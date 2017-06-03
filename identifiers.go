@@ -5,7 +5,7 @@ import "strings"
 // Base object for identifiers
 type objectIdentifier struct {
 	string `json:"identifier"`
-	Parts  []string
+	parts  []string
 }
 
 // IssuerIdentifier identifies an issuer.
@@ -47,11 +47,11 @@ func NewAttributeTypeIdentifier(identifier string) *AttributeTypeIdentifier {
 }
 
 func (o *objectIdentifier) split() []string {
-	if o.Parts == nil {
-		o.Parts = strings.Split(o.string, ".")
+	if o.parts == nil {
+		o.parts = strings.Split(o.string, ".")
 	}
 
-	return o.Parts
+	return o.parts
 }
 
 // SchemeManagerName returns the name of the scheme maanger of the current credential type.

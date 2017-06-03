@@ -18,7 +18,8 @@ var MetaStore = ConfigurationStore{
 	make(map[string]*gabi.PublicKey),
 }
 
-// ConfigurationStore ...
+// ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys.
+// Use the global MetaStore instance.
 type ConfigurationStore struct {
 	managers    map[string]*SchemeManagerDescription
 	issuers     map[string]*IssuerDescription
