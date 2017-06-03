@@ -26,7 +26,8 @@ type ConfigurationStore struct {
 	publickeys  map[string]*gabi.PublicKey
 }
 
-// ParseFolder ...
+// ParseFolder populates the current store by parsing the specified irma_configuration folder,
+// listing the containing scheme managers, issuers, credential types and public keys.
 func (store *ConfigurationStore) ParseFolder(path string) error {
 	return iterateSubfolders(path, func(dir string) error {
 		manager := &SchemeManagerDescription{}
@@ -89,6 +90,9 @@ func (store *ConfigurationStore) parseCredentialsFolder(path string) error {
 	})
 }
 
+// iterateSubfolders iterates over the subfolders of the specified path,
+// calling the specified handler each time. If anything goes wrong, or
+// if the caller returns a non-nil error, an error is immediately returned.
 func iterateSubfolders(path string, handler func(string) error) error {
 	dirs, err := filepath.Glob(path + "/*")
 	if err != nil {
