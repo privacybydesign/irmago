@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/mhe/gabi"
 )
@@ -50,10 +51,28 @@ func (store *ConfigurationStore) parseIssuerFolders(path string) error {
 		}
 		if exists {
 			store.issuers[issuer.Identifier().string] = issuer
-			return store.parseCredentialsFolder(dir + "/Issues/")
+			if err = store.parseCredentialsFolder(dir + "/Issues/"); err != nil {
+				return err
+			}
+			return store.parseKeysFolder(issuer.Identifier(), dir+"/PublicKeys/")
 		}
 		return nil
 	})
+}
+
+func (store *ConfigurationStore) parseKeysFolder(issuer *IssuerIdentifier, path string) error {
+	for i := 0; ; i++ {
+		file := path + strconv.Itoa(i) + ".xml"
+		if _, err := os.Stat(file); err != nil {
+			break
+		}
+		pk, err := gabi.NewPublicKeyFromFile(file)
+		if err != nil {
+			return err
+		}
+		MetaStore.publickeys[issuer.string] = pk
+	}
+	return nil
 }
 
 func (store *ConfigurationStore) parseCredentialsFolder(path string) error {
