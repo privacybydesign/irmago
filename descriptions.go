@@ -11,7 +11,7 @@ type SchemeManagerDescription struct {
 	KeyshareServer    string
 	KeyshareWebsite   string
 	KeyshareAttribute string
-	XMLversion        int      `xml:"version,attr"`
+	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
 }
 
@@ -24,7 +24,7 @@ type IssuerDescription struct {
 	ContactAddress    string
 	ContactEMail      string
 	URL               string `xml:"baseURL"`
-	XMLversion        int    `xml:"version,attr"`
+	XMLVersion        int    `xml:"version,attr"`
 	identifier        *IssuerIdentifier
 }
 
@@ -37,14 +37,14 @@ type CredentialDescription struct {
 	Name              string `xml:"CredentialID"`
 	IsSingleton       bool   `xml:"ShouldBeSingleton"`
 	Description       string
-	Attributes        []AttributeDesscription `xml:"Attributes>Attribute"`
-	XMLversion        int                     `xml:"version,attr"`
-	XMLName           xml.Name                `xml:"IssueSpecification"`
+	Attributes        []AttributeDescription `xml:"Attributes>Attribute"`
+	XMLVersion        int                    `xml:"version,attr"`
+	XMLName           xml.Name               `xml:"IssueSpecification"`
 	identifier        *CredentialTypeIdentifier
 }
 
-// AttributeDesscription is a description of an attribute within a credential type.
-type AttributeDesscription struct {
+// AttributeDescription is a description of an attribute within a credential type.
+type AttributeDescription struct {
 	Name        string
 	Description string
 }
