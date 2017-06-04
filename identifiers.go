@@ -1,11 +1,15 @@
 package irmago
 
+// Contains identifiers for issuers, credential types, and attributes
+// Thin wrapper about their string equivalents (e.g., "irma-demo.RU")
+// in case of the "RU" issuer in the "irma-demo" domain
+// Not sure if these are at all necessary. Avoid if possible, TODO: remove these?
+
 import "strings"
 
 // Base object for identifiers
 type objectIdentifier struct {
 	string `json:"identifier"`
-	parts  []string
 }
 
 // IssuerIdentifier identifies an issuer.
@@ -47,10 +51,7 @@ func NewAttributeTypeIdentifier(identifier string) *AttributeTypeIdentifier {
 }
 
 func (o *objectIdentifier) split() []string {
-	if o.parts == nil {
-		o.parts = strings.Split(o.string, ".")
-	}
-	return o.parts
+	return strings.Split(o.string, ".")
 }
 
 // SchemeManagerName returns the name of the scheme maanger of the current credential type.

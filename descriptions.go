@@ -54,34 +54,18 @@ type AttributeDescription struct {
 }
 
 // Identifier returns the identifier of the specified credential type.
-func (cd *CredentialDescription) Identifier() *CredentialTypeIdentifier {
-	if cd.identifier == nil {
-		cd.identifier = NewCredentialTypeIdentifier(cd.SchemeManagerName + "." + cd.IssuerName + "." + cd.Name)
-	}
-	return cd.identifier
+func (cd *CredentialDescription) Identifier() string {
+	return cd.SchemeManagerName + "." + cd.IssuerName + "." + cd.Name
 }
 
 // Identifier returns the identifier of the specified issuer description.
-func (id *IssuerDescription) Identifier() *IssuerIdentifier {
-	if id.identifier == nil {
-		id.identifier = NewIssuerIdentifier(id.SchemeManagerName + "." + id.Name)
-	}
-	return id.identifier
+func (id *IssuerDescription) Identifier() string {
+	return id.SchemeManagerName + "." + id.Name
 }
 
 // CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
 func (id *IssuerDescription) CurrentPublicKey() *gabi.PublicKey {
-	return id.Identifier().CurrentPublicKey()
-}
-
-// PublicKey returns the specified public key of the issuer identified by this instance.
-func (id *IssuerDescription) PublicKey(index int) *gabi.PublicKey {
-	return id.Identifier().PublicKey(index)
-}
-
-// CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
-func (i *IssuerIdentifier) CurrentPublicKey() *gabi.PublicKey {
-	keys := MetaStore.publickeys[i.string]
+	keys := MetaStore.publickeys[id.Identifier()]
 	if keys == nil || len(keys) == 0 {
 		return nil
 	}
@@ -89,8 +73,8 @@ func (i *IssuerIdentifier) CurrentPublicKey() *gabi.PublicKey {
 }
 
 // PublicKey returns the specified public key of the issuer identified by this instance.
-func (i *IssuerIdentifier) PublicKey(index int) *gabi.PublicKey {
-	keys := MetaStore.publickeys[i.string]
+func (id *IssuerDescription) PublicKey(index int) *gabi.PublicKey {
+	keys := MetaStore.publickeys[id.Identifier()]
 	if keys == nil || index >= len(keys) {
 		return nil
 	}

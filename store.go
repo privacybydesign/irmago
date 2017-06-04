@@ -52,17 +52,17 @@ func (store *ConfigurationStore) parseIssuerFolders(path string) error {
 			return err
 		}
 		if exists {
-			store.issuers[issuer.Identifier().string] = issuer
+			store.issuers[issuer.Identifier()] = issuer
 			if err = store.parseCredentialsFolder(dir + "/Issues/"); err != nil {
 				return err
 			}
-			return store.parseKeysFolder(issuer.Identifier(), dir+"/PublicKeys/")
+			return store.parseKeysFolder(issuer, dir+"/PublicKeys/")
 		}
 		return nil
 	})
 }
 
-func (store *ConfigurationStore) parseKeysFolder(issuer *IssuerIdentifier, path string) error {
+func (store *ConfigurationStore) parseKeysFolder(issuer *IssuerDescription, path string) error {
 	for i := 0; ; i++ {
 		file := path + strconv.Itoa(i) + ".xml"
 		if _, err := os.Stat(file); err != nil {
@@ -72,7 +72,7 @@ func (store *ConfigurationStore) parseKeysFolder(issuer *IssuerIdentifier, path 
 		if err != nil {
 			return err
 		}
-		MetaStore.publickeys[issuer.string] = append(MetaStore.publickeys[issuer.string], pk)
+		MetaStore.publickeys[issuer.Identifier()] = append(MetaStore.publickeys[issuer.Identifier()], pk)
 	}
 	return nil
 }
@@ -85,7 +85,7 @@ func (store *ConfigurationStore) parseCredentialsFolder(path string) error {
 			return err
 		}
 		if exists {
-			store.credentials[cred.Identifier().string] = cred
+			store.credentials[cred.Identifier()] = cred
 		}
 		return nil
 	})
