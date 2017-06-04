@@ -12,32 +12,32 @@ import (
 
 // MetaStore is the global instance of ConfigurationStore
 var MetaStore = ConfigurationStore{
-	make(map[string]*SchemeManagerDescription),
-	make(map[string]*IssuerDescription),
-	make(map[string]*CredentialDescription),
+	make(map[string]*SchemeManager),
+	make(map[string]*Issuer),
+	make(map[string]*CredentialType),
 	make(map[string][]*gabi.PublicKey),
 }
 
 // ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys.
 // Use the global MetaStore instance.
 type ConfigurationStore struct {
-	managers    map[string]*SchemeManagerDescription
-	issuers     map[string]*IssuerDescription
-	credentials map[string]*CredentialDescription
-	publickeys  map[string][]*gabi.PublicKey
+	SchemeManagers map[string]*SchemeManager
+	Issuers        map[string]*Issuer
+	Credentials    map[string]*CredentialType
+	PublicKeys     map[string][]*gabi.PublicKey
 }
 
 // ParseFolder populates the current store by parsing the specified irma_configuration folder,
 // listing the containing scheme managers, issuers, credential types and public keys.
 func (store *ConfigurationStore) ParseFolder(path string) error {
 	return iterateSubfolders(path, func(dir string) error {
-		manager := &SchemeManagerDescription{}
+		manager := &SchemeManager{}
 		exists, err := pathToDescription(dir+"/description.xml", manager)
 		if err != nil {
 			return err
 		}
 		if exists {
-			MetaStore.managers[manager.Name] = manager
+			MetaStore.SchemeManagers[manager.Name] = manager
 			return store.parseIssuerFolders(dir)
 		}
 		return nil
@@ -46,13 +46,13 @@ func (store *ConfigurationStore) ParseFolder(path string) error {
 
 func (store *ConfigurationStore) parseIssuerFolders(path string) error {
 	return iterateSubfolders(path, func(dir string) error {
-		issuer := &IssuerDescription{}
+		issuer := &Issuer{}
 		exists, err := pathToDescription(dir+"/description.xml", issuer)
 		if err != nil {
 			return err
 		}
 		if exists {
-			store.issuers[issuer.Identifier()] = issuer
+			store.Issuers[issuer.Identifier()] = issuer
 			if err = store.parseCredentialsFolder(dir + "/Issues/"); err != nil {
 				return err
 			}
@@ -62,7 +62,7 @@ func (store *ConfigurationStore) parseIssuerFolders(path string) error {
 	})
 }
 
-func (store *ConfigurationStore) parseKeysFolder(issuer *IssuerDescription, path string) error {
+func (store *ConfigurationStore) parseKeysFolder(issuer *Issuer, path string) error {
 	for i := 0; ; i++ {
 		file := path + strconv.Itoa(i) + ".xml"
 		if _, err := os.Stat(file); err != nil {
@@ -72,20 +72,20 @@ func (store *ConfigurationStore) parseKeysFolder(issuer *IssuerDescription, path
 		if err != nil {
 			return err
 		}
-		MetaStore.publickeys[issuer.Identifier()] = append(MetaStore.publickeys[issuer.Identifier()], pk)
+		MetaStore.PublicKeys[issuer.Identifier()] = append(MetaStore.PublicKeys[issuer.Identifier()], pk)
 	}
 	return nil
 }
 
 func (store *ConfigurationStore) parseCredentialsFolder(path string) error {
 	return iterateSubfolders(path, func(dir string) error {
-		cred := &CredentialDescription{}
+		cred := &CredentialType{}
 		exists, err := pathToDescription(dir+"/description.xml", cred)
 		if err != nil {
 			return err
 		}
 		if exists {
-			store.credentials[cred.Identifier()] = cred
+			store.Credentials[cred.Identifier()] = cred
 		}
 		return nil
 	})

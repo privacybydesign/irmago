@@ -6,8 +6,8 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// SchemeManagerDescription describes a scheme manager.
-type SchemeManagerDescription struct {
+// SchemeManager describes a scheme manager.
+type SchemeManager struct {
 	Name              string `xml:"Id"`
 	URL               string `xml:"Contact"`
 	HRName            string `xml:"Name"`
@@ -19,8 +19,8 @@ type SchemeManagerDescription struct {
 	XMLName           xml.Name `xml:"SchemeManager"`
 }
 
-// IssuerDescription describes an issuer.
-type IssuerDescription struct {
+// Issuer describes an issuer.
+type Issuer struct {
 	HRName            string `xml:"Name"`
 	HRShortName       string `xml:"ShortName"`
 	Name              string `xml:"ID"`
@@ -32,8 +32,8 @@ type IssuerDescription struct {
 	identifier        *IssuerIdentifier
 }
 
-// CredentialDescription is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
-type CredentialDescription struct {
+// CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
+type CredentialType struct {
 	HRName            string `xml:"Name"`
 	HRShortName       string `xml:"ShortName"`
 	IssuerName        string `xml:"IssuerID"`
@@ -54,18 +54,18 @@ type AttributeDescription struct {
 }
 
 // Identifier returns the identifier of the specified credential type.
-func (cd *CredentialDescription) Identifier() string {
+func (cd *CredentialType) Identifier() string {
 	return cd.SchemeManagerName + "." + cd.IssuerName + "." + cd.Name
 }
 
 // Identifier returns the identifier of the specified issuer description.
-func (id *IssuerDescription) Identifier() string {
+func (id *Issuer) Identifier() string {
 	return id.SchemeManagerName + "." + id.Name
 }
 
 // CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
-func (id *IssuerDescription) CurrentPublicKey() *gabi.PublicKey {
-	keys := MetaStore.publickeys[id.Identifier()]
+func (id *Issuer) CurrentPublicKey() *gabi.PublicKey {
+	keys := MetaStore.PublicKeys[id.Identifier()]
 	if keys == nil || len(keys) == 0 {
 		return nil
 	}
@@ -73,8 +73,8 @@ func (id *IssuerDescription) CurrentPublicKey() *gabi.PublicKey {
 }
 
 // PublicKey returns the specified public key of the issuer identified by this instance.
-func (id *IssuerDescription) PublicKey(index int) *gabi.PublicKey {
-	keys := MetaStore.publickeys[id.Identifier()]
+func (id *Issuer) PublicKey(index int) *gabi.PublicKey {
+	keys := MetaStore.PublicKeys[id.Identifier()]
 	if keys == nil || index >= len(keys) {
 		return nil
 	}
