@@ -50,7 +50,6 @@ func (o *objectIdentifier) split() []string {
 	if o.parts == nil {
 		o.parts = strings.Split(o.string, ".")
 	}
-
 	return o.parts
 }
 
@@ -67,15 +66,45 @@ func (ci *CredentialTypeIdentifier) IssuerName() string {
 // IssuerIdentifier returns the issuer identifier of the current credential type.
 func (ci *CredentialTypeIdentifier) IssuerIdentifier() *IssuerIdentifier {
 	if ci.issuer == nil {
-		ci.issuer = &IssuerIdentifier{
-			objectIdentifier: objectIdentifier{string: ci.SchemeManagerName() + "." + ci.IssuerName()},
-		}
+		ci.issuer = NewIssuerIdentifier(strings.Join(ci.split()[:1], "."))
 	}
-
 	return ci.issuer
 }
 
 // CredentialName returns the name of the current credential type.
 func (ci *CredentialTypeIdentifier) CredentialName() string {
 	return ci.split()[2]
+}
+
+// SchemeManagerName ...
+func (ai *AttributeTypeIdentifier) SchemeManagerName() string {
+	return ai.split()[0]
+}
+
+// IssuerName ...
+func (ai *AttributeTypeIdentifier) IssuerName() string {
+	return ai.split()[1]
+}
+
+// CredentialName ...
+func (ai *AttributeTypeIdentifier) CredentialName() string {
+	return ai.split()[2]
+}
+
+// AttributeName ..
+func (ai *AttributeTypeIdentifier) AttributeName() string {
+	return ai.split()[3]
+}
+
+// CredentialTypeIdentifier ...
+func (ai *AttributeTypeIdentifier) CredentialTypeIdentifier() *CredentialTypeIdentifier {
+	if ai.cred == nil {
+		ai.cred = NewCredentialTypeIdentifier(strings.Join(ai.split()[:2], "."))
+	}
+	return ai.cred
+}
+
+// IssuerIdentifier ...
+func (ai *AttributeTypeIdentifier) IssuerIdentifier() *IssuerIdentifier {
+	return ai.CredentialTypeIdentifier().IssuerIdentifier()
 }
