@@ -1,6 +1,10 @@
 package irmago
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+
+	"github.com/mhe/gabi"
+)
 
 // SchemeManagerDescription describes a scheme manager.
 type SchemeManagerDescription struct {
@@ -63,4 +67,32 @@ func (id *IssuerDescription) Identifier() *IssuerIdentifier {
 		id.identifier = NewIssuerIdentifier(id.SchemeManagerName + "." + id.Name)
 	}
 	return id.identifier
+}
+
+// CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
+func (id *IssuerDescription) CurrentPublicKey() *gabi.PublicKey {
+	return id.Identifier().CurrentPublicKey()
+}
+
+// PublicKey returns the specified public key of the issuer identified by this instance.
+func (id *IssuerDescription) PublicKey(index int) *gabi.PublicKey {
+	return id.Identifier().PublicKey(index)
+}
+
+// CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
+func (i *IssuerIdentifier) CurrentPublicKey() *gabi.PublicKey {
+	keys := MetaStore.publickeys[i.string]
+	if keys == nil || len(keys) == 0 {
+		return nil
+	}
+	return keys[len(keys)-1]
+}
+
+// PublicKey returns the specified public key of the issuer identified by this instance.
+func (i *IssuerIdentifier) PublicKey(index int) *gabi.PublicKey {
+	keys := MetaStore.publickeys[i.string]
+	if keys == nil || index >= len(keys) {
+		return nil
+	}
+	return keys[index]
 }

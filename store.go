@@ -15,7 +15,7 @@ var MetaStore = ConfigurationStore{
 	make(map[string]*SchemeManagerDescription),
 	make(map[string]*IssuerDescription),
 	make(map[string]*CredentialDescription),
-	make(map[string]*gabi.PublicKey),
+	make(map[string][]*gabi.PublicKey),
 }
 
 // ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys.
@@ -24,7 +24,7 @@ type ConfigurationStore struct {
 	managers    map[string]*SchemeManagerDescription
 	issuers     map[string]*IssuerDescription
 	credentials map[string]*CredentialDescription
-	publickeys  map[string]*gabi.PublicKey
+	publickeys  map[string][]*gabi.PublicKey
 }
 
 // ParseFolder populates the current store by parsing the specified irma_configuration folder,
@@ -72,7 +72,7 @@ func (store *ConfigurationStore) parseKeysFolder(issuer *IssuerIdentifier, path 
 		if err != nil {
 			return err
 		}
-		MetaStore.publickeys[issuer.string] = pk
+		MetaStore.publickeys[issuer.string] = append(MetaStore.publickeys[issuer.string], pk)
 	}
 	return nil
 }
