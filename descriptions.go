@@ -29,7 +29,6 @@ type Issuer struct {
 	ContactEMail      string
 	URL               string `xml:"baseURL"`
 	XMLVersion        int    `xml:"version,attr"`
-	identifier        *IssuerIdentifier
 }
 
 // CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
@@ -44,7 +43,6 @@ type CredentialType struct {
 	Attributes        []AttributeDescription `xml:"Attributes>Attribute"`
 	XMLVersion        int                    `xml:"version,attr"`
 	XMLName           xml.Name               `xml:"IssueSpecification"`
-	identifier        *CredentialTypeIdentifier
 }
 
 // AttributeDescription is a description of an attribute within a credential type.

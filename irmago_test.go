@@ -1,6 +1,8 @@
 package irmago
 
 import (
+	"encoding/binary"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,4 +24,12 @@ func TestParseStore(t *testing.T) {
 		"Student Card",
 		MetaStore.Credentials["irma-demo.RU.studentCard"].HRShortName,
 		"irma-demo.RU.studentCard has unexpected name")
+}
+
+func TestInts(t *testing.T) {
+	t.Log(big.NewInt(2900).Bytes())
+	bytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(bytes, 2900)
+	t.Log(bytes)
+	t.Log(binary.BigEndian.Uint16(bytes))
 }
