@@ -1,2 +1,4 @@
 *.test
 .idea/
+testdata/storage/*
+!testdata/storage/cardemu.xml
