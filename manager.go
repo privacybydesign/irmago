@@ -97,10 +97,15 @@ func (cm *CredentialManager) Credential(id string, counter int) (cred *Credentia
 			err = errors.New("signature file not found")
 			return nil, err
 		}
+		meta := MetadataFromInt(ints[1])
+		pk := meta.PublicKey()
+		if pk == nil {
+			return nil, errors.New("unknown public key")
+		}
 		cred := newCredential(&gabi.Credential{
 			Attributes: ints,
 			Signature:  sig,
-			Pk:         nil, // TODO
+			Pk:         pk,
 		})
 		cm.credentials[id][counter] = cred
 	}
