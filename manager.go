@@ -19,12 +19,12 @@ type CredentialManager struct {
 	secretkey   *big.Int
 	storagePath string
 	attributes  map[string][]*AttributeList
-	credentials map[string]map[int]*gabi.Credential
+	credentials map[string]map[int]*Credential
 }
 
 func newCredentialManager() *CredentialManager {
 	return &CredentialManager{
-		credentials: make(map[string]map[int]*gabi.Credential),
+		credentials: make(map[string]map[int]*Credential),
 	}
 }
 
@@ -60,10 +60,10 @@ func (cm *CredentialManager) attrs(id string) []*AttributeList {
 }
 
 // creds returns cm.credentials[id], initializing it to an empty map if neccesary
-func (cm *CredentialManager) creds(id string) map[int]*gabi.Credential {
+func (cm *CredentialManager) creds(id string) map[int]*Credential {
 	list, exists := cm.credentials[id]
 	if !exists {
-		list = make(map[int]*gabi.Credential)
+		list = make(map[int]*Credential)
 		cm.credentials[id] = list
 	}
 	return list
@@ -79,7 +79,7 @@ func (cm *CredentialManager) Attributes(id string, counter int) (attributes *Att
 }
 
 // Credential returns the requested credential, or nil if we do not have it.
-func (cm *CredentialManager) Credential(id string, counter int) (cred *gabi.Credential, err error) {
+func (cm *CredentialManager) Credential(id string, counter int) (cred *Credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during Init(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
@@ -97,7 +97,11 @@ func (cm *CredentialManager) Credential(id string, counter int) (cred *gabi.Cred
 			err = errors.New("signature file not found")
 			return nil, err
 		}
-		cred := gabi.NewCredential(ints, sig, nil)
+		cred := newCredential(&gabi.Credential{
+			Attributes: ints,
+			Signature:  sig,
+			Pk:         nil, // TODO
+		})
 		cm.credentials[id][counter] = cred
 	}
 
@@ -135,9 +139,8 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 
 	for _, list := range parsedjson {
 		cm.secretkey = list[0].Attributes[0]
-		for i, cred := range list {
-			// TODO move this metadata initialisation somehow into gabi.Credential?
-			cred.MetadataAttribute = gabi.MetadataFromInt(cred.Attributes[1])
+		for i, gabicred := range list {
+			cred := newCredential(gabicred)
 			if cred.CredentialType() == nil {
 				return errors.New("cannot add unknown credential type")
 			}
@@ -164,19 +167,19 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	return
 }
 
-func (cm *CredentialManager) addCredential(cred *gabi.Credential) {
+func (cm *CredentialManager) addCredential(cred *Credential) {
 	id := cred.CredentialType().Identifier()
 	cm.attributes[id] = append(cm.attrs(id), NewAttributeListFromInts(cred.Attributes[1:]))
 
 	if _, exists := cm.credentials[id]; !exists {
-		cm.credentials[id] = make(map[int]*gabi.Credential)
+		cm.credentials[id] = make(map[int]*Credential)
 	}
 	counter := len(cm.attributes[id]) - 1
 	cm.credentials[id][counter] = cred
 }
 
 // Add adds the specified credential to the CredentialManager.
-func (cm *CredentialManager) Add(cred *gabi.Credential) (err error) {
+func (cm *CredentialManager) Add(cred *Credential) (err error) {
 	if cred.CredentialType() == nil {
 		return errors.New("cannot add unknown credential type")
 	}
