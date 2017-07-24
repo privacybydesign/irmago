@@ -8,33 +8,39 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
-	if len(MetaStore.SchemeManagers) == 0 { // FIXME
-		MetaStore.ParseFolder("testdata/irma_configuration")
-	}
-	Manager = newCredentialManager()
-	err := os.RemoveAll("testdata/storage/test")
-	if err != nil {
-		fmt.Println("Could not delete test storage")
-		os.Exit(1)
-	}
-	err = os.Mkdir("testdata/storage/test", 0755)
-	if err != nil {
-		fmt.Println("Could not create test storage")
-		os.Exit(1)
-	}
-
 	retCode := m.Run()
 
-	err = os.RemoveAll("testdata/storage/test")
+	err := os.RemoveAll("testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not delete test storage")
 		os.Exit(1)
 	}
 
 	os.Exit(retCode)
+}
+
+func parseMetaStore(t *testing.T) {
+	require.NoError(t, MetaStore.ParseFolder("testdata/irma_configuration"), "MetaStore.ParseFolder() failed")
+}
+
+func parseStorage(t *testing.T) {
+	exists, err := pathExists("testdata/storage/path")
+	require.NoError(t, err, "pathexists() failed")
+	if !exists {
+		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
+	}
+	require.NoError(t, Manager.Init("testdata/storage/test"), "Manager.Init() failed")
+
+}
+
+func teardown(t *testing.T) {
+	MetaStore = newConfigurationStore()
+	Manager = newCredentialManager()
+	assert.NoError(t, os.RemoveAll("testdata/storage/test"))
 }
 
 // A convenience function for initializing big integers from known correct (10
@@ -45,10 +51,7 @@ func s2big(s string) (r *big.Int) {
 }
 
 func parseAndroidStorage(t *testing.T) {
-	err := Manager.Init("testdata/storage/test")
-	assert.NoError(t, err, "Manager.Init() failed")
-	err = Manager.ParseAndroidStorage()
-	assert.NoError(t, err, "ParseAndroidStorage failed")
+	assert.NoError(t, Manager.ParseAndroidStorage(), "ParseAndroidStorage() failed")
 }
 
 func verifyStoreIsUnmarshaled(t *testing.T) {
@@ -64,24 +67,29 @@ func verifyStoreIsUnmarshaled(t *testing.T) {
 }
 
 func TestAndroidParse(t *testing.T) {
+	parseMetaStore(t)
+	parseStorage(t)
 	parseAndroidStorage(t)
 	verifyStoreIsUnmarshaled(t)
+
+	teardown(t)
 }
 
 func TestUnmarshaling(t *testing.T) {
+	parseMetaStore(t)
+	parseStorage(t)
 	parseAndroidStorage(t)
 
 	Manager = newCredentialManager()
 	Manager.Init("testdata/storage/test")
 
 	verifyStoreIsUnmarshaled(t)
+
+	teardown(t)
 }
 
 func TestParseStore(t *testing.T) {
-	err := MetaStore.ParseFolder("testdata/irma_configuration")
-	if err != nil {
-		t.Fatal(err)
-	}
+	parseMetaStore(t)
 
 	assert.NotNil(t, MetaStore.Issuers["irma-demo.RU"].CurrentPublicKey().N, "irma-demo.RU public key has no modulus")
 	assert.Equal(t,
@@ -108,6 +116,8 @@ func TestParseStore(t *testing.T) {
 		"irma-demo.RU.studentCard had improper hash")
 	assert.Contains(t, MetaStore.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
 		"irma-demo.MijnOverheid.root had improper hash")
+
+	teardown(t)
 }
 
 func TestMetadataAttribute(t *testing.T) {
@@ -127,10 +137,7 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	err := MetaStore.ParseFolder("testdata/irma_configuration")
-	if err != nil {
-		t.Fatal(err)
-	}
+	parseMetaStore(t)
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
 	attr := MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"))
@@ -145,4 +152,6 @@ func TestMetadataCompatibility(t *testing.T) {
 	assert.Equal(t, time.Unix(1499904000, 0), attr.SigningDate(), "Unexpected signing date")
 	assert.Equal(t, time.Unix(1516233600, 0), attr.Expiry(), "Unexpected expiry date")
 	assert.Equal(t, 2, attr.KeyCounter(), "Unexpected key counter")
+
+	teardown(t)
 }
