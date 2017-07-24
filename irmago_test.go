@@ -17,12 +17,12 @@ func TestMain(m *testing.M) {
 	Manager = newCredentialManager()
 	err := os.RemoveAll("testdata/storage/test")
 	if err != nil {
-		fmt.Errorf("Could not delete test storage")
+		fmt.Println("Could not delete test storage")
 		os.Exit(1)
 	}
 	err = os.Mkdir("testdata/storage/test", 0755)
 	if err != nil {
-		fmt.Errorf("Could not create test storage")
+		fmt.Println("Could not create test storage")
 		os.Exit(1)
 	}
 
@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 
 	err = os.RemoveAll("testdata/storage/test")
 	if err != nil {
-		fmt.Errorf("Could not delete test storage")
+		fmt.Println("Could not delete test storage")
 		os.Exit(1)
 	}
 
