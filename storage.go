@@ -7,7 +7,11 @@ import (
 	"os"
 	"strconv"
 
+	"crypto/rand"
+	"encoding/hex"
 	"github.com/mhe/gabi"
+	"math/big"
+	"path"
 )
 
 // Filenames in which we store stuff
@@ -15,7 +19,7 @@ const (
 	skFile         = "sk"
 	attributesFile = "attrs"
 	signaturesDir  = "sigs"
-	cardemuXML     = "cardemu.xml"
+	cardemuXML     = "../cardemu.xml"
 )
 
 func pathExists(path string) (bool, error) {
@@ -33,6 +37,15 @@ func (cm *CredentialManager) path(file string) string {
 	return cm.storagePath + "/" + file
 }
 
+func (cm *CredentialManager) signatureFilename(id string, counter int) string {
+	return cm.path(signaturesDir) + "/" + id + "-" + strconv.Itoa(counter)
+}
+
+// ensureStorageExists initializes the credential storage folder,
+// ensuring that it is in a usable state.
+// NOTE: we do not create the folder if it does not exist!
+// Setting it up in a properly protected location (e.g., with automatic
+// backups to iCloud/Google disabled) is the responsibility of the user.
 func (cm *CredentialManager) ensureStorageExists() (err error) {
 	exist, err := pathExists(cm.storagePath)
 	if err != nil {
@@ -40,43 +53,6 @@ func (cm *CredentialManager) ensureStorageExists() (err error) {
 	}
 	if !exist {
 		return errors.New("credential storage path does not exist")
-	}
-
-	var file *os.File
-	exist, err = pathExists(cm.path(skFile))
-	if err != nil {
-		return
-	}
-	if !exist {
-		err = cm.generateSecretKey()
-		if err != nil {
-			return
-		}
-		file, err = os.Create(cm.path(skFile))
-		if err != nil {
-			return
-		}
-		defer file.Close()
-		_, err = file.Write(cm.secretkey.Bytes())
-		if err != nil {
-			return
-		}
-	}
-
-	exist, err = pathExists(cm.path(attributesFile))
-	if err != nil {
-		return err
-	}
-	if !exist {
-		file, err = os.Create(cm.path(attributesFile))
-		if err != nil {
-			return
-		}
-		defer file.Close()
-		_, err = file.Write([]byte("{}"))
-		if err != nil {
-			return
-		}
 	}
 
 	exist, err = pathExists(cm.path(signaturesDir))
@@ -90,8 +66,32 @@ func (cm *CredentialManager) ensureStorageExists() (err error) {
 	return
 }
 
-func (cm *CredentialManager) storeKey() error {
-	return ioutil.WriteFile(cm.path(skFile), cm.secretkey.Bytes(), 0600)
+func (cm *CredentialManager) storeSecretKey(sk *big.Int) error {
+	return ioutil.WriteFile(cm.path(skFile), sk.Bytes(), 0600)
+}
+
+// Save the filecontents at the specified path atomically:
+// - first save the content in a temp file with a random filename in the same dir
+// - then rename the temp file to the specified filepath, overwriting the old file
+func (cm *CredentialManager) saveFile(filepath string, content []byte) (err error) {
+	dir := path.Dir(filepath)
+
+	// Read random data for filename and convert to hex
+	randBytes := make([]byte, 16)
+	_, err = rand.Read(randBytes)
+	if err != nil {
+		return
+	}
+	tempfilename := hex.EncodeToString(randBytes)
+
+	// Create temp file
+	err = ioutil.WriteFile(dir+"/"+tempfilename, content, 0600)
+	if err != nil {
+		return
+	}
+
+	// Rename, overwriting old file
+	return os.Rename(dir+"/"+tempfilename, filepath)
 }
 
 func (cm *CredentialManager) storeSignature(cred *gabi.Credential, counter int) (err error) {
@@ -105,7 +105,7 @@ func (cm *CredentialManager) storeSignature(cred *gabi.Credential, counter int) 
 	}
 
 	// TODO existence check
-	filename := cm.path(signaturesDir) + "/" + cred.CredentialType().Identifier() + "-" + strconv.Itoa(counter)
+	filename := cm.signatureFilename(cred.CredentialType().Identifier(), counter)
 	err = ioutil.WriteFile(filename, credbytes, 0600)
 	return
 }
@@ -119,4 +119,58 @@ func (cm *CredentialManager) storeAttributes() (err error) {
 	// TODO existence check
 	err = ioutil.WriteFile(cm.path(attributesFile), attrbytes, 0600)
 	return
+}
+
+func (cm *CredentialManager) loadSignature(id string, counter int) (signature *gabi.CLSignature, err error) {
+	path := cm.signatureFilename(id, counter)
+	exists, err := pathExists(path)
+	if err != nil || !exists {
+		return
+	}
+	bytes, err := ioutil.ReadFile(path)
+	signature = new(gabi.CLSignature)
+	err = json.Unmarshal(bytes, signature)
+	return
+}
+
+// loadSecretKey retrieves and returns the secret key from storage, or if no secret key
+// was found in storage, it generates, saves, and returns a new secret key.
+func (cm *CredentialManager) loadSecretKey() (*big.Int, error) {
+	exists, err := pathExists(cm.path(skFile))
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		bytes, err := ioutil.ReadFile(cm.path(skFile))
+		if err != nil {
+			return nil, err
+		}
+		return new(big.Int).SetBytes(bytes), nil
+	} else {
+		sk, err := cm.generateSecretKey()
+		if err != nil {
+			return nil, err
+		}
+		err = cm.storeSecretKey(sk)
+		if err != nil {
+			return nil, err
+		}
+		return sk, nil
+	}
+}
+
+func (cm *CredentialManager) loadAttributes() (list map[string][]*AttributeList, err error) {
+	list = make(map[string][]*AttributeList)
+
+	exists, err := pathExists(cm.path(attributesFile))
+	if err != nil || !exists {
+		return
+	}
+
+	bytes, err := ioutil.ReadFile(cm.path(attributesFile))
+	if err != nil {
+		return nil, err
+	}
+	return list, json.Unmarshal(bytes, &list)
+
 }
