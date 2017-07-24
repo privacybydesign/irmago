@@ -94,15 +94,15 @@ func TestParseStore(t *testing.T) {
 	assert.NotNil(t, MetaStore.Issuers["irma-demo.RU"].CurrentPublicKey().N, "irma-demo.RU public key has no modulus")
 	assert.Equal(t,
 		"Irma Demo",
-		MetaStore.SchemeManagers["irma-demo"].HRName.Translation("en"),
+		MetaStore.SchemeManagers["irma-demo"].Name.Translation("en"),
 		"irma-demo scheme manager has unexpected name")
 	assert.Equal(t,
 		"Radboud Universiteit Nijmegen",
-		MetaStore.Issuers["irma-demo.RU"].HRName.Translation("en"),
+		MetaStore.Issuers["irma-demo.RU"].Name.Translation("en"),
 		"irma-demo.RU issuer has unexpected name")
 	assert.Equal(t,
 		"Student Card",
-		MetaStore.Credentials["irma-demo.RU.studentCard"].HRShortName.Translation("en"),
+		MetaStore.Credentials["irma-demo.RU.studentCard"].ShortName.Translation("en"),
 		"irma-demo.RU.studentCard has unexpected name")
 
 	assert.Equal(t,

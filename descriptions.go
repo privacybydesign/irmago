@@ -8,9 +8,9 @@ import (
 
 // SchemeManager describes a scheme manager.
 type SchemeManager struct {
-	Name              string           `xml:"Id"`
+	ID                string           `xml:"Id"`
+	Name              TranslatedString `xml:"Name"`
 	URL               string           `xml:"Contact"`
-	HRName            TranslatedString `xml:"Name"`
 	Description       TranslatedString
 	KeyshareServer    string
 	KeyshareWebsite   string
@@ -21,28 +21,28 @@ type SchemeManager struct {
 
 // Issuer describes an issuer.
 type Issuer struct {
-	HRName            TranslatedString `xml:"Name"`
-	HRShortName       TranslatedString `xml:"ShortName"`
-	Name              string           `xml:"ID"`
-	SchemeManagerName string           `xml:"SchemeManager"`
-	ContactAddress    string
-	ContactEMail      string
-	URL               string `xml:"baseURL"`
-	XMLVersion        int    `xml:"version,attr"`
+	ID              string           `xml:"ID"`
+	Name            TranslatedString `xml:"Name"`
+	ShortName       TranslatedString `xml:"ShortName"`
+	SchemeManagerID string           `xml:"SchemeManager"`
+	ContactAddress  string
+	ContactEMail    string
+	URL             string `xml:"baseURL"`
+	XMLVersion      int    `xml:"version,attr"`
 }
 
 // CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
 type CredentialType struct {
-	HRName            TranslatedString `xml:"Name"`
-	HRShortName       TranslatedString `xml:"ShortName"`
-	IssuerName        string           `xml:"IssuerID"`
-	SchemeManagerName string           `xml:"SchemeManager"`
-	Name              string           `xml:"CredentialID"`
-	IsSingleton       bool             `xml:"ShouldBeSingleton"`
-	Description       TranslatedString
-	Attributes        []AttributeDescription `xml:"Attributes>Attribute"`
-	XMLVersion        int                    `xml:"version,attr"`
-	XMLName           xml.Name               `xml:"IssueSpecification"`
+	ID              string           `xml:"CredentialID"`
+	Name            TranslatedString `xml:"Name"`
+	ShortName       TranslatedString `xml:"ShortName"`
+	IssuerID        string           `xml:"IssuerID"`
+	SchemeManagerID string           `xml:"SchemeManager"`
+	IsSingleton     bool             `xml:"ShouldBeSingleton"`
+	Description     TranslatedString
+	Attributes      []AttributeDescription `xml:"Attributes>Attribute"`
+	XMLVersion      int                    `xml:"version,attr"`
+	XMLName         xml.Name               `xml:"IssueSpecification"`
 }
 
 // AttributeDescription is a description of an attribute within a credential type.
@@ -93,17 +93,17 @@ func (ts *TranslatedString) Translation(lang string) string {
 
 // Identifier returns the identifier of the specified credential type.
 func (cd *CredentialType) Identifier() string {
-	return cd.SchemeManagerName + "." + cd.IssuerName + "." + cd.Name
+	return cd.SchemeManagerID + "." + cd.IssuerID + "." + cd.ID
 }
 
 // IssuerIdentifier returns the issuer identifier of the specified credential type.
 func (cd *CredentialType) IssuerIdentifier() string {
-	return cd.SchemeManagerName + "." + cd.IssuerName
+	return cd.SchemeManagerID + "." + cd.IssuerID
 }
 
 // Identifier returns the identifier of the specified issuer description.
 func (id *Issuer) Identifier() string {
-	return id.SchemeManagerName + "." + id.Name
+	return id.SchemeManagerID + "." + id.ID
 }
 
 // CurrentPublicKey returns the latest known public key of the issuer identified by this instance.

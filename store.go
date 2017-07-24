@@ -74,7 +74,7 @@ func (store *ConfigurationStore) ParseFolder(path string) error {
 			return err
 		}
 		if exists {
-			MetaStore.SchemeManagers[manager.Name] = manager
+			MetaStore.SchemeManagers[manager.ID] = manager
 			return store.parseIssuerFolders(dir)
 		}
 		return nil
