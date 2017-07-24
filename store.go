@@ -24,15 +24,16 @@ type ConfigurationStore struct {
 	PublicKeys     map[string][]*gabi.PublicKey
 
 	reverseHashes map[string]string
+	initialized   bool
 }
 
 func newConfigurationStore() (store *ConfigurationStore) {
 	store = &ConfigurationStore{
-		make(map[string]*SchemeManager),
-		make(map[string]*Issuer),
-		make(map[string]*CredentialType),
-		make(map[string][]*gabi.PublicKey),
-		make(map[string]string),
+		SchemeManagers: make(map[string]*SchemeManager),
+		Issuers:        make(map[string]*Issuer),
+		Credentials:    make(map[string]*CredentialType),
+		PublicKeys:     make(map[string][]*gabi.PublicKey),
+		reverseHashes:  make(map[string]string),
 	}
 	return
 }
@@ -59,10 +60,14 @@ func (store *ConfigurationStore) hashToCredentialType(hash []byte) *CredentialTy
 	return nil
 }
 
+func (store *ConfigurationStore) IsInitialized() bool {
+	return store.initialized
+}
+
 // ParseFolder populates the current store by parsing the specified irma_configuration folder,
 // listing the containing scheme managers, issuers, credential types and public keys.
 func (store *ConfigurationStore) ParseFolder(path string) error {
-	return iterateSubfolders(path, func(dir string) error {
+	err := iterateSubfolders(path, func(dir string) error {
 		manager := &SchemeManager{}
 		exists, err := pathToDescription(dir+"/description.xml", manager)
 		if err != nil {
@@ -74,6 +79,11 @@ func (store *ConfigurationStore) ParseFolder(path string) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	store.initialized = true
+	return nil
 }
 
 func (store *ConfigurationStore) parseIssuerFolders(path string) error {
