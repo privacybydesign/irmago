@@ -49,10 +49,30 @@ func (cm *CredentialManager) Init(path string) (err error) {
 
 }
 
+// attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
+func (cm *CredentialManager) attrs(id string) []*AttributeList {
+	list, exists := cm.attributes[id]
+	if !exists {
+		list = make([]*AttributeList, 0, 1)
+		cm.attributes[id] = list
+	}
+	return list
+}
+
+// creds returns cm.credentials[id], initializing it to an empty map if neccesary
+func (cm *CredentialManager) creds(id string) map[int]*gabi.Credential {
+	list, exists := cm.credentials[id]
+	if !exists {
+		list = make(map[int]*gabi.Credential)
+		cm.credentials[id] = list
+	}
+	return list
+}
+
 // Attributes returns the attribute list of the requested credential, or nil if we do not have it.
 func (cm *CredentialManager) Attributes(id string, counter int) (attributes *AttributeList) {
-	list, exists := cm.attributes[id]
-	if !exists || len(list) <= counter {
+	list := cm.attrs(id)
+	if len(list) <= counter {
 		return
 	}
 	return list[counter]
@@ -60,15 +80,10 @@ func (cm *CredentialManager) Attributes(id string, counter int) (attributes *Att
 
 // Credential returns the requested credential, or nil if we do not have it.
 func (cm *CredentialManager) Credential(id string, counter int) (cred *gabi.Credential, err error) {
-	_, exists := cm.credentials[id]
-	if !exists {
-		cm.credentials[id] = make(map[int]*gabi.Credential)
-	}
-
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during Init(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
-	if _, exists := cm.credentials[id][counter]; !exists {
+	if _, exists := cm.creds(id)[counter]; !exists {
 		attrs := cm.Attributes(id, counter)
 		if attrs == nil { // We do not have the requested cred
 			return
@@ -151,10 +166,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 
 func (cm *CredentialManager) addCredential(cred *gabi.Credential) {
 	id := cred.CredentialType().Identifier()
-	if _, exists := cm.attributes[id]; !exists {
-		cm.attributes[id] = make([]*AttributeList, 0, 1)
-	}
-	cm.attributes[id] = append(cm.attributes[id], NewAttributeListFromInts(cred.Attributes[1:]))
+	cm.attributes[id] = append(cm.attrs(id), NewAttributeListFromInts(cred.Attributes[1:]))
 
 	if _, exists := cm.credentials[id]; !exists {
 		cm.credentials[id] = make(map[int]*gabi.Credential)
