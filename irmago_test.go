@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +39,7 @@ func parseStorage(t *testing.T) {
 func teardown(t *testing.T) {
 	MetaStore = newConfigurationStore()
 	Manager = newCredentialManager()
-	assert.NoError(t, os.RemoveAll("testdata/storage/test"))
+	require.NoError(t, os.RemoveAll("testdata/storage/test"))
 }
 
 // A convenience function for initializing big integers from known correct (10
@@ -51,16 +50,16 @@ func s2big(s string) (r *big.Int) {
 }
 
 func parseAndroidStorage(t *testing.T) {
-	assert.NoError(t, Manager.ParseAndroidStorage(), "ParseAndroidStorage() failed")
+	require.NoError(t, Manager.ParseAndroidStorage(), "ParseAndroidStorage() failed")
 }
 
 func verifyStoreIsUnmarshaled(t *testing.T) {
 	cred, err := Manager.Credential("irma-demo.RU.studentCard", 0)
-	assert.NoError(t, err, "could not fetch credential")
-	assert.NotNil(t, cred, "Credential should exist")
-	assert.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")
+	require.NoError(t, err, "could not fetch credential")
+	require.NotNil(t, cred, "Credential should exist")
+	require.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")
 
-	assert.True(t,
+	require.True(t,
 		cred.Signature.Verify(cred.PublicKey(), cred.Attributes),
 		"Credential should be valid",
 	)
@@ -91,30 +90,30 @@ func TestUnmarshaling(t *testing.T) {
 func TestParseStore(t *testing.T) {
 	parseMetaStore(t)
 
-	assert.NotNil(t, MetaStore.Issuers["irma-demo.RU"].CurrentPublicKey().N, "irma-demo.RU public key has no modulus")
-	assert.Equal(t,
+	require.NotNil(t, MetaStore.Issuers["irma-demo.RU"].CurrentPublicKey().N, "irma-demo.RU public key has no modulus")
+	require.Equal(t,
 		"Irma Demo",
 		MetaStore.SchemeManagers["irma-demo"].Name.Translation("en"),
 		"irma-demo scheme manager has unexpected name")
-	assert.Equal(t,
+	require.Equal(t,
 		"Radboud Universiteit Nijmegen",
 		MetaStore.Issuers["irma-demo.RU"].Name.Translation("en"),
 		"irma-demo.RU issuer has unexpected name")
-	assert.Equal(t,
+	require.Equal(t,
 		"Student Card",
 		MetaStore.Credentials["irma-demo.RU.studentCard"].ShortName.Translation("en"),
 		"irma-demo.RU.studentCard has unexpected name")
 
-	assert.Equal(t,
+	require.Equal(t,
 		"studentID",
 		MetaStore.Credentials["irma-demo.RU.studentCard"].Attributes[2].ID,
 		"irma-demo.RU.studentCard.studentID has unexpected name")
 
 	// Hash algorithm pseudocode:
 	// Base64(SHA256("irma-demo.RU.studentCard")[0:16])
-	assert.Contains(t, MetaStore.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
+	require.Contains(t, MetaStore.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
 		"irma-demo.RU.studentCard had improper hash")
-	assert.Contains(t, MetaStore.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
+	require.Contains(t, MetaStore.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
 		"irma-demo.MijnOverheid.root had improper hash")
 
 	teardown(t)
@@ -141,17 +140,17 @@ func TestMetadataCompatibility(t *testing.T) {
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
 	attr := MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"))
-	assert.NotNil(t, attr.CredentialType(), "attr.CredentialType() should not be nil")
+	require.NotNil(t, attr.CredentialType(), "attr.CredentialType() should not be nil")
 
-	assert.Equal(t,
+	require.Equal(t,
 		"irma-demo.RU.studentCard",
 		attr.CredentialType().Identifier(),
 		"Metadata credential type was not irma-demo.RU.studentCard",
 	)
-	assert.Equal(t, byte(0x02), attr.Version(), "Unexpected metadata version")
-	assert.Equal(t, time.Unix(1499904000, 0), attr.SigningDate(), "Unexpected signing date")
-	assert.Equal(t, time.Unix(1516233600, 0), attr.Expiry(), "Unexpected expiry date")
-	assert.Equal(t, 2, attr.KeyCounter(), "Unexpected key counter")
+	require.Equal(t, byte(0x02), attr.Version(), "Unexpected metadata version")
+	require.Equal(t, time.Unix(1499904000, 0), attr.SigningDate(), "Unexpected signing date")
+	require.Equal(t, time.Unix(1516233600, 0), attr.Expiry(), "Unexpected expiry date")
+	require.Equal(t, 2, attr.KeyCounter(), "Unexpected key counter")
 
 	teardown(t)
 }
