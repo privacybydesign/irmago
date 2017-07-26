@@ -106,15 +106,21 @@ func (cm *CredentialManager) storeSignature(cred *Credential, counter int) (err 
 	}
 
 	// TODO existence check
-	filename := cm.signatureFilename(cred.CredentialType().Identifier(), counter)
+	filename := cm.signatureFilename(cred.CredentialType().Identifier().String(), counter)
 	err = ioutil.WriteFile(filename, credbytes, 0600)
 	return
 }
 
 func (cm *CredentialManager) storeAttributes() (err error) {
-	attrbytes, err := json.Marshal(cm.attributes)
+	// Unfortunately, the type of cm.attributes (map[CredentialIdentifier][]*AttributeList)
+	// cannot be passed directly to json.Marshal(), so we copy it into a temp list.
+	temp := make(map[string][]*AttributeList)
+	for credid, list := range cm.attributes {
+		temp[credid.String()] = list
+	}
+	attrbytes, err := json.Marshal(temp)
 	if err != nil {
-		return
+		return err
 	}
 
 	// TODO existence check
@@ -122,8 +128,8 @@ func (cm *CredentialManager) storeAttributes() (err error) {
 	return
 }
 
-func (cm *CredentialManager) loadSignature(id string, counter int) (signature *gabi.CLSignature, err error) {
-	path := cm.signatureFilename(id, counter)
+func (cm *CredentialManager) loadSignature(id CredentialIdentifier, counter int) (signature *gabi.CLSignature, err error) {
+	path := cm.signatureFilename(id.String(), counter)
 	exists, err := pathExists(path)
 	if err != nil || !exists {
 		return
@@ -147,21 +153,22 @@ func (cm *CredentialManager) loadSecretKey() (*big.Int, error) {
 			return nil, err
 		}
 		return new(big.Int).SetBytes(bytes), nil
-	} else {
-		sk, err := cm.generateSecretKey()
-		if err != nil {
-			return nil, err
-		}
-		err = cm.storeSecretKey(sk)
-		if err != nil {
-			return nil, err
-		}
-		return sk, nil
 	}
+
+	sk, err := cm.generateSecretKey()
+	if err != nil {
+		return nil, err
+	}
+	err = cm.storeSecretKey(sk)
+	if err != nil {
+		return nil, err
+	}
+	return sk, nil
 }
 
-func (cm *CredentialManager) loadAttributes() (list map[string][]*AttributeList, err error) {
-	list = make(map[string][]*AttributeList)
+func (cm *CredentialManager) loadAttributes() (list map[CredentialIdentifier][]*AttributeList, err error) {
+	list = make(map[CredentialIdentifier][]*AttributeList)
+	temp := make(map[string][]*AttributeList)
 
 	exists, err := pathExists(cm.path(attributesFile))
 	if err != nil || !exists {
@@ -172,6 +179,13 @@ func (cm *CredentialManager) loadAttributes() (list map[string][]*AttributeList,
 	if err != nil {
 		return nil, err
 	}
-	return list, json.Unmarshal(bytes, &list)
+	err = json.Unmarshal(bytes, &temp)
+	if err != nil {
+		return nil, err
+	}
 
+	for credid, attrs := range temp {
+		list[NewCredentialIdentifier(credid)] = attrs
+	}
+	return list, nil
 }

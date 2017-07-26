@@ -45,6 +45,20 @@ type CredentialType struct {
 	XMLName         xml.Name               `xml:"IssueSpecification"`
 }
 
+// ContainsAttribute tests whether the specified attribute is contained in this
+// credentialtype.
+func (ct *CredentialType) ContainsAttribute(ai AttributeIdentifier) bool {
+	if ai.CredentialIdentifier().String() != ct.Identifier().String() {
+		return false
+	}
+	for _, desc := range ct.Attributes {
+		if desc.ID == ai.Name() {
+			return true
+		}
+	}
+	return false
+}
+
 // AttributeDescription is a description of an attribute within a credential type.
 type AttributeDescription struct {
 	ID          string `xml:"id,attr"`
@@ -92,18 +106,23 @@ func (ts *TranslatedString) Translation(lang string) string {
 }
 
 // Identifier returns the identifier of the specified credential type.
-func (cd *CredentialType) Identifier() string {
-	return cd.SchemeManagerID + "." + cd.IssuerID + "." + cd.ID
+func (ct *CredentialType) Identifier() CredentialIdentifier {
+	return NewCredentialIdentifier(ct.SchemeManagerID + "." + ct.IssuerID + "." + ct.ID)
 }
 
 // IssuerIdentifier returns the issuer identifier of the specified credential type.
-func (cd *CredentialType) IssuerIdentifier() string {
-	return cd.SchemeManagerID + "." + cd.IssuerID
+func (ct *CredentialType) IssuerIdentifier() IssuerIdentifier {
+	return NewIssuerIdentifier(ct.SchemeManagerID + "." + ct.IssuerID)
 }
 
 // Identifier returns the identifier of the specified issuer description.
-func (id *Issuer) Identifier() string {
-	return id.SchemeManagerID + "." + id.ID
+func (id *Issuer) Identifier() IssuerIdentifier {
+	return NewIssuerIdentifier(id.SchemeManagerID + "." + id.ID)
+}
+
+// Identifier returns the identifier of the specified scheme manager.
+func (sm *SchemeManager) Identifier() SchemeManagerIdentifier {
+	return NewSchemeManagerIdentifier(sm.ID)
 }
 
 // CurrentPublicKey returns the latest known public key of the issuer identified by this instance.

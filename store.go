@@ -18,28 +18,28 @@ var MetaStore = newConfigurationStore()
 // ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys.
 // Use the global MetaStore instance.
 type ConfigurationStore struct {
-	SchemeManagers map[string]*SchemeManager
-	Issuers        map[string]*Issuer
-	Credentials    map[string]*CredentialType
-	PublicKeys     map[string][]*gabi.PublicKey
+	SchemeManagers map[SchemeManagerIdentifier]*SchemeManager
+	Issuers        map[IssuerIdentifier]*Issuer
+	Credentials    map[CredentialIdentifier]*CredentialType
+	PublicKeys     map[IssuerIdentifier][]*gabi.PublicKey
 
-	reverseHashes map[string]string
+	reverseHashes map[string]CredentialIdentifier
 	initialized   bool
 }
 
 func newConfigurationStore() (store *ConfigurationStore) {
 	store = &ConfigurationStore{
-		SchemeManagers: make(map[string]*SchemeManager),
-		Issuers:        make(map[string]*Issuer),
-		Credentials:    make(map[string]*CredentialType),
-		PublicKeys:     make(map[string][]*gabi.PublicKey),
-		reverseHashes:  make(map[string]string),
+		SchemeManagers: make(map[SchemeManagerIdentifier]*SchemeManager),
+		Issuers:        make(map[IssuerIdentifier]*Issuer),
+		Credentials:    make(map[CredentialIdentifier]*CredentialType),
+		PublicKeys:     make(map[IssuerIdentifier][]*gabi.PublicKey),
+		reverseHashes:  make(map[string]CredentialIdentifier),
 	}
 	return
 }
 
 // PublicKey returns the specified public key, or nil if not present in the ConfigurationStore.
-func (store *ConfigurationStore) PublicKey(id string, counter int) *gabi.PublicKey {
+func (store *ConfigurationStore) PublicKey(id IssuerIdentifier, counter int) *gabi.PublicKey {
 	if list, ok := MetaStore.PublicKeys[id]; ok {
 		if len(list) > counter {
 			return list[counter]
@@ -48,8 +48,8 @@ func (store *ConfigurationStore) PublicKey(id string, counter int) *gabi.PublicK
 	return nil
 }
 
-func (store *ConfigurationStore) addReverseHash(credid string) {
-	hash := sha256.Sum256([]byte(credid))
+func (store *ConfigurationStore) addReverseHash(credid CredentialIdentifier) {
+	hash := sha256.Sum256([]byte(credid.String()))
 	store.reverseHashes[base64.StdEncoding.EncodeToString(hash[:16])] = credid
 }
 
@@ -60,6 +60,7 @@ func (store *ConfigurationStore) hashToCredentialType(hash []byte) *CredentialTy
 	return nil
 }
 
+// IsInitialized indicates whether this instance has successfully been initialized.
 func (store *ConfigurationStore) IsInitialized() bool {
 	return store.initialized
 }
@@ -74,7 +75,7 @@ func (store *ConfigurationStore) ParseFolder(path string) error {
 			return err
 		}
 		if exists {
-			MetaStore.SchemeManagers[manager.ID] = manager
+			MetaStore.SchemeManagers[manager.Identifier()] = manager
 			return store.parseIssuerFolders(dir)
 		}
 		return nil
