@@ -154,7 +154,7 @@ func (attr *MetadataAttribute) CredentialType() *CredentialType {
 	return MetaStore.hashToCredentialType(attr.field(credentialID))
 }
 
-func (attr *MetadataAttribute) setCredentialIdentifier(id string) {
+func (attr *MetadataAttribute) setCredentialTypeIdentifier(id string) {
 	bytes := sha256.Sum256([]byte(id))
 	attr.setField(credentialID, bytes[:16])
 }

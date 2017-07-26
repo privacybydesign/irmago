@@ -48,7 +48,7 @@ type CredentialType struct {
 // ContainsAttribute tests whether the specified attribute is contained in this
 // credentialtype.
 func (ct *CredentialType) ContainsAttribute(ai AttributeIdentifier) bool {
-	if ai.CredentialIdentifier().String() != ct.Identifier().String() {
+	if ai.CredentialTypeIdentifier().String() != ct.Identifier().String() {
 		return false
 	}
 	for _, desc := range ct.Attributes {
@@ -106,8 +106,8 @@ func (ts *TranslatedString) Translation(lang string) string {
 }
 
 // Identifier returns the identifier of the specified credential type.
-func (ct *CredentialType) Identifier() CredentialIdentifier {
-	return NewCredentialIdentifier(ct.SchemeManagerID + "." + ct.IssuerID + "." + ct.ID)
+func (ct *CredentialType) Identifier() CredentialTypeIdentifier {
+	return NewCredentialTypeIdentifier(ct.SchemeManagerID + "." + ct.IssuerID + "." + ct.ID)
 }
 
 // IssuerIdentifier returns the issuer identifier of the specified credential type.

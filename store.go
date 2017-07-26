@@ -20,10 +20,10 @@ var MetaStore = newConfigurationStore()
 type ConfigurationStore struct {
 	SchemeManagers map[SchemeManagerIdentifier]*SchemeManager
 	Issuers        map[IssuerIdentifier]*Issuer
-	Credentials    map[CredentialIdentifier]*CredentialType
+	Credentials    map[CredentialTypeIdentifier]*CredentialType
 	PublicKeys     map[IssuerIdentifier][]*gabi.PublicKey
 
-	reverseHashes map[string]CredentialIdentifier
+	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
 }
 
@@ -31,9 +31,9 @@ func newConfigurationStore() (store *ConfigurationStore) {
 	store = &ConfigurationStore{
 		SchemeManagers: make(map[SchemeManagerIdentifier]*SchemeManager),
 		Issuers:        make(map[IssuerIdentifier]*Issuer),
-		Credentials:    make(map[CredentialIdentifier]*CredentialType),
+		Credentials:    make(map[CredentialTypeIdentifier]*CredentialType),
 		PublicKeys:     make(map[IssuerIdentifier][]*gabi.PublicKey),
-		reverseHashes:  make(map[string]CredentialIdentifier),
+		reverseHashes:  make(map[string]CredentialTypeIdentifier),
 	}
 	return
 }
@@ -48,7 +48,7 @@ func (store *ConfigurationStore) PublicKey(id IssuerIdentifier, counter int) *ga
 	return nil
 }
 
-func (store *ConfigurationStore) addReverseHash(credid CredentialIdentifier) {
+func (store *ConfigurationStore) addReverseHash(credid CredentialTypeIdentifier) {
 	hash := sha256.Sum256([]byte(credid.String()))
 	store.reverseHashes[base64.StdEncoding.EncodeToString(hash[:16])] = credid
 }

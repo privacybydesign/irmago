@@ -112,7 +112,7 @@ func (cm *CredentialManager) storeSignature(cred *Credential, counter int) (err 
 }
 
 func (cm *CredentialManager) storeAttributes() (err error) {
-	// Unfortunately, the type of cm.attributes (map[CredentialIdentifier][]*AttributeList)
+	// Unfortunately, the type of cm.attributes (map[CredentialTypeIdentifier][]*AttributeList)
 	// cannot be passed directly to json.Marshal(), so we copy it into a temp list.
 	temp := make(map[string][]*AttributeList)
 	for credid, list := range cm.attributes {
@@ -128,7 +128,7 @@ func (cm *CredentialManager) storeAttributes() (err error) {
 	return
 }
 
-func (cm *CredentialManager) loadSignature(id CredentialIdentifier, counter int) (signature *gabi.CLSignature, err error) {
+func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter int) (signature *gabi.CLSignature, err error) {
 	path := cm.signatureFilename(id.String(), counter)
 	exists, err := pathExists(path)
 	if err != nil || !exists {
@@ -166,8 +166,8 @@ func (cm *CredentialManager) loadSecretKey() (*big.Int, error) {
 	return sk, nil
 }
 
-func (cm *CredentialManager) loadAttributes() (list map[CredentialIdentifier][]*AttributeList, err error) {
-	list = make(map[CredentialIdentifier][]*AttributeList)
+func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier][]*AttributeList, err error) {
+	list = make(map[CredentialTypeIdentifier][]*AttributeList)
 	temp := make(map[string][]*AttributeList)
 
 	exists, err := pathExists(cm.path(attributesFile))
@@ -185,7 +185,7 @@ func (cm *CredentialManager) loadAttributes() (list map[CredentialIdentifier][]*
 	}
 
 	for credid, attrs := range temp {
-		list[NewCredentialIdentifier(credid)] = attrs
+		list[NewCredentialTypeIdentifier(credid)] = attrs
 	}
 	return list, nil
 }

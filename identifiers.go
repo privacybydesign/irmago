@@ -14,8 +14,8 @@ type IssuerIdentifier struct {
 	objectIdentifier
 }
 
-// CredentialIdentifier identifies a credentialtype. For example "irma-demo.RU.studentCard".
-type CredentialIdentifier struct {
+// CredentialTypeIdentifier identifies a credentialtype. For example "irma-demo.RU.studentCard".
+type CredentialTypeIdentifier struct {
 	objectIdentifier
 }
 
@@ -48,9 +48,9 @@ func NewIssuerIdentifier(id string) IssuerIdentifier {
 	return IssuerIdentifier{objectIdentifier(id)}
 }
 
-// NewCredentialIdentifier converts the specified identifier to a CredentialIdentifier.
-func NewCredentialIdentifier(id string) CredentialIdentifier {
-	return CredentialIdentifier{objectIdentifier(id)}
+// NewCredentialTypeIdentifier converts the specified identifier to a CredentialTypeIdentifier.
+func NewCredentialTypeIdentifier(id string) CredentialTypeIdentifier {
+	return CredentialTypeIdentifier{objectIdentifier(id)}
 }
 
 // NewAttributeIdentifier converts the specified identifier to a AttributeIdentifier.
@@ -64,11 +64,11 @@ func (id IssuerIdentifier) SchemeManagerIdentifier() SchemeManagerIdentifier {
 }
 
 // IssuerIdentifier returns the IssuerIdentifier of the credential identifier.
-func (id CredentialIdentifier) IssuerIdentifier() IssuerIdentifier {
+func (id CredentialTypeIdentifier) IssuerIdentifier() IssuerIdentifier {
 	return NewIssuerIdentifier(id.Parent())
 }
 
-// CredentialIdentifier returns the CredentialIdentifier of the attribute identifier.
-func (id AttributeIdentifier) CredentialIdentifier() CredentialIdentifier {
-	return NewCredentialIdentifier(id.Parent())
+// CredentialTypeIdentifier returns the CredentialTypeIdentifier of the attribute identifier.
+func (id AttributeIdentifier) CredentialTypeIdentifier() CredentialTypeIdentifier {
+	return NewCredentialTypeIdentifier(id.Parent())
 }

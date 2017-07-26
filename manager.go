@@ -18,13 +18,13 @@ var Manager = newCredentialManager()
 type CredentialManager struct {
 	secretkey   *big.Int
 	storagePath string
-	attributes  map[CredentialIdentifier][]*AttributeList
-	credentials map[CredentialIdentifier]map[int]*Credential
+	attributes  map[CredentialTypeIdentifier][]*AttributeList
+	credentials map[CredentialTypeIdentifier]map[int]*Credential
 }
 
 func newCredentialManager() *CredentialManager {
 	return &CredentialManager{
-		credentials: make(map[CredentialIdentifier]map[int]*Credential),
+		credentials: make(map[CredentialTypeIdentifier]map[int]*Credential),
 	}
 }
 
@@ -50,7 +50,7 @@ func (cm *CredentialManager) Init(path string) (err error) {
 }
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
-func (cm *CredentialManager) attrs(id CredentialIdentifier) []*AttributeList {
+func (cm *CredentialManager) attrs(id CredentialTypeIdentifier) []*AttributeList {
 	list, exists := cm.attributes[id]
 	if !exists {
 		list = make([]*AttributeList, 0, 1)
@@ -60,7 +60,7 @@ func (cm *CredentialManager) attrs(id CredentialIdentifier) []*AttributeList {
 }
 
 // creds returns cm.credentials[id], initializing it to an empty map if neccesary
-func (cm *CredentialManager) creds(id CredentialIdentifier) map[int]*Credential {
+func (cm *CredentialManager) creds(id CredentialTypeIdentifier) map[int]*Credential {
 	list, exists := cm.credentials[id]
 	if !exists {
 		list = make(map[int]*Credential)
@@ -70,7 +70,7 @@ func (cm *CredentialManager) creds(id CredentialIdentifier) map[int]*Credential 
 }
 
 // Attributes returns the attribute list of the requested credential, or nil if we do not have it.
-func (cm *CredentialManager) Attributes(id CredentialIdentifier, counter int) (attributes *AttributeList) {
+func (cm *CredentialManager) Attributes(id CredentialTypeIdentifier, counter int) (attributes *AttributeList) {
 	list := cm.attrs(id)
 	if len(list) <= counter {
 		return
@@ -79,7 +79,7 @@ func (cm *CredentialManager) Attributes(id CredentialIdentifier, counter int) (a
 }
 
 // Credential returns the requested credential, or nil if we do not have it.
-func (cm *CredentialManager) Credential(id CredentialIdentifier, counter int) (cred *Credential, err error) {
+func (cm *CredentialManager) Credential(id CredentialTypeIdentifier, counter int) (cred *Credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during Init(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map

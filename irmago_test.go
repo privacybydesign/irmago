@@ -55,7 +55,7 @@ func parseAndroidStorage(t *testing.T) {
 }
 
 func verifyStoreIsUnmarshaled(t *testing.T) {
-	cred, err := Manager.Credential(NewCredentialIdentifier("irma-demo.RU.studentCard"), 0)
+	cred, err := Manager.Credential(NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	assert.NoError(t, err, "could not fetch credential")
 	assert.NotNil(t, cred, "Credential should exist")
 	assert.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")
@@ -102,12 +102,12 @@ func TestParseStore(t *testing.T) {
 		"irma-demo.RU issuer has unexpected name")
 	assert.Equal(t,
 		"Student Card",
-		MetaStore.Credentials[NewCredentialIdentifier("irma-demo.RU.studentCard")].ShortName.Translation("en"),
+		MetaStore.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName.Translation("en"),
 		"irma-demo.RU.studentCard has unexpected name")
 
 	assert.Equal(t,
 		"studentID",
-		MetaStore.Credentials[NewCredentialIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
+		MetaStore.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
 		"irma-demo.RU.studentCard.studentID has unexpected name")
 
 	// Hash algorithm pseudocode:
@@ -144,7 +144,7 @@ func TestMetadataCompatibility(t *testing.T) {
 	assert.NotNil(t, attr.CredentialType(), "attr.CredentialType() should not be nil")
 
 	assert.Equal(t,
-		NewCredentialIdentifier("irma-demo.RU.studentCard"),
+		NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
 		attr.CredentialType().Identifier(),
 		"Metadata credential type was not irma-demo.RU.studentCard",
 	)
