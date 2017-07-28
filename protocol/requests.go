@@ -44,16 +44,16 @@ type SignatureRequest struct {
 }
 
 type CredentialRequest struct {
-	Validity   Timestamp
+	Validity   *Timestamp
 	KeyCounter int
 	Credential irmago.CredentialTypeIdentifier
 	Attributes map[string]string
 }
 
 type ServerRequest struct {
-	ServerName string    `json:"iss"`
-	IssuedAt   Timestamp `json:"iat"`
-	Type       string    `json:"subject"`
+	ServerName string     `json:"iss"`
+	IssuedAt   *Timestamp `json:"iat"`
+	Type       string     `json:"subject"`
 }
 
 type IssuanceRequest struct {
