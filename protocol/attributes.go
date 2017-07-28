@@ -10,10 +10,10 @@ import (
 // AttributeDisjunction ...
 type AttributeDisjunction struct {
 	Label      string
-	Attributes []irmago.AttributeIdentifier
-	Values     map[irmago.AttributeIdentifier]string
+	Attributes []irmago.AttributeTypeIdentifier
+	Values     map[irmago.AttributeTypeIdentifier]string
 
-	selected *irmago.AttributeIdentifier
+	selected *irmago.AttributeTypeIdentifier
 }
 
 type AttributeDisjunctionList []*AttributeDisjunction
@@ -60,7 +60,7 @@ func (dl AttributeDisjunctionList) Satisfied() bool {
 }
 
 // Find searches for and returns the disjunction that contains the specified attribute identifier, or nil if not found.
-func (dl AttributeDisjunctionList) Find(ai irmago.AttributeIdentifier) *AttributeDisjunction {
+func (dl AttributeDisjunctionList) Find(ai irmago.AttributeTypeIdentifier) *AttributeDisjunction {
 	for _, disjunction := range dl {
 		for _, attr := range disjunction.Attributes {
 			if attr == ai {
@@ -75,7 +75,7 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 	if !disjunction.HasValues() {
 		temp := struct {
 			Label      string                       `json:"label"`
-			Attributes []irmago.AttributeIdentifier `json:"attributes"`
+			Attributes []irmago.AttributeTypeIdentifier `json:"attributes"`
 		}{
 			Label:      disjunction.Label,
 			Attributes: disjunction.Attributes,
@@ -84,7 +84,7 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 	} else {
 		temp := struct {
 			Label      string                                `json:"label"`
-			Attributes map[irmago.AttributeIdentifier]string `json:"attributes"`
+			Attributes map[irmago.AttributeTypeIdentifier]string `json:"attributes"`
 		}{
 			Label:      disjunction.Label,
 			Attributes: disjunction.Values,
@@ -95,10 +95,10 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 
 func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	if disjunction.Values == nil {
-		disjunction.Values = make(map[irmago.AttributeIdentifier]string)
+		disjunction.Values = make(map[irmago.AttributeTypeIdentifier]string)
 	}
 	if disjunction.Attributes == nil {
-		disjunction.Attributes = make([]irmago.AttributeIdentifier, 0, 3)
+		disjunction.Attributes = make([]irmago.AttributeTypeIdentifier, 0, 3)
 	}
 
 	// We don't know if the json element "attributes" is a list, or a map.
@@ -119,7 +119,7 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 		}{}
 		json.Unmarshal(bytes, &temp)
 		for str, value := range temp.Attributes {
-			id := irmago.NewAttributeIdentifier(str)
+			id := irmago.NewAttributeTypeIdentifier(str)
 			disjunction.Attributes = append(disjunction.Attributes, id)
 			disjunction.Values[id] = value
 		}
@@ -130,7 +130,7 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 		}{}
 		json.Unmarshal(bytes, &temp)
 		for _, str := range temp.Attributes {
-			disjunction.Attributes = append(disjunction.Attributes, irmago.NewAttributeIdentifier(str))
+			disjunction.Attributes = append(disjunction.Attributes, irmago.NewAttributeTypeIdentifier(str))
 		}
 	default:
 		return errors.New("could not parse attribute disjunction: element 'attributes' was incorrect")

@@ -16,7 +16,7 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 	var _ json.Unmarshaler = &disjunction
 	var _ json.Marshaler = &disjunction
 
-	id := irmago.NewAttributeIdentifier("MijnOverheid.ageLower.over18")
+	id := irmago.NewAttributeTypeIdentifier("MijnOverheid.ageLower.over18")
 
 	attrsjson := `
 	{
@@ -90,5 +90,5 @@ func TestServiceProviderRequest(t *testing.T) {
 	require.NotEmpty(t, sprequest.Request.Request.Content[0].Attributes)
 	require.Equal(t, sprequest.Request.Request.Content[0].Attributes[0].Name(), "studentID")
 
-	require.NotNil(t, sprequest.Request.Request.Content.Find(irmago.NewAttributeIdentifier("irma-demo.RU.studentCard.studentID")))
+	require.NotNil(t, sprequest.Request.Request.Content.Find(irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")))
 }

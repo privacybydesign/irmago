@@ -47,7 +47,7 @@ type CredentialType struct {
 
 // ContainsAttribute tests whether the specified attribute is contained in this
 // credentialtype.
-func (ct *CredentialType) ContainsAttribute(ai AttributeIdentifier) bool {
+func (ct *CredentialType) ContainsAttribute(ai AttributeTypeIdentifier) bool {
 	if ai.CredentialTypeIdentifier().String() != ct.Identifier().String() {
 		return false
 	}
