@@ -26,12 +26,12 @@ type AttributeIdentifier struct {
 
 func (oi objectIdentifier) Parent() string {
 	str := string(oi)
-	return str[:strings.LastIndex(str, "/")]
+	return str[:strings.LastIndex(str, ".")]
 }
 
 func (oi objectIdentifier) Name() string {
 	str := string(oi)
-	return str[strings.LastIndex(str, "/")+1:]
+	return str[strings.LastIndex(str, ".")+1:]
 }
 
 func (oi objectIdentifier) String() string {
