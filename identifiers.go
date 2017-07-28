@@ -2,60 +2,60 @@ package irmago
 
 import "strings"
 
-type objectIdentifier string
+type metaObjectIdentifier string
 
 // SchemeManagerIdentifier identifies a scheme manager. Equal to its ID. For example "irma-demo".
 type SchemeManagerIdentifier struct {
-	objectIdentifier
+	metaObjectIdentifier
 }
 
 // IssuerIdentifier identifies an inssuer. For example "irma-demo.RU".
 type IssuerIdentifier struct {
-	objectIdentifier
+	metaObjectIdentifier
 }
 
 // CredentialTypeIdentifier identifies a credentialtype. For example "irma-demo.RU.studentCard".
 type CredentialTypeIdentifier struct {
-	objectIdentifier
+	metaObjectIdentifier
 }
 
 // AttributeTypeIdentifier identifies an attribute. For example "irma-demo.RU.studentCard.studentID".
 type AttributeTypeIdentifier struct {
-	objectIdentifier
+	metaObjectIdentifier
 }
 
-func (oi objectIdentifier) Parent() string {
+func (oi metaObjectIdentifier) Parent() string {
 	str := string(oi)
 	return str[:strings.LastIndex(str, ".")]
 }
 
-func (oi objectIdentifier) Name() string {
+func (oi metaObjectIdentifier) Name() string {
 	str := string(oi)
 	return str[strings.LastIndex(str, ".")+1:]
 }
 
-func (oi objectIdentifier) String() string {
+func (oi metaObjectIdentifier) String() string {
 	return string(oi)
 }
 
 // NewSchemeManagerIdentifier converts the specified identifier to a SchemeManagerIdentifier.
 func NewSchemeManagerIdentifier(id string) SchemeManagerIdentifier {
-	return SchemeManagerIdentifier{objectIdentifier(id)}
+	return SchemeManagerIdentifier{metaObjectIdentifier(id)}
 }
 
 // NewIssuerIdentifier converts the specified identifier to a IssuerIdentifier.
 func NewIssuerIdentifier(id string) IssuerIdentifier {
-	return IssuerIdentifier{objectIdentifier(id)}
+	return IssuerIdentifier{metaObjectIdentifier(id)}
 }
 
 // NewCredentialTypeIdentifier converts the specified identifier to a CredentialTypeIdentifier.
 func NewCredentialTypeIdentifier(id string) CredentialTypeIdentifier {
-	return CredentialTypeIdentifier{objectIdentifier(id)}
+	return CredentialTypeIdentifier{metaObjectIdentifier(id)}
 }
 
 // NewAttributeTypeIdentifier converts the specified identifier to a AttributeTypeIdentifier.
 func NewAttributeTypeIdentifier(id string) AttributeTypeIdentifier {
-	return AttributeTypeIdentifier{objectIdentifier(id)}
+	return AttributeTypeIdentifier{metaObjectIdentifier(id)}
 }
 
 // SchemeManagerIdentifier returns the scheme manager identifer of the issuer.
