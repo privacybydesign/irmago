@@ -7,7 +7,8 @@ import (
 	"github.com/credentials/irmago"
 )
 
-// AttributeDisjunction ...
+// An AttributeDisjunction encapsulates a list of possible attributes, one
+// of which should be disclused.
 type AttributeDisjunction struct {
 	Label      string
 	Attributes []irmago.AttributeTypeIdentifier
@@ -16,12 +17,17 @@ type AttributeDisjunction struct {
 	selected *irmago.AttributeTypeIdentifier
 }
 
+// An AttributeDisjunctionList is a list of AttributeDisjunctions.
 type AttributeDisjunctionList []*AttributeDisjunction
 
+// HasValues indicates if the attributes of this disjunction have values
+// that should be satisfied.
 func (disjunction *AttributeDisjunction) HasValues() bool {
 	return disjunction.Values != nil && len(disjunction.Values) != 0
 }
 
+// Satisfied indicates if this disjunction has a valid chosen attribute
+// to be disclosed.
 func (disjunction *AttributeDisjunction) Satisfied() bool {
 	if disjunction.selected == nil {
 		return false
@@ -71,28 +77,30 @@ func (dl AttributeDisjunctionList) Find(ai irmago.AttributeTypeIdentifier) *Attr
 	return nil
 }
 
+// MarshalJSON marshals the disjunction to JSON.
 func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 	if !disjunction.HasValues() {
 		temp := struct {
-			Label      string                       `json:"label"`
+			Label      string                           `json:"label"`
 			Attributes []irmago.AttributeTypeIdentifier `json:"attributes"`
 		}{
 			Label:      disjunction.Label,
 			Attributes: disjunction.Attributes,
 		}
 		return json.Marshal(temp)
-	} else {
-		temp := struct {
-			Label      string                                `json:"label"`
-			Attributes map[irmago.AttributeTypeIdentifier]string `json:"attributes"`
-		}{
-			Label:      disjunction.Label,
-			Attributes: disjunction.Values,
-		}
-		return json.Marshal(temp)
 	}
+
+	temp := struct {
+		Label      string                                    `json:"label"`
+		Attributes map[irmago.AttributeTypeIdentifier]string `json:"attributes"`
+	}{
+		Label:      disjunction.Label,
+		Attributes: disjunction.Values,
+	}
+	return json.Marshal(temp)
 }
 
+// UnmarshalJSON unmarshals an attribute disjunction from JSON.
 func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	if disjunction.Values == nil {
 		disjunction.Values = make(map[irmago.AttributeTypeIdentifier]string)
