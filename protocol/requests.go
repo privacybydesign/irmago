@@ -13,7 +13,7 @@ type SessionRequest struct {
 
 type DisclosureRequest struct {
 	SessionRequest
-	Content AttributeDisjunctionList `json:"content"`
+	Content irmago.AttributeDisjunctionList `json:"content"`
 }
 
 type SignatureRequest struct {
@@ -37,8 +37,8 @@ type ServerRequest struct {
 
 type IssuanceRequest struct {
 	SessionRequest
-	Credentials []CredentialRequest         `json:"credentials"`
-	Discose     []*AttributeDisjunctionList `json:"disclose"`
+	Credentials []CredentialRequest             `json:"credentials"`
+	Disclose    irmago.AttributeDisjunctionList `json:"disclose"`
 }
 
 type ServiceProviderRequest struct {
@@ -60,4 +60,16 @@ type IdentityProviderRequest struct {
 	Request struct {
 		Request IssuanceRequest `json:"request"`
 	} `json:"iprequest"`
+}
+
+func (spr *ServiceProviderRequest) DisjunctionList() irmago.AttributeDisjunctionList {
+	return spr.Request.Request.Content
+}
+
+func (ssr *SignatureServerRequest) DisjunctionList() irmago.AttributeDisjunctionList {
+	return ssr.Request.Request.Content
+}
+
+func (ipr *IdentityProviderRequest) DisjunctionList() irmago.AttributeDisjunctionList {
+	return ipr.Request.Request.Disclose
 }

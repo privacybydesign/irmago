@@ -5,33 +5,68 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/credentials/irmago"
-)
+	"math/big"
 
-// Session types.
-const (
-	DISCLOSING = SessionType("disclosing")
-	ISSUING    = SessionType("issuing")
-	SIGNING    = SessionType("signing")
+	"github.com/credentials/irmago"
 )
 
 // Timestamp is a time.Time that marshals to Unix timestamps.
 type Timestamp time.Time
 
-// SessionType is a session type (DISCLOSING, ISSUING or SIGNING).
-type SessionType string
+// Status encodes the status of an IRMA session (e.g., connected).
+type Status string
+
+// Action encodes the session type of an IRMA session (e.g., disclosing).
+type Action string
+
+// Version encodes the IRMA protocol version of an IRMA session.
+type Version string
+
+// SessionError are session errors.
+type SessionError string
+
+// Statuses
+const (
+	StatusConnected     = Status("connected")
+	StatusCommunicating = Status("communicating")
+	StatusDone          = Status("done")
+)
+
+// Actions
+const (
+	ActionDisclosing = Action("disclosing")
+	ActionSigning    = Action("signing")
+	ActionIssuing    = Action("issuing")
+	ActionUnknown    = Action("unknown")
+)
+
+// Protocol errors
+const (
+	ErrorProtocolVersionNotSupported = SessionError("versionNotSupported")
+	ErrorInvalidURL                  = SessionError("invalidUrl")
+	ErrorTransport                   = SessionError("httpError")
+	ErrorInvalidJWT                  = SessionError("invalidJwt")
+	ErrorUnknownAction               = SessionError("unknownAction")
+)
 
 // Qr contains the data of an IRMA session QR.
 type Qr struct {
-	URL                string      `json:"u"`
-	ProtocolVersion    string      `json:"v"`
-	ProtocolMaxVersion string      `json:"vmax"`
-	Type               SessionType `json:"irmaqr"`
+	URL                string `json:"u"`
+	ProtocolVersion    string `json:"v"`
+	ProtocolMaxVersion string `json:"vmax"`
+	Type               Action `json:"irmaqr"`
+}
+
+// A SessionInfo is the first message in the IRMA protocol.
+type SessionInfo struct {
+	Jwt     string                          `json:"jwt"`
+	Nonce   *big.Int                        `json:"nonce"`
+	Context *big.Int                        `json:"context"`
+	Keys    map[irmago.IssuerIdentifier]int `json:"keys"`
 }
 
 // A DisclosureChoice contains the attributes chosen to be disclosed.
 type DisclosureChoice struct {
-	Request    SessionRequest
 	Attributes []*irmago.AttributeIdentifier
 }
 

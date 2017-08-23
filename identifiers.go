@@ -24,6 +24,18 @@ type AttributeTypeIdentifier struct {
 	metaObjectIdentifier
 }
 
+type CredentialIdentifier struct {
+	Type  CredentialTypeIdentifier
+	Index int
+	Count int
+}
+
+type AttributeIdentifier struct {
+	Type  AttributeTypeIdentifier
+	Index int
+	Count int
+}
+
 func (oi metaObjectIdentifier) Parent() string {
 	str := string(oi)
 	return str[:strings.LastIndex(str, ".")]
@@ -71,4 +83,8 @@ func (id CredentialTypeIdentifier) IssuerIdentifier() IssuerIdentifier {
 // CredentialTypeIdentifier returns the CredentialTypeIdentifier of the attribute identifier.
 func (id AttributeTypeIdentifier) CredentialTypeIdentifier() CredentialTypeIdentifier {
 	return NewCredentialTypeIdentifier(id.Parent())
+}
+
+func (id AttributeTypeIdentifier) IsCredential() bool {
+	return strings.Count(id.String(), ".") == 2
 }

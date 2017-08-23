@@ -199,3 +199,47 @@ func (cm *CredentialManager) Add(cred *Credential) (err error) {
 	err = cm.storeAttributes()
 	return
 }
+
+func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*AttributeIdentifier {
+	candidates := make([]*AttributeIdentifier, 10)
+
+	for _, attribute := range disjunction.Attributes {
+		credId := attribute.CredentialTypeIdentifier()
+		if !MetaStore.Contains(credId) {
+			continue
+		}
+		creds := cm.credentials[credId]
+		count := len(creds)
+		if count == 0 {
+			continue
+		}
+		for i, cred := range creds {
+			id := &AttributeIdentifier{Type: attribute, Index: i, Count: count}
+			if attribute.IsCredential() {
+				candidates = append(candidates, id)
+			} else {
+				attrs := NewAttributeListFromInts(cred.Attributes[1:])
+				val := attrs.Attribute(attribute)
+				if val == "" {
+					continue
+				}
+				if !disjunction.HasValues() || val == disjunction.Values[attribute] {
+					candidates = append(candidates, id)
+				}
+			}
+		}
+	}
+
+	return candidates
+}
+
+func (cm *CredentialManager) CheckSatisfiability(disjunctions DisjunctionListContainer) AttributeDisjunctionList {
+	missing := make(AttributeDisjunctionList, 5)
+	for _, disjunction := range disjunctions.DisjunctionList() {
+		if len(cm.Candidates(disjunction)) == 0 {
+			missing = append(missing, disjunction)
+		}
+	}
+
+	return missing
+}
