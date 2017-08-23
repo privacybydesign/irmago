@@ -199,3 +199,39 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 	disjunction.selected = &disjunction.Attributes[0]
 	require.True(t, disjunction.Satisfied())
 }
+
+func TestCandidates(t *testing.T) {
+	parseMetaStore(t)
+	parseStorage(t)
+	parseAndroidStorage(t)
+
+	attrtype := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	disjunction := &AttributeDisjunction{
+		Attributes: []AttributeTypeIdentifier{attrtype},
+	}
+	attrs := Manager.Candidates(disjunction)
+	require.NotNil(t, attrs)
+	require.Len(t, attrs, 1)
+
+	attr := attrs[0]
+	require.NotNil(t, attr)
+	require.Equal(t, attr.Type, attrtype)
+
+	disjunction = &AttributeDisjunction{
+		Attributes: []AttributeTypeIdentifier{attrtype},
+		Values:     map[AttributeTypeIdentifier]string{attrtype: "s1234567"},
+	}
+	attrs = Manager.Candidates(disjunction)
+	require.NotNil(t, attrs)
+	require.Len(t, attrs, 1)
+
+	disjunction = &AttributeDisjunction{
+		Attributes: []AttributeTypeIdentifier{attrtype},
+		Values:     map[AttributeTypeIdentifier]string{attrtype: "foobarbaz"},
+	}
+	attrs = Manager.Candidates(disjunction)
+	require.NotNil(t, attrs)
+	require.Empty(t, attrs)
+
+	teardown(t)
+}

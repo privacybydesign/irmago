@@ -201,7 +201,7 @@ func (cm *CredentialManager) Add(cred *Credential) (err error) {
 }
 
 func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*AttributeIdentifier {
-	candidates := make([]*AttributeIdentifier, 10)
+	candidates := make([]*AttributeIdentifier, 0, 10)
 
 	for _, attribute := range disjunction.Attributes {
 		credId := attribute.CredentialTypeIdentifier()

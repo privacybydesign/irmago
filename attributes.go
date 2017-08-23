@@ -80,8 +80,11 @@ func (al *AttributeList) Strings() []string {
 }
 
 func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) string {
+	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
+		return ""
+	}
 	for i, desc := range al.CredentialType().Attributes {
-		if desc.ID == string(identifier.String()) {
+		if desc.ID == string(identifier.Name()) {
 			return al.Strings()[i]
 		}
 	}
