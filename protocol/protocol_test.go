@@ -21,8 +21,8 @@ func TestTimestamp(t *testing.T) {
 	require.Equal(t, time.Time(*timestruct.Time).Unix(), int64(1500000000))
 }
 
-func TestServiceProviderRequest(t *testing.T) {
-	var sprequest ServiceProviderRequest
+func TestServiceProvider(t *testing.T) {
+	var spjwt ServiceProviderJwt
 
 	var spjson = `{
 		"sprequest": {
@@ -39,16 +39,16 @@ func TestServiceProviderRequest(t *testing.T) {
 		}
 	}`
 
-	require.NoError(t, json.Unmarshal([]byte(spjson), &sprequest))
-	require.NotNil(t, sprequest.Request.Request.Content)
-	require.NotEmpty(t, sprequest.Request.Request.Content)
-	require.NotNil(t, sprequest.Request.Request.Content[0])
-	require.NotEmpty(t, sprequest.Request.Request.Content[0])
-	require.NotNil(t, sprequest.Request.Request.Content[0].Attributes)
-	require.NotEmpty(t, sprequest.Request.Request.Content[0].Attributes)
-	require.Equal(t, sprequest.Request.Request.Content[0].Attributes[0].Name(), "studentID")
+	require.NoError(t, json.Unmarshal([]byte(spjson), &spjwt))
+	require.NotNil(t, spjwt.Request.Request.Content)
+	require.NotEmpty(t, spjwt.Request.Request.Content)
+	require.NotNil(t, spjwt.Request.Request.Content[0])
+	require.NotEmpty(t, spjwt.Request.Request.Content[0])
+	require.NotNil(t, spjwt.Request.Request.Content[0].Attributes)
+	require.NotEmpty(t, spjwt.Request.Request.Content[0].Attributes)
+	require.Equal(t, spjwt.Request.Request.Content[0].Attributes[0].Name(), "studentID")
 
-	require.NotNil(t, sprequest.Request.Request.Content.Find(irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")))
+	require.NotNil(t, spjwt.Request.Request.Content.Find(irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")))
 }
 
 func TestTransport(t *testing.T) {

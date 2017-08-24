@@ -28,6 +28,12 @@ type SignatureRequest struct {
 	MessageType string `json:"messageType"`
 }
 
+type IssuanceRequest struct {
+	SessionRequest
+	Credentials []CredentialRequest             `json:"credentials"`
+	Disclose    irmago.AttributeDisjunctionList `json:"disclose"`
+}
+
 type CredentialRequest struct {
 	Validity   *Timestamp
 	KeyCounter int
@@ -35,53 +41,49 @@ type CredentialRequest struct {
 	Attributes map[string]string
 }
 
-type ServerRequest struct {
+type ServerJwt struct {
 	ServerName string     `json:"iss"`
 	IssuedAt   *Timestamp `json:"iat"`
 	Type       string     `json:"sub"`
 }
 
-type IssuanceRequest struct {
-	SessionRequest
-	Credentials []CredentialRequest             `json:"credentials"`
-	Disclose    irmago.AttributeDisjunctionList `json:"disclose"`
-}
-
-type DisclosureRequestContainer struct {
+type ServiceProviderRequest struct {
 	Request DisclosureRequest `json:"request"`
 }
 
-type ServiceProviderRequest struct {
-	ServerRequest
-	Request DisclosureRequestContainer `json:"sprequest"`
+type SignatureServerRequest struct {
+	Request SignatureRequest `json:"request"`
 }
 
-func NewServiceProviderRequest(servername string, dr DisclosureRequest) *ServiceProviderRequest {
+type IdentityProviderRequest struct {
+	Request IssuanceRequest `json:"request"`
+}
+
+type ServiceProviderJwt struct {
+	ServerJwt
+	Request ServiceProviderRequest `json:"sprequest"`
+}
+
+type SignatureServerJwt struct {
+	ServerJwt
+	Request SignatureServerRequest `json:"sigrequest"`
+}
+
+type IdentityProviderJwt struct {
+	ServerJwt
+	Request IdentityProviderRequest `json:"iprequest"`
+}
+
+func NewServiceProviderJwt(servername string, dr DisclosureRequest) *ServiceProviderJwt {
 	now := Timestamp(time.Now())
-	return &ServiceProviderRequest{
-		ServerRequest: ServerRequest{
+	return &ServiceProviderJwt{
+		ServerJwt: ServerJwt{
 			ServerName: servername,
 			IssuedAt:   &now,
 			Type:       "verification_request",
 		},
-		Request: DisclosureRequestContainer{
-			Request: dr,
-		},
+		Request: ServiceProviderRequest{Request: dr},
 	}
-}
-
-type SignatureServerRequest struct {
-	ServerRequest
-	Request struct {
-		Request SignatureRequest `json:"request"`
-	} `json:"sigrequest"`
-}
-
-type IdentityProviderRequest struct {
-	ServerRequest
-	Request struct {
-		Request IssuanceRequest `json:"request"`
-	} `json:"iprequest"`
 }
 
 func (dr *DisclosureRequest) GetContext() *big.Int {
@@ -110,14 +112,14 @@ func (sr *SignatureRequest) GetNonce() *big.Int {
 	return new(big.Int).SetBytes(asn1hash[:])
 }
 
-func (spr *ServiceProviderRequest) DisjunctionList() irmago.AttributeDisjunctionList {
+func (spr *ServiceProviderJwt) DisjunctionList() irmago.AttributeDisjunctionList {
 	return spr.Request.Request.Content
 }
 
-func (ssr *SignatureServerRequest) DisjunctionList() irmago.AttributeDisjunctionList {
+func (ssr *SignatureServerJwt) DisjunctionList() irmago.AttributeDisjunctionList {
 	return ssr.Request.Request.Content
 }
 
-func (ipr *IdentityProviderRequest) DisjunctionList() irmago.AttributeDisjunctionList {
+func (ipr *IdentityProviderJwt) DisjunctionList() irmago.AttributeDisjunctionList {
 	return ipr.Request.Request.Disclose
 }

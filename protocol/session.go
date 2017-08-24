@@ -33,9 +33,9 @@ type Session struct {
 	Handler   Handler
 
 	request   irmago.DisjunctionListContainer
-	spRequest *ServiceProviderRequest
-	ipRequest *IdentityProviderRequest
-	ssRequest *SignatureServerRequest
+	spRequest *ServiceProviderJwt
+	ipRequest *IdentityProviderJwt
+	ssRequest *SignatureServerJwt
 
 	transport *HTTPTransport
 	nonce     *big.Int
@@ -106,13 +106,13 @@ func (session *Session) start() {
 
 	switch session.Action {
 	case ActionDisclosing:
-		session.spRequest = &ServiceProviderRequest{}
+		session.spRequest = &ServiceProviderJwt{}
 		session.request = session.spRequest
 	case ActionSigning:
-		session.ssRequest = &SignatureServerRequest{}
+		session.ssRequest = &SignatureServerJwt{}
 		session.request = session.ssRequest
 	case ActionIssuing:
-		session.ipRequest = &IdentityProviderRequest{}
+		session.ipRequest = &IdentityProviderJwt{}
 		session.request = session.ipRequest
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
@@ -120,7 +120,7 @@ func (session *Session) start() {
 
 	if session.Action == ActionIssuing {
 		// Store which public keys the server will use
-		for _, credreq := range session.request.(*IdentityProviderRequest).Request.Request.Credentials {
+		for _, credreq := range session.request.(*IdentityProviderJwt).Request.Request.Credentials {
 			credreq.KeyCounter = info.Keys[credreq.Credential.IssuerIdentifier()]
 		}
 	}

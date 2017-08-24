@@ -48,7 +48,7 @@ func TestSession(t *testing.T) {
 	url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2"
 	name := "testsp"
 
-	spRequest := NewServiceProviderRequest(name, DisclosureRequest{
+	spRequest := NewServiceProviderJwt(name, DisclosureRequest{
 		Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
 			&irmago.AttributeDisjunction{
 				Label:      "foo",
