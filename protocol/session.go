@@ -2,10 +2,12 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 	"strings"
 
 	"github.com/credentials/irmago"
+	"github.com/mhe/gabi"
 )
 
 type PermissionHandler func(proceed bool, choice *irmago.DisclosureChoice)
@@ -31,13 +33,17 @@ type Session struct {
 	Handler   Handler
 
 	request   irmago.DisjunctionListContainer
+	spRequest *ServiceProviderRequest
+	ipRequest *IdentityProviderRequest
+	ssRequest *SignatureServerRequest
+
 	transport *HTTPTransport
 	nonce     *big.Int
 	context   *big.Int
 }
 
 // NewSession creates and starts a new IRMA session.
-func NewSession(qr Qr, handler Handler) *Session {
+func NewSession(qr *Qr, handler Handler) *Session {
 	if qr.ProtocolVersion != "2.1" && qr.ProtocolVersion != "2.2" { // TODO version negotiation
 		handler.Failure(ActionUnknown, ErrorProtocolVersionNotSupported, qr.ProtocolVersion)
 		return nil
@@ -100,11 +106,14 @@ func (session *Session) start() {
 
 	switch session.Action {
 	case ActionDisclosing:
-		session.request = &ServiceProviderRequest{}
+		session.spRequest = &ServiceProviderRequest{}
+		session.request = session.spRequest
 	case ActionSigning:
-		session.request = &SignatureServerRequest{}
+		session.ssRequest = &SignatureServerRequest{}
+		session.request = session.ssRequest
 	case ActionIssuing:
-		session.request = &IdentityProviderRequest{}
+		session.ipRequest = &IdentityProviderRequest{}
+		session.request = session.ipRequest
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -129,11 +138,11 @@ func (session *Session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusConnected)
 	switch session.Action {
 	case ActionDisclosing:
-		session.Handler.AskVerificationPermission(session.request.(*ServiceProviderRequest).Request.Request, header.Server, callback)
+		session.Handler.AskVerificationPermission(session.spRequest.Request.Request, header.Server, callback)
 	case ActionSigning:
-		session.Handler.AskSignaturePermission(session.request.(*SignatureServerRequest).Request.Request, header.Server, callback)
+		session.Handler.AskSignaturePermission(session.ssRequest.Request.Request, header.Server, callback)
 	case ActionIssuing:
-		session.Handler.AskIssuancePermission(session.request.(*IdentityProviderRequest).Request.Request, header.Server, callback)
+		session.Handler.AskIssuancePermission(session.ipRequest.Request.Request, header.Server, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -144,6 +153,29 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 		session.Handler.Cancelled(session.Action)
 		return
 	}
-
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
+
+	var proofs gabi.ProofList
+	var err error
+	switch session.Action {
+	case ActionSigning:
+		proofs, err = irmago.Manager.Proofs(choice, &session.ssRequest.Request.Request.Message)
+	case ActionDisclosing:
+		proofs, err = irmago.Manager.Proofs(choice, nil)
+	case ActionIssuing:
+		err = errors.New("Issuing not yet implemented")
+	}
+	if err != nil {
+		session.Handler.Failure(session.Action, ErrorCrypto, err.Error())
+		return
+	}
+
+	var response string
+	session.transport.Post("proofs", &response, proofs)
+	if response != "VALID" {
+		session.Handler.Failure(session.Action, ErrorRejected, response)
+		return
+	}
+
+	session.Handler.Success(session.Action)
 }

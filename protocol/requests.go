@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/asn1"
 	"math/big"
+	"time"
 
 	"crypto/sha256"
 
@@ -37,7 +38,7 @@ type CredentialRequest struct {
 type ServerRequest struct {
 	ServerName string     `json:"iss"`
 	IssuedAt   *Timestamp `json:"iat"`
-	Type       string     `json:"subject"`
+	Type       string     `json:"sub"`
 }
 
 type IssuanceRequest struct {
@@ -46,11 +47,27 @@ type IssuanceRequest struct {
 	Disclose    irmago.AttributeDisjunctionList `json:"disclose"`
 }
 
+type DisclosureRequestContainer struct {
+	Request DisclosureRequest `json:"request"`
+}
+
 type ServiceProviderRequest struct {
 	ServerRequest
-	Request struct {
-		Request DisclosureRequest `json:"request"`
-	} `json:"sprequest"`
+	Request DisclosureRequestContainer `json:"sprequest"`
+}
+
+func NewServiceProviderRequest(servername string, dr DisclosureRequest) *ServiceProviderRequest {
+	now := Timestamp(time.Now())
+	return &ServiceProviderRequest{
+		ServerRequest: ServerRequest{
+			ServerName: servername,
+			IssuedAt:   &now,
+			Type:       "verification_request",
+		},
+		Request: DisclosureRequestContainer{
+			Request: dr,
+		},
+	}
 }
 
 type SignatureServerRequest struct {

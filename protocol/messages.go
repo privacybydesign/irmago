@@ -42,11 +42,20 @@ const (
 
 // Protocol errors
 const (
+	// Protocol version not supported
 	ErrorProtocolVersionNotSupported = SessionError("versionNotSupported")
-	ErrorInvalidURL                  = SessionError("invalidUrl")
-	ErrorTransport                   = SessionError("httpError")
-	ErrorInvalidJWT                  = SessionError("invalidJwt")
-	ErrorUnknownAction               = SessionError("unknownAction")
+	// Server URL invalid
+	ErrorInvalidURL = SessionError("invalidUrl")
+	// Error in HTTP communication
+	ErrorTransport = SessionError("httpError")
+	// Invalid client JWT in first IRMA message
+	ErrorInvalidJWT = SessionError("invalidJwt")
+	// Unkown session type (not disclosing, signing, or issuing)
+	ErrorUnknownAction = SessionError("unknownAction")
+	// Crypto error during calculation of our response (second IRMA message)
+	ErrorCrypto = SessionError("cryptoResponseError")
+	// Server rejected our response (second IRMA message)
+	ErrorRejected = SessionError("rejectedByServer")
 )
 
 // Qr contains the data of an IRMA session QR.

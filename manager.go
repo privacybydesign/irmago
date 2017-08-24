@@ -248,7 +248,7 @@ func (cm *CredentialManager) CheckSatisfiability(disjunctions DisjunctionListCon
 	return missing
 }
 
-func (cm *CredentialManager) groupCredentials(choice DisclosureChoice) (map[CredentialIdentifier][]int, error) {
+func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[CredentialIdentifier][]int, error) {
 	grouped := make(map[CredentialIdentifier][]int)
 
 	for _, attribute := range choice.Attributes {
@@ -285,7 +285,7 @@ type SessionRequest interface {
 	GetContext() *big.Int
 }
 
-func (cm *CredentialManager) Proofs(choice DisclosureChoice, message *string) (gabi.ProofList, error) {
+func (cm *CredentialManager) Proofs(choice *DisclosureChoice, message *string) (gabi.ProofList, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
