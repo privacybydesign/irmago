@@ -65,11 +65,6 @@ type SessionInfo struct {
 	Keys    map[irmago.IssuerIdentifier]int `json:"keys"`
 }
 
-// A DisclosureChoice contains the attributes chosen to be disclosed.
-type DisclosureChoice struct {
-	Attributes []*irmago.AttributeIdentifier
-}
-
 // MarshalJSON marshals a timestamp.
 func (t *Timestamp) MarshalJSON() ([]byte, error) {
 	ts := time.Time(*t).Unix()

@@ -88,3 +88,7 @@ func (id AttributeTypeIdentifier) CredentialTypeIdentifier() CredentialTypeIdent
 func (id AttributeTypeIdentifier) IsCredential() bool {
 	return strings.Count(id.String(), ".") == 2
 }
+
+func (ai *AttributeIdentifier) CredentialIdentifier() CredentialIdentifier {
+	return CredentialIdentifier{Type: ai.Type.CredentialTypeIdentifier(), Index: ai.Index, Count: ai.Count}
+}

@@ -8,7 +8,7 @@ import (
 	"github.com/credentials/irmago"
 )
 
-type PermissionHandler func(proceed bool, choice *DisclosureChoice)
+type PermissionHandler func(proceed bool, choice *irmago.DisclosureChoice)
 
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
@@ -92,12 +92,11 @@ func (session *Session) start() {
 		session.Handler.Failure(session.Action, ErrorInvalidJWT, "")
 		return
 	}
-	headerjson := jwtparts[0]
-	reqjson := jwtparts[1]
 	var header struct {
 		Server string `json:"iss"`
 	}
-	json.Unmarshal([]byte(headerjson), &header)
+	json.Unmarshal([]byte(jwtparts[0]), &header)
+	json.Unmarshal([]byte(jwtparts[1]), session.request)
 
 	switch session.Action {
 	case ActionDisclosing:
@@ -109,7 +108,7 @@ func (session *Session) start() {
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
-	json.Unmarshal([]byte(reqjson), session.request)
+
 	if session.Action == ActionIssuing {
 		// Store which public keys the server will use
 		for _, credreq := range session.request.(*IdentityProviderRequest).Request.Request.Credentials {
@@ -123,7 +122,7 @@ func (session *Session) start() {
 		return
 	}
 
-	callback := PermissionHandler(func(proceed bool, choice *DisclosureChoice) {
+	callback := PermissionHandler(func(proceed bool, choice *irmago.DisclosureChoice) {
 		go session.do(proceed, choice)
 	})
 
@@ -140,6 +139,11 @@ func (session *Session) start() {
 	}
 }
 
-func (session *Session) do(proceed bool, choice *DisclosureChoice) {
-	// TODO
+func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
+	if !proceed {
+		session.Handler.Cancelled(session.Action)
+		return
+	}
+
+	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 }

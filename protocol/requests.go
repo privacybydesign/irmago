@@ -1,7 +1,12 @@
 package protocol
 
 import (
+	"encoding/asn1"
 	"math/big"
+
+	"crypto/sha256"
+
+	"log"
 
 	"github.com/credentials/irmago"
 )
@@ -60,6 +65,32 @@ type IdentityProviderRequest struct {
 	Request struct {
 		Request IssuanceRequest `json:"request"`
 	} `json:"iprequest"`
+}
+
+func (dr *DisclosureRequest) GetContext() *big.Int {
+	return dr.Context
+}
+
+func (dr *DisclosureRequest) GetNonce() *big.Int {
+	return dr.Nonce
+}
+
+func (sr *SignatureRequest) GetContext() *big.Int {
+	return sr.Context
+}
+
+func (sr *SignatureRequest) GetNonce() *big.Int {
+	// BigInteger messageHash = Crypto.sha256Hash(message.getBytes());
+	// return Crypto.sha256Hash(Crypto.asn1Encode(nonce, messageHash));
+
+	hashbytes := sha256.Sum256([]byte(sr.Message))
+	hashint := new(big.Int).SetBytes(hashbytes[:])
+	asn1bytes, err := asn1.Marshal([]*big.Int{sr.Nonce, hashint})
+	if err != nil {
+		log.Print(err) // TODO? does this happen?
+	}
+	asn1hash := sha256.Sum256(asn1bytes)
+	return new(big.Int).SetBytes(asn1hash[:])
 }
 
 func (spr *ServiceProviderRequest) DisjunctionList() irmago.AttributeDisjunctionList {

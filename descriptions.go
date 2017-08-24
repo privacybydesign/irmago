@@ -3,6 +3,8 @@ package irmago
 import (
 	"encoding/xml"
 
+	"errors"
+
 	"github.com/mhe/gabi"
 )
 
@@ -64,6 +66,18 @@ type AttributeDescription struct {
 	ID          string `xml:"id,attr"`
 	Name        TranslatedString
 	Description TranslatedString
+}
+
+func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
+	if ai.CredentialTypeIdentifier() != ct.Identifier() {
+		return -1, errors.New("Wrong credential type")
+	}
+	for i, description := range ct.Attributes {
+		if description.ID == ai.Name() {
+			return i, nil
+		}
+	}
+	return -1, errors.New("Attribute identifier not found")
 }
 
 // TranslatedString represents an XML tag containing a string translated to multiple languages.

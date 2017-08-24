@@ -78,6 +78,10 @@ func (cm *CredentialManager) Attributes(id CredentialTypeIdentifier, counter int
 	return list[counter]
 }
 
+func (cm *CredentialManager) CredentialByID(id CredentialIdentifier) (cred *Credential, err error) {
+	return cm.Credential(id.Type, id.Count)
+}
+
 // Credential returns the requested credential, or nil if we do not have it.
 func (cm *CredentialManager) Credential(id CredentialTypeIdentifier, counter int) (cred *Credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
@@ -242,4 +246,59 @@ func (cm *CredentialManager) CheckSatisfiability(disjunctions DisjunctionListCon
 	}
 
 	return missing
+}
+
+func (cm *CredentialManager) groupCredentials(choice DisclosureChoice) (map[CredentialIdentifier][]int, error) {
+	grouped := make(map[CredentialIdentifier][]int)
+
+	for _, attribute := range choice.Attributes {
+		identifier := attribute.Type
+		ici := attribute.CredentialIdentifier()
+
+		// If this is the first attribute of its credential type that we encounter
+		// in the disclosure choice, then there is no slice yet at grouped[ici]
+		var indices []int
+		if _, present := grouped[ici]; !present {
+			indices = []int{1} // Always include metadata
+			grouped[ici] = indices
+		}
+		indices = grouped[ici]
+
+		if identifier.IsCredential() {
+			continue // In this case we only disclose the metadata attribute, which is already handled
+		}
+		index, err := MetaStore.Credentials[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
+		if err != nil {
+			return nil, err
+		}
+
+		// These indices will be used in the []*big.Int at gabi.Credential.Attributes,
+		// which doesn't know about the secret key and metadata attribute, so +2
+		indices = append(indices, index+2)
+	}
+
+	return grouped, nil
+}
+
+type SessionRequest interface {
+	GetNonce() *big.Int
+	GetContext() *big.Int
+}
+
+func (cm *CredentialManager) Proofs(choice DisclosureChoice, message *string) (gabi.ProofList, error) {
+	todisclose, err := cm.groupCredentials(choice)
+	if err != nil {
+		return nil, err
+	}
+
+	builders := []gabi.ProofBuilder{}
+	for id, list := range todisclose {
+		cred, err := cm.CredentialByID(id)
+		if err != nil {
+			return nil, err
+		}
+		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(list))
+	}
+
+	return gabi.BuildProofList(choice.Session.GetContext(), choice.Session.GetNonce(), builders), nil
 }

@@ -225,6 +225,12 @@ func shortToByte(x int) []byte {
 	return bytes
 }
 
+// A DisclosureChoice contains the attributes chosen to be disclosed.
+type DisclosureChoice struct {
+	Session    SessionRequest
+	Attributes []*AttributeIdentifier
+}
+
 // An AttributeDisjunction encapsulates a list of possible attributes, one
 // of which should be disclosed.
 type AttributeDisjunction struct {
