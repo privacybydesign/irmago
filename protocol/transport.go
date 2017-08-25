@@ -15,6 +15,24 @@ type HTTPTransport struct {
 	client *http.Client
 }
 
+type ApiError struct {
+	Status      int    `json:"status"`
+	ErrorName   string `json:"error"'`
+	Description string `json:"description"`
+	Message     string `json:"message"`
+	Stacktrace  string `json:"stacktrace"`
+}
+
+type TransportError struct {
+	Err    string
+	Status int
+	ApiErr *ApiError
+}
+
+func (te TransportError) Error() string {
+	return te.Err
+}
+
 func NewHTTPTransport(serverURL string) *HTTPTransport {
 	url := serverURL
 	if !strings.HasSuffix(url, "/") {
@@ -40,14 +58,14 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	if object != nil {
 		marshaled, err := json.Marshal(object)
 		if err != nil {
-			return err
+			return &TransportError{Err: err.Error()}
 		}
 		reader = bytes.NewBuffer(marshaled)
 	}
 
 	req, err := http.NewRequest(method, transport.Server+url, reader)
 	if err != nil {
-		return err
+		return &TransportError{Err: err.Error()}
 	}
 
 	req.Header.Set("User-Agent", "irmago")
@@ -57,17 +75,25 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	res, err := transport.client.Do(req)
 	if err != nil {
-		return err
+		return &TransportError{Err: err.Error()}
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return err
+		return &TransportError{Err: err.Error(), Status: res.StatusCode}
+	}
+	if res.StatusCode != 200 {
+		apierr := &ApiError{}
+		json.Unmarshal(body, apierr)
+		if apierr.ErrorName == "" { // Not an ApiErrorMessage
+			return &TransportError{Err: err.Error(), Status: res.StatusCode}
+		}
+		return &TransportError{Err: apierr.ErrorName, Status: res.StatusCode, ApiErr: apierr}
 	}
 
 	err = json.Unmarshal(body, result)
 	if err != nil {
-		return err
+		return &TransportError{Err: err.Error(), Status: res.StatusCode}
 	}
 
 	return nil

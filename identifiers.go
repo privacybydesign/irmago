@@ -1,6 +1,9 @@
 package irmago
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 type metaObjectIdentifier string
 
@@ -91,4 +94,12 @@ func (id AttributeTypeIdentifier) IsCredential() bool {
 
 func (ai *AttributeIdentifier) CredentialIdentifier() CredentialIdentifier {
 	return CredentialIdentifier{Type: ai.Type.CredentialTypeIdentifier(), Index: ai.Index, Count: ai.Count}
+}
+
+func (id AttributeTypeIdentifier) MarshalJSON() ([]byte, error) {
+	return json.Marshal(id.String())
+}
+
+func (id CredentialTypeIdentifier) MarshalJSON() ([]byte, error) {
+	return json.Marshal(id.String())
 }

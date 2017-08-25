@@ -6,6 +6,8 @@ import (
 
 	"encoding/base64"
 
+	"fmt"
+
 	"github.com/credentials/irmago"
 	"github.com/stretchr/testify/require"
 )
@@ -44,8 +46,8 @@ func (th TestHandler) AskSignaturePermission(request SignatureRequest, ServerNam
 }
 
 func TestSession(t *testing.T) {
-	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentNumber")
-	url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2"
+	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/verification"
 	name := "testsp"
 
 	spRequest := NewServiceProviderJwt(name, DisclosureRequest{
@@ -56,6 +58,7 @@ func TestSession(t *testing.T) {
 			},
 		}),
 	})
+	fmt.Printf("%+v\n", spRequest.Request.Request.Content[0])
 
 	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
 	require.NoError(t, err)
@@ -63,8 +66,12 @@ func TestSession(t *testing.T) {
 	require.NoError(t, err)
 
 	jwt := base64.StdEncoding.EncodeToString(headerbytes) + "." + base64.StdEncoding.EncodeToString(bodybytes) + "."
-	qr, err := StartSession(jwt, url)
-	require.NoError(t, err)
+	fmt.Println(jwt)
+	qr, transportErr := StartSession(jwt, url)
+	if transportErr != nil {
+		fmt.Println(transportErr.(*TransportError).ApiErr)
+	}
+	require.NoError(t, transportErr)
 
 	NewSession(qr, TestHandler{t})
 }

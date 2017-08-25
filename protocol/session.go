@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"strconv"
 	"strings"
+
+	"sort"
+
+	"fmt"
 
 	"github.com/credentials/irmago"
 	"github.com/mhe/gabi"
@@ -42,15 +47,49 @@ type Session struct {
 	context   *big.Int
 }
 
+// Supported protocol versions. Minor version numbers should be reverse sorted.
+var supportedVersions = map[int][]int{
+	2: []int{2, 1},
+}
+
+func calcVersion(qr *Qr) (string, error) {
+	// Parse range supported by server
+	minmajor, err := strconv.Atoi(string(qr.ProtocolVersion[0]))
+	minminor, err := strconv.Atoi(string(qr.ProtocolVersion[2]))
+	maxmajor, err := strconv.Atoi(string(qr.ProtocolMaxVersion[0]))
+	maxminor, err := strconv.Atoi(string(qr.ProtocolMaxVersion[2]))
+	if err != nil {
+		return "", err
+	}
+
+	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
+	keys := make([]int, 0, len(supportedVersions))
+	for k, _ := range supportedVersions {
+		keys = append(keys, k)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(keys)))
+	for _, major := range keys {
+		for _, minor := range supportedVersions[major] {
+			aboveMinimum := major > minmajor || (major == minmajor && minor >= minminor)
+			underMaximum := major < maxmajor || (major == maxmajor && minor <= maxminor)
+			if aboveMinimum && underMaximum {
+				return fmt.Sprintf("%d.%d", major, minor), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
+}
+
 // NewSession creates and starts a new IRMA session.
 func NewSession(qr *Qr, handler Handler) *Session {
-	if qr.ProtocolVersion != "2.1" && qr.ProtocolVersion != "2.2" { // TODO version negotiation
-		handler.Failure(ActionUnknown, ErrorProtocolVersionNotSupported, qr.ProtocolVersion)
+	version, err := calcVersion(qr)
+	if err != nil {
+		handler.Failure(ActionUnknown, ErrorProtocolVersionNotSupported, err.Error())
 		return nil
 	}
 
 	session := &Session{
-		Version:   Version(qr.ProtocolVersion),
+		Version:   Version(version),
 		Action:    Action(qr.Type),
 		ServerURL: qr.URL,
 		Handler:   handler,
