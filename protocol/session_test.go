@@ -81,19 +81,11 @@ func (th TestHandler) AskVerificationPermission(request DisclosureRequest, Serve
 	callback(true, choice)
 }
 func (th TestHandler) AskSignaturePermission(request SignatureRequest, ServerName string, choice PermissionHandler) {
+	th.AskVerificationPermission(request.DisclosureRequest, ServerName, choice)
 }
 
-func TestSession(t *testing.T) {
-	parseMetaStore(t)
-	parseStorage(t)
-	parseAndroidStorage(t)
-
-	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	//url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/verification"
-	url := "http://localhost:8081/irma_api_server/api/v2/verification"
-	name := "testsp"
-
-	spRequest := NewServiceProviderJwt(name, DisclosureRequest{
+func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
+	return NewServiceProviderJwt(name, DisclosureRequest{
 		Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
 			&irmago.AttributeDisjunction{
 				Label:      "foo",
@@ -101,10 +93,51 @@ func TestSession(t *testing.T) {
 			},
 		}),
 	})
+}
+
+func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
+	return NewSignatureServerJwt(name, SignatureRequest{
+		Message:     "test",
+		MessageType: "STRING",
+		DisclosureRequest: DisclosureRequest{
+			Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
+				&irmago.AttributeDisjunction{
+					Label:      "foo",
+					Attributes: []irmago.AttributeTypeIdentifier{id},
+				},
+			}),
+		},
+	})
+}
+
+func TestSigningSession(t *testing.T) {
+	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	//url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/verification"
+	url := "http://localhost:8081/irma_api_server/api/v2/signature"
+	name := "testsigclient"
+
+	jwtcontents := getSigningJwt(name, id)
+	sessionHelper(t, jwtcontents, url)
+}
+
+func TestDisclosureSession(t *testing.T) {
+	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	//url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/verification"
+	url := "http://localhost:8081/irma_api_server/api/v2/verification"
+	name := "testsp"
+
+	jwtcontents := getDisclosureJwt(name, id)
+	sessionHelper(t, jwtcontents, url)
+}
+
+func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
+	parseMetaStore(t)
+	parseStorage(t)
+	parseAndroidStorage(t)
 
 	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
 	require.NoError(t, err)
-	bodybytes, err := json.Marshal(spRequest)
+	bodybytes, err := json.Marshal(jwtcontents)
 	require.NoError(t, err)
 
 	jwt := base64.RawStdEncoding.EncodeToString(headerbytes) + "." + base64.RawStdEncoding.EncodeToString(bodybytes) + "."

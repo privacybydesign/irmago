@@ -66,7 +66,7 @@ type ServiceProviderJwt struct {
 
 type SignatureServerJwt struct {
 	ServerJwt
-	Request SignatureServerRequest `json:"sigrequest"`
+	Request SignatureServerRequest `json:"absrequest"`
 }
 
 type IdentityProviderJwt struct {
@@ -86,6 +86,18 @@ func NewServiceProviderJwt(servername string, dr DisclosureRequest) *ServiceProv
 	}
 }
 
+func NewSignatureServerJwt(servername string, dr SignatureRequest) *SignatureServerJwt {
+	now := Timestamp(time.Now())
+	return &SignatureServerJwt{
+		ServerJwt: ServerJwt{
+			ServerName: servername,
+			IssuedAt:   &now,
+			Type:       "signature_request",
+		},
+		Request: SignatureServerRequest{Request: dr},
+	}
+}
+
 func (dr *DisclosureRequest) GetContext() *big.Int {
 	return dr.Context
 }
@@ -99,12 +111,10 @@ func (sr *SignatureRequest) GetContext() *big.Int {
 }
 
 func (sr *SignatureRequest) GetNonce() *big.Int {
-	// BigInteger messageHash = Crypto.sha256Hash(message.getBytes());
-	// return Crypto.sha256Hash(Crypto.asn1Encode(nonce, messageHash));
-
 	hashbytes := sha256.Sum256([]byte(sr.Message))
 	hashint := new(big.Int).SetBytes(hashbytes[:])
-	asn1bytes, err := asn1.Marshal([]*big.Int{sr.Nonce, hashint})
+	// TODO the 2 should be abstracted away
+	asn1bytes, err := asn1.Marshal([]interface{}{big.NewInt(2), sr.Nonce, hashint})
 	if err != nil {
 		log.Print(err) // TODO? does this happen?
 	}

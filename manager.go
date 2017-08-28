@@ -284,7 +284,7 @@ type SessionRequest interface {
 	GetContext() *big.Int
 }
 
-func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request SessionRequest) (gabi.ProofList, error) {
+func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request SessionRequest, issig bool) (gabi.ProofList, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -299,5 +299,5 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request SessionReq
 		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(list))
 	}
 
-	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders), nil
+	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, issig), nil
 }

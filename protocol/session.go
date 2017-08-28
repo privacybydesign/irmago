@@ -217,9 +217,9 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 	var err error
 	switch session.Action {
 	case ActionSigning:
-		proofs, err = irmago.Manager.Proofs(choice, &session.ssRequest.Request.Request)
+		proofs, err = irmago.Manager.Proofs(choice, &session.ssRequest.Request.Request, true)
 	case ActionDisclosing:
-		proofs, err = irmago.Manager.Proofs(choice, &session.spRequest.Request.Request)
+		proofs, err = irmago.Manager.Proofs(choice, &session.spRequest.Request.Request, false)
 	case ActionIssuing:
 		err = errors.New("Issuing not yet implemented")
 	}
