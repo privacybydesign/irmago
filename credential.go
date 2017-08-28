@@ -13,5 +13,6 @@ func newCredential(gabicred *gabi.Credential) (cred *Credential) {
 	cred = &Credential{}
 	cred.Credential = gabicred
 	cred.MetadataAttribute = MetadataFromInt(gabicred.Attributes[1])
+	cred.Pk = MetaStore.PublicKey(cred.CredentialType().IssuerIdentifier(), cred.KeyCounter())
 	return
 }

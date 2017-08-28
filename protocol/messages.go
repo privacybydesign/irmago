@@ -22,8 +22,15 @@ type Action string
 // Version encodes the IRMA protocol version of an IRMA session.
 type Version string
 
-// SessionError are session errors.
-type SessionError string
+// ErrorCode are session errors.
+type ErrorCode string
+
+type Error struct {
+	ErrorCode
+	error
+	info string
+	*ApiError
+}
 
 // Statuses
 const (
@@ -43,19 +50,19 @@ const (
 // Protocol errors
 const (
 	// Protocol version not supported
-	ErrorProtocolVersionNotSupported = SessionError("versionNotSupported")
+	ErrorProtocolVersionNotSupported = ErrorCode("versionNotSupported")
 	// Server URL invalid
-	ErrorInvalidURL = SessionError("invalidUrl")
+	ErrorInvalidURL = ErrorCode("invalidUrl")
 	// Error in HTTP communication
-	ErrorTransport = SessionError("httpError")
+	ErrorTransport = ErrorCode("httpError")
 	// Invalid client JWT in first IRMA message
-	ErrorInvalidJWT = SessionError("invalidJwt")
+	ErrorInvalidJWT = ErrorCode("invalidJwt")
 	// Unkown session type (not disclosing, signing, or issuing)
-	ErrorUnknownAction = SessionError("unknownAction")
+	ErrorUnknownAction = ErrorCode("unknownAction")
 	// Crypto error during calculation of our response (second IRMA message)
-	ErrorCrypto = SessionError("cryptoResponseError")
+	ErrorCrypto = ErrorCode("cryptoResponseError")
 	// Server rejected our response (second IRMA message)
-	ErrorRejected = SessionError("rejectedByServer")
+	ErrorRejected = ErrorCode("rejectedByServer")
 )
 
 // Qr contains the data of an IRMA session QR.
@@ -72,6 +79,14 @@ type SessionInfo struct {
 	Nonce   *big.Int                        `json:"nonce"`
 	Context *big.Int                        `json:"context"`
 	Keys    map[irmago.IssuerIdentifier]int `json:"keys"`
+}
+
+func (e *Error) Error() string {
+	if e.error != nil {
+		return fmt.Sprintf("%s: %s", string(e.ErrorCode), e.error.Error())
+	} else {
+		return string(e.ErrorCode)
+	}
 }
 
 // MarshalJSON marshals a timestamp.

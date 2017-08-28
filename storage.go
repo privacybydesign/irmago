@@ -23,7 +23,7 @@ const (
 	cardemuXML     = "../cardemu.xml"
 )
 
-func pathExists(path string) (bool, error) {
+func PathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil
@@ -48,7 +48,7 @@ func (cm *CredentialManager) signatureFilename(id string, counter int) string {
 // Setting it up in a properly protected location (e.g., with automatic
 // backups to iCloud/Google disabled) is the responsibility of the user.
 func (cm *CredentialManager) ensureStorageExists() (err error) {
-	exist, err := pathExists(cm.storagePath)
+	exist, err := PathExists(cm.storagePath)
 	if err != nil {
 		return
 	}
@@ -56,7 +56,7 @@ func (cm *CredentialManager) ensureStorageExists() (err error) {
 		return errors.New("credential storage path does not exist")
 	}
 
-	exist, err = pathExists(cm.path(signaturesDir))
+	exist, err = PathExists(cm.path(signaturesDir))
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (cm *CredentialManager) storeAttributes() (err error) {
 
 func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter int) (signature *gabi.CLSignature, err error) {
 	path := cm.signatureFilename(id.String(), counter)
-	exists, err := pathExists(path)
+	exists, err := PathExists(path)
 	if err != nil || !exists {
 		return
 	}
@@ -143,7 +143,7 @@ func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter 
 // loadSecretKey retrieves and returns the secret key from storage, or if no secret key
 // was found in storage, it generates, saves, and returns a new secret key.
 func (cm *CredentialManager) loadSecretKey() (*big.Int, error) {
-	exists, err := pathExists(cm.path(skFile))
+	exists, err := PathExists(cm.path(skFile))
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier
 	list = make(map[CredentialTypeIdentifier][]*AttributeList)
 	temp := make(map[string][]*AttributeList)
 
-	exists, err := pathExists(cm.path(attributesFile))
+	exists, err := PathExists(cm.path(attributesFile))
 	if err != nil || !exists {
 		return
 	}

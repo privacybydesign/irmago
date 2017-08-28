@@ -79,7 +79,7 @@ func (cm *CredentialManager) Attributes(id CredentialTypeIdentifier, counter int
 }
 
 func (cm *CredentialManager) CredentialByID(id CredentialIdentifier) (cred *Credential, err error) {
-	return cm.Credential(id.Type, id.Count)
+	return cm.Credential(id.Type, id.Index)
 }
 
 // Credential returns the requested credential, or nil if we do not have it.
@@ -122,7 +122,7 @@ func (cm *CredentialManager) Credential(id CredentialTypeIdentifier, counter int
 // and saving them to storage.
 // CAREFUL: this method overwrites any existing secret keys and attributes on storage.
 func (cm *CredentialManager) ParseAndroidStorage() (err error) {
-	exists, err := pathExists(cm.path(cardemuXML))
+	exists, err := PathExists(cm.path(cardemuXML))
 	if err != nil || !exists {
 		return
 	}
@@ -238,7 +238,7 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 }
 
 func (cm *CredentialManager) CheckSatisfiability(disjunctions DisjunctionListContainer) AttributeDisjunctionList {
-	missing := make(AttributeDisjunctionList, 5)
+	missing := make(AttributeDisjunctionList, 0, 5)
 	for _, disjunction := range disjunctions.DisjunctionList() {
 		if len(cm.Candidates(disjunction)) == 0 {
 			missing = append(missing, disjunction)
@@ -257,12 +257,11 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 
 		// If this is the first attribute of its credential type that we encounter
 		// in the disclosure choice, then there is no slice yet at grouped[ici]
-		var indices []int
 		if _, present := grouped[ici]; !present {
-			indices = []int{1} // Always include metadata
+			indices := make([]int, 1, 1)
+			indices[0] = 1 // Always include metadata
 			grouped[ici] = indices
 		}
-		indices = grouped[ici]
 
 		if identifier.IsCredential() {
 			continue // In this case we only disclose the metadata attribute, which is already handled
@@ -274,7 +273,7 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 
 		// These indices will be used in the []*big.Int at gabi.Credential.Attributes,
 		// which doesn't know about the secret key and metadata attribute, so +2
-		indices = append(indices, index+2)
+		grouped[ici] = append(grouped[ici], index+2)
 	}
 
 	return grouped, nil
@@ -285,7 +284,7 @@ type SessionRequest interface {
 	GetContext() *big.Int
 }
 
-func (cm *CredentialManager) Proofs(choice *DisclosureChoice, message *string) (gabi.ProofList, error) {
+func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request SessionRequest) (gabi.ProofList, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -300,5 +299,5 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, message *string) (
 		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(list))
 	}
 
-	return gabi.BuildProofList(choice.Session.GetContext(), choice.Session.GetNonce(), builders), nil
+	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders), nil
 }

@@ -227,7 +227,6 @@ func shortToByte(x int) []byte {
 
 // A DisclosureChoice contains the attributes chosen to be disclosed.
 type DisclosureChoice struct {
-	Session    SessionRequest
 	Attributes []*AttributeIdentifier
 }
 

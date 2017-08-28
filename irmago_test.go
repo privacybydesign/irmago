@@ -30,7 +30,7 @@ func parseMetaStore(t *testing.T) {
 }
 
 func parseStorage(t *testing.T) {
-	exists, err := pathExists("testdata/storage/path")
+	exists, err := PathExists("testdata/storage/path")
 	require.NoError(t, err, "pathexists() failed")
 	if !exists {
 		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")

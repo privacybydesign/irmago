@@ -103,3 +103,23 @@ func (id AttributeTypeIdentifier) MarshalJSON() ([]byte, error) {
 func (id CredentialTypeIdentifier) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id.String())
 }
+
+func (id AttributeTypeIdentifier) UnmarshalJSON(b []byte) error {
+	var val string
+	err := json.Unmarshal(b, &val)
+	if err != nil {
+		return err
+	}
+	id.metaObjectIdentifier = metaObjectIdentifier(val)
+	return nil
+}
+
+func (id CredentialTypeIdentifier) UnmarshalJSON(b []byte) error {
+	var val string
+	err := json.Unmarshal(b, &val)
+	if err != nil {
+		return err
+	}
+	id.metaObjectIdentifier = metaObjectIdentifier(val)
+	return nil
+}

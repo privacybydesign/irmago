@@ -54,13 +54,19 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		panic("Cannot GET and also post an object")
 	}
 
+	var isstr bool
 	var reader io.Reader
 	if object != nil {
-		marshaled, err := json.Marshal(object)
-		if err != nil {
-			return &TransportError{Err: err.Error()}
+		var objstr string
+		if objstr, isstr = object.(string); isstr {
+			reader = bytes.NewBuffer([]byte(objstr))
+		} else {
+			marshaled, err := json.Marshal(object)
+			if err != nil {
+				return &TransportError{Err: err.Error()}
+			}
+			reader = bytes.NewBuffer(marshaled)
 		}
-		reader = bytes.NewBuffer(marshaled)
 	}
 
 	req, err := http.NewRequest(method, transport.Server+url, reader)
@@ -70,7 +76,11 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	req.Header.Set("User-Agent", "irmago")
 	if object != nil {
-		req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+		if isstr {
+			req.Header.Set("Content-Type", "text/plain; charset=UTF-8")
+		} else {
+			req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+		}
 	}
 
 	res, err := transport.client.Do(req)
@@ -86,7 +96,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		apierr := &ApiError{}
 		json.Unmarshal(body, apierr)
 		if apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &TransportError{Err: err.Error(), Status: res.StatusCode}
+			return &TransportError{Status: res.StatusCode}
 		}
 		return &TransportError{Err: apierr.ErrorName, Status: res.StatusCode, ApiErr: apierr}
 	}
