@@ -65,9 +65,9 @@ func (th TestHandler) Failure(action Action, err *Error) {
 func (th TestHandler) UnsatisfiableRequest(action Action, missing irmago.AttributeDisjunctionList) {
 	th.c <- &Error{}
 }
-func (th TestHandler) AskIssuancePermission(request IssuanceRequest, ServerName string, choice PermissionHandler) {
+func (th TestHandler) AskIssuancePermission(request irmago.IssuanceRequest, ServerName string, choice PermissionHandler) {
 }
-func (th TestHandler) AskVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler) {
+func (th TestHandler) AskVerificationPermission(request irmago.DisclosureRequest, ServerName string, callback PermissionHandler) {
 	choice := &irmago.DisclosureChoice{
 		Attributes: []*irmago.AttributeIdentifier{},
 	}
@@ -80,12 +80,12 @@ func (th TestHandler) AskVerificationPermission(request DisclosureRequest, Serve
 	}
 	callback(true, choice)
 }
-func (th TestHandler) AskSignaturePermission(request SignatureRequest, ServerName string, choice PermissionHandler) {
+func (th TestHandler) AskSignaturePermission(request irmago.SignatureRequest, ServerName string, choice PermissionHandler) {
 	th.AskVerificationPermission(request.DisclosureRequest, ServerName, choice)
 }
 
 func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	return NewServiceProviderJwt(name, DisclosureRequest{
+	return NewServiceProviderJwt(name, irmago.DisclosureRequest{
 		Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
 			&irmago.AttributeDisjunction{
 				Label:      "foo",
@@ -96,10 +96,10 @@ func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{
 }
 
 func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	return NewSignatureServerJwt(name, SignatureRequest{
+	return NewSignatureServerJwt(name, irmago.SignatureRequest{
 		Message:     "test",
 		MessageType: "STRING",
-		DisclosureRequest: DisclosureRequest{
+		DisclosureRequest: irmago.DisclosureRequest{
 			Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
 				&irmago.AttributeDisjunction{
 					Label:      "foo",
@@ -112,28 +112,27 @@ func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
 
 func TestSigningSession(t *testing.T) {
 	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	//url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/verification"
-	url := "http://localhost:8081/irma_api_server/api/v2/signature"
 	name := "testsigclient"
 
 	jwtcontents := getSigningJwt(name, id)
-	sessionHelper(t, jwtcontents, url)
+	sessionHelper(t, jwtcontents, "signature")
 }
 
 func TestDisclosureSession(t *testing.T) {
 	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	//url := "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/verification"
-	url := "http://localhost:8081/irma_api_server/api/v2/verification"
 	name := "testsp"
 
 	jwtcontents := getDisclosureJwt(name, id)
-	sessionHelper(t, jwtcontents, url)
+	sessionHelper(t, jwtcontents, "verification")
 }
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
 	parseMetaStore(t)
 	parseStorage(t)
 	parseAndroidStorage(t)
+
+	//url = "http://localhost:8081/irma_api_server/api/v2/" + url
+	url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
 
 	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
 	require.NoError(t, err)

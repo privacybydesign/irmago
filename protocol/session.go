@@ -28,9 +28,9 @@ type Handler interface {
 	Failure(action Action, err *Error)
 	UnsatisfiableRequest(action Action, missing irmago.AttributeDisjunctionList)
 
-	AskIssuancePermission(request IssuanceRequest, ServerName string, choice PermissionHandler)
-	AskVerificationPermission(request DisclosureRequest, ServerName string, choice PermissionHandler)
-	AskSignaturePermission(request SignatureRequest, ServerName string, choice PermissionHandler)
+	AskIssuancePermission(request irmago.IssuanceRequest, ServerName string, choice PermissionHandler)
+	AskVerificationPermission(request irmago.DisclosureRequest, ServerName string, choice PermissionHandler)
+	AskSignaturePermission(request irmago.SignatureRequest, ServerName string, choice PermissionHandler)
 }
 
 // A Session is an IRMA session.

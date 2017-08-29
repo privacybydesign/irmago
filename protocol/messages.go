@@ -2,16 +2,11 @@ package protocol
 
 import (
 	"fmt"
-	"strconv"
-	"time"
 
 	"math/big"
 
 	"github.com/credentials/irmago"
 )
-
-// Timestamp is a time.Time that marshals to Unix timestamps.
-type Timestamp time.Time
 
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
@@ -87,21 +82,4 @@ func (e *Error) Error() string {
 	} else {
 		return string(e.ErrorCode)
 	}
-}
-
-// MarshalJSON marshals a timestamp.
-func (t *Timestamp) MarshalJSON() ([]byte, error) {
-	ts := time.Time(*t).Unix()
-	stamp := fmt.Sprint(ts)
-	return []byte(stamp), nil
-}
-
-// UnmarshalJSON unmarshals a timestamp.
-func (t *Timestamp) UnmarshalJSON(b []byte) error {
-	ts, err := strconv.Atoi(string(b))
-	if err != nil {
-		return err
-	}
-	*t = Timestamp(time.Unix(int64(ts), 0))
-	return nil
 }

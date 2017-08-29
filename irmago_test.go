@@ -9,6 +9,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/credentials/irmago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -234,4 +235,15 @@ func TestCandidates(t *testing.T) {
 	require.Empty(t, attrs)
 
 	teardown(t)
+}
+
+func TestTimestamp(t *testing.T) {
+	mytime := irmago.Timestamp(time.Unix(1500000000, 0))
+	timestruct := struct{ Time *irmago.Timestamp }{Time: &mytime}
+	bytes, err := json.Marshal(timestruct)
+	require.NoError(t, err)
+
+	timestruct = struct{ Time *irmago.Timestamp }{}
+	require.NoError(t, json.Unmarshal(bytes, &timestruct))
+	require.Equal(t, time.Time(*timestruct.Time).Unix(), int64(1500000000))
 }

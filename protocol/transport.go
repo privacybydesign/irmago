@@ -17,7 +17,7 @@ type HTTPTransport struct {
 
 type ApiError struct {
 	Status      int    `json:"status"`
-	ErrorName   string `json:"error"'`
+	ErrorName   string `json:"error"`
 	Description string `json:"description"`
 	Message     string `json:"message"`
 	Stacktrace  string `json:"stacktrace"`

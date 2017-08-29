@@ -4,22 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"time"
-
 	"github.com/credentials/irmago"
 	"github.com/stretchr/testify/require"
 )
-
-func TestTimestamp(t *testing.T) {
-	mytime := Timestamp(time.Unix(1500000000, 0))
-	timestruct := struct{ Time *Timestamp }{Time: &mytime}
-	bytes, err := json.Marshal(timestruct)
-	require.NoError(t, err)
-
-	timestruct = struct{ Time *Timestamp }{}
-	require.NoError(t, json.Unmarshal(bytes, &timestruct))
-	require.Equal(t, time.Time(*timestruct.Time).Unix(), int64(1500000000))
-}
 
 func TestServiceProvider(t *testing.T) {
 	var spjwt ServiceProviderJwt

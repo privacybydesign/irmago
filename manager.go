@@ -280,12 +280,12 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 	return grouped, nil
 }
 
-type SessionRequest interface {
+type sessionRequest interface {
 	GetNonce() *big.Int
 	GetContext() *big.Int
 }
 
-func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request SessionRequest, issig bool) (gabi.ProofList, error) {
+func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request sessionRequest, issig bool) (gabi.ProofList, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -308,11 +308,13 @@ type issuanceState struct {
 	nonce2   *big.Int
 }
 
-func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request SessionRequest) (gabi.IssueCommitmentMessage, error) {
+func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request sessionRequest) (*gabi.IssueCommitmentMessage, error) {
 	cm.issuance = issuanceState{[]*gabi.CredentialBuilder{}, nil}
 
-	todisclose, err := cm.groupCredentials(choice)
+	_, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
 	}
+
+	return nil, nil
 }
