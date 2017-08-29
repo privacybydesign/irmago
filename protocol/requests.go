@@ -86,7 +86,7 @@ func NewServiceProviderJwt(servername string, dr DisclosureRequest) *ServiceProv
 	}
 }
 
-func NewSignatureServerJwt(servername string, dr SignatureRequest) *SignatureServerJwt {
+func NewSignatureServerJwt(servername string, sr SignatureRequest) *SignatureServerJwt {
 	now := Timestamp(time.Now())
 	return &SignatureServerJwt{
 		ServerJwt: ServerJwt{
@@ -94,8 +94,28 @@ func NewSignatureServerJwt(servername string, dr SignatureRequest) *SignatureSer
 			IssuedAt:   &now,
 			Type:       "signature_request",
 		},
-		Request: SignatureServerRequest{Request: dr},
+		Request: SignatureServerRequest{Request: sr},
 	}
+}
+
+func NewIdentityProviderJwt(servername string, ir IssuanceRequest) *IdentityProviderJwt {
+	now := Timestamp(time.Now())
+	return &IdentityProviderJwt{
+		ServerJwt: ServerJwt{
+			ServerName: servername,
+			IssuedAt:   &now,
+			Type:       "signature_request",
+		},
+		Request: IdentityProviderRequest{Request: ir},
+	}
+}
+
+func (ir *IssuanceRequest) GetContext() *big.Int {
+	return ir.Context
+}
+
+func (ir *IssuanceRequest) GetNonce() *big.Int {
+	return ir.Nonce
 }
 
 func (dr *DisclosureRequest) GetContext() *big.Int {

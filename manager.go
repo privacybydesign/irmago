@@ -20,6 +20,7 @@ type CredentialManager struct {
 	storagePath string
 	attributes  map[CredentialTypeIdentifier][]*AttributeList
 	credentials map[CredentialTypeIdentifier]map[int]*Credential
+	issuance    issuanceState
 }
 
 func newCredentialManager() *CredentialManager {
@@ -300,4 +301,18 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request SessionReq
 	}
 
 	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, issig), nil
+}
+
+type issuanceState struct {
+	builders []*gabi.CredentialBuilder
+	nonce2   *big.Int
+}
+
+func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request SessionRequest) (gabi.IssueCommitmentMessage, error) {
+	cm.issuance = issuanceState{[]*gabi.CredentialBuilder{}, nil}
+
+	todisclose, err := cm.groupCredentials(choice)
+	if err != nil {
+		return nil, err
+	}
 }
