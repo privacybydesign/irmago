@@ -135,6 +135,9 @@ func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter 
 		return
 	}
 	bytes, err := ioutil.ReadFile(path)
+	if err != nil {
+		return
+	}
 	signature = new(gabi.CLSignature)
 	err = json.Unmarshal(bytes, signature)
 	return
@@ -148,11 +151,11 @@ func (cm *CredentialManager) loadSecretKey() (*big.Int, error) {
 		return nil, err
 	}
 	if exists {
-		bytes, err := ioutil.ReadFile(cm.path(skFile))
-		if err != nil {
-			return nil, err
+		var bytes []byte
+		if bytes, err = ioutil.ReadFile(cm.path(skFile)); err == nil {
+			return new(big.Int).SetBytes(bytes), nil
 		}
-		return new(big.Int).SetBytes(bytes), nil
+		return nil, err
 	}
 
 	sk, err := cm.generateSecretKey()

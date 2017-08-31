@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -79,9 +80,8 @@ type SessionInfo struct {
 func (e *Error) Error() string {
 	if e.error != nil {
 		return fmt.Sprintf("%s: %s", string(e.ErrorCode), e.error.Error())
-	} else {
-		return string(e.ErrorCode)
 	}
+	return string(e.ErrorCode)
 }
 
 /*
@@ -115,9 +115,21 @@ func (si *SessionInfo) UnmarshalJSON(b []byte) error {
 	si.Context = temp.Context
 	si.Keys = make(map[irmago.IssuerIdentifier]int, len(temp.Keys))
 	for _, item := range temp.Keys {
-		idmap := item[0].(map[string]interface{})
-		id := irmago.NewIssuerIdentifier(idmap["identifier"].(string))
-		si.Keys[id] = int(item[1].(float64))
+		var idmap map[string]interface{}
+		var idstr string
+		var counter float64
+		var ok bool
+		if idmap, ok = item[0].(map[string]interface{}); !ok {
+			return errors.New("Failed to deserialize session info")
+		}
+		if idstr, ok = idmap["identifier"].(string); !ok {
+			return errors.New("Failed to deserialize session info")
+		}
+		if counter, ok = item[1].(float64); !ok {
+			return errors.New("Failed to deserialize session info")
+		}
+		id := irmago.NewIssuerIdentifier(idstr)
+		si.Keys[id] = int(counter)
 	}
 	return nil
 }

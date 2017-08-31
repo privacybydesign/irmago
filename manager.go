@@ -224,7 +224,7 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 			} else {
 				attrs := NewAttributeListFromInts(cred.Attributes[1:])
 				val := attrs.Attribute(attribute)
-				if val == "" {
+				if val == "" { // This won't handle empty attributes correctly
 					continue
 				}
 				if !disjunction.HasValues() || val == disjunction.Values[attribute] {
@@ -279,12 +279,12 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 	return grouped, nil
 }
 
-type sessionRequest interface {
+type Session interface {
 	GetNonce() *big.Int
 	GetContext() *big.Int
 }
 
-func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice, request sessionRequest) ([]gabi.ProofBuilder, error) {
+func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice) ([]gabi.ProofBuilder, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -301,12 +301,12 @@ func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice, request se
 	return builders, nil
 }
 
-func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request sessionRequest, issig bool) (gabi.ProofList, error) {
-	builders, err := cm.proofsBuilders(choice, request)
+func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, issig bool) (gabi.ProofList, error) {
+	builders, err := cm.proofsBuilders(choice)
 	if err != nil {
 		return nil, err
 	}
-	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, false), nil
+	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, issig), nil
 }
 
 func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
@@ -324,7 +324,7 @@ func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request 
 		proofBuilders = append(proofBuilders, credBuilder)
 	}
 
-	disclosures, err := cm.proofsBuilders(choice, request)
+	disclosures, err := cm.proofsBuilders(choice)
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +339,8 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 		return errors.New("Received unexpected amount of signatures")
 	}
 
+	// First collect all credentials in a slice, so that if one of them induces an error,
+	// we save none of them to fail the session cleanly
 	creds := []*gabi.Credential{}
 	for i, sig := range msg {
 		attrs, err := request.Credentials[i].AttributeList()
@@ -353,7 +355,7 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	}
 
 	for _, cred := range creds {
-		cm.addCredential(newCredential(cred))
+		cm.Add(newCredential(cred))
 	}
 
 	return nil

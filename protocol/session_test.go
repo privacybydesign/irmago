@@ -90,7 +90,7 @@ func (th TestHandler) AskSignaturePermission(request irmago.SignatureRequest, Se
 }
 
 func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	return NewServiceProviderJwt(name, irmago.DisclosureRequest{
+	return NewServiceProviderJwt(name, &irmago.DisclosureRequest{
 		Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
 			&irmago.AttributeDisjunction{
 				Label:      "foo",
@@ -101,7 +101,7 @@ func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{
 }
 
 func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	return NewSignatureServerJwt(name, irmago.SignatureRequest{
+	return NewSignatureServerJwt(name, &irmago.SignatureRequest{
 		Message:     "test",
 		MessageType: "STRING",
 		DisclosureRequest: irmago.DisclosureRequest{
@@ -119,7 +119,7 @@ func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} 
 	expiry := irmago.Timestamp(irmago.NewMetadataAttribute().Expiry())
 	credid1 := irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	credid2 := irmago.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
-	return NewIdentityProviderJwt(name, irmago.IssuanceRequest{
+	return NewIdentityProviderJwt(name, &irmago.IssuanceRequest{
 		Credentials: []*irmago.CredentialRequest{
 			&irmago.CredentialRequest{
 				Validity:   &expiry,
@@ -174,8 +174,8 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
 	parseStorage(t)
 	parseAndroidStorage(t)
 
-	//url = "http://localhost:8081/irma_api_server/api/v2/" + url
-	url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
+	url = "http://localhost:8081/irma_api_server/api/v2/" + url
+	//url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
 
 	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
 	require.NoError(t, err)

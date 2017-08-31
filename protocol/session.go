@@ -56,17 +56,24 @@ var supportedVersions = map[int][]int{
 
 func calcVersion(qr *Qr) (string, error) {
 	// Parse range supported by server
-	minmajor, err := strconv.Atoi(string(qr.ProtocolVersion[0]))
-	minminor, err := strconv.Atoi(string(qr.ProtocolVersion[2]))
-	maxmajor, err := strconv.Atoi(string(qr.ProtocolMaxVersion[0]))
-	maxminor, err := strconv.Atoi(string(qr.ProtocolMaxVersion[2]))
-	if err != nil {
+	var minmajor, minminor, maxmajor, maxminor int
+	var err error
+	if minmajor, err = strconv.Atoi(string(qr.ProtocolVersion[0])); err != nil {
+		return "", err
+	}
+	if minminor, err = strconv.Atoi(string(qr.ProtocolVersion[2])); err != nil {
+		return "", err
+	}
+	if maxmajor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[0])); err != nil {
+		return "", err
+	}
+	if maxminor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[2])); err != nil {
 		return "", err
 	}
 
 	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
 	keys := make([]int, 0, len(supportedVersions))
-	for k, _ := range supportedVersions {
+	for k := range supportedVersions {
 		keys = append(keys, k)
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(keys)))
@@ -141,9 +148,13 @@ func (session *Session) start() {
 	}
 
 	headerbytes, err := base64.RawStdEncoding.DecodeString(jwtparts[0])
+	if err != nil {
+		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
+		return
+	}
 	bodybytes, err := base64.RawStdEncoding.DecodeString(jwtparts[1])
 	if err != nil {
-		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT})
+		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
 		return
 	}
 
@@ -152,7 +163,7 @@ func (session *Session) start() {
 	}
 	err = json.Unmarshal([]byte(headerbytes), &header)
 	if err != nil {
-		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT})
+		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
 		return
 	}
 
@@ -179,7 +190,7 @@ func (session *Session) start() {
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
 	if err != nil {
-		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT})
+		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
 		return
 	}
 
@@ -203,11 +214,11 @@ func (session *Session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusConnected)
 	switch session.Action {
 	case ActionDisclosing:
-		session.Handler.AskVerificationPermission(session.spRequest.Request.Request, header.Server, callback)
+		session.Handler.AskVerificationPermission(*session.spRequest.Request.Request, header.Server, callback)
 	case ActionSigning:
-		session.Handler.AskSignaturePermission(session.ssRequest.Request.Request, header.Server, callback)
+		session.Handler.AskSignaturePermission(*session.ssRequest.Request.Request, header.Server, callback)
 	case ActionIssuing:
-		session.Handler.AskIssuancePermission(session.ipRequest.Request.Request, header.Server, callback)
+		session.Handler.AskIssuancePermission(*session.ipRequest.Request.Request, header.Server, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -224,11 +235,11 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 	var err error
 	switch session.Action {
 	case ActionSigning:
-		message, err = irmago.Manager.Proofs(choice, &session.ssRequest.Request.Request, true)
+		message, err = irmago.Manager.Proofs(choice, session.ssRequest.Request.Request, true)
 	case ActionDisclosing:
-		message, err = irmago.Manager.Proofs(choice, &session.spRequest.Request.Request, false)
+		message, err = irmago.Manager.Proofs(choice, session.spRequest.Request.Request, false)
 	case ActionIssuing:
-		message, err = irmago.Manager.IssueCommitments(choice, &session.ipRequest.Request.Request)
+		message, err = irmago.Manager.IssueCommitments(choice, session.ipRequest.Request.Request)
 	}
 	if err != nil {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, error: err})
@@ -243,7 +254,7 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 		err = session.transport.Post("proofs", &response, message)
 		if err != nil {
 			session.Handler.Failure(session.Action,
-				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error()})
+				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error(), error: err})
 			return
 		}
 		if response != "VALID" {
@@ -255,11 +266,11 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 		err = session.transport.Post("commitments", &response, message)
 		if err != nil {
 			session.Handler.Failure(session.Action,
-				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error()})
+				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error(), error: err})
 			return
 		}
 
-		err = irmago.Manager.ConstructCredentials(response, &session.ipRequest.Request.Request)
+		err = irmago.Manager.ConstructCredentials(response, session.ipRequest.Request.Request)
 		if err != nil {
 			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, error: err})
 			return

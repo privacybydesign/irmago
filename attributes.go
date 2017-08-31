@@ -3,11 +3,10 @@ package irmago
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"time"
-
-	"encoding/json"
 
 	"github.com/mhe/gabi"
 )

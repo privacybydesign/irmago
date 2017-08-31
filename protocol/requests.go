@@ -7,21 +7,21 @@ import (
 )
 
 type ServerJwt struct {
-	ServerName string            `json:"iss"`
-	IssuedAt   *irmago.Timestamp `json:"iat"`
-	Type       string            `json:"sub"`
+	Type       string           `json:"sub"`
+	ServerName string           `json:"iss"`
+	IssuedAt   irmago.Timestamp `json:"iat"`
 }
 
 type ServiceProviderRequest struct {
-	Request irmago.DisclosureRequest `json:"request"`
+	Request *irmago.DisclosureRequest `json:"request"`
 }
 
 type SignatureServerRequest struct {
-	Request irmago.SignatureRequest `json:"request"`
+	Request *irmago.SignatureRequest `json:"request"`
 }
 
 type IdentityProviderRequest struct {
-	Request irmago.IssuanceRequest `json:"request"`
+	Request *irmago.IssuanceRequest `json:"request"`
 }
 
 type ServiceProviderJwt struct {
@@ -39,36 +39,33 @@ type IdentityProviderJwt struct {
 	Request IdentityProviderRequest `json:"iprequest"`
 }
 
-func NewServiceProviderJwt(servername string, dr irmago.DisclosureRequest) *ServiceProviderJwt {
-	now := irmago.Timestamp(time.Now())
+func NewServiceProviderJwt(servername string, dr *irmago.DisclosureRequest) *ServiceProviderJwt {
 	return &ServiceProviderJwt{
 		ServerJwt: ServerJwt{
 			ServerName: servername,
-			IssuedAt:   &now,
+			IssuedAt:   irmago.Timestamp(time.Now()),
 			Type:       "verification_request",
 		},
 		Request: ServiceProviderRequest{Request: dr},
 	}
 }
 
-func NewSignatureServerJwt(servername string, sr irmago.SignatureRequest) *SignatureServerJwt {
-	now := irmago.Timestamp(time.Now())
+func NewSignatureServerJwt(servername string, sr *irmago.SignatureRequest) *SignatureServerJwt {
 	return &SignatureServerJwt{
 		ServerJwt: ServerJwt{
 			ServerName: servername,
-			IssuedAt:   &now,
+			IssuedAt:   irmago.Timestamp(time.Now()),
 			Type:       "signature_request",
 		},
 		Request: SignatureServerRequest{Request: sr},
 	}
 }
 
-func NewIdentityProviderJwt(servername string, ir irmago.IssuanceRequest) *IdentityProviderJwt {
-	now := irmago.Timestamp(time.Now())
+func NewIdentityProviderJwt(servername string, ir *irmago.IssuanceRequest) *IdentityProviderJwt {
 	return &IdentityProviderJwt{
 		ServerJwt: ServerJwt{
 			ServerName: servername,
-			IssuedAt:   &now,
+			IssuedAt:   irmago.Timestamp(time.Now()),
 			Type:       "issue_request",
 		},
 		Request: IdentityProviderRequest{Request: ir},
