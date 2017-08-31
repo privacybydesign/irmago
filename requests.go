@@ -3,15 +3,15 @@ package irmago
 import (
 	"crypto/sha256"
 	"encoding/asn1"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
 	"strconv"
 	"time"
-)
 
-// Timestamp is a time.Time that marshals to Unix timestamps.
-type Timestamp time.Time
+	"github.com/mhe/gabi"
+)
 
 type SessionRequest struct {
 	Context *big.Int `json:"nonce"`
@@ -31,15 +31,67 @@ type SignatureRequest struct {
 
 type IssuanceRequest struct {
 	SessionRequest
-	Credentials []CredentialRequest      `json:"credentials"`
+	Credentials []*CredentialRequest     `json:"credentials"`
 	Disclose    AttributeDisjunctionList `json:"disclose"`
+
+	state *issuanceState
 }
 
 type CredentialRequest struct {
-	Validity   *Timestamp
-	KeyCounter int
-	Credential CredentialTypeIdentifier
-	Attributes map[string]string
+	Validity   *Timestamp                `json:"validity"`
+	KeyCounter int                       `json:"keyCounter"`
+	Credential *CredentialTypeIdentifier `json:"credential"`
+	Attributes map[string]string         `json:"attributes"`
+}
+
+// Timestamp is a time.Time that marshals to Unix timestamps.
+type Timestamp time.Time
+
+type issuanceState struct {
+	nonce2   *big.Int
+	builders []*gabi.CredentialBuilder
+}
+
+func (cr *CredentialRequest) AttributeList() (*AttributeList, error) {
+	meta := NewMetadataAttribute()
+	meta.setKeyCounter(cr.KeyCounter)
+	meta.setCredentialTypeIdentifier(cr.Credential.String())
+	meta.setSigningDate()
+	err := meta.setExpiryDate(cr.Validity)
+	if err != nil {
+		return nil, err
+	}
+
+	attrs := make([]*big.Int, len(cr.Attributes)+1, len(cr.Attributes)+1)
+	credtype := MetaStore.Credentials[*cr.Credential]
+	if credtype == nil {
+		return nil, errors.New("Unknown credential type")
+	}
+	if len(credtype.Attributes) != len(cr.Attributes) {
+		return nil, errors.New("Received unexpected amount of attributes")
+	}
+
+	attrs[0] = meta.Int
+	for i, attrtype := range credtype.Attributes {
+		if str, present := cr.Attributes[attrtype.ID]; present {
+			attrs[i+1] = new(big.Int).SetBytes([]byte(str))
+		} else {
+			return nil, errors.New("Unknown attribute")
+		}
+	}
+
+	return NewAttributeListFromInts(attrs), nil
+}
+
+func newIssuanceState(request *IssuanceRequest) (*issuanceState, error) {
+	nonce2, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
+	if err != nil {
+		return nil, err
+	}
+	return &issuanceState{
+		nonce2:   nonce2,
+		builders: []*gabi.CredentialBuilder{},
+	}, nil
 }
 
 func (ir *IssuanceRequest) GetContext() *big.Int {

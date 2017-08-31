@@ -1,8 +1,8 @@
 package protocol
 
 import (
+	"encoding/json"
 	"fmt"
-
 	"math/big"
 
 	"github.com/credentials/irmago"
@@ -82,4 +82,42 @@ func (e *Error) Error() string {
 	} else {
 		return string(e.ErrorCode)
 	}
+}
+
+/*
+So apparently, in the old Java implementation we forgot to write a (de)serialization for the Java
+equivalent of the type IssuerIdentifier. This means a Java IssuerIdentifier does not serialize to
+a string, but to e.g. `{"identifier":"irma-demo.RU"}`.
+This is a complex data type, so not suitable to act as keys in a JSON map. Consequentially,
+Gson serializes the `json:"keys"` field not as a map, but as a list consisting of pairs where
+the first item of the pair is a serialized IssuerIdentifier as above, and the second item
+of the pair is the corresponding key counter from the original map.
+This is a bit of a mess to have to deserialize. See below. In a future version of the protocol,
+this will have to be fixed both in the Java world and here in Go.
+*/
+
+type jsonSessionInfo struct {
+	Jwt     string          `json:"jwt"`
+	Nonce   *big.Int        `json:"nonce"`
+	Context *big.Int        `json:"context"`
+	Keys    [][]interface{} `json:"keys"`
+}
+
+func (si *SessionInfo) UnmarshalJSON(b []byte) error {
+	temp := &jsonSessionInfo{}
+	err := json.Unmarshal(b, temp)
+	if err != nil {
+		return err
+	}
+
+	si.Jwt = temp.Jwt
+	si.Nonce = temp.Nonce
+	si.Context = temp.Context
+	si.Keys = make(map[irmago.IssuerIdentifier]int, len(temp.Keys))
+	for _, item := range temp.Keys {
+		idmap := item[0].(map[string]interface{})
+		id := irmago.NewIssuerIdentifier(idmap["identifier"].(string))
+		si.Keys[id] = int(item[1].(float64))
+	}
+	return nil
 }

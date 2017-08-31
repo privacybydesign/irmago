@@ -12,7 +12,7 @@ type SchemeManagerIdentifier struct {
 	metaObjectIdentifier
 }
 
-// IssuerIdentifier identifies an inssuer. For example "irma-demo.RU".
+// IssuerIdentifier identifies an issuer. For example "irma-demo.RU".
 type IssuerIdentifier struct {
 	metaObjectIdentifier
 }
@@ -114,7 +114,7 @@ func (id AttributeTypeIdentifier) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (id CredentialTypeIdentifier) UnmarshalJSON(b []byte) error {
+func (id *CredentialTypeIdentifier) UnmarshalJSON(b []byte) error {
 	var val string
 	err := json.Unmarshal(b, &val)
 	if err != nil {

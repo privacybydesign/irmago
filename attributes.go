@@ -163,6 +163,16 @@ func (attr *MetadataAttribute) setValidityDuration(weeks int) {
 	attr.setField(validityField, shortToByte(weeks))
 }
 
+func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
+	expiry := time.Time(*timestamp).Unix()
+	if expiry%ExpiryFactor != 0 {
+		return errors.New("Expiry date does not match an epoch boundary")
+	}
+	signing := attr.SigningDate().Unix()
+	attr.setValidityDuration(int((expiry - signing) / ExpiryFactor))
+	return nil
+}
+
 // CredentialType returns the credential type of the current instance
 // using the MetaStore.
 func (attr *MetadataAttribute) CredentialType() *CredentialType {

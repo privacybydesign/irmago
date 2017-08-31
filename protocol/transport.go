@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -65,6 +66,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 			if err != nil {
 				return &TransportError{Err: err.Error()}
 			}
+			fmt.Printf("POST: %s\n", string(marshaled))
 			reader = bytes.NewBuffer(marshaled)
 		}
 	}
@@ -98,9 +100,11 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		if apierr.ErrorName == "" { // Not an ApiErrorMessage
 			return &TransportError{Status: res.StatusCode}
 		}
+		fmt.Printf("ERROR: %+v\n", apierr)
 		return &TransportError{Err: apierr.ErrorName, Status: res.StatusCode, ApiErr: apierr}
 	}
 
+	fmt.Printf("RESPONSE: %s\n", string(body))
 	err = json.Unmarshal(body, result)
 	if err != nil {
 		return &TransportError{Err: err.Error(), Status: res.StatusCode}

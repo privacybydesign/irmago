@@ -69,7 +69,7 @@ func NewIdentityProviderJwt(servername string, ir irmago.IssuanceRequest) *Ident
 		ServerJwt: ServerJwt{
 			ServerName: servername,
 			IssuedAt:   &now,
-			Type:       "signature_request",
+			Type:       "issue_request",
 		},
 		Request: IdentityProviderRequest{Request: ir},
 	}

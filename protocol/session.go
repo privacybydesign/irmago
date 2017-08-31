@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"errors"
 	"math/big"
 	"strconv"
 	"strings"
@@ -151,29 +150,37 @@ func (session *Session) start() {
 	var header struct {
 		Server string `json:"iss"`
 	}
-	json.Unmarshal([]byte(headerbytes), &header)
+	err = json.Unmarshal([]byte(headerbytes), &header)
+	if err != nil {
+		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT})
+		return
+	}
 
 	switch session.Action {
 	case ActionDisclosing:
 		session.spRequest = &ServiceProviderJwt{}
-		json.Unmarshal([]byte(bodybytes), session.spRequest)
+		err = json.Unmarshal([]byte(bodybytes), session.spRequest)
 		session.spRequest.Request.Request.Context = session.context
 		session.spRequest.Request.Request.Nonce = session.nonce
 		session.request = session.spRequest
 	case ActionSigning:
 		session.ssRequest = &SignatureServerJwt{}
-		json.Unmarshal([]byte(bodybytes), session.ssRequest)
+		err = json.Unmarshal([]byte(bodybytes), session.ssRequest)
 		session.ssRequest.Request.Request.Context = session.context
 		session.ssRequest.Request.Request.Nonce = session.nonce
 		session.request = session.ssRequest
 	case ActionIssuing:
 		session.ipRequest = &IdentityProviderJwt{}
-		json.Unmarshal([]byte(bodybytes), session.ipRequest)
+		err = json.Unmarshal([]byte(bodybytes), session.ipRequest)
 		session.ipRequest.Request.Request.Context = session.context
 		session.ipRequest.Request.Request.Nonce = session.nonce
 		session.request = session.ipRequest
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
+	}
+	if err != nil {
+		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT})
+		return
 	}
 
 	if session.Action == ActionIssuing {
@@ -213,26 +220,50 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 	}
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
-	var proofs gabi.ProofList
+	var message interface{}
 	var err error
 	switch session.Action {
 	case ActionSigning:
-		proofs, err = irmago.Manager.Proofs(choice, &session.ssRequest.Request.Request, true)
+		message, err = irmago.Manager.Proofs(choice, &session.ssRequest.Request.Request, true)
 	case ActionDisclosing:
-		proofs, err = irmago.Manager.Proofs(choice, &session.spRequest.Request.Request, false)
+		message, err = irmago.Manager.Proofs(choice, &session.spRequest.Request.Request, false)
 	case ActionIssuing:
-		err = errors.New("Issuing not yet implemented")
+		message, err = irmago.Manager.IssueCommitments(choice, &session.ipRequest.Request.Request)
 	}
 	if err != nil {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, error: err})
 		return
 	}
 
-	var response string
-	session.transport.Post("proofs", &response, proofs)
-	if response != "VALID" {
-		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorRejected, info: response})
-		return
+	switch session.Action {
+	case ActionSigning:
+		fallthrough
+	case ActionDisclosing:
+		response := ""
+		err = session.transport.Post("proofs", &response, message)
+		if err != nil {
+			session.Handler.Failure(session.Action,
+				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error()})
+			return
+		}
+		if response != "VALID" {
+			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorRejected, info: response})
+			return
+		}
+	case ActionIssuing:
+		response := []*gabi.IssueSignatureMessage{}
+		err = session.transport.Post("commitments", &response, message)
+		if err != nil {
+			session.Handler.Failure(session.Action,
+				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error()})
+			return
+		}
+
+		err = irmago.Manager.ConstructCredentials(response, &session.ipRequest.Request.Request)
+		if err != nil {
+			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, error: err})
+			return
+		}
 	}
 
 	session.Handler.Success(session.Action)

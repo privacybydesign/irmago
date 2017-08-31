@@ -20,7 +20,6 @@ type CredentialManager struct {
 	storagePath string
 	attributes  map[CredentialTypeIdentifier][]*AttributeList
 	credentials map[CredentialTypeIdentifier]map[int]*Credential
-	issuance    issuanceState
 }
 
 func newCredentialManager() *CredentialManager {
@@ -209,11 +208,11 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 	candidates := make([]*AttributeIdentifier, 0, 10)
 
 	for _, attribute := range disjunction.Attributes {
-		credId := attribute.CredentialTypeIdentifier()
-		if !MetaStore.Contains(credId) {
+		credID := attribute.CredentialTypeIdentifier()
+		if !MetaStore.Contains(credID) {
 			continue
 		}
-		creds := cm.credentials[credId]
+		creds := cm.credentials[credID]
 		count := len(creds)
 		if count == 0 {
 			continue
@@ -285,7 +284,7 @@ type sessionRequest interface {
 	GetContext() *big.Int
 }
 
-func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request sessionRequest, issig bool) (gabi.ProofList, error) {
+func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice, request sessionRequest) ([]gabi.ProofBuilder, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -299,22 +298,63 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request sessionReq
 		}
 		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(list))
 	}
-
-	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, issig), nil
+	return builders, nil
 }
 
-type issuanceState struct {
-	builders []*gabi.CredentialBuilder
-	nonce2   *big.Int
-}
-
-func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request sessionRequest) (*gabi.IssueCommitmentMessage, error) {
-	cm.issuance = issuanceState{[]*gabi.CredentialBuilder{}, nil}
-
-	_, err := cm.groupCredentials(choice)
+func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request sessionRequest, issig bool) (gabi.ProofList, error) {
+	builders, err := cm.proofsBuilders(choice, request)
 	if err != nil {
 		return nil, err
 	}
+	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, false), nil
+}
 
-	return nil, nil
+func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
+	state, err := newIssuanceState(request)
+	if err != nil {
+		return nil, err
+	}
+	request.state = state
+
+	proofBuilders := []gabi.ProofBuilder{}
+	for _, futurecred := range request.Credentials {
+		pk := MetaStore.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
+		credBuilder := gabi.NewCredentialBuilder(pk, request.GetContext(), cm.secretkey, state.nonce2)
+		request.state.builders = append(request.state.builders, credBuilder)
+		proofBuilders = append(proofBuilders, credBuilder)
+	}
+
+	disclosures, err := cm.proofsBuilders(choice, request)
+	if err != nil {
+		return nil, err
+	}
+	proofBuilders = append(disclosures, proofBuilders...)
+
+	list := gabi.BuildProofList(request.GetContext(), request.GetNonce(), proofBuilders, false)
+	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: state.nonce2}, nil
+}
+
+func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *IssuanceRequest) error {
+	if len(msg) != len(request.state.builders) {
+		return errors.New("Received unexpected amount of signatures")
+	}
+
+	creds := []*gabi.Credential{}
+	for i, sig := range msg {
+		attrs, err := request.Credentials[i].AttributeList()
+		if err != nil {
+			return err
+		}
+		cred, err := request.state.builders[i].ConstructCredential(sig, attrs.Ints)
+		if err != nil {
+			return err
+		}
+		creds = append(creds, cred)
+	}
+
+	for _, cred := range creds {
+		cm.addCredential(newCredential(cred))
+	}
+
+	return nil
 }

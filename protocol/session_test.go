@@ -65,8 +65,6 @@ func (th TestHandler) Failure(action Action, err *Error) {
 func (th TestHandler) UnsatisfiableRequest(action Action, missing irmago.AttributeDisjunctionList) {
 	th.c <- &Error{}
 }
-func (th TestHandler) AskIssuancePermission(request irmago.IssuanceRequest, ServerName string, choice PermissionHandler) {
-}
 func (th TestHandler) AskVerificationPermission(request irmago.DisclosureRequest, ServerName string, callback PermissionHandler) {
 	choice := &irmago.DisclosureChoice{
 		Attributes: []*irmago.AttributeIdentifier{},
@@ -80,8 +78,15 @@ func (th TestHandler) AskVerificationPermission(request irmago.DisclosureRequest
 	}
 	callback(true, choice)
 }
-func (th TestHandler) AskSignaturePermission(request irmago.SignatureRequest, ServerName string, choice PermissionHandler) {
-	th.AskVerificationPermission(request.DisclosureRequest, ServerName, choice)
+func (th TestHandler) AskIssuancePermission(request irmago.IssuanceRequest, ServerName string, callback PermissionHandler) {
+	dreq := irmago.DisclosureRequest{
+		SessionRequest: request.SessionRequest,
+		Content:        request.Disclose,
+	}
+	th.AskVerificationPermission(dreq, ServerName, callback)
+}
+func (th TestHandler) AskSignaturePermission(request irmago.SignatureRequest, ServerName string, callback PermissionHandler) {
+	th.AskVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
 
 func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
@@ -110,6 +115,36 @@ func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
 	})
 }
 
+func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
+	expiry := irmago.Timestamp(irmago.NewMetadataAttribute().Expiry())
+	credid1 := irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	credid2 := irmago.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	return NewIdentityProviderJwt(name, irmago.IssuanceRequest{
+		Credentials: []*irmago.CredentialRequest{
+			&irmago.CredentialRequest{
+				Validity:   &expiry,
+				Credential: &credid1,
+				Attributes: map[string]string{
+					"university":        "Radboud",
+					"studentCardNumber": "3.1415926535897932384626433832795028841971694",
+					"studentID":         "s1234567",
+					"level":             "42",
+				},
+			},
+			&irmago.CredentialRequest{
+				Validity:   &expiry,
+				Credential: &credid2,
+				Attributes: map[string]string{
+					"BSN": "299792458",
+				},
+			},
+		},
+		Disclose: irmago.AttributeDisjunctionList{
+			&irmago.AttributeDisjunction{Label: "foo", Attributes: []irmago.AttributeTypeIdentifier{id}},
+		},
+	})
+}
+
 func TestSigningSession(t *testing.T) {
 	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testsigclient"
@@ -124,6 +159,14 @@ func TestDisclosureSession(t *testing.T) {
 
 	jwtcontents := getDisclosureJwt(name, id)
 	sessionHelper(t, jwtcontents, "verification")
+}
+
+func TestIssuanceSession(t *testing.T) {
+	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	name := "testip"
+
+	jwtcontents := getIssuanceJwt(name, id)
+	sessionHelper(t, jwtcontents, "issue")
 }
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
