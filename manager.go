@@ -322,7 +322,7 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, i
 // IssueCommitments computes issuance commitments, along with disclosure proofs
 // specified by choice.
 func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
-	state, err := newIssuanceState(request)
+	state, err := newIssuanceState()
 	if err != nil {
 		return nil, err
 	}

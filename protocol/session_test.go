@@ -91,12 +91,10 @@ func (th TestHandler) AskSignaturePermission(request irmago.SignatureRequest, Se
 
 func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
 	return NewServiceProviderJwt(name, &irmago.DisclosureRequest{
-		Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
-			&irmago.AttributeDisjunction{
-				Label:      "foo",
-				Attributes: []irmago.AttributeTypeIdentifier{id},
-			},
-		}),
+		Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{{
+			Label:      "foo",
+			Attributes: []irmago.AttributeTypeIdentifier{id},
+		}}),
 	})
 }
 
@@ -105,12 +103,10 @@ func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
 		Message:     "test",
 		MessageType: "STRING",
 		DisclosureRequest: irmago.DisclosureRequest{
-			Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{
-				&irmago.AttributeDisjunction{
-					Label:      "foo",
-					Attributes: []irmago.AttributeTypeIdentifier{id},
-				},
-			}),
+			Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{{
+				Label:      "foo",
+				Attributes: []irmago.AttributeTypeIdentifier{id},
+			}}),
 		},
 	})
 }
@@ -121,7 +117,7 @@ func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} 
 	credid2 := irmago.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 	return NewIdentityProviderJwt(name, &irmago.IssuanceRequest{
 		Credentials: []*irmago.CredentialRequest{
-			&irmago.CredentialRequest{
+			{
 				Validity:   &expiry,
 				Credential: &credid1,
 				Attributes: map[string]string{
@@ -130,8 +126,7 @@ func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} 
 					"studentID":         "s1234567",
 					"level":             "42",
 				},
-			},
-			&irmago.CredentialRequest{
+			}, {
 				Validity:   &expiry,
 				Credential: &credid2,
 				Attributes: map[string]string{

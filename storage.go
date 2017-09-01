@@ -130,12 +130,12 @@ func (cm *CredentialManager) storeAttributes() (err error) {
 }
 
 func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter int) (signature *gabi.CLSignature, err error) {
-	path := cm.signatureFilename(id.String(), counter)
-	exists, err := PathExists(path)
+	sigpath := cm.signatureFilename(id.String(), counter)
+	exists, err := PathExists(sigpath)
 	if err != nil || !exists {
 		return
 	}
-	bytes, err := ioutil.ReadFile(path)
+	bytes, err := ioutil.ReadFile(sigpath)
 	if err != nil {
 		return
 	}

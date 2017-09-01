@@ -91,7 +91,7 @@ func (cr *CredentialRequest) AttributeList() (*AttributeList, error) {
 	return NewAttributeListFromInts(attrs), nil
 }
 
-func newIssuanceState(request *IssuanceRequest) (*issuanceState, error) {
+func newIssuanceState() (*issuanceState, error) {
 	nonce2, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
 	if err != nil {
 		return nil, err

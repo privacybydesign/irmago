@@ -33,7 +33,6 @@ type Error struct {
 const (
 	StatusConnected     = Status("connected")
 	StatusCommunicating = Status("communicating")
-	StatusDone          = Status("done")
 )
 
 // Actions
@@ -48,8 +47,6 @@ const (
 const (
 	// Protocol version not supported
 	ErrorProtocolVersionNotSupported = ErrorCode("versionNotSupported")
-	// Server URL invalid
-	ErrorInvalidURL = ErrorCode("invalidUrl")
 	// Error in HTTP communication
 	ErrorTransport = ErrorCode("httpError")
 	// Invalid client JWT in first IRMA message
