@@ -58,7 +58,7 @@ func parseAndroidStorage(t *testing.T) {
 }
 
 func verifyStoreIsUnmarshaled(t *testing.T) {
-	cred, err := Manager.Credential(NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
+	cred, err := Manager.credential(NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	assert.NoError(t, err, "could not fetch credential")
 	assert.NotNil(t, cred, "Credential should exist")
 	assert.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")

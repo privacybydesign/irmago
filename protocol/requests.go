@@ -16,7 +16,7 @@ type ServiceProviderRequest struct {
 	Request *irmago.DisclosureRequest `json:"request"`
 }
 
-type SignatureServerRequest struct {
+type SignatureRequestorRequest struct {
 	Request *irmago.SignatureRequest `json:"request"`
 }
 
@@ -29,9 +29,9 @@ type ServiceProviderJwt struct {
 	Request ServiceProviderRequest `json:"sprequest"`
 }
 
-type SignatureServerJwt struct {
+type SignatureRequestorJwt struct {
 	ServerJwt
-	Request SignatureServerRequest `json:"absrequest"`
+	Request SignatureRequestorRequest `json:"absrequest"`
 }
 
 type IdentityProviderJwt struct {
@@ -50,14 +50,14 @@ func NewServiceProviderJwt(servername string, dr *irmago.DisclosureRequest) *Ser
 	}
 }
 
-func NewSignatureServerJwt(servername string, sr *irmago.SignatureRequest) *SignatureServerJwt {
-	return &SignatureServerJwt{
+func NewSignatureRequestorJwt(servername string, sr *irmago.SignatureRequest) *SignatureRequestorJwt {
+	return &SignatureRequestorJwt{
 		ServerJwt: ServerJwt{
 			ServerName: servername,
 			IssuedAt:   irmago.Timestamp(time.Now()),
 			Type:       "signature_request",
 		},
-		Request: SignatureServerRequest{Request: sr},
+		Request: SignatureRequestorRequest{Request: sr},
 	}
 }
 
@@ -72,14 +72,10 @@ func NewIdentityProviderJwt(servername string, ir *irmago.IssuanceRequest) *Iden
 	}
 }
 
-func (spr *ServiceProviderJwt) DisjunctionList() irmago.AttributeDisjunctionList {
-	return spr.Request.Request.Content
+type RequestorJwt interface {
+	IrmaSession() irmago.Session
 }
 
-func (ssr *SignatureServerJwt) DisjunctionList() irmago.AttributeDisjunctionList {
-	return ssr.Request.Request.Content
-}
-
-func (ipr *IdentityProviderJwt) DisjunctionList() irmago.AttributeDisjunctionList {
-	return ipr.Request.Request.Disclose
-}
+func (jwt *ServiceProviderJwt) IrmaSession() irmago.Session    { return jwt.Request.Request }
+func (jwt *SignatureRequestorJwt) IrmaSession() irmago.Session { return jwt.Request.Request }
+func (jwt *IdentityProviderJwt) IrmaSession() irmago.Session   { return jwt.Request.Request }

@@ -95,7 +95,7 @@ func (cm *CredentialManager) saveFile(filepath string, content []byte) (err erro
 	return os.Rename(dir+"/"+tempfilename, filepath)
 }
 
-func (cm *CredentialManager) storeSignature(cred *Credential, counter int) (err error) {
+func (cm *CredentialManager) storeSignature(cred *credential, counter int) (err error) {
 	if cred.CredentialType() == nil {
 		return errors.New("cannot add unknown credential type")
 	}

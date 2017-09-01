@@ -94,26 +94,20 @@ func newIssuanceState(request *IssuanceRequest) (*issuanceState, error) {
 	}, nil
 }
 
-func (ir *IssuanceRequest) GetContext() *big.Int {
-	return ir.Context
-}
-
-func (ir *IssuanceRequest) GetNonce() *big.Int {
-	return ir.Nonce
-}
-
-func (dr *DisclosureRequest) GetContext() *big.Int {
-	return dr.Context
-}
-
-func (dr *DisclosureRequest) GetNonce() *big.Int {
-	return dr.Nonce
-}
-
-func (sr *SignatureRequest) GetContext() *big.Int {
-	return sr.Context
-}
-
+func (ir *IssuanceRequest) DisjunctionList() AttributeDisjunctionList   { return ir.Disclose }
+func (ir *IssuanceRequest) GetContext() *big.Int                        { return ir.Context }
+func (ir *IssuanceRequest) SetContext(context *big.Int)                 { ir.Context = context }
+func (ir *IssuanceRequest) GetNonce() *big.Int                          { return ir.Nonce }
+func (ir *IssuanceRequest) SetNonce(nonce *big.Int)                     { ir.Nonce = nonce }
+func (dr *DisclosureRequest) DisjunctionList() AttributeDisjunctionList { return dr.Content }
+func (dr *DisclosureRequest) GetContext() *big.Int                      { return dr.Context }
+func (dr *DisclosureRequest) SetContext(context *big.Int)               { dr.Context = context }
+func (dr *DisclosureRequest) GetNonce() *big.Int                        { return dr.Nonce }
+func (dr *DisclosureRequest) SetNonce(nonce *big.Int)                   { dr.Nonce = nonce }
+func (sr *SignatureRequest) DisjunctionList() AttributeDisjunctionList  { return sr.Content }
+func (sr *SignatureRequest) GetContext() *big.Int                       { return sr.Context }
+func (sr *SessionRequest) SetContext(context *big.Int)                  { sr.Context = context }
+func (sr *SessionRequest) SetNonce(nonce *big.Int)                      { sr.Nonce = nonce }
 func (sr *SignatureRequest) GetNonce() *big.Int {
 	hashbytes := sha256.Sum256([]byte(sr.Message))
 	hashint := new(big.Int).SetBytes(hashbytes[:])

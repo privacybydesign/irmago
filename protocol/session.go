@@ -1,17 +1,13 @@
 package protocol
 
 import (
-	"math/big"
+	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
-	"sort"
-
-	"fmt"
-
-	"encoding/json"
-
 	"encoding/base64"
+	"encoding/json"
 
 	"github.com/credentials/irmago"
 	"github.com/mhe/gabi"
@@ -27,31 +23,26 @@ type Handler interface {
 	Failure(action Action, err *Error)
 	UnsatisfiableRequest(action Action, missing irmago.AttributeDisjunctionList)
 
-	AskIssuancePermission(request irmago.IssuanceRequest, ServerName string, choice PermissionHandler)
-	AskVerificationPermission(request irmago.DisclosureRequest, ServerName string, choice PermissionHandler)
-	AskSignaturePermission(request irmago.SignatureRequest, ServerName string, choice PermissionHandler)
+	AskIssuancePermission(request irmago.IssuanceRequest, ServerName string, callback PermissionHandler)
+	AskVerificationPermission(request irmago.DisclosureRequest, ServerName string, callback PermissionHandler)
+	AskSignaturePermission(request irmago.SignatureRequest, ServerName string, callback PermissionHandler)
 }
 
-// A Session is an IRMA session.
-type Session struct {
+// A session is an IRMA session.
+type session struct {
 	Action    Action
 	Version   Version
 	ServerURL string
 	Handler   Handler
 
-	request   irmago.DisjunctionListContainer
-	spRequest *ServiceProviderJwt
-	ipRequest *IdentityProviderJwt
-	ssRequest *SignatureServerJwt
-
-	transport *HTTPTransport
-	nonce     *big.Int
-	context   *big.Int
+	jwt         RequestorJwt
+	irmaSession irmago.Session
+	transport   *HTTPTransport
 }
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
-	2: []int{2, 1},
+	2: {2, 1},
 }
 
 func calcVersion(qr *Qr) (string, error) {
@@ -90,14 +81,14 @@ func calcVersion(qr *Qr) (string, error) {
 }
 
 // NewSession creates and starts a new IRMA session.
-func NewSession(qr *Qr, handler Handler) *Session {
+func NewSession(qr *Qr, handler Handler) {
 	version, err := calcVersion(qr)
 	if err != nil {
 		handler.Failure(ActionUnknown, &Error{ErrorCode: ErrorProtocolVersionNotSupported, error: err})
-		return nil
+		return
 	}
 
-	session := &Session{
+	session := &session{
 		Version:   Version(version),
 		Action:    Action(qr.Type),
 		ServerURL: qr.URL,
@@ -114,7 +105,7 @@ func NewSession(qr *Qr, handler Handler) *Session {
 		fallthrough
 	default:
 		handler.Failure(ActionUnknown, &Error{ErrorCode: ErrorUnknownAction, error: nil, info: string(session.Action)})
-		return nil
+		return
 	}
 
 	if !strings.HasSuffix(session.ServerURL, "/") {
@@ -123,41 +114,31 @@ func NewSession(qr *Qr, handler Handler) *Session {
 
 	go session.start()
 
-	return session
+	return
 }
 
 // start retrieves the first message in the IRMA protocol, checks if we can perform
 // the request, and informs the user of the outcome.
-func (session *Session) start() {
+func (session *session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
-	// Get the first IRMA protocol message
+	// Get the first IRMA protocol message and parse it
 	info := &SessionInfo{}
 	err := session.transport.Get("jwt", info)
 	if err != nil {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr})
 		return
 	}
-
-	session.nonce = info.Nonce
-	session.context = info.Context
 	jwtparts := strings.Split(info.Jwt, ".")
 	if jwtparts == nil || len(jwtparts) < 2 {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT})
 		return
 	}
-
 	headerbytes, err := base64.RawStdEncoding.DecodeString(jwtparts[0])
 	if err != nil {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
 		return
 	}
-	bodybytes, err := base64.RawStdEncoding.DecodeString(jwtparts[1])
-	if err != nil {
-		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
-		return
-	}
-
 	var header struct {
 		Server string `json:"iss"`
 	}
@@ -167,25 +148,25 @@ func (session *Session) start() {
 		return
 	}
 
+	// Deserialize JWT, and set session state
+	bodybytes, err := base64.RawStdEncoding.DecodeString(jwtparts[1])
+	if err != nil {
+		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
+		return
+	}
 	switch session.Action {
 	case ActionDisclosing:
-		session.spRequest = &ServiceProviderJwt{}
-		err = json.Unmarshal([]byte(bodybytes), session.spRequest)
-		session.spRequest.Request.Request.Context = session.context
-		session.spRequest.Request.Request.Nonce = session.nonce
-		session.request = session.spRequest
+		jwt := &ServiceProviderJwt{}
+		err = json.Unmarshal([]byte(bodybytes), jwt)
+		session.jwt = jwt
 	case ActionSigning:
-		session.ssRequest = &SignatureServerJwt{}
-		err = json.Unmarshal([]byte(bodybytes), session.ssRequest)
-		session.ssRequest.Request.Request.Context = session.context
-		session.ssRequest.Request.Request.Nonce = session.nonce
-		session.request = session.ssRequest
+		jwt := &SignatureRequestorJwt{}
+		err = json.Unmarshal([]byte(bodybytes), jwt)
+		session.jwt = jwt
 	case ActionIssuing:
-		session.ipRequest = &IdentityProviderJwt{}
-		err = json.Unmarshal([]byte(bodybytes), session.ipRequest)
-		session.ipRequest.Request.Request.Context = session.context
-		session.ipRequest.Request.Request.Nonce = session.nonce
-		session.request = session.ipRequest
+		jwt := &IdentityProviderJwt{}
+		err = json.Unmarshal([]byte(bodybytes), jwt)
+		session.jwt = jwt
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -193,38 +174,40 @@ func (session *Session) start() {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, error: err})
 		return
 	}
-
+	session.irmaSession = session.jwt.IrmaSession()
+	session.irmaSession.SetContext(info.Context)
+	session.irmaSession.SetNonce(info.Nonce)
 	if session.Action == ActionIssuing {
 		// Store which public keys the server will use
-		for _, credreq := range session.ipRequest.Request.Request.Credentials {
+		for _, credreq := range session.irmaSession.(*irmago.IssuanceRequest).Credentials {
 			credreq.KeyCounter = info.Keys[credreq.Credential.IssuerIdentifier()]
 		}
 	}
 
-	missing := irmago.Manager.CheckSatisfiability(session.request)
+	missing := irmago.Manager.CheckSatisfiability(session.irmaSession.DisjunctionList())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, missing)
 		return
 	}
 
+	// Ask for permission to execute the session
 	callback := PermissionHandler(func(proceed bool, choice *irmago.DisclosureChoice) {
 		go session.do(proceed, choice)
 	})
-
 	session.Handler.StatusUpdate(session.Action, StatusConnected)
 	switch session.Action {
 	case ActionDisclosing:
-		session.Handler.AskVerificationPermission(*session.spRequest.Request.Request, header.Server, callback)
+		session.Handler.AskVerificationPermission(*session.irmaSession.(*irmago.DisclosureRequest), header.Server, callback)
 	case ActionSigning:
-		session.Handler.AskSignaturePermission(*session.ssRequest.Request.Request, header.Server, callback)
+		session.Handler.AskSignaturePermission(*session.irmaSession.(*irmago.SignatureRequest), header.Server, callback)
 	case ActionIssuing:
-		session.Handler.AskIssuancePermission(*session.ipRequest.Request.Request, header.Server, callback)
+		session.Handler.AskIssuancePermission(*session.irmaSession.(*irmago.IssuanceRequest), header.Server, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
 }
 
-func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
+func (session *session) do(proceed bool, choice *irmago.DisclosureChoice) {
 	if !proceed {
 		session.Handler.Cancelled(session.Action)
 		return
@@ -235,11 +218,11 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 	var err error
 	switch session.Action {
 	case ActionSigning:
-		message, err = irmago.Manager.Proofs(choice, session.ssRequest.Request.Request, true)
+		message, err = irmago.Manager.Proofs(choice, session.irmaSession, true)
 	case ActionDisclosing:
-		message, err = irmago.Manager.Proofs(choice, session.spRequest.Request.Request, false)
+		message, err = irmago.Manager.Proofs(choice, session.irmaSession, false)
 	case ActionIssuing:
-		message, err = irmago.Manager.IssueCommitments(choice, session.ipRequest.Request.Request)
+		message, err = irmago.Manager.IssueCommitments(choice, session.irmaSession.(*irmago.IssuanceRequest))
 	}
 	if err != nil {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, error: err})
@@ -270,7 +253,7 @@ func (session *Session) do(proceed bool, choice *irmago.DisclosureChoice) {
 			return
 		}
 
-		err = irmago.Manager.ConstructCredentials(response, session.ipRequest.Request.Request)
+		err = irmago.Manager.ConstructCredentials(response, session.irmaSession.(*irmago.IssuanceRequest))
 		if err != nil {
 			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, error: err})
 			return

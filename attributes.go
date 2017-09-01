@@ -22,15 +22,15 @@ const (
 var (
 	metadataVersion = []byte{0x02}
 
-	versionField     = MetadataField{1, 0}
-	signingDateField = MetadataField{3, 1}
-	validityField    = MetadataField{2, 4}
-	keyCounterField  = MetadataField{2, 6}
-	credentialID     = MetadataField{16, 8}
+	versionField     = metadataField{1, 0}
+	signingDateField = metadataField{3, 1}
+	validityField    = metadataField{2, 4}
+	keyCounterField  = metadataField{2, 6}
+	credentialID     = metadataField{16, 8}
 )
 
-// MetadataField contains the length and offset of a field within a metadata attribute.
-type MetadataField struct {
+// metadataField contains the length and offset of a field within a metadata attribute.
+type metadataField struct {
 	length int
 	offset int
 }
@@ -199,11 +199,11 @@ func (attr *MetadataAttribute) IsValid() bool {
 	return attr.IsValidOn(time.Now())
 }
 
-func (attr *MetadataAttribute) field(field MetadataField) []byte {
+func (attr *MetadataAttribute) field(field metadataField) []byte {
 	return attr.Bytes()[field.offset : field.offset+field.length]
 }
 
-func (attr *MetadataAttribute) setField(field MetadataField, value []byte) {
+func (attr *MetadataAttribute) setField(field metadataField, value []byte) {
 	if len(value) > field.length {
 		panic("Specified metadata field too large")
 	}
@@ -251,10 +251,6 @@ type AttributeDisjunction struct {
 
 // An AttributeDisjunctionList is a list of AttributeDisjunctions.
 type AttributeDisjunctionList []*AttributeDisjunction
-
-type DisjunctionListContainer interface {
-	DisjunctionList() AttributeDisjunctionList
-}
 
 // HasValues indicates if the attributes of this disjunction have values
 // that should be satisfied.

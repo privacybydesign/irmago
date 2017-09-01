@@ -101,7 +101,7 @@ func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{
 }
 
 func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	return NewSignatureServerJwt(name, &irmago.SignatureRequest{
+	return NewSignatureRequestorJwt(name, &irmago.SignatureRequest{
 		Message:     "test",
 		MessageType: "STRING",
 		DisclosureRequest: irmago.DisclosureRequest{

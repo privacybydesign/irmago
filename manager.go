@@ -19,12 +19,12 @@ type CredentialManager struct {
 	secretkey   *big.Int
 	storagePath string
 	attributes  map[CredentialTypeIdentifier][]*AttributeList
-	credentials map[CredentialTypeIdentifier]map[int]*Credential
+	credentials map[CredentialTypeIdentifier]map[int]*credential
 }
 
 func newCredentialManager() *CredentialManager {
 	return &CredentialManager{
-		credentials: make(map[CredentialTypeIdentifier]map[int]*Credential),
+		credentials: make(map[CredentialTypeIdentifier]map[int]*credential),
 	}
 }
 
@@ -60,10 +60,10 @@ func (cm *CredentialManager) attrs(id CredentialTypeIdentifier) []*AttributeList
 }
 
 // creds returns cm.credentials[id], initializing it to an empty map if neccesary
-func (cm *CredentialManager) creds(id CredentialTypeIdentifier) map[int]*Credential {
+func (cm *CredentialManager) creds(id CredentialTypeIdentifier) map[int]*credential {
 	list, exists := cm.credentials[id]
 	if !exists {
-		list = make(map[int]*Credential)
+		list = make(map[int]*credential)
 		cm.credentials[id] = list
 	}
 	return list
@@ -78,12 +78,12 @@ func (cm *CredentialManager) Attributes(id CredentialTypeIdentifier, counter int
 	return list[counter]
 }
 
-func (cm *CredentialManager) CredentialByID(id CredentialIdentifier) (cred *Credential, err error) {
-	return cm.Credential(id.Type, id.Index)
+func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (cred *credential, err error) {
+	return cm.credential(id.Type, id.Index)
 }
 
-// Credential returns the requested credential, or nil if we do not have it.
-func (cm *CredentialManager) Credential(id CredentialTypeIdentifier, counter int) (cred *Credential, err error) {
+// credential returns the requested credential, or nil if we do not have it.
+func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during Init(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
@@ -176,19 +176,19 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	return
 }
 
-func (cm *CredentialManager) addCredential(cred *Credential) {
+func (cm *CredentialManager) addCredential(cred *credential) {
 	id := cred.CredentialType().Identifier()
 	cm.attributes[id] = append(cm.attrs(id), NewAttributeListFromInts(cred.Attributes[1:]))
 
 	if _, exists := cm.credentials[id]; !exists {
-		cm.credentials[id] = make(map[int]*Credential)
+		cm.credentials[id] = make(map[int]*credential)
 	}
 	counter := len(cm.attributes[id]) - 1
 	cm.credentials[id][counter] = cred
 }
 
-// Add adds the specified credential to the CredentialManager.
-func (cm *CredentialManager) Add(cred *Credential) (err error) {
+// add adds the specified credential to the CredentialManager.
+func (cm *CredentialManager) add(cred *credential) (err error) {
 	if cred.CredentialType() == nil {
 		return errors.New("cannot add unknown credential type")
 	}
@@ -237,9 +237,9 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 	return candidates
 }
 
-func (cm *CredentialManager) CheckSatisfiability(disjunctions DisjunctionListContainer) AttributeDisjunctionList {
+func (cm *CredentialManager) CheckSatisfiability(disjunctions AttributeDisjunctionList) AttributeDisjunctionList {
 	missing := make(AttributeDisjunctionList, 0, 5)
-	for _, disjunction := range disjunctions.DisjunctionList() {
+	for _, disjunction := range disjunctions {
 		if len(cm.Candidates(disjunction)) == 0 {
 			missing = append(missing, disjunction)
 		}
@@ -271,7 +271,7 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 			return nil, err
 		}
 
-		// These indices will be used in the []*big.Int at gabi.Credential.Attributes,
+		// These indices will be used in the []*big.Int at gabi.credential.Attributes,
 		// which doesn't know about the secret key and metadata attribute, so +2
 		grouped[ici] = append(grouped[ici], index+2)
 	}
@@ -281,7 +281,10 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 
 type Session interface {
 	GetNonce() *big.Int
+	SetNonce(*big.Int)
 	GetContext() *big.Int
+	SetContext(*big.Int)
+	DisjunctionList() AttributeDisjunctionList
 }
 
 func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice) ([]gabi.ProofBuilder, error) {
@@ -292,7 +295,7 @@ func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice) ([]gabi.Pr
 
 	builders := []gabi.ProofBuilder{}
 	for id, list := range todisclose {
-		cred, err := cm.CredentialByID(id)
+		cred, err := cm.credentialByID(id)
 		if err != nil {
 			return nil, err
 		}
@@ -355,7 +358,7 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	}
 
 	for _, cred := range creds {
-		cm.Add(newCredential(cred))
+		cm.add(newCredential(cred))
 	}
 
 	return nil
