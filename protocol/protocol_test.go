@@ -47,5 +47,7 @@ func TestTransport(t *testing.T) {
 	}{}
 
 	err := transport.Get("614/info.0.json", obj)
-	require.NoError(t, err)
+	if err != nil { // require.NoError() does not work because of the type of err
+		t.Fatalf("%+v\n", err)
+	}
 }

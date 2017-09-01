@@ -192,7 +192,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
 	jwt := base64.RawStdEncoding.EncodeToString(headerbytes) + "." + base64.RawStdEncoding.EncodeToString(bodybytes) + "."
 	qr, transportErr := StartSession(jwt, url)
 	if transportErr != nil {
-		fmt.Println(transportErr.(*TransportError).ApiErr)
+		fmt.Printf("+%v\n", transportErr)
 	}
 	require.NoError(t, transportErr)
 	qr.URL = url + "/" + qr.URL

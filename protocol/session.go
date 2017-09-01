@@ -106,7 +106,7 @@ func NewSession(qr *Qr, handler Handler) {
 	case ActionUnknown:
 		fallthrough
 	default:
-		handler.Failure(ActionUnknown, &Error{ErrorCode: ErrorUnknownAction, error: nil, info: string(session.Action)})
+		handler.Failure(ActionUnknown, &Error{ErrorCode: ErrorUnknownAction, error: nil, Info: string(session.Action)})
 		return
 	}
 
@@ -126,9 +126,9 @@ func (session *session) start() {
 
 	// Get the first IRMA protocol message and parse it
 	info := &SessionInfo{}
-	err := session.transport.Get("jwt", info)
-	if err != nil {
-		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr})
+	Err := session.transport.Get("jwt", info)
+	if Err != nil {
+		session.Handler.Failure(session.Action, Err)
 		return
 	}
 	jwtparts := strings.Split(info.Jwt, ".")
@@ -231,33 +231,32 @@ func (session *session) do(proceed bool, choice *irmago.DisclosureChoice) {
 		return
 	}
 
+	var Err *Error
 	switch session.Action {
 	case ActionSigning:
 		fallthrough
 	case ActionDisclosing:
 		response := ""
-		err = session.transport.Post("proofs", &response, message)
-		if err != nil {
-			session.Handler.Failure(session.Action,
-				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error(), error: err})
+		Err = session.transport.Post("proofs", &response, message)
+		if Err != nil {
+			session.Handler.Failure(session.Action, Err)
 			return
 		}
 		if response != "VALID" {
-			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorRejected, info: response})
+			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorRejected, Info: response})
 			return
 		}
 	case ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
-		err = session.transport.Post("commitments", &response, message)
-		if err != nil {
-			session.Handler.Failure(session.Action,
-				&Error{ErrorCode: ErrorTransport, ApiError: err.(*TransportError).ApiErr, info: err.Error(), error: err})
+		Err = session.transport.Post("commitments", &response, message)
+		if Err != nil {
+			session.Handler.Failure(session.Action, Err)
 			return
 		}
 
 		err = irmago.Manager.ConstructCredentials(response, session.irmaSession.(*irmago.IssuanceRequest))
 		if err != nil {
-			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, error: err})
+			session.Handler.Failure(session.Action, &Error{error: err, ErrorCode: ErrorCrypto})
 			return
 		}
 	}
