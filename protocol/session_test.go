@@ -145,6 +145,18 @@ func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} 
 	})
 }
 
+// StartSession starts an IRMA session by posting the request,
+// and retrieving the QR contents from the specified url.
+func StartSession(request interface{}, url string) (*Qr, error) {
+	server := NewHTTPTransport(url)
+	var response Qr
+	err := server.Post("", &response, request)
+	if err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 func TestSigningSession(t *testing.T) {
 	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testsigclient"
