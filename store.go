@@ -186,6 +186,7 @@ func pathToDescription(path string, description interface{}) (bool, error) {
 	return true, nil
 }
 
+// Contains checks if the store contains the specified credential type.
 func (store *ConfigurationStore) Contains(cred CredentialTypeIdentifier) bool {
 	return store.SchemeManagers[cred.IssuerIdentifier().SchemeManagerIdentifier()] != nil &&
 		store.Issuers[cred.IssuerIdentifier()] != nil &&

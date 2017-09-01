@@ -23,6 +23,7 @@ const (
 	cardemuXML     = "../cardemu.xml"
 )
 
+// PathExists checks if the specified path exists.
 func PathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {

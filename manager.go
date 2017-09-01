@@ -204,6 +204,8 @@ func (cm *CredentialManager) add(cred *credential) (err error) {
 	return
 }
 
+// Candidates returns a list of attributes present in this credential manager
+// that satisfy the specified attribute disjunction.
 func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*AttributeIdentifier {
 	candidates := make([]*AttributeIdentifier, 0, 10)
 
@@ -237,6 +239,9 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 	return candidates
 }
 
+// CheckSatisfiability checks if this credential manager has the required attributes
+// to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
+// are returned.
 func (cm *CredentialManager) CheckSatisfiability(disjunctions AttributeDisjunctionList) AttributeDisjunctionList {
 	missing := make(AttributeDisjunctionList, 0, 5)
 	for _, disjunction := range disjunctions {
@@ -279,6 +284,7 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 	return grouped, nil
 }
 
+// Session is an IRMA session.
 type Session interface {
 	GetNonce() *big.Int
 	SetNonce(*big.Int)
@@ -304,6 +310,7 @@ func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice) ([]gabi.Pr
 	return builders, nil
 }
 
+// Proofs computes disclosure proofs containing the attributes specified by choice.
 func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, issig bool) (gabi.ProofList, error) {
 	builders, err := cm.proofsBuilders(choice)
 	if err != nil {
@@ -312,6 +319,8 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, i
 	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, issig), nil
 }
 
+// IssueCommitments computes issuance commitments, along with disclosure proofs
+// specified by choice.
 func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
 	state, err := newIssuanceState(request)
 	if err != nil {
@@ -337,6 +346,8 @@ func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request 
 	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: state.nonce2}, nil
 }
 
+// ConstructCredentials constructs and saves new credentials
+// using the specified issuance signature messages.
 func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *IssuanceRequest) error {
 	if len(msg) != len(request.state.builders) {
 		return errors.New("Received unexpected amount of signatures")

@@ -10,11 +10,13 @@ import (
 	"time"
 )
 
+// HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
 	Server string
 	client *http.Client
 }
 
+// ApiError is an error message returned by the API server on errors.
 type ApiError struct {
 	Status      int    `json:"status"`
 	ErrorName   string `json:"error"`
@@ -23,6 +25,7 @@ type ApiError struct {
 	Stacktrace  string `json:"stacktrace"`
 }
 
+// TransportError is an error occuring during HTTP traffic.
 type TransportError struct {
 	Err    string
 	Status int
@@ -33,6 +36,7 @@ func (te TransportError) Error() string {
 	return te.Err
 }
 
+// NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string) *HTTPTransport {
 	url := serverURL
 	if !strings.HasSuffix(url, "/") {
@@ -112,14 +116,17 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	return nil
 }
 
+// Post sends the object to the server and parses its response into result.
 func (transport *HTTPTransport) Post(url string, result interface{}, object interface{}) error {
 	return transport.request(url, http.MethodPost, result, object)
 }
 
+// Get performs a GET request and parses the server's response into result.
 func (transport *HTTPTransport) Get(url string, result interface{}) error {
 	return transport.request(url, http.MethodGet, result, nil)
 }
 
+// Delete performs a DELETE.
 func (transport *HTTPTransport) Delete(url string) {
 	// TODO
 }

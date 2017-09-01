@@ -78,6 +78,7 @@ func (al *AttributeList) Strings() []string {
 	return al.strings
 }
 
+// Attribute returns the content of the specified attribute, or "" if not present in this attribute list.
 func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) string {
 	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
 		return ""

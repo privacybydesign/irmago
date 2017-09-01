@@ -13,22 +13,27 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
 	Context *big.Int `json:"nonce"`
 	Nonce   *big.Int `json:"context"`
 }
 
+// A DisclosureRequest is a request to disclose certain attributes.
 type DisclosureRequest struct {
 	SessionRequest
 	Content AttributeDisjunctionList `json:"content"`
 }
 
+// A SignatureRequest is a a request to sign a message with certain attributes.
 type SignatureRequest struct {
 	DisclosureRequest
 	Message     string `json:"message"`
 	MessageType string `json:"messageType"`
 }
 
+// An IssuanceRequest is a request to issue certain credentials,
+// optionally also asking for certain attributes to be simultaneously disclosed.
 type IssuanceRequest struct {
 	SessionRequest
 	Credentials []*CredentialRequest     `json:"credentials"`
@@ -37,6 +42,8 @@ type IssuanceRequest struct {
 	state *issuanceState
 }
 
+// A CredentialRequest contains the attributes and metadata of a credential
+// that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
 	Validity   *Timestamp                `json:"validity"`
 	KeyCounter int                       `json:"keyCounter"`
@@ -52,6 +59,7 @@ type issuanceState struct {
 	builders []*gabi.CredentialBuilder
 }
 
+// AttributeList returns the list of attributes from this credential request.
 func (cr *CredentialRequest) AttributeList() (*AttributeList, error) {
 	meta := NewMetadataAttribute()
 	meta.setKeyCounter(cr.KeyCounter)
@@ -94,20 +102,50 @@ func newIssuanceState(request *IssuanceRequest) (*issuanceState, error) {
 	}, nil
 }
 
-func (ir *IssuanceRequest) DisjunctionList() AttributeDisjunctionList   { return ir.Disclose }
-func (ir *IssuanceRequest) GetContext() *big.Int                        { return ir.Context }
-func (ir *IssuanceRequest) SetContext(context *big.Int)                 { ir.Context = context }
-func (ir *IssuanceRequest) GetNonce() *big.Int                          { return ir.Nonce }
-func (ir *IssuanceRequest) SetNonce(nonce *big.Int)                     { ir.Nonce = nonce }
+// DisjunctionList returns the attributes that must be disclosed in this issuance session.
+func (ir *IssuanceRequest) DisjunctionList() AttributeDisjunctionList { return ir.Disclose }
+
+// GetContext returns the context of this session.
+func (ir *IssuanceRequest) GetContext() *big.Int { return ir.Context }
+
+// SetContext sets the context of this session.
+func (ir *IssuanceRequest) SetContext(context *big.Int) { ir.Context = context }
+
+// GetNonce returns the nonce of this session.
+func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
+
+// SetNonce sets the nonce of this session.
+func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
+
+// DisjunctionList returns the attributes to be disclosed in this session.
 func (dr *DisclosureRequest) DisjunctionList() AttributeDisjunctionList { return dr.Content }
-func (dr *DisclosureRequest) GetContext() *big.Int                      { return dr.Context }
-func (dr *DisclosureRequest) SetContext(context *big.Int)               { dr.Context = context }
-func (dr *DisclosureRequest) GetNonce() *big.Int                        { return dr.Nonce }
-func (dr *DisclosureRequest) SetNonce(nonce *big.Int)                   { dr.Nonce = nonce }
-func (sr *SignatureRequest) DisjunctionList() AttributeDisjunctionList  { return sr.Content }
-func (sr *SignatureRequest) GetContext() *big.Int                       { return sr.Context }
-func (sr *SessionRequest) SetContext(context *big.Int)                  { sr.Context = context }
-func (sr *SessionRequest) SetNonce(nonce *big.Int)                      { sr.Nonce = nonce }
+
+// GetContext returns the context of this session.
+func (dr *DisclosureRequest) GetContext() *big.Int { return dr.Context }
+
+// SetContext sets the context of this session.
+func (dr *DisclosureRequest) SetContext(context *big.Int) { dr.Context = context }
+
+// GetNonce returns the nonce of this session.
+func (dr *DisclosureRequest) GetNonce() *big.Int { return dr.Nonce }
+
+// SetNonce sets the nonce of this session.
+func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
+
+// DisjunctionList returns the attributes with which the message must be signed.
+func (sr *SignatureRequest) DisjunctionList() AttributeDisjunctionList { return sr.Content }
+
+// GetContext returns the context of this session.
+func (sr *SignatureRequest) GetContext() *big.Int { return sr.Context }
+
+// SetContext sets the context of this session.
+func (sr *SessionRequest) SetContext(context *big.Int) { sr.Context = context }
+
+// SetNonce sets the nonce of this session.
+func (sr *SessionRequest) SetNonce(nonce *big.Int) { sr.Nonce = nonce }
+
+// GetNonce returns the nonce of this signature session
+// (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
 	hashbytes := sha256.Sum256([]byte(sr.Message))
 	hashint := new(big.Int).SetBytes(hashbytes[:])

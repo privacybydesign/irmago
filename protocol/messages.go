@@ -21,6 +21,7 @@ type Version string
 // ErrorCode are session errors.
 type ErrorCode string
 
+// Error is a protocol error.
 type Error struct {
 	ErrorCode
 	error
@@ -103,6 +104,7 @@ type jsonSessionInfo struct {
 	Keys    [][]interface{} `json:"keys"`
 }
 
+// UnmarshalJSON unmarshals session information.
 func (si *SessionInfo) UnmarshalJSON(b []byte) error {
 	temp := &jsonSessionInfo{}
 	err := json.Unmarshal(b, temp)

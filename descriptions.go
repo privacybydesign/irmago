@@ -68,6 +68,8 @@ type AttributeDescription struct {
 	Description TranslatedString
 }
 
+// IndexOf returns the index of the specified attribute if present,
+// or an error (and -1) if not present.
 func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 	if ai.CredentialTypeIdentifier() != ct.Identifier() {
 		return -1, errors.New("Wrong credential type")
@@ -79,26 +81,6 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 	}
 	return -1, errors.New("Attribute identifier not found")
 }
-
-// TranslatedString represents an XML tag containing a string translated to multiple languages.
-// For example: <Foo id="bla"><Translation lang="en">Hello world</Translation><Translation lang="nl">Hallo wereld</Translation></Foo>
-// type TranslatedString struct {
-// 	Translations []struct {
-// 		Language string `xml:"lang,attr"`
-// 		Value    string `xml:",chardata"`
-// 	} `xml:"Translation"`
-// 	ID string `xml:"id,attr"`
-// }
-//
-// // Get returns the specified translation
-// func (ts TranslatedString) Get(lang string) string {
-// 	for _, l := range ts.Translations {
-// 		if l.Language == lang {
-// 			return l.Value
-// 		}
-// 	}
-// 	return ""
-// }
 
 // TranslatedString represents an XML tag containing a string translated to multiple languages.
 // For example: <Foo id="bla"><en>Hello world</en><nl>Hallo wereld</nl></Foo>

@@ -27,28 +27,33 @@ type AttributeTypeIdentifier struct {
 	metaObjectIdentifier
 }
 
+// CredentialIdentifier identifies a credential instance.
 type CredentialIdentifier struct {
 	Type  CredentialTypeIdentifier
 	Index int
 	Count int
 }
 
+// AttributeIdentifier identifies an attribute instance.
 type AttributeIdentifier struct {
 	Type  AttributeTypeIdentifier
 	Index int
 	Count int
 }
 
+// Parent returns the parent object of this identifier.
 func (oi metaObjectIdentifier) Parent() string {
 	str := string(oi)
 	return str[:strings.LastIndex(str, ".")]
 }
 
+// Name returns the last part of this identifier.
 func (oi metaObjectIdentifier) Name() string {
 	str := string(oi)
 	return str[strings.LastIndex(str, ".")+1:]
 }
 
+// String returns this identifier as a string.
 func (oi metaObjectIdentifier) String() string {
 	return string(oi)
 }
@@ -88,23 +93,29 @@ func (id AttributeTypeIdentifier) CredentialTypeIdentifier() CredentialTypeIdent
 	return NewCredentialTypeIdentifier(id.Parent())
 }
 
+// IsCredential returns true if this attribute refers to its containing credential
+// (i.e., it consists of only 3 parts).
 func (id AttributeTypeIdentifier) IsCredential() bool {
 	return strings.Count(id.String(), ".") == 2
 }
 
+// CredentialIdentifier returns the credential identifier of this attribute.
 func (ai *AttributeIdentifier) CredentialIdentifier() CredentialIdentifier {
 	return CredentialIdentifier{Type: ai.Type.CredentialTypeIdentifier(), Index: ai.Index, Count: ai.Count}
 }
 
+// MarshalJSON marshals this instance to JSON as a string.
 func (id AttributeTypeIdentifier) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id.String())
 }
 
+// MarshalJSON marshals this instance to JSON as a string.
 func (id CredentialTypeIdentifier) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id.String())
 }
 
-func (id AttributeTypeIdentifier) UnmarshalJSON(b []byte) error {
+// UnmarshalJSON unmarshals this instance from JSON.
+func (id *AttributeTypeIdentifier) UnmarshalJSON(b []byte) error {
 	var val string
 	err := json.Unmarshal(b, &val)
 	if err != nil {
@@ -114,6 +125,7 @@ func (id AttributeTypeIdentifier) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// UnmarshalJSON unmarshals this instance from JSON.
 func (id *CredentialTypeIdentifier) UnmarshalJSON(b []byte) error {
 	var val string
 	err := json.Unmarshal(b, &val)

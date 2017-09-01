@@ -13,6 +13,8 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// PermissionHandler is a callback for providing permission for an IRMA session
+// and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *irmago.DisclosureChoice)
 
 // A Handler contains callbacks for communication to the user.
