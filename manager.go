@@ -8,6 +8,9 @@ import (
 	"io/ioutil"
 	"math/big"
 
+	"crypto/rand"
+
+	"github.com/mcornejo/go-go-gadget-paillier"
 	"github.com/mhe/gabi"
 )
 
@@ -16,15 +19,19 @@ var Manager = newCredentialManager()
 
 // CredentialManager manages credentials.
 type CredentialManager struct {
-	secretkey   *big.Int
-	storagePath string
-	attributes  map[CredentialTypeIdentifier][]*AttributeList
-	credentials map[CredentialTypeIdentifier]map[int]*credential
+	secretkey       *big.Int
+	storagePath     string
+	attributes      map[CredentialTypeIdentifier][]*AttributeList
+	credentials     map[CredentialTypeIdentifier]map[int]*credential
+	keyshareServers map[SchemeManagerIdentifier]*keyshareServer
+
+	paillierKeyCache *paillierPrivateKey
 }
 
 func newCredentialManager() *CredentialManager {
 	return &CredentialManager{
-		credentials: make(map[CredentialTypeIdentifier]map[int]*credential),
+		credentials:     make(map[CredentialTypeIdentifier]map[int]*credential),
+		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
 	}
 }
 
@@ -45,8 +52,15 @@ func (cm *CredentialManager) Init(path string) (err error) {
 		return
 	}
 	cm.attributes, err = cm.loadAttributes()
+	if err != nil {
+		return
+	}
+	cm.keyshareServers, err = cm.loadKeyshareServers()
+	if err != nil {
+		return
+	}
+	cm.paillierKeyCache, err = cm.loadPaillierKeys()
 	return
-
 }
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
@@ -137,6 +151,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	xml.Unmarshal(bytes, &parsedxml)
 
 	parsedjson := make(map[string][]*gabi.Credential)
+	parsedksses := make(map[string]*keyshareServer)
 	for _, xmltag := range parsedxml.Strings {
 		if xmltag.Name == "credentials" {
 			jsontag := html.UnescapeString(xmltag.Content)
@@ -144,6 +159,25 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 				return
 			}
 		}
+		if xmltag.Name == "keyshare" {
+			jsontag := html.UnescapeString(xmltag.Content)
+			if err = json.Unmarshal([]byte(jsontag), &parsedksses); err != nil {
+				return
+			}
+		}
+		if xmltag.Name == "KeyshareKeypairs" {
+			jsontag := html.UnescapeString(xmltag.Content)
+			keys := make([]*paillierPrivateKey, 0, 3)
+			if err = json.Unmarshal([]byte(jsontag), &keys); err != nil {
+				return
+			}
+			cm.paillierKeyCache = keys[0]
+		}
+	}
+
+	for name, kss := range parsedksses {
+		kss.keyGenerator = cm
+		cm.keyshareServers[NewSchemeManagerIdentifier(name)] = kss
 	}
 
 	for _, list := range parsedjson {
@@ -171,6 +205,21 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 		if err != nil {
 			return err
 		}
+	}
+
+	if len(cm.keyshareServers) > 0 {
+		err = cm.storeKeyshareServers()
+		if err != nil {
+			return err
+		}
+	}
+
+	err = cm.storePaillierKeys()
+	if err != nil {
+		return err
+	}
+	if cm.paillierKeyCache == nil {
+		cm.paillierKey() // trigger calculating a new one
 	}
 
 	return
@@ -373,4 +422,15 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	}
 
 	return nil
+}
+
+// PaillierKey returns a new Paillier key (and generates a new one in a goroutine).
+func (cm *CredentialManager) paillierKey() *paillierPrivateKey {
+	retval := cm.paillierKeyCache
+	go func() {
+		newkey, _ := paillier.GenerateKey(rand.Reader, 2048)
+		converted := paillierPrivateKey(*newkey)
+		cm.paillierKeyCache = &converted
+	}()
+	return retval
 }

@@ -19,6 +19,8 @@ import (
 const (
 	skFile         = "sk"
 	attributesFile = "attrs"
+	kssFile        = "kss"
+	paillierFile   = "paillier"
 	signaturesDir  = "sigs"
 	cardemuXML     = "../cardemu.xml"
 )
@@ -129,6 +131,28 @@ func (cm *CredentialManager) storeAttributes() (err error) {
 	return
 }
 
+func (cm *CredentialManager) storeKeyshareServers() (err error) {
+	temp := make(map[string]*keyshareServer)
+	for name, kss := range cm.keyshareServers {
+		temp[name.String()] = kss
+	}
+	bts, err := json.Marshal(temp)
+	if err != nil {
+		return
+	}
+	err = ioutil.WriteFile(cm.path(kssFile), bts, 0600)
+	return
+}
+
+func (cm *CredentialManager) storePaillierKeys() (err error) {
+	bts, err := json.Marshal(cm.paillierKeyCache)
+	if err != nil {
+		return
+	}
+	err = ioutil.WriteFile(cm.path(paillierFile), bts, 0600)
+	return
+}
+
 func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter int) (signature *gabi.CLSignature, err error) {
 	sigpath := cm.signatureFilename(id.String(), counter)
 	exists, err := PathExists(sigpath)
@@ -192,4 +216,44 @@ func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier
 		list[NewCredentialTypeIdentifier(credid)] = attrs
 	}
 	return list, nil
+}
+
+func (cm *CredentialManager) loadKeyshareServers() (ksses map[SchemeManagerIdentifier]*keyshareServer, err error) {
+	ksses = make(map[SchemeManagerIdentifier]*keyshareServer)
+	temp := make(map[string]*keyshareServer)
+
+	exists, err := PathExists(cm.path(kssFile))
+	if err != nil || !exists {
+		return
+	}
+	bytes, err := ioutil.ReadFile(cm.path(kssFile))
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(bytes, &temp)
+	if err != nil {
+		return nil, err
+	}
+	for name, kss := range temp {
+		kss.keyGenerator = cm
+		ksses[NewSchemeManagerIdentifier(name)] = kss
+	}
+	return
+}
+
+func (cm *CredentialManager) loadPaillierKeys() (key *paillierPrivateKey, err error) {
+	exists, err := PathExists(cm.path(paillierFile))
+	if err != nil || !exists {
+		return
+	}
+	bytes, err := ioutil.ReadFile(cm.path(paillierFile))
+	if err != nil {
+		return nil, err
+	}
+	key = new(paillierPrivateKey)
+	err = json.Unmarshal(bytes, key)
+	if err != nil {
+		return nil, err
+	}
+	return
 }

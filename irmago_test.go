@@ -9,7 +9,6 @@ import (
 
 	"encoding/json"
 
-	"github.com/credentials/irmago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +30,7 @@ func parseMetaStore(t *testing.T) {
 }
 
 func parseStorage(t *testing.T) {
-	exists, err := PathExists("testdata/storage/path")
+	exists, err := PathExists("testdata/storage/test")
 	require.NoError(t, err, "pathexists() failed")
 	if !exists {
 		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
@@ -69,11 +68,41 @@ func verifyStoreIsUnmarshaled(t *testing.T) {
 	)
 }
 
+func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
+	require.NotNil(t, PrivateKey)
+	require.NotNil(t, PrivateKey.L)
+	require.NotNil(t, PrivateKey.U)
+	require.NotNil(t, PrivateKey.PublicKey.N)
+
+	require.Equal(t, big.NewInt(1), new(big.Int).Exp(big.NewInt(2), PrivateKey.L, PrivateKey.N))
+	require.Equal(t, PrivateKey.NSquared, new(big.Int).Exp(PrivateKey.N, big.NewInt(2), nil))
+
+	plaintext := "Hello Paillier!"
+	ciphertext, err := PrivateKey.Encrypt([]byte(plaintext))
+	require.NoError(t, err)
+	decrypted, err := PrivateKey.Decrypt(ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, plaintext, string(decrypted))
+}
+
+func verifyKeyshareIsUnmarshaled(t *testing.T) {
+	require.NotNil(t, Manager.paillierKeyCache)
+	require.NotNil(t, Manager.keyshareServers)
+	test := NewSchemeManagerIdentifier("test")
+	require.Contains(t, Manager.keyshareServers, test)
+	kss := Manager.keyshareServers[test]
+	require.NotEmpty(t, kss.Nonce)
+
+	verifyPaillierKey(t, kss.PrivateKey)
+	verifyPaillierKey(t, Manager.paillierKeyCache)
+}
+
 func TestAndroidParse(t *testing.T) {
 	parseMetaStore(t)
 	parseStorage(t)
 	parseAndroidStorage(t)
 	verifyStoreIsUnmarshaled(t)
+	verifyKeyshareIsUnmarshaled(t)
 
 	teardown(t)
 }
@@ -84,9 +113,11 @@ func TestUnmarshaling(t *testing.T) {
 	parseAndroidStorage(t)
 
 	Manager = newCredentialManager()
-	Manager.Init("testdata/storage/test")
+	err := Manager.Init("testdata/storage/test")
+	require.NoError(t, err)
 
 	verifyStoreIsUnmarshaled(t)
+	verifyKeyshareIsUnmarshaled(t)
 
 	teardown(t)
 }
@@ -238,12 +269,12 @@ func TestCandidates(t *testing.T) {
 }
 
 func TestTimestamp(t *testing.T) {
-	mytime := irmago.Timestamp(time.Unix(1500000000, 0))
-	timestruct := struct{ Time *irmago.Timestamp }{Time: &mytime}
+	mytime := Timestamp(time.Unix(1500000000, 0))
+	timestruct := struct{ Time *Timestamp }{Time: &mytime}
 	bytes, err := json.Marshal(timestruct)
 	require.NoError(t, err)
 
-	timestruct = struct{ Time *irmago.Timestamp }{}
+	timestruct = struct{ Time *Timestamp }{}
 	require.NoError(t, json.Unmarshal(bytes, &timestruct))
 	require.Equal(t, time.Time(*timestruct.Time).Unix(), int64(1500000000))
 }
