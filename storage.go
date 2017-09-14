@@ -2,7 +2,9 @@ package irmago
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"html"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -35,6 +37,124 @@ func PathExists(path string) (bool, error) {
 		return false, nil
 	}
 	return true, err
+}
+
+// Init deserializes the credentials from storage.
+func (cm *CredentialManager) Init(path string) (err error) {
+	cm.storagePath = path
+
+	err = cm.ensureStorageExists()
+	if err != nil {
+		return err
+	}
+	cm.secretkey, err = cm.loadSecretKey()
+	if err != nil {
+		return
+	}
+	cm.attributes, err = cm.loadAttributes()
+	if err != nil {
+		return
+	}
+	cm.keyshareServers, err = cm.loadKeyshareServers()
+	if err != nil {
+		return
+	}
+	cm.paillierKeyCache, err = cm.loadPaillierKeys()
+	return
+}
+
+// ParseAndroidStorage parses an Android cardemu.xml shared preferences file
+// from the old Android IRMA app, parsing its credentials into the current instance,
+// and saving them to storage.
+// CAREFUL: this method overwrites any existing secret keys and attributes on storage.
+func (cm *CredentialManager) ParseAndroidStorage() (err error) {
+	exists, err := PathExists(cm.path(cardemuXML))
+	if err != nil || !exists {
+		return
+	}
+
+	bytes, err := ioutil.ReadFile(cm.path(cardemuXML))
+	parsedxml := struct {
+		Strings []struct {
+			Name    string `xml:"name,attr"`
+			Content string `xml:",chardata"`
+		} `xml:"string"`
+	}{}
+	xml.Unmarshal(bytes, &parsedxml)
+
+	parsedjson := make(map[string][]*gabi.Credential)
+	parsedksses := make(map[string]*keyshareServer)
+	for _, xmltag := range parsedxml.Strings {
+		if xmltag.Name == "credentials" {
+			jsontag := html.UnescapeString(xmltag.Content)
+			if err = json.Unmarshal([]byte(jsontag), &parsedjson); err != nil {
+				return
+			}
+		}
+		if xmltag.Name == "keyshare" {
+			jsontag := html.UnescapeString(xmltag.Content)
+			if err = json.Unmarshal([]byte(jsontag), &parsedksses); err != nil {
+				return
+			}
+		}
+		if xmltag.Name == "KeyshareKeypairs" {
+			jsontag := html.UnescapeString(xmltag.Content)
+			keys := make([]*paillierPrivateKey, 0, 3)
+			if err = json.Unmarshal([]byte(jsontag), &keys); err != nil {
+				return
+			}
+			cm.paillierKeyCache = keys[0]
+		}
+	}
+
+	for name, kss := range parsedksses {
+		kss.keyGenerator = cm
+		cm.keyshareServers[NewSchemeManagerIdentifier(name)] = kss
+	}
+
+	for _, list := range parsedjson {
+		cm.secretkey = list[0].Attributes[0]
+		for i, gabicred := range list {
+			cred := newCredential(gabicred)
+			if cred.CredentialType() == nil {
+				return errors.New("cannot add unknown credential type")
+			}
+
+			cm.addCredential(cred)
+			err = cm.storeSignature(cred, i)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(cm.credentials) > 0 {
+		err = cm.storeAttributes()
+		if err != nil {
+			return err
+		}
+		err = cm.storeSecretKey(cm.secretkey)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(cm.keyshareServers) > 0 {
+		err = cm.storeKeyshareServers()
+		if err != nil {
+			return err
+		}
+	}
+
+	err = cm.storePaillierKeys()
+	if err != nil {
+		return err
+	}
+	if cm.paillierKeyCache == nil {
+		cm.paillierKey() // trigger calculating a new one
+	}
+
+	return
 }
 
 func (cm *CredentialManager) path(file string) string {
