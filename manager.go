@@ -312,3 +312,13 @@ func (cm *CredentialManager) paillierKey() *paillierPrivateKey {
 	}()
 	return retval
 }
+
+func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
+	list := []*SchemeManager{}
+	for name, manager := range MetaStore.SchemeManagers {
+		if _, contains := cm.keyshareServers[name]; len(manager.KeyshareServer) > 0 && !contains {
+			list = append(list, manager)
+		}
+	}
+	return list
+}
