@@ -39,7 +39,7 @@ func TestServiceProvider(t *testing.T) {
 }
 
 func TestTransport(t *testing.T) {
-	transport := NewHTTPTransport("https://xkcd.com")
+	transport := irmago.NewHTTPTransport("https://xkcd.com")
 	obj := &struct {
 		Num   int    `json:"num"`
 		Img   string `json:"img"`

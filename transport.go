@@ -1,8 +1,9 @@
-package protocol
+package irmago
 
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -16,6 +17,18 @@ type HTTPTransport struct {
 	client *http.Client
 }
 
+// ErrorCode are session errors.
+type ErrorCode string
+
+// Error is a protocol error.
+type Error struct {
+	Err error
+	ErrorCode
+	*ApiError
+	Info   string
+	Status int
+}
+
 // ApiError is an error message returned by the API server on errors.
 type ApiError struct {
 	Status      int    `json:"status"`
@@ -23,6 +36,31 @@ type ApiError struct {
 	Description string `json:"description"`
 	Message     string `json:"message"`
 	Stacktrace  string `json:"stacktrace"`
+}
+
+// Protocol errors
+const (
+	// Protocol version not supported
+	ErrorProtocolVersionNotSupported = ErrorCode("versionNotSupported")
+	// Error in HTTP communication
+	ErrorTransport = ErrorCode("httpError")
+	// Invalid client JWT in first IRMA message
+	ErrorInvalidJWT = ErrorCode("invalidJwt")
+	// Unkown session type (not disclosing, signing, or issuing)
+	ErrorUnknownAction = ErrorCode("unknownAction")
+	// Crypto error during calculation of our response (second IRMA message)
+	ErrorCrypto = ErrorCode("cryptoResponseError")
+	// Server rejected our response (second IRMA message)
+	ErrorRejected = ErrorCode("rejectedByServer")
+	// (De)serializing of a message failed
+	ErrorSerialization = ErrorCode("serializationError")
+)
+
+func (e *Error) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %s", string(e.ErrorCode), e.Err.Error())
+	}
+	return string(e.ErrorCode)
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
@@ -56,7 +94,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		} else {
 			marshaled, err := json.Marshal(object)
 			if err != nil {
-				return &Error{error: err, ErrorCode: ErrorSerialization}
+				return &Error{Err: err, ErrorCode: ErrorSerialization}
 				//return &TransportError{Err: err.Error()}
 			}
 			//fmt.Printf("POST: %s\n", string(marshaled))
@@ -66,7 +104,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	req, err := http.NewRequest(method, transport.Server+url, reader)
 	if err != nil {
-		return &Error{error: err, ErrorCode: ErrorTransport}
+		return &Error{Err: err, ErrorCode: ErrorTransport}
 	}
 
 	req.Header.Set("User-Agent", "irmago")
@@ -80,12 +118,12 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	res, err := transport.client.Do(req)
 	if err != nil {
-		return &Error{error: err, ErrorCode: ErrorTransport}
+		return &Error{Err: err, ErrorCode: ErrorTransport}
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return &Error{error: err, Status: res.StatusCode}
+		return &Error{Err: err, Status: res.StatusCode}
 	}
 	if res.StatusCode != 200 {
 		apierr := &ApiError{}
@@ -100,7 +138,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	//fmt.Printf("RESPONSE: %s\n", string(body))
 	err = json.Unmarshal(body, result)
 	if err != nil {
-		return &Error{error: err, Status: res.StatusCode}
+		return &Error{Err: err, Status: res.StatusCode}
 	}
 
 	return nil

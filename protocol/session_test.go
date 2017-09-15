@@ -49,7 +49,7 @@ func teardown(t *testing.T) {
 
 type TestHandler struct {
 	t *testing.T
-	c chan *Error
+	c chan *irmago.Error
 }
 
 func (th TestHandler) StatusUpdate(action Action, status Status) {}
@@ -57,13 +57,13 @@ func (th TestHandler) Success(action Action) {
 	th.c <- nil
 }
 func (th TestHandler) Cancelled(action Action) {
-	th.c <- &Error{}
+	th.c <- &irmago.Error{}
 }
-func (th TestHandler) Failure(action Action, err *Error) {
+func (th TestHandler) Failure(action Action, err *irmago.Error) {
 	th.c <- err
 }
 func (th TestHandler) UnsatisfiableRequest(action Action, missing irmago.AttributeDisjunctionList) {
-	th.c <- &Error{}
+	th.c <- &irmago.Error{}
 }
 func (th TestHandler) AskVerificationPermission(request irmago.DisclosureRequest, ServerName string, callback PermissionHandler) {
 	choice := &irmago.DisclosureChoice{
@@ -143,7 +143,7 @@ func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} 
 // StartSession starts an IRMA session by posting the request,
 // and retrieving the QR contents from the specified url.
 func StartSession(request interface{}, url string) (*Qr, error) {
-	server := NewHTTPTransport(url)
+	server := irmago.NewHTTPTransport(url)
 	var response Qr
 	err := server.Post("", &response, request)
 	if err != nil {
@@ -197,7 +197,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
 	require.NoError(t, transportErr)
 	qr.URL = url + "/" + qr.URL
 
-	c := make(chan *Error)
+	c := make(chan *irmago.Error)
 	NewSession(qr, TestHandler{t, c})
 
 	if err := <-c; err != nil {
