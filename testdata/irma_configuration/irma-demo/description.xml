@@ -1,0 +1,14 @@
+<SchemeManager version="7">
+	<Id>irma-demo</Id>
+	<Url>https://credentials.github.io/irma_configuration/irma-demo</Url>
+	<Name>
+		<en>Irma Demo</en>
+		<nl></nl>
+	</Name>
+	<Description>
+		<en>Demo credentials within the IRMA domain</en>
+		<nl></nl>
+	</Description>
+	<Contact>https://www.irmacard.org
+phone@demo.irmacard.org</Contact>
+</SchemeManager>

@@ -1,0 +1,64 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Student Card</en>
+		<nl></nl>
+	</Name>
+	<ShortName>
+		<en>Student Card</en>
+		<nl></nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>RU</IssuerID>
+	<CredentialID>studentCard</CredentialID>
+	<Description>
+		<en>Student Card issued by the Radboud University Nijmegen.</en>
+		<nl></nl>
+	</Description>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+
+
+	<Attributes>
+		<Attribute id="university">
+			<Name>
+				<en>university</en>
+				<nl></nl>
+			</Name>
+			<Description>
+				<en>The name of the university</en>
+				<nl></nl>
+			</Description>
+		</Attribute>
+		<Attribute id="studentCardNumber">
+			<Name>
+				<en>studentCardNumber</en>
+				<nl></nl>
+			</Name>
+			<Description>
+				<en>The unique number of your student card</en>
+				<nl></nl>
+			</Description>
+		</Attribute>
+		<Attribute id="studentID">
+			<Name>
+				<en>studentID</en>
+				<nl></nl>
+			</Name>
+			<Description>
+				<en>Your student number</en>
+				<nl></nl>
+			</Description>
+		</Attribute>
+		<Attribute id="level">
+			<Name>
+				<en>level</en>
+				<nl></nl>
+			</Name>
+			<Description>
+				<en>Whether you are a regular or PhD student</en>
+				<nl></nl>
+			</Description>
+		</Attribute>
+
+	</Attributes>
+</IssueSpecification>

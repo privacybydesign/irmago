@@ -1,0 +1,33 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Root</en>
+		<nl></nl>
+	</Name>
+	<ShortName>
+		<en>Root</en>
+		<nl></nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>MijnOverheid</IssuerID>
+	<CredentialID>root</CredentialID>
+	<Description>
+		<en>Root credential issued by MijnOverheid.nl.</en>
+		<nl></nl>
+	</Description>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+
+
+	<Attributes>
+		<Attribute id="BSN">
+			<Name>
+				<en>BSN</en>
+				<nl></nl>
+			</Name>
+			<Description>
+				<en>Your BSN-number</en>
+				<nl></nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>
