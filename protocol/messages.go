@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math/big"
 
 	"github.com/credentials/irmago"

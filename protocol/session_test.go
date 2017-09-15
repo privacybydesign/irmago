@@ -36,7 +36,7 @@ func parseStorage(t *testing.T) {
 	if !exists {
 		require.NoError(t, os.Mkdir("../testdata/storage/test", 0755), "Could not create test storage")
 	}
-	require.NoError(t, irmago.Manager.Init("../testdata/storage/test"), "Manager.Init() failed")
+	require.NoError(t, irmago.Manager.Init("../testdata/storage/test", &IgnoringKeyshareHandler{}), "Manager.Init() failed")
 }
 
 func parseAndroidStorage(t *testing.T) {
@@ -88,6 +88,10 @@ func (th TestHandler) AskIssuancePermission(request irmago.IssuanceRequest, Serv
 func (th TestHandler) AskSignaturePermission(request irmago.SignatureRequest, ServerName string, callback PermissionHandler) {
 	th.AskVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
+
+type IgnoringKeyshareHandler struct{}
+
+func (i *IgnoringKeyshareHandler) StartKeyshareRegistration(m *irmago.SchemeManager) {}
 
 func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
 	return NewServiceProviderJwt(name, &irmago.DisclosureRequest{

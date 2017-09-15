@@ -25,6 +25,10 @@ func TestMain(m *testing.M) {
 	os.Exit(retCode)
 }
 
+type IgnoringKeyshareHandler struct{}
+
+func (i *IgnoringKeyshareHandler) StartKeyshareRegistration(m *SchemeManager) {}
+
 func parseMetaStore(t *testing.T) {
 	require.NoError(t, MetaStore.ParseFolder("testdata/irma_configuration"), "MetaStore.ParseFolder() failed")
 }
@@ -35,8 +39,7 @@ func parseStorage(t *testing.T) {
 	if !exists {
 		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
 	}
-	require.NoError(t, Manager.Init("testdata/storage/test"), "Manager.Init() failed")
-
+	require.NoError(t, Manager.Init("testdata/storage/test", &IgnoringKeyshareHandler{}), "Manager.Init() failed")
 }
 
 func teardown(t *testing.T) {
@@ -113,7 +116,7 @@ func TestUnmarshaling(t *testing.T) {
 	parseAndroidStorage(t)
 
 	Manager = newCredentialManager()
-	err := Manager.Init("testdata/storage/test")
+	err := Manager.Init("testdata/storage/test", nil)
 	require.NoError(t, err)
 
 	verifyStoreIsUnmarshaled(t)

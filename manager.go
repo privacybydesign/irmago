@@ -322,3 +322,8 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 	}
 	return list
 }
+
+func (cm *CredentialManager) addKeyshareServer(manager *SchemeManager, kss *keyshareServer) error {
+	cm.keyshareServers[manager.Identifier()] = kss
+	return cm.storeKeyshareServers()
+}

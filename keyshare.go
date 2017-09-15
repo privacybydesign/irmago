@@ -4,27 +4,30 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-
-	"github.com/mcornejo/go-go-gadget-paillier"
 )
 
 type keyshareServer struct {
-	URL          string              `json:"url"`
-	Username     string              `json:"username"`
-	Nonce        []byte              `json:"nonce"`
-	PrivateKey   *paillierPrivateKey `json:"keyPair"`
-	keyGenerator paillierKeygen
+	URL        string              `json:"url"`
+	Username   string              `json:"username"`
+	Nonce      []byte              `json:"nonce"`
+	PrivateKey *paillierPrivateKey `json:"keyPair"`
 }
 
 type keyshareRegistration struct {
 	Username  string             `json:"username"`
 	Pin       string             `json:"pin"`
-	PublicKey paillier.PublicKey `json:"publicKey"`
+	PublicKey *paillierPublicKey `json:"publicKey"`
 }
 
-func newKeyshareServer(keygen paillierKeygen) (ks *keyshareServer, err error) {
+type KeyshareHandler interface {
+	StartKeyshareRegistration(manager *SchemeManager)
+}
+
+func newKeyshareServer(privatekey *paillierPrivateKey, url, email string) (ks *keyshareServer, err error) {
 	ks.Nonce = make([]byte, 0, 32)
-	ks.keyGenerator = keygen
+	ks.URL = url
+	ks.Username = email
+	ks.PrivateKey = privatekey
 	_, err = rand.Read(ks.Nonce)
 	return
 }
@@ -34,13 +37,23 @@ func (ks *keyshareServer) HashedPin(pin string) string {
 	return base64.RawStdEncoding.EncodeToString(hash[:])
 }
 
-func (ks *keyshareServer) GetKey() *paillierPrivateKey {
-	if ks.PrivateKey == nil {
-		ks.PrivateKey = ks.keyGenerator.paillierKey()
-	}
-	return ks.PrivateKey
-}
-
 func KeyshareEnroll(manager *SchemeManager, email, pin string) error {
-	//NewHTTPTransport(qr.URL)
+	transport := NewHTTPTransport(manager.KeyshareServer)
+	kss, err := newKeyshareServer(Manager.paillierKey(), manager.URL, email)
+	if err != nil {
+		return err
+	}
+	message := keyshareRegistration{
+		Username:  email,
+		Pin:       kss.HashedPin(pin),
+		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
+	}
+
+	// TODO: examine error returned by Post() to see if it tells us that the email address is already in use
+	result := &struct{}{}
+	err = transport.Post("/web/users/selfenroll", result, message)
+	if err != nil {
+		return err
+	}
+	return Manager.addKeyshareServer(manager, kss)
 }

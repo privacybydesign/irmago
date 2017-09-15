@@ -40,7 +40,7 @@ func PathExists(path string) (bool, error) {
 }
 
 // Init deserializes the credentials from storage.
-func (cm *CredentialManager) Init(path string) (err error) {
+func (cm *CredentialManager) Init(path string, pinProvider KeyshareHandler) (err error) {
 	cm.storagePath = path
 
 	err = cm.ensureStorageExists()
@@ -55,12 +55,30 @@ func (cm *CredentialManager) Init(path string) (err error) {
 	if err != nil {
 		return
 	}
+	cm.paillierKeyCache, err = cm.loadPaillierKeys()
+	if err != nil {
+		return
+	}
+
 	cm.keyshareServers, err = cm.loadKeyshareServers()
 	if err != nil {
 		return
 	}
-	cm.paillierKeyCache, err = cm.loadPaillierKeys()
-	return
+
+	unenrolled := cm.unenrolledKeyshareServers()
+	switch len(unenrolled) {
+	case 0:
+		return
+	case 1:
+		if pinProvider == nil {
+			return errors.New("Keyshare server found but no PinPovider was given")
+		}
+		pinProvider.StartKeyshareRegistration(unenrolled[0])
+	default:
+		return errors.New("Too many keyshare servers")
+	}
+
+	return nil
 }
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file
@@ -108,7 +126,6 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	}
 
 	for name, kss := range parsedksses {
-		kss.keyGenerator = cm
 		cm.keyshareServers[NewSchemeManagerIdentifier(name)] = kss
 	}
 
@@ -355,7 +372,6 @@ func (cm *CredentialManager) loadKeyshareServers() (ksses map[SchemeManagerIdent
 		return nil, err
 	}
 	for name, kss := range temp {
-		kss.keyGenerator = cm
 		ksses[NewSchemeManagerIdentifier(name)] = kss
 	}
 	return

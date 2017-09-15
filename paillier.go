@@ -11,10 +11,6 @@ import (
 type paillierPrivateKey paillier.PrivateKey
 type paillierPublicKey paillier.PublicKey
 
-type paillierKeygen interface {
-	paillierKey() *paillierPrivateKey
-}
-
 func (psk *paillierPrivateKey) UnmarshalJSON(bytes []byte) (err error) {
 	// First try to unmarshal it as a keypair serialized in the old Android format
 	oldFormat := &struct {
