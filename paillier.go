@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"math/big"
 
-	paillier "github.com/mcornejo/go-go-gadget-paillier"
+	"github.com/Roasbeef/go-go-gadget-paillier"
 )
 
 // paillierPrivateKey is an alias for paillier.PrivateKey so that we can add a custom unmarshaler to it.

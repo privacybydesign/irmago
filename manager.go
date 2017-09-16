@@ -6,7 +6,7 @@ import (
 
 	"crypto/rand"
 
-	"github.com/mcornejo/go-go-gadget-paillier"
+	"github.com/Roasbeef/go-go-gadget-paillier"
 	"github.com/mhe/gabi"
 )
 
