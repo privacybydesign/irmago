@@ -40,7 +40,7 @@ func PathExists(path string) (bool, error) {
 }
 
 // Init deserializes the credentials from storage.
-func (cm *CredentialManager) Init(path string, pinProvider KeyshareHandler) (err error) {
+func (cm *CredentialManager) Init(path string, keyshareHandler KeyshareHandler) (err error) {
 	cm.storagePath = path
 
 	err = cm.ensureStorageExists()
@@ -70,10 +70,12 @@ func (cm *CredentialManager) Init(path string, pinProvider KeyshareHandler) (err
 	case 0:
 		return
 	case 1:
-		if pinProvider == nil {
-			return errors.New("Keyshare server found but no PinPovider was given")
+		if keyshareHandler == nil {
+			return errors.New("Keyshare server found but no KeyshareHandler was given")
 		}
-		pinProvider.StartKeyshareRegistration(unenrolled[0])
+		keyshareHandler.StartKeyshareRegistration(unenrolled[0], func(email, pin string) {
+			cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
+		})
 	default:
 		return errors.New("Too many keyshare servers")
 	}

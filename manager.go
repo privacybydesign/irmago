@@ -323,7 +323,44 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 	return list
 }
 
-func (cm *CredentialManager) addKeyshareServer(manager *SchemeManager, kss *keyshareServer) error {
-	cm.keyshareServers[manager.Identifier()] = kss
+func (cm *CredentialManager) KeyshareEnroll(managerId SchemeManagerIdentifier, email, pin string) error {
+	manager, ok := MetaStore.SchemeManagers[managerId]
+	if !ok {
+		return errors.New("Unknown scheme manager")
+	}
+	if len(manager.KeyshareServer) == 0 {
+		return errors.New("Scheme manager has no keyshare server")
+	}
+	if len(pin) < 5 {
+		return errors.New("PIN too short, must be at least 5 characters")
+	}
+
+	transport := NewHTTPTransport(manager.KeyshareServer)
+	kss, err := newKeyshareServer(Manager.paillierKey(), manager.URL, email)
+	if err != nil {
+		return err
+	}
+	message := keyshareRegistration{
+		Username:  email,
+		Pin:       kss.HashedPin(pin),
+		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
+	}
+
+	// TODO: examine error returned by Post() to see if it tells us that the email address is already in use
+	result := &struct{}{}
+	err = transport.Post("web/users/selfenroll", result, message)
+	if err != nil {
+		return err
+	}
+
+	cm.keyshareServers[managerId] = kss
+	return cm.storeKeyshareServers()
+}
+
+func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) error {
+	if _, contains := cm.keyshareServers[manager]; !contains {
+		return errors.New("Can't uninstall unknown keyshare server")
+	}
+	delete(cm.keyshareServers, manager)
 	return cm.storeKeyshareServers()
 }

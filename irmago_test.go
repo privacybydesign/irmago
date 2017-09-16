@@ -27,7 +27,8 @@ func TestMain(m *testing.M) {
 
 type IgnoringKeyshareHandler struct{}
 
-func (i *IgnoringKeyshareHandler) StartKeyshareRegistration(m *SchemeManager) {}
+func (i *IgnoringKeyshareHandler) StartKeyshareRegistration(m *SchemeManager, callback func(e, p string)) {
+}
 
 func parseMetaStore(t *testing.T) {
 	require.NoError(t, MetaStore.ParseFolder("testdata/irma_configuration"), "MetaStore.ParseFolder() failed")

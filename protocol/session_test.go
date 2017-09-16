@@ -1,4 +1,4 @@
-// +build integration
+/// +build integration
 
 package protocol
 
@@ -8,6 +8,10 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"crypto/rand"
+
+	"encoding/hex"
 
 	"github.com/credentials/irmago"
 	"github.com/stretchr/testify/require"
@@ -211,4 +215,20 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
 	}
 
 	teardown(t)
+}
+
+func TestKeyshareRegistration(t *testing.T) {
+	parseMetaStore(t)
+	parseStorage(t)
+	parseAndroidStorage(t)
+
+	test := irmago.NewSchemeManagerIdentifier("test")
+	err := irmago.Manager.KeyshareRemove(test)
+	require.NoError(t, err)
+
+	bytes := make([]byte, 8, 8)
+	rand.Read(bytes)
+	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
+	err = irmago.Manager.KeyshareEnroll(test, email, "12345")
+	require.NoError(t, err)
 }

@@ -20,14 +20,16 @@ type keyshareRegistration struct {
 }
 
 type KeyshareHandler interface {
-	StartKeyshareRegistration(manager *SchemeManager)
+	StartKeyshareRegistration(manager *SchemeManager, registrationCallback func(email, pin string))
 }
 
 func newKeyshareServer(privatekey *paillierPrivateKey, url, email string) (ks *keyshareServer, err error) {
-	ks.Nonce = make([]byte, 0, 32)
-	ks.URL = url
-	ks.Username = email
-	ks.PrivateKey = privatekey
+	ks = &keyshareServer{
+		Nonce:      make([]byte, 32),
+		URL:        url,
+		Username:   email,
+		PrivateKey: privatekey,
+	}
 	_, err = rand.Read(ks.Nonce)
 	return
 }
@@ -35,25 +37,4 @@ func newKeyshareServer(privatekey *paillierPrivateKey, url, email string) (ks *k
 func (ks *keyshareServer) HashedPin(pin string) string {
 	hash := sha256.Sum256(append(ks.Nonce, []byte(pin)...))
 	return base64.RawStdEncoding.EncodeToString(hash[:])
-}
-
-func KeyshareEnroll(manager *SchemeManager, email, pin string) error {
-	transport := NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(Manager.paillierKey(), manager.URL, email)
-	if err != nil {
-		return err
-	}
-	message := keyshareRegistration{
-		Username:  email,
-		Pin:       kss.HashedPin(pin),
-		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
-	}
-
-	// TODO: examine error returned by Post() to see if it tells us that the email address is already in use
-	result := &struct{}{}
-	err = transport.Post("/web/users/selfenroll", result, message)
-	if err != nil {
-		return err
-	}
-	return Manager.addKeyshareServer(manager, kss)
 }

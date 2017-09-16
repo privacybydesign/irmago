@@ -77,7 +77,7 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 	}
 }
 
-func (transport *HTTPTransport) request(url string, method string, result interface{}, object interface{}) *Error {
+func (transport *HTTPTransport) request(url string, method string, result interface{}, object interface{}) error {
 	if method != http.MethodPost && method != http.MethodGet {
 		panic("Unsupported HTTP method " + method)
 	}
@@ -145,12 +145,12 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 }
 
 // Post sends the object to the server and parses its response into result.
-func (transport *HTTPTransport) Post(url string, result interface{}, object interface{}) *Error {
+func (transport *HTTPTransport) Post(url string, result interface{}, object interface{}) error {
 	return transport.request(url, http.MethodPost, result, object)
 }
 
 // Get performs a GET request and parses the server's response into result.
-func (transport *HTTPTransport) Get(url string, result interface{}) *Error {
+func (transport *HTTPTransport) Get(url string, result interface{}) error {
 	return transport.request(url, http.MethodGet, result, nil)
 }
 

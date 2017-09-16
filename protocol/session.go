@@ -128,7 +128,7 @@ func (session *session) start() {
 	info := &SessionInfo{}
 	Err := session.transport.Get("jwt", info)
 	if Err != nil {
-		session.Handler.Failure(session.Action, Err)
+		session.Handler.Failure(session.Action, Err.(*irmago.Error))
 		return
 	}
 	jwtparts := strings.Split(info.Jwt, ".")
@@ -237,7 +237,7 @@ func (session *session) do(proceed bool, choice *irmago.DisclosureChoice) {
 		fallthrough
 	case ActionDisclosing:
 		response := ""
-		Err = session.transport.Post("proofs", &response, message)
+		Err = session.transport.Post("proofs", &response, message).(*irmago.Error)
 		if Err != nil {
 			session.Handler.Failure(session.Action, Err)
 			return
@@ -248,7 +248,7 @@ func (session *session) do(proceed bool, choice *irmago.DisclosureChoice) {
 		}
 	case ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
-		Err = session.transport.Post("commitments", &response, message)
+		Err = session.transport.Post("commitments", &response, message).(*irmago.Error)
 		if Err != nil {
 			session.Handler.Failure(session.Action, Err)
 			return
