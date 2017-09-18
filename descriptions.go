@@ -82,23 +82,29 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 	return -1, errors.New("Attribute identifier not found")
 }
 
-// TranslatedString represents an XML tag containing a string translated to multiple languages.
-// For example: <Foo id="bla"><en>Hello world</en><nl>Hallo wereld</nl></Foo>
-type TranslatedString struct {
-	Translations []struct {
-		XMLName xml.Name
-		Text    string `xml:",chardata"`
-	} `xml:",any"`
-}
+// TranslatedString is a map of translated strings.
+type TranslatedString map[string]string
 
-// Translation returns the specified translation.
-func (ts *TranslatedString) Translation(lang string) string {
-	for _, translation := range ts.Translations {
-		if translation.XMLName.Local == lang {
-			return translation.Text
-		}
+// UnmarshalXML unmarshals an XML tag containing a string translated to multiple languages,
+// for example: <Foo><en>Hello world</en><nl>Hallo wereld</nl></Foo>
+// into a TranslatedString: { "en": "Hello world" , "nl": "Hallo wereld" }
+func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	if map[string]string(*ts) == nil {
+		*ts = TranslatedString(make(map[string]string))
 	}
-	return ""
+	temp := &struct {
+		Translations []struct {
+			XMLName xml.Name
+			Text    string `xml:",chardata"`
+		} `xml:",any"`
+	}{}
+	if err := d.DecodeElement(temp, &start); err != nil {
+		return err
+	}
+	for _, translation := range temp.Translations {
+		(*ts)[translation.XMLName.Local] = translation.Text
+	}
+	return nil
 }
 
 // Identifier returns the identifier of the specified credential type.
