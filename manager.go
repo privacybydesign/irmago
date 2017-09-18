@@ -8,7 +8,7 @@ import (
 
 	"sort"
 
-	"github.com/Roasbeef/go-go-gadget-paillier"
+	"github.com/credentials/go-go-gadget-paillier"
 	"github.com/mhe/gabi"
 )
 
