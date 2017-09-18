@@ -6,6 +6,8 @@ import (
 
 	"crypto/rand"
 
+	"sort"
+
 	"github.com/Roasbeef/go-go-gadget-paillier"
 	"github.com/mhe/gabi"
 )
@@ -29,6 +31,17 @@ func newCredentialManager() *CredentialManager {
 		credentials:     make(map[CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
 	}
+}
+
+func (cm *CredentialManager) CredentialList() CredentialList {
+	list := CredentialList([]*Credential{})
+	for _, credlist := range cm.credentials {
+		for _, cred := range credlist {
+			list = append(list, cred.info)
+		}
+	}
+	sort.Sort(list)
+	return list
 }
 
 func (cm *CredentialManager) generateSecretKey() (sk *big.Int, err error) {
