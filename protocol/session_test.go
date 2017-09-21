@@ -37,11 +37,12 @@ func parseMetaStore(t *testing.T) {
 }
 
 func parseStorage(t *testing.T) {
-	exists, err := irmago.PathExists("../testdata/storage/path")
+	exists, err := irmago.PathExists("../testdata/storage/test")
 	require.NoError(t, err, "pathexists() failed")
-	if !exists {
-		require.NoError(t, os.Mkdir("../testdata/storage/test", 0755), "Could not create test storage")
+	if exists {
+		require.NoError(t, os.RemoveAll("../testdata/storage/test"))
 	}
+	require.NoError(t, os.Mkdir("../testdata/storage/test", 0755), "Could not create test storage")
 	require.NoError(t, irmago.Manager.Init("../testdata/storage/test", &IgnoringKeyshareHandler{}), "Manager.Init() failed")
 }
 
@@ -94,10 +95,14 @@ func (th TestHandler) AskIssuancePermission(request irmago.IssuanceRequest, Serv
 func (th TestHandler) AskSignaturePermission(request irmago.SignatureRequest, ServerName string, callback PermissionHandler) {
 	th.AskVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
+func (th TestHandler) AskPin(remainingAttempts int, callback func(pin string)) {
+	callback("12345")
+}
 
 type IgnoringKeyshareHandler struct{}
 
-func (i *IgnoringKeyshareHandler) StartKeyshareRegistration(m *irmago.SchemeManager) {}
+func (i *IgnoringKeyshareHandler) StartKeyshareRegistration(m *irmago.SchemeManager, callback func(email, pin string)) {
+}
 
 func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
 	return NewServiceProviderJwt(name, &irmago.DisclosureRequest{
@@ -167,7 +172,7 @@ func TestSigningSession(t *testing.T) {
 	name := "testsigclient"
 
 	jwtcontents := getSigningJwt(name, id)
-	sessionHelper(t, jwtcontents, "signature")
+	sessionHelper(t, jwtcontents, "signature", true)
 }
 
 func TestDisclosureSession(t *testing.T) {
@@ -175,7 +180,7 @@ func TestDisclosureSession(t *testing.T) {
 	name := "testsp"
 
 	jwtcontents := getDisclosureJwt(name, id)
-	sessionHelper(t, jwtcontents, "verification")
+	sessionHelper(t, jwtcontents, "verification", true)
 }
 
 func TestIssuanceSession(t *testing.T) {
@@ -183,13 +188,15 @@ func TestIssuanceSession(t *testing.T) {
 	name := "testip"
 
 	jwtcontents := getIssuanceJwt(name, id)
-	sessionHelper(t, jwtcontents, "issue")
+	sessionHelper(t, jwtcontents, "issue", true)
 }
 
-func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
-	parseMetaStore(t)
-	parseStorage(t)
-	parseAndroidStorage(t)
+func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool) {
+	if init {
+		parseMetaStore(t)
+		parseStorage(t)
+		parseAndroidStorage(t)
+	}
 
 	url = "http://localhost:8081/irma_api_server/api/v2/" + url
 	//url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
@@ -217,7 +224,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string) {
 	teardown(t)
 }
 
-func TestKeyshareRegistration(t *testing.T) {
+func keyshareRegistration(t *testing.T) {
 	parseMetaStore(t)
 	parseStorage(t)
 	parseAndroidStorage(t)
@@ -231,4 +238,22 @@ func TestKeyshareRegistration(t *testing.T) {
 	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
 	err = irmago.Manager.KeyshareEnroll(test, email, "12345")
 	require.NoError(t, err)
+}
+
+func dTestKeyshareSession(t *testing.T) {
+	keyshareRegistration(t)
+
+	expiry := irmago.Timestamp(irmago.NewMetadataAttribute().Expiry())
+	credid := irmago.NewCredentialTypeIdentifier("test.test.mijnirma")
+	jwtcontents := NewIdentityProviderJwt("testip", &irmago.IssuanceRequest{
+		Credentials: []*irmago.CredentialRequest{
+			{
+				Validity:   &expiry,
+				Credential: &credid,
+				Attributes: map[string]string{"email": "example@example.com"},
+			},
+		},
+	})
+
+	sessionHelper(t, jwtcontents, "issue", false)
 }

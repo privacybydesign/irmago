@@ -231,9 +231,13 @@ type Session interface {
 	GetContext() *big.Int
 	SetContext(*big.Int)
 	DisjunctionList() AttributeDisjunctionList
+	DisclosureChoice() *DisclosureChoice
+	SetDisclosureChoice(choice *DisclosureChoice)
+	Distributed() bool
+	SchemeManagers() []SchemeManagerIdentifier
 }
 
-func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice) ([]gabi.ProofBuilder, error) {
+func (cm *CredentialManager) ProofBuilders(choice *DisclosureChoice) ([]gabi.ProofBuilder, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -252,16 +256,14 @@ func (cm *CredentialManager) proofsBuilders(choice *DisclosureChoice) ([]gabi.Pr
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.
 func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, issig bool) (gabi.ProofList, error) {
-	builders, err := cm.proofsBuilders(choice)
+	builders, err := cm.ProofBuilders(choice)
 	if err != nil {
 		return nil, err
 	}
 	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, issig), nil
 }
 
-// IssueCommitments computes issuance commitments, along with disclosure proofs
-// specified by choice.
-func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
+func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) ([]gabi.ProofBuilder, error) {
 	state, err := newIssuanceState()
 	if err != nil {
 		return nil, err
@@ -276,14 +278,23 @@ func (cm *CredentialManager) IssueCommitments(choice *DisclosureChoice, request 
 		proofBuilders = append(proofBuilders, credBuilder)
 	}
 
-	disclosures, err := cm.proofsBuilders(choice)
+	disclosures, err := cm.ProofBuilders(request.choice)
 	if err != nil {
 		return nil, err
 	}
 	proofBuilders = append(disclosures, proofBuilders...)
+	return proofBuilders, nil
+}
 
+// IssueCommitments computes issuance commitments, along with disclosure proofs
+// specified by choice.
+func (cm *CredentialManager) IssueCommitments(request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
+	proofBuilders, err := cm.IssuanceProofBuilders(request)
+	if err != nil {
+		return nil, err
+	}
 	list := gabi.BuildProofList(request.GetContext(), request.GetNonce(), proofBuilders, false)
-	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: state.nonce2}, nil
+	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: request.state.nonce2}, nil
 }
 
 // ConstructCredentials constructs and saves new credentials
@@ -316,13 +327,21 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 }
 
 // PaillierKey returns a new Paillier key (and generates a new one in a goroutine).
-func (cm *CredentialManager) paillierKey() *paillierPrivateKey {
+func (cm *CredentialManager) paillierKey(wait bool) *paillierPrivateKey {
 	retval := cm.paillierKeyCache
+	ch := make(chan bool)
 	go func() {
 		newkey, _ := paillier.GenerateKey(rand.Reader, 2048)
 		converted := paillierPrivateKey(*newkey)
 		cm.paillierKeyCache = &converted
+		if wait && retval == nil {
+			ch <- true
+		}
 	}()
+	if wait && retval == nil {
+		<-ch
+		return cm.paillierKeyCache
+	}
 	return retval
 }
 
@@ -349,7 +368,7 @@ func (cm *CredentialManager) KeyshareEnroll(managerId SchemeManagerIdentifier, e
 	}
 
 	transport := NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(Manager.paillierKey(), manager.URL, email)
+	kss, err := newKeyshareServer(Manager.paillierKey(true), manager.KeyshareServer, email)
 	if err != nil {
 		return err
 	}

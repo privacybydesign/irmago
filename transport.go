@@ -13,54 +13,9 @@ import (
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
-	Server string
-	client *http.Client
-}
-
-// ErrorCode are session errors.
-type ErrorCode string
-
-// Error is a protocol error.
-type Error struct {
-	Err error
-	ErrorCode
-	*ApiError
-	Info   string
-	Status int
-}
-
-// ApiError is an error message returned by the API server on errors.
-type ApiError struct {
-	Status      int    `json:"status"`
-	ErrorName   string `json:"error"`
-	Description string `json:"description"`
-	Message     string `json:"message"`
-	Stacktrace  string `json:"stacktrace"`
-}
-
-// Protocol errors
-const (
-	// Protocol version not supported
-	ErrorProtocolVersionNotSupported = ErrorCode("versionNotSupported")
-	// Error in HTTP communication
-	ErrorTransport = ErrorCode("httpError")
-	// Invalid client JWT in first IRMA message
-	ErrorInvalidJWT = ErrorCode("invalidJwt")
-	// Unkown session type (not disclosing, signing, or issuing)
-	ErrorUnknownAction = ErrorCode("unknownAction")
-	// Crypto error during calculation of our response (second IRMA message)
-	ErrorCrypto = ErrorCode("cryptoResponseError")
-	// Server rejected our response (second IRMA message)
-	ErrorRejected = ErrorCode("rejectedByServer")
-	// (De)serializing of a message failed
-	ErrorSerialization = ErrorCode("serializationError")
-)
-
-func (e *Error) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("%s: %s", string(e.ErrorCode), e.Err.Error())
-	}
-	return string(e.ErrorCode)
+	Server  string
+	client  *http.Client
+	headers map[string]string
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
@@ -70,11 +25,16 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 		url += "/"
 	}
 	return &HTTPTransport{
-		Server: url,
+		Server:  url,
+		headers: map[string]string{},
 		client: &http.Client{
 			Timeout: time.Second * 5,
 		},
 	}
+}
+
+func (transport *HTTPTransport) SetHeader(name, val string) {
+	transport.headers[name] = val
 }
 
 func (transport *HTTPTransport) request(url string, method string, result interface{}, object interface{}) error {
@@ -90,6 +50,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	if object != nil {
 		var objstr string
 		if objstr, isstr = object.(string); isstr {
+			fmt.Printf("GET %s\n", url)
 			reader = bytes.NewBuffer([]byte(objstr))
 		} else {
 			marshaled, err := json.Marshal(object)
@@ -97,7 +58,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 				return &Error{Err: err, ErrorCode: ErrorSerialization}
 				//return &TransportError{Err: err.Error()}
 			}
-			//fmt.Printf("POST: %s\n", string(marshaled))
+			fmt.Printf("POST %s: %s\n", url, string(marshaled))
 			reader = bytes.NewBuffer(marshaled)
 		}
 	}
@@ -115,6 +76,9 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 			req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 		}
 	}
+	for name, val := range transport.headers {
+		req.Header.Set(name, val)
+	}
 
 	res, err := transport.client.Do(req)
 	if err != nil {
@@ -131,11 +95,11 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		if apierr.ErrorName == "" { // Not an ApiErrorMessage
 			return &Error{ErrorCode: ErrorTransport, Status: res.StatusCode}
 		}
-		//fmt.Printf("ERROR: %+v\n", apierr)
+		fmt.Printf("ERROR: %+v\n", apierr)
 		return &Error{ErrorCode: ErrorTransport, Status: res.StatusCode, ApiError: apierr}
 	}
 
-	//fmt.Printf("RESPONSE: %s\n", string(body))
+	fmt.Printf("RESPONSE: %s\n", string(body))
 	err = json.Unmarshal(body, result)
 	if err != nil {
 		return &Error{Err: err, Status: res.StatusCode}

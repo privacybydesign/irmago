@@ -170,7 +170,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 		return err
 	}
 	if cm.paillierKeyCache == nil {
-		cm.paillierKey() // trigger calculating a new one
+		cm.paillierKey(false) // trigger calculating a new one
 	}
 
 	return

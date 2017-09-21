@@ -15,8 +15,17 @@ import (
 
 // SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
-	Context *big.Int `json:"nonce"`
-	Nonce   *big.Int `json:"context"`
+	Context *big.Int          `json:"nonce"`
+	Nonce   *big.Int          `json:"context"`
+	choice  *DisclosureChoice `json:"-"`
+}
+
+func (sr *SessionRequest) DisclosureChoice() *DisclosureChoice {
+	return sr.choice
+}
+
+func (sr *SessionRequest) SetDisclosureChoice(choice *DisclosureChoice) {
+	sr.choice = choice
 }
 
 // A DisclosureRequest is a request to disclose certain attributes.
@@ -102,6 +111,28 @@ func newIssuanceState() (*issuanceState, error) {
 	}, nil
 }
 
+func (ir *IssuanceRequest) Distributed() bool {
+	for _, manager := range ir.SchemeManagers() {
+		if MetaStore.SchemeManagers[manager].Distributed() {
+			return true
+		}
+	}
+	return false
+}
+
+func (ir *IssuanceRequest) SchemeManagers() []SchemeManagerIdentifier {
+	list := []SchemeManagerIdentifier{}
+	for _, cred := range ir.Credentials {
+		list = append(list, cred.Credential.IssuerIdentifier().SchemeManagerIdentifier())
+	}
+	for _, disjunctions := range ir.Disclose {
+		for _, attr := range disjunctions.Attributes {
+			list = append(list, attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier())
+		}
+	}
+	return list
+}
+
 // DisjunctionList returns the attributes that must be disclosed in this issuance session.
 func (ir *IssuanceRequest) DisjunctionList() AttributeDisjunctionList { return ir.Disclose }
 
@@ -116,6 +147,25 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 
 // SetNonce sets the nonce of this session.
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
+
+func (dr *DisclosureRequest) Distributed() bool {
+	for _, manager := range dr.SchemeManagers() {
+		if MetaStore.SchemeManagers[manager].Distributed() {
+			return true
+		}
+	}
+	return false
+}
+
+func (dr *DisclosureRequest) SchemeManagers() []SchemeManagerIdentifier {
+	list := []SchemeManagerIdentifier{}
+	for _, disjunction := range dr.Content {
+		for _, attr := range disjunction.Attributes {
+			list = append(list, attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier())
+		}
+	}
+	return list
+}
 
 // DisjunctionList returns the attributes to be disclosed in this session.
 func (dr *DisclosureRequest) DisjunctionList() AttributeDisjunctionList { return dr.Content }

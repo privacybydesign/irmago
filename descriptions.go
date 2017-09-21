@@ -127,6 +127,10 @@ func (sm *SchemeManager) Identifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(sm.ID)
 }
 
+func (sm *SchemeManager) Distributed() bool {
+	return len(sm.KeyshareServer) > 0
+}
+
 // CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
 func (id *Issuer) CurrentPublicKey() *gabi.PublicKey {
 	keys := MetaStore.PublicKeys[id.Identifier()]

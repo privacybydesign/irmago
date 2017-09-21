@@ -115,6 +115,7 @@ func (store *ConfigurationStore) parseKeysFolder(issuer *Issuer, path string) er
 		if err != nil {
 			return err
 		}
+		pk.Issuer = issuer.Identifier().String()
 		MetaStore.PublicKeys[issuer.Identifier()] = append(MetaStore.PublicKeys[issuer.Identifier()], pk)
 	}
 	return nil

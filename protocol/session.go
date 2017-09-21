@@ -6,9 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"encoding/base64"
-	"encoding/json"
-
 	"github.com/credentials/irmago"
 	"github.com/mhe/gabi"
 )
@@ -28,6 +25,8 @@ type Handler interface {
 	AskIssuancePermission(request irmago.IssuanceRequest, ServerName string, callback PermissionHandler)
 	AskVerificationPermission(request irmago.DisclosureRequest, ServerName string, callback PermissionHandler)
 	AskSignaturePermission(request irmago.SignatureRequest, ServerName string, callback PermissionHandler)
+
+	AskPin(remainingAttempts int, callback func(pin string))
 }
 
 // A session is an IRMA session.
@@ -40,6 +39,7 @@ type session struct {
 	jwt         RequestorJwt
 	irmaSession irmago.Session
 	transport   *irmago.HTTPTransport
+	choice      *irmago.DisclosureChoice
 }
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
@@ -131,47 +131,18 @@ func (session *session) start() {
 		session.Handler.Failure(session.Action, Err.(*irmago.Error))
 		return
 	}
-	jwtparts := strings.Split(info.Jwt, ".")
-	if jwtparts == nil || len(jwtparts) < 2 {
-		session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorInvalidJWT})
-		return
-	}
-	headerbytes, err := base64.RawStdEncoding.DecodeString(jwtparts[0])
-	if err != nil {
-		session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorInvalidJWT, Err: err})
-		return
-	}
-	var header struct {
-		Server string `json:"iss"`
-	}
-	err = json.Unmarshal([]byte(headerbytes), &header)
-	if err != nil {
-		session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorInvalidJWT, Err: err})
-		return
-	}
 
-	// Deserialize JWT, and set session state
-	bodybytes, err := base64.RawStdEncoding.DecodeString(jwtparts[1])
-	if err != nil {
-		session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorInvalidJWT, Err: err})
-		return
-	}
 	switch session.Action {
 	case ActionDisclosing:
-		jwt := &ServiceProviderJwt{}
-		err = json.Unmarshal([]byte(bodybytes), jwt)
-		session.jwt = jwt
+		session.jwt = &ServiceProviderJwt{}
 	case ActionSigning:
-		jwt := &SignatureRequestorJwt{}
-		err = json.Unmarshal([]byte(bodybytes), jwt)
-		session.jwt = jwt
+		session.jwt = &SignatureRequestorJwt{}
 	case ActionIssuing:
-		jwt := &IdentityProviderJwt{}
-		err = json.Unmarshal([]byte(bodybytes), jwt)
-		session.jwt = jwt
+		session.jwt = &IdentityProviderJwt{}
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
+	server, err := irmago.JwtDecode(info.Jwt, session.jwt)
 	if err != nil {
 		session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorInvalidJWT, Err: err})
 		return
@@ -194,52 +165,93 @@ func (session *session) start() {
 
 	// Ask for permission to execute the session
 	callback := PermissionHandler(func(proceed bool, choice *irmago.DisclosureChoice) {
-		go session.do(proceed, choice)
+		session.choice = choice
+		session.irmaSession.SetDisclosureChoice(choice)
+		go session.do(proceed)
 	})
 	session.Handler.StatusUpdate(session.Action, StatusConnected)
 	switch session.Action {
 	case ActionDisclosing:
-		session.Handler.AskVerificationPermission(*session.irmaSession.(*irmago.DisclosureRequest), header.Server, callback)
+		session.Handler.AskVerificationPermission(*session.irmaSession.(*irmago.DisclosureRequest), server, callback)
 	case ActionSigning:
-		session.Handler.AskSignaturePermission(*session.irmaSession.(*irmago.SignatureRequest), header.Server, callback)
+		session.Handler.AskSignaturePermission(*session.irmaSession.(*irmago.SignatureRequest), server, callback)
 	case ActionIssuing:
-		session.Handler.AskIssuancePermission(*session.irmaSession.(*irmago.IssuanceRequest), header.Server, callback)
+		session.Handler.AskIssuancePermission(*session.irmaSession.(*irmago.IssuanceRequest), server, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
 }
 
-func (session *session) do(proceed bool, choice *irmago.DisclosureChoice) {
+func (session *session) do(proceed bool) {
 	if !proceed {
 		session.Handler.Cancelled(session.Action)
 		return
 	}
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
-	var message interface{}
-	var err error
-	switch session.Action {
-	case ActionSigning:
-		message, err = irmago.Manager.Proofs(choice, session.irmaSession, true)
-	case ActionDisclosing:
-		message, err = irmago.Manager.Proofs(choice, session.irmaSession, false)
-	case ActionIssuing:
-		message, err = irmago.Manager.IssueCommitments(choice, session.irmaSession.(*irmago.IssuanceRequest))
-	}
-	if err != nil {
-		session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorCrypto, Err: err})
-		return
-	}
+	if !session.irmaSession.Distributed() {
+		var message interface{}
+		var err error
+		switch session.Action {
+		case ActionSigning:
+			message, err = irmago.Manager.Proofs(session.choice, session.irmaSession, true)
+		case ActionDisclosing:
+			message, err = irmago.Manager.Proofs(session.choice, session.irmaSession, false)
+		case ActionIssuing:
+			message, err = irmago.Manager.IssueCommitments(session.irmaSession.(*irmago.IssuanceRequest))
+		}
+		if err != nil {
+			session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorCrypto, Err: err})
+			return
+		}
+		session.sendResponse(message)
+	} else {
+		var builders []gabi.ProofBuilder
+		var err error
+		switch session.Action {
+		case ActionSigning:
+			fallthrough
+		case ActionDisclosing:
+			builders, err = irmago.Manager.ProofBuilders(session.choice)
+		case ActionIssuing:
+			builders, err = irmago.Manager.IssuanceProofBuilders(session.irmaSession.(*irmago.IssuanceRequest))
+		}
+		if err != nil {
+			session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorCrypto, Err: err})
+		}
 
-	var Err *irmago.Error
+		irmago.StartKeyshareSession(session.irmaSession, builders, session)
+	}
+}
+
+func (session *session) AskPin(remainingAttempts int, callback func(pin string)) {
+	session.Handler.AskPin(remainingAttempts, callback)
+}
+
+func (session *session) KeyshareDone(message interface{}) {
+	session.sendResponse(message)
+}
+
+func (session *session) KeyshareBlocked(duration int) {
+	session.Handler.Failure(
+		session.Action,
+		&irmago.Error{ErrorCode: irmago.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)},
+	)
+}
+
+func (session *session) KeyshareError(err error) {
+	session.Handler.Failure(session.Action, &irmago.Error{ErrorCode: irmago.ErrorKeyshare, Err: err})
+}
+
+func (session *session) sendResponse(message interface{}) {
+	var err error
 	switch session.Action {
 	case ActionSigning:
 		fallthrough
 	case ActionDisclosing:
-		response := ""
-		Err = session.transport.Post("proofs", &response, message).(*irmago.Error)
-		if Err != nil {
-			session.Handler.Failure(session.Action, Err)
+		var response string
+		if err = session.transport.Post("proofs", &response, message); err != nil {
+			session.Handler.Failure(session.Action, err.(*irmago.Error))
 			return
 		}
 		if response != "VALID" {
@@ -248,14 +260,11 @@ func (session *session) do(proceed bool, choice *irmago.DisclosureChoice) {
 		}
 	case ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
-		Err = session.transport.Post("commitments", &response, message).(*irmago.Error)
-		if Err != nil {
-			session.Handler.Failure(session.Action, Err)
+		if err = session.transport.Post("commitments", &response, message); err != nil {
+			session.Handler.Failure(session.Action, err.(*irmago.Error))
 			return
 		}
-
-		err = irmago.Manager.ConstructCredentials(response, session.irmaSession.(*irmago.IssuanceRequest))
-		if err != nil {
+		if err = irmago.Manager.ConstructCredentials(response, session.irmaSession.(*irmago.IssuanceRequest)); err != nil {
 			session.Handler.Failure(session.Action, &irmago.Error{Err: err, ErrorCode: irmago.ErrorCrypto})
 			return
 		}
