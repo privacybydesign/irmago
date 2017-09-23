@@ -110,9 +110,13 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	if verbose {
 		fmt.Printf("RESPONSE: %s\n", string(body))
 	}
-	err = json.Unmarshal(body, result)
-	if err != nil {
-		return &Error{Err: err, Status: res.StatusCode}
+	if _, resultstr := result.(*string); resultstr {
+		*result.(*string) = string(body)
+	} else {
+		err = json.Unmarshal(body, result)
+		if err != nil {
+			return &Error{Err: err, Status: res.StatusCode}
+		}
 	}
 
 	return nil
