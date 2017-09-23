@@ -54,8 +54,8 @@ func (th TestHandler) AskIssuancePermission(request IssuanceRequest, ServerName 
 func (th TestHandler) AskSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler) {
 	th.AskVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
-func (th TestHandler) AskPin(remainingAttempts int, callback func(pin string)) {
-	callback("12345")
+func (th TestHandler) AskPin(remainingAttempts int, callback func(proceed bool, pin string)) {
+	callback(true, "12345")
 }
 
 func getDisclosureJwt(name string, id AttributeTypeIdentifier) interface{} {

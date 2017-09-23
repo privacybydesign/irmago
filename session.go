@@ -25,7 +25,7 @@ type Handler interface {
 	AskVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler)
 	AskSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler)
 
-	AskPin(remainingAttempts int, callback func(pin string))
+	AskPin(remainingAttempts int, callback func(proceed bool, pin string))
 }
 
 // A session is an IRMA session.
@@ -141,7 +141,7 @@ func (session *session) start() {
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
-	server, err := JwtDecode(info.Jwt, session.jwt)
+	server, err := jwtDecode(info.Jwt, session.jwt)
 	if err != nil {
 		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, Err: err})
 		return
@@ -219,16 +219,16 @@ func (session *session) do(proceed bool) {
 			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, Err: err})
 		}
 
-		StartKeyshareSession(session.irmaSession, builders, session)
+		startKeyshareSession(session.irmaSession, builders, session, session.Handler)
 	}
-}
-
-func (session *session) AskPin(remainingAttempts int, callback func(pin string)) {
-	session.Handler.AskPin(remainingAttempts, callback)
 }
 
 func (session *session) KeyshareDone(message interface{}) {
 	session.sendResponse(message)
+}
+
+func (session *session) KeyshareCancelled() {
+	session.Handler.Cancelled(session.Action)
 }
 
 func (session *session) KeyshareBlocked(duration int) {

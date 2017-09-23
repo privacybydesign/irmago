@@ -13,9 +13,13 @@ import (
 	"github.com/mhe/gabi"
 )
 
-type KeyshareSessionHandler interface {
-	AskPin(remainingAttempts int, callback func(pin string))
+type KeysharePinRequestor interface {
+	AskPin(remainingAttempts int, callback func(proceed bool, pin string))
+}
+
+type keyshareSessionHandler interface {
 	KeyshareDone(message interface{})
+	KeyshareCancelled()
 	KeyshareBlocked(duration int)
 	KeyshareError(err error)
 }
@@ -24,7 +28,8 @@ type keyshareSession struct {
 	session        Session
 	builders       []gabi.ProofBuilder
 	transports     map[SchemeManagerIdentifier]*HTTPTransport
-	sessionHandler KeyshareSessionHandler
+	sessionHandler keyshareSessionHandler
+	pinRequestor   KeysharePinRequestor
 	keyshareServer *keyshareServer
 }
 
@@ -108,10 +113,16 @@ func (ks *keyshareServer) HashedPin(pin string) string {
 	return base64.RawStdEncoding.EncodeToString(hash[:])
 }
 
-func StartKeyshareSession(
+// startKeyshareSession starts and completes the entire keyshare protocol with all involved keyshare servers
+// for the specified session, merging the keyshare proofs into the specified ProofBuilder's.
+// The user's pin is retrieved using the KeysharePinRequestor, repeatedly, until either it is correct; or the
+// user cancels; or one of the keyshare servers blocks us.
+// Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
+func startKeyshareSession(
 	session Session,
 	builders []gabi.ProofBuilder,
-	sessionHandler KeyshareSessionHandler,
+	sessionHandler keyshareSessionHandler,
+	pin KeysharePinRequestor,
 ) {
 	ksscount := 0
 	for _, managerId := range session.SchemeManagers() {
@@ -135,6 +146,7 @@ func StartKeyshareSession(
 		builders:       builders,
 		sessionHandler: sessionHandler,
 		transports:     map[SchemeManagerIdentifier]*HTTPTransport{},
+		pinRequestor:   pin,
 	}
 
 	askPin := false
@@ -174,11 +186,14 @@ func StartKeyshareSession(
 // Ask for a pin, repeatedly if necessary, and either continue the keyshare protocol
 // with authorization, or stop the keyshare protocol and inform of failure.
 func (ks *keyshareSession) VerifyPin(attempts int) {
-	ks.sessionHandler.AskPin(attempts, func(pin string) {
+	ks.pinRequestor.AskPin(attempts, func(proceed bool, pin string) {
 		success, attemptsRemaining, blocked, err := ks.verifyPinAttempt(pin)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return
+		}
+		if !proceed {
+			ks.sessionHandler.KeyshareCancelled()
 		}
 		if blocked != 0 {
 			ks.sessionHandler.KeyshareBlocked(blocked)
@@ -194,14 +209,11 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 }
 
 // Verify the specified pin at each of the keyshare servers involved in the specified session.
-//
 // - If the pin did not verify at one of the keyshare servers but there are attempts remaining,
 // the amount of remaining attempts is returned as the second return value.
-//
 // - If the pin did not verify at one of the keyshare servers and there are no attempts remaining,
 // the amount of time for which we are blocked at the keyshare server is returned as the third
 // parameter.
-//
 // - If this or anything else (specified in err) goes wrong, success will be false.
 // If all is ok, success will be true.
 func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int, blocked int, err error) {
@@ -353,7 +365,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 			msg := struct {
 				ProofP *gabi.ProofP
 			}{}
-			_, err := JwtDecode(responses[managerId], msg)
+			_, err := jwtDecode(responses[managerId], msg)
 			if err != nil {
 				ks.sessionHandler.KeyshareError(err)
 				return

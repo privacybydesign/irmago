@@ -18,6 +18,8 @@ type HTTPTransport struct {
 	headers map[string]string
 }
 
+const verbose = false
+
 // NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string) *HTTPTransport {
 	url := serverURL
@@ -50,7 +52,9 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	if object != nil {
 		var objstr string
 		if objstr, isstr = object.(string); isstr {
-			fmt.Printf("GET %s\n", url)
+			if verbose {
+				fmt.Printf("GET %s\n", url)
+			}
 			reader = bytes.NewBuffer([]byte(objstr))
 		} else {
 			marshaled, err := json.Marshal(object)
@@ -58,7 +62,9 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 				return &Error{Err: err, ErrorCode: ErrorSerialization}
 				//return &TransportError{Err: err.Error()}
 			}
-			fmt.Printf("POST %s: %s\n", url, string(marshaled))
+			if verbose {
+				fmt.Printf("POST %s: %s\n", url, string(marshaled))
+			}
 			reader = bytes.NewBuffer(marshaled)
 		}
 	}
@@ -95,11 +101,15 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		if apierr.ErrorName == "" { // Not an ApiErrorMessage
 			return &Error{ErrorCode: ErrorTransport, Status: res.StatusCode}
 		}
-		fmt.Printf("ERROR: %+v\n", apierr)
+		if verbose {
+			fmt.Printf("ERROR: %+v\n", apierr)
+		}
 		return &Error{ErrorCode: ErrorTransport, Status: res.StatusCode, ApiError: apierr}
 	}
 
-	fmt.Printf("RESPONSE: %s\n", string(body))
+	if verbose {
+		fmt.Printf("RESPONSE: %s\n", string(body))
+	}
 	err = json.Unmarshal(body, result)
 	if err != nil {
 		return &Error{Err: err, Status: res.StatusCode}

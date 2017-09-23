@@ -107,8 +107,10 @@ const (
 	// Server rejected our response (second IRMA message)
 	ErrorRejected = ErrorCode("rejectedByServer")
 	// (De)serializing of a message failed
-	ErrorSerialization   = ErrorCode("serializationError")
-	ErrorKeyshare        = ErrorCode("keyshare")
+	ErrorSerialization = ErrorCode("serializationError")
+	// Error in keyshare protocol
+	ErrorKeyshare = ErrorCode("keyshare")
+	// Keyshare server has blocked us
 	ErrorKeyshareBlocked = ErrorCode("keyshareBlocked")
 )
 
@@ -119,7 +121,7 @@ func (e *Error) Error() string {
 	return string(e.ErrorCode)
 }
 
-func JwtDecode(jwt string, body interface{}) (string, error) {
+func jwtDecode(jwt string, body interface{}) (string, error) {
 	jwtparts := strings.Split(jwt, ".")
 	if jwtparts == nil || len(jwtparts) < 2 {
 		return "", errors.New("Not a JWT")
