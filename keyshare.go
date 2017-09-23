@@ -26,7 +26,7 @@ type keyshareSessionHandler interface {
 
 type keyshareSession struct {
 	session        Session
-	builders       []gabi.ProofBuilder
+	builders       gabi.ProofBuilderList
 	transports     map[SchemeManagerIdentifier]*HTTPTransport
 	sessionHandler keyshareSessionHandler
 	pinRequestor   KeysharePinRequestor
@@ -120,7 +120,7 @@ func (ks *keyshareServer) HashedPin(pin string) string {
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
 func startKeyshareSession(
 	session Session,
-	builders []gabi.ProofBuilder,
+	builders gabi.ProofBuilderList,
 	sessionHandler keyshareSessionHandler,
 	pin KeysharePinRequestor,
 ) {
@@ -317,7 +317,7 @@ func (ks *keyshareSession) GetCommitments() {
 func (ks *keyshareSession) GetProofPs() {
 	_, issig := ks.session.(*SignatureRequest)
 	_, issuing := ks.session.(*IssuanceRequest)
-	challenge := gabi.DistributedChallenge(ks.session.GetContext(), ks.session.GetNonce(), ks.builders, issig)
+	challenge := ks.builders.Challenge(ks.session.GetContext(), ks.session.GetNonce(), issig)
 	kssChallenge := challenge
 
 	// In disclosure or signature sessions the challenge is Paillier encrypted.
@@ -382,7 +382,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 		}
 
 		// Create merged proofs and finish protocol
-		list, err := gabi.BuildDistributedProofList(challenge, ks.builders, proofPs)
+		list, err := ks.builders.BuildDistributedProofList(challenge, proofPs)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return
@@ -393,7 +393,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 		// Calculate IssueCommitmentMessage, without merging in any of the received ProofP's:
 		// instead, include the keyshare server's JWT in the IssueCommitmentMessage for the
 		// issuance server to verify
-		list, err := gabi.BuildDistributedProofList(challenge, ks.builders, nil)
+		list, err := ks.builders.BuildDistributedProofList(challenge, nil)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return

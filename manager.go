@@ -237,13 +237,13 @@ type Session interface {
 	SchemeManagers() []SchemeManagerIdentifier
 }
 
-func (cm *CredentialManager) ProofBuilders(choice *DisclosureChoice) ([]gabi.ProofBuilder, error) {
+func (cm *CredentialManager) ProofBuilders(choice *DisclosureChoice) (gabi.ProofBuilderList, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
 		return nil, err
 	}
 
-	builders := []gabi.ProofBuilder{}
+	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for id, list := range todisclose {
 		cred, err := cm.credentialByID(id)
 		if err != nil {
@@ -260,17 +260,17 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, i
 	if err != nil {
 		return nil, err
 	}
-	return gabi.BuildProofList(request.GetContext(), request.GetNonce(), builders, issig), nil
+	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
 }
 
-func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) ([]gabi.ProofBuilder, error) {
+func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (gabi.ProofBuilderList, error) {
 	state, err := newIssuanceState()
 	if err != nil {
 		return nil, err
 	}
 	request.state = state
 
-	proofBuilders := []gabi.ProofBuilder{}
+	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
 		pk := MetaStore.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
 		credBuilder := gabi.NewCredentialBuilder(pk, request.GetContext(), cm.secretkey, state.nonce2)
@@ -293,7 +293,7 @@ func (cm *CredentialManager) IssueCommitments(request *IssuanceRequest) (*gabi.I
 	if err != nil {
 		return nil, err
 	}
-	list := gabi.BuildProofList(request.GetContext(), request.GetNonce(), proofBuilders, false)
+	list := proofBuilders.BuildProofList(request.GetContext(), request.GetNonce(), false)
 	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: request.state.nonce2}, nil
 }
 

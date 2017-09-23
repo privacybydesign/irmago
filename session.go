@@ -205,7 +205,7 @@ func (session *session) do(proceed bool) {
 		}
 		session.sendResponse(message)
 	} else {
-		var builders []gabi.ProofBuilder
+		var builders gabi.ProofBuilderList
 		var err error
 		switch session.Action {
 		case ActionSigning:
