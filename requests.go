@@ -60,6 +60,46 @@ type CredentialRequest struct {
 	Attributes map[string]string         `json:"attributes"`
 }
 
+// ServerJwt contains standard JWT fields.
+type ServerJwt struct {
+	Type       string    `json:"sub"`
+	ServerName string    `json:"iss"`
+	IssuedAt   Timestamp `json:"iat"`
+}
+
+// A ServiceProviderRequest contains a disclosure request.
+type ServiceProviderRequest struct {
+	Request *DisclosureRequest `json:"request"`
+}
+
+// A SignatureRequestorRequest contains a signing request.
+type SignatureRequestorRequest struct {
+	Request *SignatureRequest `json:"request"`
+}
+
+// An IdentityProviderRequest contains an issuance request.
+type IdentityProviderRequest struct {
+	Request *IssuanceRequest `json:"request"`
+}
+
+// ServiceProviderJwt is a requestor JWT for a disclosure session.
+type ServiceProviderJwt struct {
+	ServerJwt
+	Request ServiceProviderRequest `json:"sprequest"`
+}
+
+// SignatureRequestorJwt is a requestor JWT for a signing session.
+type SignatureRequestorJwt struct {
+	ServerJwt
+	Request SignatureRequestorRequest `json:"absrequest"`
+}
+
+// IdentityProviderJwt is a requestor JWT for issuance session.
+type IdentityProviderJwt struct {
+	ServerJwt
+	Request IdentityProviderRequest `json:"iprequest"`
+}
+
 // Timestamp is a time.Time that marshals to Unix timestamps.
 type Timestamp time.Time
 
@@ -224,3 +264,53 @@ func (t *Timestamp) UnmarshalJSON(b []byte) error {
 	*t = Timestamp(time.Unix(int64(ts), 0))
 	return nil
 }
+
+// NewServiceProviderJwt returns a new ServiceProviderJwt.
+func NewServiceProviderJwt(servername string, dr *DisclosureRequest) *ServiceProviderJwt {
+	return &ServiceProviderJwt{
+		ServerJwt: ServerJwt{
+			ServerName: servername,
+			IssuedAt:   Timestamp(time.Now()),
+			Type:       "verification_request",
+		},
+		Request: ServiceProviderRequest{Request: dr},
+	}
+}
+
+// NewSignatureRequestorJwt returns a new SignatureRequestorJwt.
+func NewSignatureRequestorJwt(servername string, sr *SignatureRequest) *SignatureRequestorJwt {
+	return &SignatureRequestorJwt{
+		ServerJwt: ServerJwt{
+			ServerName: servername,
+			IssuedAt:   Timestamp(time.Now()),
+			Type:       "signature_request",
+		},
+		Request: SignatureRequestorRequest{Request: sr},
+	}
+}
+
+// NewIdentityProviderJwt returns a new IdentityProviderJwt.
+func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityProviderJwt {
+	return &IdentityProviderJwt{
+		ServerJwt: ServerJwt{
+			ServerName: servername,
+			IssuedAt:   Timestamp(time.Now()),
+			Type:       "issue_request",
+		},
+		Request: IdentityProviderRequest{Request: ir},
+	}
+}
+
+// A RequestorJwt contains an IRMA session object.
+type RequestorJwt interface {
+	IrmaSession() Session
+}
+
+// IrmaSession returns an IRMA session object.
+func (jwt *ServiceProviderJwt) IrmaSession() Session { return jwt.Request.Request }
+
+// IrmaSession returns an IRMA session object.
+func (jwt *SignatureRequestorJwt) IrmaSession() Session { return jwt.Request.Request }
+
+// IrmaSession returns an IRMA session object.
+func (jwt *IdentityProviderJwt) IrmaSession() Session { return jwt.Request.Request }
