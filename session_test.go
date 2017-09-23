@@ -194,7 +194,7 @@ func registerKeyshareServer(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func dTestKeyshareSession(t *testing.T) {
+func TestKeyshareSession(t *testing.T) {
 	registerKeyshareServer(t)
 
 	expiry := Timestamp(NewMetadataAttribute().Expiry())

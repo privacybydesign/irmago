@@ -242,19 +242,21 @@ func (session *session) KeyshareError(err error) {
 	session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorKeyshare, Err: err})
 }
 
+type disclosureResponse string
+
 func (session *session) sendResponse(message interface{}) {
 	var err error
 	switch session.Action {
 	case ActionSigning:
 		fallthrough
 	case ActionDisclosing:
-		var response string
+		var response disclosureResponse
 		if err = session.transport.Post("proofs", &response, message); err != nil {
 			session.Handler.Failure(session.Action, err.(*Error))
 			return
 		}
 		if response != "VALID" {
-			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorRejected, Info: response})
+			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorRejected, Info: string(response)})
 			return
 		}
 	case ActionIssuing:

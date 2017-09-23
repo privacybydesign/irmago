@@ -393,11 +393,12 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 		// Calculate IssueCommitmentMessage, without merging in any of the received ProofP's:
 		// instead, include the keyshare server's JWT in the IssueCommitmentMessage for the
 		// issuance server to verify
-		message, err := Manager.IssueCommitments(ks.session.(*IssuanceRequest))
+		list, err := gabi.BuildDistributedProofList(challenge, ks.builders, nil)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return
 		}
+		message := gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.session.(*IssuanceRequest).state.nonce2}
 		for _, response := range responses {
 			message.ProofPjwt = response
 			break
