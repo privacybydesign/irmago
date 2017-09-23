@@ -94,6 +94,9 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	}
 
 	bytes, err := ioutil.ReadFile(cm.path(cardemuXML))
+	if err != nil {
+		return
+	}
 	parsedxml := struct {
 		Strings []struct {
 			Name    string `xml:"name,attr"`

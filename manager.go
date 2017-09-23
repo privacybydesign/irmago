@@ -33,6 +33,7 @@ func newCredentialManager() *CredentialManager {
 	}
 }
 
+// CredentialList returns a list of information of all contained credentials.
 func (cm *CredentialManager) CredentialList() CredentialList {
 	list := CredentialList([]*Credential{})
 	for _, credlist := range cm.credentials {
@@ -237,6 +238,7 @@ type Session interface {
 	SchemeManagers() []SchemeManagerIdentifier
 }
 
+// ProofBuilders constructs a list of proof builders for the specified attribute choice.
 func (cm *CredentialManager) ProofBuilders(choice *DisclosureChoice) (gabi.ProofBuilderList, error) {
 	todisclose, err := cm.groupCredentials(choice)
 	if err != nil {
@@ -263,6 +265,8 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, i
 	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
 }
 
+// IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
+// for the future credentials as well as possibly any disclosed attributes.
 func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (gabi.ProofBuilderList, error) {
 	state, err := newIssuanceState()
 	if err != nil {
@@ -355,8 +359,9 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 	return list
 }
 
-func (cm *CredentialManager) KeyshareEnroll(managerId SchemeManagerIdentifier, email, pin string) error {
-	manager, ok := MetaStore.SchemeManagers[managerId]
+// KeyshareEnroll attempts to register at the keyshare server of the specified scheme manager.
+func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, email, pin string) error {
+	manager, ok := MetaStore.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
 	}
@@ -385,10 +390,11 @@ func (cm *CredentialManager) KeyshareEnroll(managerId SchemeManagerIdentifier, e
 		return err
 	}
 
-	cm.keyshareServers[managerId] = kss
+	cm.keyshareServers[managerID] = kss
 	return cm.storeKeyshareServers()
 }
 
+// KeyshareRemove unregisters the keyshare server of the specified scheme manager.
 func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) error {
 	if _, contains := cm.keyshareServers[manager]; !contains {
 		return errors.New("Can't uninstall unknown keyshare server")

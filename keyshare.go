@@ -13,6 +13,7 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// KeysharePinRequestor is used to asking the user for his PIN.
 type KeysharePinRequestor interface {
 	AskPin(remainingAttempts int, callback func(proceed bool, pin string))
 }
@@ -83,6 +84,8 @@ type proofPCommitmentMap struct {
 	Commitments map[publicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
 }
 
+// KeyshareHandler is used for asking the user for his email address and PIN,
+// for registering at a keyshare server.
 type KeyshareHandler interface {
 	StartKeyshareRegistration(manager *SchemeManager, registrationCallback func(email, pin string))
 }
@@ -125,11 +128,11 @@ func startKeyshareSession(
 	pin KeysharePinRequestor,
 ) {
 	ksscount := 0
-	for _, managerId := range session.SchemeManagers() {
-		if MetaStore.SchemeManagers[managerId].Distributed() {
+	for _, managerID := range session.SchemeManagers() {
+		if MetaStore.SchemeManagers[managerID].Distributed() {
 			ksscount++
-			if _, registered := Manager.keyshareServers[managerId]; !registered {
-				err := errors.New("Not registered to keyshare server of scheme manager " + managerId.String())
+			if _, registered := Manager.keyshareServers[managerID]; !registered {
+				err := errors.New("Not registered to keyshare server of scheme manager " + managerID.String())
 				sessionHandler.KeyshareError(err)
 				return
 			}
@@ -151,16 +154,16 @@ func startKeyshareSession(
 
 	askPin := false
 
-	for _, managerId := range session.SchemeManagers() {
-		if !MetaStore.SchemeManagers[managerId].Distributed() {
+	for _, managerID := range session.SchemeManagers() {
+		if !MetaStore.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
-		ks.keyshareServer = Manager.keyshareServers[managerId]
+		ks.keyshareServer = Manager.keyshareServers[managerID]
 		transport := NewHTTPTransport(ks.keyshareServer.URL)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
-		ks.transports[managerId] = transport
+		ks.transports[managerID] = transport
 
 		authstatus := &keyshareAuthorization{}
 		err := transport.Post("users/isAuthorized", authstatus, "")
@@ -217,13 +220,13 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 // - If this or anything else (specified in err) goes wrong, success will be false.
 // If all is ok, success will be true.
 func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int, blocked int, err error) {
-	for _, managerId := range ks.session.SchemeManagers() {
-		if !MetaStore.SchemeManagers[managerId].Distributed() {
+	for _, managerID := range ks.session.SchemeManagers() {
+		if !MetaStore.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
-		kss := Manager.keyshareServers[managerId]
-		transport := ks.transports[managerId]
+		kss := Manager.keyshareServers[managerID]
+		transport := ks.transports[managerID]
 		pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
 		pinresult := &keysharePinStatus{}
 		err = transport.Post("users/verify/pin", pinresult, pinmsg)
@@ -268,26 +271,26 @@ func (ks *keyshareSession) GetCommitments() {
 	// that we will use in the keyshare protocol with the keyshare server of this manager
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
-		managerId := NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
-		if !MetaStore.SchemeManagers[managerId].Distributed() {
+		managerID := NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
+		if !MetaStore.SchemeManagers[managerID].Distributed() {
 			continue
 		}
-		if _, contains := pkids[managerId]; !contains {
-			pkids[managerId] = []*publicKeyIdentifier{}
+		if _, contains := pkids[managerID]; !contains {
+			pkids[managerID] = []*publicKeyIdentifier{}
 		}
-		pkids[managerId] = append(pkids[managerId], &publicKeyIdentifier{Issuer: pk.Issuer, Counter: pk.Counter})
+		pkids[managerID] = append(pkids[managerID], &publicKeyIdentifier{Issuer: pk.Issuer, Counter: pk.Counter})
 	}
 
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
-	for _, managerId := range ks.session.SchemeManagers() {
-		if !MetaStore.SchemeManagers[managerId].Distributed() {
+	for _, managerID := range ks.session.SchemeManagers() {
+		if !MetaStore.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
-		transport := ks.transports[managerId]
+		transport := ks.transports[managerID]
 		comms := &proofPCommitmentMap{}
-		err := transport.Post("prove/getCommitments", comms, pkids[managerId])
+		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return
@@ -331,8 +334,8 @@ func (ks *keyshareSession) GetProofPs() {
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[SchemeManagerIdentifier]string{}
-	for _, managerId := range ks.session.SchemeManagers() {
-		transport, distributed := ks.transports[managerId]
+	for _, managerID := range ks.session.SchemeManagers() {
+		transport, distributed := ks.transports[managerID]
 		if !distributed {
 			continue
 		}
@@ -342,7 +345,7 @@ func (ks *keyshareSession) GetProofPs() {
 			ks.sessionHandler.KeyshareError(err)
 			return
 		}
-		responses[managerId] = jwt
+		responses[managerID] = jwt
 	}
 
 	ks.Finish(challenge, responses)
@@ -358,14 +361,14 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 		proofPs := make([]*gabi.ProofP, len(ks.builders))
 		for i, builder := range ks.builders {
 			// Parse each received JWT
-			managerId := NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
-			if !MetaStore.SchemeManagers[managerId].Distributed() {
+			managerID := NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
+			if !MetaStore.SchemeManagers[managerID].Distributed() {
 				continue
 			}
 			msg := struct {
 				ProofP *gabi.ProofP
 			}{}
-			_, err := jwtDecode(responses[managerId], msg)
+			_, err := jwtDecode(responses[managerID], msg)
 			if err != nil {
 				ks.sessionHandler.KeyshareError(err)
 				return
@@ -417,20 +420,20 @@ func (comms *proofPCommitmentMap) UnmarshalJSON(bytes []byte) error {
 		return err
 	}
 	for _, raw := range temp.C {
-		tempPkId := struct {
+		tempPkID := struct {
 			Issuer struct {
 				Identifier string `json:"identifier"`
 			} `json:"issuer"`
 			Counter uint `json:"counter"`
 		}{}
 		comm := gabi.ProofPCommitment{}
-		if err := json.Unmarshal([]byte(*raw[0]), &tempPkId); err != nil {
+		if err := json.Unmarshal([]byte(*raw[0]), &tempPkID); err != nil {
 			return err
 		}
 		if err := json.Unmarshal([]byte(*raw[1]), &comm); err != nil {
 			return err
 		}
-		pkid := publicKeyIdentifier{Issuer: tempPkId.Issuer.Identifier, Counter: tempPkId.Counter}
+		pkid := publicKeyIdentifier{Issuer: tempPkID.Issuer.Identifier, Counter: tempPkID.Counter}
 		comms.Commitments[pkid] = &comm
 	}
 	return nil

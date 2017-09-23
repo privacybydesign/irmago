@@ -127,6 +127,7 @@ func (sm *SchemeManager) Identifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(sm.ID)
 }
 
+// Distributed indicates if this scheme manager uses a keyshare server.
 func (sm *SchemeManager) Distributed() bool {
 	return len(sm.KeyshareServer) > 0
 }

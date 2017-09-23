@@ -35,6 +35,7 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 	}
 }
 
+// SetHeader sets a header to be sent in requests.
 func (transport *HTTPTransport) SetHeader(name, val string) {
 	transport.headers[name] = val
 }

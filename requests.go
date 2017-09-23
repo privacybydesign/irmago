@@ -15,15 +15,17 @@ import (
 
 // SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
-	Context *big.Int          `json:"nonce"`
-	Nonce   *big.Int          `json:"context"`
-	choice  *DisclosureChoice `json:"-"`
+	Context *big.Int `json:"nonce"`
+	Nonce   *big.Int `json:"context"`
+	choice  *DisclosureChoice
 }
 
+// DisclosureChoice returns the attributes to be disclosed in this session.
 func (sr *SessionRequest) DisclosureChoice() *DisclosureChoice {
 	return sr.choice
 }
 
+// SetDisclosureChoice sets the attributes to be disclosed in this session.
 func (sr *SessionRequest) SetDisclosureChoice(choice *DisclosureChoice) {
 	sr.choice = choice
 }
@@ -151,6 +153,7 @@ func newIssuanceState() (*issuanceState, error) {
 	}, nil
 }
 
+// Distributed indicates if a keyshare is involved in this session.
 func (ir *IssuanceRequest) Distributed() bool {
 	for _, manager := range ir.SchemeManagers() {
 		if MetaStore.SchemeManagers[manager].Distributed() {
@@ -160,6 +163,7 @@ func (ir *IssuanceRequest) Distributed() bool {
 	return false
 }
 
+// SchemeManagers returns a list of all scheme managers involved in this session.
 func (ir *IssuanceRequest) SchemeManagers() []SchemeManagerIdentifier {
 	list := []SchemeManagerIdentifier{}
 	for _, cred := range ir.Credentials {
@@ -188,6 +192,7 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 // SetNonce sets the nonce of this session.
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
 
+// Distributed indicates if a keyshare is involved in this session.
 func (dr *DisclosureRequest) Distributed() bool {
 	for _, manager := range dr.SchemeManagers() {
 		if MetaStore.SchemeManagers[manager].Distributed() {
@@ -197,6 +202,7 @@ func (dr *DisclosureRequest) Distributed() bool {
 	return false
 }
 
+// SchemeManagers returns a list of all scheme managers involved in this session.
 func (dr *DisclosureRequest) SchemeManagers() []SchemeManagerIdentifier {
 	list := []SchemeManagerIdentifier{}
 	for _, disjunction := range dr.Content {
