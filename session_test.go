@@ -204,7 +204,6 @@ func TestKeyshareSession(t *testing.T) {
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := Timestamp(NewMetadataAttribute().Expiry())
 	credid := NewCredentialTypeIdentifier("test.test.mijnirma")
-
 	jwt := getIssuanceJwt("testip", id)
 	jwt.(*IdentityProviderJwt).Request.Request.Credentials = append(
 		jwt.(*IdentityProviderJwt).Request.Request.Credentials,
@@ -214,7 +213,6 @@ func TestKeyshareSession(t *testing.T) {
 			Attributes: map[string]string{"email": "example@example.com"},
 		},
 	)
-
 	sessionHelper(t, jwt, "issue", false)
 
 	jwt = getDisclosureJwt("testsp", id)
@@ -225,8 +223,17 @@ func TestKeyshareSession(t *testing.T) {
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-
 	sessionHelper(t, jwt, "verification", false)
+
+	jwt = getSigningJwt("testsigclient", id)
+	jwt.(*SignatureRequestorJwt).Request.Request.Content = append(
+		jwt.(*SignatureRequestorJwt).Request.Request.Content,
+		&AttributeDisjunction{
+			Label:      "foo",
+			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		},
+	)
+	sessionHelper(t, jwt, "signature", false)
 
 	teardown(t)
 }

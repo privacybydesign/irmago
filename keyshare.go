@@ -176,7 +176,7 @@ func startKeyshareSession(
 		case kssTokenExpired:
 			askPin = true
 		default:
-			ks.sessionHandler.KeyshareError(errors.New("Keyshare server returned unrecognized authirization status"))
+			ks.sessionHandler.KeyshareError(errors.New("Keyshare server returned unrecognized authorization status"))
 			return
 		}
 	}
