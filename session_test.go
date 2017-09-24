@@ -29,7 +29,9 @@ func (th TestHandler) Failure(action Action, err *Error) {
 	th.c <- err
 }
 func (th TestHandler) UnsatisfiableRequest(action Action, missing AttributeDisjunctionList) {
-	th.c <- &Error{}
+	th.c <- &Error{
+		ErrorCode: ErrorCode("UnsatisfiableRequest"),
+	}
 }
 func (th TestHandler) AskVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler) {
 	choice := &DisclosureChoice{
@@ -175,7 +177,9 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 		t.Fatal(*err)
 	}
 
-	teardown(t)
+	if init {
+		teardown(t)
+	}
 }
 
 func registerKeyshareServer(t *testing.T) {
@@ -197,17 +201,32 @@ func registerKeyshareServer(t *testing.T) {
 func TestKeyshareSession(t *testing.T) {
 	registerKeyshareServer(t)
 
+	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := Timestamp(NewMetadataAttribute().Expiry())
 	credid := NewCredentialTypeIdentifier("test.test.mijnirma")
-	jwtcontents := NewIdentityProviderJwt("testip", &IssuanceRequest{
-		Credentials: []*CredentialRequest{
-			{
-				Validity:   &expiry,
-				Credential: &credid,
-				Attributes: map[string]string{"email": "example@example.com"},
-			},
-		},
-	})
 
-	sessionHelper(t, jwtcontents, "issue", false)
+	jwt := getIssuanceJwt("testip", id)
+	jwt.(*IdentityProviderJwt).Request.Request.Credentials = append(
+		jwt.(*IdentityProviderJwt).Request.Request.Credentials,
+		&CredentialRequest{
+			Validity:   &expiry,
+			Credential: &credid,
+			Attributes: map[string]string{"email": "example@example.com"},
+		},
+	)
+
+	sessionHelper(t, jwt, "issue", false)
+
+	jwt = getDisclosureJwt("testsp", id)
+	jwt.(*ServiceProviderJwt).Request.Request.Content = append(
+		jwt.(*ServiceProviderJwt).Request.Request.Content,
+		&AttributeDisjunction{
+			Label:      "foo",
+			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		},
+	)
+
+	sessionHelper(t, jwt, "verification", false)
+
+	teardown(t)
 }

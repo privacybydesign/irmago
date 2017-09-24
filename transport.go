@@ -18,7 +18,7 @@ type HTTPTransport struct {
 	headers map[string]string
 }
 
-const verbose = false
+const verbose = true
 
 // NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string) *HTTPTransport {

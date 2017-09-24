@@ -183,6 +183,8 @@ func startKeyshareSession(
 
 	if askPin {
 		ks.VerifyPin(-1)
+	} else {
+		ks.GetCommitments()
 	}
 }
 
@@ -356,42 +358,10 @@ func (ks *keyshareSession) GetProofPs() {
 // merge in the received ProofP's, and finish.
 func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManagerIdentifier]string) {
 	switch ks.session.(type) {
-	case *DisclosureRequest:
-	case *SignatureRequest:
-		proofPs := make([]*gabi.ProofP, len(ks.builders))
-		for i, builder := range ks.builders {
-			// Parse each received JWT
-			managerID := NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
-			if !MetaStore.SchemeManagers[managerID].Distributed() {
-				continue
-			}
-			msg := struct {
-				ProofP *gabi.ProofP
-			}{}
-			_, err := jwtDecode(responses[managerID], msg)
-			if err != nil {
-				ks.sessionHandler.KeyshareError(err)
-				return
-			}
-
-			// Decrypt the responses and populate a slice of ProofP's
-			proofPs[i] = msg.ProofP
-			bytes, err := ks.keyshareServer.PrivateKey.Decrypt(proofPs[i].C.Bytes())
-			if err != nil {
-				ks.sessionHandler.KeyshareError(err)
-				return
-			}
-			proofPs[i].C = new(big.Int).SetBytes(bytes)
-		}
-
-		// Create merged proofs and finish protocol
-		list, err := ks.builders.BuildDistributedProofList(challenge, proofPs)
-		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
-			return
-		}
-		ks.sessionHandler.KeyshareDone(list)
-
+	case *DisclosureRequest: // Can't use fallthrough in a type switch in go
+		ks.finishDisclosureOrSigning(challenge, responses)
+	case *SignatureRequest: // So we have to do this in a separate method
+		ks.finishDisclosureOrSigning(challenge, responses)
 	case *IssuanceRequest:
 		// Calculate IssueCommitmentMessage, without merging in any of the received ProofP's:
 		// instead, include the keyshare server's JWT in the IssueCommitmentMessage for the
@@ -408,6 +378,42 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 		}
 		ks.sessionHandler.KeyshareDone(message)
 	}
+}
+
+func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, responses map[SchemeManagerIdentifier]string) {
+	proofPs := make([]*gabi.ProofP, len(ks.builders))
+	for i, builder := range ks.builders {
+		// Parse each received JWT
+		managerID := NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
+		if !MetaStore.SchemeManagers[managerID].Distributed() {
+			continue
+		}
+		msg := struct {
+			ProofP *gabi.ProofP
+		}{}
+		_, err := jwtDecode(responses[managerID], &msg)
+		if err != nil {
+			ks.sessionHandler.KeyshareError(err)
+			return
+		}
+
+		// Decrypt the responses and populate a slice of ProofP's
+		proofPs[i] = msg.ProofP
+		bytes, err := ks.keyshareServer.PrivateKey.Decrypt(proofPs[i].SResponse.Bytes())
+		if err != nil {
+			ks.sessionHandler.KeyshareError(err)
+			return
+		}
+		proofPs[i].SResponse = new(big.Int).SetBytes(bytes)
+	}
+
+	// Create merged proofs and finish protocol
+	list, err := ks.builders.BuildDistributedProofList(challenge, proofPs)
+	if err != nil {
+		ks.sessionHandler.KeyshareError(err)
+		return
+	}
+	ks.sessionHandler.KeyshareDone(list)
 }
 
 // TODO this message is ugly, should update protocol

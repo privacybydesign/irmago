@@ -47,6 +47,7 @@ func teardown(t *testing.T) {
 	MetaStore = newConfigurationStore()
 	Manager = newCredentialManager()
 	assert.NoError(t, os.RemoveAll("testdata/storage/test"))
+	// TODO first RemoveAll?!
 }
 
 // A convenience function for initializing big integers from known correct (10
