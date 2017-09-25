@@ -112,6 +112,10 @@ const (
 	ErrorKeyshare = ErrorCode("keyshare")
 	// Keyshare server has blocked us
 	ErrorKeyshareBlocked = ErrorCode("keyshareBlocked")
+	// API server error
+	ErrorApi = ErrorCode("api")
+	// Server returned unexpected or malformed response
+	ErrorServerResponse = ErrorCode("serverResponse")
 )
 
 func (e *Error) Error() string {

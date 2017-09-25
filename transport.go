@@ -18,7 +18,7 @@ type HTTPTransport struct {
 	headers map[string]string
 }
 
-const verbose = true
+const verbose = false
 
 // NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string) *HTTPTransport {
@@ -61,7 +61,6 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 			marshaled, err := json.Marshal(object)
 			if err != nil {
 				return &Error{Err: err, ErrorCode: ErrorSerialization}
-				//return &TransportError{Err: err.Error()}
 			}
 			if verbose {
 				fmt.Printf("POST %s: %s\n", url, string(marshaled))
@@ -89,23 +88,23 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	res, err := transport.client.Do(req)
 	if err != nil {
-		return &Error{Err: err, ErrorCode: ErrorTransport}
+		return &Error{ErrorCode: ErrorTransport, Err: err}
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return &Error{Err: err, Status: res.StatusCode}
+		return &Error{ErrorCode: ErrorServerResponse, Err: err, Status: res.StatusCode}
 	}
 	if res.StatusCode != 200 {
 		apierr := &ApiError{}
 		json.Unmarshal(body, apierr)
 		if apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &Error{ErrorCode: ErrorTransport, Status: res.StatusCode}
+			return &Error{ErrorCode: ErrorServerResponse, Status: res.StatusCode}
 		}
 		if verbose {
 			fmt.Printf("ERROR: %+v\n", apierr)
 		}
-		return &Error{ErrorCode: ErrorTransport, Status: res.StatusCode, ApiError: apierr}
+		return &Error{ErrorCode: ErrorApi, Status: res.StatusCode, ApiError: apierr}
 	}
 
 	if verbose {
@@ -116,7 +115,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	} else {
 		err = json.Unmarshal(body, result)
 		if err != nil {
-			return &Error{Err: err, Status: res.StatusCode}
+			return &Error{ErrorCode: ErrorServerResponse, Err: err, Status: res.StatusCode}
 		}
 	}
 
