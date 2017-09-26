@@ -89,8 +89,11 @@ func (cm *CredentialManager) Init(path string, keyshareHandler KeyshareHandler) 
 // CAREFUL: this method overwrites any existing secret keys and attributes on storage.
 func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	exists, err := PathExists(cm.path(cardemuXML))
-	if err != nil || !exists {
+	if err != nil {
 		return
+	}
+	if !exists {
+		return errors.New("cardemu.xml not found at " + cardemuXML)
 	}
 
 	bytes, err := ioutil.ReadFile(cm.path(cardemuXML))
