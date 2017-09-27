@@ -1,9 +1,6 @@
 package irmago
 
-import (
-	"encoding/json"
-	"strings"
-)
+import "strings"
 
 type metaObjectIdentifier string
 
@@ -104,40 +101,46 @@ func (ai *AttributeIdentifier) CredentialIdentifier() CredentialIdentifier {
 	return CredentialIdentifier{Type: ai.Type.CredentialTypeIdentifier(), Index: ai.Index, Count: ai.Count}
 }
 
-// MarshalJSON marshals this instance to JSON as a string.
-func (id AttributeTypeIdentifier) MarshalJSON() ([]byte, error) {
-	return json.Marshal(id.String())
+// MarshalText implements encoding.TextMarshaler.
+func (id SchemeManagerIdentifier) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
 }
 
-// MarshalJSON marshals this instance to JSON as a string.
-func (id CredentialTypeIdentifier) MarshalJSON() ([]byte, error) {
-	return json.Marshal(id.String())
-}
-
-// UnmarshalJSON unmarshals this instance from JSON.
-func (id *AttributeTypeIdentifier) UnmarshalJSON(b []byte) error {
-	var val string
-	err := json.Unmarshal(b, &val)
-	if err != nil {
-		return err
-	}
-	id.metaObjectIdentifier = metaObjectIdentifier(val)
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (id *SchemeManagerIdentifier) UnmarshalText(text []byte) error {
+	*id = NewSchemeManagerIdentifier(string(text))
 	return nil
 }
 
-// UnmarshalJSON unmarshals this instance from JSON.
-func (id *CredentialTypeIdentifier) UnmarshalJSON(b []byte) error {
-	var val string
-	err := json.Unmarshal(b, &val)
-	if err != nil {
-		return err
-	}
-	id.metaObjectIdentifier = metaObjectIdentifier(val)
-	return nil
+// MarshalText implements encoding.TextMarshaler.
+func (id IssuerIdentifier) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
 }
 
-// TODO this also for the other identifiers
+// UnmarshalText implements encoding.TextUnmarshaler.
 func (id *IssuerIdentifier) UnmarshalText(text []byte) error {
 	*id = NewIssuerIdentifier(string(text))
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (id CredentialTypeIdentifier) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (id *CredentialTypeIdentifier) UnmarshalText(text []byte) error {
+	*id = NewCredentialTypeIdentifier(string(text))
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (id AttributeTypeIdentifier) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (id *AttributeTypeIdentifier) UnmarshalText(text []byte) error {
+	*id = NewAttributeTypeIdentifier(string(text))
 	return nil
 }

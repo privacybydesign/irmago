@@ -110,7 +110,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	xml.Unmarshal(bytes, &parsedxml)
 
 	parsedjson := make(map[string][]*gabi.Credential)
-	parsedksses := make(map[string]*keyshareServer)
+	cm.keyshareServers = make(map[SchemeManagerIdentifier]*keyshareServer)
 	for _, xmltag := range parsedxml.Strings {
 		if xmltag.Name == "credentials" {
 			jsontag := html.UnescapeString(xmltag.Content)
@@ -120,7 +120,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 		}
 		if xmltag.Name == "keyshare" {
 			jsontag := html.UnescapeString(xmltag.Content)
-			if err = json.Unmarshal([]byte(jsontag), &parsedksses); err != nil {
+			if err = json.Unmarshal([]byte(jsontag), &cm.keyshareServers); err != nil {
 				return
 			}
 		}
@@ -132,10 +132,6 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 			}
 			cm.paillierKeyCache = keys[0]
 		}
-	}
-
-	for name, kss := range parsedksses {
-		cm.keyshareServers[NewSchemeManagerIdentifier(name)] = kss
 	}
 
 	for _, list := range parsedjson {
@@ -261,13 +257,7 @@ func (cm *CredentialManager) storeSignature(cred *credential, counter int) (err 
 }
 
 func (cm *CredentialManager) storeAttributes() (err error) {
-	// Unfortunately, the type of cm.attributes (map[CredentialTypeIdentifier][]*AttributeList)
-	// cannot be passed directly to json.Marshal(), so we copy it into a temp list.
-	temp := make(map[string][]*AttributeList)
-	for credid, list := range cm.attributes {
-		temp[credid.String()] = list
-	}
-	attrbytes, err := json.Marshal(temp)
+	attrbytes, err := json.Marshal(cm.attributes)
 	if err != nil {
 		return err
 	}
@@ -278,11 +268,7 @@ func (cm *CredentialManager) storeAttributes() (err error) {
 }
 
 func (cm *CredentialManager) storeKeyshareServers() (err error) {
-	temp := make(map[string]*keyshareServer)
-	for name, kss := range cm.keyshareServers {
-		temp[name.String()] = kss
-	}
-	bts, err := json.Marshal(temp)
+	bts, err := json.Marshal(cm.keyshareServers)
 	if err != nil {
 		return
 	}
@@ -345,32 +331,24 @@ func (cm *CredentialManager) loadSecretKey() (*big.Int, error) {
 
 func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier][]*AttributeList, err error) {
 	list = make(map[CredentialTypeIdentifier][]*AttributeList)
-	temp := make(map[string][]*AttributeList)
-
 	exists, err := PathExists(cm.path(attributesFile))
 	if err != nil || !exists {
 		return
 	}
-
 	bytes, err := ioutil.ReadFile(cm.path(attributesFile))
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(bytes, &temp)
+	err = json.Unmarshal(bytes, &list)
 	if err != nil {
 		return nil, err
 	}
 
-	for credid, attrs := range temp {
-		list[NewCredentialTypeIdentifier(credid)] = attrs
-	}
 	return list, nil
 }
 
 func (cm *CredentialManager) loadKeyshareServers() (ksses map[SchemeManagerIdentifier]*keyshareServer, err error) {
 	ksses = make(map[SchemeManagerIdentifier]*keyshareServer)
-	temp := make(map[string]*keyshareServer)
-
 	exists, err := PathExists(cm.path(kssFile))
 	if err != nil || !exists {
 		return
@@ -379,12 +357,9 @@ func (cm *CredentialManager) loadKeyshareServers() (ksses map[SchemeManagerIdent
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(bytes, &temp)
+	err = json.Unmarshal(bytes, &ksses)
 	if err != nil {
 		return nil, err
-	}
-	for name, kss := range temp {
-		ksses[NewSchemeManagerIdentifier(name)] = kss
 	}
 	return
 }

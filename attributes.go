@@ -87,16 +87,6 @@ func (al *AttributeList) Info() *Credential {
 	return al.info
 }
 
-// TODO maybe remove
-func (al *AttributeList) hash() string {
-	bytes := make([]byte, 20)
-	for _, i := range al.Ints {
-		bytes = append(bytes, i.Bytes()...)
-	}
-	shasum := sha256.Sum256(bytes)
-	return string(shasum[:])
-}
-
 // Strings converts the current instance to human-readable strings.
 func (al *AttributeList) Strings() []string {
 	if al.strings == nil {
