@@ -43,7 +43,7 @@ type session struct {
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
-	2: {2, 1},
+	3: {0},
 }
 
 func calcVersion(qr *Qr) (string, error) {

@@ -135,3 +135,9 @@ func (id *CredentialTypeIdentifier) UnmarshalJSON(b []byte) error {
 	id.metaObjectIdentifier = metaObjectIdentifier(val)
 	return nil
 }
+
+// TODO this also for the other identifiers
+func (id *IssuerIdentifier) UnmarshalText(text []byte) error {
+	*id = NewIssuerIdentifier(string(text))
+	return nil
+}

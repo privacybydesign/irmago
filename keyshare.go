@@ -4,11 +4,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
+	"fmt"
+	"math/big"
 	"strconv"
 
-	"math/big"
+	"strings"
 
 	"github.com/mhe/gabi"
 )
@@ -68,16 +69,22 @@ type publicKeyIdentifier struct {
 	Counter uint   `json:"counter"`
 }
 
-// TODO update protocol so this can go away
-func (pki *publicKeyIdentifier) MarshalJSON() ([]byte, error) {
-	temp := struct {
-		Issuer  map[string]string `json:"issuer"`
-		Counter uint              `json:"counter"`
-	}{
-		Issuer:  map[string]string{"identifier": pki.Issuer},
-		Counter: pki.Counter,
+func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
+	str := string(text)
+	index := strings.LastIndex(str, "-")
+	if index == -1 {
+		return errors.New("Invalid publicKeyIdentifier")
 	}
-	return json.Marshal(temp)
+	counter, err := strconv.Atoi(str[index+1:])
+	if err != nil {
+		return err
+	}
+	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
+	return nil
+}
+
+func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
+	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
 }
 
 type proofPCommitmentMap struct {
@@ -414,33 +421,4 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		return
 	}
 	ks.sessionHandler.KeyshareDone(list)
-}
-
-// TODO this message is ugly, should update protocol
-func (comms *proofPCommitmentMap) UnmarshalJSON(bytes []byte) error {
-	comms.Commitments = map[publicKeyIdentifier]*gabi.ProofPCommitment{}
-	temp := struct {
-		C [][]*json.RawMessage `json:"c"`
-	}{}
-	if err := json.Unmarshal(bytes, &temp); err != nil {
-		return err
-	}
-	for _, raw := range temp.C {
-		tempPkID := struct {
-			Issuer struct {
-				Identifier string `json:"identifier"`
-			} `json:"issuer"`
-			Counter uint `json:"counter"`
-		}{}
-		comm := gabi.ProofPCommitment{}
-		if err := json.Unmarshal([]byte(*raw[0]), &tempPkID); err != nil {
-			return err
-		}
-		if err := json.Unmarshal([]byte(*raw[1]), &comm); err != nil {
-			return err
-		}
-		pkid := publicKeyIdentifier{Issuer: tempPkID.Issuer.Identifier, Counter: tempPkID.Counter}
-		comms.Commitments[pkid] = &comm
-	}
-	return nil
 }

@@ -26,7 +26,11 @@ func (th TestHandler) Cancelled(action Action) {
 	th.c <- &Error{}
 }
 func (th TestHandler) Failure(action Action, err *Error) {
-	th.c <- err
+	select {
+	case th.c <- err:
+	default:
+		th.t.Fatal(err)
+	}
 }
 func (th TestHandler) UnsatisfiableRequest(action Action, missing AttributeDisjunctionList) {
 	th.c <- &Error{
@@ -153,7 +157,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 		parseAndroidStorage(t)
 	}
 
-	url = "http://localhost:8081/irma_api_server/api/v2/" + url
+	url = "http://localhost:8081/irma_api_server/api/v3/" + url
 	//url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
 
 	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})

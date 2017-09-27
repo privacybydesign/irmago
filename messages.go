@@ -59,25 +59,6 @@ type SessionInfo struct {
 	Keys    map[IssuerIdentifier]int `json:"keys"`
 }
 
-/*
-So apparently, in the old Java implementation we forgot to write a (de)serialization for the Java
-equivalent of the type IssuerIdentifier. This means a Java IssuerIdentifier does not serialize to
-a string, but to e.g. `{"identifier":"irma-demo.RU"}`.
-This is a complex data type, so not suitable to act as keys in a JSON map. Consequentially,
-Gson serializes the `json:"keys"` field not as a map, but as a list consisting of pairs where
-the first item of the pair is a serialized IssuerIdentifier as above, and the second item
-of the pair is the corresponding key counter from the original map.
-This is a bit of a mess to have to deserialize. See below. In a future version of the protocol,
-this will have to be fixed both in the Java world and here in Go.
-*/
-
-type jsonSessionInfo struct {
-	Jwt     string          `json:"jwt"`
-	Nonce   *big.Int        `json:"nonce"`
-	Context *big.Int        `json:"context"`
-	Keys    [][]interface{} `json:"keys"`
-}
-
 // Statuses
 const (
 	StatusConnected     = Status("connected")
@@ -147,36 +128,4 @@ func jwtDecode(jwt string, body interface{}) (string, error) {
 		return "", err
 	}
 	return header.Issuer, json.Unmarshal(bodybytes, body)
-}
-
-// UnmarshalJSON unmarshals session information.
-func (si *SessionInfo) UnmarshalJSON(b []byte) error {
-	temp := &jsonSessionInfo{}
-	err := json.Unmarshal(b, temp)
-	if err != nil {
-		return err
-	}
-
-	si.Jwt = temp.Jwt
-	si.Nonce = temp.Nonce
-	si.Context = temp.Context
-	si.Keys = make(map[IssuerIdentifier]int, len(temp.Keys))
-	for _, item := range temp.Keys {
-		var idmap map[string]interface{}
-		var idstr string
-		var counter float64
-		var ok bool
-		if idmap, ok = item[0].(map[string]interface{}); !ok {
-			return errors.New("Failed to deserialize session info")
-		}
-		if idstr, ok = idmap["identifier"].(string); !ok {
-			return errors.New("Failed to deserialize session info")
-		}
-		if counter, ok = item[1].(float64); !ok {
-			return errors.New("Failed to deserialize session info")
-		}
-		id := NewIssuerIdentifier(idstr)
-		si.Keys[id] = int(counter)
-	}
-	return nil
 }

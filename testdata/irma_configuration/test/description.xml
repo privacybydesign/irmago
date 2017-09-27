@@ -9,7 +9,7 @@
 		<en>A test scheme manager with a scheme manager.</en>
 		<nl>Een test-scheme manager met een keyshare server.</nl>
 	</Description>
-	<KeyshareServer>http://localhost:8080/irma_keyshare_server/api/v1</KeyshareServer>
+	<KeyshareServer>http://localhost:8080/irma_keyshare_server/api/v2</KeyshareServer>
 	<KeyshareWebsite>http://localhost:8080/irma_keyshare_server/mijnirma/</KeyshareWebsite>
 	<KeyshareAttribute>test.test.mijnirma.email</KeyshareAttribute>
 	<Contact>https://privacybydesign.foundation/</Contact>
