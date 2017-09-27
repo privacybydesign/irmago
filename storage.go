@@ -73,7 +73,7 @@ func (cm *CredentialManager) Init(path string, keyshareHandler KeyshareHandler) 
 		if keyshareHandler == nil {
 			return errors.New("Keyshare server found but no KeyshareHandler was given")
 		}
-		keyshareHandler.StartKeyshareRegistration(unenrolled[0], func(email, pin string) {
+		keyshareHandler.StartRegistration(unenrolled[0], func(email, pin string) {
 			cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
 		})
 	default:

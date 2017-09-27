@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 
 type IgnoringKeyshareHandler struct{}
 
-func (i *IgnoringKeyshareHandler) StartKeyshareRegistration(m *SchemeManager, callback func(e, p string)) {
+func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string)) {
 }
 
 func parseMetaStore(t *testing.T) {
