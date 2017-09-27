@@ -9,6 +9,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/mhe/gabi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -326,4 +327,36 @@ func TestTransport(t *testing.T) {
 	if err != nil { // require.NoError() does not work because of the type of err
 		t.Fatalf("%+v\n", err)
 	}
+}
+
+func TestPaillier(t *testing.T) {
+	parseMetaStore(t)
+	parseStorage(t)
+	parseAndroidStorage(t)
+
+	challenge, _ := gabi.RandomBigInt(256)
+	comm, _ := gabi.RandomBigInt(1000)
+	resp, _ := gabi.RandomBigInt(1000)
+
+	sk := Manager.paillierKey(true)
+	bytes, err := sk.Encrypt(challenge.Bytes())
+	require.NoError(t, err)
+	cipher := new(big.Int).SetBytes(bytes)
+
+	bytes, err = sk.Encrypt(comm.Bytes())
+	require.NoError(t, err)
+	commcipher := new(big.Int).SetBytes(bytes)
+
+	// [[ c ]]^resp * [[ comm ]]
+	cipher.Exp(cipher, resp, sk.NSquared).Mul(cipher, commcipher).Mod(cipher, sk.NSquared)
+
+	bytes, err = sk.Decrypt(cipher.Bytes())
+	require.NoError(t, err)
+	plaintext := new(big.Int).SetBytes(bytes)
+	expected := new(big.Int).Set(challenge)
+	expected.Mul(expected, resp).Add(expected, comm)
+
+	require.Equal(t, plaintext, expected)
+
+	teardown(t)
 }
