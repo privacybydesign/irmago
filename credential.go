@@ -11,8 +11,6 @@ import (
 type credential struct {
 	*gabi.Credential
 	*MetadataAttribute
-
-	info *Credential
 }
 
 // A Credential contains all information of an IRMA credential.
@@ -32,31 +30,11 @@ type CredentialList []*Credential
 
 func newCredential(gabicred *gabi.Credential) (cred *credential) {
 	meta := MetadataFromInt(gabicred.Attributes[1])
-	credtype := meta.CredentialType()
-	issid := credtype.IssuerIdentifier()
-
-	attrs := make([]TranslatedString, len(credtype.Attributes))
-	for i := range credtype.Attributes {
-		val := string(gabicred.Attributes[i+2].Bytes())
-		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
-	}
-
 	cred = &credential{
 		Credential:        gabicred,
 		MetadataAttribute: meta,
-		info: &Credential{
-			ID:            credtype.Identifier().String(),
-			SignedOn:      Timestamp(meta.SigningDate()),
-			Expires:       Timestamp(meta.Expiry()),
-			Type:          credtype,
-			Issuer:        MetaStore.Issuers[issid],
-			SchemeManager: MetaStore.SchemeManagers[issid.SchemeManagerIdentifier()],
-			Attributes:    attrs,
-			Logo:          "", // TODO
-		},
 	}
-	cred.Pk = MetaStore.PublicKey(issid, cred.KeyCounter())
-
+	cred.Pk = MetaStore.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
 	return
 }
 

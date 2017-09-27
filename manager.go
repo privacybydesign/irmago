@@ -36,11 +36,13 @@ func newCredentialManager() *CredentialManager {
 // CredentialList returns a list of information of all contained credentials.
 func (cm *CredentialManager) CredentialList() CredentialList {
 	list := CredentialList([]*Credential{})
-	for _, credlist := range cm.credentials {
-		for _, cred := range credlist {
-			list = append(list, cred.info)
+
+	for _, attrlistlist := range cm.attributes {
+		for _, attrlist := range attrlistlist {
+			list = append(list, attrlist.info)
 		}
 	}
+
 	sort.Sort(list)
 	return list
 }

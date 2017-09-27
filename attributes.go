@@ -44,16 +44,50 @@ type MetadataAttribute struct {
 // AttributeList contains attributes, excluding the secret key,
 // providing convenient access to the metadata attribute.
 type AttributeList struct {
+	*MetadataAttribute `json:"-"`
 	Ints               []*big.Int
 	strings            []string
-	*MetadataAttribute `json:"-"`
+	info               *Credential
+}
+
+func (al *AttributeList) MarshalJSON() ([]byte, error) {
+	return json.Marshal(al.Ints)
+}
+
+func (al *AttributeList) UnmarshalJSON(bytes []byte) error {
+	ints := []*big.Int{}
+	if err := json.Unmarshal(bytes, &ints); err != nil {
+		return err
+	}
+	*al = *NewAttributeListFromInts(ints)
+	return nil
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
 func NewAttributeListFromInts(ints []*big.Int) *AttributeList {
+	meta := MetadataFromInt(ints[0])
+	credtype := meta.CredentialType()
+	issid := credtype.IssuerIdentifier()
+
+	attrs := make([]TranslatedString, len(credtype.Attributes))
+	for i := range credtype.Attributes {
+		val := string(ints[i+1].Bytes())
+		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
+	}
+
 	return &AttributeList{
 		Ints:              ints,
-		MetadataAttribute: MetadataFromInt(ints[0]),
+		MetadataAttribute: meta,
+		info: &Credential{
+			ID:            credtype.Identifier().String(),
+			SignedOn:      Timestamp(meta.SigningDate()),
+			Expires:       Timestamp(meta.Expiry()),
+			Type:          credtype,
+			Issuer:        MetaStore.Issuers[issid],
+			SchemeManager: MetaStore.SchemeManagers[issid.SchemeManagerIdentifier()],
+			Attributes:    attrs,
+			Logo:          "", // TODO
+		},
 	}
 }
 
