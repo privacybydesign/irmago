@@ -59,36 +59,32 @@ func (al *AttributeList) UnmarshalJSON(bytes []byte) error {
 	if err := json.Unmarshal(bytes, &ints); err != nil {
 		return err
 	}
-	*al = *NewAttributeListFromInts(ints)
+	list, err := NewAttributeListFromInts(ints)
+	if err != nil {
+		return err
+	}
+	*al = *list
 	return nil
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
-func NewAttributeListFromInts(ints []*big.Int) *AttributeList {
+func NewAttributeListFromInts(ints []*big.Int) (*AttributeList, error) {
 	meta := MetadataFromInt(ints[0])
-	credtype := meta.CredentialType()
-	issid := credtype.IssuerIdentifier()
-
-	attrs := make([]TranslatedString, len(credtype.Attributes))
-	for i := range credtype.Attributes {
-		val := string(ints[i+1].Bytes())
-		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
+	if ints[0] == nil || meta.CredentialType() == nil {
+		return nil, errors.New("Encountered credential of unknown type")
 	}
 
 	return &AttributeList{
 		Ints:              ints,
 		MetadataAttribute: meta,
-		info: &Credential{
-			ID:            credtype.Identifier().String(),
-			SignedOn:      Timestamp(meta.SigningDate()),
-			Expires:       Timestamp(meta.Expiry()),
-			Type:          credtype,
-			Issuer:        MetaStore.Issuers[issid],
-			SchemeManager: MetaStore.SchemeManagers[issid.SchemeManagerIdentifier()],
-			Attributes:    attrs,
-			Logo:          "", // TODO
-		},
+	}, nil
+}
+
+func (al *AttributeList) Info() *Credential {
+	if al.info == nil {
+		al.info = NewCredential(al.Ints)
 	}
+	return al.info
 }
 
 // TODO maybe remove

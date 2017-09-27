@@ -3,6 +3,8 @@ package irmago
 import (
 	"strings"
 
+	"math/big"
+
 	"github.com/mhe/gabi"
 )
 
@@ -27,6 +29,29 @@ type Credential struct {
 
 // A CredentialList is a list of credentials (implements sort.Interface).
 type CredentialList []*Credential
+
+func NewCredential(ints []*big.Int) *Credential {
+	meta := MetadataFromInt(ints[0])
+	credtype := meta.CredentialType()
+	issid := credtype.IssuerIdentifier()
+
+	attrs := make([]TranslatedString, len(credtype.Attributes))
+	for i := range credtype.Attributes {
+		val := string(ints[i+1].Bytes())
+		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
+	}
+
+	return &Credential{
+		ID:            credtype.Identifier().String(),
+		SignedOn:      Timestamp(meta.SigningDate()),
+		Expires:       Timestamp(meta.Expiry()),
+		Type:          credtype,
+		Issuer:        MetaStore.Issuers[issid],
+		SchemeManager: MetaStore.SchemeManagers[issid.SchemeManagerIdentifier()],
+		Attributes:    attrs,
+		Logo:          "", // TODO
+	}
+}
 
 func newCredential(gabicred *gabi.Credential) (cred *credential) {
 	meta := MetadataFromInt(gabicred.Attributes[1])

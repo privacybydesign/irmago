@@ -39,7 +39,7 @@ func (cm *CredentialManager) CredentialList() CredentialList {
 
 	for _, attrlistlist := range cm.attributes {
 		for _, attrlist := range attrlistlist {
-			list = append(list, attrlist.info)
+			list = append(list, attrlist.Info())
 		}
 	}
 
@@ -119,15 +119,20 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 	return cm.credentials[id][counter], nil
 }
 
-func (cm *CredentialManager) addCredential(cred *credential) {
+func (cm *CredentialManager) addCredential(cred *credential) error {
+	attrs, err := NewAttributeListFromInts(cred.Attributes[1:])
+	if err != nil {
+		return err
+	}
 	id := cred.CredentialType().Identifier()
-	cm.attributes[id] = append(cm.attrs(id), NewAttributeListFromInts(cred.Attributes[1:]))
+	cm.attributes[id] = append(cm.attrs(id), attrs)
 
 	if _, exists := cm.credentials[id]; !exists {
 		cm.credentials[id] = make(map[int]*credential)
 	}
 	counter := len(cm.attributes[id]) - 1
 	cm.credentials[id][counter] = cred
+	return nil
 }
 
 // add adds the specified credential to the CredentialManager.
@@ -136,11 +141,12 @@ func (cm *CredentialManager) add(cred *credential) (err error) {
 		return errors.New("cannot add unknown credential type")
 	}
 
-	cm.addCredential(cred)
+	if err = cm.addCredential(cred); err != nil {
+		return
+	}
 	counter := len(cm.credentials[cred.CredentialType().Identifier()]) - 1
 
-	err = cm.storeSignature(cred, counter)
-	if err != nil {
+	if err = cm.storeSignature(cred, counter); err != nil {
 		return
 	}
 	err = cm.storeAttributes()
@@ -167,7 +173,8 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 			if attribute.IsCredential() {
 				candidates = append(candidates, id)
 			} else {
-				attrs := NewAttributeListFromInts(cred.Attributes[1:])
+				// Ignoring error of unknown credential type, would have happened during initialization
+				attrs, _ := NewAttributeListFromInts(cred.Attributes[1:])
 				val := attrs.Attribute(attribute)
 				if val == "" { // This won't handle empty attributes correctly
 					continue

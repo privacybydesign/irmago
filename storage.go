@@ -40,28 +40,29 @@ func PathExists(path string) (bool, error) {
 }
 
 // Init deserializes the credentials from storage.
-func (cm *CredentialManager) Init(path string, keyshareHandler KeyshareHandler) (err error) {
-	cm.storagePath = path
-
-	err = cm.ensureStorageExists()
-	if err != nil {
-		return err
-	}
-	cm.secretkey, err = cm.loadSecretKey()
-	if err != nil {
-		return
-	}
-	cm.attributes, err = cm.loadAttributes()
-	if err != nil {
-		return
-	}
-	cm.paillierKeyCache, err = cm.loadPaillierKeys()
-	if err != nil {
+func (cm *CredentialManager) Init(
+	storagePath string,
+	irmaConfigurationPath string,
+	keyshareHandler KeyshareHandler,
+) (err error) {
+	if err = MetaStore.ParseFolder(irmaConfigurationPath); err != nil {
 		return
 	}
 
-	cm.keyshareServers, err = cm.loadKeyshareServers()
-	if err != nil {
+	cm.storagePath = storagePath
+	if err = cm.ensureStorageExists(); err != nil {
+		return
+	}
+	if cm.secretkey, err = cm.loadSecretKey(); err != nil {
+		return
+	}
+	if cm.attributes, err = cm.loadAttributes(); err != nil {
+		return
+	}
+	if cm.paillierKeyCache, err = cm.loadPaillierKeys(); err != nil {
+		return
+	}
+	if cm.keyshareServers, err = cm.loadKeyshareServers(); err != nil {
 		return
 	}
 
@@ -301,8 +302,11 @@ func (cm *CredentialManager) storePaillierKeys() (err error) {
 func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter int) (signature *gabi.CLSignature, err error) {
 	sigpath := cm.signatureFilename(id.String(), counter)
 	exists, err := PathExists(sigpath)
-	if err != nil || !exists {
+	if err != nil {
 		return
+	}
+	if !exists {
+		return nil, errors.New("Signature file not found")
 	}
 	bytes, err := ioutil.ReadFile(sigpath)
 	if err != nil {

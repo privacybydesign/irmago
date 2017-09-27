@@ -149,7 +149,6 @@ func TestIssuanceSession(t *testing.T) {
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool) {
 	if init {
-		parseMetaStore(t)
 		parseStorage(t)
 		parseAndroidStorage(t)
 	}
@@ -183,7 +182,6 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 }
 
 func registerKeyshareServer(t *testing.T) {
-	parseMetaStore(t)
 	parseStorage(t)
 	parseAndroidStorage(t)
 

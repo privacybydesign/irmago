@@ -139,7 +139,7 @@ func (cr *CredentialRequest) AttributeList() (*AttributeList, error) {
 		}
 	}
 
-	return NewAttributeListFromInts(attrs), nil
+	return NewAttributeListFromInts(attrs)
 }
 
 func newIssuanceState() (*issuanceState, error) {
