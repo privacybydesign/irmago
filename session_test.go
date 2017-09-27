@@ -97,7 +97,7 @@ func getIssuanceJwt(name string, id AttributeTypeIdentifier) interface{} {
 				Credential: &credid1,
 				Attributes: map[string]string{
 					"university":        "Radboud",
-					"studentCardNumber": "3.1415926535897932384626433832795028841971694",
+					"studentCardNumber": "3.14159265358979323846264338328",
 					"studentID":         "s1234567",
 					"level":             "42",
 				},
