@@ -379,9 +379,9 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 			return
 		}
 		message := gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.session.(*IssuanceRequest).state.nonce2}
-		for _, response := range responses {
-			message.ProofPjwt = response
-			break
+		message.ProofPjwts = map[string]string{}
+		for manager, response := range responses {
+			message.ProofPjwts[manager.String()] = response
 		}
 		ks.sessionHandler.KeyshareDone(message)
 	}
