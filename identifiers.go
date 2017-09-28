@@ -112,16 +112,17 @@ func (id *SchemeManagerIdentifier) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// MarshalText implements encoding.TextMarshaler.
-func (id IssuerIdentifier) MarshalText() ([]byte, error) {
-	return []byte(id.String()), nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (id *IssuerIdentifier) UnmarshalText(text []byte) error {
-	*id = NewIssuerIdentifier(string(text))
-	return nil
-}
+// TODO enable this when updating protocol
+//// MarshalText implements encoding.TextMarshaler.
+//func (id IssuerIdentifier) MarshalText() ([]byte, error) {
+//	return []byte(id.String()), nil
+//}
+//
+//// UnmarshalText implements encoding.TextUnmarshaler.
+//func (id *IssuerIdentifier) UnmarshalText(text []byte) error {
+//	*id = NewIssuerIdentifier(string(text))
+//	return nil
+//}
 
 // MarshalText implements encoding.TextMarshaler.
 func (id CredentialTypeIdentifier) MarshalText() ([]byte, error) {

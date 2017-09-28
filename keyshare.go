@@ -5,11 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"math/big"
 	"strconv"
-
-	"strings"
 
 	"github.com/mhe/gabi"
 )
@@ -69,23 +66,24 @@ type publicKeyIdentifier struct {
 	Counter uint   `json:"counter"`
 }
 
-func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
-	str := string(text)
-	index := strings.LastIndex(str, "-")
-	if index == -1 {
-		return errors.New("Invalid publicKeyIdentifier")
-	}
-	counter, err := strconv.Atoi(str[index+1:])
-	if err != nil {
-		return err
-	}
-	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
-	return nil
-}
-
-func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
-	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
-}
+// TODO enable this when updating protocol
+//func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
+//	str := string(text)
+//	index := strings.LastIndex(str, "-")
+//	if index == -1 {
+//		return errors.New("Invalid publicKeyIdentifier")
+//	}
+//	counter, err := strconv.Atoi(str[index+1:])
+//	if err != nil {
+//		return err
+//	}
+//	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
+//	return nil
+//}
+//
+//func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
+//	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
+//}
 
 type proofPCommitmentMap struct {
 	Commitments map[publicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
@@ -379,10 +377,15 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 			return
 		}
 		message := gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.session.(*IssuanceRequest).state.nonce2}
-		message.ProofPjwts = map[string]string{}
-		for manager, response := range responses {
-			message.ProofPjwts[manager.String()] = response
+		for _, response := range responses {
+			message.ProofPjwt = response
+			break
 		}
+		// TODO for new protocol version
+		//message.ProofPjwts = map[string]string{}
+		//for manager, response := range responses {
+		//	message.ProofPjwts[manager.String()] = response
+		//}
 		ks.sessionHandler.KeyshareDone(message)
 	}
 }
