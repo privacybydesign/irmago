@@ -33,9 +33,9 @@ func newCredentialManager() *CredentialManager {
 	}
 }
 
-// CredentialList returns a list of information of all contained credentials.
-func (cm *CredentialManager) CredentialList() CredentialList {
-	list := CredentialList([]*Credential{})
+// CredentialInfoList returns a list of information of all contained credentials.
+func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
+	list := CredentialInfoList([]*CredentialInfo{})
 
 	for _, attrlistlist := range cm.attributes {
 		for _, attrlist := range attrlistlist {

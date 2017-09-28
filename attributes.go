@@ -47,7 +47,7 @@ type AttributeList struct {
 	*MetadataAttribute `json:"-"`
 	Ints               []*big.Int
 	strings            []string
-	info               *Credential
+	info               *CredentialInfo
 }
 
 func (al *AttributeList) MarshalJSON() ([]byte, error) {
@@ -80,9 +80,9 @@ func NewAttributeListFromInts(ints []*big.Int) (*AttributeList, error) {
 	}, nil
 }
 
-func (al *AttributeList) Info() *Credential {
+func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
-		al.info = NewCredential(al.Ints)
+		al.info = NewCredentialInfo(al.Ints)
 	}
 	return al.info
 }
