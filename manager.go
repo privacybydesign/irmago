@@ -225,8 +225,8 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 	return grouped, nil
 }
 
-// Session is an IRMA session.
-type Session interface {
+// IrmaSession is an IRMA session.
+type IrmaSession interface {
 	GetNonce() *big.Int
 	SetNonce(*big.Int)
 	GetContext() *big.Int
@@ -257,7 +257,7 @@ func (cm *CredentialManager) ProofBuilders(choice *DisclosureChoice) (gabi.Proof
 }
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.
-func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request Session, issig bool) (gabi.ProofList, error) {
+func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request IrmaSession, issig bool) (gabi.ProofList, error) {
 	builders, err := cm.ProofBuilders(choice)
 	if err != nil {
 		return nil, err

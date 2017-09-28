@@ -36,7 +36,7 @@ type session struct {
 	Handler   Handler
 
 	jwt         RequestorJwt
-	irmaSession Session
+	irmaSession IrmaSession
 	transport   *HTTPTransport
 	choice      *DisclosureChoice
 }

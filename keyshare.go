@@ -24,7 +24,7 @@ type keyshareSessionHandler interface {
 }
 
 type keyshareSession struct {
-	session        Session
+	session        IrmaSession
 	builders       gabi.ProofBuilderList
 	transports     map[SchemeManagerIdentifier]*HTTPTransport
 	sessionHandler keyshareSessionHandler
@@ -127,7 +127,7 @@ func (ks *keyshareServer) HashedPin(pin string) string {
 // user cancels; or one of the keyshare servers blocks us.
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
 func startKeyshareSession(
-	session Session,
+	session IrmaSession,
 	builders gabi.ProofBuilderList,
 	sessionHandler keyshareSessionHandler,
 	pin KeysharePinRequestor,

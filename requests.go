@@ -309,14 +309,14 @@ func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityPro
 
 // A RequestorJwt contains an IRMA session object.
 type RequestorJwt interface {
-	IrmaSession() Session
+	IrmaSession() IrmaSession
 }
 
 // IrmaSession returns an IRMA session object.
-func (jwt *ServiceProviderJwt) IrmaSession() Session { return jwt.Request.Request }
+func (jwt *ServiceProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
 
 // IrmaSession returns an IRMA session object.
-func (jwt *SignatureRequestorJwt) IrmaSession() Session { return jwt.Request.Request }
+func (jwt *SignatureRequestorJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
 
 // IrmaSession returns an IRMA session object.
-func (jwt *IdentityProviderJwt) IrmaSession() Session { return jwt.Request.Request }
+func (jwt *IdentityProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
