@@ -51,7 +51,8 @@ func NewCredentialManager(
 		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
 	}
 
-	if err = MetaStore.ParseFolder(irmaConfigurationPath); err != nil {
+	cm.store = newConfigurationStore()
+	if err = cm.store.ParseFolder(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
 

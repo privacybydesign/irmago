@@ -136,7 +136,7 @@ func startKeyshareSession(
 ) {
 	ksscount := 0
 	for _, managerID := range session.SchemeManagers() {
-		if MetaStore.SchemeManagers[managerID].Distributed() {
+		if credManager.store.SchemeManagers[managerID].Distributed() {
 			ksscount++
 			if _, registered := credManager.keyshareServers[managerID]; !registered {
 				err := errors.New("Not registered to keyshare server of scheme manager " + managerID.String())
@@ -163,7 +163,7 @@ func startKeyshareSession(
 	askPin := false
 
 	for _, managerID := range session.SchemeManagers() {
-		if !MetaStore.SchemeManagers[managerID].Distributed() {
+		if !ks.credManager.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -231,7 +231,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 // If all is ok, success will be true.
 func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int, blocked int, err error) {
 	for _, managerID := range ks.session.SchemeManagers() {
-		if !MetaStore.SchemeManagers[managerID].Distributed() {
+		if !ks.credManager.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -282,7 +282,7 @@ func (ks *keyshareSession) GetCommitments() {
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
 		managerID := NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
-		if !MetaStore.SchemeManagers[managerID].Distributed() {
+		if !ks.credManager.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		if _, contains := pkids[managerID]; !contains {
@@ -294,7 +294,7 @@ func (ks *keyshareSession) GetCommitments() {
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
 	for _, managerID := range ks.session.SchemeManagers() {
-		if !MetaStore.SchemeManagers[managerID].Distributed() {
+		if !ks.credManager.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -398,7 +398,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 	for i, builder := range ks.builders {
 		// Parse each received JWT
 		managerID := NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
-		if !MetaStore.SchemeManagers[managerID].Distributed() {
+		if !ks.credManager.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		msg := struct {

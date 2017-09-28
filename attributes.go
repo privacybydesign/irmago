@@ -37,8 +37,9 @@ type metadataField struct {
 
 // MetadataAttribute represent a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
 type MetadataAttribute struct {
-	Int *big.Int
-	pk  *gabi.PublicKey
+	Int   *big.Int
+	pk    *gabi.PublicKey
+	store *ConfigurationStore
 }
 
 // AttributeList contains attributes, excluding the secret key,
@@ -68,8 +69,8 @@ func (al *AttributeList) UnmarshalJSON(bytes []byte) error {
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
-func NewAttributeListFromInts(ints []*big.Int) (*AttributeList, error) {
-	meta := MetadataFromInt(ints[0])
+func NewAttributeListFromInts(ints []*big.Int, store *ConfigurationStore) (*AttributeList, error) {
+	meta := MetadataFromInt(ints[0], store)
 	if ints[0] == nil || meta.CredentialType() == nil {
 		return nil, errors.New("Encountered credential of unknown type")
 	}
@@ -112,8 +113,8 @@ func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) string {
 }
 
 // MetadataFromInt wraps the given Int
-func MetadataFromInt(i *big.Int) *MetadataAttribute {
-	return &MetadataAttribute{Int: i}
+func MetadataFromInt(i *big.Int, store *ConfigurationStore) *MetadataAttribute {
+	return &MetadataAttribute{Int: i, store: store}
 }
 
 // NewMetadataAttribute constructs a new instance containing the default values:
@@ -122,7 +123,7 @@ func MetadataFromInt(i *big.Int) *MetadataAttribute {
 // 0 as keycounter
 // ValidityDefault (half a year) as default validity.
 func NewMetadataAttribute() *MetadataAttribute {
-	val := MetadataAttribute{new(big.Int), nil}
+	val := MetadataAttribute{new(big.Int), nil, nil}
 	val.setField(versionField, metadataVersion)
 	val.setSigningDate()
 	val.setKeyCounter(0)
@@ -295,9 +296,9 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 
 // MatchesStore returns true if all attributes contained in the disjunction are
 // present in the MetaStore.
-func (disjunction *AttributeDisjunction) MatchesStore() bool {
+func (disjunction *AttributeDisjunction) MatchesStore(store *ConfigurationStore) bool {
 	for ai := range disjunction.Values {
-		creddescription, exists := MetaStore.Credentials[ai.CredentialTypeIdentifier()]
+		creddescription, exists := store.Credentials[ai.CredentialTypeIdentifier()]
 		if !exists {
 			return false
 		}

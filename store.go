@@ -40,7 +40,7 @@ func newConfigurationStore() (store *ConfigurationStore) {
 
 // PublicKey returns the specified public key, or nil if not present in the ConfigurationStore.
 func (store *ConfigurationStore) PublicKey(id IssuerIdentifier, counter int) *gabi.PublicKey {
-	if list, ok := MetaStore.PublicKeys[id]; ok {
+	if list, ok := store.PublicKeys[id]; ok {
 		if len(list) > counter {
 			return list[counter]
 		}
@@ -75,7 +75,7 @@ func (store *ConfigurationStore) ParseFolder(path string) error {
 			return err
 		}
 		if exists {
-			MetaStore.SchemeManagers[manager.Identifier()] = manager
+			store.SchemeManagers[manager.Identifier()] = manager
 			return store.parseIssuerFolders(dir)
 		}
 		return nil
@@ -116,7 +116,7 @@ func (store *ConfigurationStore) parseKeysFolder(issuer *Issuer, path string) er
 			return err
 		}
 		pk.Issuer = issuer.Identifier().String()
-		MetaStore.PublicKeys[issuer.Identifier()] = append(MetaStore.PublicKeys[issuer.Identifier()], pk)
+		store.PublicKeys[issuer.Identifier()] = append(store.PublicKeys[issuer.Identifier()], pk)
 	}
 	return nil
 }
