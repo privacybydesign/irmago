@@ -12,9 +12,6 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// Manager is the global instance of CredentialManager.
-var Manager = newCredentialManager()
-
 // CredentialManager manages credentials.
 type CredentialManager struct {
 	secretkey       *big.Int
@@ -24,13 +21,6 @@ type CredentialManager struct {
 	keyshareServers map[SchemeManagerIdentifier]*keyshareServer
 
 	paillierKeyCache *paillierPrivateKey
-}
-
-func newCredentialManager() *CredentialManager {
-	return &CredentialManager{
-		credentials:     make(map[CredentialTypeIdentifier]map[int]*credential),
-		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
-	}
 }
 
 // CredentialList returns a list of information of all contained credentials.
@@ -87,7 +77,7 @@ func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (cred *cred
 // credential returns the requested credential, or nil if we do not have it.
 func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
-	// deserialized during Init(). If so, there should be a corresponding signature file,
+	// deserialized during NewCredentialManager(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
 	if _, exists := cm.creds(id)[counter]; !exists {
 		attrs := cm.Attributes(id, counter)
@@ -373,7 +363,7 @@ func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, e
 	}
 
 	transport := NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(Manager.paillierKey(true), manager.KeyshareServer, email)
+	kss, err := newKeyshareServer(cm.paillierKey(true), manager.KeyshareServer, email)
 	if err != nil {
 		return err
 	}

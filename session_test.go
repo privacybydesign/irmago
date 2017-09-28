@@ -14,8 +14,9 @@ import (
 )
 
 type TestHandler struct {
-	t *testing.T
-	c chan *Error
+	t       *testing.T
+	c       chan *Error
+	manager *CredentialManager
 }
 
 func (th TestHandler) StatusUpdate(action Action, status Status) {}
@@ -43,7 +44,7 @@ func (th TestHandler) AskVerificationPermission(request DisclosureRequest, Serve
 	}
 	var candidates []*AttributeIdentifier
 	for _, disjunction := range request.Content {
-		candidates = Manager.Candidates(disjunction)
+		candidates = th.manager.Candidates(disjunction)
 		require.NotNil(th.t, candidates)
 		require.NotEmpty(th.t, candidates, 1)
 		choice.Attributes = append(choice.Attributes, candidates[0])
@@ -132,7 +133,7 @@ func TestSigningSession(t *testing.T) {
 	name := "testsigclient"
 
 	jwtcontents := getSigningJwt(name, id)
-	sessionHelper(t, jwtcontents, "signature", true)
+	sessionHelper(t, jwtcontents, "signature", nil)
 }
 
 func TestDisclosureSession(t *testing.T) {
@@ -140,7 +141,7 @@ func TestDisclosureSession(t *testing.T) {
 	name := "testsp"
 
 	jwtcontents := getDisclosureJwt(name, id)
-	sessionHelper(t, jwtcontents, "verification", true)
+	sessionHelper(t, jwtcontents, "verification", nil)
 }
 
 func TestIssuanceSession(t *testing.T) {
@@ -148,13 +149,14 @@ func TestIssuanceSession(t *testing.T) {
 	name := "testip"
 
 	jwtcontents := getIssuanceJwt(name, id)
-	sessionHelper(t, jwtcontents, "issue", true)
+	sessionHelper(t, jwtcontents, "issue", nil)
 }
 
-func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool) {
+func sessionHelper(t *testing.T, jwtcontents interface{}, url string, manager *CredentialManager) {
+	init := manager == nil
 	if init {
-		parseStorage(t)
-		parseAndroidStorage(t)
+		manager = parseStorage(t)
+		parseAndroidStorage(t, manager)
 	}
 
 	url = "http://localhost:8081/irma_api_server/api/v2/" + url
@@ -174,7 +176,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 	qr.URL = url + "/" + qr.URL
 
 	c := make(chan *Error)
-	NewSession(qr, TestHandler{t, c})
+	NewSession(manager, qr, TestHandler{t, c, manager})
 
 	if err := <-c; err != nil {
 		t.Fatal(*err)
@@ -185,23 +187,25 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 	}
 }
 
-func registerKeyshareServer(t *testing.T) {
-	parseStorage(t)
-	parseAndroidStorage(t)
+func registerKeyshareServer(t *testing.T) *CredentialManager {
+	manager := parseStorage(t)
+	parseAndroidStorage(t, manager)
 
 	test := NewSchemeManagerIdentifier("test")
-	err := Manager.KeyshareRemove(test)
+	err := manager.KeyshareRemove(test)
 	require.NoError(t, err)
 
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
 	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
-	err = Manager.KeyshareEnroll(test, email, "12345")
+	err = manager.KeyshareEnroll(test, email, "12345")
 	require.NoError(t, err)
+
+	return manager
 }
 
 func TestKeyshareSession(t *testing.T) {
-	registerKeyshareServer(t)
+	manager := registerKeyshareServer(t)
 
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := Timestamp(NewMetadataAttribute().Expiry())
@@ -215,7 +219,7 @@ func TestKeyshareSession(t *testing.T) {
 			Attributes: map[string]string{"email": "example@example.com"},
 		},
 	)
-	sessionHelper(t, jwt, "issue", false)
+	sessionHelper(t, jwt, "issue", manager)
 
 	jwt = getDisclosureJwt("testsp", id)
 	jwt.(*ServiceProviderJwt).Request.Request.Content = append(
@@ -225,7 +229,7 @@ func TestKeyshareSession(t *testing.T) {
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "verification", false)
+	sessionHelper(t, jwt, "verification", manager)
 
 	jwt = getSigningJwt("testsigclient", id)
 	jwt.(*SignatureRequestorJwt).Request.Request.Content = append(
@@ -235,7 +239,7 @@ func TestKeyshareSession(t *testing.T) {
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "signature", false)
+	sessionHelper(t, jwt, "signature", manager)
 
 	teardown(t)
 }

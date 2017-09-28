@@ -35,6 +35,7 @@ type session struct {
 	ServerURL string
 	Handler   Handler
 
+	credManager *CredentialManager
 	jwt         RequestorJwt
 	irmaSession IrmaSession
 	transport   *HTTPTransport
@@ -82,7 +83,7 @@ func calcVersion(qr *Qr) (string, error) {
 }
 
 // NewSession creates and starts a new IRMA session.
-func NewSession(qr *Qr, handler Handler) {
+func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	version, err := calcVersion(qr)
 	if err != nil {
 		handler.Failure(ActionUnknown, &Error{ErrorCode: ErrorProtocolVersionNotSupported, Err: err})
@@ -90,11 +91,12 @@ func NewSession(qr *Qr, handler Handler) {
 	}
 
 	session := &session{
-		Version:   Version(version),
-		Action:    Action(qr.Type),
-		ServerURL: qr.URL,
-		Handler:   handler,
-		transport: NewHTTPTransport(qr.URL),
+		Version:     Version(version),
+		Action:      Action(qr.Type),
+		ServerURL:   qr.URL,
+		Handler:     handler,
+		transport:   NewHTTPTransport(qr.URL),
+		credManager: credManager,
 	}
 
 	// Check if the action is one of the supported types
@@ -156,7 +158,7 @@ func (session *session) start() {
 		}
 	}
 
-	missing := Manager.CheckSatisfiability(session.irmaSession.DisjunctionList())
+	missing := session.credManager.CheckSatisfiability(session.irmaSession.DisjunctionList())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, missing)
 		return
@@ -193,11 +195,11 @@ func (session *session) do(proceed bool) {
 		var err error
 		switch session.Action {
 		case ActionSigning:
-			message, err = Manager.Proofs(session.choice, session.irmaSession, true)
+			message, err = session.credManager.Proofs(session.choice, session.irmaSession, true)
 		case ActionDisclosing:
-			message, err = Manager.Proofs(session.choice, session.irmaSession, false)
+			message, err = session.credManager.Proofs(session.choice, session.irmaSession, false)
 		case ActionIssuing:
-			message, err = Manager.IssueCommitments(session.irmaSession.(*IssuanceRequest))
+			message, err = session.credManager.IssueCommitments(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
 			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, Err: err})
@@ -211,15 +213,15 @@ func (session *session) do(proceed bool) {
 		case ActionSigning:
 			fallthrough
 		case ActionDisclosing:
-			builders, err = Manager.ProofBuilders(session.choice)
+			builders, err = session.credManager.ProofBuilders(session.choice)
 		case ActionIssuing:
-			builders, err = Manager.IssuanceProofBuilders(session.irmaSession.(*IssuanceRequest))
+			builders, err = session.credManager.IssuanceProofBuilders(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
 			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, Err: err})
 		}
 
-		startKeyshareSession(session.irmaSession, builders, session, session.Handler)
+		startKeyshareSession(session.credManager, session.irmaSession, builders, session, session.Handler)
 	}
 }
 
@@ -265,7 +267,7 @@ func (session *session) sendResponse(message interface{}) {
 			session.Handler.Failure(session.Action, err.(*Error))
 			return
 		}
-		if err = Manager.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
+		if err = session.credManager.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
 			session.Handler.Failure(session.Action, &Error{Err: err, ErrorCode: ErrorCrypto})
 			return
 		}
