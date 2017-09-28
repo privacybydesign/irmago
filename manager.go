@@ -119,7 +119,9 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 	return cm.credentials[id][counter], nil
 }
 
-func (cm *CredentialManager) addCredential(cred *credential) error {
+// addCredential adds the specified credential to the CredentialManager, saving its signature
+// imediately, and optionally cm.attributes as well.
+func (cm *CredentialManager) addCredential(cred *credential, storeAttributes bool) (err error) {
 	attrs, err := NewAttributeListFromInts(cred.Attributes[1:])
 	if err != nil {
 		return err
@@ -132,24 +134,13 @@ func (cm *CredentialManager) addCredential(cred *credential) error {
 	}
 	counter := len(cm.attributes[id]) - 1
 	cm.credentials[id][counter] = cred
-	return nil
-}
-
-// add adds the specified credential to the CredentialManager.
-func (cm *CredentialManager) add(cred *credential) (err error) {
-	if cred.CredentialType() == nil {
-		return errors.New("cannot add unknown credential type")
-	}
-
-	if err = cm.addCredential(cred); err != nil {
-		return
-	}
-	counter := len(cm.credentials[cred.CredentialType().Identifier()]) - 1
 
 	if err = cm.storeSignature(cred, counter); err != nil {
 		return
 	}
-	err = cm.storeAttributes()
+	if storeAttributes {
+		err = cm.storeAttributes()
+	}
 	return
 }
 
@@ -333,7 +324,7 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	}
 
 	for _, cred := range creds {
-		cm.add(newCredential(cred))
+		cm.addCredential(newCredential(cred), true)
 	}
 
 	return nil

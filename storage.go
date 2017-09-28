@@ -136,14 +136,13 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 
 	for _, list := range parsedjson {
 		cm.secretkey = list[0].Attributes[0]
-		for i, gabicred := range list {
+		for _, gabicred := range list {
 			cred := newCredential(gabicred)
 			if cred.CredentialType() == nil {
 				return errors.New("cannot add unknown credential type")
 			}
 
-			cm.addCredential(cred)
-			err = cm.storeSignature(cred, i)
+			err = cm.addCredential(cred, false)
 			if err != nil {
 				return err
 			}
