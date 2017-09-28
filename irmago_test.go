@@ -68,6 +68,11 @@ func verifyManagerIsUnmarshaled(t *testing.T) {
 	assert.NotNil(t, cred, "Credential should exist")
 	assert.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")
 
+	cred, err = Manager.credential(NewCredentialTypeIdentifier("test.test.mijnirma"), 0)
+	assert.NoError(t, err, "could not fetch credential")
+	assert.NotNil(t, cred, "Credential should exist")
+	assert.NotNil(t, cred.Signature.KeyshareP)
+
 	assert.NotEmpty(t, Manager.CredentialInfoList())
 
 	assert.True(t,

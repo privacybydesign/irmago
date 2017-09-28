@@ -109,7 +109,12 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 	}{}
 	xml.Unmarshal(bytes, &parsedxml)
 
-	parsedjson := make(map[string][]*gabi.Credential)
+	parsedjson := make(map[string][]*struct {
+		Signature    *gabi.CLSignature `json:"signature"`
+		Pk           *gabi.PublicKey   `json:"-"`
+		Attributes   []*big.Int        `json:"attributes"`
+		SharedPoints []*big.Int        `json:"public_sks"`
+	})
 	cm.keyshareServers = make(map[SchemeManagerIdentifier]*keyshareServer)
 	for _, xmltag := range parsedxml.Strings {
 		if xmltag.Name == "credentials" {
@@ -136,7 +141,14 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 
 	for _, list := range parsedjson {
 		cm.secretkey = list[0].Attributes[0]
-		for _, gabicred := range list {
+		for _, oldcred := range list {
+			gabicred := &gabi.Credential{
+				Attributes: oldcred.Attributes,
+				Signature:  oldcred.Signature,
+			}
+			if oldcred.SharedPoints != nil && len(oldcred.SharedPoints) > 0 {
+				gabicred.Signature.KeyshareP = oldcred.SharedPoints[0]
+			}
 			cred := newCredential(gabicred)
 			if cred.CredentialType() == nil {
 				return errors.New("cannot add unknown credential type")
