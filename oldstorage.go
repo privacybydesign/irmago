@@ -76,7 +76,10 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 			if oldcred.SharedPoints != nil && len(oldcred.SharedPoints) > 0 {
 				gabicred.Signature.KeyshareP = oldcred.SharedPoints[0]
 			}
-			cred := newCredential(gabicred, cm.Store)
+			cred, err := newCredential(gabicred, cm.Store)
+			if err != nil {
+				return err
+			}
 			if cred.CredentialType() == nil {
 				return errors.New("cannot add unknown credential type")
 			}

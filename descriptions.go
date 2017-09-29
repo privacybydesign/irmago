@@ -4,8 +4,6 @@ import (
 	"encoding/xml"
 
 	"errors"
-
-	"github.com/mhe/gabi"
 )
 
 // SchemeManager describes a scheme manager.
@@ -130,22 +128,4 @@ func (sm *SchemeManager) Identifier() SchemeManagerIdentifier {
 // Distributed indicates if this scheme manager uses a keyshare server.
 func (sm *SchemeManager) Distributed() bool {
 	return len(sm.KeyshareServer) > 0
-}
-
-// CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
-func (id *Issuer) CurrentPublicKey(store *ConfigurationStore) *gabi.PublicKey {
-	keys := store.PublicKeys[id.Identifier()]
-	if keys == nil || len(keys) == 0 {
-		return nil
-	}
-	return keys[len(keys)-1]
-}
-
-// PublicKey returns the specified public key of the issuer identified by this instance.
-func (id *Issuer) PublicKey(index int, store *ConfigurationStore) *gabi.PublicKey {
-	keys := store.PublicKeys[id.Identifier()]
-	if keys == nil || index >= len(keys) {
-		return nil
-	}
-	return keys[index]
 }

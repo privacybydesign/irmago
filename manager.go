@@ -95,15 +95,21 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 			return nil, err
 		}
 		meta := MetadataFromInt(ints[1], cm.Store)
-		pk := meta.PublicKey()
+		pk, err := meta.PublicKey()
+		if err != nil {
+			return nil, err
+		}
 		if pk == nil {
 			return nil, errors.New("unknown public key")
 		}
-		cred := newCredential(&gabi.Credential{
+		cred, err := newCredential(&gabi.Credential{
 			Attributes: ints,
 			Signature:  sig,
 			Pk:         pk,
 		}, cm.Store)
+		if err != nil {
+			return nil, err
+		}
 		cm.credentials[id][counter] = cred
 	}
 
@@ -263,7 +269,10 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
-		pk := cm.Store.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
+		pk, err := cm.Store.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
+		if err != nil {
+			return nil, err
+		}
 		credBuilder := gabi.NewCredentialBuilder(pk, request.GetContext(), cm.secretkey, state.nonce2)
 		request.state.builders = append(request.state.builders, credBuilder)
 		proofBuilders = append(proofBuilders, credBuilder)
@@ -297,7 +306,7 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 
 	// First collect all credentials in a slice, so that if one of them induces an error,
 	// we save none of them to fail the session cleanly
-	creds := []*gabi.Credential{}
+	gabicreds := []*gabi.Credential{}
 	for i, sig := range msg {
 		attrs, err := request.Credentials[i].AttributeList(cm.Store)
 		if err != nil {
@@ -307,11 +316,15 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 		if err != nil {
 			return err
 		}
-		creds = append(creds, cred)
+		gabicreds = append(gabicreds, cred)
 	}
 
-	for _, cred := range creds {
-		cm.addCredential(newCredential(cred, cm.Store), true)
+	for _, gabicred := range gabicreds {
+		newcred, err := newCredential(gabicred, cm.Store)
+		if err != nil {
+			return err
+		}
+		cm.addCredential(newcred, true)
 	}
 
 	return nil

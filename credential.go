@@ -53,14 +53,18 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 	}
 }
 
-func newCredential(gabicred *gabi.Credential, store *ConfigurationStore) (cred *credential) {
+func newCredential(gabicred *gabi.Credential, store *ConfigurationStore) (*credential, error) {
 	meta := MetadataFromInt(gabicred.Attributes[1], store)
-	cred = &credential{
+	cred := &credential{
 		Credential:        gabicred,
 		MetadataAttribute: meta,
 	}
-	cred.Pk = store.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
-	return
+	var err error
+	cred.Pk, err = store.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
+	if err != nil {
+		return nil, err
+	}
+	return cred, nil
 }
 
 // Len implements sort.Interface.

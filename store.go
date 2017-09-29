@@ -17,9 +17,10 @@ type ConfigurationStore struct {
 	SchemeManagers map[SchemeManagerIdentifier]*SchemeManager
 	Issuers        map[IssuerIdentifier]*Issuer
 	Credentials    map[CredentialTypeIdentifier]*CredentialType
-	PublicKeys     map[IssuerIdentifier][]*gabi.PublicKey
 
+	publicKeys    map[IssuerIdentifier][]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
+	path          string
 	initialized   bool
 }
 
@@ -28,20 +29,28 @@ func NewConfigurationStore() (store *ConfigurationStore) {
 		SchemeManagers: make(map[SchemeManagerIdentifier]*SchemeManager),
 		Issuers:        make(map[IssuerIdentifier]*Issuer),
 		Credentials:    make(map[CredentialTypeIdentifier]*CredentialType),
-		PublicKeys:     make(map[IssuerIdentifier][]*gabi.PublicKey),
+		publicKeys:     make(map[IssuerIdentifier][]*gabi.PublicKey),
 		reverseHashes:  make(map[string]CredentialTypeIdentifier),
 	}
 	return
 }
 
 // PublicKey returns the specified public key, or nil if not present in the ConfigurationStore.
-func (store *ConfigurationStore) PublicKey(id IssuerIdentifier, counter int) *gabi.PublicKey {
-	if list, ok := store.PublicKeys[id]; ok {
-		if len(list) > counter {
-			return list[counter]
+func (store *ConfigurationStore) PublicKey(id IssuerIdentifier, counter int) (*gabi.PublicKey, error) {
+	if _, contains := store.publicKeys[id]; !contains {
+		store.publicKeys[id] = []*gabi.PublicKey{}
+		err := store.parseKeysFolder(id)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return nil
+
+	list := store.publicKeys[id]
+	if len(list) > counter {
+		return list[counter], nil
+	}
+
+	return nil, nil
 }
 
 func (store *ConfigurationStore) addReverseHash(credid CredentialTypeIdentifier) {
@@ -64,6 +73,7 @@ func (store *ConfigurationStore) IsInitialized() bool {
 // ParseFolder populates the current store by parsing the specified irma_configuration folder,
 // listing the containing scheme managers, issuers, credential types and public keys.
 func (store *ConfigurationStore) ParseFolder(path string) error {
+	store.path = path
 	err := iterateSubfolders(path, func(dir string) error {
 		manager := &SchemeManager{}
 		exists, err := pathToDescription(dir+"/description.xml", manager)
@@ -95,13 +105,17 @@ func (store *ConfigurationStore) parseIssuerFolders(path string) error {
 			if err = store.parseCredentialsFolder(dir + "/Issues/"); err != nil {
 				return err
 			}
-			return store.parseKeysFolder(issuer, dir+"/PublicKeys/")
 		}
 		return nil
 	})
 }
 
-func (store *ConfigurationStore) parseKeysFolder(issuer *Issuer, path string) error {
+func (store *ConfigurationStore) parseKeysFolder(issuerid IssuerIdentifier) error {
+	issuer := store.Issuers[issuerid]
+	path := store.path + "/" +
+		issuer.Identifier().SchemeManagerIdentifier().String() +
+		"/" + issuer.ID + "/PublicKeys/"
+
 	for i := 0; ; i++ {
 		file := path + strconv.Itoa(i) + ".xml"
 		if _, err := os.Stat(file); err != nil {
@@ -112,7 +126,7 @@ func (store *ConfigurationStore) parseKeysFolder(issuer *Issuer, path string) er
 			return err
 		}
 		pk.Issuer = issuer.Identifier().String()
-		store.PublicKeys[issuer.Identifier()] = append(store.PublicKeys[issuer.Identifier()], pk)
+		store.publicKeys[issuer.Identifier()] = append(store.publicKeys[issuer.Identifier()], pk)
 	}
 	return nil
 }

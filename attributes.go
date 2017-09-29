@@ -134,11 +134,15 @@ func (attr *MetadataAttribute) Bytes() []byte {
 
 // PublicKey extracts identifier of the Idemix public key with which this instance was signed,
 // and returns this public key.
-func (attr *MetadataAttribute) PublicKey() *gabi.PublicKey {
+func (attr *MetadataAttribute) PublicKey() (*gabi.PublicKey, error) {
 	if attr.pk == nil {
-		attr.pk = attr.store.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
+		var err error
+		attr.pk, err = attr.store.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
+		if err != nil {
+			return nil, err
+		}
 	}
-	return attr.pk
+	return attr.pk, nil
 }
 
 // Version returns the metadata version of this instance
