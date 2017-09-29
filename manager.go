@@ -12,25 +12,16 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// Manager is the global instance of CredentialManager.
-var Manager = newCredentialManager()
-
 // CredentialManager manages credentials.
 type CredentialManager struct {
-	secretkey       *big.Int
-	storagePath     string
-	attributes      map[CredentialTypeIdentifier][]*AttributeList
-	credentials     map[CredentialTypeIdentifier]map[int]*credential
-	keyshareServers map[SchemeManagerIdentifier]*keyshareServer
-
+	secretkey        *big.Int
+	storagePath      string
+	attributes       map[CredentialTypeIdentifier][]*AttributeList
+	credentials      map[CredentialTypeIdentifier]map[int]*credential
+	keyshareServers  map[SchemeManagerIdentifier]*keyshareServer
 	paillierKeyCache *paillierPrivateKey
-}
 
-func newCredentialManager() *CredentialManager {
-	return &CredentialManager{
-		credentials:     make(map[CredentialTypeIdentifier]map[int]*credential),
-		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
-	}
+	store *ConfigurationStore
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
@@ -87,7 +78,7 @@ func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (cred *cred
 // credential returns the requested credential, or nil if we do not have it.
 func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
-	// deserialized during Init(). If so, there should be a corresponding signature file,
+	// deserialized during NewCredentialManager(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
 	if _, exists := cm.creds(id)[counter]; !exists {
 		attrs := cm.Attributes(id, counter)
@@ -151,7 +142,7 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 
 	for _, attribute := range disjunction.Attributes {
 		credID := attribute.CredentialTypeIdentifier()
-		if !MetaStore.Contains(credID) {
+		if !cm.store.Contains(credID) {
 			continue
 		}
 		creds := cm.credentials[credID]
@@ -212,7 +203,7 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 		if identifier.IsCredential() {
 			continue // In this case we only disclose the metadata attribute, which is already handled
 		}
-		index, err := MetaStore.Credentials[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
+		index, err := cm.store.Credentials[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +267,7 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
-		pk := MetaStore.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
+		pk := cm.store.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
 		credBuilder := gabi.NewCredentialBuilder(pk, request.GetContext(), cm.secretkey, state.nonce2)
 		request.state.builders = append(request.state.builders, credBuilder)
 		proofBuilders = append(proofBuilders, credBuilder)
@@ -351,7 +342,7 @@ func (cm *CredentialManager) paillierKey(wait bool) *paillierPrivateKey {
 
 func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 	list := []*SchemeManager{}
-	for name, manager := range MetaStore.SchemeManagers {
+	for name, manager := range cm.store.SchemeManagers {
 		if _, contains := cm.keyshareServers[name]; len(manager.KeyshareServer) > 0 && !contains {
 			list = append(list, manager)
 		}
@@ -361,7 +352,7 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 
 // KeyshareEnroll attempts to register at the keyshare server of the specified scheme manager.
 func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, email, pin string) error {
-	manager, ok := MetaStore.SchemeManagers[managerID]
+	manager, ok := cm.store.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
 	}
@@ -373,7 +364,7 @@ func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, e
 	}
 
 	transport := NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(Manager.paillierKey(true), manager.KeyshareServer, email)
+	kss, err := newKeyshareServer(cm.paillierKey(true), manager.KeyshareServer, email)
 	if err != nil {
 		return err
 	}

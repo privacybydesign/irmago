@@ -31,22 +31,23 @@ type IgnoringKeyshareHandler struct{}
 func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string)) {
 }
 
-func parseStorage(t *testing.T) {
+func parseStorage(t *testing.T) *CredentialManager {
 	exists, err := PathExists("testdata/storage/test")
 	require.NoError(t, err, "pathexists() failed")
 	if !exists {
 		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
 	}
-	require.NoError(t, Manager.Init(
+	manager, err := NewCredentialManager(
 		"testdata/storage/test",
 		"testdata/irma_configuration",
 		&IgnoringKeyshareHandler{},
-	), "Manager.Init() failed")
+	)
+	require.NoError(t, err)
+	return manager
 }
 
 func teardown(t *testing.T) {
 	MetaStore = newConfigurationStore()
-	Manager = newCredentialManager()
 	assert.NoError(t, os.RemoveAll("testdata/storage/test"))
 	// TODO first RemoveAll?!
 }
@@ -58,22 +59,22 @@ func s2big(s string) (r *big.Int) {
 	return
 }
 
-func parseAndroidStorage(t *testing.T) {
-	assert.NoError(t, Manager.ParseAndroidStorage(), "ParseAndroidStorage() failed")
+func parseAndroidStorage(t *testing.T, manager *CredentialManager) {
+	assert.NoError(t, manager.ParseAndroidStorage(), "ParseAndroidStorage() failed")
 }
 
-func verifyManagerIsUnmarshaled(t *testing.T) {
-	cred, err := Manager.credential(NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
+func verifyManagerIsUnmarshaled(t *testing.T, manager *CredentialManager) {
+	cred, err := manager.credential(NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	assert.NoError(t, err, "could not fetch credential")
 	assert.NotNil(t, cred, "Credential should exist")
 	assert.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")
 
-	cred, err = Manager.credential(NewCredentialTypeIdentifier("test.test.mijnirma"), 0)
+	cred, err = manager.credential(NewCredentialTypeIdentifier("test.test.mijnirma"), 0)
 	assert.NoError(t, err, "could not fetch credential")
 	assert.NotNil(t, cred, "Credential should exist")
 	assert.NotNil(t, cred.Signature.KeyshareP)
 
-	assert.NotEmpty(t, Manager.CredentialInfoList())
+	assert.NotEmpty(t, manager.CredentialInfoList())
 
 	assert.True(t,
 		cred.Signature.Verify(cred.PublicKey(), cred.Attributes),
@@ -81,14 +82,14 @@ func verifyManagerIsUnmarshaled(t *testing.T) {
 	)
 }
 
-func verifyCredentials(t *testing.T) {
-	for credtype, credsmap := range Manager.credentials {
+func verifyCredentials(t *testing.T, manager *CredentialManager) {
+	for credtype, credsmap := range manager.credentials {
 		for index, cred := range credsmap {
 			require.True(t,
 				cred.Credential.Signature.Verify(cred.PublicKey(), cred.Attributes),
 				"Credential %s-%d was invalid", credtype.String(), index,
 			)
-			require.Equal(t, cred.Attributes[0], Manager.secretkey,
+			require.Equal(t, cred.Attributes[0], manager.secretkey,
 				"Secret key of credential %s-%d unequal to main secret key")
 		}
 	}
@@ -111,16 +112,16 @@ func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
 	require.Equal(t, plaintext, string(decrypted))
 }
 
-func verifyKeyshareIsUnmarshaled(t *testing.T) {
-	require.NotNil(t, Manager.paillierKeyCache)
-	require.NotNil(t, Manager.keyshareServers)
+func verifyKeyshareIsUnmarshaled(t *testing.T, manager *CredentialManager) {
+	require.NotNil(t, manager.paillierKeyCache)
+	require.NotNil(t, manager.keyshareServers)
 	test := NewSchemeManagerIdentifier("test")
-	require.Contains(t, Manager.keyshareServers, test)
-	kss := Manager.keyshareServers[test]
+	require.Contains(t, manager.keyshareServers, test)
+	kss := manager.keyshareServers[test]
 	require.NotEmpty(t, kss.Nonce)
 
 	verifyPaillierKey(t, kss.PrivateKey)
-	verifyPaillierKey(t, Manager.paillierKeyCache)
+	verifyPaillierKey(t, manager.paillierKeyCache)
 }
 
 func verifyStoreIsLoaded(t *testing.T) {
@@ -152,28 +153,27 @@ func verifyStoreIsLoaded(t *testing.T) {
 }
 
 func TestAndroidParse(t *testing.T) {
-	parseStorage(t)
+	manager := parseStorage(t)
 	verifyStoreIsLoaded(t)
 
-	parseAndroidStorage(t)
-	verifyManagerIsUnmarshaled(t)
-	verifyCredentials(t)
-	verifyKeyshareIsUnmarshaled(t)
+	parseAndroidStorage(t, manager)
+	verifyManagerIsUnmarshaled(t, manager)
+	verifyCredentials(t, manager)
+	verifyKeyshareIsUnmarshaled(t, manager)
 
 	teardown(t)
 }
 
 func TestUnmarshaling(t *testing.T) {
-	parseStorage(t)
-	parseAndroidStorage(t)
+	manager := parseStorage(t)
+	parseAndroidStorage(t, manager)
 
-	Manager = newCredentialManager()
-	err := Manager.Init("testdata/storage/test", "testdata/irma_configuration", nil)
+	newmanager, err := NewCredentialManager("testdata/storage/test", "testdata/irma_configuration", nil)
 	require.NoError(t, err)
 
-	verifyManagerIsUnmarshaled(t)
-	verifyCredentials(t)
-	verifyKeyshareIsUnmarshaled(t)
+	verifyManagerIsUnmarshaled(t, newmanager)
+	verifyCredentials(t, newmanager)
+	verifyKeyshareIsUnmarshaled(t, newmanager)
 
 	teardown(t)
 }
@@ -195,10 +195,11 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	require.NoError(t, MetaStore.ParseFolder("testdata/irma_configuration"))
+	store := newConfigurationStore()
+	require.NoError(t, store.ParseFolder("testdata/irma_configuration"))
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
-	attr := MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"))
+	attr := MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"), store)
 	assert.NotNil(t, attr.CredentialType(), "attr.CredentialType() should not be nil")
 
 	assert.Equal(t,
@@ -215,6 +216,8 @@ func TestMetadataCompatibility(t *testing.T) {
 }
 
 func TestAttributeDisjunctionMarshaling(t *testing.T) {
+	store := newConfigurationStore()
+	store.ParseFolder("testdata/irma_configuration")
 	disjunction := AttributeDisjunction{}
 
 	var _ json.Unmarshaler = &disjunction
@@ -249,7 +252,7 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 	require.False(t, disjunction.HasValues())
 	require.Contains(t, disjunction.Attributes, id)
 
-	require.True(t, disjunction.MatchesStore())
+	require.True(t, disjunction.MatchesStore(store))
 
 	require.False(t, disjunction.Satisfied())
 	disjunction.selected = &disjunction.Attributes[0]
@@ -257,14 +260,14 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 }
 
 func TestCandidates(t *testing.T) {
-	parseStorage(t)
-	parseAndroidStorage(t)
+	manager := parseStorage(t)
+	parseAndroidStorage(t, manager)
 
 	attrtype := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	disjunction := &AttributeDisjunction{
 		Attributes: []AttributeTypeIdentifier{attrtype},
 	}
-	attrs := Manager.Candidates(disjunction)
+	attrs := manager.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 
@@ -276,7 +279,7 @@ func TestCandidates(t *testing.T) {
 		Attributes: []AttributeTypeIdentifier{attrtype},
 		Values:     map[AttributeTypeIdentifier]string{attrtype: "456"},
 	}
-	attrs = Manager.Candidates(disjunction)
+	attrs = manager.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 
@@ -284,7 +287,7 @@ func TestCandidates(t *testing.T) {
 		Attributes: []AttributeTypeIdentifier{attrtype},
 		Values:     map[AttributeTypeIdentifier]string{attrtype: "foobarbaz"},
 	}
-	attrs = Manager.Candidates(disjunction)
+	attrs = manager.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Empty(t, attrs)
 
@@ -347,14 +350,14 @@ func TestTransport(t *testing.T) {
 }
 
 func TestPaillier(t *testing.T) {
-	parseStorage(t)
-	parseAndroidStorage(t)
+	manager := parseStorage(t)
+	parseAndroidStorage(t, manager)
 
 	challenge, _ := gabi.RandomBigInt(256)
 	comm, _ := gabi.RandomBigInt(1000)
 	resp, _ := gabi.RandomBigInt(1000)
 
-	sk := Manager.paillierKey(true)
+	sk := manager.paillierKey(true)
 	bytes, err := sk.Encrypt(challenge.Bytes())
 	require.NoError(t, err)
 	cipher := new(big.Int).SetBytes(bytes)

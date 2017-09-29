@@ -14,8 +14,9 @@ import (
 )
 
 type TestHandler struct {
-	t *testing.T
-	c chan *Error
+	t       *testing.T
+	c       chan *Error
+	manager *CredentialManager
 }
 
 func (th TestHandler) StatusUpdate(action Action, status Status) {}
@@ -43,7 +44,7 @@ func (th TestHandler) AskVerificationPermission(request DisclosureRequest, Serve
 	}
 	var candidates []*AttributeIdentifier
 	for _, disjunction := range request.Content {
-		candidates = Manager.Candidates(disjunction)
+		candidates = th.manager.Candidates(disjunction)
 		require.NotNil(th.t, candidates)
 		require.NotEmpty(th.t, candidates, 1)
 		choice.Attributes = append(choice.Attributes, candidates[0])
@@ -132,7 +133,7 @@ func TestSigningSession(t *testing.T) {
 	name := "testsigclient"
 
 	jwtcontents := getSigningJwt(name, id)
-	sessionHelper(t, jwtcontents, "signature", true)
+	sessionHelper(t, jwtcontents, "signature", nil)
 }
 
 func TestDisclosureSession(t *testing.T) {
@@ -140,7 +141,7 @@ func TestDisclosureSession(t *testing.T) {
 	name := "testsp"
 
 	jwtcontents := getDisclosureJwt(name, id)
-	sessionHelper(t, jwtcontents, "verification", true)
+	sessionHelper(t, jwtcontents, "verification", nil)
 }
 
 func TestIssuanceSession(t *testing.T) {
@@ -148,13 +149,14 @@ func TestIssuanceSession(t *testing.T) {
 	name := "testip"
 
 	jwtcontents := getIssuanceJwt(name, id)
-	sessionHelper(t, jwtcontents, "issue", true)
+	sessionHelper(t, jwtcontents, "issue", nil)
 }
 
-func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool) {
+func sessionHelper(t *testing.T, jwtcontents interface{}, url string, manager *CredentialManager) {
+	init := manager == nil
 	if init {
-		parseStorage(t)
-		parseAndroidStorage(t)
+		manager = parseStorage(t)
+		parseAndroidStorage(t, manager)
 	}
 
 	url = "http://localhost:8081/irma_api_server/api/v2/" + url
@@ -174,7 +176,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 	qr.URL = url + "/" + qr.URL
 
 	c := make(chan *Error)
-	NewSession(qr, TestHandler{t, c})
+	NewSession(manager, qr, TestHandler{t, c, manager})
 
 	if err := <-c; err != nil {
 		t.Fatal(*err)
@@ -185,24 +187,24 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 	}
 }
 
-func registerKeyshareServer(t *testing.T) {
+func registerKeyshareServer(t *testing.T, manager *CredentialManager) {
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
 	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
-	require.NoError(t, Manager.KeyshareEnroll(NewSchemeManagerIdentifier("test"), email, "12345"))
+	require.NoError(t, manager.KeyshareEnroll(NewSchemeManagerIdentifier("test"), email, "12345"))
 }
 
 // Register a new account at the keyshare server and do an issuance, disclosure,
 // and issuance session, also using irma-demo credentials deserialized from Android storage
 func TestKeyshareRegistrationAndSessions(t *testing.T) {
-	parseStorage(t)
-	parseAndroidStorage(t)
+	manager := parseStorage(t)
+	parseAndroidStorage(t, manager)
 
-	Manager.credentials[NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
+	manager.credentials[NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
 	test := NewSchemeManagerIdentifier("test")
-	err := Manager.KeyshareRemove(test)
+	err := manager.KeyshareRemove(test)
 	require.NoError(t, err)
-	registerKeyshareServer(t)
+	registerKeyshareServer(t, manager)
 
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := Timestamp(NewMetadataAttribute().Expiry())
@@ -216,7 +218,7 @@ func TestKeyshareRegistrationAndSessions(t *testing.T) {
 			Attributes: map[string]string{"email": "example@example.com"},
 		},
 	)
-	sessionHelper(t, jwt, "issue", false)
+	sessionHelper(t, jwt, "issue", manager)
 
 	jwt = getDisclosureJwt("testsp", id)
 	jwt.(*ServiceProviderJwt).Request.Request.Content = append(
@@ -226,7 +228,7 @@ func TestKeyshareRegistrationAndSessions(t *testing.T) {
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "verification", false)
+	sessionHelper(t, jwt, "verification", manager)
 
 	jwt = getSigningJwt("testsigclient", id)
 	jwt.(*SignatureRequestorJwt).Request.Request.Content = append(
@@ -236,7 +238,7 @@ func TestKeyshareRegistrationAndSessions(t *testing.T) {
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "signature", false)
+	sessionHelper(t, jwt, "signature", manager)
 
 	teardown(t)
 }
@@ -245,8 +247,8 @@ func TestKeyshareRegistrationAndSessions(t *testing.T) {
 // in a keyshare session of each session type.
 // Use keyshareuser.sql to register the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
-	parseStorage(t)
-	parseAndroidStorage(t)
+	manager := parseStorage(t)
+	parseAndroidStorage(t, manager)
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	expiry := Timestamp(NewMetadataAttribute().Expiry())
@@ -260,7 +262,7 @@ func TestKeyshareSessions(t *testing.T) {
 			Attributes: map[string]string{"email": "example@example.com"},
 		},
 	)
-	sessionHelper(t, jwt, "issue", false)
+	sessionHelper(t, jwt, "issue", manager)
 
 	jwt = getDisclosureJwt("testsp", id)
 	jwt.(*ServiceProviderJwt).Request.Request.Content = append(
@@ -270,7 +272,7 @@ func TestKeyshareSessions(t *testing.T) {
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "verification", false)
+	sessionHelper(t, jwt, "verification", manager)
 
 	jwt = getSigningJwt("testsigclient", id)
 	jwt.(*SignatureRequestorJwt).Request.Request.Content = append(
@@ -280,7 +282,7 @@ func TestKeyshareSessions(t *testing.T) {
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "signature", false)
+	sessionHelper(t, jwt, "signature", manager)
 
 	teardown(t)
 }

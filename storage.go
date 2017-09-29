@@ -39,49 +39,55 @@ func PathExists(path string) (bool, error) {
 	return true, err
 }
 
-// Init deserializes the credentials from storage.
-func (cm *CredentialManager) Init(
+// NewCredentialManager deserializes the credentials from storage.
+func NewCredentialManager(
 	storagePath string,
 	irmaConfigurationPath string,
 	keyshareHandler KeyshareHandler,
-) (err error) {
-	if err = MetaStore.ParseFolder(irmaConfigurationPath); err != nil {
-		return
+) (*CredentialManager, error) {
+	var err error
+	cm := &CredentialManager{
+		credentials:     make(map[CredentialTypeIdentifier]map[int]*credential),
+		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
+	}
+
+	cm.store = newConfigurationStore()
+	if err = cm.store.ParseFolder(irmaConfigurationPath); err != nil {
+		return nil, err
 	}
 
 	cm.storagePath = storagePath
 	if err = cm.ensureStorageExists(); err != nil {
-		return
+		return nil, err
 	}
 	if cm.secretkey, err = cm.loadSecretKey(); err != nil {
-		return
+		return nil, err
 	}
 	if cm.attributes, err = cm.loadAttributes(); err != nil {
-		return
+		return nil, err
 	}
 	if cm.paillierKeyCache, err = cm.loadPaillierKeys(); err != nil {
-		return
+		return nil, err
 	}
 	if cm.keyshareServers, err = cm.loadKeyshareServers(); err != nil {
-		return
+		return nil, err
 	}
 
 	unenrolled := cm.unenrolledKeyshareServers()
 	switch len(unenrolled) {
-	case 0:
-		return
+	case 0: // nop
 	case 1:
 		if keyshareHandler == nil {
-			return errors.New("Keyshare server found but no KeyshareHandler was given")
+			return nil, errors.New("Keyshare server found but no KeyshareHandler was given")
 		}
 		keyshareHandler.StartRegistration(unenrolled[0], func(email, pin string) {
 			cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
 		})
 	default:
-		return errors.New("Too many keyshare servers")
+		return nil, errors.New("Too many keyshare servers")
 	}
 
-	return nil
+	return cm, nil
 }
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file
