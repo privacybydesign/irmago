@@ -193,7 +193,7 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	store := newConfigurationStore()
+	store := NewConfigurationStore()
 	require.NoError(t, store.ParseFolder("testdata/irma_configuration"))
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
@@ -214,7 +214,7 @@ func TestMetadataCompatibility(t *testing.T) {
 }
 
 func TestAttributeDisjunctionMarshaling(t *testing.T) {
-	store := newConfigurationStore()
+	store := NewConfigurationStore()
 	store.ParseFolder("testdata/irma_configuration")
 	disjunction := AttributeDisjunction{}
 

@@ -13,7 +13,6 @@ import (
 )
 
 // ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys.
-// Use the global MetaStore instance.
 type ConfigurationStore struct {
 	SchemeManagers map[SchemeManagerIdentifier]*SchemeManager
 	Issuers        map[IssuerIdentifier]*Issuer
@@ -24,7 +23,7 @@ type ConfigurationStore struct {
 	initialized   bool
 }
 
-func newConfigurationStore() (store *ConfigurationStore) {
+func NewConfigurationStore() (store *ConfigurationStore) {
 	store = &ConfigurationStore{
 		SchemeManagers: make(map[SchemeManagerIdentifier]*SchemeManager),
 		Issuers:        make(map[IssuerIdentifier]*Issuer),
