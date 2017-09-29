@@ -186,21 +186,22 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, init bool)
 }
 
 func registerKeyshareServer(t *testing.T) {
-	parseStorage(t)
-	parseAndroidStorage(t)
-
-	test := NewSchemeManagerIdentifier("test")
-	err := Manager.KeyshareRemove(test)
-	require.NoError(t, err)
-
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
 	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
-	err = Manager.KeyshareEnroll(test, email, "12345")
-	require.NoError(t, err)
+	require.NoError(t, Manager.KeyshareEnroll(NewSchemeManagerIdentifier("test"), email, "12345"))
 }
 
-func TestKeyshareSession(t *testing.T) {
+// Register a new account at the keyshare server and do an issuance, disclosure,
+// and issuance session, also using irma-demo credentials deserialized from Android storage
+func TestKeyshareRegistrationAndSessions(t *testing.T) {
+	parseStorage(t)
+	parseAndroidStorage(t)
+
+	Manager.credentials[NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
+	test := NewSchemeManagerIdentifier("test")
+	err := Manager.KeyshareRemove(test)
+	require.NoError(t, err)
 	registerKeyshareServer(t)
 
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -230,6 +231,50 @@ func TestKeyshareSession(t *testing.T) {
 	jwt = getSigningJwt("testsigclient", id)
 	jwt.(*SignatureRequestorJwt).Request.Request.Content = append(
 		jwt.(*SignatureRequestorJwt).Request.Request.Content,
+		&AttributeDisjunction{
+			Label:      "foo",
+			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		},
+	)
+	sessionHelper(t, jwt, "signature", false)
+
+	teardown(t)
+}
+
+// Use the existing keyshare registration and credentials deserialized from Android storage
+// in a keyshare session of each session type.
+// Use keyshareuser.sql to register the user at the keyshare server.
+func TestKeyshareSessions(t *testing.T) {
+	parseStorage(t)
+	parseAndroidStorage(t)
+	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+
+	expiry := Timestamp(NewMetadataAttribute().Expiry())
+	credid := NewCredentialTypeIdentifier("test.test.mijnirma")
+	jwt := getIssuanceJwt("testip", id)
+	jwt.(*IdentityProviderJwt).Request.Request.Credentials = append(
+		jwt.(*IdentityProviderJwt).Request.Request.Credentials,
+		&CredentialRequest{
+			Validity:   &expiry,
+			Credential: &credid,
+			Attributes: map[string]string{"email": "example@example.com"},
+		},
+	)
+	sessionHelper(t, jwt, "issue", false)
+
+	jwt = getDisclosureJwt("testsp", id)
+	jwt.(*ServiceProviderJwt).Request.Request.Content = append(
+		jwt.(*ServiceProviderJwt).Request.Request.Content, //[]*AttributeDisjunction{},
+		&AttributeDisjunction{
+			Label:      "foo",
+			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		},
+	)
+	sessionHelper(t, jwt, "verification", false)
+
+	jwt = getSigningJwt("testsigclient", id)
+	jwt.(*SignatureRequestorJwt).Request.Request.Content = append(
+		jwt.(*SignatureRequestorJwt).Request.Request.Content, //[]*AttributeDisjunction{},
 		&AttributeDisjunction{
 			Label:      "foo",
 			Attributes: []AttributeTypeIdentifier{NewAttributeTypeIdentifier("test.test.mijnirma.email")},

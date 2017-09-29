@@ -118,7 +118,10 @@ func newKeyshareServer(privatekey *paillierPrivateKey, url, email string) (ks *k
 
 func (ks *keyshareServer) HashedPin(pin string) string {
 	hash := sha256.Sum256(append(ks.Nonce, []byte(pin)...))
-	return base64.RawStdEncoding.EncodeToString(hash[:])
+	// We must be compatible with the old Android app here,
+	// which uses Base64.encodeToString(hash, Base64.DEFAULT),
+	// which appends a newline.
+	return base64.StdEncoding.EncodeToString(hash[:]) + "\n"
 }
 
 // startKeyshareSession starts and completes the entire keyshare protocol with all involved keyshare servers

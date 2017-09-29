@@ -81,6 +81,19 @@ func verifyManagerIsUnmarshaled(t *testing.T) {
 	)
 }
 
+func verifyCredentials(t *testing.T) {
+	for credtype, credsmap := range Manager.credentials {
+		for index, cred := range credsmap {
+			require.True(t,
+				cred.Credential.Signature.Verify(cred.PublicKey(), cred.Attributes),
+				"Credential %s-%d was invalid", credtype.String(), index,
+			)
+			require.Equal(t, cred.Attributes[0], Manager.secretkey,
+				"Secret key of credential %s-%d unequal to main secret key")
+		}
+	}
+}
+
 func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
 	require.NotNil(t, PrivateKey)
 	require.NotNil(t, PrivateKey.L)
@@ -144,6 +157,7 @@ func TestAndroidParse(t *testing.T) {
 
 	parseAndroidStorage(t)
 	verifyManagerIsUnmarshaled(t)
+	verifyCredentials(t)
 	verifyKeyshareIsUnmarshaled(t)
 
 	teardown(t)
@@ -158,6 +172,7 @@ func TestUnmarshaling(t *testing.T) {
 	require.NoError(t, err)
 
 	verifyManagerIsUnmarshaled(t)
+	verifyCredentials(t)
 	verifyKeyshareIsUnmarshaled(t)
 
 	teardown(t)
@@ -259,7 +274,7 @@ func TestCandidates(t *testing.T) {
 
 	disjunction = &AttributeDisjunction{
 		Attributes: []AttributeTypeIdentifier{attrtype},
-		Values:     map[AttributeTypeIdentifier]string{attrtype: "s1234567"},
+		Values:     map[AttributeTypeIdentifier]string{attrtype: "456"},
 	}
 	attrs = Manager.Candidates(disjunction)
 	require.NotNil(t, attrs)
