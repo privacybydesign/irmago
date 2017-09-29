@@ -60,30 +60,22 @@ func (al *AttributeList) UnmarshalJSON(bytes []byte) error {
 	if err := json.Unmarshal(bytes, &ints); err != nil {
 		return err
 	}
-	list, err := NewAttributeListFromInts(ints)
-	if err != nil {
-		return err
-	}
+	list := NewAttributeListFromInts(ints, nil)
 	*al = *list
 	return nil
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
-func NewAttributeListFromInts(ints []*big.Int, store *ConfigurationStore) (*AttributeList, error) {
-	meta := MetadataFromInt(ints[0], store)
-	if ints[0] == nil || meta.CredentialType() == nil {
-		return nil, errors.New("Encountered credential of unknown type")
-	}
-
+func NewAttributeListFromInts(ints []*big.Int, store *ConfigurationStore) *AttributeList {
 	return &AttributeList{
 		Ints:              ints,
-		MetadataAttribute: meta,
-	}, nil
+		MetadataAttribute: MetadataFromInt(ints[0], store),
+	}
 }
 
 func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
-		al.info = NewCredentialInfo(al.Ints)
+		al.info = NewCredentialInfo(al.Ints, al.store)
 	}
 	return al.info
 }
@@ -144,7 +136,7 @@ func (attr *MetadataAttribute) Bytes() []byte {
 // and returns this public key.
 func (attr *MetadataAttribute) PublicKey() *gabi.PublicKey {
 	if attr.pk == nil {
-		attr.pk = MetaStore.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
+		attr.pk = attr.store.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
 	}
 	return attr.pk
 }
@@ -197,7 +189,7 @@ func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
 // CredentialType returns the credential type of the current instance
 // using the MetaStore.
 func (attr *MetadataAttribute) CredentialType() *CredentialType {
-	return MetaStore.hashToCredentialType(attr.field(credentialID))
+	return attr.store.hashToCredentialType(attr.field(credentialID))
 }
 
 func (attr *MetadataAttribute) setCredentialTypeIdentifier(id string) {
@@ -295,7 +287,7 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 }
 
 // MatchesStore returns true if all attributes contained in the disjunction are
-// present in the MetaStore.
+// present in the specified configuration store.
 func (disjunction *AttributeDisjunction) MatchesStore(store *ConfigurationStore) bool {
 	for ai := range disjunction.Values {
 		creddescription, exists := store.Credentials[ai.CredentialTypeIdentifier()]

@@ -133,8 +133,8 @@ func (sm *SchemeManager) Distributed() bool {
 }
 
 // CurrentPublicKey returns the latest known public key of the issuer identified by this instance.
-func (id *Issuer) CurrentPublicKey() *gabi.PublicKey {
-	keys := MetaStore.PublicKeys[id.Identifier()]
+func (id *Issuer) CurrentPublicKey(store *ConfigurationStore) *gabi.PublicKey {
+	keys := store.PublicKeys[id.Identifier()]
 	if keys == nil || len(keys) == 0 {
 		return nil
 	}
@@ -142,8 +142,8 @@ func (id *Issuer) CurrentPublicKey() *gabi.PublicKey {
 }
 
 // PublicKey returns the specified public key of the issuer identified by this instance.
-func (id *Issuer) PublicKey(index int) *gabi.PublicKey {
-	keys := MetaStore.PublicKeys[id.Identifier()]
+func (id *Issuer) PublicKey(index int, store *ConfigurationStore) *gabi.PublicKey {
+	keys := store.PublicKeys[id.Identifier()]
 	if keys == nil || index >= len(keys) {
 		return nil
 	}

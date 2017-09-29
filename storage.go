@@ -51,8 +51,8 @@ func NewCredentialManager(
 		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
 	}
 
-	cm.store = newConfigurationStore()
-	if err = cm.store.ParseFolder(irmaConfigurationPath); err != nil {
+	cm.Store = newConfigurationStore()
+	if err = cm.Store.ParseFolder(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
 
@@ -155,7 +155,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 			if oldcred.SharedPoints != nil && len(oldcred.SharedPoints) > 0 {
 				gabicred.Signature.KeyshareP = oldcred.SharedPoints[0]
 			}
-			cred := newCredential(gabicred)
+			cred := newCredential(gabicred, cm.Store)
 			if cred.CredentialType() == nil {
 				return errors.New("cannot add unknown credential type")
 			}
@@ -359,6 +359,12 @@ func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier
 	err = json.Unmarshal(bytes, &list)
 	if err != nil {
 		return nil, err
+	}
+
+	for _, attrlistlist := range list {
+		for _, attrlist := range attrlistlist {
+			attrlist.MetadataAttribute.store = cm.Store
+		}
 	}
 
 	return list, nil

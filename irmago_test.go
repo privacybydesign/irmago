@@ -47,9 +47,7 @@ func parseStorage(t *testing.T) *CredentialManager {
 }
 
 func teardown(t *testing.T) {
-	MetaStore = newConfigurationStore()
 	assert.NoError(t, os.RemoveAll("testdata/storage/test"))
-	// TODO first RemoveAll?!
 }
 
 // A convenience function for initializing big integers from known correct (10
@@ -124,37 +122,37 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, manager *CredentialManager) {
 	verifyPaillierKey(t, manager.paillierKeyCache)
 }
 
-func verifyStoreIsLoaded(t *testing.T) {
-	assert.NotNil(t, MetaStore.Issuers[NewIssuerIdentifier("irma-demo.RU")].CurrentPublicKey().N, "irma-demo.RU public key has no modulus")
+func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore) {
+	assert.NotNil(t, store.Issuers[NewIssuerIdentifier("irma-demo.RU")].CurrentPublicKey(store).N, "irma-demo.RU public key has no modulus")
 	assert.Equal(t,
 		"Irma Demo",
-		MetaStore.SchemeManagers[NewSchemeManagerIdentifier("irma-demo")].Name["en"],
+		store.SchemeManagers[NewSchemeManagerIdentifier("irma-demo")].Name["en"],
 		"irma-demo scheme manager has unexpected name")
 	assert.Equal(t,
 		"Radboud Universiteit Nijmegen",
-		MetaStore.Issuers[NewIssuerIdentifier("irma-demo.RU")].Name["en"],
+		store.Issuers[NewIssuerIdentifier("irma-demo.RU")].Name["en"],
 		"irma-demo.RU issuer has unexpected name")
 	assert.Equal(t,
 		"Student Card",
-		MetaStore.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
+		store.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
 		"irma-demo.RU.studentCard has unexpected name")
 
 	assert.Equal(t,
 		"studentID",
-		MetaStore.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
+		store.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
 		"irma-demo.RU.studentCard.studentID has unexpected name")
 
 	// Hash algorithm pseudocode:
 	// Base64(SHA256("irma-demo.RU.studentCard")[0:16])
-	assert.Contains(t, MetaStore.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
+	assert.Contains(t, store.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
 		"irma-demo.RU.studentCard had improper hash")
-	assert.Contains(t, MetaStore.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
+	assert.Contains(t, store.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
 		"irma-demo.MijnOverheid.root had improper hash")
 }
 
 func TestAndroidParse(t *testing.T) {
 	manager := parseStorage(t)
-	verifyStoreIsLoaded(t)
+	verifyStoreIsLoaded(t, manager.Store)
 
 	parseAndroidStorage(t, manager)
 	verifyManagerIsUnmarshaled(t, manager)

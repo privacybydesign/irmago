@@ -12,9 +12,6 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// MetaStore is the global instance of ConfigurationStore
-var MetaStore = newConfigurationStore()
-
 // ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys.
 // Use the global MetaStore instance.
 type ConfigurationStore struct {

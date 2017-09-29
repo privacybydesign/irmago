@@ -20,9 +20,9 @@ type CredentialInfo struct {
 	ID            string             // e.g., "irma-demo.RU.studentCard"
 	SignedOn      Timestamp          // Unix timestamp
 	Expires       Timestamp          // Unix timestamp
-	Type          *CredentialType    // Credential information from MetaStore
-	Issuer        *Issuer            // Issuer information from MetaStore
-	SchemeManager *SchemeManager     // Scheme manager information from MetaStore
+	Type          *CredentialType    // Credential information from ConfigurationStore
+	Issuer        *Issuer            // Issuer information from ConfigurationStore
+	SchemeManager *SchemeManager     // Scheme manager information from ConfigurationStore
 	Attributes    []TranslatedString // Human-readable rendered attributes
 	Logo          string             // Path to logo on storage
 }
@@ -30,8 +30,8 @@ type CredentialInfo struct {
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
 type CredentialInfoList []*CredentialInfo
 
-func NewCredentialInfo(ints []*big.Int) *CredentialInfo {
-	meta := MetadataFromInt(ints[0])
+func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialInfo {
+	meta := MetadataFromInt(ints[0], store)
 	credtype := meta.CredentialType()
 	issid := credtype.IssuerIdentifier()
 
@@ -46,20 +46,20 @@ func NewCredentialInfo(ints []*big.Int) *CredentialInfo {
 		SignedOn:      Timestamp(meta.SigningDate()),
 		Expires:       Timestamp(meta.Expiry()),
 		Type:          credtype,
-		Issuer:        MetaStore.Issuers[issid],
-		SchemeManager: MetaStore.SchemeManagers[issid.SchemeManagerIdentifier()],
+		Issuer:        store.Issuers[issid],
+		SchemeManager: store.SchemeManagers[issid.SchemeManagerIdentifier()],
 		Attributes:    attrs,
 		Logo:          "", // TODO
 	}
 }
 
-func newCredential(gabicred *gabi.Credential) (cred *credential) {
-	meta := MetadataFromInt(gabicred.Attributes[1])
+func newCredential(gabicred *gabi.Credential, store *ConfigurationStore) (cred *credential) {
+	meta := MetadataFromInt(gabicred.Attributes[1], store)
 	cred = &credential{
 		Credential:        gabicred,
 		MetadataAttribute: meta,
 	}
-	cred.Pk = MetaStore.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
+	cred.Pk = store.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
 	return
 }
 

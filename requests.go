@@ -111,7 +111,7 @@ type issuanceState struct {
 }
 
 // AttributeList returns the list of attributes from this credential request.
-func (cr *CredentialRequest) AttributeList() (*AttributeList, error) {
+func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*AttributeList, error) {
 	meta := NewMetadataAttribute()
 	meta.setKeyCounter(cr.KeyCounter)
 	meta.setCredentialTypeIdentifier(cr.Credential.String())
@@ -122,7 +122,7 @@ func (cr *CredentialRequest) AttributeList() (*AttributeList, error) {
 	}
 
 	attrs := make([]*big.Int, len(cr.Attributes)+1, len(cr.Attributes)+1)
-	credtype := MetaStore.Credentials[*cr.Credential]
+	credtype := store.Credentials[*cr.Credential]
 	if credtype == nil {
 		return nil, errors.New("Unknown credential type")
 	}
@@ -139,7 +139,7 @@ func (cr *CredentialRequest) AttributeList() (*AttributeList, error) {
 		}
 	}
 
-	return NewAttributeListFromInts(attrs)
+	return NewAttributeListFromInts(attrs, store), nil
 }
 
 func newIssuanceState() (*issuanceState, error) {
@@ -154,9 +154,9 @@ func newIssuanceState() (*issuanceState, error) {
 }
 
 // Distributed indicates if a keyshare is involved in this session.
-func (ir *IssuanceRequest) Distributed() bool {
+func (ir *IssuanceRequest) Distributed(store *ConfigurationStore) bool {
 	for _, manager := range ir.SchemeManagers() {
-		if MetaStore.SchemeManagers[manager].Distributed() {
+		if store.SchemeManagers[manager].Distributed() {
 			return true
 		}
 	}
@@ -193,9 +193,9 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
 
 // Distributed indicates if a keyshare is involved in this session.
-func (dr *DisclosureRequest) Distributed() bool {
+func (dr *DisclosureRequest) Distributed(store *ConfigurationStore) bool {
 	for _, manager := range dr.SchemeManagers() {
-		if MetaStore.SchemeManagers[manager].Distributed() {
+		if store.SchemeManagers[manager].Distributed() {
 			return true
 		}
 	}
