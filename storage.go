@@ -258,21 +258,25 @@ func (cm *CredentialManager) storeSignature(cred *credential, counter int) (err 
 		return err
 	}
 
-	// TODO existence check
 	filename := cm.signatureFilename(cred.AttributeList())
 	err = ioutil.WriteFile(filename, credbytes, 0600)
 	return
 }
 
-func (cm *CredentialManager) storeAttributes() (err error) {
-	attrbytes, err := json.Marshal(cm.attributes)
-	if err != nil {
-		return err
+func (cm *CredentialManager) storeAttributes() error {
+	temp := []*AttributeList{}
+	for _, attrlistlist := range cm.attributes {
+		for _, attrlist := range attrlistlist {
+			temp = append(temp, attrlist)
+		}
 	}
 
-	// TODO existence check
-	err = ioutil.WriteFile(cm.path(attributesFile), attrbytes, 0600)
-	return
+	if attrbytes, err := json.Marshal(temp); err == nil {
+		err = ioutil.WriteFile(cm.path(attributesFile), attrbytes, 0600)
+		return nil
+	} else {
+		return err
+	}
 }
 
 func (cm *CredentialManager) storeKeyshareServers() (err error) {
@@ -343,7 +347,6 @@ func (cm *CredentialManager) loadSecretKey() (*secretKey, error) {
 }
 
 func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier][]*AttributeList, err error) {
-	list = make(map[CredentialTypeIdentifier][]*AttributeList)
 	exists, err := PathExists(cm.path(attributesFile))
 	if err != nil || !exists {
 		return
@@ -352,15 +355,24 @@ func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(bytes, &list)
-	if err != nil {
+
+	// The attributes are stored as a list of instances of AttributeList
+	temp := []*AttributeList{}
+	list = make(map[CredentialTypeIdentifier][]*AttributeList)
+	if err = json.Unmarshal(bytes, &temp); err != nil {
 		return nil, err
 	}
-
-	for _, attrlistlist := range list {
-		for _, attrlist := range attrlistlist {
-			attrlist.MetadataAttribute = MetadataFromInt(attrlist.Ints[0], cm.Store)
+	for _, attrlist := range temp {
+		attrlist.MetadataAttribute = MetadataFromInt(attrlist.Ints[0], cm.Store)
+		id := attrlist.CredentialType()
+		var ct CredentialTypeIdentifier
+		if id != nil {
+			ct = id.Identifier()
 		}
+		if _, contains := list[ct]; !contains {
+			list[ct] = []*AttributeList{}
+		}
+		list[ct] = append(list[ct], attrlist)
 	}
 
 	return list, nil
