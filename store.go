@@ -1,13 +1,14 @@
 package irmago
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/xml"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"crypto/sha256"
 
 	"github.com/mhe/gabi"
 )
@@ -24,15 +25,40 @@ type ConfigurationStore struct {
 	initialized   bool
 }
 
-func NewConfigurationStore() (store *ConfigurationStore) {
+// NewConfigurationStore returns a new configuration store. After this
+// ParseFolder() should be called to parse the specified path.
+func NewConfigurationStore(path string) (store *ConfigurationStore) {
 	store = &ConfigurationStore{
 		SchemeManagers: make(map[SchemeManagerIdentifier]*SchemeManager),
 		Issuers:        make(map[IssuerIdentifier]*Issuer),
 		Credentials:    make(map[CredentialTypeIdentifier]*CredentialType),
 		publicKeys:     make(map[IssuerIdentifier][]*gabi.PublicKey),
 		reverseHashes:  make(map[string]CredentialTypeIdentifier),
+		path:           path + "/irma_configuration",
 	}
 	return
+}
+
+// ParseFolder populates the current store by parsing the storage path,
+// listing the containing scheme managers, issuers and credential types.
+func (store *ConfigurationStore) ParseFolder() error {
+	err := iterateSubfolders(store.path, func(dir string) error {
+		manager := &SchemeManager{}
+		exists, err := pathToDescription(dir+"/description.xml", manager)
+		if err != nil {
+			return err
+		}
+		if exists {
+			store.SchemeManagers[manager.Identifier()] = manager
+			return store.parseIssuerFolders(dir)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	store.initialized = true
+	return nil
 }
 
 // PublicKey returns the specified public key, or nil if not present in the ConfigurationStore.
@@ -68,29 +94,6 @@ func (store *ConfigurationStore) hashToCredentialType(hash []byte) *CredentialTy
 // IsInitialized indicates whether this instance has successfully been initialized.
 func (store *ConfigurationStore) IsInitialized() bool {
 	return store.initialized
-}
-
-// ParseFolder populates the current store by parsing the specified irma_configuration folder,
-// listing the containing scheme managers, issuers, credential types and public keys.
-func (store *ConfigurationStore) ParseFolder(path string) error {
-	store.path = path
-	err := iterateSubfolders(path, func(dir string) error {
-		manager := &SchemeManager{}
-		exists, err := pathToDescription(dir+"/description.xml", manager)
-		if err != nil {
-			return err
-		}
-		if exists {
-			store.SchemeManagers[manager.Identifier()] = manager
-			return store.parseIssuerFolders(dir)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	store.initialized = true
-	return nil
 }
 
 func (store *ConfigurationStore) parseIssuerFolders(path string) error {
@@ -202,4 +205,35 @@ func (store *ConfigurationStore) Contains(cred CredentialTypeIdentifier) bool {
 	return store.SchemeManagers[cred.IssuerIdentifier().SchemeManagerIdentifier()] != nil &&
 		store.Issuers[cred.IssuerIdentifier()] != nil &&
 		store.Credentials[cred] != nil
+}
+
+func (store *ConfigurationStore) Copy(source string) error {
+	if err := ensureDirectoryExists(store.path); err != nil {
+		return err
+	}
+
+	// TODO skip existing scheme managers? individual files?
+	return filepath.Walk(source, filepath.WalkFunc(
+		func(path string, info os.FileInfo, err error) error {
+			if path == source {
+				return nil
+			}
+			subpath := path[len(source):]
+			if info.IsDir() {
+				if err := ensureDirectoryExists(store.path + subpath); err != nil {
+					return err
+				}
+			} else {
+				srcfile, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer srcfile.Close()
+				if err := writeFile(srcfile, store.path+subpath); err != nil {
+					return err
+				}
+			}
+			return nil
+		}),
+	)
 }

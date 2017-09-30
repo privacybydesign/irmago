@@ -3,6 +3,7 @@ package irmago
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -37,6 +38,30 @@ func PathExists(path string) (bool, error) {
 	return true, err
 }
 
+func ensureDirectoryExists(path string) error {
+	exists, err := PathExists(path)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return os.Mkdir(path, 0700)
+}
+
+// writeFile writes the contents of reader to a new or truncated file at dest.
+func writeFile(reader io.Reader, dest string) error {
+	destfile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(destfile, reader); err != nil {
+		destfile.Close()
+		return err
+	}
+	return destfile.Close()
+}
+
 // NewCredentialManager deserializes the credentials from storage.
 func NewCredentialManager(
 	storagePath string,
@@ -49,8 +74,9 @@ func NewCredentialManager(
 		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
 	}
 
-	cm.Store = NewConfigurationStore()
-	if err = cm.Store.ParseFolder(irmaConfigurationPath); err != nil {
+	cm.Store = NewConfigurationStore(storagePath)
+	cm.Store.Copy(irmaConfigurationPath)
+	if err = cm.Store.ParseFolder(); err != nil {
 		return nil, err
 	}
 
@@ -110,15 +136,7 @@ func (cm *CredentialManager) ensureStorageExists() (err error) {
 		return errors.New("credential storage path does not exist")
 	}
 
-	exist, err = PathExists(cm.path(signaturesDir))
-	if err != nil {
-		return err
-	}
-	if !exist {
-		err = os.Mkdir(cm.path(signaturesDir), 0700)
-	}
-
-	return
+	return ensureDirectoryExists(cm.path(signaturesDir))
 }
 
 func (cm *CredentialManager) storeSecretKey(sk *big.Int) error {
