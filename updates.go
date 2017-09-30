@@ -12,8 +12,10 @@ import (
 )
 
 type update struct {
-	When   Timestamp
-	Number int
+	When    Timestamp
+	Number  int
+	Success bool
+	Error   *string
 }
 
 var credentialManagerUpdates = []func(manager *CredentialManager) error{

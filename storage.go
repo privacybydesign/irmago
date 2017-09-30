@@ -166,15 +166,17 @@ func (cm *CredentialManager) update() error {
 
 	// Perform all new updates
 	for i := len(cm.updates); i < len(credentialManagerUpdates); i++ {
-		if err := credentialManagerUpdates[i](cm); err != nil {
-			return err
+		err = credentialManagerUpdates[i](cm)
+		update := update{
+			When:    Timestamp(time.Now()),
+			Number:  i,
+			Success: err == nil,
 		}
-		cm.updates = append(cm.updates,
-			update{
-				When:   Timestamp(time.Now()),
-				Number: i,
-			},
-		)
+		if err != nil {
+			str := err.Error()
+			update.Error = &str
+		}
+		cm.updates = append(cm.updates, update)
 	}
 
 	// Save updates file
