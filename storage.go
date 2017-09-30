@@ -1,17 +1,15 @@
 package irmago
 
 import (
-	"encoding/json"
-	"errors"
-	"io/ioutil"
-	"os"
-
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"io/ioutil"
+	"os"
 	"path"
-
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 

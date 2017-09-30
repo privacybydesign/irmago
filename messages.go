@@ -3,10 +3,11 @@ package irmago
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/go-errors/errors"
 )
 
 // Status encodes the status of an IRMA session (e.g., connected).

@@ -3,11 +3,11 @@ package irmago
 import (
 	"encoding/json"
 	"encoding/xml"
-	"errors"
 	"html"
 	"io/ioutil"
 	"math/big"
 
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 

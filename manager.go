@@ -1,14 +1,12 @@
 package irmago
 
 import (
-	"errors"
-	"math/big"
-
 	"crypto/rand"
-
+	"math/big"
 	"sort"
 
 	"github.com/credentials/go-go-gadget-paillier"
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 

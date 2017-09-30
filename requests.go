@@ -3,13 +3,13 @@ package irmago
 import (
 	"crypto/sha256"
 	"encoding/asn1"
-	"errors"
 	"fmt"
 	"log"
 	"math/big"
 	"strconv"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 

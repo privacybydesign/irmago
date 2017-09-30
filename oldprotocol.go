@@ -2,12 +2,11 @@ package irmago
 
 import (
 	"encoding/json"
-	"errors"
 	"math/big"
 
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
-
 
 func (pki *publicKeyIdentifier) MarshalJSON() ([]byte, error) {
 	temp := struct {

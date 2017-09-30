@@ -3,7 +3,7 @@ package irmago
 import (
 	"encoding/xml"
 
-	"errors"
+	"github.com/go-errors/errors"
 )
 
 // SchemeManager describes a scheme manager.

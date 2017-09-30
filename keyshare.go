@@ -4,10 +4,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"math/big"
 	"strconv"
 
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 
