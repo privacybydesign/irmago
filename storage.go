@@ -26,6 +26,12 @@ const (
 	cardemuXML     = "../cardemu.xml"
 )
 
+type update struct {
+	when   Timestamp
+	number int
+	info   string
+}
+
 // PathExists checks if the specified path exists.
 func PathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
@@ -273,7 +279,7 @@ func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier
 
 	for _, attrlistlist := range list {
 		for _, attrlist := range attrlistlist {
-			attrlist.MetadataAttribute.store = cm.Store
+			attrlist.MetadataAttribute = MetadataFromInt(attrlist.Ints[0], cm.Store)
 		}
 	}
 

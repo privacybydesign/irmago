@@ -51,20 +51,6 @@ type AttributeList struct {
 	info               *CredentialInfo
 }
 
-func (al *AttributeList) MarshalJSON() ([]byte, error) {
-	return json.Marshal(al.Ints)
-}
-
-func (al *AttributeList) UnmarshalJSON(bytes []byte) error {
-	ints := []*big.Int{}
-	if err := json.Unmarshal(bytes, &ints); err != nil {
-		return err
-	}
-	list := NewAttributeListFromInts(ints, nil)
-	*al = *list
-	return nil
-}
-
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
 func NewAttributeListFromInts(ints []*big.Int, store *ConfigurationStore) *AttributeList {
 	return &AttributeList{
