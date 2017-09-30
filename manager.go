@@ -22,7 +22,9 @@ type CredentialManager struct {
 	paillierKeyCache *paillierPrivateKey
 
 	irmaConfigurationPath string
+	androidStoragePath    string
 	Store                 *ConfigurationStore
+	updates               []update
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.

@@ -39,6 +39,7 @@ func parseStorage(t *testing.T) *CredentialManager {
 	manager, err := NewCredentialManager(
 		"testdata/storage/test",
 		"testdata/irma_configuration",
+		"testdata/oldstorage",
 		&IgnoringKeyshareHandler{},
 	)
 	require.NoError(t, err)
@@ -54,13 +55,6 @@ func teardown(t *testing.T) {
 func s2big(s string) (r *big.Int) {
 	r, _ = new(big.Int).SetString(s, 10)
 	return
-}
-
-func parseAndroidStorage(t *testing.T, manager *CredentialManager) {
-	oldStoragePath = "testdata/oldstorage"
-	present, err := manager.ParseAndroidStorage()
-	require.NoError(t, err, "ParseAndroidStorage() failed")
-	require.True(t, present, "Android storage not found")
 }
 
 func verifyManagerIsUnmarshaled(t *testing.T, manager *CredentialManager) {
@@ -169,8 +163,6 @@ func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore, android bool) 
 
 func TestAndroidParse(t *testing.T) {
 	manager := parseStorage(t)
-	verifyStoreIsLoaded(t, manager.Store, false)
-	parseAndroidStorage(t, manager)
 	verifyStoreIsLoaded(t, manager.Store, true)
 	verifyManagerIsUnmarshaled(t, manager)
 	verifyCredentials(t, manager)
@@ -180,12 +172,9 @@ func TestAndroidParse(t *testing.T) {
 }
 
 func TestUnmarshaling(t *testing.T) {
-	manager := parseStorage(t)
-	parseAndroidStorage(t, manager)
-
-	newmanager, err := NewCredentialManager("testdata/storage/test", "testdata/irma_configuration", nil)
+	parseStorage(t)
+	newmanager, err := NewCredentialManager("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
 	require.NoError(t, err)
-
 	verifyManagerIsUnmarshaled(t, newmanager)
 	verifyCredentials(t, newmanager)
 	verifyKeyshareIsUnmarshaled(t, newmanager)
@@ -276,7 +265,6 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 
 func TestCandidates(t *testing.T) {
 	manager := parseStorage(t)
-	parseAndroidStorage(t, manager)
 
 	attrtype := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	disjunction := &AttributeDisjunction{
@@ -366,7 +354,6 @@ func TestTransport(t *testing.T) {
 
 func TestPaillier(t *testing.T) {
 	manager := parseStorage(t)
-	parseAndroidStorage(t, manager)
 
 	challenge, _ := gabi.RandomBigInt(256)
 	comm, _ := gabi.RandomBigInt(1000)

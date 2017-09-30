@@ -156,7 +156,6 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, manager *C
 	init := manager == nil
 	if init {
 		manager = parseStorage(t)
-		parseAndroidStorage(t, manager)
 	}
 
 	url = "http://localhost:8081/irma_api_server/api/v2/" + url
@@ -198,7 +197,6 @@ func registerKeyshareServer(t *testing.T, manager *CredentialManager) {
 // and issuance session, also using irma-demo credentials deserialized from Android storage
 func TestKeyshareRegistrationAndSessions(t *testing.T) {
 	manager := parseStorage(t)
-	parseAndroidStorage(t, manager)
 
 	manager.credentials[NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
 	test := NewSchemeManagerIdentifier("test")
@@ -248,7 +246,6 @@ func TestKeyshareRegistrationAndSessions(t *testing.T) {
 // Use keyshareuser.sql to register the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
 	manager := parseStorage(t)
-	parseAndroidStorage(t, manager)
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	expiry := Timestamp(NewMetadataAttribute().Expiry())

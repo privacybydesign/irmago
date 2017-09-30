@@ -13,6 +13,8 @@ import (
 	"math/big"
 	"path"
 
+	"time"
+
 	"github.com/mhe/gabi"
 )
 
@@ -22,6 +24,7 @@ const (
 	attributesFile = "attrs"
 	kssFile        = "kss"
 	paillierFile   = "paillier"
+	updatesFile    = "updates"
 	signaturesDir  = "sigs"
 )
 
@@ -61,29 +64,49 @@ func writeFile(reader io.Reader, dest string) error {
 	return destfile.Close()
 }
 
-// NewCredentialManager deserializes the credentials from storage.
+// NewCredentialManager creates a new CredentialManager that uses the directory
+// specified by storagePath for (de)serializing itself. irmaConfigurationPath
+// is the path to a (possibly readonly) folder containing irma_configuration;
+// androidStoragePath is an optional path to the files of the old android app
+// (specify "" if you do not want to parse the old android app files),
+// and keyshareHandler is used for when a registration to a keyshare server needs
+// to happen.
+// The credential manager returned by this function has been fully deserialized
+// and is ready for use.
+//
+// NOTE: It is the responsibility of the caller that there exists a directory
+// at storagePath!
 func NewCredentialManager(
 	storagePath string,
 	irmaConfigurationPath string,
+	androidStoragePath string,
 	keyshareHandler KeyshareHandler,
 ) (*CredentialManager, error) {
 	var err error
 	cm := &CredentialManager{
 		credentials:           make(map[CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[SchemeManagerIdentifier]*keyshareServer),
+		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
-		Store: NewConfigurationStore(storagePath + "/irma_configuration"),
+		androidStoragePath:    androidStoragePath,
+		Store:                 NewConfigurationStore(storagePath + "/irma_configuration"),
 	}
 
+	// Ensure storage path exists, and populate it with necessary files
 	cm.storagePath = storagePath
 	if err = cm.ensureStorageExists(); err != nil {
 		return nil, err
 	}
-
 	if err = cm.Store.ParseFolder(); err != nil {
 		return nil, err
 	}
 
+	// Perform new update functions from credentialManagerUpdates, if any
+	if err = cm.update(); err != nil {
+		return nil, err
+	}
+
+	// Load our stuff
 	if cm.secretkey, err = cm.loadSecretKey(); err != nil {
 		return nil, err
 	}
@@ -112,6 +135,50 @@ func NewCredentialManager(
 	}
 
 	return cm, nil
+}
+
+// update performs any function from credentialManagerUpdates that has not
+// already been executed in the past, keeping track of previously executed updates
+// in the file at updatesFile.
+func (cm *CredentialManager) update() error {
+	// Load and parse file containing info about already performed updates
+	exists, err := PathExists(cm.path(updatesFile))
+	if err != nil {
+		return err
+	}
+	if !exists {
+		cm.updates = []update{}
+	} else {
+		bytes, err := ioutil.ReadFile(cm.path(updatesFile))
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(bytes, &cm.updates); err != nil {
+			return err
+		}
+	}
+
+	// Perform all new updates
+	for i := len(cm.updates); i < len(credentialManagerUpdates); i++ {
+		if err := credentialManagerUpdates[i](cm); err != nil {
+			return err
+		}
+		cm.updates = append(cm.updates,
+			update{
+				When:   Timestamp(time.Now()),
+				Number: i,
+			},
+		)
+	}
+
+	// Save updates file
+	bytes, err := json.Marshal(cm.updates)
+	if err != nil {
+		return err
+	}
+	cm.saveFile(cm.path(updatesFile), bytes)
+
+	return nil
 }
 
 func (cm *CredentialManager) path(file string) string {

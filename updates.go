@@ -11,14 +11,28 @@ import (
 	"github.com/mhe/gabi"
 )
 
-var oldStoragePath = "/data/data/org.irmacard.cardemu"
+type update struct {
+	When   Timestamp
+	Number int
+}
+
+var credentialManagerUpdates = []func(manager *CredentialManager) error{
+	func(manager *CredentialManager) error {
+		_, err := manager.ParseAndroidStorage()
+		return err
+	},
+}
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file
 // from the old Android IRMA app, parsing its credentials into the current instance,
 // and saving them to storage.
 // CAREFUL: this method overwrites any existing secret keys and attributes on storage.
 func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
-	cardemuXML := oldStoragePath + "/shared_prefs/cardemu.xml"
+	if cm.androidStoragePath == "" {
+		return false, nil
+	}
+
+	cardemuXML := cm.androidStoragePath + "/shared_prefs/cardemu.xml"
 	present, err = PathExists(cardemuXML)
 	if err != nil || !present {
 		return
@@ -114,7 +128,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 		cm.paillierKey(false) // trigger calculating a new one
 	}
 
-	if err = cm.Store.Copy(oldStoragePath+"/app_store/irma_configuration", false); err != nil {
+	if err = cm.Store.Copy(cm.androidStoragePath+"/app_store/irma_configuration", false); err != nil {
 		return
 	}
 	// Copy from assets again to ensure we have the latest versions
