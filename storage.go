@@ -3,7 +3,6 @@ package irmago
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 
@@ -49,17 +48,28 @@ func ensureDirectoryExists(path string) error {
 	return os.Mkdir(path, 0700)
 }
 
-// writeFile writes the contents of reader to a new or truncated file at dest.
-func writeFile(reader io.Reader, dest string) error {
-	destfile, err := os.Create(dest)
+// Save the filecontents at the specified path atomically:
+// - first save the content in a temp file with a random filename in the same dir
+// - then rename the temp file to the specified filepath, overwriting the old file
+func saveFile(filepath string, content []byte) (err error) {
+	dir := path.Dir(filepath)
+
+	// Read random data for filename and convert to hex
+	randBytes := make([]byte, 16)
+	_, err = rand.Read(randBytes)
 	if err != nil {
-		return err
+		return
 	}
-	if _, err := io.Copy(destfile, reader); err != nil {
-		destfile.Close()
-		return err
+	tempfilename := hex.EncodeToString(randBytes)
+
+	// Create temp file
+	err = ioutil.WriteFile(dir+"/"+tempfilename, content, 0600)
+	if err != nil {
+		return
 	}
-	return destfile.Close()
+
+	// Rename, overwriting old file
+	return os.Rename(dir+"/"+tempfilename, filepath)
 }
 
 // NewCredentialManager creates a new CredentialManager that uses the directory
@@ -174,7 +184,7 @@ func (cm *CredentialManager) update() error {
 	if err != nil {
 		return err
 	}
-	cm.saveFile(cm.path(updatesFile), bytes)
+	saveFile(cm.path(updatesFile), bytes)
 
 	return nil
 }
@@ -184,6 +194,11 @@ func (cm *CredentialManager) path(file string) string {
 }
 
 func (cm *CredentialManager) signatureFilename(attrs *AttributeList) string {
+	// We take the SHA256 hash over all attributes as the filename for the signature.
+	// This means that the signatures of two credentials that have identical attributes
+	// will be written to the same file, one overwriting the other - but that doesn't
+	// matter, because either one of the signatures is valid over both attribute lists,
+	// so keeping one of them suffices.
 	return cm.path(signaturesDir) + "/" + attrs.hash()
 }
 
@@ -221,31 +236,7 @@ func (cm *CredentialManager) storeSecretKey(sk *secretKey) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(cm.path(skFile), bytes, 0600)
-}
-
-// Save the filecontents at the specified path atomically:
-// - first save the content in a temp file with a random filename in the same dir
-// - then rename the temp file to the specified filepath, overwriting the old file
-func (cm *CredentialManager) saveFile(filepath string, content []byte) (err error) {
-	dir := path.Dir(filepath)
-
-	// Read random data for filename and convert to hex
-	randBytes := make([]byte, 16)
-	_, err = rand.Read(randBytes)
-	if err != nil {
-		return
-	}
-	tempfilename := hex.EncodeToString(randBytes)
-
-	// Create temp file
-	err = ioutil.WriteFile(dir+"/"+tempfilename, content, 0600)
-	if err != nil {
-		return
-	}
-
-	// Rename, overwriting old file
-	return os.Rename(dir+"/"+tempfilename, filepath)
+	return saveFile(cm.path(skFile), bytes)
 }
 
 func (cm *CredentialManager) storeSignature(cred *credential, counter int) (err error) {
@@ -259,7 +250,7 @@ func (cm *CredentialManager) storeSignature(cred *credential, counter int) (err 
 	}
 
 	filename := cm.signatureFilename(cred.AttributeList())
-	err = ioutil.WriteFile(filename, credbytes, 0600)
+	err = saveFile(filename, credbytes)
 	return
 }
 
@@ -272,7 +263,7 @@ func (cm *CredentialManager) storeAttributes() error {
 	}
 
 	if attrbytes, err := json.Marshal(temp); err == nil {
-		err = ioutil.WriteFile(cm.path(attributesFile), attrbytes, 0600)
+		err = saveFile(cm.path(attributesFile), attrbytes)
 		return nil
 	} else {
 		return err
@@ -284,7 +275,7 @@ func (cm *CredentialManager) storeKeyshareServers() (err error) {
 	if err != nil {
 		return
 	}
-	err = ioutil.WriteFile(cm.path(kssFile), bts, 0600)
+	err = saveFile(cm.path(kssFile), bts)
 	return
 }
 
@@ -293,7 +284,7 @@ func (cm *CredentialManager) storePaillierKeys() (err error) {
 	if err != nil {
 		return
 	}
-	err = ioutil.WriteFile(cm.path(paillierFile), bts, 0600)
+	err = saveFile(cm.path(paillierFile), bts)
 	return
 }
 

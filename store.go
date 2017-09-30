@@ -231,7 +231,11 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 					return err
 				}
 				defer srcfile.Close()
-				if err := writeFile(srcfile, store.path+subpath); err != nil {
+				bytes, err := ioutil.ReadAll(srcfile)
+				if err != nil {
+					return err
+				}
+				if err := saveFile(store.path+subpath, bytes); err != nil {
 					return err
 				}
 			}
