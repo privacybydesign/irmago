@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 
@@ -84,20 +85,19 @@ func calcVersion(qr *Qr) (string, error) {
 
 // NewSession creates and starts a new IRMA session.
 func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
-	version, err := calcVersion(qr)
-	if err != nil {
-		handler.Failure(ActionUnknown, &Error{ErrorCode: ErrorProtocolVersionNotSupported, Err: err})
-		return
-	}
-
 	session := &session{
-		Version:     Version(version),
 		Action:      Action(qr.Type),
 		ServerURL:   qr.URL,
 		Handler:     handler,
 		transport:   NewHTTPTransport(qr.URL),
 		credManager: credManager,
 	}
+	version, err := calcVersion(qr)
+	if err != nil {
+		session.fail(&Error{ErrorCode: ErrorProtocolVersionNotSupported, Err: err})
+		return
+	}
+	session.Version = Version(version)
 
 	// Check if the action is one of the supported types
 	switch session.Action {
@@ -107,7 +107,7 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	case ActionUnknown:
 		fallthrough
 	default:
-		handler.Failure(ActionUnknown, &Error{ErrorCode: ErrorUnknownAction, Err: nil, Info: string(session.Action)})
+		session.fail(&Error{ErrorCode: ErrorUnknownAction, Err: nil, Info: string(session.Action)})
 		return
 	}
 
@@ -120,6 +120,12 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	return
 }
 
+func (session *session) fail(err *Error) {
+	session.transport.Delete()
+	err.Err = errors.Wrap(err.Err, 0)
+	session.Handler.Failure(session.Action, err)
+}
+
 // start retrieves the first message in the IRMA protocol, checks if we can perform
 // the request, and informs the user of the outcome.
 func (session *session) start() {
@@ -129,7 +135,7 @@ func (session *session) start() {
 	info := &SessionInfo{}
 	Err := session.transport.Get("jwt", info)
 	if Err != nil {
-		session.Handler.Failure(session.Action, Err.(*Error))
+		session.fail(Err.(*Error))
 		return
 	}
 
@@ -145,7 +151,7 @@ func (session *session) start() {
 	}
 	server, err := jwtDecode(info.Jwt, session.jwt)
 	if err != nil {
-		session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorInvalidJWT, Err: err})
+		session.fail(&Error{ErrorCode: ErrorInvalidJWT, Err: err})
 		return
 	}
 	session.irmaSession = session.jwt.IrmaSession()
@@ -161,6 +167,7 @@ func (session *session) start() {
 	missing := session.credManager.CheckSatisfiability(session.irmaSession.DisjunctionList())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, missing)
+		// TODO: session.transport.Delete() on dialog cancel
 		return
 	}
 
@@ -185,6 +192,7 @@ func (session *session) start() {
 
 func (session *session) do(proceed bool) {
 	if !proceed {
+		session.transport.Delete()
 		session.Handler.Cancelled(session.Action)
 		return
 	}
@@ -202,7 +210,7 @@ func (session *session) do(proceed bool) {
 			message, err = session.credManager.IssueCommitments(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
-			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, Err: err})
+			session.fail(&Error{ErrorCode: ErrorCrypto, Err: err})
 			return
 		}
 		session.sendResponse(message)
@@ -218,7 +226,7 @@ func (session *session) do(proceed bool) {
 			builders, err = session.credManager.IssuanceProofBuilders(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
-			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorCrypto, Err: err})
+			session.fail(&Error{ErrorCode: ErrorCrypto, Err: err})
 		}
 
 		startKeyshareSession(session.credManager, session.irmaSession, builders, session, session.Handler)
@@ -230,18 +238,16 @@ func (session *session) KeyshareDone(message interface{}) {
 }
 
 func (session *session) KeyshareCancelled() {
+	session.transport.Delete()
 	session.Handler.Cancelled(session.Action)
 }
 
 func (session *session) KeyshareBlocked(duration int) {
-	session.Handler.Failure(
-		session.Action,
-		&Error{ErrorCode: ErrorKeyshareBlocked, Info: strconv.Itoa(duration)},
-	)
+	session.fail(&Error{ErrorCode: ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
 }
 
 func (session *session) KeyshareError(err error) {
-	session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorKeyshare, Err: err})
+	session.fail(&Error{ErrorCode: ErrorKeyshare, Err: err})
 }
 
 type disclosureResponse string
@@ -254,21 +260,21 @@ func (session *session) sendResponse(message interface{}) {
 	case ActionDisclosing:
 		var response disclosureResponse
 		if err = session.transport.Post("proofs", &response, message); err != nil {
-			session.Handler.Failure(session.Action, err.(*Error))
+			session.fail(err.(*Error))
 			return
 		}
 		if response != "VALID" {
-			session.Handler.Failure(session.Action, &Error{ErrorCode: ErrorRejected, Info: string(response)})
+			session.fail(&Error{ErrorCode: ErrorRejected, Info: string(response)})
 			return
 		}
 	case ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
-			session.Handler.Failure(session.Action, err.(*Error))
+			session.fail(err.(*Error))
 			return
 		}
 		if err = session.credManager.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
-			session.Handler.Failure(session.Action, &Error{Err: err, ErrorCode: ErrorCrypto})
+			session.fail(&Error{Err: err, ErrorCode: ErrorCrypto})
 			return
 		}
 	}

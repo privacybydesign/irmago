@@ -41,7 +41,7 @@ func (transport *HTTPTransport) SetHeader(name, val string) {
 }
 
 func (transport *HTTPTransport) request(url string, method string, result interface{}, object interface{}) error {
-	if method != http.MethodPost && method != http.MethodGet {
+	if method != http.MethodPost && method != http.MethodGet && method != http.MethodDelete {
 		panic("Unsupported HTTP method " + method)
 	}
 	if method == http.MethodGet && object != nil {
@@ -53,9 +53,6 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	if object != nil {
 		var objstr string
 		if objstr, isstr = object.(string); isstr {
-			if verbose {
-				fmt.Printf("GET %s\n", url)
-			}
 			reader = bytes.NewBuffer([]byte(objstr))
 		} else {
 			marshaled, err := json.Marshal(object)
@@ -63,9 +60,13 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 				return &Error{Err: err, ErrorCode: ErrorSerialization}
 			}
 			if verbose {
-				fmt.Printf("POST %s: %s\n", url, string(marshaled))
+				fmt.Printf("%s %s: %s\n", method, url, string(marshaled))
 			}
 			reader = bytes.NewBuffer(marshaled)
+		}
+	} else {
+		if verbose {
+			fmt.Printf("%s %s\n", method, url)
 		}
 	}
 
@@ -89,6 +90,10 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	res, err := transport.client.Do(req)
 	if err != nil {
 		return &Error{ErrorCode: ErrorTransport, Err: err}
+	}
+
+	if method == http.MethodDelete {
+		return nil
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
@@ -133,6 +138,6 @@ func (transport *HTTPTransport) Get(url string, result interface{}) error {
 }
 
 // Delete performs a DELETE.
-func (transport *HTTPTransport) Delete(url string) {
-	// TODO
+func (transport *HTTPTransport) Delete() {
+	transport.request("", http.MethodDelete, nil, nil)
 }
