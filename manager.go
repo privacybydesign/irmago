@@ -14,7 +14,7 @@ import (
 
 // CredentialManager manages credentials.
 type CredentialManager struct {
-	secretkey        *big.Int
+	secretkey        *secretKey
 	storagePath      string
 	attributes       map[CredentialTypeIdentifier][]*AttributeList
 	credentials      map[CredentialTypeIdentifier]map[int]*credential
@@ -25,6 +25,10 @@ type CredentialManager struct {
 	androidStoragePath    string
 	Store                 *ConfigurationStore
 	updates               []update
+}
+
+type secretKey struct {
+	Key *big.Int
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
@@ -41,8 +45,12 @@ func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
 	return list
 }
 
-func (cm *CredentialManager) generateSecretKey() (sk *big.Int, err error) {
-	return gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
+func (cm *CredentialManager) generateSecretKey() (*secretKey, error) {
+	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
+	if err != nil {
+		return nil, err
+	}
+	return &secretKey{Key: key}, nil
 }
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
@@ -104,7 +112,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 			return nil, errors.New("unknown public key")
 		}
 		cred, err := newCredential(&gabi.Credential{
-			Attributes: append([]*big.Int{cm.secretkey}, attrs.Ints...),
+			Attributes: append([]*big.Int{cm.secretkey.Key}, attrs.Ints...),
 			Signature:  sig,
 			Pk:         pk,
 		}, cm.Store)
@@ -273,7 +281,8 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 		if err != nil {
 			return nil, err
 		}
-		credBuilder := gabi.NewCredentialBuilder(pk, request.GetContext(), cm.secretkey, state.nonce2)
+		credBuilder := gabi.NewCredentialBuilder(
+			pk, request.GetContext(), cm.secretkey.Key, state.nonce2)
 		request.state.builders = append(request.state.builders, credBuilder)
 		proofBuilders = append(proofBuilders, credBuilder)
 	}

@@ -82,7 +82,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 	}
 
 	for _, list := range parsedjson {
-		cm.secretkey = list[0].Attributes[0]
+		cm.secretkey = &secretKey{Key: list[0].Attributes[0]}
 		for _, oldcred := range list {
 			gabicred := &gabi.Credential{
 				Attributes: oldcred.Attributes,

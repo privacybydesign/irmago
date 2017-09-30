@@ -9,7 +9,6 @@ import (
 
 	"crypto/rand"
 	"encoding/hex"
-	"math/big"
 	"path"
 
 	"time"
@@ -217,8 +216,12 @@ func (cm *CredentialManager) ensureStorageExists() error {
 	return ensureDirectoryExists(cm.path(signaturesDir))
 }
 
-func (cm *CredentialManager) storeSecretKey(sk *big.Int) error {
-	return ioutil.WriteFile(cm.path(skFile), sk.Bytes(), 0600)
+func (cm *CredentialManager) storeSecretKey(sk *secretKey) error {
+	bytes, err := json.Marshal(sk)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(cm.path(skFile), bytes, 0600)
 }
 
 // Save the filecontents at the specified path atomically:
@@ -310,20 +313,25 @@ func (cm *CredentialManager) loadSignature(attrs *AttributeList) (signature *gab
 
 // loadSecretKey retrieves and returns the secret key from storage, or if no secret key
 // was found in storage, it generates, saves, and returns a new secret key.
-func (cm *CredentialManager) loadSecretKey() (*big.Int, error) {
+func (cm *CredentialManager) loadSecretKey() (*secretKey, error) {
+	sk := &secretKey{}
+	var err error
 	exists, err := PathExists(cm.path(skFile))
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		var bytes []byte
-		if bytes, err = ioutil.ReadFile(cm.path(skFile)); err == nil {
-			return new(big.Int).SetBytes(bytes), nil
+		if bytes, err = ioutil.ReadFile(cm.path(skFile)); err != nil {
+			return nil, err
 		}
-		return nil, err
+		if err = json.Unmarshal(bytes, sk); err != nil {
+			return nil, err
+		}
+		return sk, err
 	}
 
-	sk, err := cm.generateSecretKey()
+	sk, err = cm.generateSecretKey()
 	if err != nil {
 		return nil, err
 	}

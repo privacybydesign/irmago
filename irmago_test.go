@@ -89,8 +89,10 @@ func verifyCredentials(t *testing.T, manager *CredentialManager) {
 				cred.Credential.Signature.Verify(pk, cred.Attributes),
 				"Credential %s-%d was invalid", credtype.String(), index,
 			)
-			require.Equal(t, cred.Attributes[0], manager.secretkey,
-				"Secret key of credential %s-%d unequal to main secret key")
+			require.Equal(t, cred.Attributes[0], manager.secretkey.Key,
+				"Secret key of credential %s-%d unequal to main secret key",
+				cred.CredentialType().Identifier().String(), index,
+			)
 		}
 	}
 }
