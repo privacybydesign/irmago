@@ -21,7 +21,8 @@ type CredentialManager struct {
 	keyshareServers  map[SchemeManagerIdentifier]*keyshareServer
 	paillierKeyCache *paillierPrivateKey
 
-	Store *ConfigurationStore
+	irmaConfigurationPath string
+	Store                 *ConfigurationStore
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.

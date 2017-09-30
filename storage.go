@@ -23,14 +23,7 @@ const (
 	kssFile        = "kss"
 	paillierFile   = "paillier"
 	signaturesDir  = "sigs"
-	cardemuXML     = "../cardemu.xml"
 )
-
-type update struct {
-	when   Timestamp
-	number int
-	info   string
-}
 
 // PathExists checks if the specified path exists.
 func PathExists(path string) (bool, error) {
@@ -76,20 +69,21 @@ func NewCredentialManager(
 ) (*CredentialManager, error) {
 	var err error
 	cm := &CredentialManager{
-		credentials:     make(map[CredentialTypeIdentifier]map[int]*credential),
-		keyshareServers: make(map[SchemeManagerIdentifier]*keyshareServer),
-	}
-
-	cm.Store = NewConfigurationStore(storagePath)
-	cm.Store.Copy(irmaConfigurationPath)
-	if err = cm.Store.ParseFolder(); err != nil {
-		return nil, err
+		credentials:           make(map[CredentialTypeIdentifier]map[int]*credential),
+		keyshareServers:       make(map[SchemeManagerIdentifier]*keyshareServer),
+		irmaConfigurationPath: irmaConfigurationPath,
+		Store: NewConfigurationStore(storagePath + "/irma_configuration"),
 	}
 
 	cm.storagePath = storagePath
 	if err = cm.ensureStorageExists(); err != nil {
 		return nil, err
 	}
+
+	if err = cm.Store.ParseFolder(); err != nil {
+		return nil, err
+	}
+
 	if cm.secretkey, err = cm.loadSecretKey(); err != nil {
 		return nil, err
 	}
@@ -133,15 +127,27 @@ func (cm *CredentialManager) signatureFilename(id string, counter int) string {
 // NOTE: we do not create the folder if it does not exist!
 // Setting it up in a properly protected location (e.g., with automatic
 // backups to iCloud/Google disabled) is the responsibility of the user.
-func (cm *CredentialManager) ensureStorageExists() (err error) {
+func (cm *CredentialManager) ensureStorageExists() error {
 	exist, err := PathExists(cm.storagePath)
 	if err != nil {
-		return
+		return err
 	}
 	if !exist {
 		return errors.New("credential storage path does not exist")
 	}
 
+	if exist, err = PathExists(cm.Store.path); err != nil {
+		return err
+	}
+	if !exist {
+		if err = ensureDirectoryExists(cm.Store.path); err != nil {
+			return err
+		}
+		cm.Store.Copy(cm.irmaConfigurationPath, false)
+		if err = cm.Store.ParseFolder(); err != nil {
+			return err
+		}
+	}
 	return ensureDirectoryExists(cm.path(signaturesDir))
 }
 

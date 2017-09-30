@@ -1,0 +1,5 @@
+<InvalidSchemeManager>
+	An invalid scheme manager. This should raise no error, since it should
+	never be parsed, since it should be overwritten by the corresponding file
+	testdata/irma_configuration/test/description.xml from the 'assets' folder.
+</InvalidSchemeManager>

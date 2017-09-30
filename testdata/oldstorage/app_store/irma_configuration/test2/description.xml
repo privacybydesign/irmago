@@ -1,0 +1,16 @@
+<SchemeManager version="7">
+	<Id>test2</Id>
+	<Url>https://privacybydesign.foundation</Url>
+	<Name>
+		<en>Test Scheme Manager</en>
+		<nl>Test scheme manager</nl>
+	</Name>
+	<Description>
+		<en>A test scheme manager with a scheme manager.</en>
+		<nl>Een test-scheme manager met een keyshare server.</nl>
+	</Description>
+	<KeyshareServer></KeyshareServer>
+	<KeyshareWebsite></KeyshareWebsite>
+	<KeyshareAttribute></KeyshareAttribute>
+	<Contact>https://privacybydesign.foundation/</Contact>
+</SchemeManager>

@@ -34,7 +34,7 @@ func NewConfigurationStore(path string) (store *ConfigurationStore) {
 		Credentials:    make(map[CredentialTypeIdentifier]*CredentialType),
 		publicKeys:     make(map[IssuerIdentifier][]*gabi.PublicKey),
 		reverseHashes:  make(map[string]CredentialTypeIdentifier),
-		path:           path + "/irma_configuration",
+		path:           path,
 	}
 	return
 }
@@ -42,6 +42,8 @@ func NewConfigurationStore(path string) (store *ConfigurationStore) {
 // ParseFolder populates the current store by parsing the storage path,
 // listing the containing scheme managers, issuers and credential types.
 func (store *ConfigurationStore) ParseFolder() error {
+	*store = *NewConfigurationStore(store.path) // Init all maps
+
 	err := iterateSubfolders(store.path, func(dir string) error {
 		manager := &SchemeManager{}
 		exists, err := pathToDescription(dir+"/description.xml", manager)
@@ -207,13 +209,13 @@ func (store *ConfigurationStore) Contains(cred CredentialTypeIdentifier) bool {
 		store.Credentials[cred] != nil
 }
 
-func (store *ConfigurationStore) Copy(source string) error {
+func (store *ConfigurationStore) Copy(source string, parse bool) error {
 	if err := ensureDirectoryExists(store.path); err != nil {
 		return err
 	}
 
 	// TODO skip existing scheme managers? individual files?
-	return filepath.Walk(source, filepath.WalkFunc(
+	err := filepath.Walk(source, filepath.WalkFunc(
 		func(path string, info os.FileInfo, err error) error {
 			if path == source {
 				return nil
@@ -236,4 +238,12 @@ func (store *ConfigurationStore) Copy(source string) error {
 			return nil
 		}),
 	)
+
+	if err != nil {
+		return err
+	}
+	if parse {
+		return store.ParseFolder()
+	}
+	return nil
 }

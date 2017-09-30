@@ -11,20 +11,21 @@ import (
 	"github.com/mhe/gabi"
 )
 
+var oldStoragePath = "/data/data/org.irmacard.cardemu"
+
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file
 // from the old Android IRMA app, parsing its credentials into the current instance,
 // and saving them to storage.
 // CAREFUL: this method overwrites any existing secret keys and attributes on storage.
-func (cm *CredentialManager) ParseAndroidStorage() (err error) {
-	exists, err := PathExists(cm.path(cardemuXML))
-	if err != nil {
+func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
+	cardemuXML := oldStoragePath + "/shared_prefs/cardemu.xml"
+	present, err = PathExists(cardemuXML)
+	if err != nil || !present {
 		return
 	}
-	if !exists {
-		return errors.New("cardemu.xml not found at " + cardemuXML)
-	}
+	present = true
 
-	bytes, err := ioutil.ReadFile(cm.path(cardemuXML))
+	bytes, err := ioutil.ReadFile(cardemuXML)
 	if err != nil {
 		return
 	}
@@ -76,46 +77,46 @@ func (cm *CredentialManager) ParseAndroidStorage() (err error) {
 			if oldcred.SharedPoints != nil && len(oldcred.SharedPoints) > 0 {
 				gabicred.Signature.KeyshareP = oldcred.SharedPoints[0]
 			}
-			cred, err := newCredential(gabicred, cm.Store)
-			if err != nil {
-				return err
+			var cred *credential
+			if cred, err = newCredential(gabicred, cm.Store); err != nil {
+				return
 			}
 			if cred.CredentialType() == nil {
-				return errors.New("cannot add unknown credential type")
+				err = errors.New("cannot add unknown credential type")
+				return
 			}
 
-			err = cm.addCredential(cred, false)
-			if err != nil {
-				return err
+			if err = cm.addCredential(cred, false); err != nil {
+				return
 			}
 		}
 	}
 
 	if len(cm.credentials) > 0 {
-		err = cm.storeAttributes()
-		if err != nil {
-			return err
+		if err = cm.storeAttributes(); err != nil {
+			return
 		}
-		err = cm.storeSecretKey(cm.secretkey)
-		if err != nil {
-			return err
+		if err = cm.storeSecretKey(cm.secretkey); err != nil {
+			return
 		}
 	}
 
 	if len(cm.keyshareServers) > 0 {
-		err = cm.storeKeyshareServers()
-		if err != nil {
-			return err
+		if err = cm.storeKeyshareServers(); err != nil {
+			return
 		}
 	}
 
-	err = cm.storePaillierKeys()
-	if err != nil {
-		return err
+	if err = cm.storePaillierKeys(); err != nil {
+		return
 	}
 	if cm.paillierKeyCache == nil {
 		cm.paillierKey(false) // trigger calculating a new one
 	}
 
-	return
+	if err = cm.Store.Copy(oldStoragePath+"/app_store/irma_configuration", false); err != nil {
+		return
+	}
+	// Copy from assets again to ensure we have the latest versions
+	return present, cm.Store.Copy(cm.irmaConfigurationPath, true)
 }

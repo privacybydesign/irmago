@@ -57,7 +57,10 @@ func s2big(s string) (r *big.Int) {
 }
 
 func parseAndroidStorage(t *testing.T, manager *CredentialManager) {
-	require.NoError(t, manager.ParseAndroidStorage(), "ParseAndroidStorage() failed")
+	oldStoragePath = "testdata/oldstorage"
+	present, err := manager.ParseAndroidStorage()
+	require.NoError(t, err, "ParseAndroidStorage() failed")
+	require.True(t, present, "Android storage not found")
 }
 
 func verifyManagerIsUnmarshaled(t *testing.T, manager *CredentialManager) {
@@ -127,7 +130,13 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, manager *CredentialManager) {
 	verifyPaillierKey(t, manager.paillierKeyCache)
 }
 
-func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore) {
+func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore, android bool) {
+	require.Contains(t, store.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
+	require.Contains(t, store.SchemeManagers, NewSchemeManagerIdentifier("test"))
+	if android {
+		require.Contains(t, store.SchemeManagers, NewSchemeManagerIdentifier("test2"))
+	}
+
 	pk, err := store.PublicKey(NewIssuerIdentifier("irma-demo.RU"), 0)
 	require.NoError(t, err)
 	require.NotNil(t, pk)
@@ -160,9 +169,9 @@ func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore) {
 
 func TestAndroidParse(t *testing.T) {
 	manager := parseStorage(t)
-	verifyStoreIsLoaded(t, manager.Store)
-
+	verifyStoreIsLoaded(t, manager.Store, false)
 	parseAndroidStorage(t, manager)
+	verifyStoreIsLoaded(t, manager.Store, true)
 	verifyManagerIsUnmarshaled(t, manager)
 	verifyCredentials(t, manager)
 	verifyKeyshareIsUnmarshaled(t, manager)
@@ -201,7 +210,7 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	store := NewConfigurationStore("testdata")
+	store := NewConfigurationStore("testdata/irma_configuration")
 	require.NoError(t, store.ParseFolder())
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
@@ -222,7 +231,7 @@ func TestMetadataCompatibility(t *testing.T) {
 }
 
 func TestAttributeDisjunctionMarshaling(t *testing.T) {
-	store := NewConfigurationStore("testdata")
+	store := NewConfigurationStore("testdata/irma_configuration")
 	store.ParseFolder()
 	disjunction := AttributeDisjunction{}
 
