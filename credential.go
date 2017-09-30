@@ -13,6 +13,7 @@ import (
 type credential struct {
 	*gabi.Credential
 	*MetadataAttribute
+	attrs *AttributeList
 }
 
 // CredentialInfo contains all information of an IRMA credential.
@@ -65,6 +66,13 @@ func newCredential(gabicred *gabi.Credential, store *ConfigurationStore) (*crede
 		return nil, err
 	}
 	return cred, nil
+}
+
+func (cred *credential) AttributeList() *AttributeList {
+	if cred.attrs == nil {
+		cred.attrs = NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.store)
+	}
+	return cred.attrs
 }
 
 // Len implements sort.Interface.

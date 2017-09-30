@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"time"
 
+	"encoding/hex"
+
 	"github.com/mhe/gabi"
 )
 
@@ -64,6 +66,15 @@ func (al *AttributeList) Info() *CredentialInfo {
 		al.info = NewCredentialInfo(al.Ints, al.store)
 	}
 	return al.info
+}
+
+func (al *AttributeList) hash() string {
+	bytes := []byte{}
+	for _, i := range al.Ints {
+		bytes = append(bytes, i.Bytes()...)
+	}
+	shasum := sha256.Sum256(bytes)
+	return hex.EncodeToString(shasum[:])
 }
 
 // Strings converts the current instance to human-readable strings.

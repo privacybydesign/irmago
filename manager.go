@@ -88,8 +88,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 		if attrs == nil { // We do not have the requested cred
 			return
 		}
-		ints := append([]*big.Int{cm.secretkey}, attrs.Ints...)
-		sig, err := cm.loadSignature(id, counter)
+		sig, err := cm.loadSignature(attrs)
 		if err != nil {
 			return nil, err
 		}
@@ -97,8 +96,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 			err = errors.New("signature file not found")
 			return nil, err
 		}
-		meta := MetadataFromInt(ints[1], cm.Store)
-		pk, err := meta.PublicKey()
+		pk, err := attrs.PublicKey()
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +104,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 			return nil, errors.New("unknown public key")
 		}
 		cred, err := newCredential(&gabi.Credential{
-			Attributes: ints,
+			Attributes: append([]*big.Int{cm.secretkey}, attrs.Ints...),
 			Signature:  sig,
 			Pk:         pk,
 		}, cm.Store)
@@ -122,9 +120,8 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 // addCredential adds the specified credential to the CredentialManager, saving its signature
 // imediately, and optionally cm.attributes as well.
 func (cm *CredentialManager) addCredential(cred *credential, storeAttributes bool) (err error) {
-	attrs := NewAttributeListFromInts(cred.Attributes[1:], cm.Store)
 	id := cred.CredentialType().Identifier()
-	cm.attributes[id] = append(cm.attrs(id), attrs)
+	cm.attributes[id] = append(cm.attrs(id), cred.AttributeList())
 
 	if _, exists := cm.credentials[id]; !exists {
 		cm.credentials[id] = make(map[int]*credential)
@@ -161,7 +158,7 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 			if attribute.IsCredential() {
 				candidates = append(candidates, id)
 			} else {
-				attrs := NewAttributeListFromInts(cred.Attributes[1:], cm.Store)
+				attrs := cred.AttributeList()
 				val := attrs.Attribute(attribute)
 				if val == "" { // This won't handle empty attributes correctly
 					continue

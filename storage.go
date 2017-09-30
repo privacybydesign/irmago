@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strconv"
 
 	"crypto/rand"
 	"encoding/hex"
@@ -185,8 +184,8 @@ func (cm *CredentialManager) path(file string) string {
 	return cm.storagePath + "/" + file
 }
 
-func (cm *CredentialManager) signatureFilename(id string, counter int) string {
-	return cm.path(signaturesDir) + "/" + id + "-" + strconv.Itoa(counter)
+func (cm *CredentialManager) signatureFilename(attrs *AttributeList) string {
+	return cm.path(signaturesDir) + "/" + attrs.hash()
 }
 
 // ensureStorageExists initializes the credential storage folder,
@@ -257,7 +256,7 @@ func (cm *CredentialManager) storeSignature(cred *credential, counter int) (err 
 	}
 
 	// TODO existence check
-	filename := cm.signatureFilename(cred.CredentialType().Identifier().String(), counter)
+	filename := cm.signatureFilename(cred.AttributeList())
 	err = ioutil.WriteFile(filename, credbytes, 0600)
 	return
 }
@@ -291,8 +290,8 @@ func (cm *CredentialManager) storePaillierKeys() (err error) {
 	return
 }
 
-func (cm *CredentialManager) loadSignature(id CredentialTypeIdentifier, counter int) (signature *gabi.CLSignature, err error) {
-	sigpath := cm.signatureFilename(id.String(), counter)
+func (cm *CredentialManager) loadSignature(attrs *AttributeList) (signature *gabi.CLSignature, err error) {
+	sigpath := cm.signatureFilename(attrs)
 	exists, err := PathExists(sigpath)
 	if err != nil {
 		return
