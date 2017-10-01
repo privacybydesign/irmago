@@ -26,6 +26,7 @@ type CredentialInfo struct {
 	SchemeManager *SchemeManager     // Scheme manager information from ConfigurationStore
 	Attributes    []TranslatedString // Human-readable rendered attributes
 	Logo          string             // Path to logo on storage
+	Hash          string             // SHA256 hash over the attributes
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
@@ -51,6 +52,7 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 		SchemeManager: store.SchemeManagers[issid.SchemeManagerIdentifier()],
 		Attributes:    attrs,
 		Logo:          "", // TODO
+		Hash:          NewAttributeListFromInts(ints, store).hash(),
 	}
 }
 
