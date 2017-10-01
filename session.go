@@ -191,7 +191,7 @@ func (session *session) do(proceed bool) {
 	}
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
-	if !session.irmaSession.Distributed(session.credManager.Store) {
+	if !session.irmaSession.Distributed(session.credManager.ConfigurationStore) {
 		var message interface{}
 		var err error
 		switch session.Action {

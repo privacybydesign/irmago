@@ -94,7 +94,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 				gabicred.Signature.KeyshareP = oldcred.SharedPoints[0]
 			}
 			var cred *credential
-			if cred, err = newCredential(gabicred, cm.Store); err != nil {
+			if cred, err = newCredential(gabicred, cm.ConfigurationStore); err != nil {
 				return
 			}
 			if cred.CredentialType() == nil {
@@ -130,9 +130,9 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 		cm.paillierKey(false) // trigger calculating a new one
 	}
 
-	if err = cm.Store.Copy(cm.androidStoragePath+"/app_store/irma_configuration", false); err != nil {
+	if err = cm.ConfigurationStore.Copy(cm.androidStoragePath+"/app_store/irma_configuration", false); err != nil {
 		return
 	}
 	// Copy from assets again to ensure we have the latest versions
-	return present, cm.Store.Copy(cm.irmaConfigurationPath, true)
+	return present, cm.ConfigurationStore.Copy(cm.irmaConfigurationPath, true)
 }

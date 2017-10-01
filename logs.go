@@ -58,7 +58,7 @@ func (session *session) createLogEntry(response gabi.ProofList) (*LogEntry, erro
 	case ActionIssuing:
 		item := &IssuanceLog{Proofs: proofs}
 		for _, req := range session.jwt.(*IdentityProviderJwt).Request.Request.Credentials {
-			list, err := req.AttributeList(session.credManager.Store)
+			list, err := req.AttributeList(session.credManager.ConfigurationStore)
 			if err != nil {
 				continue // TODO?
 			}

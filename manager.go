@@ -22,7 +22,7 @@ type CredentialManager struct {
 
 	irmaConfigurationPath string
 	androidStoragePath    string
-	Store                 *ConfigurationStore
+	ConfigurationStore    *ConfigurationStore
 	updates               []update
 }
 
@@ -114,7 +114,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 			Attributes: append([]*big.Int{cm.secretkey.Key}, attrs.Ints...),
 			Signature:  sig,
 			Pk:         pk,
-		}, cm.Store)
+		}, cm.ConfigurationStore)
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +152,7 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 
 	for _, attribute := range disjunction.Attributes {
 		credID := attribute.CredentialTypeIdentifier()
-		if !cm.Store.Contains(credID) {
+		if !cm.ConfigurationStore.Contains(credID) {
 			continue
 		}
 		creds := cm.credentials[credID]
@@ -212,7 +212,7 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 		if identifier.IsCredential() {
 			continue // In this case we only disclose the metadata attribute, which is already handled
 		}
-		index, err := cm.Store.Credentials[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
+		index, err := cm.ConfigurationStore.Credentials[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +276,7 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
-		pk, err := cm.Store.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
+		pk, err := cm.ConfigurationStore.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, err
 		}
@@ -316,7 +316,7 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	// we save none of them to fail the session cleanly
 	gabicreds := []*gabi.Credential{}
 	for i, sig := range msg {
-		attrs, err := request.Credentials[i].AttributeList(cm.Store)
+		attrs, err := request.Credentials[i].AttributeList(cm.ConfigurationStore)
 		if err != nil {
 			return err
 		}
@@ -328,7 +328,7 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	}
 
 	for _, gabicred := range gabicreds {
-		newcred, err := newCredential(gabicred, cm.Store)
+		newcred, err := newCredential(gabicred, cm.ConfigurationStore)
 		if err != nil {
 			return err
 		}
@@ -359,7 +359,7 @@ func (cm *CredentialManager) paillierKey(wait bool) *paillierPrivateKey {
 
 func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 	list := []*SchemeManager{}
-	for name, manager := range cm.Store.SchemeManagers {
+	for name, manager := range cm.ConfigurationStore.SchemeManagers {
 		if _, contains := cm.keyshareServers[name]; len(manager.KeyshareServer) > 0 && !contains {
 			list = append(list, manager)
 		}
@@ -369,7 +369,7 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 
 // KeyshareEnroll attempts to register at the keyshare server of the specified scheme manager.
 func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, email, pin string) error {
-	manager, ok := cm.Store.SchemeManagers[managerID]
+	manager, ok := cm.ConfigurationStore.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
 	}

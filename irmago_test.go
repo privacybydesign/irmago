@@ -165,7 +165,7 @@ func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore, android bool) 
 
 func TestAndroidParse(t *testing.T) {
 	manager := parseStorage(t)
-	verifyStoreIsLoaded(t, manager.Store, true)
+	verifyStoreIsLoaded(t, manager.ConfigurationStore, true)
 	verifyManagerIsUnmarshaled(t, manager)
 	verifyCredentials(t, manager)
 	verifyKeyshareIsUnmarshaled(t, manager)

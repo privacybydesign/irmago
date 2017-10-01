@@ -96,7 +96,7 @@ func NewCredentialManager(
 		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		androidStoragePath:    androidStoragePath,
-		Store:                 NewConfigurationStore(storagePath + "/irma_configuration"),
+		ConfigurationStore:    NewConfigurationStore(storagePath + "/irma_configuration"),
 	}
 
 	exists, err := PathExists(cm.irmaConfigurationPath)
@@ -109,7 +109,7 @@ func NewCredentialManager(
 	if err = cm.ensureStorageExists(); err != nil {
 		return nil, err
 	}
-	if err = cm.Store.ParseFolder(); err != nil {
+	if err = cm.ConfigurationStore.ParseFolder(); err != nil {
 		return nil, err
 	}
 
@@ -222,14 +222,14 @@ func (cm *CredentialManager) ensureStorageExists() error {
 		return errors.New("credential storage path does not exist")
 	}
 
-	if exist, err = PathExists(cm.Store.path); err != nil {
+	if exist, err = PathExists(cm.ConfigurationStore.path); err != nil {
 		return err
 	}
 	if !exist {
-		if err = ensureDirectoryExists(cm.Store.path); err != nil {
+		if err = ensureDirectoryExists(cm.ConfigurationStore.path); err != nil {
 			return err
 		}
-		cm.Store.Copy(cm.irmaConfigurationPath, false)
+		cm.ConfigurationStore.Copy(cm.irmaConfigurationPath, false)
 	}
 	return ensureDirectoryExists(cm.path(signaturesDir))
 }
@@ -366,7 +366,7 @@ func (cm *CredentialManager) loadAttributes() (list map[CredentialTypeIdentifier
 		return nil, err
 	}
 	for _, attrlist := range temp {
-		attrlist.MetadataAttribute = MetadataFromInt(attrlist.Ints[0], cm.Store)
+		attrlist.MetadataAttribute = MetadataFromInt(attrlist.Ints[0], cm.ConfigurationStore)
 		id := attrlist.CredentialType()
 		var ct CredentialTypeIdentifier
 		if id != nil {
