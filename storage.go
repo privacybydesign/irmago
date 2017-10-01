@@ -20,6 +20,7 @@ const (
 	kssFile        = "kss"
 	paillierFile   = "paillier"
 	updatesFile    = "updates"
+	logsFile       = "logs"
 	signaturesDir  = "sigs"
 )
 
@@ -288,6 +289,15 @@ func (cm *CredentialManager) storePaillierKeys() (err error) {
 	return
 }
 
+func (cm *CredentialManager) storeLogs() (err error) {
+	bts, err := json.Marshal(cm.logs)
+	if err != nil {
+		return
+	}
+	err = saveFile(cm.path(logsFile), bts)
+	return
+}
+
 func (cm *CredentialManager) loadSignature(attrs *AttributeList) (signature *gabi.CLSignature, err error) {
 	sigpath := cm.signatureFilename(attrs)
 	exists, err := PathExists(sigpath)
@@ -397,6 +407,23 @@ func (cm *CredentialManager) loadPaillierKeys() (key *paillierPrivateKey, err er
 	}
 	key = new(paillierPrivateKey)
 	err = json.Unmarshal(bytes, key)
+	if err != nil {
+		return nil, err
+	}
+	return
+}
+
+func (cm *CredentialManager) loadLogs() (logs []*LogEntry, err error) {
+	logs = []*LogEntry{}
+	exists, err := PathExists(cm.path(logsFile))
+	if err != nil || !exists {
+		return
+	}
+	bytes, err := ioutil.ReadFile(cm.path(logsFile))
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(bytes, &logs)
 	if err != nil {
 		return nil, err
 	}

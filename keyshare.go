@@ -382,7 +382,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[SchemeManage
 			ks.sessionHandler.KeyshareError(err)
 			return
 		}
-		message := gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.session.(*IssuanceRequest).state.nonce2}
+		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.session.(*IssuanceRequest).state.nonce2}
 		for _, response := range responses {
 			message.ProofPjwt = response
 			break

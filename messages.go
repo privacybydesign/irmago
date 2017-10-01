@@ -130,3 +130,22 @@ func jwtDecode(jwt string, body interface{}) (string, error) {
 	}
 	return header.Issuer, json.Unmarshal(bodybytes, body)
 }
+
+func parseRequestorJwt(action Action, jwt string) (RequestorJwt, string, error) {
+	var retval RequestorJwt
+	switch action {
+	case ActionDisclosing:
+		retval = &ServiceProviderJwt{}
+	case ActionSigning:
+		retval = &SignatureRequestorJwt{}
+	case ActionIssuing:
+		retval = &IdentityProviderJwt{}
+	default:
+		return nil, "", errors.New("Invalid session type")
+	}
+	server, err := jwtDecode(jwt, retval)
+	if err != nil {
+		return nil, "", err
+	}
+	return retval, server, nil
+}

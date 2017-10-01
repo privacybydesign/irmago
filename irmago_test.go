@@ -174,12 +174,32 @@ func TestAndroidParse(t *testing.T) {
 }
 
 func TestUnmarshaling(t *testing.T) {
-	parseStorage(t)
+	manager := parseStorage(t)
+
+	// Do session so we can examine its log item later
+	logs, err := manager.Logs()
+	require.NoError(t, err)
+	jwt := getIssuanceJwt("testip", NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	sessionHelper(t, jwt, "issue", manager)
+
 	newmanager, err := NewCredentialManager("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
 	require.NoError(t, err)
 	verifyManagerIsUnmarshaled(t, newmanager)
 	verifyCredentials(t, newmanager)
 	verifyKeyshareIsUnmarshaled(t, newmanager)
+
+	newlogs, err := newmanager.Logs()
+	require.NoError(t, err)
+	require.True(t, len(newlogs) == len(logs)+1)
+
+	entry := newlogs[len(newlogs)-1]
+	require.NotNil(t, entry)
+	sessionjwt, _, err := entry.Jwt()
+	require.NoError(t, err)
+	require.Equal(t, "testip", sessionjwt.(*IdentityProviderJwt).ServerName)
+	response, err := entry.GetResponse()
+	require.NoError(t, err)
+	require.NotEmpty(t, response.(*IssuanceLog).Proofs)
 
 	teardown(t)
 }

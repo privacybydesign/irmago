@@ -18,6 +18,7 @@ type CredentialManager struct {
 	credentials      map[CredentialTypeIdentifier]map[int]*credential
 	keyshareServers  map[SchemeManagerIdentifier]*keyshareServer
 	paillierKeyCache *paillierPrivateKey
+	logs             []*LogEntry
 
 	irmaConfigurationPath string
 	androidStoragePath    string
@@ -408,4 +409,20 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 	}
 	delete(cm.keyshareServers, manager)
 	return cm.storeKeyshareServers()
+}
+
+func (cm *CredentialManager) addLogEntry(entry *LogEntry) error {
+	cm.logs = append(cm.logs, entry)
+	return cm.storeLogs()
+}
+
+func (cm *CredentialManager) Logs() ([]*LogEntry, error) {
+	if cm.logs == nil || len(cm.logs) == 0 {
+		var err error
+		cm.logs, err = cm.loadLogs()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return cm.logs, nil
 }

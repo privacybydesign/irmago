@@ -36,6 +36,7 @@ type session struct {
 	ServerURL string
 	Handler   Handler
 
+	info        *SessionInfo
 	credManager *CredentialManager
 	jwt         RequestorJwt
 	irmaSession IrmaSession
@@ -132,35 +133,27 @@ func (session *session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
-	info := &SessionInfo{}
-	Err := session.transport.Get("jwt", info)
+	session.info = &SessionInfo{}
+	Err := session.transport.Get("jwt", session.info)
 	if Err != nil {
 		session.fail(Err.(*Error))
 		return
 	}
 
-	switch session.Action {
-	case ActionDisclosing:
-		session.jwt = &ServiceProviderJwt{}
-	case ActionSigning:
-		session.jwt = &SignatureRequestorJwt{}
-	case ActionIssuing:
-		session.jwt = &IdentityProviderJwt{}
-	default:
-		panic("Invalid session type") // does not happen, session.Action has been checked earlier
-	}
-	server, err := jwtDecode(info.Jwt, session.jwt)
+	var server string
+	var err error
+	session.jwt, server, err = parseRequestorJwt(session.Action, session.info.Jwt)
 	if err != nil {
 		session.fail(&Error{ErrorCode: ErrorInvalidJWT, Err: err})
 		return
 	}
 	session.irmaSession = session.jwt.IrmaSession()
-	session.irmaSession.SetContext(info.Context)
-	session.irmaSession.SetNonce(info.Nonce)
+	session.irmaSession.SetContext(session.info.Context)
+	session.irmaSession.SetNonce(session.info.Nonce)
 	if session.Action == ActionIssuing {
 		// Store which public keys the server will use
 		for _, credreq := range session.irmaSession.(*IssuanceRequest).Credentials {
-			credreq.KeyCounter = info.Keys[credreq.Credential.IssuerIdentifier()]
+			credreq.KeyCounter = session.info.Keys[credreq.Credential.IssuerIdentifier()]
 		}
 	}
 
@@ -253,7 +246,9 @@ func (session *session) KeyshareError(err error) {
 type disclosureResponse string
 
 func (session *session) sendResponse(message interface{}) {
+	var log *LogEntry
 	var err error
+
 	switch session.Action {
 	case ActionSigning:
 		fallthrough
@@ -267,6 +262,7 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&Error{ErrorCode: ErrorRejected, Info: string(response)})
 			return
 		}
+		log, err = session.createLogEntry(message.(gabi.ProofList)) // TODO err
 	case ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
@@ -277,7 +273,9 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&Error{Err: err, ErrorCode: ErrorCrypto})
 			return
 		}
+		log, err = session.createLogEntry(message.(*gabi.IssueCommitmentMessage).Proofs) // TODO err
 	}
 
+	session.credManager.addLogEntry(log) // TODO err
 	session.Handler.Success(session.Action)
 }
