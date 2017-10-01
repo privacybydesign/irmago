@@ -99,6 +99,11 @@ func NewCredentialManager(
 		Store:                 NewConfigurationStore(storagePath + "/irma_configuration"),
 	}
 
+	exists, err := PathExists(cm.irmaConfigurationPath)
+	if !exists {
+		return nil, errors.New("irmaConfigurationPath does not exist")
+	}
+
 	// Ensure storage path exists, and populate it with necessary files
 	cm.storagePath = storagePath
 	if err = cm.ensureStorageExists(); err != nil {
@@ -225,9 +230,6 @@ func (cm *CredentialManager) ensureStorageExists() error {
 			return err
 		}
 		cm.Store.Copy(cm.irmaConfigurationPath, false)
-		if err = cm.Store.ParseFolder(); err != nil {
-			return err
-		}
 	}
 	return ensureDirectoryExists(cm.path(signaturesDir))
 }
