@@ -57,7 +57,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		} else {
 			marshaled, err := json.Marshal(object)
 			if err != nil {
-				return &SessionError{Err: err, ErrorCode: ErrorSerialization}
+				return &SessionError{ErrorCode: ErrorSerialization, Err: err}
 			}
 			if verbose {
 				fmt.Printf("%s %s: %s\n", method, url, string(marshaled))
@@ -72,7 +72,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	req, err := http.NewRequest(method, transport.Server+url, reader)
 	if err != nil {
-		return &SessionError{Err: err, ErrorCode: ErrorTransport}
+		return &SessionError{ErrorCode: ErrorTransport, Err: err}
 	}
 
 	req.Header.Set("User-Agent", "irmago")

@@ -108,7 +108,7 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	case ActionUnknown:
 		fallthrough
 	default:
-		session.fail(&SessionError{ErrorCode: ErrorUnknownAction, Err: nil, Info: string(session.Action)})
+		session.fail(&SessionError{ErrorCode: ErrorUnknownAction, Info: string(session.Action)})
 		return
 	}
 
@@ -270,7 +270,7 @@ func (session *session) sendResponse(message interface{}) {
 			return
 		}
 		if err = session.credManager.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
-			session.fail(&SessionError{Err: err, ErrorCode: ErrorCrypto})
+			session.fail(&SessionError{ErrorCode: ErrorCrypto, Err: err})
 			return
 		}
 		log, err = session.createLogEntry(message) // TODO err
