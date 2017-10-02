@@ -35,7 +35,9 @@ func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
 	list := CredentialInfoList([]*CredentialInfo{})
 
 	for _, attrlistlist := range cm.attributes {
-		for _, attrlist := range attrlistlist {
+		for index, attrlist := range attrlistlist {
+			info := attrlist.Info()
+			info.Index = index
 			list = append(list, attrlist.Info())
 		}
 	}

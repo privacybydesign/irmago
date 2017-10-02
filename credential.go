@@ -19,6 +19,7 @@ type credential struct {
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
 	ID            string             // e.g., "irma-demo.RU.studentCard"
+	Index         int                // This is the Index-th credential instance of this type
 	SignedOn      Timestamp          // Unix timestamp
 	Expires       Timestamp          // Unix timestamp
 	Type          *CredentialType    // Credential information from ConfigurationStore
