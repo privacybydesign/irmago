@@ -35,7 +35,7 @@ func (th TestHandler) Failure(action Action, err *SessionError) {
 }
 func (th TestHandler) UnsatisfiableRequest(action Action, missing AttributeDisjunctionList) {
 	th.c <- &SessionError{
-		ErrorCode: ErrorCode("UnsatisfiableRequest"),
+		ErrorType: ErrorType("UnsatisfiableRequest"),
 	}
 }
 func (th TestHandler) AskVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler) {

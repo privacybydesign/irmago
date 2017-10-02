@@ -95,7 +95,7 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	}
 	version, err := calcVersion(qr)
 	if err != nil {
-		session.fail(&SessionError{ErrorCode: ErrorProtocolVersionNotSupported, Err: err})
+		session.fail(&SessionError{ErrorType: ErrorProtocolVersionNotSupported, Err: err})
 		return
 	}
 	session.Version = Version(version)
@@ -108,7 +108,7 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	case ActionUnknown:
 		fallthrough
 	default:
-		session.fail(&SessionError{ErrorCode: ErrorUnknownAction, Info: string(session.Action)})
+		session.fail(&SessionError{ErrorType: ErrorUnknownAction, Info: string(session.Action)})
 		return
 	}
 
@@ -144,7 +144,7 @@ func (session *session) start() {
 	var err error
 	session.jwt, server, err = parseRequestorJwt(session.Action, session.info.Jwt)
 	if err != nil {
-		session.fail(&SessionError{ErrorCode: ErrorInvalidJWT, Err: err})
+		session.fail(&SessionError{ErrorType: ErrorInvalidJWT, Err: err})
 		return
 	}
 	session.irmaSession = session.jwt.IrmaSession()
@@ -203,7 +203,7 @@ func (session *session) do(proceed bool) {
 			message, err = session.credManager.IssueCommitments(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
-			session.fail(&SessionError{ErrorCode: ErrorCrypto, Err: err})
+			session.fail(&SessionError{ErrorType: ErrorCrypto, Err: err})
 			return
 		}
 		session.sendResponse(message)
@@ -219,7 +219,7 @@ func (session *session) do(proceed bool) {
 			builders, err = session.credManager.IssuanceProofBuilders(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
-			session.fail(&SessionError{ErrorCode: ErrorCrypto, Err: err})
+			session.fail(&SessionError{ErrorType: ErrorCrypto, Err: err})
 		}
 
 		startKeyshareSession(session.credManager, session.irmaSession, builders, session, session.Handler)
@@ -236,11 +236,11 @@ func (session *session) KeyshareCancelled() {
 }
 
 func (session *session) KeyshareBlocked(duration int) {
-	session.fail(&SessionError{ErrorCode: ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+	session.fail(&SessionError{ErrorType: ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
 }
 
 func (session *session) KeyshareError(err error) {
-	session.fail(&SessionError{ErrorCode: ErrorKeyshare, Err: err})
+	session.fail(&SessionError{ErrorType: ErrorKeyshare, Err: err})
 }
 
 type disclosureResponse string
@@ -259,7 +259,7 @@ func (session *session) sendResponse(message interface{}) {
 			return
 		}
 		if response != "VALID" {
-			session.fail(&SessionError{ErrorCode: ErrorRejected, Info: string(response)})
+			session.fail(&SessionError{ErrorType: ErrorRejected, Info: string(response)})
 			return
 		}
 		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
@@ -270,7 +270,7 @@ func (session *session) sendResponse(message interface{}) {
 			return
 		}
 		if err = session.credManager.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
-			session.fail(&SessionError{ErrorCode: ErrorCrypto, Err: err})
+			session.fail(&SessionError{ErrorType: ErrorCrypto, Err: err})
 			return
 		}
 		log, _ = session.createLogEntry(message) // TODO err

@@ -19,13 +19,13 @@ type Version string
 // Action encodes the session type of an IRMA session (e.g., disclosing).
 type Action string
 
-// ErrorCode are session errors.
-type ErrorCode string
+// ErrorType are session errors.
+type ErrorType string
 
 // SessionError is a protocol error.
 type SessionError struct {
 	Err error
-	ErrorCode
+	ErrorType
 	*ApiError
 	Info   string
 	Status int
@@ -77,34 +77,34 @@ const (
 // Protocol errors
 const (
 	// Protocol version not supported
-	ErrorProtocolVersionNotSupported = ErrorCode("protocolVersionNotSupported")
+	ErrorProtocolVersionNotSupported = ErrorType("protocolVersionNotSupported")
 	// Error in HTTP communication
-	ErrorTransport = ErrorCode("transport")
+	ErrorTransport = ErrorType("transport")
 	// Invalid client JWT in first IRMA message
-	ErrorInvalidJWT = ErrorCode("invalidJwt")
+	ErrorInvalidJWT = ErrorType("invalidJwt")
 	// Unkown session type (not disclosing, signing, or issuing)
-	ErrorUnknownAction = ErrorCode("unknownAction")
+	ErrorUnknownAction = ErrorType("unknownAction")
 	// Crypto error during calculation of our response (second IRMA message)
-	ErrorCrypto = ErrorCode("crypto")
+	ErrorCrypto = ErrorType("crypto")
 	// Server rejected our response (second IRMA message)
-	ErrorRejected = ErrorCode("rejected")
+	ErrorRejected = ErrorType("rejected")
 	// (De)serializing of a message failed
-	ErrorSerialization = ErrorCode("serialization")
+	ErrorSerialization = ErrorType("serialization")
 	// Error in keyshare protocol
-	ErrorKeyshare = ErrorCode("keyshare")
+	ErrorKeyshare = ErrorType("keyshare")
 	// Keyshare server has blocked us
-	ErrorKeyshareBlocked = ErrorCode("keyshareBlocked")
+	ErrorKeyshareBlocked = ErrorType("keyshareBlocked")
 	// API server error
-	ErrorApi = ErrorCode("api")
+	ErrorApi = ErrorType("api")
 	// Server returned unexpected or malformed response
-	ErrorServerResponse = ErrorCode("serverResponse")
+	ErrorServerResponse = ErrorType("serverResponse")
 )
 
 func (e *SessionError) Error() string {
 	if e.Err != nil {
-		return fmt.Sprintf("%s: %s", string(e.ErrorCode), e.Err.Error())
+		return fmt.Sprintf("%s: %s", string(e.ErrorType), e.Err.Error())
 	}
-	return string(e.ErrorCode)
+	return string(e.ErrorType)
 }
 
 func jwtDecode(jwt string, body interface{}) (string, error) {
