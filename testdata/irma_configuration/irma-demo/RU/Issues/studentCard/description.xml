@@ -1,18 +1,18 @@
 <IssueSpecification version="4">
 	<Name>
 		<en>Student Card</en>
-		<nl></nl>
+		<nl>Studentenkaart</nl>
 	</Name>
 	<ShortName>
 		<en>Student Card</en>
-		<nl></nl>
+		<nl>Studentenkaart</nl>
 	</ShortName>
 	<SchemeManager>irma-demo</SchemeManager>
 	<IssuerID>RU</IssuerID>
 	<CredentialID>studentCard</CredentialID>
 	<Description>
-		<en>Student Card issued by the Radboud University Nijmegen.</en>
-		<nl></nl>
+		<en>Student Card issued by the Radboud University Nijmegen</en>
+		<nl>Studentenkaart uitgegeven door de Radboud Universiteit Nijmegen</nl>
 	</Description>
 	<ShouldBeSingleton>true</ShouldBeSingleton>
 
@@ -21,42 +21,42 @@
 	<Attributes>
 		<Attribute id="university">
 			<Name>
-				<en>university</en>
-				<nl></nl>
+				<en>University</en>
+				<nl>Universiteit</nl>
 			</Name>
 			<Description>
 				<en>The name of the university</en>
-				<nl></nl>
+				<nl>Naam van de universiteit</nl>
 			</Description>
 		</Attribute>
 		<Attribute id="studentCardNumber">
 			<Name>
-				<en>studentCardNumber</en>
-				<nl></nl>
+				<en>Student card number</en>
+				<nl>Studentenkaartnummer</nl>
 			</Name>
 			<Description>
 				<en>The unique number of your student card</en>
-				<nl></nl>
+				<nl>Het unieke nummer op uw studentenkaart</nl>
 			</Description>
 		</Attribute>
 		<Attribute id="studentID">
 			<Name>
-				<en>studentID</en>
-				<nl></nl>
+				<en>Student number</en>
+				<nl>Studentnummer</nl>
 			</Name>
 			<Description>
 				<en>Your student number</en>
-				<nl></nl>
+				<nl>Uw studentnummer</nl>
 			</Description>
 		</Attribute>
 		<Attribute id="level">
 			<Name>
-				<en>level</en>
-				<nl></nl>
+				<en>Type</en>
+				<nl>Soort</nl>
 			</Name>
 			<Description>
 				<en>Whether you are a regular or PhD student</en>
-				<nl></nl>
+				<nl>Of u een gewone of PhD student bent</nl>
 			</Description>
 		</Attribute>
 

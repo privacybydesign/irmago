@@ -2,8 +2,12 @@
   <ID>MijnOverheid</ID>
   <Name>
 	  <en>MijnOverheid.nl</en>
-	  <nl></nl>
+	  <nl>MijnOverheid.nl</nl>
   </Name>
+  <ShortName>
+	  <en>MijnOverheid.nl</en>
+	  <nl>MijnOverheid.nl</nl>
+  </ShortName>
   <SchemeManager>irma-demo</SchemeManager>
   <ContactAddress>Ministerie van BZK
 Turfmarkt 147

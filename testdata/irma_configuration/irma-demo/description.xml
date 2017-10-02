@@ -3,11 +3,11 @@
 	<Url>https://credentials.github.io/irma_configuration/irma-demo</Url>
 	<Name>
 		<en>Irma Demo</en>
-		<nl></nl>
+		<nl>Irma Demo</nl>
 	</Name>
 	<Description>
 		<en>Demo credentials within the IRMA domain</en>
-		<nl></nl>
+		<nl>Demo IRMA-credentials</nl>
 	</Description>
 	<Contact>https://www.irmacard.org
 phone@demo.irmacard.org</Contact>
