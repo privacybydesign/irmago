@@ -77,19 +77,19 @@ const (
 // Protocol errors
 const (
 	// Protocol version not supported
-	ErrorProtocolVersionNotSupported = ErrorCode("versionNotSupported")
+	ErrorProtocolVersionNotSupported = ErrorCode("protocolVersionNotSupported")
 	// Error in HTTP communication
-	ErrorTransport = ErrorCode("httpError")
+	ErrorTransport = ErrorCode("transport")
 	// Invalid client JWT in first IRMA message
 	ErrorInvalidJWT = ErrorCode("invalidJwt")
 	// Unkown session type (not disclosing, signing, or issuing)
 	ErrorUnknownAction = ErrorCode("unknownAction")
 	// Crypto error during calculation of our response (second IRMA message)
-	ErrorCrypto = ErrorCode("cryptoResponseError")
+	ErrorCrypto = ErrorCode("crypto")
 	// Server rejected our response (second IRMA message)
-	ErrorRejected = ErrorCode("rejectedByServer")
+	ErrorRejected = ErrorCode("rejected")
 	// (De)serializing of a message failed
-	ErrorSerialization = ErrorCode("serializationError")
+	ErrorSerialization = ErrorCode("serialization")
 	// Error in keyshare protocol
 	ErrorKeyshare = ErrorCode("keyshare")
 	// Keyshare server has blocked us
