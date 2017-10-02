@@ -10,68 +10,80 @@ import (
 )
 
 type LogEntry struct {
+	// General info
 	Type        Action
 	Time        Timestamp    // Time at which the session was completed
 	SessionInfo *SessionInfo // Message that started the session
-	Response    interface{}  // Session-type specific info, parsed on-demand, use .GetResponse()
 
-	raw json.RawMessage
+	// Session type-specific info
+	RemovedCredential CredentialTypeIdentifier                              // In case of credential removal
+	Disclosed         map[CredentialTypeIdentifier]map[int]TranslatedString // Any session type
+	Received          map[CredentialTypeIdentifier][]TranslatedString       // In case of issuance session
+	SignedMessage     []byte                                                // In case of signature sessions
+	SignedMessageType string                                                // In case of signature sessions
+
+	response    interface{}     // Our response (ProofList or IssueCommitmentMessage)
+	rawResponse json.RawMessage // Unparsed []byte version of response
 }
 
-type RemovalLog struct {
-	Credential CredentialTypeIdentifier
-}
-
-type VerificationLog struct {
-	Proofs []*gabi.ProofD
-}
-
-type IssuanceLog struct {
-	Proofs        []*gabi.ProofD
-	AttributeList []*AttributeList
-}
-
-type SigningLog struct {
-	Proofs      []*gabi.ProofD
-	Message     []byte
-	MessageType string
-}
-
-func (session *session) createLogEntry(response gabi.ProofList) (*LogEntry, error) {
+func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
 		Type:        session.Action,
 		Time:        Timestamp(time.Now()),
 		SessionInfo: session.info,
+		response:    response,
 	}
 
-	proofs := []*gabi.ProofD{}
-	for _, proof := range response {
-		if proofd, isproofd := proof.(*gabi.ProofD); isproofd {
-			proofs = append(proofs, proofd)
-		}
-	}
-
+	// Populate session type-specific fields of the log entry (except for .Disclosed which is handled below)
+	var prooflist gabi.ProofList
+	var ok bool
 	switch entry.Type {
+	case ActionSigning:
+		entry.SignedMessage = []byte(session.jwt.(*SignatureRequestorJwt).Request.Request.Message)
+		entry.SignedMessageType = session.jwt.(*SignatureRequestorJwt).Request.Request.MessageType
+		fallthrough
 	case ActionDisclosing:
-		item := &VerificationLog{Proofs: proofs}
-		entry.Response = item
+		if prooflist, ok = response.(gabi.ProofList); !ok {
+			return nil, errors.New("Response was not a ProofList")
+		}
 	case ActionIssuing:
-		item := &IssuanceLog{Proofs: proofs}
+		if entry.Received == nil {
+			entry.Received = map[CredentialTypeIdentifier][]TranslatedString{}
+		}
 		for _, req := range session.jwt.(*IdentityProviderJwt).Request.Request.Credentials {
 			list, err := req.AttributeList(session.credManager.ConfigurationStore)
 			if err != nil {
 				continue // TODO?
 			}
-			item.AttributeList = append(item.AttributeList, list)
+			entry.Received[list.CredentialType().Identifier()] = list.Strings()
 		}
-		entry.Response = item
-	case ActionSigning:
-		item := SigningLog{Proofs: proofs}
-		item.Message = []byte(session.jwt.(*SignatureRequestorJwt).Request.Request.Message)
-		item.MessageType = session.jwt.(*SignatureRequestorJwt).Request.Request.MessageType
-		entry.Response = item
+		var msg *gabi.IssueCommitmentMessage
+		if msg, ok = response.(*gabi.IssueCommitmentMessage); ok {
+			prooflist = msg.Proofs
+		} else {
+			return nil, errors.New("Response was not a *IssueCommitmentMessage")
+		}
 	default:
 		return nil, errors.New("Invalid log type")
+	}
+
+	// Populate the list of disclosed attributes .Disclosed
+	for _, proof := range prooflist {
+		if proofd, isproofd := proof.(*gabi.ProofD); isproofd {
+			if entry.Disclosed == nil {
+				entry.Disclosed = map[CredentialTypeIdentifier]map[int]TranslatedString{}
+			}
+			meta := MetadataFromInt(proofd.ADisclosed[1], session.credManager.ConfigurationStore)
+			id := meta.CredentialType().Identifier()
+			entry.Disclosed[id] = map[int]TranslatedString{}
+			for i, attr := range proofd.ADisclosed {
+				if i == 1 {
+					continue
+				}
+				val := string(attr.Bytes())
+				entry.Disclosed[id][i] = TranslatedString{"en": val, "nl": val}
+			}
+		}
 	}
 
 	return entry, nil
@@ -82,33 +94,40 @@ func (entry *LogEntry) Jwt() (RequestorJwt, string, error) {
 }
 
 func (entry *LogEntry) GetResponse() (interface{}, error) {
-	if entry.Response == nil {
+	if entry.response == nil {
 		switch entry.Type {
-		case ActionDisclosing:
-			entry.Response = &VerificationLog{}
-		case ActionIssuing:
-			entry.Response = &IssuanceLog{}
-		case ActionSigning:
-			entry.Response = &SigningLog{}
 		case Action("removal"):
-			entry.Response = &RemovalLog{}
+			return nil, nil
+		case ActionSigning:
+			fallthrough
+		case ActionDisclosing:
+			entry.response = []*gabi.ProofD{}
+		case ActionIssuing:
+			entry.response = &gabi.IssueCommitmentMessage{}
 		default:
 			return nil, errors.New("Invalid log type")
 		}
-		err := json.Unmarshal(entry.raw, entry.Response)
+		err := json.Unmarshal(entry.rawResponse, entry.response)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return entry.Response, nil
+	return entry.response, nil
 }
 
 type jsonLogEntry struct {
 	Type        Action
 	Time        Timestamp
 	SessionInfo *logSessionInfo
-	Response    json.RawMessage
+
+	RemovedCredential string                                                `json:",omitempty"`
+	Disclosed         map[CredentialTypeIdentifier]map[int]TranslatedString `json:",omitempty"`
+	Received          map[CredentialTypeIdentifier][]TranslatedString       `json:",omitempty"`
+	SignedMessage     []byte                                                `json:",omitempty"`
+	SignedMessageType string                                                `json:",omitempty"`
+
+	Response json.RawMessage
 }
 
 func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
@@ -127,7 +146,12 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 			Context: temp.SessionInfo.Context,
 			Keys:    make(map[IssuerIdentifier]int),
 		},
-		raw: temp.Response,
+		RemovedCredential: NewCredentialTypeIdentifier(temp.RemovedCredential),
+		Disclosed:         temp.Disclosed,
+		Received:          temp.Received,
+		SignedMessage:     temp.SignedMessage,
+		SignedMessageType: temp.SignedMessageType,
+		rawResponse:       temp.Response,
 	}
 
 	// TODO remove on protocol upgrade
@@ -136,4 +160,39 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 	}
 
 	return nil
+}
+
+func (entry *LogEntry) MarshalJSON() ([]byte, error) {
+	// If the entry was created using createLogEntry(), then entry.rawResponse == nil
+	if len(entry.rawResponse) == 0 && entry.response != nil {
+		if bytes, err := json.Marshal(entry.response); err == nil {
+			entry.rawResponse = json.RawMessage(bytes)
+		} else {
+			return nil, err
+		}
+	}
+
+	temp := &jsonLogEntry{
+		Type:     entry.Type,
+		Time:     entry.Time,
+		Response: entry.rawResponse,
+		SessionInfo: &logSessionInfo{
+			Jwt:     entry.SessionInfo.Jwt,
+			Nonce:   entry.SessionInfo.Nonce,
+			Context: entry.SessionInfo.Context,
+			Keys:    make(map[string]int),
+		},
+		RemovedCredential: entry.RemovedCredential.String(),
+		Disclosed:         entry.Disclosed,
+		Received:          entry.Received,
+		SignedMessage:     entry.SignedMessage,
+		SignedMessageType: entry.SignedMessageType,
+	}
+
+	// TODO remove on protocol upgrade
+	for iss, count := range entry.SessionInfo.Keys {
+		temp.SessionInfo.Keys[iss.String()] = count
+	}
+
+	return json.Marshal(temp)
 }

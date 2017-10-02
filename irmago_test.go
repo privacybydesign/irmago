@@ -16,6 +16,8 @@ import (
 func TestMain(m *testing.M) {
 	retCode := m.Run()
 
+	// TODO make testdata/storage
+
 	err := os.RemoveAll("testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not delete test storage")
@@ -197,9 +199,13 @@ func TestUnmarshaling(t *testing.T) {
 	sessionjwt, _, err := entry.Jwt()
 	require.NoError(t, err)
 	require.Equal(t, "testip", sessionjwt.(*IdentityProviderJwt).ServerName)
+	require.NoError(t, err)
+	require.NotEmpty(t, entry.Disclosed)
+	require.NotEmpty(t, entry.Received)
 	response, err := entry.GetResponse()
 	require.NoError(t, err)
-	require.NotEmpty(t, response.(*IssuanceLog).Proofs)
+	require.NotNil(t, response)
+	require.IsType(t, &gabi.IssueCommitmentMessage{}, response)
 
 	teardown(t)
 }

@@ -165,33 +165,3 @@ type logSessionInfo struct {
 	Context *big.Int       `json:"context"`
 	Keys    map[string]int `json:"keys"`
 }
-
-// TODO remove on protocol upgrade
-func (entry *LogEntry) MarshalJSON() ([]byte, error) {
-	resp := entry.raw
-	if len(resp) == 0 {
-		if bytes, err := json.Marshal(entry.Response); err == nil {
-			resp = json.RawMessage(bytes)
-		} else {
-			return nil, err
-		}
-	}
-
-	temp := &jsonLogEntry{
-		Type:     entry.Type,
-		Time:     entry.Time,
-		Response: resp,
-		SessionInfo: &logSessionInfo{
-			Jwt:     entry.SessionInfo.Jwt,
-			Nonce:   entry.SessionInfo.Nonce,
-			Context: entry.SessionInfo.Context,
-			Keys:    make(map[string]int),
-		},
-	}
-
-	for iss, count := range entry.SessionInfo.Keys {
-		temp.SessionInfo.Keys[iss.String()] = count
-	}
-
-	return json.Marshal(temp)
-}

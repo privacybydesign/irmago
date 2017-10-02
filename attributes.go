@@ -48,7 +48,7 @@ type MetadataAttribute struct {
 type AttributeList struct {
 	*MetadataAttribute `json:"-"`
 	Ints               []*big.Int
-	strings            []string
+	strings            []TranslatedString
 	info               *CredentialInfo
 }
 
@@ -77,27 +77,39 @@ func (al *AttributeList) hash() string {
 }
 
 // Strings converts the current instance to human-readable strings.
-func (al *AttributeList) Strings() []string {
+func (al *AttributeList) Strings() []TranslatedString {
 	if al.strings == nil {
-		al.strings = make([]string, len(al.Ints)-1)
+		al.strings = make([]TranslatedString, len(al.Ints)-1)
 		for index, num := range al.Ints[1:] { // skip metadata
-			al.strings[index] = string(num.Bytes())
+			al.strings[index] = map[string]string{"en": string(num.Bytes()), "nl": string(num.Bytes())} // TODO
 		}
 	}
 	return al.strings
 }
 
-// Attribute returns the content of the specified attribute, or "" if not present in this attribute list.
-func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) string {
+func (al *AttributeList) untranslatedAttribute(identifier AttributeTypeIdentifier) string {
 	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
 		return ""
+	}
+	for i, desc := range al.CredentialType().Attributes {
+		if desc.ID == string(identifier.Name()) {
+			return string(al.Ints[i+1].Bytes())
+		}
+	}
+	return ""
+}
+
+// Attribute returns the content of the specified attribute, or "" if not present in this attribute list.
+func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) TranslatedString {
+	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
+		return nil
 	}
 	for i, desc := range al.CredentialType().Attributes {
 		if desc.ID == string(identifier.Name()) {
 			return al.Strings()[i]
 		}
 	}
-	return ""
+	return nil
 }
 
 // MetadataFromInt wraps the given Int

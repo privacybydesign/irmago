@@ -273,7 +273,7 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&Error{Err: err, ErrorCode: ErrorCrypto})
 			return
 		}
-		log, err = session.createLogEntry(message.(*gabi.IssueCommitmentMessage).Proofs) // TODO err
+		log, err = session.createLogEntry(message) // TODO err
 	}
 
 	session.credManager.addLogEntry(log) // TODO err

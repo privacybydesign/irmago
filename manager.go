@@ -166,7 +166,7 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 				candidates = append(candidates, id)
 			} else {
 				attrs := cred.AttributeList()
-				val := attrs.Attribute(attribute)
+				val := attrs.untranslatedAttribute(attribute)
 				if val == "" { // This won't handle empty attributes correctly
 					continue
 				}
