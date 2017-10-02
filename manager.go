@@ -3,7 +3,9 @@ package irmago
 import (
 	"crypto/rand"
 	"math/big"
+	"os"
 	"sort"
+	"time"
 
 	"github.com/credentials/go-go-gadget-paillier"
 	"github.com/go-errors/errors"
@@ -46,6 +48,63 @@ func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
 	return list
 }
 
+func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, storenow bool) error {
+	// Remove attributes
+	list, exists := cm.attributes[id]
+	if !exists || index >= len(list) {
+		return errors.Errorf("Can't remove credential %s-%d: no such credential", id.String(), index)
+	}
+	attrs := list[index]
+	cm.attributes[id] = append(list[:index], list[index+1:]...)
+	if storenow {
+		cm.storeAttributes()
+	}
+
+	// Remove credential
+	if creds, exists := cm.credentials[id]; exists {
+		if _, exists := creds[index]; exists {
+			creds[index] = nil
+			cm.credentials[id] = creds
+		}
+	}
+
+	// Remove signature from storage
+	if err := os.Remove(cm.signatureFilename(attrs)); err != nil {
+		return err
+	}
+
+	return cm.addLogEntry(&LogEntry{
+		Type:              actionRemoval,
+		Time:              Timestamp(time.Now()),
+		RemovedCredential: id,
+	}, storenow)
+}
+
+func (cm *CredentialManager) RemoveCredential(id CredentialTypeIdentifier, index int) error {
+	return cm.remove(id, index, true)
+}
+
+func (cm *CredentialManager) RemoveCredentialByHash(hash string) error {
+	cred, index, err := cm.credentialByHash(hash)
+	if err != nil {
+		return err
+	}
+	return cm.RemoveCredential(cred.CredentialType().Identifier(), index)
+}
+
+func (cm *CredentialManager) RemoveAllCredentials() error {
+	list := cm.CredentialInfoList()
+	for _, cred := range list {
+		if err := cm.remove(NewCredentialTypeIdentifier(cred.ID), cred.Index, false); err != nil {
+			return err
+		}
+	}
+	if err := cm.storeAttributes(); err != nil {
+		return err
+	}
+	return cm.storeLogs()
+}
+
 func (cm *CredentialManager) generateSecretKey() (*secretKey, error) {
 	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
 	if err != nil {
@@ -83,7 +142,19 @@ func (cm *CredentialManager) Attributes(id CredentialTypeIdentifier, counter int
 	return list[counter]
 }
 
-func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (cred *credential, err error) {
+func (cm *CredentialManager) credentialByHash(hash string) (*credential, int, error) {
+	for _, attrlistlist := range cm.attributes {
+		for index, attrs := range attrlistlist {
+			if attrs.hash() == hash {
+				cred, err := cm.credential(attrs.CredentialType().Identifier(), index)
+				return cred, index, err
+			}
+		}
+	}
+	return nil, 0, nil
+}
+
+func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (*credential, error) {
 	return cm.credential(id.Type, id.Index)
 }
 
@@ -413,9 +484,12 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 	return cm.storeKeyshareServers()
 }
 
-func (cm *CredentialManager) addLogEntry(entry *LogEntry) error {
+func (cm *CredentialManager) addLogEntry(entry *LogEntry, storenow bool) error {
 	cm.logs = append(cm.logs, entry)
-	return cm.storeLogs()
+	if storenow {
+		return cm.storeLogs()
+	}
+	return nil
 }
 
 func (cm *CredentialManager) Logs() ([]*LogEntry, error) {

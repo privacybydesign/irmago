@@ -276,6 +276,6 @@ func (session *session) sendResponse(message interface{}) {
 		log, err = session.createLogEntry(message) // TODO err
 	}
 
-	session.credManager.addLogEntry(log) // TODO err
+	session.credManager.addLogEntry(log, true) // TODO err
 	session.Handler.Success(session.Action)
 }

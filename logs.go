@@ -2,7 +2,6 @@ package irmago
 
 import (
 	"encoding/json"
-
 	"time"
 
 	"github.com/go-errors/errors"
@@ -25,6 +24,8 @@ type LogEntry struct {
 	response    interface{}     // Our response (ProofList or IssueCommitmentMessage)
 	rawResponse json.RawMessage // Unparsed []byte version of response
 }
+
+const actionRemoval = Action("removal")
 
 func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
@@ -96,7 +97,7 @@ func (entry *LogEntry) Jwt() (RequestorJwt, string, error) {
 func (entry *LogEntry) GetResponse() (interface{}, error) {
 	if entry.response == nil {
 		switch entry.Type {
-		case Action("removal"):
+		case actionRemoval:
 			return nil, nil
 		case ActionSigning:
 			fallthrough
@@ -172,26 +173,29 @@ func (entry *LogEntry) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	temp := &jsonLogEntry{
-		Type:     entry.Type,
-		Time:     entry.Time,
-		Response: entry.rawResponse,
-		SessionInfo: &logSessionInfo{
+	var si *logSessionInfo
+	if entry.SessionInfo != nil {
+		si = &logSessionInfo{
 			Jwt:     entry.SessionInfo.Jwt,
 			Nonce:   entry.SessionInfo.Nonce,
 			Context: entry.SessionInfo.Context,
 			Keys:    make(map[string]int),
-		},
+		}
+		// TODO remove on protocol upgrade
+		for iss, count := range entry.SessionInfo.Keys {
+			si.Keys[iss.String()] = count
+		}
+	}
+	temp := &jsonLogEntry{
+		Type:              entry.Type,
+		Time:              entry.Time,
+		Response:          entry.rawResponse,
+		SessionInfo:       si,
 		RemovedCredential: entry.RemovedCredential.String(),
 		Disclosed:         entry.Disclosed,
 		Received:          entry.Received,
 		SignedMessage:     entry.SignedMessage,
 		SignedMessageType: entry.SignedMessageType,
-	}
-
-	// TODO remove on protocol upgrade
-	for iss, count := range entry.SessionInfo.Keys {
-		temp.SessionInfo.Keys[iss.String()] = count
 	}
 
 	return json.Marshal(temp)

@@ -409,3 +409,29 @@ func TestPaillier(t *testing.T) {
 
 	teardown(t)
 }
+
+func TestCredentialRemoval(t *testing.T) {
+	manager := parseStorage(t)
+	id := NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	id2 := NewCredentialTypeIdentifier("test.test.mijnirma")
+
+	cred, err := manager.credential(id, 0)
+	require.NoError(t, err)
+	require.NotNil(t, cred)
+	err = manager.RemoveCredentialByHash(cred.AttributeList().hash())
+	require.NoError(t, err)
+	cred, err = manager.credential(id, 0)
+	require.NoError(t, err)
+	require.Nil(t, cred)
+
+	cred, err = manager.credential(id2, 0)
+	require.NoError(t, err)
+	require.NotNil(t, cred)
+	err = manager.RemoveCredential(id2, 0)
+	require.NoError(t, err)
+	cred, err = manager.credential(id2, 0)
+	require.NoError(t, err)
+	require.Nil(t, cred)
+
+	teardown(t)
+}
