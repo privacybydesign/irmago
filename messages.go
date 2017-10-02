@@ -22,8 +22,8 @@ type Action string
 // ErrorCode are session errors.
 type ErrorCode string
 
-// Error is a protocol error.
-type Error struct {
+// SessionError is a protocol error.
+type SessionError struct {
 	Err error
 	ErrorCode
 	*ApiError
@@ -100,7 +100,7 @@ const (
 	ErrorServerResponse = ErrorCode("serverResponse")
 )
 
-func (e *Error) Error() string {
+func (e *SessionError) Error() string {
 	if e.Err != nil {
 		return fmt.Sprintf("%s: %s", string(e.ErrorCode), e.Err.Error())
 	}

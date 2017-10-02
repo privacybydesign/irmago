@@ -15,7 +15,7 @@ import (
 
 type TestHandler struct {
 	t       *testing.T
-	c       chan *Error
+	c       chan *SessionError
 	manager *CredentialManager
 }
 
@@ -24,9 +24,9 @@ func (th TestHandler) Success(action Action) {
 	th.c <- nil
 }
 func (th TestHandler) Cancelled(action Action) {
-	th.c <- &Error{}
+	th.c <- &SessionError{}
 }
-func (th TestHandler) Failure(action Action, err *Error) {
+func (th TestHandler) Failure(action Action, err *SessionError) {
 	select {
 	case th.c <- err:
 	default:
@@ -34,7 +34,7 @@ func (th TestHandler) Failure(action Action, err *Error) {
 	}
 }
 func (th TestHandler) UnsatisfiableRequest(action Action, missing AttributeDisjunctionList) {
-	th.c <- &Error{
+	th.c <- &SessionError{
 		ErrorCode: ErrorCode("UnsatisfiableRequest"),
 	}
 }
@@ -174,7 +174,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, manager *C
 	require.NoError(t, transportErr)
 	qr.URL = url + "/" + qr.URL
 
-	c := make(chan *Error)
+	c := make(chan *SessionError)
 	NewSession(manager, qr, TestHandler{t, c, manager})
 
 	if err := <-c; err != nil {

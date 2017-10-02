@@ -19,7 +19,7 @@ type Handler interface {
 	StatusUpdate(action Action, status Status)
 	Success(action Action)
 	Cancelled(action Action)
-	Failure(action Action, err *Error)
+	Failure(action Action, err *SessionError)
 	UnsatisfiableRequest(action Action, missing AttributeDisjunctionList)
 
 	AskIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler)
@@ -95,7 +95,7 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	}
 	version, err := calcVersion(qr)
 	if err != nil {
-		session.fail(&Error{ErrorCode: ErrorProtocolVersionNotSupported, Err: err})
+		session.fail(&SessionError{ErrorCode: ErrorProtocolVersionNotSupported, Err: err})
 		return
 	}
 	session.Version = Version(version)
@@ -108,7 +108,7 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	case ActionUnknown:
 		fallthrough
 	default:
-		session.fail(&Error{ErrorCode: ErrorUnknownAction, Err: nil, Info: string(session.Action)})
+		session.fail(&SessionError{ErrorCode: ErrorUnknownAction, Err: nil, Info: string(session.Action)})
 		return
 	}
 
@@ -121,7 +121,7 @@ func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
 	return
 }
 
-func (session *session) fail(err *Error) {
+func (session *session) fail(err *SessionError) {
 	session.transport.Delete()
 	err.Err = errors.Wrap(err.Err, 0)
 	session.Handler.Failure(session.Action, err)
@@ -136,7 +136,7 @@ func (session *session) start() {
 	session.info = &SessionInfo{}
 	Err := session.transport.Get("jwt", session.info)
 	if Err != nil {
-		session.fail(Err.(*Error))
+		session.fail(Err.(*SessionError))
 		return
 	}
 
@@ -144,7 +144,7 @@ func (session *session) start() {
 	var err error
 	session.jwt, server, err = parseRequestorJwt(session.Action, session.info.Jwt)
 	if err != nil {
-		session.fail(&Error{ErrorCode: ErrorInvalidJWT, Err: err})
+		session.fail(&SessionError{ErrorCode: ErrorInvalidJWT, Err: err})
 		return
 	}
 	session.irmaSession = session.jwt.IrmaSession()
@@ -203,7 +203,7 @@ func (session *session) do(proceed bool) {
 			message, err = session.credManager.IssueCommitments(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
-			session.fail(&Error{ErrorCode: ErrorCrypto, Err: err})
+			session.fail(&SessionError{ErrorCode: ErrorCrypto, Err: err})
 			return
 		}
 		session.sendResponse(message)
@@ -219,7 +219,7 @@ func (session *session) do(proceed bool) {
 			builders, err = session.credManager.IssuanceProofBuilders(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
-			session.fail(&Error{ErrorCode: ErrorCrypto, Err: err})
+			session.fail(&SessionError{ErrorCode: ErrorCrypto, Err: err})
 		}
 
 		startKeyshareSession(session.credManager, session.irmaSession, builders, session, session.Handler)
@@ -236,11 +236,11 @@ func (session *session) KeyshareCancelled() {
 }
 
 func (session *session) KeyshareBlocked(duration int) {
-	session.fail(&Error{ErrorCode: ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+	session.fail(&SessionError{ErrorCode: ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
 }
 
 func (session *session) KeyshareError(err error) {
-	session.fail(&Error{ErrorCode: ErrorKeyshare, Err: err})
+	session.fail(&SessionError{ErrorCode: ErrorKeyshare, Err: err})
 }
 
 type disclosureResponse string
@@ -255,22 +255,22 @@ func (session *session) sendResponse(message interface{}) {
 	case ActionDisclosing:
 		var response disclosureResponse
 		if err = session.transport.Post("proofs", &response, message); err != nil {
-			session.fail(err.(*Error))
+			session.fail(err.(*SessionError))
 			return
 		}
 		if response != "VALID" {
-			session.fail(&Error{ErrorCode: ErrorRejected, Info: string(response)})
+			session.fail(&SessionError{ErrorCode: ErrorRejected, Info: string(response)})
 			return
 		}
 		log, err = session.createLogEntry(message.(gabi.ProofList)) // TODO err
 	case ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
-			session.fail(err.(*Error))
+			session.fail(err.(*SessionError))
 			return
 		}
 		if err = session.credManager.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
-			session.fail(&Error{Err: err, ErrorCode: ErrorCrypto})
+			session.fail(&SessionError{Err: err, ErrorCode: ErrorCrypto})
 			return
 		}
 		log, err = session.createLogEntry(message) // TODO err

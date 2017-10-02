@@ -57,7 +57,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		} else {
 			marshaled, err := json.Marshal(object)
 			if err != nil {
-				return &Error{Err: err, ErrorCode: ErrorSerialization}
+				return &SessionError{Err: err, ErrorCode: ErrorSerialization}
 			}
 			if verbose {
 				fmt.Printf("%s %s: %s\n", method, url, string(marshaled))
@@ -72,7 +72,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	req, err := http.NewRequest(method, transport.Server+url, reader)
 	if err != nil {
-		return &Error{Err: err, ErrorCode: ErrorTransport}
+		return &SessionError{Err: err, ErrorCode: ErrorTransport}
 	}
 
 	req.Header.Set("User-Agent", "irmago")
@@ -89,7 +89,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	res, err := transport.client.Do(req)
 	if err != nil {
-		return &Error{ErrorCode: ErrorTransport, Err: err}
+		return &SessionError{ErrorCode: ErrorTransport, Err: err}
 	}
 
 	if method == http.MethodDelete {
@@ -98,18 +98,18 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return &Error{ErrorCode: ErrorServerResponse, Err: err, Status: res.StatusCode}
+		return &SessionError{ErrorCode: ErrorServerResponse, Err: err, Status: res.StatusCode}
 	}
 	if res.StatusCode != 200 {
 		apierr := &ApiError{}
 		json.Unmarshal(body, apierr)
 		if apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &Error{ErrorCode: ErrorServerResponse, Status: res.StatusCode}
+			return &SessionError{ErrorCode: ErrorServerResponse, Status: res.StatusCode}
 		}
 		if verbose {
 			fmt.Printf("ERROR: %+v\n", apierr)
 		}
-		return &Error{ErrorCode: ErrorApi, Status: res.StatusCode, ApiError: apierr}
+		return &SessionError{ErrorCode: ErrorApi, Status: res.StatusCode, ApiError: apierr}
 	}
 
 	if verbose {
@@ -120,7 +120,7 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	} else {
 		err = json.Unmarshal(body, result)
 		if err != nil {
-			return &Error{ErrorCode: ErrorServerResponse, Err: err, Status: res.StatusCode}
+			return &SessionError{ErrorCode: ErrorServerResponse, Err: err, Status: res.StatusCode}
 		}
 	}
 
