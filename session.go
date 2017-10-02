@@ -262,7 +262,7 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&SessionError{ErrorCode: ErrorRejected, Info: string(response)})
 			return
 		}
-		log, err = session.createLogEntry(message.(gabi.ProofList)) // TODO err
+		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
 	case ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
@@ -273,7 +273,7 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&SessionError{ErrorCode: ErrorCrypto, Err: err})
 			return
 		}
-		log, err = session.createLogEntry(message) // TODO err
+		log, _ = session.createLogEntry(message) // TODO err
 	}
 
 	session.credManager.addLogEntry(log, true) // TODO err

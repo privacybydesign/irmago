@@ -1,6 +1,6 @@
-/// +build integration
-
 package irmago
+
+// TODO +build integration
 
 import (
 	"crypto/rand"

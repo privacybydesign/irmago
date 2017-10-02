@@ -349,7 +349,8 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
-		pk, err := cm.ConfigurationStore.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
+		var pk *gabi.PublicKey
+		pk, err = cm.ConfigurationStore.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, err
 		}

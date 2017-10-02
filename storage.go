@@ -100,6 +100,9 @@ func NewCredentialManager(
 	}
 
 	exists, err := PathExists(cm.irmaConfigurationPath)
+	if err != nil {
+		return nil, err
+	}
 	if !exists {
 		return nil, errors.New("irmaConfigurationPath does not exist")
 	}
@@ -154,6 +157,7 @@ func NewCredentialManager(
 // in the file at updatesFile.
 func (cm *CredentialManager) update() error {
 	// Load and parse file containing info about already performed updates
+	var err error
 	exists, err := PathExists(cm.path(updatesFile))
 	if err != nil {
 		return err
@@ -161,7 +165,8 @@ func (cm *CredentialManager) update() error {
 	if !exists {
 		cm.updates = []update{}
 	} else {
-		bytes, err := ioutil.ReadFile(cm.path(updatesFile))
+		var bytes []byte
+		bytes, err = ioutil.ReadFile(cm.path(updatesFile))
 		if err != nil {
 			return err
 		}
@@ -266,8 +271,7 @@ func (cm *CredentialManager) storeAttributes() error {
 	}
 
 	if attrbytes, err := json.Marshal(temp); err == nil {
-		err = saveFile(cm.path(attributesFile), attrbytes)
-		return nil
+		return saveFile(cm.path(attributesFile), attrbytes)
 	} else {
 		return err
 	}
