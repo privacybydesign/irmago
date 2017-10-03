@@ -15,13 +15,13 @@ import (
 // CredentialManager manages credentials.
 type CredentialManager struct {
 	secretkey        *secretKey
-	storagePath      string
 	attributes       map[CredentialTypeIdentifier][]*AttributeList
 	credentials      map[CredentialTypeIdentifier]map[int]*credential
 	keyshareServers  map[SchemeManagerIdentifier]*keyshareServer
 	paillierKeyCache *paillierPrivateKey
 	logs             []*LogEntry
 
+	storage               storage
 	irmaConfigurationPath string
 	androidStoragePath    string
 	ConfigurationStore    *ConfigurationStore
@@ -30,6 +30,91 @@ type CredentialManager struct {
 
 type secretKey struct {
 	Key *big.Int
+}
+
+// NewCredentialManager creates a new CredentialManager that uses the directory
+// specified by storagePath for (de)serializing itself. irmaConfigurationPath
+// is the path to a (possibly readonly) folder containing irma_configuration;
+// androidStoragePath is an optional path to the files of the old android app
+// (specify "" if you do not want to parse the old android app files),
+// and keyshareHandler is used for when a registration to a keyshare server needs
+// to happen.
+// The credential manager returned by this function has been fully deserialized
+// and is ready for use.
+//
+// NOTE: It is the responsibility of the caller that there exists a directory
+// at storagePath!
+func NewCredentialManager(
+	storagePath string,
+	irmaConfigurationPath string,
+	androidStoragePath string,
+	keyshareHandler KeyshareHandler,
+) (*CredentialManager, error) {
+	var err error
+	if err = AssertPathExists(storagePath); err != nil {
+		return nil, err
+	}
+	if err = AssertPathExists(irmaConfigurationPath); err != nil {
+		return nil, err
+	}
+
+	var store *ConfigurationStore
+	if store, err = NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath); err != nil {
+		return nil, err
+	}
+	if err = store.ParseFolder(); err != nil {
+		return nil, err
+	}
+
+	cm := &CredentialManager{
+		credentials:           make(map[CredentialTypeIdentifier]map[int]*credential),
+		keyshareServers:       make(map[SchemeManagerIdentifier]*keyshareServer),
+		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
+		irmaConfigurationPath: irmaConfigurationPath,
+		androidStoragePath:    androidStoragePath,
+		ConfigurationStore:    store,
+		storage:               storage{storagePath: storagePath, ConfigurationStore: store},
+	}
+
+	// Ensure storage path exists, and populate it with necessary files
+	if err = cm.storage.ensureStorageExists(); err != nil {
+		return nil, err
+	}
+
+	// Perform new update functions from credentialManagerUpdates, if any
+	if err = cm.update(); err != nil {
+		return nil, err
+	}
+
+	// Load our stuff
+	if cm.secretkey, err = cm.storage.loadSecretKey(); err != nil {
+		return nil, err
+	}
+	if cm.attributes, err = cm.storage.loadAttributes(); err != nil {
+		return nil, err
+	}
+	if cm.paillierKeyCache, err = cm.storage.loadPaillierKeys(); err != nil {
+		return nil, err
+	}
+	if cm.keyshareServers, err = cm.storage.loadKeyshareServers(); err != nil {
+		return nil, err
+	}
+
+	unenrolled := cm.unenrolledKeyshareServers()
+	switch len(unenrolled) {
+	case 0: // nop
+	case 1:
+		if keyshareHandler == nil {
+			return nil, errors.New("Keyshare server found but no KeyshareHandler was given")
+		}
+		keyshareHandler.StartRegistration(unenrolled[0], func(email, pin string) {
+			cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
+		})
+	default:
+		return nil, errors.New("Too many keyshare servers")
+	}
+
+	return cm, nil
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
@@ -57,7 +142,7 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	attrs := list[index]
 	cm.attributes[id] = append(list[:index], list[index+1:]...)
 	if storenow {
-		cm.storeAttributes()
+		cm.storage.storeAttributes(cm.attributes)
 	}
 
 	// Remove credential
@@ -69,7 +154,7 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	}
 
 	// Remove signature from storage
-	if err := os.Remove(cm.signatureFilename(attrs)); err != nil {
+	if err := os.Remove(cm.storage.signatureFilename(attrs)); err != nil {
 		return err
 	}
 
@@ -99,18 +184,10 @@ func (cm *CredentialManager) RemoveAllCredentials() error {
 			return err
 		}
 	}
-	if err := cm.storeAttributes(); err != nil {
+	if err := cm.storage.storeAttributes(cm.attributes); err != nil {
 		return err
 	}
-	return cm.storeLogs()
-}
-
-func (cm *CredentialManager) generateSecretKey() (*secretKey, error) {
-	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
-	if err != nil {
-		return nil, err
-	}
-	return &secretKey{Key: key}, nil
+	return cm.storage.storeLogs(cm.logs)
 }
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
@@ -168,7 +245,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 		if attrs == nil { // We do not have the requested cred
 			return
 		}
-		sig, err := cm.loadSignature(attrs)
+		sig, err := cm.storage.loadSignature(attrs)
 		if err != nil {
 			return nil, err
 		}
@@ -209,11 +286,11 @@ func (cm *CredentialManager) addCredential(cred *credential, storeAttributes boo
 	counter := len(cm.attributes[id]) - 1
 	cm.credentials[id][counter] = cred
 
-	if err = cm.storeSignature(cred, counter); err != nil {
+	if err = cm.storage.storeSignature(cred); err != nil {
 		return
 	}
 	if storeAttributes {
-		err = cm.storeAttributes()
+		err = cm.storage.storeAttributes(cm.attributes)
 	}
 	return
 }
@@ -473,7 +550,7 @@ func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, e
 	}
 
 	cm.keyshareServers[managerID] = kss
-	return cm.storeKeyshareServers()
+	return cm.storage.storeKeyshareServers(cm.keyshareServers)
 }
 
 // KeyshareRemove unregisters the keyshare server of the specified scheme manager.
@@ -482,13 +559,13 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 		return errors.New("Can't uninstall unknown keyshare server")
 	}
 	delete(cm.keyshareServers, manager)
-	return cm.storeKeyshareServers()
+	return cm.storage.storeKeyshareServers(cm.keyshareServers)
 }
 
 func (cm *CredentialManager) addLogEntry(entry *LogEntry, storenow bool) error {
 	cm.logs = append(cm.logs, entry)
 	if storenow {
-		return cm.storeLogs()
+		return cm.storage.storeLogs(cm.logs)
 	}
 	return nil
 }
@@ -496,7 +573,7 @@ func (cm *CredentialManager) addLogEntry(entry *LogEntry, storenow bool) error {
 func (cm *CredentialManager) Logs() ([]*LogEntry, error) {
 	if cm.logs == nil || len(cm.logs) == 0 {
 		var err error
-		cm.logs, err = cm.loadLogs()
+		cm.logs, err = cm.storage.loadLogs()
 		if err != nil {
 			return nil, err
 		}

@@ -6,6 +6,7 @@ import (
 	"html"
 	"io/ioutil"
 	"math/big"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
@@ -23,6 +24,36 @@ var credentialManagerUpdates = []func(manager *CredentialManager) error{
 		_, err := manager.ParseAndroidStorage()
 		return err
 	},
+}
+
+// update performs any function from credentialManagerUpdates that has not
+// already been executed in the past, keeping track of previously executed updates
+// in the file at updatesFile.
+func (cm *CredentialManager) update() error {
+	// Load and parse file containing info about already performed updates
+	var err error
+	if cm.updates, err = cm.storage.loadUpdates(); err != nil {
+		return err
+	}
+
+	// Perform all new updates
+	for i := len(cm.updates); i < len(credentialManagerUpdates); i++ {
+		err = credentialManagerUpdates[i](cm)
+		update := update{
+			When:    Timestamp(time.Now()),
+			Number:  i,
+			Success: err == nil,
+		}
+		if err != nil {
+			str := err.Error()
+			update.Error = &str
+		}
+		cm.updates = append(cm.updates, update)
+	}
+
+	cm.storage.storeUpdates(cm.updates)
+
+	return nil
 }
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file
@@ -109,21 +140,21 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 	}
 
 	if len(cm.credentials) > 0 {
-		if err = cm.storeAttributes(); err != nil {
+		if err = cm.storage.storeAttributes(cm.attributes); err != nil {
 			return
 		}
-		if err = cm.storeSecretKey(cm.secretkey); err != nil {
+		if err = cm.storage.storeSecretKey(cm.secretkey); err != nil {
 			return
 		}
 	}
 
 	if len(cm.keyshareServers) > 0 {
-		if err = cm.storeKeyshareServers(); err != nil {
+		if err = cm.storage.storeKeyshareServers(cm.keyshareServers); err != nil {
 			return
 		}
 	}
 
-	if err = cm.storePaillierKeys(); err != nil {
+	if err = cm.storage.storePaillierKeys(cm.paillierKeyCache); err != nil {
 		return
 	}
 	if cm.paillierKeyCache == nil {

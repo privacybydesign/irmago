@@ -227,7 +227,8 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	store := NewConfigurationStore("testdata/irma_configuration")
+	store, err := NewConfigurationStore("testdata/irma_configuration", "")
+	require.NoError(t, err)
 	require.NoError(t, store.ParseFolder())
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
@@ -248,8 +249,9 @@ func TestMetadataCompatibility(t *testing.T) {
 }
 
 func TestAttributeDisjunctionMarshaling(t *testing.T) {
-	store := NewConfigurationStore("testdata/irma_configuration")
-	store.ParseFolder()
+	store, err := NewConfigurationStore("testdata/irma_configuration", "")
+	require.NoError(t, err)
+	require.NoError(t, store.ParseFolder())
 	disjunction := AttributeDisjunction{}
 
 	var _ json.Unmarshaler = &disjunction

@@ -27,22 +27,38 @@ type ConfigurationStore struct {
 
 // NewConfigurationStore returns a new configuration store. After this
 // ParseFolder() should be called to parse the specified path.
-func NewConfigurationStore(path string) (store *ConfigurationStore) {
+func NewConfigurationStore(path string, assets string) (store *ConfigurationStore, err error) {
 	store = &ConfigurationStore{
-		SchemeManagers: make(map[SchemeManagerIdentifier]*SchemeManager),
-		Issuers:        make(map[IssuerIdentifier]*Issuer),
-		Credentials:    make(map[CredentialTypeIdentifier]*CredentialType),
-		publicKeys:     make(map[IssuerIdentifier][]*gabi.PublicKey),
-		reverseHashes:  make(map[string]CredentialTypeIdentifier),
-		path:           path,
+		path: path,
 	}
+
+	var exist bool
+	if exist, err = PathExists(store.path); err != nil {
+		return nil, err
+	}
+	if !exist {
+		if err = ensureDirectoryExists(store.path); err != nil {
+			return nil, err
+		}
+		if assets != "" {
+			if err = store.Copy(assets, false); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return
 }
 
 // ParseFolder populates the current store by parsing the storage path,
 // listing the containing scheme managers, issuers and credential types.
 func (store *ConfigurationStore) ParseFolder() error {
-	*store = *NewConfigurationStore(store.path) // Init all maps
+	// Init all maps
+	store.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
+	store.Issuers = make(map[IssuerIdentifier]*Issuer)
+	store.Credentials = make(map[CredentialTypeIdentifier]*CredentialType)
+	store.publicKeys = make(map[IssuerIdentifier][]*gabi.PublicKey)
+	store.reverseHashes = make(map[string]CredentialTypeIdentifier)
 
 	err := iterateSubfolders(store.path, func(dir string) error {
 		manager := &SchemeManager{}
