@@ -11,7 +11,27 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// CredentialManager manages credentials.
+// This file contains most methods of the CredentialManager (c.f. session.go
+// and updates.go).
+//
+// The storage of credentials is split up in several parts:
+//
+// - The CL-signature of each credential is stored separately, so that we can
+// load it on demand (i.e., during an IRMA session), instead of immediately
+// at initialization.
+//
+// - The attributes of all credentials are stored together, as they all
+// immediately need to be available anyway,
+//
+// - The secret key (the zeroth attribute of every credential), being the same
+// across all credentials, is stored only once in a separate file (storing this
+// in multiple places would be bad).
+
+// CredentialManager (de)serializes credentials and keyshare server information
+// from storage; as well as logs of earlier IRMA sessions; it provides access
+// to the attributes and all related information of its credentials;
+// it is the starting point for new IRMA sessions; and it computes some
+// of the messages in the client side of the IRMA protocol.
 type CredentialManager struct {
 	secretkey        *secretKey
 	attributes       map[CredentialTypeIdentifier][]*AttributeList
@@ -31,6 +51,19 @@ type secretKey struct {
 	Key *big.Int
 }
 
+// IrmaSession is an IRMA session.
+type IrmaSession interface {
+	GetNonce() *big.Int
+	SetNonce(*big.Int)
+	GetContext() *big.Int
+	SetContext(*big.Int)
+	DisjunctionList() AttributeDisjunctionList
+	DisclosureChoice() *DisclosureChoice
+	SetDisclosureChoice(choice *DisclosureChoice)
+	Distributed(store *ConfigurationStore) bool
+	SchemeManagers() []SchemeManagerIdentifier
+}
+
 // NewCredentialManager creates a new CredentialManager that uses the directory
 // specified by storagePath for (de)serializing itself. irmaConfigurationPath
 // is the path to a (possibly readonly) folder containing irma_configuration;
@@ -41,8 +74,8 @@ type secretKey struct {
 // The credential manager returned by this function has been fully deserialized
 // and is ready for use.
 //
-// NOTE: It is the responsibility of the caller that there exists a directory
-// at storagePath!
+// NOTE: It is the responsibility of the caller that there exists a (properly
+// protected) directory at storagePath!
 func NewCredentialManager(
 	storagePath string,
 	irmaConfigurationPath string,
@@ -132,6 +165,41 @@ func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
 	return list
 }
 
+// addCredential adds the specified credential to the CredentialManager, saving its signature
+// imediately, and optionally cm.attributes as well.
+func (cm *CredentialManager) addCredential(cred *credential, storeAttributes bool) (err error) {
+	id := cred.CredentialType().Identifier()
+	cm.attributes[id] = append(cm.attrs(id), cred.AttributeList())
+
+	if _, exists := cm.credentials[id]; !exists {
+		cm.credentials[id] = make(map[int]*credential)
+	}
+	if cred.CredentialType().IsSingleton {
+		cm.credentials[id][0] = cred
+	} else {
+		counter := len(cm.attributes[id]) - 1
+		cm.credentials[id][counter] = cred
+	}
+
+	if err = cm.storage.StoreSignature(cred); err != nil {
+		return
+	}
+	if storeAttributes {
+		err = cm.storage.StoreAttributes(cm.attributes)
+	}
+	return
+}
+
+func generateSecretKey() (*secretKey, error) {
+	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
+	if err != nil {
+		return nil, err
+	}
+	return &secretKey{Key: key}, nil
+}
+
+// Removal methods
+
 func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, storenow bool) error {
 	// Remove attributes
 	list, exists := cm.attributes[id]
@@ -188,6 +256,8 @@ func (cm *CredentialManager) RemoveAllCredentials() error {
 	}
 	return cm.storage.StoreLogs(cm.logs)
 }
+
+// Getter methods
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
 func (cm *CredentialManager) attrs(id CredentialTypeIdentifier) []*AttributeList {
@@ -273,30 +343,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 	return cm.credentials[id][counter], nil
 }
 
-// addCredential adds the specified credential to the CredentialManager, saving its signature
-// imediately, and optionally cm.attributes as well.
-func (cm *CredentialManager) addCredential(cred *credential, storeAttributes bool) (err error) {
-	id := cred.CredentialType().Identifier()
-	cm.attributes[id] = append(cm.attrs(id), cred.AttributeList())
-
-	if _, exists := cm.credentials[id]; !exists {
-		cm.credentials[id] = make(map[int]*credential)
-	}
-	if cred.CredentialType().IsSingleton {
-		cm.credentials[id][0] = cred
-	} else {
-		counter := len(cm.attributes[id]) - 1
-		cm.credentials[id][counter] = cred
-	}
-
-	if err = cm.storage.StoreSignature(cred); err != nil {
-		return
-	}
-	if storeAttributes {
-		err = cm.storage.StoreAttributes(cm.attributes)
-	}
-	return
-}
+// Methods used in the IRMA protocol
 
 // Candidates returns a list of attributes present in this credential manager
 // that satisfy the specified attribute disjunction.
@@ -376,19 +423,6 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 	}
 
 	return grouped, nil
-}
-
-// IrmaSession is an IRMA session.
-type IrmaSession interface {
-	GetNonce() *big.Int
-	SetNonce(*big.Int)
-	GetContext() *big.Int
-	SetContext(*big.Int)
-	DisjunctionList() AttributeDisjunctionList
-	DisclosureChoice() *DisclosureChoice
-	SetDisclosureChoice(choice *DisclosureChoice)
-	Distributed(store *ConfigurationStore) bool
-	SchemeManagers() []SchemeManagerIdentifier
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
@@ -492,6 +526,8 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	return nil
 }
 
+// Keyshare server handling
+
 // PaillierKey returns a new Paillier key (and generates a new one in a goroutine).
 func (cm *CredentialManager) paillierKey(wait bool) *paillierPrivateKey {
 	retval := cm.paillierKeyCache
@@ -565,6 +601,8 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
 }
 
+// Add, load and store log entries
+
 func (cm *CredentialManager) addLogEntry(entry *LogEntry, storenow bool) error {
 	cm.logs = append(cm.logs, entry)
 	if storenow {
@@ -582,12 +620,4 @@ func (cm *CredentialManager) Logs() ([]*LogEntry, error) {
 		}
 	}
 	return cm.logs, nil
-}
-
-func generateSecretKey() (*secretKey, error) {
-	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
-	if err != nil {
-		return nil, err
-	}
-	return &secretKey{Key: key}, nil
 }
