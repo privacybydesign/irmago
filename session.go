@@ -85,13 +85,13 @@ func calcVersion(qr *Qr) (string, error) {
 }
 
 // NewSession creates and starts a new IRMA session.
-func NewSession(credManager *CredentialManager, qr *Qr, handler Handler) {
+func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 	session := &session{
 		Action:      Action(qr.Type),
 		ServerURL:   qr.URL,
 		Handler:     handler,
 		transport:   NewHTTPTransport(qr.URL),
-		credManager: credManager,
+		credManager: cm,
 	}
 	version, err := calcVersion(qr)
 	if err != nil {

@@ -175,7 +175,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, manager *C
 	qr.URL = url + "/" + qr.URL
 
 	c := make(chan *SessionError)
-	NewSession(manager, qr, TestHandler{t, c, manager})
+	manager.NewSession(qr, TestHandler{t, c, manager})
 
 	if err := <-c; err != nil {
 		t.Fatal(*err)
