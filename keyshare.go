@@ -36,6 +36,7 @@ type keyshareSession struct {
 	keyshareServers map[SchemeManagerIdentifier]*keyshareServer
 	keyshareServer  *keyshareServer // The one keyshare server in use in case of issuance
 	transports      map[SchemeManagerIdentifier]*HTTPTransport
+	schemeManagers  []SchemeManagerIdentifier
 }
 
 type keyshareServer struct {
@@ -143,8 +144,9 @@ func startKeyshareSession(
 	store *ConfigurationStore,
 	keyshareServers map[SchemeManagerIdentifier]*keyshareServer,
 ) {
+	schemeManagers := session.SchemeManagers()
 	ksscount := 0
-	for _, managerID := range session.SchemeManagers() {
+	for _, managerID := range schemeManagers {
 		if store.SchemeManagers[managerID].Distributed() {
 			ksscount++
 			if _, registered := keyshareServers[managerID]; !registered {
@@ -168,11 +170,12 @@ func startKeyshareSession(
 		pinRequestor:    pin,
 		store:           store,
 		keyshareServers: keyshareServers,
+		schemeManagers:  schemeManagers,
 	}
 
 	askPin := false
 
-	for _, managerID := range session.SchemeManagers() {
+	for _, managerID := range schemeManagers {
 		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
@@ -240,7 +243,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 // - If this or anything else (specified in err) goes wrong, success will be false.
 // If all is ok, success will be true.
 func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int, blocked int, err error) {
-	for _, managerID := range ks.session.SchemeManagers() {
+	for _, managerID := range ks.schemeManagers {
 		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
@@ -303,7 +306,7 @@ func (ks *keyshareSession) GetCommitments() {
 
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
-	for _, managerID := range ks.session.SchemeManagers() {
+	for _, managerID := range ks.schemeManagers {
 		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
@@ -354,7 +357,7 @@ func (ks *keyshareSession) GetProofPs() {
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[SchemeManagerIdentifier]string{}
-	for _, managerID := range ks.session.SchemeManagers() {
+	for _, managerID := range ks.schemeManagers {
 		transport, distributed := ks.transports[managerID]
 		if !distributed {
 			continue
