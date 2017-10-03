@@ -230,7 +230,6 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 		return err
 	}
 
-	// TODO skip existing scheme managers? individual files?
 	err := filepath.Walk(source, filepath.WalkFunc(
 		func(path string, info os.FileInfo, err error) error {
 			if path == source {

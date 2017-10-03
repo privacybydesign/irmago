@@ -102,8 +102,8 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	}
 	if res.StatusCode != 200 {
 		apierr := &ApiError{}
-		json.Unmarshal(body, apierr)
-		if apierr.ErrorName == "" { // Not an ApiErrorMessage
+		err = json.Unmarshal(body, apierr)
+		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
 			return &SessionError{ErrorType: ErrorServerResponse, Status: res.StatusCode}
 		}
 		if verbose {
@@ -139,5 +139,5 @@ func (transport *HTTPTransport) Get(url string, result interface{}) error {
 
 // Delete performs a DELETE.
 func (transport *HTTPTransport) Delete() {
-	transport.request("", http.MethodDelete, nil, nil)
+	_ = transport.request("", http.MethodDelete, nil, nil)
 }

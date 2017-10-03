@@ -42,21 +42,19 @@ func (cm *CredentialManager) update() error {
 	// Perform all new updates
 	for i := len(cm.updates); i < len(credentialManagerUpdates); i++ {
 		err = credentialManagerUpdates[i](cm)
-		update := update{
+		u := update{
 			When:    Timestamp(time.Now()),
 			Number:  i,
 			Success: err == nil,
 		}
 		if err != nil {
 			str := err.Error()
-			update.Error = &str
+			u.Error = &str
 		}
-		cm.updates = append(cm.updates, update)
+		cm.updates = append(cm.updates, u)
 	}
 
-	cm.storage.StoreUpdates(cm.updates)
-
-	return nil
+	return cm.storage.StoreUpdates(cm.updates)
 }
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file
@@ -85,7 +83,9 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 			Content string `xml:",chardata"`
 		} `xml:"string"`
 	}{}
-	xml.Unmarshal(bytes, &parsedxml)
+	if err = xml.Unmarshal(bytes, &parsedxml); err != nil {
+		return
+	}
 
 	parsedjson := make(map[string][]*struct {
 		Signature    *gabi.CLSignature `json:"signature"`

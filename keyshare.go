@@ -98,7 +98,7 @@ type proofPCommitmentMap struct {
 // KeyshareHandler is used for asking the user for his email address and PIN,
 // for registering at a keyshare server.
 type KeyshareHandler interface {
-	StartRegistration(manager *SchemeManager, registrationCallback func(email, pin string))
+	StartRegistration(manager *SchemeManager, registrationCallback func(email, pin string) error)
 }
 
 const (

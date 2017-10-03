@@ -139,8 +139,8 @@ func NewCredentialManager(
 		if keyshareHandler == nil {
 			return nil, errors.New("Keyshare server found but no KeyshareHandler was given")
 		}
-		keyshareHandler.StartRegistration(unenrolled[0], func(email, pin string) {
-			cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
+		keyshareHandler.StartRegistration(unenrolled[0], func(email, pin string) error {
+			return cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
 		})
 	default:
 		return nil, errors.New("Too many keyshare servers")
@@ -209,7 +209,9 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	attrs := list[index]
 	cm.attributes[id] = append(list[:index], list[index+1:]...)
 	if storenow {
-		cm.storage.StoreAttributes(cm.attributes)
+		if err := cm.storage.StoreAttributes(cm.attributes); err != nil {
+			return err
+		}
 	}
 
 	// Remove credential
@@ -520,7 +522,9 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 		if err != nil {
 			return err
 		}
-		cm.addCredential(newcred, true)
+		if err = cm.addCredential(newcred, true); err != nil {
+			return err
+		}
 	}
 
 	return nil

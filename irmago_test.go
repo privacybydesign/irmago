@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 
 type IgnoringKeyshareHandler struct{}
 
-func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string)) {
+func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string) error) {
 }
 
 func parseStorage(t *testing.T) *CredentialManager {

@@ -374,7 +374,9 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 		Label      string      `json:"label"`
 		Attributes interface{} `json:"attributes"`
 	}{}
-	json.Unmarshal(bytes, &temp)
+	if err := json.Unmarshal(bytes, &temp); err != nil {
+		return err
+	}
 	disjunction.Label = temp.Label
 
 	switch temp.Attributes.(type) {
@@ -383,7 +385,9 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 			Label      string            `json:"label"`
 			Attributes map[string]string `json:"attributes"`
 		}{}
-		json.Unmarshal(bytes, &temp)
+		if err := json.Unmarshal(bytes, &temp); err != nil {
+			return err
+		}
 		for str, value := range temp.Attributes {
 			id := NewAttributeTypeIdentifier(str)
 			disjunction.Attributes = append(disjunction.Attributes, id)
@@ -394,7 +398,9 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 			Label      string   `json:"label"`
 			Attributes []string `json:"attributes"`
 		}{}
-		json.Unmarshal(bytes, &temp)
+		if err := json.Unmarshal(bytes, &temp); err != nil {
+			return err
+		}
 		for _, str := range temp.Attributes {
 			disjunction.Attributes = append(disjunction.Attributes, NewAttributeTypeIdentifier(str))
 		}
