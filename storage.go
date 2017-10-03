@@ -12,6 +12,9 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// This file contains the storage struct and its methods,
+// and some general filesystem functions.
+
 // Storage provider for a CredentialManager
 type storage struct {
 	storagePath        string
@@ -89,16 +92,40 @@ func saveFile(filepath string, content []byte) (err error) {
 	return os.Rename(dir+"/"+tempfilename, filepath)
 }
 
-func generateSecretKey() (*secretKey, error) {
-	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
-	if err != nil {
-		return nil, err
-	}
-	return &secretKey{Key: key}, nil
-}
-
 func (s *storage) path(p string) string {
 	return s.storagePath + "/" + p
+}
+
+// EnsureStorageExists initializes the credential storage folder,
+// ensuring that it is in a usable state.
+// NOTE: we do not create the folder if it does not exist!
+// Setting it up in a properly protected location (e.g., with automatic
+// backups to iCloud/Google disabled) is the responsibility of the user.
+func (s *storage) EnsureStorageExists() error {
+	if err := AssertPathExists(s.storagePath); err != nil {
+		return err
+	}
+	return ensureDirectoryExists(s.path(signaturesDir))
+}
+
+func (s *storage) load(dest interface{}, path string) (err error) {
+	exists, err := PathExists(s.path(path))
+	if err != nil || !exists {
+		return
+	}
+	bytes, err := ioutil.ReadFile(s.path(path))
+	if err != nil {
+		return
+	}
+	return json.Unmarshal(bytes, dest)
+}
+
+func (s *storage) store(contents interface{}, file string) error {
+	bts, err := json.Marshal(contents)
+	if err != nil {
+		return err
+	}
+	return saveFile(s.path(file), bts)
 }
 
 func (s *storage) signatureFilename(attrs *AttributeList) string {
@@ -107,45 +134,22 @@ func (s *storage) signatureFilename(attrs *AttributeList) string {
 	// will be written to the same file, one overwriting the other - but that doesn't
 	// matter, because either one of the signatures is valid over both attribute lists,
 	// so keeping one of them suffices.
-	return s.path(signaturesDir) + "/" + attrs.hash()
+	return signaturesDir + "/" + attrs.hash()
 }
 
-// ensureStorageExists initializes the credential storage folder,
-// ensuring that it is in a usable state.
-// NOTE: we do not create the folder if it does not exist!
-// Setting it up in a properly protected location (e.g., with automatic
-// backups to iCloud/Google disabled) is the responsibility of the user.
-func (s *storage) ensureStorageExists() error {
-	if err := AssertPathExists(s.storagePath); err != nil {
-		return err
-	}
-	return ensureDirectoryExists(s.path(signaturesDir))
+func (s *storage) DeleteSignature(attrs *AttributeList) error {
+	return os.Remove(s.path(s.signatureFilename(attrs)))
 }
 
-func (s *storage) storeSecretKey(sk *secretKey) error {
-	bytes, err := json.Marshal(sk)
-	if err != nil {
-		return err
-	}
-	return saveFile(s.path(skFile), bytes)
+func (s *storage) StoreSignature(cred *credential) error {
+	return s.store(cred.Signature, s.signatureFilename(cred.AttributeList()))
 }
 
-func (s *storage) storeSignature(cred *credential) (err error) {
-	if cred.CredentialType() == nil {
-		return errors.New("cannot add unknown credential type")
-	}
-
-	credbytes, err := json.Marshal(cred.Signature)
-	if err != nil {
-		return err
-	}
-
-	filename := s.signatureFilename(cred.AttributeList())
-	err = saveFile(filename, credbytes)
-	return
+func (s *storage) StoreSecretKey(sk *secretKey) error {
+	return s.store(sk, skFile)
 }
 
-func (s *storage) storeAttributes(attributes map[CredentialTypeIdentifier][]*AttributeList) error {
+func (s *storage) StoreAttributes(attributes map[CredentialTypeIdentifier][]*AttributeList) error {
 	temp := []*AttributeList{}
 	for _, attrlistlist := range attributes {
 		for _, attrlist := range attrlistlist {
@@ -153,110 +157,66 @@ func (s *storage) storeAttributes(attributes map[CredentialTypeIdentifier][]*Att
 		}
 	}
 
-	if attrbytes, err := json.Marshal(temp); err == nil {
-		return saveFile(s.path(attributesFile), attrbytes)
-	} else {
-		return err
-	}
+	return s.store(temp, attributesFile)
 }
 
-func (s *storage) storeKeyshareServers(keyshareServers map[SchemeManagerIdentifier]*keyshareServer) (err error) {
-	bts, err := json.Marshal(keyshareServers)
-	if err != nil {
-		return
-	}
-	err = saveFile(s.path(kssFile), bts)
-	return
+func (s *storage) StoreKeyshareServers(keyshareServers map[SchemeManagerIdentifier]*keyshareServer) (err error) {
+	return s.store(keyshareServers, kssFile)
 }
 
-func (s *storage) storePaillierKeys(key *paillierPrivateKey) (err error) {
-	bts, err := json.Marshal(key)
-	if err != nil {
-		return
-	}
-	err = saveFile(s.path(paillierFile), bts)
-	return
+func (s *storage) StorePaillierKeys(key *paillierPrivateKey) (err error) {
+	return s.store(key, paillierFile)
 }
 
-func (s *storage) storeLogs(logs []*LogEntry) (err error) {
-	bts, err := json.Marshal(logs)
-	if err != nil {
-		return
-	}
-	err = saveFile(s.path(logsFile), bts)
-	return
+func (s *storage) StoreLogs(logs []*LogEntry) (err error) {
+	return s.store(logs, logsFile)
 }
 
-func (s *storage) storeUpdates(updates []update) (err error) {
-	bts, err := json.Marshal(updates)
-	if err != nil {
-		return
-	}
-	err = saveFile(s.path(updatesFile), bts)
-	return
+func (s *storage) StoreUpdates(updates []update) (err error) {
+	return s.store(updates, updatesFile)
 }
 
-func (s *storage) loadSignature(attrs *AttributeList) (signature *gabi.CLSignature, err error) {
+func (s *storage) LoadSignature(attrs *AttributeList) (signature *gabi.CLSignature, err error) {
 	sigpath := s.signatureFilename(attrs)
-	if err := AssertPathExists(sigpath); err != nil {
+	if err := AssertPathExists(s.path(sigpath)); err != nil {
 		return nil, err
-	}
-	bytes, err := ioutil.ReadFile(sigpath)
-	if err != nil {
-		return
 	}
 	signature = new(gabi.CLSignature)
-	err = json.Unmarshal(bytes, signature)
-	return
+	if err := s.load(signature, sigpath); err != nil {
+		return nil, err
+	}
+	return signature, nil
 }
 
-// loadSecretKey retrieves and returns the secret key from storage, or if no secret key
+// LoadSecretKey retrieves and returns the secret key from storage, or if no secret key
 // was found in storage, it generates, saves, and returns a new secret key.
-func (s *storage) loadSecretKey() (*secretKey, error) {
-	sk := &secretKey{}
+func (s *storage) LoadSecretKey() (*secretKey, error) {
 	var err error
-	exists, err := PathExists(s.path(skFile))
-	if err != nil {
+	sk := &secretKey{}
+	if err = s.load(sk, skFile); err != nil {
 		return nil, err
 	}
-	if exists {
-		var bytes []byte
-		if bytes, err = ioutil.ReadFile(s.path(skFile)); err != nil {
-			return nil, err
-		}
-		if err = json.Unmarshal(bytes, sk); err != nil {
-			return nil, err
-		}
-		return sk, err
+	if sk.Key != nil {
+		return sk, nil
 	}
 
-	sk, err = generateSecretKey()
-	if err != nil {
+	if sk, err = generateSecretKey(); err != nil {
 		return nil, err
 	}
-	err = s.storeSecretKey(sk)
-	if err != nil {
+	if err = s.StoreSecretKey(sk); err != nil {
 		return nil, err
 	}
 	return sk, nil
 }
 
-func (s *storage) loadAttributes() (list map[CredentialTypeIdentifier][]*AttributeList, err error) {
-	exists, err := PathExists(s.path(attributesFile))
-	if err != nil || !exists {
-		return
-	}
-	bytes, err := ioutil.ReadFile(s.path(attributesFile))
-	if err != nil {
-		return nil, err
-	}
-
+func (s *storage) LoadAttributes() (list map[CredentialTypeIdentifier][]*AttributeList, err error) {
 	// The attributes are stored as a list of instances of AttributeList
 	temp := []*AttributeList{}
-	list = make(map[CredentialTypeIdentifier][]*AttributeList)
-	if err = json.Unmarshal(bytes, &temp); err != nil {
-		return nil, err
+	if err = s.load(&temp, attributesFile); err != nil {
+		return
 	}
+
+	list = make(map[CredentialTypeIdentifier][]*AttributeList)
 	for _, attrlist := range temp {
 		attrlist.MetadataAttribute = MetadataFromInt(attrlist.Ints[0], s.ConfigurationStore)
 		id := attrlist.CredentialType()
@@ -273,70 +233,34 @@ func (s *storage) loadAttributes() (list map[CredentialTypeIdentifier][]*Attribu
 	return list, nil
 }
 
-func (s *storage) loadKeyshareServers() (ksses map[SchemeManagerIdentifier]*keyshareServer, err error) {
+func (s *storage) LoadKeyshareServers() (ksses map[SchemeManagerIdentifier]*keyshareServer, err error) {
 	ksses = make(map[SchemeManagerIdentifier]*keyshareServer)
-	exists, err := PathExists(s.path(kssFile))
-	if err != nil || !exists {
-		return
-	}
-	bytes, err := ioutil.ReadFile(s.path(kssFile))
-	if err != nil {
+	if err := s.load(&ksses, kssFile); err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(bytes, &ksses)
-	if err != nil {
-		return nil, err
-	}
-	return
+	return ksses, nil
 }
 
-func (s *storage) loadPaillierKeys() (key *paillierPrivateKey, err error) {
-	exists, err := PathExists(s.path(paillierFile))
-	if err != nil || !exists {
-		return
-	}
-	bytes, err := ioutil.ReadFile(s.path(paillierFile))
-	if err != nil {
-		return nil, err
-	}
+func (s *storage) LoadPaillierKeys() (key *paillierPrivateKey, err error) {
 	key = new(paillierPrivateKey)
-	err = json.Unmarshal(bytes, key)
-	if err != nil {
+	if err := s.load(key, paillierFile); err != nil {
 		return nil, err
 	}
-	return
+	return key, nil
 }
 
-func (s *storage) loadLogs() (logs []*LogEntry, err error) {
+func (s *storage) LoadLogs() (logs []*LogEntry, err error) {
 	logs = []*LogEntry{}
-	exists, err := PathExists(s.path(logsFile))
-	if err != nil || !exists {
-		return
-	}
-	bytes, err := ioutil.ReadFile(s.path(logsFile))
-	if err != nil {
+	if err := s.load(&logs, logsFile); err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(bytes, &logs)
-	if err != nil {
-		return nil, err
-	}
-	return
+	return logs, nil
 }
 
-func (s *storage) loadUpdates() (updates []update, err error) {
+func (s *storage) LoadUpdates() (updates []update, err error) {
 	updates = []update{}
-	exists, err := PathExists(s.path(updatesFile))
-	if err != nil || !exists {
-		return
-	}
-	bytes, err := ioutil.ReadFile(s.path(updatesFile))
-	if err != nil {
+	if err := s.load(&updates, updatesFile); err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(bytes, &updates)
-	if err != nil {
-		return nil, err
-	}
-	return
+	return updates, nil
 }

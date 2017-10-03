@@ -12,6 +12,9 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// This file contains the update mechanism for CredentialManager
+// as well as updates themselves.
+
 type update struct {
 	When    Timestamp
 	Number  int
@@ -32,7 +35,7 @@ var credentialManagerUpdates = []func(manager *CredentialManager) error{
 func (cm *CredentialManager) update() error {
 	// Load and parse file containing info about already performed updates
 	var err error
-	if cm.updates, err = cm.storage.loadUpdates(); err != nil {
+	if cm.updates, err = cm.storage.LoadUpdates(); err != nil {
 		return err
 	}
 
@@ -51,7 +54,7 @@ func (cm *CredentialManager) update() error {
 		cm.updates = append(cm.updates, update)
 	}
 
-	cm.storage.storeUpdates(cm.updates)
+	cm.storage.StoreUpdates(cm.updates)
 
 	return nil
 }
@@ -140,21 +143,21 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 	}
 
 	if len(cm.credentials) > 0 {
-		if err = cm.storage.storeAttributes(cm.attributes); err != nil {
+		if err = cm.storage.StoreAttributes(cm.attributes); err != nil {
 			return
 		}
-		if err = cm.storage.storeSecretKey(cm.secretkey); err != nil {
+		if err = cm.storage.StoreSecretKey(cm.secretkey); err != nil {
 			return
 		}
 	}
 
 	if len(cm.keyshareServers) > 0 {
-		if err = cm.storage.storeKeyshareServers(cm.keyshareServers); err != nil {
+		if err = cm.storage.StoreKeyshareServers(cm.keyshareServers); err != nil {
 			return
 		}
 	}
 
-	if err = cm.storage.storePaillierKeys(cm.paillierKeyCache); err != nil {
+	if err = cm.storage.StorePaillierKeys(cm.paillierKeyCache); err != nil {
 		return
 	}
 	if cm.paillierKeyCache == nil {

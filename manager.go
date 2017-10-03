@@ -3,7 +3,6 @@ package irmago
 import (
 	"crypto/rand"
 	"math/big"
-	"os"
 	"sort"
 	"time"
 
@@ -77,7 +76,7 @@ func NewCredentialManager(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	if err = cm.storage.ensureStorageExists(); err != nil {
+	if err = cm.storage.EnsureStorageExists(); err != nil {
 		return nil, err
 	}
 
@@ -87,16 +86,16 @@ func NewCredentialManager(
 	}
 
 	// Load our stuff
-	if cm.secretkey, err = cm.storage.loadSecretKey(); err != nil {
+	if cm.secretkey, err = cm.storage.LoadSecretKey(); err != nil {
 		return nil, err
 	}
-	if cm.attributes, err = cm.storage.loadAttributes(); err != nil {
+	if cm.attributes, err = cm.storage.LoadAttributes(); err != nil {
 		return nil, err
 	}
-	if cm.paillierKeyCache, err = cm.storage.loadPaillierKeys(); err != nil {
+	if cm.paillierKeyCache, err = cm.storage.LoadPaillierKeys(); err != nil {
 		return nil, err
 	}
-	if cm.keyshareServers, err = cm.storage.loadKeyshareServers(); err != nil {
+	if cm.keyshareServers, err = cm.storage.LoadKeyshareServers(); err != nil {
 		return nil, err
 	}
 
@@ -142,7 +141,7 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	attrs := list[index]
 	cm.attributes[id] = append(list[:index], list[index+1:]...)
 	if storenow {
-		cm.storage.storeAttributes(cm.attributes)
+		cm.storage.StoreAttributes(cm.attributes)
 	}
 
 	// Remove credential
@@ -154,7 +153,7 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	}
 
 	// Remove signature from storage
-	if err := os.Remove(cm.storage.signatureFilename(attrs)); err != nil {
+	if err := cm.storage.DeleteSignature(attrs); err != nil {
 		return err
 	}
 
@@ -184,10 +183,10 @@ func (cm *CredentialManager) RemoveAllCredentials() error {
 			return err
 		}
 	}
-	if err := cm.storage.storeAttributes(cm.attributes); err != nil {
+	if err := cm.storage.StoreAttributes(cm.attributes); err != nil {
 		return err
 	}
-	return cm.storage.storeLogs(cm.logs)
+	return cm.storage.StoreLogs(cm.logs)
 }
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
@@ -245,7 +244,7 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 		if attrs == nil { // We do not have the requested cred
 			return
 		}
-		sig, err := cm.storage.loadSignature(attrs)
+		sig, err := cm.storage.LoadSignature(attrs)
 		if err != nil {
 			return nil, err
 		}
@@ -286,11 +285,11 @@ func (cm *CredentialManager) addCredential(cred *credential, storeAttributes boo
 	counter := len(cm.attributes[id]) - 1
 	cm.credentials[id][counter] = cred
 
-	if err = cm.storage.storeSignature(cred); err != nil {
+	if err = cm.storage.StoreSignature(cred); err != nil {
 		return
 	}
 	if storeAttributes {
-		err = cm.storage.storeAttributes(cm.attributes)
+		err = cm.storage.StoreAttributes(cm.attributes)
 	}
 	return
 }
@@ -550,7 +549,7 @@ func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, e
 	}
 
 	cm.keyshareServers[managerID] = kss
-	return cm.storage.storeKeyshareServers(cm.keyshareServers)
+	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
 }
 
 // KeyshareRemove unregisters the keyshare server of the specified scheme manager.
@@ -559,13 +558,13 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 		return errors.New("Can't uninstall unknown keyshare server")
 	}
 	delete(cm.keyshareServers, manager)
-	return cm.storage.storeKeyshareServers(cm.keyshareServers)
+	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
 }
 
 func (cm *CredentialManager) addLogEntry(entry *LogEntry, storenow bool) error {
 	cm.logs = append(cm.logs, entry)
 	if storenow {
-		return cm.storage.storeLogs(cm.logs)
+		return cm.storage.StoreLogs(cm.logs)
 	}
 	return nil
 }
@@ -573,10 +572,18 @@ func (cm *CredentialManager) addLogEntry(entry *LogEntry, storenow bool) error {
 func (cm *CredentialManager) Logs() ([]*LogEntry, error) {
 	if cm.logs == nil || len(cm.logs) == 0 {
 		var err error
-		cm.logs, err = cm.storage.loadLogs()
+		cm.logs, err = cm.storage.LoadLogs()
 		if err != nil {
 			return nil, err
 		}
 	}
 	return cm.logs, nil
+}
+
+func generateSecretKey() (*secretKey, error) {
+	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
+	if err != nil {
+		return nil, err
+	}
+	return &secretKey{Key: key}, nil
 }
