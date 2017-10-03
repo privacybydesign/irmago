@@ -282,8 +282,12 @@ func (cm *CredentialManager) addCredential(cred *credential, storeAttributes boo
 	if _, exists := cm.credentials[id]; !exists {
 		cm.credentials[id] = make(map[int]*credential)
 	}
-	counter := len(cm.attributes[id]) - 1
-	cm.credentials[id][counter] = cred
+	if cred.CredentialType().IsSingleton {
+		cm.credentials[id][0] = cred
+	} else {
+		counter := len(cm.attributes[id]) - 1
+		cm.credentials[id][counter] = cred
+	}
 
 	if err = cm.storage.StoreSignature(cred); err != nil {
 		return
