@@ -47,6 +47,9 @@ type session struct {
 	choice      *DisclosureChoice
 }
 
+// We implement the handler for the keyshare protocol
+var _ keyshareSessionHandler = (*session)(nil)
+
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
 	2: {2, 1},
@@ -225,7 +228,14 @@ func (session *session) do(proceed bool) {
 			session.fail(&SessionError{ErrorType: ErrorCrypto, Err: err})
 		}
 
-		startKeyshareSession(session.credManager, session.irmaSession, builders, session, session.Handler)
+		startKeyshareSession(
+			session,
+			session.Handler,
+			builders,
+			session.irmaSession,
+			session.credManager.ConfigurationStore,
+			session.credManager.keyshareServers,
+		)
 	}
 }
 

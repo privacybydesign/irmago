@@ -11,6 +11,10 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// This file contains an implementation of the client side of the keyshare protocol,
+// as well as the keyshareSessionHandler which is used to communicate with the user
+// (currently only CredentialManager).
+
 // KeysharePinRequestor is used to asking the user for his PIN.
 type KeysharePinRequestor interface {
 	AskPin(remainingAttempts int, callback func(proceed bool, pin string))
@@ -24,13 +28,14 @@ type keyshareSessionHandler interface {
 }
 
 type keyshareSession struct {
-	session        IrmaSession
-	builders       gabi.ProofBuilderList
-	transports     map[SchemeManagerIdentifier]*HTTPTransport
-	sessionHandler keyshareSessionHandler
-	pinRequestor   KeysharePinRequestor
-	keyshareServer *keyshareServer
-	credManager    *CredentialManager
+	sessionHandler  keyshareSessionHandler
+	pinRequestor    KeysharePinRequestor
+	builders        gabi.ProofBuilderList
+	session         IrmaSession
+	store           *ConfigurationStore
+	keyshareServers map[SchemeManagerIdentifier]*keyshareServer
+	keyshareServer  *keyshareServer // The one keyshare server in use in case of issuance
+	transports      map[SchemeManagerIdentifier]*HTTPTransport
 }
 
 type keyshareServer struct {
@@ -131,17 +136,18 @@ func (ks *keyshareServer) HashedPin(pin string) string {
 // user cancels; or one of the keyshare servers blocks us.
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
 func startKeyshareSession(
-	credManager *CredentialManager,
-	session IrmaSession,
-	builders gabi.ProofBuilderList,
 	sessionHandler keyshareSessionHandler,
 	pin KeysharePinRequestor,
+	builders gabi.ProofBuilderList,
+	session IrmaSession,
+	store *ConfigurationStore,
+	keyshareServers map[SchemeManagerIdentifier]*keyshareServer,
 ) {
 	ksscount := 0
 	for _, managerID := range session.SchemeManagers() {
-		if credManager.ConfigurationStore.SchemeManagers[managerID].Distributed() {
+		if store.SchemeManagers[managerID].Distributed() {
 			ksscount++
-			if _, registered := credManager.keyshareServers[managerID]; !registered {
+			if _, registered := keyshareServers[managerID]; !registered {
 				err := errors.New("Not registered to keyshare server of scheme manager " + managerID.String())
 				sessionHandler.KeyshareError(err)
 				return
@@ -155,22 +161,23 @@ func startKeyshareSession(
 	}
 
 	ks := &keyshareSession{
-		session:        session,
-		builders:       builders,
-		sessionHandler: sessionHandler,
-		transports:     map[SchemeManagerIdentifier]*HTTPTransport{},
-		pinRequestor:   pin,
-		credManager:    credManager,
+		session:         session,
+		builders:        builders,
+		sessionHandler:  sessionHandler,
+		transports:      map[SchemeManagerIdentifier]*HTTPTransport{},
+		pinRequestor:    pin,
+		store:           store,
+		keyshareServers: keyshareServers,
 	}
 
 	askPin := false
 
 	for _, managerID := range session.SchemeManagers() {
-		if !ks.credManager.ConfigurationStore.SchemeManagers[managerID].Distributed() {
+		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
-		ks.keyshareServer = ks.credManager.keyshareServers[managerID]
+		ks.keyshareServer = ks.keyshareServers[managerID]
 		transport := NewHTTPTransport(ks.keyshareServer.URL)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
@@ -234,11 +241,11 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 // If all is ok, success will be true.
 func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int, blocked int, err error) {
 	for _, managerID := range ks.session.SchemeManagers() {
-		if !ks.credManager.ConfigurationStore.SchemeManagers[managerID].Distributed() {
+		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
-		kss := ks.credManager.keyshareServers[managerID]
+		kss := ks.keyshareServers[managerID]
 		transport := ks.transports[managerID]
 		pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
 		pinresult := &keysharePinStatus{}
@@ -285,7 +292,7 @@ func (ks *keyshareSession) GetCommitments() {
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
 		managerID := NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
-		if !ks.credManager.ConfigurationStore.SchemeManagers[managerID].Distributed() {
+		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		if _, contains := pkids[managerID]; !contains {
@@ -297,7 +304,7 @@ func (ks *keyshareSession) GetCommitments() {
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
 	for _, managerID := range ks.session.SchemeManagers() {
-		if !ks.credManager.ConfigurationStore.SchemeManagers[managerID].Distributed() {
+		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -401,7 +408,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 	for i, builder := range ks.builders {
 		// Parse each received JWT
 		managerID := NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
-		if !ks.credManager.ConfigurationStore.SchemeManagers[managerID].Distributed() {
+		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		msg := struct {
