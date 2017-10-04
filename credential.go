@@ -5,6 +5,8 @@ import (
 
 	"math/big"
 
+	"fmt"
+
 	"github.com/mhe/gabi"
 )
 
@@ -44,6 +46,15 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
 	}
 
+	path := fmt.Sprintf("%s/%s/%s/Issues/%s/logo.png", store.path, credtype.SchemeManagerID, credtype.IssuerID, credtype.ID)
+	exists, err := PathExists(path)
+	if err != nil {
+		return nil
+	}
+	if !exists {
+		path = ""
+	}
+
 	return &CredentialInfo{
 		ID:            credtype.Identifier().String(),
 		SignedOn:      Timestamp(meta.SigningDate()),
@@ -52,7 +63,7 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 		Issuer:        store.Issuers[issid],
 		SchemeManager: store.SchemeManagers[issid.SchemeManagerIdentifier()],
 		Attributes:    attrs,
-		Logo:          "", // TODO
+		Logo:          path,
 		Hash:          NewAttributeListFromInts(ints, store).hash(),
 	}
 }

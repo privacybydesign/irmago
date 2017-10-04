@@ -157,7 +157,7 @@ func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
 		for index, attrlist := range attrlistlist {
 			info := attrlist.Info()
 			info.Index = index
-			list = append(list, attrlist.Info())
+			list = append(list, info)
 		}
 	}
 
