@@ -38,6 +38,15 @@ type AttributeIdentifier struct {
 	Count int
 }
 
+// IrmaIdentifierSet contains a set (ensured by using map[...]struct{}) of all scheme managers,
+// all issuers, all credential types and all public keys that are involved in an IRMA session.
+type IrmaIdentifierSet struct {
+	SchemeManagers  map[SchemeManagerIdentifier]struct{}
+	Issuers         map[IssuerIdentifier]struct{}
+	CredentialTypes map[CredentialTypeIdentifier]struct{}
+	PublicKeys      map[IssuerIdentifier][]int
+}
+
 // Parent returns the parent object of this identifier.
 func (oi metaObjectIdentifier) Parent() string {
 	str := string(oi)
@@ -144,4 +153,13 @@ func (id AttributeTypeIdentifier) MarshalText() ([]byte, error) {
 func (id *AttributeTypeIdentifier) UnmarshalText(text []byte) error {
 	*id = NewAttributeTypeIdentifier(string(text))
 	return nil
+}
+
+func (set *IrmaIdentifierSet) Distributed(store *ConfigurationStore) bool {
+	for id := range set.SchemeManagers {
+		if store.SchemeManagers[id].Distributed() {
+			return true
+		}
+	}
+	return false
 }

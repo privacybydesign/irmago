@@ -55,19 +55,6 @@ type secretKey struct {
 	Key *big.Int
 }
 
-// IrmaSession is an IRMA session.
-type IrmaSession interface {
-	GetNonce() *big.Int
-	SetNonce(*big.Int)
-	GetContext() *big.Int
-	SetContext(*big.Int)
-	DisjunctionList() AttributeDisjunctionList
-	DisclosureChoice() *DisclosureChoice
-	SetDisclosureChoice(choice *DisclosureChoice)
-	Distributed(store *ConfigurationStore) bool
-	SchemeManagers() []SchemeManagerIdentifier
-}
-
 // NewCredentialManager creates a new CredentialManager that uses the directory
 // specified by storagePath for (de)serializing itself. irmaConfigurationPath
 // is the path to a (possibly readonly) folder containing irma_configuration;
