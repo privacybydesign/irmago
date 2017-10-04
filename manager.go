@@ -227,11 +227,17 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 		return err
 	}
 
-	return cm.addLogEntry(&LogEntry{
-		Type:              actionRemoval,
-		Time:              Timestamp(time.Now()),
-		RemovedCredential: id,
-	}, storenow)
+	removed := map[CredentialTypeIdentifier][]TranslatedString{}
+	removed[id] = attrs.Strings()
+
+	if storenow {
+		return cm.addLogEntry(&LogEntry{
+			Type:    actionRemoval,
+			Time:    Timestamp(time.Now()),
+			Removed: removed,
+		})
+	}
+	return nil
 }
 
 func (cm *CredentialManager) RemoveCredential(id CredentialTypeIdentifier, index int) error {
@@ -247,19 +253,31 @@ func (cm *CredentialManager) RemoveCredentialByHash(hash string) error {
 }
 
 func (cm *CredentialManager) RemoveAllCredentials() error {
+	removed := map[CredentialTypeIdentifier][]TranslatedString{}
 	list := cm.CredentialInfoList()
 	for _, cred := range list {
-		if err := cm.remove(NewCredentialTypeIdentifier(cred.ID), cred.Index, false); err != nil {
+		id := NewCredentialTypeIdentifier(cred.ID)
+		removed[id] = cred.Attributes
+		if err := cm.remove(id, cred.Index, false); err != nil {
 			return err
 		}
 	}
 	if err := cm.storage.StoreAttributes(cm.attributes); err != nil {
 		return err
 	}
+
+	logentry := &LogEntry{
+		Type:    actionRemoval,
+		Time:    Timestamp(time.Now()),
+		Removed: removed,
+	}
+	if err := cm.addLogEntry(logentry); err != nil {
+		return err
+	}
 	return cm.storage.StoreLogs(cm.logs)
 }
 
-// Getter methods
+// Attribute and credential getter methods
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
 func (cm *CredentialManager) attrs(id CredentialTypeIdentifier) []*AttributeList {
@@ -607,11 +625,9 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 
 // Add, load and store log entries
 
-func (cm *CredentialManager) addLogEntry(entry *LogEntry, storenow bool) error {
+func (cm *CredentialManager) addLogEntry(entry *LogEntry) error {
 	cm.logs = append(cm.logs, entry)
-	if storenow {
-		return cm.storage.StoreLogs(cm.logs)
-	}
+	return cm.storage.StoreLogs(cm.logs)
 	return nil
 }
 

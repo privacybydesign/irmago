@@ -15,9 +15,9 @@ type LogEntry struct {
 	SessionInfo *SessionInfo // Message that started the session
 
 	// Session type-specific info
-	RemovedCredential CredentialTypeIdentifier                              // In case of credential removal
 	Disclosed         map[CredentialTypeIdentifier]map[int]TranslatedString // Any session type
 	Received          map[CredentialTypeIdentifier][]TranslatedString       // In case of issuance session
+	Removed           map[CredentialTypeIdentifier][]TranslatedString       // In case of credential removal
 	SignedMessage     []byte                                                // In case of signature sessions
 	SignedMessageType string                                                // In case of signature sessions
 
@@ -122,9 +122,9 @@ type jsonLogEntry struct {
 	Time        Timestamp
 	SessionInfo *logSessionInfo
 
-	RemovedCredential string                                                `json:",omitempty"`
 	Disclosed         map[CredentialTypeIdentifier]map[int]TranslatedString `json:",omitempty"`
 	Received          map[CredentialTypeIdentifier][]TranslatedString       `json:",omitempty"`
+	Removed           map[CredentialTypeIdentifier][]TranslatedString       `json:",omitempty"`
 	SignedMessage     []byte                                                `json:",omitempty"`
 	SignedMessageType string                                                `json:",omitempty"`
 
@@ -147,7 +147,7 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 			Context: temp.SessionInfo.Context,
 			Keys:    make(map[IssuerIdentifier]int),
 		},
-		RemovedCredential: NewCredentialTypeIdentifier(temp.RemovedCredential),
+		Removed:           temp.Removed,
 		Disclosed:         temp.Disclosed,
 		Received:          temp.Received,
 		SignedMessage:     temp.SignedMessage,
@@ -191,7 +191,7 @@ func (entry *LogEntry) MarshalJSON() ([]byte, error) {
 		Time:              entry.Time,
 		Response:          entry.rawResponse,
 		SessionInfo:       si,
-		RemovedCredential: entry.RemovedCredential.String(),
+		Removed:           entry.Removed,
 		Disclosed:         entry.Disclosed,
 		Received:          entry.Received,
 		SignedMessage:     entry.SignedMessage,
