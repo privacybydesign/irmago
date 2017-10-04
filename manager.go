@@ -33,18 +33,22 @@ import (
 // it is the starting point for new IRMA sessions; and it computes some
 // of the messages in the client side of the IRMA protocol.
 type CredentialManager struct {
+	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[CredentialTypeIdentifier][]*AttributeList
 	credentials      map[CredentialTypeIdentifier]map[int]*credential
 	keyshareServers  map[SchemeManagerIdentifier]*keyshareServer
 	paillierKeyCache *paillierPrivateKey
 	logs             []*LogEntry
+	updates          []update
 
-	storage               storage
+	// Where we store/load it to/from
+	storage storage
+
+	// Other state
+	ConfigurationStore    *ConfigurationStore
 	irmaConfigurationPath string
 	androidStoragePath    string
-	ConfigurationStore    *ConfigurationStore
-	updates               []update
 }
 
 type secretKey struct {
@@ -552,21 +556,19 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 
 // PaillierKey returns a new Paillier key (and generates a new one in a goroutine).
 func (cm *CredentialManager) paillierKey(wait bool) *paillierPrivateKey {
-	retval := cm.paillierKeyCache
+	cached := cm.paillierKeyCache
 	ch := make(chan bool)
 	go func() {
 		newkey, _ := paillier.GenerateKey(rand.Reader, 2048)
-		converted := paillierPrivateKey(*newkey)
-		cm.paillierKeyCache = &converted
-		if wait && retval == nil {
+		cm.paillierKeyCache = (*paillierPrivateKey)(newkey)
+		if wait && cached == nil {
 			ch <- true
 		}
 	}()
-	if wait && retval == nil {
+	if wait && cached == nil {
 		<-ch
-		return cm.paillierKeyCache
 	}
-	return retval
+	return cm.paillierKeyCache
 }
 
 func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
@@ -603,7 +605,6 @@ func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, e
 		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
 	}
 
-	// TODO: examine error returned by Post() to see if it tells us that the email address is already in use
 	result := &struct{}{}
 	err = transport.Post("web/users/selfenroll", result, message)
 	if err != nil {
