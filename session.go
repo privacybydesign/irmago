@@ -163,6 +163,14 @@ func (session *session) start() {
 		}
 	}
 
+	if err = session.credManager.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
+		session.Handler.Failure(
+			session.Action,
+			&SessionError{ErrorType: ErrorConfigurationStoreDownload, Err: err},
+		)
+		return
+	}
+
 	missing := session.credManager.CheckSatisfiability(session.irmaSession.DisjunctionList())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, missing)

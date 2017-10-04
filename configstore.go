@@ -266,3 +266,7 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 	}
 	return nil
 }
+
+func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) error {
+	return nil
+}

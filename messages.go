@@ -98,6 +98,8 @@ const (
 	ErrorApi = ErrorType("api")
 	// Server returned unexpected or malformed response
 	ErrorServerResponse = ErrorType("serverResponse")
+	// Error during downloading of credential type, issuer, or public keys
+	ErrorConfigurationStoreDownload = ErrorType("configurationStoreDownload")
 )
 
 func (e *SessionError) Error() string {
