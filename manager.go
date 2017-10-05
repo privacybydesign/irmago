@@ -131,9 +131,7 @@ func NewCredentialManager(
 		if keyshareHandler == nil {
 			return nil, errors.New("Keyshare server found but no KeyshareHandler was given")
 		}
-		keyshareHandler.StartRegistration(unenrolled[0], func(email, pin string) error {
-			return cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
-		})
+		cm.KeyshareEnroll(unenrolled[0], keyshareHandler)
 	default:
 		return nil, errors.New("Too many keyshare servers")
 	}
@@ -570,7 +568,20 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 }
 
 // KeyshareEnroll attempts to register at the keyshare server of the specified scheme manager.
-func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, email, pin string) error {
+func (cm *CredentialManager) KeyshareEnroll(manager *SchemeManager, handler KeyshareHandler) {
+	handler.StartRegistration(manager, func(email, pin string) {
+		go func() {
+			err := cm.keyshareEnrollWorker(manager.Identifier(), email, pin)
+			if err != nil {
+				handler.RegistrationError(err)
+			} else {
+				handler.RegistrationSuccess()
+			}
+		}()
+	})
+}
+
+func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentifier, email, pin string) error {
 	manager, ok := cm.ConfigurationStore.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")

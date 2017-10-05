@@ -68,10 +68,11 @@ const (
 
 // Actions
 const (
-	ActionDisclosing = Action("disclosing")
-	ActionSigning    = Action("signing")
-	ActionIssuing    = Action("issuing")
-	ActionUnknown    = Action("unknown")
+	ActionSchemeManager = Action("schememanager")
+	ActionDisclosing    = Action("disclosing")
+	ActionSigning       = Action("signing")
+	ActionIssuing       = Action("issuing")
+	ActionUnknown       = Action("unknown")
 )
 
 // Protocol errors

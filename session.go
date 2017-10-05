@@ -28,6 +28,7 @@ type Handler interface {
 	AskIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler)
 	AskVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler)
 	AskSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler)
+	AskSchemeManagerPermission(manager *SchemeManager, callback func(proceed bool))
 
 	AskPin(remainingAttempts int, callback func(proceed bool, pin string))
 }
@@ -45,6 +46,7 @@ type session struct {
 	irmaSession IrmaSession
 	transport   *HTTPTransport
 	choice      *DisclosureChoice
+	newmanager  *SchemeManager
 }
 
 // We implement the handler for the keyshare protocol
@@ -111,6 +113,7 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 	case ActionDisclosing: // nop
 	case ActionSigning: // nop
 	case ActionIssuing: // nop
+	case ActionSchemeManager: // nop
 	case ActionUnknown:
 		fallthrough
 	default:
@@ -137,6 +140,11 @@ func (session *session) fail(err *SessionError) {
 // the request, and informs the user of the outcome.
 func (session *session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
+
+	if session.Action == ActionSchemeManager {
+		session.managerSession()
+		return
+	}
 
 	// Get the first IRMA protocol message and parse it
 	session.info = &SessionInfo{}
@@ -299,4 +307,43 @@ func (session *session) sendResponse(message interface{}) {
 
 	_ = session.credManager.addLogEntry(log) // TODO err
 	session.Handler.Success(session.Action)
+}
+
+func (session *session) managerSession() {
+	manager, err := session.credManager.ConfigurationStore.DownloadSchemeManager(session.ServerURL)
+	if err != nil {
+		session.Handler.Failure(session.Action, &SessionError{Err: err}) // TODO
+		return
+	}
+	session.Handler.AskSchemeManagerPermission(manager, func(proceed bool) {
+		if !proceed {
+			session.Handler.Cancelled(session.Action)
+			return
+		}
+		session.newmanager = manager
+		if manager.Distributed() {
+			session.credManager.KeyshareEnroll(manager, KeyshareHandler(session))
+		} else {
+			session.RegistrationSuccess()
+		}
+	})
+	return
+}
+
+func (session *session) StartRegistration(manager *SchemeManager, callback func(email, pin string)) {
+	session.credManager.keyshareHandler.StartRegistration(manager, callback)
+}
+
+func (session *session) RegistrationError(err error) {
+	session.Handler.Failure(session.Action, &SessionError{Err: err}) // TODO
+	session.credManager.keyshareHandler.RegistrationError(err)
+}
+
+func (session *session) RegistrationSuccess() {
+	if err := session.credManager.ConfigurationStore.AddSchemeManager(session.newmanager); err != nil {
+		session.Handler.Failure(session.Action, &SessionError{})
+		return
+	}
+	session.Handler.Success(session.Action)
+	session.credManager.keyshareHandler.RegistrationSuccess()
 }
