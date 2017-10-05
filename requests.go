@@ -15,8 +15,8 @@ import (
 
 // SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
-	Context *big.Int `json:"nonce"`
-	Nonce   *big.Int `json:"context"`
+	Context *big.Int `json:"context"`
+	Nonce   *big.Int `json:"nonce"`
 	choice  *DisclosureChoice
 }
 
