@@ -38,7 +38,7 @@ func (th TestHandler) UnsatisfiableRequest(action Action, missing AttributeDisju
 		ErrorType: ErrorType("UnsatisfiableRequest"),
 	}
 }
-func (th TestHandler) AskVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler) {
+func (th TestHandler) RequestVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler) {
 	choice := &DisclosureChoice{
 		Attributes: []*AttributeIdentifier{},
 	}
@@ -51,17 +51,17 @@ func (th TestHandler) AskVerificationPermission(request DisclosureRequest, Serve
 	}
 	callback(true, choice)
 }
-func (th TestHandler) AskIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler) {
+func (th TestHandler) RequestIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler) {
 	dreq := DisclosureRequest{
 		SessionRequest: request.SessionRequest,
 		Content:        request.Disclose,
 	}
-	th.AskVerificationPermission(dreq, ServerName, callback)
+	th.RequestVerificationPermission(dreq, ServerName, callback)
 }
-func (th TestHandler) AskSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler) {
-	th.AskVerificationPermission(request.DisclosureRequest, ServerName, callback)
+func (th TestHandler) RequestSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler) {
+	th.RequestVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
-func (th TestHandler) AskPin(remainingAttempts int, callback func(proceed bool, pin string)) {
+func (th TestHandler) RequestPin(remainingAttempts int, callback func(proceed bool, pin string)) {
 	callback(true, "12345")
 }
 

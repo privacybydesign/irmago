@@ -25,11 +25,11 @@ type Handler interface {
 	Failure(action Action, err *SessionError)
 	UnsatisfiableRequest(action Action, missing AttributeDisjunctionList)
 
-	AskIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler)
-	AskVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler)
-	AskSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler)
+	RequestIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler)
+	RequestVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler)
+	RequestSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler)
 
-	AskPin(remainingAttempts int, callback func(proceed bool, pin string))
+	RequestPin(remainingAttempts int, callback func(proceed bool, pin string))
 }
 
 // A session is an IRMA session.
@@ -179,11 +179,11 @@ func (session *session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusConnected)
 	switch session.Action {
 	case ActionDisclosing:
-		session.Handler.AskVerificationPermission(*session.irmaSession.(*DisclosureRequest), server, callback)
+		session.Handler.RequestVerificationPermission(*session.irmaSession.(*DisclosureRequest), server, callback)
 	case ActionSigning:
-		session.Handler.AskSignaturePermission(*session.irmaSession.(*SignatureRequest), server, callback)
+		session.Handler.RequestSignaturePermission(*session.irmaSession.(*SignatureRequest), server, callback)
 	case ActionIssuing:
-		session.Handler.AskIssuancePermission(*session.irmaSession.(*IssuanceRequest), server, callback)
+		session.Handler.RequestIssuancePermission(*session.irmaSession.(*IssuanceRequest), server, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}

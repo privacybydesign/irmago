@@ -17,7 +17,7 @@ import (
 
 // KeysharePinRequestor is used to asking the user for his PIN.
 type KeysharePinRequestor interface {
-	AskPin(remainingAttempts int, callback func(proceed bool, pin string))
+	RequestPin(remainingAttempts int, callback func(proceed bool, pin string))
 }
 
 type keyshareSessionHandler interface {
@@ -173,7 +173,7 @@ func startKeyshareSession(
 		schemeManagers:  schemeManagers,
 	}
 
-	askPin := false
+	requestPin := false
 
 	for _, managerID := range schemeManagers {
 		if !ks.store.SchemeManagers[managerID].Distributed() {
@@ -195,14 +195,14 @@ func startKeyshareSession(
 		switch authstatus.Status {
 		case kssAuthorized: // nop
 		case kssTokenExpired:
-			askPin = true
+			requestPin = true
 		default:
 			ks.sessionHandler.KeyshareError(errors.New("Keyshare server returned unrecognized authorization status"))
 			return
 		}
 	}
 
-	if askPin {
+	if requestPin {
 		ks.VerifyPin(-1)
 	} else {
 		ks.GetCommitments()
@@ -212,7 +212,7 @@ func startKeyshareSession(
 // Ask for a pin, repeatedly if necessary, and either continue the keyshare protocol
 // with authorization, or stop the keyshare protocol and inform of failure.
 func (ks *keyshareSession) VerifyPin(attempts int) {
-	ks.pinRequestor.AskPin(attempts, func(proceed bool, pin string) {
+	ks.pinRequestor.RequestPin(attempts, func(proceed bool, pin string) {
 		success, attemptsRemaining, blocked, err := ks.verifyPinAttempt(pin)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
