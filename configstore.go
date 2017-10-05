@@ -10,6 +10,11 @@ import (
 
 	"crypto/sha256"
 
+	"fmt"
+
+	"strings"
+
+	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 
@@ -267,6 +272,100 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 	return nil
 }
 
-func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) error {
+func (store *ConfigurationStore) DownloadSchemeManager(url string) (*SchemeManager, error) {
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "https://" + url
+	}
+	if url[len(url)-1] == '/' {
+		url = url[:len(url)-1]
+	}
+	if strings.HasSuffix(url, "/description.xml") {
+		url = url[:len(url)-len("/description.xml")]
+	}
+	b, err := NewHTTPTransport(url).GetBytes("/description.xml")
+	if err != nil {
+		return nil, err
+	}
+	manager := &SchemeManager{}
+	if err = xml.Unmarshal(b, manager); err != nil {
+		return nil, err
+	}
+
+	manager.URL = url // TODO?
+	return manager, nil
+}
+
+func (store *ConfigurationStore) RemoveSchemeManager(id SchemeManagerIdentifier) error {
+	// Remove everything falling under the manager's responsibility
+	for credid := range store.Credentials {
+		if credid.IssuerIdentifier().SchemeManagerIdentifier() == id {
+			delete(store.Credentials, credid)
+		}
+	}
+	for issid := range store.Issuers {
+		if issid.SchemeManagerIdentifier() == id {
+			delete(store.Issuers, issid)
+		}
+	}
+	for issid := range store.publicKeys {
+		if issid.SchemeManagerIdentifier() == id {
+			delete(store.publicKeys, issid)
+		}
+	}
+	// Remove from storage
+	return os.RemoveAll(fmt.Sprintf("%s/%s", store.path, id.String()))
+	// or, remove above iterations and call .ParseFolder()?
+}
+
+func (store *ConfigurationStore) AddSchemeManager(manager *SchemeManager) error {
+	name := manager.ID
+	if err := ensureDirectoryExists(fmt.Sprintf("%s/%s", store.path, name)); err != nil {
+		return err
+	}
+	b, err := xml.Marshal(manager)
+	if err != nil {
+		return err
+	}
+	if err := saveFile(fmt.Sprintf("%s/%s/description.xml", store.path, name), b); err != nil {
+		return err
+	}
+	store.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
 	return nil
+}
+
+func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) error {
+	var contains bool
+	for manid := range set.SchemeManagers {
+		if _, contains = store.SchemeManagers[manid]; !contains {
+			return errors.Errorf("Unknown scheme manager: %s", manid)
+		}
+	}
+
+	transport := NewHTTPTransport("")
+	for issid := range set.Issuers {
+		if _, contains = store.Issuers[issid]; !contains {
+			url := store.SchemeManagers[issid.SchemeManagerIdentifier()].URL + "/" + issid.Name()
+			path := fmt.Sprintf("%s/%s/%s", store.path, issid.SchemeManagerIdentifier().String(), issid.Name())
+			transport.GetFile(url+"/description.xml", path+"/description.xml")
+			transport.GetFile(url+"/logo.png", path+"/logo.png")
+		}
+		for issid, list := range set.PublicKeys {
+			for _, count := range list {
+				manager := issid.SchemeManagerIdentifier()
+				suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
+				path := fmt.Sprintf("%s/%s/%s", store.path, manager.String(), suffix)
+				transport.GetFile(store.SchemeManagers[manager].URL+suffix, path)
+			}
+		}
+	}
+	for credid := range set.CredentialTypes {
+		if _, contains := store.Credentials[credid]; !contains {
+			manager := credid.IssuerIdentifier().SchemeManagerIdentifier()
+			suffix := fmt.Sprintf("/%s/Issues/%s/description.xml", credid.IssuerIdentifier().Name(), credid.Name())
+			path := fmt.Sprintf("%s/%s/%s", store.path, manager.String(), suffix)
+			transport.GetFile(store.SchemeManagers[manager].URL+suffix, path)
+		}
+	}
+
+	return store.ParseFolder()
 }

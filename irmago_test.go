@@ -437,3 +437,12 @@ func TestCredentialRemoval(t *testing.T) {
 
 	teardown(t)
 }
+
+func TestDownloadSchemeManager(t *testing.T) {
+	manager := parseStorage(t)
+	require.NoError(t, manager.ConfigurationStore.RemoveSchemeManager(NewSchemeManagerIdentifier("irma-demo")))
+	url := "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo"
+	sm, err := manager.ConfigurationStore.DownloadSchemeManager(url)
+	require.NoError(t, err)
+	require.NotNil(t, sm)
+}

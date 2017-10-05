@@ -49,6 +49,7 @@ type CredentialManager struct {
 	ConfigurationStore    *ConfigurationStore
 	irmaConfigurationPath string
 	androidStoragePath    string
+	keyshareHandler       KeyshareHandler
 }
 
 type secretKey struct {
@@ -81,25 +82,25 @@ func NewCredentialManager(
 		return nil, err
 	}
 
-	var store *ConfigurationStore
-	if store, err = NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath); err != nil {
-		return nil, err
-	}
-	if err = store.ParseFolder(); err != nil {
-		return nil, err
-	}
-
 	cm := &CredentialManager{
 		credentials:           make(map[CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		androidStoragePath:    androidStoragePath,
-		ConfigurationStore:    store,
-		storage:               storage{storagePath: storagePath, ConfigurationStore: store},
+		keyshareHandler:       keyshareHandler,
+	}
+
+	cm.ConfigurationStore, err = NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath)
+	if err != nil {
+		return nil, err
+	}
+	if err = cm.ConfigurationStore.ParseFolder(); err != nil {
+		return nil, err
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
+	cm.storage = storage{storagePath: storagePath, ConfigurationStore: cm.ConfigurationStore}
 	if err = cm.storage.EnsureStorageExists(); err != nil {
 		return nil, err
 	}
