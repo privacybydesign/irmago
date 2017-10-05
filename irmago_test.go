@@ -29,8 +29,10 @@ func TestMain(m *testing.M) {
 
 type IgnoringKeyshareHandler struct{}
 
-func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string) error) {
+func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string)) {
 }
+func (i *IgnoringKeyshareHandler) RegistrationError(err error) {}
+func (i *IgnoringKeyshareHandler) RegistrationSuccess()        {}
 
 func parseStorage(t *testing.T) *CredentialManager {
 	exists, err := PathExists("testdata/storage/test")
@@ -434,6 +436,22 @@ func TestCredentialRemoval(t *testing.T) {
 	cred, err = manager.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
+
+	teardown(t)
+}
+
+func TestDownloadSchemeManager(t *testing.T) {
+	manager := parseStorage(t)
+	require.NoError(t, manager.ConfigurationStore.RemoveSchemeManager(NewSchemeManagerIdentifier("irma-demo")))
+	url := "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo"
+	sm, err := manager.ConfigurationStore.DownloadSchemeManager(url)
+	require.NoError(t, err)
+	require.NotNil(t, sm)
+
+	require.NoError(t, manager.ConfigurationStore.AddSchemeManager(sm))
+
+	jwt := getIssuanceJwt("testip", NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	sessionHelper(t, jwt, "issue", manager)
 
 	teardown(t)
 }

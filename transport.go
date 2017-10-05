@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -23,7 +24,7 @@ const verbose = false
 // NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string) *HTTPTransport {
 	url := serverURL
-	if !strings.HasSuffix(url, "/") {
+	if serverURL != "" && !strings.HasSuffix(url, "/") { // TODO fix this
 		url += "/"
 	}
 	return &HTTPTransport{
@@ -40,7 +41,34 @@ func (transport *HTTPTransport) SetHeader(name, val string) {
 	transport.headers[name] = val
 }
 
-func (transport *HTTPTransport) request(url string, method string, result interface{}, object interface{}) error {
+func (transport *HTTPTransport) request(
+	url string, method string, reader io.Reader, isstr bool,
+) (response *http.Response, err error) {
+	req, err := http.NewRequest(method, transport.Server+url, reader)
+	if err != nil {
+		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
+	}
+
+	req.Header.Set("User-Agent", "irmago")
+	if reader != nil {
+		if isstr {
+			req.Header.Set("Content-Type", "text/plain; charset=UTF-8")
+		} else {
+			req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+		}
+	}
+	for name, val := range transport.headers {
+		req.Header.Set(name, val)
+	}
+
+	res, err := transport.client.Do(req)
+	if err != nil {
+		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
+	}
+	return res, nil
+}
+
+func (transport *HTTPTransport) jsonRequest(url string, method string, result interface{}, object interface{}) error {
 	if method != http.MethodPost && method != http.MethodGet && method != http.MethodDelete {
 		panic("Unsupported HTTP method " + method)
 	}
@@ -70,28 +98,10 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 		}
 	}
 
-	req, err := http.NewRequest(method, transport.Server+url, reader)
+	res, err := transport.request(url, method, reader, isstr)
 	if err != nil {
-		return &SessionError{ErrorType: ErrorTransport, Err: err}
+		return err
 	}
-
-	req.Header.Set("User-Agent", "irmago")
-	if object != nil {
-		if isstr {
-			req.Header.Set("Content-Type", "text/plain; charset=UTF-8")
-		} else {
-			req.Header.Set("Content-Type", "application/json; charset=UTF-8")
-		}
-	}
-	for name, val := range transport.headers {
-		req.Header.Set(name, val)
-	}
-
-	res, err := transport.client.Do(req)
-	if err != nil {
-		return &SessionError{ErrorType: ErrorTransport, Err: err}
-	}
-
 	if method == http.MethodDelete {
 		return nil
 	}
@@ -127,17 +137,40 @@ func (transport *HTTPTransport) request(url string, method string, result interf
 	return nil
 }
 
+func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
+	res, err := transport.request(url, http.MethodGet, nil, false)
+	if err != nil {
+		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
+	}
+	b, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode}
+	}
+	return b, nil
+}
+
+func (transport *HTTPTransport) GetFile(url string, dest string) error {
+	b, err := transport.GetBytes(url)
+	if err != nil {
+		return err
+	}
+	if err = ensureDirectoryExists(filepath.Dir(dest)); err != nil {
+		return err
+	}
+	return saveFile(dest, b)
+}
+
 // Post sends the object to the server and parses its response into result.
 func (transport *HTTPTransport) Post(url string, result interface{}, object interface{}) error {
-	return transport.request(url, http.MethodPost, result, object)
+	return transport.jsonRequest(url, http.MethodPost, result, object)
 }
 
 // Get performs a GET request and parses the server's response into result.
 func (transport *HTTPTransport) Get(url string, result interface{}) error {
-	return transport.request(url, http.MethodGet, result, nil)
+	return transport.jsonRequest(url, http.MethodGet, result, nil)
 }
 
 // Delete performs a DELETE.
 func (transport *HTTPTransport) Delete() {
-	_ = transport.request("", http.MethodDelete, nil, nil)
+	_ = transport.jsonRequest("", http.MethodDelete, nil, nil)
 }

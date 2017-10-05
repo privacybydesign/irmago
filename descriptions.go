@@ -6,11 +6,15 @@ import (
 	"github.com/go-errors/errors"
 )
 
+// This file contains data types for scheme managers, issuers, credential types
+// matching the XML files in irma_configuration.
+
 // SchemeManager describes a scheme manager.
 type SchemeManager struct {
 	ID                string           `xml:"Id"`
 	Name              TranslatedString `xml:"Name"`
-	URL               string           `xml:"Contact"`
+	URL               string           `xml:"Url"`
+	Contact           string           `xml:"contact"`
 	Description       TranslatedString
 	KeyshareServer    string
 	KeyshareWebsite   string
@@ -83,6 +87,26 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 // TranslatedString is a map of translated strings.
 type TranslatedString map[string]string
 
+type xmlTranslation struct {
+	XMLName xml.Name
+	Text    string `xml:",chardata"`
+}
+
+type xmlTranslatedString struct {
+	Translations []xmlTranslation `xml:",any"`
+}
+
+// MarshalXML implements xml.Marshaler.
+func (ts *TranslatedString) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	temp := &xmlTranslatedString{}
+	for lang, text := range *ts {
+		temp.Translations = append(temp.Translations,
+			xmlTranslation{XMLName: xml.Name{Local: lang}, Text: text},
+		)
+	}
+	return e.EncodeElement(temp, start)
+}
+
 // UnmarshalXML unmarshals an XML tag containing a string translated to multiple languages,
 // for example: <Foo><en>Hello world</en><nl>Hallo wereld</nl></Foo>
 // into a TranslatedString: { "en": "Hello world" , "nl": "Hallo wereld" }
@@ -90,12 +114,7 @@ func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	if map[string]string(*ts) == nil {
 		*ts = TranslatedString(make(map[string]string))
 	}
-	temp := &struct {
-		Translations []struct {
-			XMLName xml.Name
-			Text    string `xml:",chardata"`
-		} `xml:",any"`
-	}{}
+	temp := &xmlTranslatedString{}
 	if err := d.DecodeElement(temp, &start); err != nil {
 		return err
 	}

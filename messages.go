@@ -68,10 +68,11 @@ const (
 
 // Actions
 const (
-	ActionDisclosing = Action("disclosing")
-	ActionSigning    = Action("signing")
-	ActionIssuing    = Action("issuing")
-	ActionUnknown    = Action("unknown")
+	ActionSchemeManager = Action("schememanager")
+	ActionDisclosing    = Action("disclosing")
+	ActionSigning       = Action("signing")
+	ActionIssuing       = Action("issuing")
+	ActionUnknown       = Action("unknown")
 )
 
 // Protocol errors
@@ -98,6 +99,8 @@ const (
 	ErrorApi = ErrorType("api")
 	// Server returned unexpected or malformed response
 	ErrorServerResponse = ErrorType("serverResponse")
+	// Error during downloading of credential type, issuer, or public keys
+	ErrorConfigurationStoreDownload = ErrorType("configurationStoreDownload")
 )
 
 func (e *SessionError) Error() string {
