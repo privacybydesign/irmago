@@ -302,7 +302,7 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 // present in the specified configuration store.
 func (disjunction *AttributeDisjunction) MatchesStore(store *ConfigurationStore) bool {
 	for ai := range disjunction.Values {
-		creddescription, exists := store.Credentials[ai.CredentialTypeIdentifier()]
+		creddescription, exists := store.CredentialTypes[ai.CredentialTypeIdentifier()]
 		if !exists {
 			return false
 		}

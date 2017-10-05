@@ -122,7 +122,7 @@ func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*Attribut
 	}
 
 	attrs := make([]*big.Int, len(cr.Attributes)+1, len(cr.Attributes)+1)
-	credtype := store.Credentials[*cr.Credential]
+	credtype := store.CredentialTypes[*cr.Credential]
 	if credtype == nil {
 		return nil, errors.New("Unknown credential type")
 	}

@@ -436,7 +436,7 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 		if identifier.IsCredential() {
 			continue // In this case we only disclose the metadata attribute, which is already handled
 		}
-		index, err := cm.ConfigurationStore.Credentials[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
+		index, err := cm.ConfigurationStore.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
 			return nil, err
 		}

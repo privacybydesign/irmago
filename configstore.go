@@ -15,9 +15,9 @@ import (
 
 // ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys.
 type ConfigurationStore struct {
-	SchemeManagers map[SchemeManagerIdentifier]*SchemeManager
-	Issuers        map[IssuerIdentifier]*Issuer
-	Credentials    map[CredentialTypeIdentifier]*CredentialType
+	SchemeManagers  map[SchemeManagerIdentifier]*SchemeManager
+	Issuers         map[IssuerIdentifier]*Issuer
+	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 
 	publicKeys    map[IssuerIdentifier][]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
@@ -56,7 +56,7 @@ func (store *ConfigurationStore) ParseFolder() error {
 	// Init all maps
 	store.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
 	store.Issuers = make(map[IssuerIdentifier]*Issuer)
-	store.Credentials = make(map[CredentialTypeIdentifier]*CredentialType)
+	store.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
 	store.publicKeys = make(map[IssuerIdentifier][]*gabi.PublicKey)
 	store.reverseHashes = make(map[string]CredentialTypeIdentifier)
 
@@ -104,7 +104,7 @@ func (store *ConfigurationStore) addReverseHash(credid CredentialTypeIdentifier)
 
 func (store *ConfigurationStore) hashToCredentialType(hash []byte) *CredentialType {
 	if str, exists := store.reverseHashes[base64.StdEncoding.EncodeToString(hash)]; exists {
-		return store.Credentials[str]
+		return store.CredentialTypes[str]
 	}
 	return nil
 }
@@ -161,7 +161,7 @@ func (store *ConfigurationStore) parseCredentialsFolder(path string) error {
 		}
 		if exists {
 			credid := cred.Identifier()
-			store.Credentials[credid] = cred
+			store.CredentialTypes[credid] = cred
 			store.addReverseHash(credid)
 		}
 		return nil
@@ -222,7 +222,7 @@ func pathToDescription(path string, description interface{}) (bool, error) {
 func (store *ConfigurationStore) Contains(cred CredentialTypeIdentifier) bool {
 	return store.SchemeManagers[cred.IssuerIdentifier().SchemeManagerIdentifier()] != nil &&
 		store.Issuers[cred.IssuerIdentifier()] != nil &&
-		store.Credentials[cred] != nil
+		store.CredentialTypes[cred] != nil
 }
 
 func (store *ConfigurationStore) Copy(source string, parse bool) error {

@@ -149,12 +149,12 @@ func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore, android bool) 
 		"irma-demo.RU issuer has unexpected name")
 	require.Equal(t,
 		"Student Card",
-		store.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
+		store.CredentialTypes[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
 		"irma-demo.RU.studentCard has unexpected name")
 
 	require.Equal(t,
 		"studentID",
-		store.Credentials[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
+		store.CredentialTypes[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
 		"irma-demo.RU.studentCard.studentID has unexpected name")
 
 	// Hash algorithm pseudocode:

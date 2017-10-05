@@ -98,5 +98,5 @@ func (cl CredentialInfoList) Swap(i, j int) {
 // Less implements sort.Interface.
 func (cl CredentialInfoList) Less(i, j int) bool {
 	// TODO Decide on sorting, and if it depends on a TranslatedString, allow language choosing
-	return strings.Compare(cl[i].Type.Name["en"], cl[j].Type.Name["en"]) > 0
+	return strings.Compare(cl[i].Name, cl[j].Name) > 0
 }
