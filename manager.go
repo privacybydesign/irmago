@@ -61,7 +61,7 @@ type IrmaSession interface {
 	SetNonce(*big.Int)
 	GetContext() *big.Int
 	SetContext(*big.Int)
-	DisjunctionList() AttributeDisjunctionList
+	ToDisclose() AttributeDisjunctionList
 	DisclosureChoice() *DisclosureChoice
 	SetDisclosureChoice(choice *DisclosureChoice)
 	Distributed(store *ConfigurationStore) bool

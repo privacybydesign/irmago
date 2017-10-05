@@ -177,8 +177,8 @@ func (ir *IssuanceRequest) SchemeManagers() []SchemeManagerIdentifier {
 	return list
 }
 
-// DisjunctionList returns the attributes that must be disclosed in this issuance session.
-func (ir *IssuanceRequest) DisjunctionList() AttributeDisjunctionList { return ir.Disclose }
+// ToDisclose returns the attributes that must be disclosed in this issuance session.
+func (ir *IssuanceRequest) ToDisclose() AttributeDisjunctionList { return ir.Disclose }
 
 // GetContext returns the context of this session.
 func (ir *IssuanceRequest) GetContext() *big.Int { return ir.Context }
@@ -213,8 +213,8 @@ func (dr *DisclosureRequest) SchemeManagers() []SchemeManagerIdentifier {
 	return list
 }
 
-// DisjunctionList returns the attributes to be disclosed in this session.
-func (dr *DisclosureRequest) DisjunctionList() AttributeDisjunctionList { return dr.Content }
+// ToDisclose returns the attributes to be disclosed in this session.
+func (dr *DisclosureRequest) ToDisclose() AttributeDisjunctionList { return dr.Content }
 
 // GetContext returns the context of this session.
 func (dr *DisclosureRequest) GetContext() *big.Int { return dr.Context }
@@ -227,18 +227,6 @@ func (dr *DisclosureRequest) GetNonce() *big.Int { return dr.Nonce }
 
 // SetNonce sets the nonce of this session.
 func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
-
-// DisjunctionList returns the attributes with which the message must be signed.
-func (sr *SignatureRequest) DisjunctionList() AttributeDisjunctionList { return sr.Content }
-
-// GetContext returns the context of this session.
-func (sr *SignatureRequest) GetContext() *big.Int { return sr.Context }
-
-// SetContext sets the context of this session.
-func (sr *SessionRequest) SetContext(context *big.Int) { sr.Context = context }
-
-// SetNonce sets the nonce of this session.
-func (sr *SessionRequest) SetNonce(nonce *big.Int) { sr.Nonce = nonce }
 
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).

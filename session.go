@@ -163,7 +163,7 @@ func (session *session) start() {
 		}
 	}
 
-	missing := session.credManager.CheckSatisfiability(session.irmaSession.DisjunctionList())
+	missing := session.credManager.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, missing)
 		// TODO: session.transport.Delete() on dialog cancel
