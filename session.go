@@ -159,7 +159,7 @@ func (session *session) start() {
 	if session.Action == ActionIssuing {
 		// Store which public keys the server will use
 		for _, credreq := range session.irmaSession.(*IssuanceRequest).Credentials {
-			credreq.KeyCounter = session.info.Keys[credreq.Credential.IssuerIdentifier()]
+			credreq.KeyCounter = session.info.Keys[credreq.CredentialTypeID.IssuerIdentifier()]
 		}
 	}
 

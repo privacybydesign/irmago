@@ -260,7 +260,7 @@ func (cm *CredentialManager) RemoveAllCredentials() error {
 	removed := map[CredentialTypeIdentifier][]TranslatedString{}
 	list := cm.CredentialInfoList()
 	for _, cred := range list {
-		id := NewCredentialTypeIdentifier(cred.ID)
+		id := NewCredentialTypeIdentifier(cred.CredentialTypeID)
 		removed[id] = cred.Attributes
 		if err := cm.remove(id, cred.Index, false); err != nil {
 			return err
@@ -488,7 +488,7 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
 		var pk *gabi.PublicKey
-		pk, err = cm.ConfigurationStore.PublicKey(futurecred.Credential.IssuerIdentifier(), futurecred.KeyCounter)
+		pk, err = cm.ConfigurationStore.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, err
 		}

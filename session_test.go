@@ -94,8 +94,8 @@ func getIssuanceJwt(name string, id AttributeTypeIdentifier) interface{} {
 	return NewIdentityProviderJwt(name, &IssuanceRequest{
 		Credentials: []*CredentialRequest{
 			{
-				Validity:   &expiry,
-				Credential: &credid1,
+				Validity:         &expiry,
+				CredentialTypeID: &credid1,
 				Attributes: map[string]string{
 					"university":        "Radboud",
 					"studentCardNumber": "3.14159265358979323846264338328",
@@ -103,8 +103,8 @@ func getIssuanceJwt(name string, id AttributeTypeIdentifier) interface{} {
 					"level":             "42",
 				},
 			}, {
-				Validity:   &expiry,
-				Credential: &credid2,
+				Validity:         &expiry,
+				CredentialTypeID: &credid2,
 				Attributes: map[string]string{
 					"BSN": "299792458",
 				},
@@ -211,9 +211,9 @@ func TestKeyshareRegistrationAndSessions(t *testing.T) {
 	jwt.(*IdentityProviderJwt).Request.Request.Credentials = append(
 		jwt.(*IdentityProviderJwt).Request.Request.Credentials,
 		&CredentialRequest{
-			Validity:   &expiry,
-			Credential: &credid,
-			Attributes: map[string]string{"email": "example@example.com"},
+			Validity:         &expiry,
+			CredentialTypeID: &credid,
+			Attributes:       map[string]string{"email": "example@example.com"},
 		},
 	)
 	sessionHelper(t, jwt, "issue", manager)
@@ -254,9 +254,9 @@ func TestKeyshareSessions(t *testing.T) {
 	jwt.(*IdentityProviderJwt).Request.Request.Credentials = append(
 		jwt.(*IdentityProviderJwt).Request.Request.Credentials,
 		&CredentialRequest{
-			Validity:   &expiry,
-			Credential: &credid,
-			Attributes: map[string]string{"email": "example@example.com"},
+			Validity:         &expiry,
+			CredentialTypeID: &credid,
+			Attributes:       map[string]string{"email": "example@example.com"},
 		},
 	)
 	sessionHelper(t, jwt, "issue", manager)

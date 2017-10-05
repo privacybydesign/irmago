@@ -56,10 +56,10 @@ type IssuanceRequest struct {
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
-	Validity   *Timestamp                `json:"validity"`
-	KeyCounter int                       `json:"keyCounter"`
-	Credential *CredentialTypeIdentifier `json:"credential"`
-	Attributes map[string]string         `json:"attributes"`
+	Validity         *Timestamp                `json:"validity"`
+	KeyCounter       int                       `json:"keyCounter"`
+	CredentialTypeID *CredentialTypeIdentifier `json:"credential"`
+	Attributes       map[string]string         `json:"attributes"`
 }
 
 // ServerJwt contains standard JWT fields.
@@ -114,7 +114,7 @@ type issuanceState struct {
 func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*AttributeList, error) {
 	meta := NewMetadataAttribute()
 	meta.setKeyCounter(cr.KeyCounter)
-	meta.setCredentialTypeIdentifier(cr.Credential.String())
+	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
 	meta.setSigningDate()
 	err := meta.setExpiryDate(cr.Validity)
 	if err != nil {
@@ -122,7 +122,7 @@ func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*Attribut
 	}
 
 	attrs := make([]*big.Int, len(cr.Attributes)+1, len(cr.Attributes)+1)
-	credtype := store.CredentialTypes[*cr.Credential]
+	credtype := store.CredentialTypes[*cr.CredentialTypeID]
 	if credtype == nil {
 		return nil, errors.New("Unknown credential type")
 	}
@@ -167,7 +167,7 @@ func (ir *IssuanceRequest) Distributed(store *ConfigurationStore) bool {
 func (ir *IssuanceRequest) SchemeManagers() []SchemeManagerIdentifier {
 	list := []SchemeManagerIdentifier{}
 	for _, cred := range ir.Credentials {
-		list = append(list, cred.Credential.IssuerIdentifier().SchemeManagerIdentifier())
+		list = append(list, cred.CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier())
 	}
 	for _, disjunctions := range ir.Disclose {
 		for _, attr := range disjunctions.Attributes {

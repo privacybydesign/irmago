@@ -20,16 +20,16 @@ type credential struct {
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
-	ID              string             // e.g., "irma-demo.RU.studentCard"
-	Name            string             // e.g., "studentCard"
-	IssuerID        string             // e.g., "RU"
-	SchemeManagerID string             // e.g., "irma-demo"
-	Index           int                // This is the Index-th credential instance of this type
-	SignedOn        Timestamp          // Unix timestamp
-	Expires         Timestamp          // Unix timestamp
-	Attributes      []TranslatedString // Human-readable rendered attributes
-	Logo            string             // Path to logo on storage
-	Hash            string             // SHA256 hash over the attributes
+	CredentialTypeID string             // e.g., "irma-demo.RU.studentCard"
+	Name             string             // e.g., "studentCard"
+	IssuerID         string             // e.g., "RU"
+	SchemeManagerID  string             // e.g., "irma-demo"
+	Index            int                // This is the Index-th credential instance of this type
+	SignedOn         Timestamp          // Unix timestamp
+	Expires          Timestamp          // Unix timestamp
+	Attributes       []TranslatedString // Human-readable rendered attributes
+	Logo             string             // Path to logo on storage
+	Hash            string              // SHA256 hash over the attributes
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
@@ -55,12 +55,12 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 	}
 
 	return &CredentialInfo{
-		ID:         credtype.Identifier().String(),
-		SignedOn:   Timestamp(meta.SigningDate()),
-		Expires:    Timestamp(meta.Expiry()),
-		Attributes: attrs,
-		Logo:       path,
-		Hash:       NewAttributeListFromInts(ints, store).hash(),
+		CredentialTypeID: credtype.Identifier().String(),
+		SignedOn:         Timestamp(meta.SigningDate()),
+		Expires:          Timestamp(meta.Expiry()),
+		Attributes:       attrs,
+		Logo:             path,
+		Hash:             NewAttributeListFromInts(ints, store).hash(),
 	}
 }
 
