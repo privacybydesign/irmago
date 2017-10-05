@@ -20,16 +20,16 @@ type credential struct {
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
-	ID            string             // e.g., "irma-demo.RU.studentCard"
-	Index         int                // This is the Index-th credential instance of this type
-	SignedOn      Timestamp          // Unix timestamp
-	Expires       Timestamp          // Unix timestamp
-	Type          *CredentialType    // Credential information from ConfigurationStore
-	Issuer        *Issuer            // Issuer information from ConfigurationStore
-	SchemeManager *SchemeManager     // Scheme manager information from ConfigurationStore
-	Attributes    []TranslatedString // Human-readable rendered attributes
-	Logo          string             // Path to logo on storage
-	Hash          string             // SHA256 hash over the attributes
+	ID              string             // e.g., "irma-demo.RU.studentCard"
+	Name            string             // e.g., "studentCard"
+	IssuerID        string             // e.g., "RU"
+	SchemeManagerID string             // e.g., "irma-demo"
+	Index           int                // This is the Index-th credential instance of this type
+	SignedOn        Timestamp          // Unix timestamp
+	Expires         Timestamp          // Unix timestamp
+	Attributes      []TranslatedString // Human-readable rendered attributes
+	Logo            string             // Path to logo on storage
+	Hash            string             // SHA256 hash over the attributes
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
@@ -38,7 +38,6 @@ type CredentialInfoList []*CredentialInfo
 func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialInfo {
 	meta := MetadataFromInt(ints[0], store)
 	credtype := meta.CredentialType()
-	issid := credtype.IssuerIdentifier()
 
 	attrs := make([]TranslatedString, len(credtype.Attributes))
 	for i := range credtype.Attributes {
@@ -56,15 +55,12 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 	}
 
 	return &CredentialInfo{
-		ID:            credtype.Identifier().String(),
-		SignedOn:      Timestamp(meta.SigningDate()),
-		Expires:       Timestamp(meta.Expiry()),
-		Type:          credtype,
-		Issuer:        store.Issuers[issid],
-		SchemeManager: store.SchemeManagers[issid.SchemeManagerIdentifier()],
-		Attributes:    attrs,
-		Logo:          path,
-		Hash:          NewAttributeListFromInts(ints, store).hash(),
+		ID:         credtype.Identifier().String(),
+		SignedOn:   Timestamp(meta.SigningDate()),
+		Expires:    Timestamp(meta.Expiry()),
+		Attributes: attrs,
+		Logo:       path,
+		Hash:       NewAttributeListFromInts(ints, store).hash(),
 	}
 }
 
