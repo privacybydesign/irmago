@@ -50,6 +50,7 @@ type AttributeList struct {
 	Ints               []*big.Int
 	strings            []TranslatedString
 	info               *CredentialInfo
+	h                  string
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
@@ -68,12 +69,15 @@ func (al *AttributeList) Info() *CredentialInfo {
 }
 
 func (al *AttributeList) hash() string {
-	bytes := []byte{}
-	for _, i := range al.Ints {
-		bytes = append(bytes, i.Bytes()...)
+	if al.h == "" {
+		bytes := []byte{}
+		for _, i := range al.Ints {
+			bytes = append(bytes, i.Bytes()...)
+		}
+		shasum := sha256.Sum256(bytes)
+		al.h = hex.EncodeToString(shasum[:])
 	}
-	shasum := sha256.Sum256(bytes)
-	return hex.EncodeToString(shasum[:])
+	return al.h
 }
 
 // Strings converts the current instance to human-readable strings.

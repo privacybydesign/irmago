@@ -193,12 +193,13 @@ func (session *session) start() {
 		}
 	}
 
-	missing := session.credManager.CheckSatisfiability(session.irmaSession.ToDisclose())
+	candidates, missing := session.credManager.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, missing)
 		// TODO: session.transport.Delete() on dialog cancel
 		return
 	}
+	session.irmaSession.SetCandidates(candidates)
 
 	// Ask for permission to execute the session
 	callback := PermissionHandler(func(proceed bool, choice *DisclosureChoice) {

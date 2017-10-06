@@ -311,7 +311,8 @@ func (cm *CredentialManager) credentialByHash(hash string) (*credential, int, er
 }
 
 func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (*credential, error) {
-	return cm.credential(id.Type, id.Index)
+	cred, _, err := cm.credentialByHash(id.Hash)
+	return cred, err
 }
 
 // credential returns the requested credential, or nil if we do not have it.
@@ -365,17 +366,16 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 		if !cm.ConfigurationStore.Contains(credID) {
 			continue
 		}
-		creds := cm.credentials[credID]
+		creds := cm.attributes[credID]
 		count := len(creds)
 		if count == 0 {
 			continue
 		}
-		for i, cred := range creds {
-			id := &AttributeIdentifier{Type: attribute, Index: i, Count: count}
+		for _, attrs := range creds {
+			id := &AttributeIdentifier{Type: attribute, Hash: attrs.hash()}
 			if attribute.IsCredential() {
 				candidates = append(candidates, id)
 			} else {
-				attrs := cred.AttributeList()
 				val := attrs.untranslatedAttribute(attribute)
 				if val == "" { // This won't handle empty attributes correctly
 					continue
@@ -393,19 +393,26 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 // CheckSatisfiability checks if this credential manager has the required attributes
 // to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
 // are returned.
-func (cm *CredentialManager) CheckSatisfiability(disjunctions AttributeDisjunctionList) AttributeDisjunctionList {
-	missing := make(AttributeDisjunctionList, 0, 5)
-	for _, disjunction := range disjunctions {
-		if len(cm.Candidates(disjunction)) == 0 {
+func (cm *CredentialManager) CheckSatisfiability(
+	disjunctions AttributeDisjunctionList,
+) ([][]*AttributeIdentifier, AttributeDisjunctionList) {
+	candidates := [][]*AttributeIdentifier{}
+	missing := AttributeDisjunctionList{}
+	for i, disjunction := range disjunctions {
+		candidates = append(candidates, []*AttributeIdentifier{})
+		candidates[i] = cm.Candidates(disjunction)
+		if len(candidates[i]) == 0 {
 			missing = append(missing, disjunction)
 		}
 	}
-
-	return missing
+	return candidates, missing
 }
 
 func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[CredentialIdentifier][]int, error) {
 	grouped := make(map[CredentialIdentifier][]int)
+	if choice == nil || choice.Attributes == nil {
+		return grouped, nil
+	}
 
 	for _, attribute := range choice.Attributes {
 		identifier := attribute.Type

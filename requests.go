@@ -17,8 +17,13 @@ import (
 type SessionRequest struct {
 	Context     *big.Int `json:"context"`
 	Nonce       *big.Int `json:"nonce"`
+	Candidates  [][]*AttributeIdentifier
 	choice      *DisclosureChoice
 	identifiers *IrmaIdentifierSet
+}
+
+func (sr *SessionRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
+	sr.Candidates = candidates
 }
 
 // DisclosureChoice returns the attributes to be disclosed in this session.
@@ -113,6 +118,7 @@ type IrmaSession interface {
 	ToDisclose() AttributeDisjunctionList
 	DisclosureChoice() *DisclosureChoice
 	SetDisclosureChoice(choice *DisclosureChoice)
+	SetCandidates(candidates [][]*AttributeIdentifier)
 	Identifiers() *IrmaIdentifierSet
 }
 

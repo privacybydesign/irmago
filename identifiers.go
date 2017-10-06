@@ -26,16 +26,14 @@ type AttributeTypeIdentifier struct {
 
 // CredentialIdentifier identifies a credential instance.
 type CredentialIdentifier struct {
-	Type  CredentialTypeIdentifier
-	Index int
-	Count int
+	Type CredentialTypeIdentifier
+	Hash string
 }
 
 // AttributeIdentifier identifies an attribute instance.
 type AttributeIdentifier struct {
-	Type  AttributeTypeIdentifier
-	Index int
-	Count int
+	Type AttributeTypeIdentifier
+	Hash string
 }
 
 // IrmaIdentifierSet contains a set (ensured by using map[...]struct{}) of all scheme managers,
@@ -107,7 +105,7 @@ func (id AttributeTypeIdentifier) IsCredential() bool {
 
 // CredentialIdentifier returns the credential identifier of this attribute.
 func (ai *AttributeIdentifier) CredentialIdentifier() CredentialIdentifier {
-	return CredentialIdentifier{Type: ai.Type.CredentialTypeIdentifier(), Index: ai.Index, Count: ai.Count}
+	return CredentialIdentifier{Type: ai.Type.CredentialTypeIdentifier(), Hash: ai.Hash}
 }
 
 // MarshalText implements encoding.TextMarshaler.
