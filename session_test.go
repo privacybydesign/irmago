@@ -61,6 +61,9 @@ func (th TestHandler) RequestIssuancePermission(request IssuanceRequest, ServerN
 func (th TestHandler) RequestSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler) {
 	th.RequestVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
+func (th TestHandler) RequestSchemeManagerPermission(manager *SchemeManager, callback func(proceed bool)) {
+	callback(true)
+}
 func (th TestHandler) RequestPin(remainingAttempts int, callback func(proceed bool, pin string)) {
 	callback(true, "12345")
 }
@@ -190,7 +193,7 @@ func registerKeyshareServer(t *testing.T, manager *CredentialManager) {
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
 	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
-	require.NoError(t, manager.KeyshareEnroll(NewSchemeManagerIdentifier("test"), email, "12345"))
+	require.NoError(t, manager.keyshareEnrollWorker(NewSchemeManagerIdentifier("test"), email, "12345"))
 }
 
 // Register a new account at the keyshare server and do an issuance, disclosure,

@@ -49,23 +49,11 @@ type CredentialManager struct {
 	ConfigurationStore    *ConfigurationStore
 	irmaConfigurationPath string
 	androidStoragePath    string
+	keyshareHandler       KeyshareHandler
 }
 
 type secretKey struct {
 	Key *big.Int
-}
-
-// IrmaSession is an IRMA session.
-type IrmaSession interface {
-	GetNonce() *big.Int
-	SetNonce(*big.Int)
-	GetContext() *big.Int
-	SetContext(*big.Int)
-	ToDisclose() AttributeDisjunctionList
-	DisclosureChoice() *DisclosureChoice
-	SetDisclosureChoice(choice *DisclosureChoice)
-	Distributed(store *ConfigurationStore) bool
-	SchemeManagers() []SchemeManagerIdentifier
 }
 
 // NewCredentialManager creates a new CredentialManager that uses the directory
@@ -94,25 +82,25 @@ func NewCredentialManager(
 		return nil, err
 	}
 
-	var store *ConfigurationStore
-	if store, err = NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath); err != nil {
-		return nil, err
-	}
-	if err = store.ParseFolder(); err != nil {
-		return nil, err
-	}
-
 	cm := &CredentialManager{
 		credentials:           make(map[CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		androidStoragePath:    androidStoragePath,
-		ConfigurationStore:    store,
-		storage:               storage{storagePath: storagePath, ConfigurationStore: store},
+		keyshareHandler:       keyshareHandler,
+	}
+
+	cm.ConfigurationStore, err = NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath)
+	if err != nil {
+		return nil, err
+	}
+	if err = cm.ConfigurationStore.ParseFolder(); err != nil {
+		return nil, err
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
+	cm.storage = storage{storagePath: storagePath, ConfigurationStore: cm.ConfigurationStore}
 	if err = cm.storage.EnsureStorageExists(); err != nil {
 		return nil, err
 	}
@@ -143,9 +131,7 @@ func NewCredentialManager(
 		if keyshareHandler == nil {
 			return nil, errors.New("Keyshare server found but no KeyshareHandler was given")
 		}
-		keyshareHandler.StartRegistration(unenrolled[0], func(email, pin string) error {
-			return cm.KeyshareEnroll(unenrolled[0].Identifier(), email, pin)
-		})
+		cm.KeyshareEnroll(unenrolled[0], keyshareHandler)
 	default:
 		return nil, errors.New("Too many keyshare servers")
 	}
@@ -582,7 +568,20 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
 }
 
 // KeyshareEnroll attempts to register at the keyshare server of the specified scheme manager.
-func (cm *CredentialManager) KeyshareEnroll(managerID SchemeManagerIdentifier, email, pin string) error {
+func (cm *CredentialManager) KeyshareEnroll(manager *SchemeManager, handler KeyshareHandler) {
+	handler.StartRegistration(manager, func(email, pin string) {
+		go func() {
+			err := cm.keyshareEnrollWorker(manager.Identifier(), email, pin)
+			if err != nil {
+				handler.RegistrationError(err)
+			} else {
+				handler.RegistrationSuccess()
+			}
+		}()
+	})
+}
+
+func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentifier, email, pin string) error {
 	manager, ok := cm.ConfigurationStore.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")

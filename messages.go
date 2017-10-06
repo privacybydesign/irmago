@@ -68,10 +68,11 @@ const (
 
 // Actions
 const (
-	ActionDisclosing = Action("disclosing")
-	ActionSigning    = Action("signing")
-	ActionIssuing    = Action("issuing")
-	ActionUnknown    = Action("unknown")
+	ActionSchemeManager = Action("schememanager")
+	ActionDisclosing    = Action("disclosing")
+	ActionSigning       = Action("signing")
+	ActionIssuing       = Action("issuing")
+	ActionUnknown       = Action("unknown")
 )
 
 // Protocol errors
@@ -100,6 +101,8 @@ const (
 	ErrorServerResponse = ErrorType("serverResponse")
 	// Credential type not present in our ConfigurationStore
 	ErrorUnknownCredentialType = ErrorType("unknownCredentialType")
+	// Error during downloading of credential type, issuer, or public keys
+	ErrorConfigurationStoreDownload = ErrorType("configurationStoreDownload")
 )
 
 func (e *SessionError) Error() string {

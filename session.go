@@ -28,6 +28,7 @@ type Handler interface {
 	RequestIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler)
 	RequestVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler)
 	RequestSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler)
+	RequestSchemeManagerPermission(manager *SchemeManager, callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback func(proceed bool, pin string))
 }
@@ -45,6 +46,7 @@ type session struct {
 	irmaSession IrmaSession
 	transport   *HTTPTransport
 	choice      *DisclosureChoice
+	newmanager  *SchemeManager
 }
 
 // We implement the handler for the keyshare protocol
@@ -111,6 +113,7 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 	case ActionDisclosing: // nop
 	case ActionSigning: // nop
 	case ActionIssuing: // nop
+	case ActionSchemeManager: // nop
 	case ActionUnknown:
 		fallthrough
 	default:
@@ -138,6 +141,11 @@ func (session *session) fail(err *SessionError) {
 func (session *session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
+	if session.Action == ActionSchemeManager {
+		session.managerSession()
+		return
+	}
+
 	// Get the first IRMA protocol message and parse it
 	session.info = &SessionInfo{}
 	Err := session.transport.Get("jwt", session.info)
@@ -161,6 +169,21 @@ func (session *session) start() {
 		// Store which public keys the server will use
 		for _, credreq := range ir.Credentials {
 			credreq.KeyCounter = session.info.Keys[credreq.CredentialTypeID.IssuerIdentifier()]
+		}
+	}
+
+	// Download missing credential types/issuers/public keys from the scheme manager
+	if err = session.credManager.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
+		session.Handler.Failure(
+			session.Action,
+			&SessionError{ErrorType: ErrorConfigurationStoreDownload, Err: err},
+		)
+		return
+	}
+
+	if session.Action == ActionIssuing {
+		ir := session.irmaSession.(*IssuanceRequest)
+		for _, credreq := range ir.Credentials {
 			info, err := credreq.Info(session.credManager.ConfigurationStore)
 			if err != nil {
 				session.fail(&SessionError{ErrorType: ErrorUnknownCredentialType, Err: err})
@@ -204,7 +227,7 @@ func (session *session) do(proceed bool) {
 	}
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
-	if !session.irmaSession.Distributed(session.credManager.ConfigurationStore) {
+	if !session.irmaSession.Identifiers().Distributed(session.credManager.ConfigurationStore) {
 		var message interface{}
 		var err error
 		switch session.Action {
@@ -298,4 +321,43 @@ func (session *session) sendResponse(message interface{}) {
 
 	_ = session.credManager.addLogEntry(log) // TODO err
 	session.Handler.Success(session.Action)
+}
+
+func (session *session) managerSession() {
+	manager, err := session.credManager.ConfigurationStore.DownloadSchemeManager(session.ServerURL)
+	if err != nil {
+		session.Handler.Failure(session.Action, &SessionError{Err: err}) // TODO
+		return
+	}
+	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
+		if !proceed {
+			session.Handler.Cancelled(session.Action)
+			return
+		}
+		session.newmanager = manager
+		if manager.Distributed() {
+			session.credManager.KeyshareEnroll(manager, KeyshareHandler(session))
+		} else {
+			session.RegistrationSuccess()
+		}
+	})
+	return
+}
+
+func (session *session) StartRegistration(manager *SchemeManager, callback func(email, pin string)) {
+	session.credManager.keyshareHandler.StartRegistration(manager, callback)
+}
+
+func (session *session) RegistrationError(err error) {
+	session.Handler.Failure(session.Action, &SessionError{Err: err}) // TODO
+	session.credManager.keyshareHandler.RegistrationError(err)
+}
+
+func (session *session) RegistrationSuccess() {
+	if err := session.credManager.ConfigurationStore.AddSchemeManager(session.newmanager); err != nil {
+		session.Handler.Failure(session.Action, &SessionError{})
+		return
+	}
+	session.Handler.Success(session.Action)
+	session.credManager.keyshareHandler.RegistrationSuccess()
 }

@@ -15,9 +15,10 @@ import (
 
 // SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
-	Context *big.Int `json:"context"`
-	Nonce   *big.Int `json:"nonce"`
-	choice  *DisclosureChoice
+	Context     *big.Int `json:"context"`
+	Nonce       *big.Int `json:"nonce"`
+	choice      *DisclosureChoice
+	identifiers *IrmaIdentifierSet
 }
 
 // DisclosureChoice returns the attributes to be disclosed in this session.
@@ -103,6 +104,18 @@ type IdentityProviderJwt struct {
 	Request IdentityProviderRequest `json:"iprequest"`
 }
 
+// IrmaSession is an IRMA session.
+type IrmaSession interface {
+	GetNonce() *big.Int
+	SetNonce(*big.Int)
+	GetContext() *big.Int
+	SetContext(*big.Int)
+	ToDisclose() AttributeDisjunctionList
+	DisclosureChoice() *DisclosureChoice
+	SetDisclosureChoice(choice *DisclosureChoice)
+	Identifiers() *IrmaIdentifierSet
+}
+
 // Timestamp is a time.Time that marshals to Unix timestamps.
 type Timestamp time.Time
 
@@ -162,28 +175,35 @@ func newIssuanceState() (*issuanceState, error) {
 	}, nil
 }
 
-// Distributed indicates if a keyshare is involved in this session.
-func (ir *IssuanceRequest) Distributed(store *ConfigurationStore) bool {
-	for _, manager := range ir.SchemeManagers() {
-		if store.SchemeManagers[manager].Distributed() {
-			return true
+func (dr *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
+	if dr.identifiers == nil {
+		dr.identifiers = &IrmaIdentifierSet{
+			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
+			Issuers:         map[IssuerIdentifier]struct{}{},
+			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+			PublicKeys:      map[IssuerIdentifier][]int{},
 		}
-	}
-	return false
-}
 
-// SchemeManagers returns a list of all scheme managers involved in this session.
-func (ir *IssuanceRequest) SchemeManagers() []SchemeManagerIdentifier {
-	list := []SchemeManagerIdentifier{}
-	for _, cred := range ir.Credentials {
-		list = append(list, cred.CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier())
-	}
-	for _, disjunctions := range ir.Disclose {
-		for _, attr := range disjunctions.Attributes {
-			list = append(list, attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier())
+		for _, credreq := range dr.Credentials {
+			issuer := credreq.CredentialTypeID.IssuerIdentifier()
+			dr.identifiers.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
+			dr.identifiers.Issuers[issuer] = struct{}{}
+			dr.identifiers.CredentialTypes[*credreq.CredentialTypeID] = struct{}{}
+			if dr.identifiers.PublicKeys[issuer] == nil {
+				dr.identifiers.PublicKeys[issuer] = []int{}
+			}
+			dr.identifiers.PublicKeys[issuer] = append(dr.identifiers.PublicKeys[issuer], credreq.KeyCounter)
+		}
+
+		for _, disjunction := range dr.Disclose {
+			for _, attr := range disjunction.Attributes {
+				dr.identifiers.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+				dr.identifiers.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
+				dr.identifiers.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
+			}
 		}
 	}
-	return list
+	return dr.identifiers
 }
 
 // ToDisclose returns the attributes that must be disclosed in this issuance session.
@@ -201,25 +221,23 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 // SetNonce sets the nonce of this session.
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
 
-// Distributed indicates if a keyshare is involved in this session.
-func (dr *DisclosureRequest) Distributed(store *ConfigurationStore) bool {
-	for _, manager := range dr.SchemeManagers() {
-		if store.SchemeManagers[manager].Distributed() {
-			return true
+func (dr *DisclosureRequest) Identifiers() *IrmaIdentifierSet {
+	if dr.identifiers == nil {
+		dr.identifiers = &IrmaIdentifierSet{
+			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
+			Issuers:         map[IssuerIdentifier]struct{}{},
+			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+			PublicKeys:      map[IssuerIdentifier][]int{},
+		}
+		for _, disjunction := range dr.Content {
+			for _, attr := range disjunction.Attributes {
+				dr.identifiers.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+				dr.identifiers.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
+				dr.identifiers.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
+			}
 		}
 	}
-	return false
-}
-
-// SchemeManagers returns a list of all scheme managers involved in this session.
-func (dr *DisclosureRequest) SchemeManagers() []SchemeManagerIdentifier {
-	list := []SchemeManagerIdentifier{}
-	for _, disjunction := range dr.Content {
-		for _, attr := range disjunction.Attributes {
-			list = append(list, attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier())
-		}
-	}
-	return list
+	return dr.identifiers
 }
 
 // ToDisclose returns the attributes to be disclosed in this session.
