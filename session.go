@@ -113,7 +113,7 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 	case ActionDisclosing: // nop
 	case ActionSigning: // nop
 	case ActionIssuing: // nop
-	case ActionSchemeManager: // nop
+	//case ActionSchemeManager: // nop
 	case ActionUnknown:
 		fallthrough
 	default:
