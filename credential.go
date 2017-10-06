@@ -29,7 +29,7 @@ type CredentialInfo struct {
 	Expires          Timestamp          // Unix timestamp
 	Attributes       []TranslatedString // Human-readable rendered attributes
 	Logo             string             // Path to logo on storage
-	Hash            string              // SHA256 hash over the attributes
+	Hash             string             // SHA256 hash over the attributes
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
@@ -53,9 +53,13 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 	if !exists {
 		path = ""
 	}
-
+	id := credtype.Identifier()
+	issid := id.IssuerIdentifier()
 	return &CredentialInfo{
-		CredentialTypeID: credtype.Identifier().String(),
+		CredentialTypeID: id.String(),
+		Name:             id.Name(),
+		IssuerID:         issid.Name(),
+		SchemeManagerID:  issid.SchemeManagerIdentifier().String(),
 		SignedOn:         Timestamp(meta.SigningDate()),
 		Expires:          Timestamp(meta.Expiry()),
 		Attributes:       attrs,

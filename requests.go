@@ -47,8 +47,9 @@ type SignatureRequest struct {
 // optionally also asking for certain attributes to be simultaneously disclosed.
 type IssuanceRequest struct {
 	SessionRequest
-	Credentials []*CredentialRequest     `json:"credentials"`
-	Disclose    AttributeDisjunctionList `json:"disclose"`
+	Credentials        []*CredentialRequest     `json:"credentials"`
+	Disclose           AttributeDisjunctionList `json:"disclose"`
+	CredentialInfoList CredentialInfoList       `json:",omitempty"`
 
 	state *issuanceState
 }
@@ -108,6 +109,14 @@ type Timestamp time.Time
 type issuanceState struct {
 	nonce2   *big.Int
 	builders []*gabi.CredentialBuilder
+}
+
+func (cr *CredentialRequest) Info(store *ConfigurationStore) (*CredentialInfo, error) {
+	list, err := cr.AttributeList(store)
+	if err != nil {
+		return nil, err
+	}
+	return NewCredentialInfo(list.Ints, store), nil
 }
 
 // AttributeList returns the list of attributes from this credential request.

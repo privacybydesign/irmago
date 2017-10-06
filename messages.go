@@ -98,6 +98,8 @@ const (
 	ErrorApi = ErrorType("api")
 	// Server returned unexpected or malformed response
 	ErrorServerResponse = ErrorType("serverResponse")
+	// Credential type not present in our ConfigurationStore
+	ErrorUnknownCredentialType = ErrorType("unknownCredentialType")
 )
 
 func (e *SessionError) Error() string {

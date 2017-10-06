@@ -157,9 +157,16 @@ func (session *session) start() {
 	session.irmaSession.SetContext(session.info.Context)
 	session.irmaSession.SetNonce(session.info.Nonce)
 	if session.Action == ActionIssuing {
+		ir := session.irmaSession.(*IssuanceRequest)
 		// Store which public keys the server will use
-		for _, credreq := range session.irmaSession.(*IssuanceRequest).Credentials {
+		for _, credreq := range ir.Credentials {
 			credreq.KeyCounter = session.info.Keys[credreq.CredentialTypeID.IssuerIdentifier()]
+			info, err := credreq.Info(session.credManager.ConfigurationStore)
+			if err != nil {
+				session.fail(&SessionError{ErrorType: ErrorUnknownCredentialType, Err: err})
+				return
+			}
+			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
 		}
 	}
 
