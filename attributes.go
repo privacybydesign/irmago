@@ -194,6 +194,7 @@ func (attr *MetadataAttribute) setValidityDuration(weeks int) {
 
 func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
 	if timestamp == nil {
+		attr.setValidityDuration(ValidityDefault)
 		return nil
 	}
 	expiry := time.Time(*timestamp).Unix()
