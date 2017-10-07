@@ -328,11 +328,18 @@ func (store *ConfigurationStore) AddSchemeManager(manager *SchemeManager) error 
 	return nil
 }
 
-func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) error {
+func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet, error) {
 	var contains bool
+	var err error
+	downloaded := &IrmaIdentifierSet{
+		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
+		Issuers:         map[IssuerIdentifier]struct{}{},
+		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+	}
+
 	for manid := range set.SchemeManagers {
 		if _, contains = store.SchemeManagers[manid]; !contains {
-			return errors.Errorf("Unknown scheme manager: %s", manid)
+			return nil, errors.Errorf("Unknown scheme manager: %s", manid)
 		}
 	}
 
@@ -341,20 +348,27 @@ func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) error {
 		if _, contains = store.Issuers[issid]; !contains {
 			url := store.SchemeManagers[issid.SchemeManagerIdentifier()].URL + "/" + issid.Name()
 			path := fmt.Sprintf("%s/%s/%s", store.path, issid.SchemeManagerIdentifier().String(), issid.Name())
-			transport.GetFile(url+"/description.xml", path+"/description.xml")
-			transport.GetFile(url+"/logo.png", path+"/logo.png")
+			if err = transport.GetFile(url+"/description.xml", path+"/description.xml"); err != nil {
+				return nil, err
+			}
+			if transport.GetFile(url+"/logo.png", path+"/logo.png"); err != nil {
+				return nil, err
+			}
+			downloaded.Issuers[issid] = struct{}{}
 		}
 		for issid, list := range set.PublicKeys {
 			for _, count := range list {
 				pk, err := store.PublicKey(issid, count)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				if pk == nil {
 					manager := issid.SchemeManagerIdentifier()
 					suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
 					path := fmt.Sprintf("%s/%s/%s", store.path, manager.String(), suffix)
-					transport.GetFile(store.SchemeManagers[manager].URL+suffix, path)
+					if transport.GetFile(store.SchemeManagers[manager].URL+suffix, path); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -365,15 +379,18 @@ func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) error {
 			manager := issuer.SchemeManagerIdentifier()
 			local := fmt.Sprintf("%s/%s/%s/Issues", store.path, manager.Name(), issuer.Name())
 			if err := ensureDirectoryExists(local); err != nil {
-				return err
+				return nil, err
 			}
-			transport.GetFile(
+			if transport.GetFile(
 				fmt.Sprintf("%s/%s/Issues/%s/description.xml",
 					store.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
 				fmt.Sprintf("%s/%s/description.xml", local, credid.Name()),
-			)
+			); err != nil {
+				return nil, err
+			}
+			downloaded.CredentialTypes[credid] = struct{}{}
 		}
 	}
 
-	return store.ParseFolder()
+	return downloaded, store.ParseFolder()
 }

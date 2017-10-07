@@ -49,7 +49,22 @@ type CredentialManager struct {
 	ConfigurationStore    *ConfigurationStore
 	irmaConfigurationPath string
 	androidStoragePath    string
-	keyshareHandler       KeyshareHandler
+	handler               ClientHandler
+}
+
+// KeyshareHandler is used for asking the user for his email address and PIN,
+// for registering at a keyshare server.
+type KeyshareHandler interface {
+	StartRegistration(manager *SchemeManager, registrationCallback func(email, pin string))
+	RegistrationError(err error)
+	RegistrationSuccess()
+}
+
+type ClientHandler interface {
+	KeyshareHandler
+
+	UpdateConfigurationStore(new *IrmaIdentifierSet)
+	UpdateAttributes()
 }
 
 type secretKey struct {
@@ -61,8 +76,8 @@ type secretKey struct {
 // is the path to a (possibly readonly) folder containing irma_configuration;
 // androidStoragePath is an optional path to the files of the old android app
 // (specify "" if you do not want to parse the old android app files),
-// and keyshareHandler is used for when a registration to a keyshare server needs
-// to happen.
+// and handler is used for informing the user of new stuff, and when a
+// registration to a keyshare server needs to happen.
 // The credential manager returned by this function has been fully deserialized
 // and is ready for use.
 //
@@ -72,7 +87,7 @@ func NewCredentialManager(
 	storagePath string,
 	irmaConfigurationPath string,
 	androidStoragePath string,
-	keyshareHandler KeyshareHandler,
+	handler ClientHandler,
 ) (*CredentialManager, error) {
 	var err error
 	if err = AssertPathExists(storagePath); err != nil {
@@ -88,7 +103,7 @@ func NewCredentialManager(
 		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		androidStoragePath:    androidStoragePath,
-		keyshareHandler:       keyshareHandler,
+		handler:               handler,
 	}
 
 	cm.ConfigurationStore, err = NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath)
@@ -128,10 +143,7 @@ func NewCredentialManager(
 	switch len(unenrolled) {
 	case 0: // nop
 	case 1:
-		if keyshareHandler == nil {
-			return nil, errors.New("Keyshare server found but no KeyshareHandler was given")
-		}
-		cm.KeyshareEnroll(unenrolled[0], keyshareHandler)
+		cm.KeyshareEnroll(unenrolled[0], cm.handler)
 	default:
 		return nil, errors.New("Too many keyshare servers")
 	}

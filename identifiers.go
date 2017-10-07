@@ -161,3 +161,7 @@ func (set *IrmaIdentifierSet) Distributed(store *ConfigurationStore) bool {
 	}
 	return false
 }
+
+func (set *IrmaIdentifierSet) Empty() bool {
+	return len(set.SchemeManagers) == 0 && len(set.Issuers) == 0 && len(set.CredentialTypes) == 0 && len(set.PublicKeys) == 0
+}

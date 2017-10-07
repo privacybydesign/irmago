@@ -29,10 +29,12 @@ func TestMain(m *testing.M) {
 
 type IgnoringKeyshareHandler struct{}
 
+func (i *IgnoringKeyshareHandler) UpdateConfigurationStore(new *IrmaIdentifierSet) {}
+func (i *IgnoringKeyshareHandler) UpdateAttributes()                               {}
+func (i *IgnoringKeyshareHandler) RegistrationError(err error)                     {}
+func (i *IgnoringKeyshareHandler) RegistrationSuccess()                            {}
 func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string)) {
 }
-func (i *IgnoringKeyshareHandler) RegistrationError(err error) {}
-func (i *IgnoringKeyshareHandler) RegistrationSuccess()        {}
 
 func parseStorage(t *testing.T) *CredentialManager {
 	exists, err := PathExists("testdata/storage/test")

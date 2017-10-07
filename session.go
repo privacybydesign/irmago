@@ -47,6 +47,7 @@ type session struct {
 	transport   *HTTPTransport
 	choice      *DisclosureChoice
 	newmanager  *SchemeManager
+	downloaded  *IrmaIdentifierSet
 }
 
 // We implement the handler for the keyshare protocol
@@ -133,7 +134,18 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 func (session *session) fail(err *SessionError) {
 	session.transport.Delete()
 	err.Err = errors.Wrap(err.Err, 0)
+	if !session.downloaded.Empty() {
+		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+	}
 	session.Handler.Failure(session.Action, err)
+}
+
+func (session *session) cancel() {
+	session.transport.Delete()
+	if !session.downloaded.Empty() {
+		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+	}
+	session.Handler.Cancelled(session.Action)
 }
 
 // start retrieves the first message in the IRMA protocol, checks if we can perform
@@ -173,7 +185,7 @@ func (session *session) start() {
 	}
 
 	// Download missing credential types/issuers/public keys from the scheme manager
-	if err = session.credManager.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
+	if session.downloaded, err = session.credManager.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
 		session.Handler.Failure(
 			session.Action,
 			&SessionError{ErrorType: ErrorConfigurationStoreDownload, Err: err},
@@ -222,8 +234,7 @@ func (session *session) start() {
 
 func (session *session) do(proceed bool) {
 	if !proceed {
-		session.transport.Delete()
-		session.Handler.Cancelled(session.Action)
+		session.cancel()
 		return
 	}
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
@@ -275,8 +286,7 @@ func (session *session) KeyshareDone(message interface{}) {
 }
 
 func (session *session) KeyshareCancelled() {
-	session.transport.Delete()
-	session.Handler.Cancelled(session.Action)
+	session.cancel()
 }
 
 func (session *session) KeyshareBlocked(duration int) {
@@ -321,6 +331,12 @@ func (session *session) sendResponse(message interface{}) {
 	}
 
 	_ = session.credManager.addLogEntry(log) // TODO err
+	if !session.downloaded.Empty() {
+		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+	}
+	if session.Action == ActionIssuing {
+		session.credManager.handler.UpdateAttributes()
+	}
 	session.Handler.Success(session.Action)
 }
 
@@ -332,7 +348,7 @@ func (session *session) managerSession() {
 	}
 	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
 		if !proceed {
-			session.Handler.Cancelled(session.Action)
+			session.Handler.Cancelled(session.Action) // No need to DELETE session here
 			return
 		}
 		session.newmanager = manager
@@ -346,12 +362,12 @@ func (session *session) managerSession() {
 }
 
 func (session *session) StartRegistration(manager *SchemeManager, callback func(email, pin string)) {
-	session.credManager.keyshareHandler.StartRegistration(manager, callback)
+	session.credManager.handler.StartRegistration(manager, callback)
 }
 
 func (session *session) RegistrationError(err error) {
 	session.Handler.Failure(session.Action, &SessionError{Err: err}) // TODO
-	session.credManager.keyshareHandler.RegistrationError(err)
+	session.credManager.handler.RegistrationError(err)
 }
 
 func (session *session) RegistrationSuccess() {
@@ -359,6 +375,15 @@ func (session *session) RegistrationSuccess() {
 		session.Handler.Failure(session.Action, &SessionError{})
 		return
 	}
+	session.credManager.handler.UpdateConfigurationStore(
+		&IrmaIdentifierSet{
+			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{session.newmanager.Identifier(): {}},
+			Issuers:         map[IssuerIdentifier]struct{}{},
+			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+		},
+	)
 	session.Handler.Success(session.Action)
-	session.credManager.keyshareHandler.RegistrationSuccess()
+	if session.newmanager.Distributed() {
+		session.credManager.handler.RegistrationSuccess()
+	}
 }
