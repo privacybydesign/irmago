@@ -207,7 +207,7 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	// Remove credential
 	if creds, exists := cm.credentials[id]; exists {
 		if _, exists := creds[index]; exists {
-			creds[index] = nil
+			delete(creds, index)
 			cm.credentials[id] = creds
 		}
 	}
@@ -244,14 +244,15 @@ func (cm *CredentialManager) RemoveCredentialByHash(hash string) error {
 
 func (cm *CredentialManager) RemoveAllCredentials() error {
 	removed := map[CredentialTypeIdentifier][]TranslatedString{}
-	list := cm.CredentialInfoList()
-	for _, cred := range list {
-		id := NewCredentialTypeIdentifier(cred.CredentialTypeID)
-		removed[id] = cred.Attributes
-		if err := cm.remove(id, cred.Index, false); err != nil {
-			return err
+	for _, attrlistlist := range cm.attributes {
+		for _, attrs := range attrlistlist {
+			if attrs.CredentialType() != nil {
+				removed[attrs.CredentialType().Identifier()] = attrs.Strings()
+			}
+			cm.storage.DeleteSignature(attrs)
 		}
 	}
+	cm.attributes = map[CredentialTypeIdentifier][]*AttributeList{}
 	if err := cm.storage.StoreAttributes(cm.attributes); err != nil {
 		return err
 	}
@@ -311,8 +312,15 @@ func (cm *CredentialManager) credentialByHash(hash string) (*credential, int, er
 }
 
 func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (*credential, error) {
-	cred, _, err := cm.credentialByHash(id.Hash)
-	return cred, err
+	if _, exists := cm.attributes[id.Type]; !exists {
+		return nil, nil
+	}
+	for index, attrs := range cm.attributes[id.Type] {
+		if attrs.hash() == id.Hash {
+			return cm.credential(attrs.CredentialType().Identifier(), index)
+		}
+	}
+	return nil, nil
 }
 
 // credential returns the requested credential, or nil if we do not have it.
