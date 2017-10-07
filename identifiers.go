@@ -48,7 +48,11 @@ type IrmaIdentifierSet struct {
 // Parent returns the parent object of this identifier.
 func (oi metaObjectIdentifier) Parent() string {
 	str := string(oi)
-	return str[:strings.LastIndex(str, ".")]
+	if i := strings.LastIndex(str, "."); i != -1 {
+		return str[:i]
+	} else {
+		return str
+	}
 }
 
 // Name returns the last part of this identifier.
@@ -60,6 +64,15 @@ func (oi metaObjectIdentifier) Name() string {
 // String returns this identifier as a string.
 func (oi metaObjectIdentifier) String() string {
 	return string(oi)
+}
+
+func (oi metaObjectIdentifier) Root() string {
+	str := string(oi)
+	if i := strings.Index(str, "."); i != -1 {
+		return str[:i]
+	} else {
+		return str
+	}
 }
 
 // NewSchemeManagerIdentifier converts the specified identifier to a SchemeManagerIdentifier.

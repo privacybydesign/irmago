@@ -203,9 +203,15 @@ func (dr *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 
 		for _, disjunction := range dr.Disclose {
 			for _, attr := range disjunction.Attributes {
-				dr.identifiers.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
-				dr.identifiers.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
-				dr.identifiers.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
+				var cti CredentialTypeIdentifier
+				if !attr.IsCredential() {
+					cti = attr.CredentialTypeIdentifier()
+				} else {
+					cti = NewCredentialTypeIdentifier(attr.String())
+				}
+				dr.identifiers.SchemeManagers[cti.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+				dr.identifiers.Issuers[cti.IssuerIdentifier()] = struct{}{}
+				dr.identifiers.CredentialTypes[cti] = struct{}{}
 			}
 		}
 	}
