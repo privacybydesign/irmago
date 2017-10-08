@@ -134,7 +134,7 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 func (session *session) fail(err *SessionError) {
 	session.transport.Delete()
 	err.Err = errors.Wrap(err.Err, 0)
-	if !session.downloaded.Empty() {
+	if session.downloaded != nil && !session.downloaded.Empty() {
 		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
 	}
 	session.Handler.Failure(session.Action, err)
@@ -142,7 +142,7 @@ func (session *session) fail(err *SessionError) {
 
 func (session *session) cancel() {
 	session.transport.Delete()
-	if !session.downloaded.Empty() {
+	if session.downloaded != nil && !session.downloaded.Empty() {
 		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
 	}
 	session.Handler.Cancelled(session.Action)
