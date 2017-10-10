@@ -112,31 +112,19 @@ func (e *SessionError) Error() string {
 	return string(e.ErrorType)
 }
 
-func jwtDecode(jwt string, body interface{}) (string, error) {
+func jwtDecode(jwt string, body interface{}) error {
 	jwtparts := strings.Split(jwt, ".")
 	if jwtparts == nil || len(jwtparts) < 2 {
-		return "", errors.New("Not a JWT")
+		return errors.New("Not a JWT")
 	}
-	headerbytes, err := base64.RawStdEncoding.DecodeString(jwtparts[0])
-	if err != nil {
-		return "", err
-	}
-	var header struct {
-		Issuer string `json:"iss"`
-	}
-	err = json.Unmarshal([]byte(headerbytes), &header)
-	if err != nil {
-		return "", err
-	}
-
 	bodybytes, err := base64.RawStdEncoding.DecodeString(jwtparts[1])
 	if err != nil {
-		return "", err
+		return err
 	}
-	return header.Issuer, json.Unmarshal(bodybytes, body)
+	return json.Unmarshal(bodybytes, body)
 }
 
-func parseRequestorJwt(action Action, jwt string) (RequestorJwt, string, error) {
+func parseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
 	var retval RequestorJwt
 	switch action {
 	case ActionDisclosing:
@@ -146,11 +134,11 @@ func parseRequestorJwt(action Action, jwt string) (RequestorJwt, string, error) 
 	case ActionIssuing:
 		retval = &IdentityProviderJwt{}
 	default:
-		return nil, "", errors.New("Invalid session type")
+		return nil, errors.New("Invalid session type")
 	}
-	server, err := jwtDecode(jwt, retval)
+	err := jwtDecode(jwt, retval)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return retval, server, nil
+	return retval, nil
 }

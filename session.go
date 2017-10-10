@@ -166,9 +166,8 @@ func (session *session) start() {
 		return
 	}
 
-	var server string
 	var err error
-	session.jwt, server, err = parseRequestorJwt(session.Action, session.info.Jwt)
+	session.jwt, err = parseRequestorJwt(session.Action, session.info.Jwt)
 	if err != nil {
 		session.fail(&SessionError{ErrorType: ErrorInvalidJWT, Err: err})
 		return
@@ -233,11 +232,14 @@ func (session *session) start() {
 	session.Handler.StatusUpdate(session.Action, StatusConnected)
 	switch session.Action {
 	case ActionDisclosing:
-		session.Handler.RequestVerificationPermission(*session.irmaSession.(*DisclosureRequest), server, callback)
+		session.Handler.RequestVerificationPermission(
+			*session.irmaSession.(*DisclosureRequest), session.jwt.Requestor(), callback)
 	case ActionSigning:
-		session.Handler.RequestSignaturePermission(*session.irmaSession.(*SignatureRequest), server, callback)
+		session.Handler.RequestSignaturePermission(
+			*session.irmaSession.(*SignatureRequest), session.jwt.Requestor(), callback)
 	case ActionIssuing:
-		session.Handler.RequestIssuancePermission(*session.irmaSession.(*IssuanceRequest), server, callback)
+		session.Handler.RequestIssuancePermission(
+			*session.irmaSession.(*IssuanceRequest), session.jwt.Requestor(), callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}

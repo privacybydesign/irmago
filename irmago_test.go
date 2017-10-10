@@ -198,7 +198,7 @@ func TestUnmarshaling(t *testing.T) {
 
 	entry := newlogs[len(newlogs)-1]
 	require.NotNil(t, entry)
-	sessionjwt, _, err := entry.Jwt()
+	sessionjwt, err := entry.Jwt()
 	require.NoError(t, err)
 	require.Equal(t, "testip", sessionjwt.(*IdentityProviderJwt).ServerName)
 	require.NoError(t, err)

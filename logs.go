@@ -90,7 +90,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	return entry, nil
 }
 
-func (entry *LogEntry) Jwt() (RequestorJwt, string, error) {
+func (entry *LogEntry) Jwt() (RequestorJwt, error) {
 	return parseRequestorJwt(entry.Type, entry.SessionInfo.Jwt)
 }
 

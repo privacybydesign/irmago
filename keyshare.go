@@ -408,8 +408,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		msg := struct {
 			ProofP *gabi.ProofP
 		}{}
-		_, err := jwtDecode(responses[managerID], &msg)
-		if err != nil {
+		if err := jwtDecode(responses[managerID], &msg); err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return
 		}
