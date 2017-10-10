@@ -246,6 +246,9 @@ func (s *storage) LoadPaillierKeys() (key *paillierPrivateKey, err error) {
 	if err := s.load(key, paillierFile); err != nil {
 		return nil, err
 	}
+	if key.N == nil { // TODO this is ugly
+		return nil, nil
+	}
 	return key, nil
 }
 

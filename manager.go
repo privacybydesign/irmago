@@ -132,11 +132,14 @@ func NewCredentialManager(
 	if cm.attributes, err = cm.storage.LoadAttributes(); err != nil {
 		return nil, err
 	}
+	if cm.keyshareServers, err = cm.storage.LoadKeyshareServers(); err != nil {
+		return nil, err
+	}
 	if cm.paillierKeyCache, err = cm.storage.LoadPaillierKeys(); err != nil {
 		return nil, err
 	}
-	if cm.keyshareServers, err = cm.storage.LoadKeyshareServers(); err != nil {
-		return nil, err
+	if cm.paillierKeyCache == nil {
+		cm.paillierKey(false)
 	}
 
 	unenrolled := cm.unenrolledKeyshareServers()
@@ -571,17 +574,26 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 func (cm *CredentialManager) paillierKey(wait bool) *paillierPrivateKey {
 	cached := cm.paillierKeyCache
 	ch := make(chan bool)
-	go func() {
-		newkey, _ := paillier.GenerateKey(rand.Reader, 2048)
-		cm.paillierKeyCache = (*paillierPrivateKey)(newkey)
-		if wait && cached == nil {
-			ch <- true
-		}
-	}()
-	if wait && cached == nil {
+
+	// Would just write cm.paillierKeyCache instead of cached here, but the worker
+	// modifies cm.paillierKeyCache, and we must be sure that the boolean here and
+	// the if-clause below match.
+	go cm.paillierKeyWorker(cached == nil && wait, ch)
+	if cached == nil && wait {
 		<-ch
+		// generate yet another one for future calls, but no need to wait now
+		go cm.paillierKeyWorker(false, ch)
 	}
 	return cm.paillierKeyCache
+}
+
+func (cm *CredentialManager) paillierKeyWorker(wait bool, ch chan bool) {
+	newkey, _ := paillier.GenerateKey(rand.Reader, 2048)
+	cm.paillierKeyCache = (*paillierPrivateKey)(newkey)
+	cm.storage.StorePaillierKeys(cm.paillierKeyCache)
+	if wait {
+		ch <- true
+	}
 }
 
 func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
