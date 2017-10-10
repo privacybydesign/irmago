@@ -46,18 +46,18 @@ type CredentialManager struct {
 	storage storage
 
 	// Other state
-	ConfigurationStore    *ConfigurationStore
-	irmaConfigurationPath string
-	androidStoragePath    string
-	handler               ClientHandler
+	ConfigurationStore        *ConfigurationStore
+	UnenrolledKeyshareServers []SchemeManagerIdentifier
+	irmaConfigurationPath     string
+	androidStoragePath        string
+	handler                   ClientHandler
 }
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
 // for registering at a keyshare server.
 type KeyshareHandler interface {
-	StartRegistration(manager *SchemeManager, registrationCallback func(email, pin string))
-	RegistrationError(err error)
-	RegistrationSuccess()
+	RegistrationError(manager SchemeManagerIdentifier, err error)
+	RegistrationSuccess(manager SchemeManagerIdentifier)
 }
 
 type ClientHandler interface {
@@ -142,12 +142,8 @@ func NewCredentialManager(
 		cm.paillierKey(false)
 	}
 
-	unenrolled := cm.unenrolledKeyshareServers()
-	switch len(unenrolled) {
-	case 0: // nop
-	case 1:
-		cm.KeyshareEnroll(unenrolled[0], cm.handler)
-	default:
+	cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
+	if len(cm.UnenrolledKeyshareServers) > 1 {
 		return nil, errors.New("Too many keyshare servers")
 	}
 
@@ -596,28 +592,27 @@ func (cm *CredentialManager) paillierKeyWorker(wait bool, ch chan bool) {
 	}
 }
 
-func (cm *CredentialManager) unenrolledKeyshareServers() []*SchemeManager {
-	list := []*SchemeManager{}
+func (cm *CredentialManager) unenrolledKeyshareServers() []SchemeManagerIdentifier {
+	list := []SchemeManagerIdentifier{}
 	for name, manager := range cm.ConfigurationStore.SchemeManagers {
-		if _, contains := cm.keyshareServers[name]; len(manager.KeyshareServer) > 0 && !contains {
-			list = append(list, manager)
+		if _, contains := cm.keyshareServers[name]; manager.Distributed() && !contains {
+			list = append(list, manager.Identifier())
 		}
 	}
 	return list
 }
 
 // KeyshareEnroll attempts to register at the keyshare server of the specified scheme manager.
-func (cm *CredentialManager) KeyshareEnroll(manager *SchemeManager, handler KeyshareHandler) {
-	handler.StartRegistration(manager, func(email, pin string) {
-		go func() {
-			err := cm.keyshareEnrollWorker(manager.Identifier(), email, pin)
-			if err != nil {
-				handler.RegistrationError(err)
-			} else {
-				handler.RegistrationSuccess()
-			}
-		}()
-	})
+func (cm *CredentialManager) KeyshareEnroll(manager SchemeManagerIdentifier, email, pin string) {
+	go func() {
+		err := cm.keyshareEnrollWorker(manager, email, pin)
+		cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
+		if err != nil {
+			cm.handler.RegistrationError(manager, err)
+		} else {
+			cm.handler.RegistrationSuccess(manager)
+		}
+	}()
 }
 
 func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentifier, email, pin string) error {

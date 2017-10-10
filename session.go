@@ -24,6 +24,7 @@ type Handler interface {
 	Cancelled(action Action)
 	Failure(action Action, err *SessionError)
 	UnsatisfiableRequest(action Action, missing AttributeDisjunctionList)
+	MissingKeyshareServer(manager SchemeManagerIdentifier)
 
 	RequestIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler)
 	RequestVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler)
@@ -46,7 +47,6 @@ type session struct {
 	irmaSession IrmaSession
 	transport   *HTTPTransport
 	choice      *DisclosureChoice
-	newmanager  *SchemeManager
 	downloaded  *IrmaIdentifierSet
 }
 
@@ -181,6 +181,17 @@ func (session *session) start() {
 		// Store which public keys the server will use
 		for _, credreq := range ir.Credentials {
 			credreq.KeyCounter = session.info.Keys[credreq.CredentialTypeID.IssuerIdentifier()]
+		}
+	}
+
+	// Check if we are registered to all involved keyshare servers
+	for id := range session.irmaSession.Identifiers().SchemeManagers {
+		distributed := session.credManager.ConfigurationStore.SchemeManagers[id].Distributed()
+		_, registered := session.credManager.keyshareServers[id]
+		if distributed && !registered {
+			session.transport.Delete()
+			session.Handler.MissingKeyshareServer(id)
+			return
 		}
 	}
 
@@ -351,39 +362,21 @@ func (session *session) managerSession() {
 			session.Handler.Cancelled(session.Action) // No need to DELETE session here
 			return
 		}
-		session.newmanager = manager
-		if manager.Distributed() {
-			session.credManager.KeyshareEnroll(manager, KeyshareHandler(session))
-		} else {
-			session.RegistrationSuccess()
+		if err := session.credManager.ConfigurationStore.AddSchemeManager(manager); err != nil {
+			session.Handler.Failure(session.Action, &SessionError{})
+			return
 		}
+		if manager.Distributed() {
+			session.credManager.UnenrolledKeyshareServers = session.credManager.unenrolledKeyshareServers()
+		}
+		session.credManager.handler.UpdateConfigurationStore(
+			&IrmaIdentifierSet{
+				SchemeManagers:  map[SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
+				Issuers:         map[IssuerIdentifier]struct{}{},
+				CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+			},
+		)
+		session.Handler.Success(session.Action)
 	})
 	return
-}
-
-func (session *session) StartRegistration(manager *SchemeManager, callback func(email, pin string)) {
-	session.credManager.handler.StartRegistration(manager, callback)
-}
-
-func (session *session) RegistrationError(err error) {
-	session.Handler.Failure(session.Action, &SessionError{Err: err}) // TODO
-	session.credManager.handler.RegistrationError(err)
-}
-
-func (session *session) RegistrationSuccess() {
-	if err := session.credManager.ConfigurationStore.AddSchemeManager(session.newmanager); err != nil {
-		session.Handler.Failure(session.Action, &SessionError{})
-		return
-	}
-	session.credManager.handler.UpdateConfigurationStore(
-		&IrmaIdentifierSet{
-			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{session.newmanager.Identifier(): {}},
-			Issuers:         map[IssuerIdentifier]struct{}{},
-			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-		},
-	)
-	session.Handler.Success(session.Action)
-	if session.newmanager.Distributed() {
-		session.credManager.handler.RegistrationSuccess()
-	}
 }

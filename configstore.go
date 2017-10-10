@@ -356,19 +356,19 @@ func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) (*IrmaIdentifi
 			}
 			downloaded.Issuers[issid] = struct{}{}
 		}
-		for issid, list := range set.PublicKeys {
-			for _, count := range list {
-				pk, err := store.PublicKey(issid, count)
-				if err != nil {
+	}
+	for issid, list := range set.PublicKeys {
+		for _, count := range list {
+			pk, err := store.PublicKey(issid, count)
+			if err != nil {
+				return nil, err
+			}
+			if pk == nil {
+				manager := issid.SchemeManagerIdentifier()
+				suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
+				path := fmt.Sprintf("%s/%s/%s", store.path, manager.String(), suffix)
+				if transport.GetFile(store.SchemeManagers[manager].URL+suffix, path); err != nil {
 					return nil, err
-				}
-				if pk == nil {
-					manager := issid.SchemeManagerIdentifier()
-					suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
-					path := fmt.Sprintf("%s/%s/%s", store.path, manager.String(), suffix)
-					if transport.GetFile(store.SchemeManagers[manager].URL+suffix, path); err != nil {
-						return nil, err
-					}
 				}
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,6 +18,10 @@ type TestHandler struct {
 	t       *testing.T
 	c       chan *SessionError
 	manager *CredentialManager
+}
+
+func (th TestHandler) MissingKeyshareServer(manager SchemeManagerIdentifier) {
+	th.Failure(ActionUnknown, &SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 
 func (th TestHandler) StatusUpdate(action Action, status Status) {}

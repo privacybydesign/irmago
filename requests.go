@@ -181,27 +181,27 @@ func newIssuanceState() (*issuanceState, error) {
 	}, nil
 }
 
-func (dr *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
-	if dr.identifiers == nil {
-		dr.identifiers = &IrmaIdentifierSet{
+func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
+	if ir.identifiers == nil {
+		ir.identifiers = &IrmaIdentifierSet{
 			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
 			PublicKeys:      map[IssuerIdentifier][]int{},
 		}
 
-		for _, credreq := range dr.Credentials {
+		for _, credreq := range ir.Credentials {
 			issuer := credreq.CredentialTypeID.IssuerIdentifier()
-			dr.identifiers.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
-			dr.identifiers.Issuers[issuer] = struct{}{}
-			dr.identifiers.CredentialTypes[*credreq.CredentialTypeID] = struct{}{}
-			if dr.identifiers.PublicKeys[issuer] == nil {
-				dr.identifiers.PublicKeys[issuer] = []int{}
+			ir.identifiers.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
+			ir.identifiers.Issuers[issuer] = struct{}{}
+			ir.identifiers.CredentialTypes[*credreq.CredentialTypeID] = struct{}{}
+			if ir.identifiers.PublicKeys[issuer] == nil {
+				ir.identifiers.PublicKeys[issuer] = []int{}
 			}
-			dr.identifiers.PublicKeys[issuer] = append(dr.identifiers.PublicKeys[issuer], credreq.KeyCounter)
+			ir.identifiers.PublicKeys[issuer] = append(ir.identifiers.PublicKeys[issuer], credreq.KeyCounter)
 		}
 
-		for _, disjunction := range dr.Disclose {
+		for _, disjunction := range ir.Disclose {
 			for _, attr := range disjunction.Attributes {
 				var cti CredentialTypeIdentifier
 				if !attr.IsCredential() {
@@ -209,13 +209,13 @@ func (dr *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 				} else {
 					cti = NewCredentialTypeIdentifier(attr.String())
 				}
-				dr.identifiers.SchemeManagers[cti.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
-				dr.identifiers.Issuers[cti.IssuerIdentifier()] = struct{}{}
-				dr.identifiers.CredentialTypes[cti] = struct{}{}
+				ir.identifiers.SchemeManagers[cti.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+				ir.identifiers.Issuers[cti.IssuerIdentifier()] = struct{}{}
+				ir.identifiers.CredentialTypes[cti] = struct{}{}
 			}
 		}
 	}
-	return dr.identifiers
+	return ir.identifiers
 }
 
 // ToDisclose returns the attributes that must be disclosed in this issuance session.

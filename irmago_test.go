@@ -27,14 +27,12 @@ func TestMain(m *testing.M) {
 	os.Exit(retCode)
 }
 
-type IgnoringKeyshareHandler struct{}
+type IgnoringClientHandler struct{}
 
-func (i *IgnoringKeyshareHandler) UpdateConfigurationStore(new *IrmaIdentifierSet) {}
-func (i *IgnoringKeyshareHandler) UpdateAttributes()                               {}
-func (i *IgnoringKeyshareHandler) RegistrationError(err error)                     {}
-func (i *IgnoringKeyshareHandler) RegistrationSuccess()                            {}
-func (i *IgnoringKeyshareHandler) StartRegistration(m *SchemeManager, callback func(e, p string)) {
-}
+func (i *IgnoringClientHandler) UpdateConfigurationStore(new *IrmaIdentifierSet)              {}
+func (i *IgnoringClientHandler) UpdateAttributes()                                            {}
+func (i *IgnoringClientHandler) RegistrationError(manager SchemeManagerIdentifier, err error) {}
+func (i *IgnoringClientHandler) RegistrationSuccess(manager SchemeManagerIdentifier)          {}
 
 func parseStorage(t *testing.T) *CredentialManager {
 	exists, err := PathExists("testdata/storage/test")
@@ -46,7 +44,7 @@ func parseStorage(t *testing.T) *CredentialManager {
 		"testdata/storage/test",
 		"testdata/irma_configuration",
 		"testdata/oldstorage",
-		&IgnoringKeyshareHandler{},
+		&IgnoringClientHandler{},
 	)
 	require.NoError(t, err)
 	return manager
