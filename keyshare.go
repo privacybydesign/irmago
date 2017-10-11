@@ -17,7 +17,7 @@ import (
 
 // KeysharePinRequestor is used to asking the user for his PIN.
 type KeysharePinRequestor interface {
-	RequestPin(remainingAttempts int, callback func(proceed bool, pin string))
+	RequestPin(remainingAttempts int, callback PinHandler)
 }
 
 type keyshareSessionHandler interface {
@@ -203,7 +203,7 @@ func startKeyshareSession(
 // Ask for a pin, repeatedly if necessary, and either continue the keyshare protocol
 // with authorization, or stop the keyshare protocol and inform of failure.
 func (ks *keyshareSession) VerifyPin(attempts int) {
-	ks.pinRequestor.RequestPin(attempts, func(proceed bool, pin string) {
+	ks.pinRequestor.RequestPin(attempts, PinHandler(func(proceed bool, pin string) {
 		success, attemptsRemaining, blocked, err := ks.verifyPinAttempt(pin)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
@@ -222,7 +222,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 		}
 		// Not successful but no error and not yet blocked: try again
 		ks.VerifyPin(attemptsRemaining)
-	})
+	}))
 }
 
 // Verify the specified pin at each of the keyshare servers involved in the specified session.

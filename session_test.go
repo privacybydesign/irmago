@@ -69,7 +69,7 @@ func (th TestHandler) RequestSignaturePermission(request SignatureRequest, Serve
 func (th TestHandler) RequestSchemeManagerPermission(manager *SchemeManager, callback func(proceed bool)) {
 	callback(true)
 }
-func (th TestHandler) RequestPin(remainingAttempts int, callback func(proceed bool, pin string)) {
+func (th TestHandler) RequestPin(remainingAttempts int, callback PinHandler) {
 	callback(true, "12345")
 }
 

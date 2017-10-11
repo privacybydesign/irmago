@@ -17,6 +17,8 @@ import (
 // and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *DisclosureChoice)
 
+type PinHandler func(proceed bool, pin string)
+
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
 	StatusUpdate(action Action, status Status)
@@ -31,7 +33,7 @@ type Handler interface {
 	RequestSignaturePermission(request SignatureRequest, ServerName string, callback PermissionHandler)
 	RequestSchemeManagerPermission(manager *SchemeManager, callback func(proceed bool))
 
-	RequestPin(remainingAttempts int, callback func(proceed bool, pin string))
+	RequestPin(remainingAttempts int, callback PinHandler)
 }
 
 // A session is an IRMA session.
