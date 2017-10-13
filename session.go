@@ -187,7 +187,12 @@ func (session *session) start() {
 
 	// Check if we are registered to all involved keyshare servers
 	for id := range session.irmaSession.Identifiers().SchemeManagers {
-		distributed := session.credManager.ConfigurationStore.SchemeManagers[id].Distributed()
+		manager, ok := session.credManager.ConfigurationStore.SchemeManagers[id]
+		if !ok {
+			session.fail(&SessionError{ErrorType: ErrorUnknownSchemeManager, Info: id.String()})
+			return
+		}
+		distributed := manager.Distributed()
 		_, registered := session.credManager.keyshareServers[id]
 		if distributed && !registered {
 			session.transport.Delete()

@@ -103,6 +103,8 @@ const (
 	ErrorUnknownCredentialType = ErrorType("unknownCredentialType")
 	// Error during downloading of credential type, issuer, or public keys
 	ErrorConfigurationStoreDownload = ErrorType("configurationStoreDownload")
+	// IRMA requests refers to unknown scheme manager
+	ErrorUnknownSchemeManager = ErrorType("unknownSchemeManager")
 )
 
 func (e *SessionError) Error() string {
