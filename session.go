@@ -36,6 +36,10 @@ type Handler interface {
 	RequestPin(remainingAttempts int, callback PinHandler)
 }
 
+type SessionDismisser interface {
+	Dismiss()
+}
+
 // A session is an IRMA session.
 type session struct {
 	Action    Action
@@ -50,6 +54,7 @@ type session struct {
 	transport   *HTTPTransport
 	choice      *DisclosureChoice
 	downloaded  *IrmaIdentifierSet
+	deleted     bool
 }
 
 // We implement the handler for the keyshare protocol
@@ -96,7 +101,7 @@ func calcVersion(qr *Qr) (string, error) {
 }
 
 // NewSession creates and starts a new IRMA session.
-func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
+func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) SessionDismisser {
 	session := &session{
 		Action:      Action(qr.Type),
 		ServerURL:   qr.URL,
@@ -107,7 +112,7 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 	version, err := calcVersion(qr)
 	if err != nil {
 		session.fail(&SessionError{ErrorType: ErrorProtocolVersionNotSupported, Err: err})
-		return
+		return nil
 	}
 	session.Version = Version(version)
 
@@ -121,7 +126,7 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 		fallthrough
 	default:
 		session.fail(&SessionError{ErrorType: ErrorUnknownAction, Info: string(session.Action)})
-		return
+		return nil
 	}
 
 	if !strings.HasSuffix(session.ServerURL, "/") {
@@ -130,43 +135,7 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 
 	go session.start()
 
-	return
-}
-
-func handlePanic(callback func(*SessionError)) {
-	if e := recover(); e != nil {
-		var info string
-		switch x := e.(type) {
-		case string:
-			info = x
-		case error:
-			info = x.Error()
-		case fmt.Stringer:
-			info = x.String()
-		default: // nop
-		}
-		fmt.Printf("Recovered from panic: '%v'\n%s\n", e, info)
-		if callback != nil {
-			callback(&SessionError{ErrorType: ErrorPanic, Info: info})
-		}
-	}
-}
-
-func (session *session) fail(err *SessionError) {
-	session.transport.Delete()
-	err.Err = errors.Wrap(err.Err, 0)
-	if session.downloaded != nil && !session.downloaded.Empty() {
-		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
-	}
-	session.Handler.Failure(session.Action, err)
-}
-
-func (session *session) cancel() {
-	session.transport.Delete()
-	if session.downloaded != nil && !session.downloaded.Empty() {
-		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
-	}
-	session.Handler.Cancelled(session.Action)
+	return session
 }
 
 // start retrieves the first message in the IRMA protocol, checks if we can perform
@@ -222,7 +191,7 @@ func (session *session) start() {
 		distributed := manager.Distributed()
 		_, enrolled := session.credManager.keyshareServers[id]
 		if distributed && !enrolled {
-			session.transport.Delete()
+			session.delete()
 			session.Handler.MissingKeyshareEnrollment(id)
 			return
 		}
@@ -423,4 +392,58 @@ func (session *session) managerSession() {
 		session.Handler.Success(session.Action)
 	})
 	return
+}
+
+// Session lifetime functions
+
+func handlePanic(callback func(*SessionError)) {
+	if e := recover(); e != nil {
+		var info string
+		switch x := e.(type) {
+		case string:
+			info = x
+		case error:
+			info = x.Error()
+		case fmt.Stringer:
+			info = x.String()
+		default: // nop
+		}
+		fmt.Printf("Recovered from panic: '%v'\n%s\n", e, info)
+		if callback != nil {
+			callback(&SessionError{ErrorType: ErrorPanic, Info: info})
+		}
+	}
+}
+
+// Idempotently send DELETE to remote server, returning whether or not we did something
+func (session *session) delete() bool {
+	if !session.deleted {
+		session.transport.Delete()
+		session.deleted = true
+		return true
+	}
+	return false
+}
+
+func (session *session) fail(err *SessionError) {
+	if session.delete() {
+		err.Err = errors.Wrap(err.Err, 0)
+		if session.downloaded != nil && !session.downloaded.Empty() {
+			session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+		}
+		session.Handler.Failure(session.Action, err)
+	}
+}
+
+func (session *session) cancel() {
+	if session.delete() {
+		if session.downloaded != nil && !session.downloaded.Empty() {
+			session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+		}
+		session.Handler.Cancelled(session.Action)
+	}
+}
+
+func (session *session) Dismiss() {
+	session.cancel()
 }
