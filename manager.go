@@ -657,6 +657,11 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
 }
 
+func (cm *CredentialManager) KeyshareRemoveAll() error {
+	cm.keyshareServers = map[SchemeManagerIdentifier]*keyshareServer{}
+	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
+}
+
 // Add, load and store log entries
 
 func (cm *CredentialManager) addLogEntry(entry *LogEntry) error {
