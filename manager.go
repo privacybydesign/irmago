@@ -46,11 +46,11 @@ type CredentialManager struct {
 	storage storage
 
 	// Other state
-	ConfigurationStore        *ConfigurationStore
-	UnenrolledKeyshareServers []SchemeManagerIdentifier
-	irmaConfigurationPath     string
-	androidStoragePath        string
-	handler                   ClientHandler
+	ConfigurationStore       *ConfigurationStore
+	UnenrolledSchemeManagers []SchemeManagerIdentifier
+	irmaConfigurationPath    string
+	androidStoragePath       string
+	handler                  ClientHandler
 }
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
@@ -142,8 +142,8 @@ func NewCredentialManager(
 		cm.paillierKey(false)
 	}
 
-	cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
-	if len(cm.UnenrolledKeyshareServers) > 1 {
+	cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
+	if len(cm.UnenrolledSchemeManagers) > 1 {
 		return nil, errors.New("Too many keyshare servers")
 	}
 
@@ -592,7 +592,7 @@ func (cm *CredentialManager) paillierKeyWorker(wait bool, ch chan bool) {
 	}
 }
 
-func (cm *CredentialManager) unenrolledKeyshareServers() []SchemeManagerIdentifier {
+func (cm *CredentialManager) unenrolledSchemeManagers() []SchemeManagerIdentifier {
 	list := []SchemeManagerIdentifier{}
 	for name, manager := range cm.ConfigurationStore.SchemeManagers {
 		if _, contains := cm.keyshareServers[name]; manager.Distributed() && !contains {
@@ -614,7 +614,7 @@ func (cm *CredentialManager) KeyshareEnroll(manager SchemeManagerIdentifier, ema
 		}()
 
 		err := cm.keyshareEnrollWorker(manager, email, pin)
-		cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
+		cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
 		if err != nil {
 			cm.handler.EnrollmentError(manager, err)
 		} else {

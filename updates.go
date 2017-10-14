@@ -156,7 +156,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 			return
 		}
 	}
-	cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
+	cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
 
 	if err = cm.storage.StorePaillierKeys(cm.paillierKeyCache); err != nil {
 		return

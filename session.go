@@ -380,7 +380,7 @@ func (session *session) managerSession() {
 			return
 		}
 		if manager.Distributed() {
-			session.credManager.UnenrolledKeyshareServers = session.credManager.unenrolledKeyshareServers()
+			session.credManager.UnenrolledSchemeManagers = session.credManager.unenrolledSchemeManagers()
 		}
 		session.credManager.handler.UpdateConfigurationStore(
 			&IrmaIdentifierSet{
