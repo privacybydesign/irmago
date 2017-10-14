@@ -46,7 +46,7 @@ type keyshareServer struct {
 	token      string
 }
 
-type keyshareRegistration struct {
+type keyshareEnrollment struct {
 	Username  string             `json:"username"`
 	Pin       string             `json:"pin"`
 	PublicKey *paillierPublicKey `json:"publicKey"`
@@ -141,8 +141,8 @@ func startKeyshareSession(
 	for managerID := range session.Identifiers().SchemeManagers {
 		if store.SchemeManagers[managerID].Distributed() {
 			ksscount++
-			if _, registered := keyshareServers[managerID]; !registered {
-				err := errors.New("Not registered to keyshare server of scheme manager " + managerID.String())
+			if _, enrolled := keyshareServers[managerID]; !enrolled {
+				err := errors.New("Not enrolled to keyshare server of scheme manager " + managerID.String())
 				sessionHandler.KeyshareError(err)
 				return
 			}

@@ -54,10 +54,10 @@ type CredentialManager struct {
 }
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
-// for registering at a keyshare server.
+// for enrolling at a keyshare server.
 type KeyshareHandler interface {
-	RegistrationError(manager SchemeManagerIdentifier, err error)
-	RegistrationSuccess(manager SchemeManagerIdentifier)
+	EnrollmentError(manager SchemeManagerIdentifier, err error)
+	EnrollmentSuccess(manager SchemeManagerIdentifier)
 }
 
 type ClientHandler interface {
@@ -77,7 +77,7 @@ type secretKey struct {
 // androidStoragePath is an optional path to the files of the old android app
 // (specify "" if you do not want to parse the old android app files),
 // and handler is used for informing the user of new stuff, and when a
-// registration to a keyshare server needs to happen.
+// enrollment to a keyshare server needs to happen.
 // The credential manager returned by this function has been fully deserialized
 // and is ready for use.
 //
@@ -602,15 +602,15 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []SchemeManagerIdentifi
 	return list
 }
 
-// KeyshareEnroll attempts to register at the keyshare server of the specified scheme manager.
+// KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
 func (cm *CredentialManager) KeyshareEnroll(manager SchemeManagerIdentifier, email, pin string) {
 	go func() {
 		err := cm.keyshareEnrollWorker(manager, email, pin)
 		cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
 		if err != nil {
-			cm.handler.RegistrationError(manager, err)
+			cm.handler.EnrollmentError(manager, err)
 		} else {
-			cm.handler.RegistrationSuccess(manager)
+			cm.handler.EnrollmentSuccess(manager)
 		}
 	}()
 }
@@ -632,7 +632,7 @@ func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentif
 	if err != nil {
 		return err
 	}
-	message := keyshareRegistration{
+	message := keyshareEnrollment{
 		Username:  email,
 		Pin:       kss.HashedPin(pin),
 		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
@@ -648,7 +648,7 @@ func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentif
 	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
 }
 
-// KeyshareRemove unregisters the keyshare server of the specified scheme manager.
+// KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
 func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) error {
 	if _, contains := cm.keyshareServers[manager]; !contains {
 		return errors.New("Can't uninstall unknown keyshare server")

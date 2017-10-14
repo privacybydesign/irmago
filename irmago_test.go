@@ -29,10 +29,10 @@ func TestMain(m *testing.M) {
 
 type IgnoringClientHandler struct{}
 
-func (i *IgnoringClientHandler) UpdateConfigurationStore(new *IrmaIdentifierSet)              {}
-func (i *IgnoringClientHandler) UpdateAttributes()                                            {}
-func (i *IgnoringClientHandler) RegistrationError(manager SchemeManagerIdentifier, err error) {}
-func (i *IgnoringClientHandler) RegistrationSuccess(manager SchemeManagerIdentifier)          {}
+func (i *IgnoringClientHandler) UpdateConfigurationStore(new *IrmaIdentifierSet)            {}
+func (i *IgnoringClientHandler) UpdateAttributes()                                          {}
+func (i *IgnoringClientHandler) EnrollmentError(manager SchemeManagerIdentifier, err error) {}
+func (i *IgnoringClientHandler) EnrollmentSuccess(manager SchemeManagerIdentifier)          {}
 
 func parseStorage(t *testing.T) *CredentialManager {
 	exists, err := PathExists("testdata/storage/test")

@@ -26,7 +26,7 @@ type Handler interface {
 	Cancelled(action Action)
 	Failure(action Action, err *SessionError)
 	UnsatisfiableRequest(action Action, missing AttributeDisjunctionList)
-	MissingKeyshareServer(manager SchemeManagerIdentifier)
+	MissingKeyshareEnrollment(manager SchemeManagerIdentifier)
 
 	RequestIssuancePermission(request IssuanceRequest, ServerName string, callback PermissionHandler)
 	RequestVerificationPermission(request DisclosureRequest, ServerName string, callback PermissionHandler)
@@ -185,7 +185,7 @@ func (session *session) start() {
 		}
 	}
 
-	// Check if we are registered to all involved keyshare servers
+	// Check if we are enrolled into all involved keyshare servers
 	for id := range session.irmaSession.Identifiers().SchemeManagers {
 		manager, ok := session.credManager.ConfigurationStore.SchemeManagers[id]
 		if !ok {
@@ -193,10 +193,10 @@ func (session *session) start() {
 			return
 		}
 		distributed := manager.Distributed()
-		_, registered := session.credManager.keyshareServers[id]
-		if distributed && !registered {
+		_, enrolled := session.credManager.keyshareServers[id]
+		if distributed && !enrolled {
 			session.transport.Delete()
-			session.Handler.MissingKeyshareServer(id)
+			session.Handler.MissingKeyshareEnrollment(id)
 			return
 		}
 	}

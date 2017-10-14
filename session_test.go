@@ -20,7 +20,7 @@ type TestHandler struct {
 	manager *CredentialManager
 }
 
-func (th TestHandler) MissingKeyshareServer(manager SchemeManagerIdentifier) {
+func (th TestHandler) MissingKeyshareEnrollment(manager SchemeManagerIdentifier) {
 	th.Failure(ActionUnknown, &SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 
@@ -194,23 +194,23 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, manager *C
 	}
 }
 
-func registerKeyshareServer(t *testing.T, manager *CredentialManager) {
+func enrollKeyshareServer(t *testing.T, manager *CredentialManager) {
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
 	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
 	require.NoError(t, manager.keyshareEnrollWorker(NewSchemeManagerIdentifier("test"), email, "12345"))
 }
 
-// Register a new account at the keyshare server and do an issuance, disclosure,
+// Enroll at a keyshare server and do an issuance, disclosure,
 // and issuance session, also using irma-demo credentials deserialized from Android storage
-func TestKeyshareRegistrationAndSessions(t *testing.T) {
+func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	manager := parseStorage(t)
 
 	manager.credentials[NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
 	test := NewSchemeManagerIdentifier("test")
 	err := manager.KeyshareRemove(test)
 	require.NoError(t, err)
-	registerKeyshareServer(t, manager)
+	enrollKeyshareServer(t, manager)
 
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := Timestamp(NewMetadataAttribute().Expiry())
@@ -249,9 +249,9 @@ func TestKeyshareRegistrationAndSessions(t *testing.T) {
 	teardown(t)
 }
 
-// Use the existing keyshare registration and credentials deserialized from Android storage
+// Use the existing keyshare enrollment and credentials deserialized from Android storage
 // in a keyshare session of each session type.
-// Use keyshareuser.sql to register the user at the keyshare server.
+// Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
 	manager := parseStorage(t)
 	id := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
