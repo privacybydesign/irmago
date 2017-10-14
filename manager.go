@@ -668,6 +668,7 @@ func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) err
 
 func (cm *CredentialManager) KeyshareRemoveAll() error {
 	cm.keyshareServers = map[SchemeManagerIdentifier]*keyshareServer{}
+	cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
 	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
 }
 
