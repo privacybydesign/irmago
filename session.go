@@ -133,6 +133,25 @@ func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) {
 	return
 }
 
+func handlePanic(callback func(*SessionError)) {
+	if e := recover(); e != nil {
+		var info string
+		switch x := e.(type) {
+		case string:
+			info = x
+		case error:
+			info = x.Error()
+		case fmt.Stringer:
+			info = x.String()
+		default: // nop
+		}
+		fmt.Printf("Recovered from panic: '%v'\n%s\n", e, info)
+		if callback != nil {
+			callback(&SessionError{ErrorType: ErrorPanic, Info: info})
+		}
+	}
+}
+
 func (session *session) fail(err *SessionError) {
 	session.transport.Delete()
 	err.Err = errors.Wrap(err.Err, 0)
@@ -153,6 +172,14 @@ func (session *session) cancel() {
 // start retrieves the first message in the IRMA protocol, checks if we can perform
 // the request, and informs the user of the outcome.
 func (session *session) start() {
+	defer func() {
+		handlePanic(func(err *SessionError) {
+			if session.Handler != nil {
+				session.Handler.Failure(session.Action, err)
+			}
+		})
+	}()
+
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
 	if session.Action == ActionSchemeManager {
@@ -253,6 +280,14 @@ func (session *session) start() {
 }
 
 func (session *session) do(proceed bool) {
+	defer func() {
+		handlePanic(func(err *SessionError) {
+			if session.Handler != nil {
+				session.Handler.Failure(session.Action, err)
+			}
+		})
+	}()
+
 	if !proceed {
 		session.cancel()
 		return

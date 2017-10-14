@@ -105,6 +105,8 @@ const (
 	ErrorConfigurationStoreDownload = ErrorType("configurationStoreDownload")
 	// IRMA requests refers to unknown scheme manager
 	ErrorUnknownSchemeManager = ErrorType("unknownSchemeManager")
+	// Recovered panic
+	ErrorPanic = ErrorType("panic")
 )
 
 func (e *SessionError) Error() string {

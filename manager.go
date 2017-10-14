@@ -605,6 +605,14 @@ func (cm *CredentialManager) unenrolledKeyshareServers() []SchemeManagerIdentifi
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
 func (cm *CredentialManager) KeyshareEnroll(manager SchemeManagerIdentifier, email, pin string) {
 	go func() {
+		defer func() {
+			handlePanic(func(err *SessionError) {
+				if cm.handler != nil {
+					cm.handler.EnrollmentError(manager, err)
+				}
+			})
+		}()
+
 		err := cm.keyshareEnrollWorker(manager, email, pin)
 		cm.UnenrolledKeyshareServers = cm.unenrolledKeyshareServers()
 		if err != nil {
@@ -613,6 +621,7 @@ func (cm *CredentialManager) KeyshareEnroll(manager SchemeManagerIdentifier, ema
 			cm.handler.EnrollmentSuccess(manager)
 		}
 	}()
+
 }
 
 func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentifier, email, pin string) error {
