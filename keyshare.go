@@ -204,13 +204,13 @@ func startKeyshareSession(
 // with authorization, or stop the keyshare protocol and inform of failure.
 func (ks *keyshareSession) VerifyPin(attempts int) {
 	ks.pinRequestor.RequestPin(attempts, PinHandler(func(proceed bool, pin string) {
+		if !proceed {
+			ks.sessionHandler.KeyshareCancelled()
+		}
 		success, attemptsRemaining, blocked, err := ks.verifyPinAttempt(pin)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return
-		}
-		if !proceed {
-			ks.sessionHandler.KeyshareCancelled()
 		}
 		if blocked != 0 {
 			ks.sessionHandler.KeyshareBlocked(blocked)
