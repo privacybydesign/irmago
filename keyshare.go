@@ -206,6 +206,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 	ks.pinRequestor.RequestPin(attempts, PinHandler(func(proceed bool, pin string) {
 		if !proceed {
 			ks.sessionHandler.KeyshareCancelled()
+			return
 		}
 		success, attemptsRemaining, blocked, err := ks.verifyPinAttempt(pin)
 		if err != nil {
