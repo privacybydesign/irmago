@@ -54,7 +54,7 @@ type session struct {
 	transport   *HTTPTransport
 	choice      *DisclosureChoice
 	downloaded  *IrmaIdentifierSet
-	deleted     bool
+	done        bool
 }
 
 // We implement the handler for the keyshare protocol
@@ -361,6 +361,7 @@ func (session *session) sendResponse(message interface{}) {
 	if session.Action == ActionIssuing {
 		session.credManager.handler.UpdateAttributes()
 	}
+	session.done = true
 	session.Handler.Success(session.Action)
 }
 
@@ -417,9 +418,9 @@ func handlePanic(callback func(*SessionError)) {
 
 // Idempotently send DELETE to remote server, returning whether or not we did something
 func (session *session) delete() bool {
-	if !session.deleted {
+	if !session.done {
 		session.transport.Delete()
-		session.deleted = true
+		session.done = true
 		return true
 	}
 	return false
