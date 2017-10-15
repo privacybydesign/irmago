@@ -170,17 +170,28 @@ func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
 // imediately, and optionally cm.attributes as well.
 func (cm *CredentialManager) addCredential(cred *credential, storeAttributes bool) (err error) {
 	id := cred.CredentialType().Identifier()
-	cm.attributes[id] = append(cm.attrs(id), cred.AttributeList())
 
+	// Don't add duplicate creds
+	for _, attrlistlist := range cm.attributes {
+		for _, attrs := range attrlistlist {
+			if attrs.hash() == cred.AttributeList().hash() {
+				return nil
+			}
+		}
+	}
+
+	// If this is a singleton credential type, ensure we have at most one by removing any previous instance
+	if cred.CredentialType().IsSingleton && len(cm.creds(id)) > 0 {
+		cm.remove(id, 0, false) // Index is 0, because if we're here we have exactly one
+	}
+
+	// Append the new cred to our attributes and credentials
+	cm.attributes[id] = append(cm.attrs(id), cred.AttributeList())
 	if _, exists := cm.credentials[id]; !exists {
 		cm.credentials[id] = make(map[int]*credential)
 	}
-	if cred.CredentialType().IsSingleton {
-		cm.credentials[id][0] = cred
-	} else {
-		counter := len(cm.attributes[id]) - 1
-		cm.credentials[id][counter] = cred
-	}
+	counter := len(cm.attributes[id]) - 1
+	cm.credentials[id][counter] = cred
 
 	if err = cm.storage.StoreSignature(cred); err != nil {
 		return
