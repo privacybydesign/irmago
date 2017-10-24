@@ -40,7 +40,7 @@ type metadataField struct {
 type MetadataAttribute struct {
 	Int   *big.Int
 	pk    *gabi.PublicKey
-	store *ConfigurationStore
+	Store *ConfigurationStore
 }
 
 // AttributeList contains attributes, excluding the secret key,
@@ -63,12 +63,12 @@ func NewAttributeListFromInts(ints []*big.Int, store *ConfigurationStore) *Attri
 
 func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
-		al.info = NewCredentialInfo(al.Ints, al.store)
+		al.info = NewCredentialInfo(al.Ints, al.Store)
 	}
 	return al.info
 }
 
-func (al *AttributeList) hash() string {
+func (al *AttributeList) Hash() string {
 	if al.h == "" {
 		bytes := []byte{}
 		for _, i := range al.Ints {
@@ -91,7 +91,7 @@ func (al *AttributeList) Strings() []TranslatedString {
 	return al.strings
 }
 
-func (al *AttributeList) untranslatedAttribute(identifier AttributeTypeIdentifier) string {
+func (al *AttributeList) UntranslatedAttribute(identifier AttributeTypeIdentifier) string {
 	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
 		return ""
 	}
@@ -118,7 +118,7 @@ func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) Translate
 
 // MetadataFromInt wraps the given Int
 func MetadataFromInt(i *big.Int, store *ConfigurationStore) *MetadataAttribute {
-	return &MetadataAttribute{Int: i, store: store}
+	return &MetadataAttribute{Int: i, Store: store}
 }
 
 // NewMetadataAttribute constructs a new instance containing the default values:
@@ -149,7 +149,7 @@ func (attr *MetadataAttribute) Bytes() []byte {
 func (attr *MetadataAttribute) PublicKey() (*gabi.PublicKey, error) {
 	if attr.pk == nil {
 		var err error
-		attr.pk, err = attr.store.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
+		attr.pk, err = attr.Store.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +206,7 @@ func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
 // CredentialType returns the credential type of the current instance
 // using the MetaStore.
 func (attr *MetadataAttribute) CredentialType() *CredentialType {
-	return attr.store.hashToCredentialType(attr.field(credentialID))
+	return attr.Store.hashToCredentialType(attr.field(credentialID))
 }
 
 func (attr *MetadataAttribute) setCredentialTypeIdentifier(id string) {

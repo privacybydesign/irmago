@@ -10,16 +10,16 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
 )
 
 // SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
-	Context     *big.Int `json:"context"`
-	Nonce       *big.Int `json:"nonce"`
-	Candidates  [][]*AttributeIdentifier
-	choice      *DisclosureChoice
-	identifiers *IrmaIdentifierSet
+	Context    *big.Int `json:"context"`
+	Nonce      *big.Int `json:"nonce"`
+	Candidates [][]*AttributeIdentifier
+
+	Choice *DisclosureChoice  `json:"-"`
+	Ids    *IrmaIdentifierSet `json:"-"`
 }
 
 func (sr *SessionRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
@@ -28,12 +28,12 @@ func (sr *SessionRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
 
 // DisclosureChoice returns the attributes to be disclosed in this session.
 func (sr *SessionRequest) DisclosureChoice() *DisclosureChoice {
-	return sr.choice
+	return sr.Choice
 }
 
 // SetDisclosureChoice sets the attributes to be disclosed in this session.
 func (sr *SessionRequest) SetDisclosureChoice(choice *DisclosureChoice) {
-	sr.choice = choice
+	sr.Choice = choice
 }
 
 // A DisclosureRequest is a request to disclose certain attributes.
@@ -56,8 +56,6 @@ type IssuanceRequest struct {
 	Credentials        []*CredentialRequest     `json:"credentials"`
 	Disclose           AttributeDisjunctionList `json:"disclose"`
 	CredentialInfoList CredentialInfoList       `json:",omitempty"`
-
-	state *issuanceState
 }
 
 // A CredentialRequest contains the attributes and metadata of a credential
@@ -125,11 +123,6 @@ type IrmaSession interface {
 // Timestamp is a time.Time that marshals to Unix timestamps.
 type Timestamp time.Time
 
-type issuanceState struct {
-	nonce2   *big.Int
-	builders []*gabi.CredentialBuilder
-}
-
 func (cr *CredentialRequest) Info(store *ConfigurationStore) (*CredentialInfo, error) {
 	list, err := cr.AttributeList(store)
 	if err != nil {
@@ -170,20 +163,9 @@ func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*Attribut
 	return NewAttributeListFromInts(attrs, store), nil
 }
 
-func newIssuanceState() (*issuanceState, error) {
-	nonce2, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
-	if err != nil {
-		return nil, err
-	}
-	return &issuanceState{
-		nonce2:   nonce2,
-		builders: []*gabi.CredentialBuilder{},
-	}, nil
-}
-
 func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
-	if ir.identifiers == nil {
-		ir.identifiers = &IrmaIdentifierSet{
+	if ir.Ids == nil {
+		ir.Ids = &IrmaIdentifierSet{
 			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
@@ -192,13 +174,13 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 
 		for _, credreq := range ir.Credentials {
 			issuer := credreq.CredentialTypeID.IssuerIdentifier()
-			ir.identifiers.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
-			ir.identifiers.Issuers[issuer] = struct{}{}
-			ir.identifiers.CredentialTypes[*credreq.CredentialTypeID] = struct{}{}
-			if ir.identifiers.PublicKeys[issuer] == nil {
-				ir.identifiers.PublicKeys[issuer] = []int{}
+			ir.Ids.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
+			ir.Ids.Issuers[issuer] = struct{}{}
+			ir.Ids.CredentialTypes[*credreq.CredentialTypeID] = struct{}{}
+			if ir.Ids.PublicKeys[issuer] == nil {
+				ir.Ids.PublicKeys[issuer] = []int{}
 			}
-			ir.identifiers.PublicKeys[issuer] = append(ir.identifiers.PublicKeys[issuer], credreq.KeyCounter)
+			ir.Ids.PublicKeys[issuer] = append(ir.Ids.PublicKeys[issuer], credreq.KeyCounter)
 		}
 
 		for _, disjunction := range ir.Disclose {
@@ -209,13 +191,13 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 				} else {
 					cti = NewCredentialTypeIdentifier(attr.String())
 				}
-				ir.identifiers.SchemeManagers[cti.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
-				ir.identifiers.Issuers[cti.IssuerIdentifier()] = struct{}{}
-				ir.identifiers.CredentialTypes[cti] = struct{}{}
+				ir.Ids.SchemeManagers[cti.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+				ir.Ids.Issuers[cti.IssuerIdentifier()] = struct{}{}
+				ir.Ids.CredentialTypes[cti] = struct{}{}
 			}
 		}
 	}
-	return ir.identifiers
+	return ir.Ids
 }
 
 // ToDisclose returns the attributes that must be disclosed in this issuance session.
@@ -234,8 +216,8 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
 
 func (dr *DisclosureRequest) Identifiers() *IrmaIdentifierSet {
-	if dr.identifiers == nil {
-		dr.identifiers = &IrmaIdentifierSet{
+	if dr.Ids == nil {
+		dr.Ids = &IrmaIdentifierSet{
 			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
@@ -243,13 +225,13 @@ func (dr *DisclosureRequest) Identifiers() *IrmaIdentifierSet {
 		}
 		for _, disjunction := range dr.Content {
 			for _, attr := range disjunction.Attributes {
-				dr.identifiers.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
-				dr.identifiers.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
-				dr.identifiers.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
+				dr.Ids.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+				dr.Ids.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
+				dr.Ids.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
 			}
 		}
 	}
-	return dr.identifiers
+	return dr.Ids
 }
 
 // ToDisclose returns the attributes to be disclosed in this session.

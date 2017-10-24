@@ -1,22 +1,12 @@
 package irmago
 
 import (
+	"fmt"
+	"math/big"
 	"strings"
 
-	"math/big"
-
-	"fmt"
-
-	"github.com/mhe/gabi"
+	"github.com/credentials/irmago/internal/fs"
 )
-
-// credential represents an IRMA credential, whose zeroth attribute
-// is always the secret key and the first attribute the metadata attribute.
-type credential struct {
-	*gabi.Credential
-	*MetadataAttribute
-	attrs *AttributeList
-}
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
@@ -46,7 +36,7 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 	}
 
 	path := fmt.Sprintf("%s/%s/%s/Issues/%s/logo.png", store.path, credtype.SchemeManagerID, credtype.IssuerID, credtype.ID)
-	exists, err := PathExists(path)
+	exists, err := fs.PathExists(path)
 	if err != nil {
 		return nil
 	}
@@ -64,29 +54,8 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 		Expires:          Timestamp(meta.Expiry()),
 		Attributes:       attrs,
 		Logo:             path,
-		Hash:             NewAttributeListFromInts(ints, store).hash(),
+		Hash:             NewAttributeListFromInts(ints, store).Hash(),
 	}
-}
-
-func newCredential(gabicred *gabi.Credential, store *ConfigurationStore) (*credential, error) {
-	meta := MetadataFromInt(gabicred.Attributes[1], store)
-	cred := &credential{
-		Credential:        gabicred,
-		MetadataAttribute: meta,
-	}
-	var err error
-	cred.Pk, err = store.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
-	if err != nil {
-		return nil, err
-	}
-	return cred, nil
-}
-
-func (cred *credential) AttributeList() *AttributeList {
-	if cred.attrs == nil {
-		cred.attrs = NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.store)
-	}
-	return cred.attrs
 }
 
 // Len implements sort.Interface.
@@ -101,6 +70,6 @@ func (cl CredentialInfoList) Swap(i, j int) {
 
 // Less implements sort.Interface.
 func (cl CredentialInfoList) Less(i, j int) bool {
-	// TODO Decide on sorting, and if it depends on a TranslatedString, allow language choosing
+	// TODO Decide on sorting, and if it depends on a irmago.TranslatedString, allow language choosing
 	return strings.Compare(cl[i].Name, cl[j].Name) > 0
 }

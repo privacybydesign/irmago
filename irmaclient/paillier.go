@@ -1,4 +1,4 @@
-package irmago
+package irmaclient
 
 import (
 	"encoding/json"

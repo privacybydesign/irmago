@@ -116,7 +116,7 @@ func (e *SessionError) Error() string {
 	return string(e.ErrorType)
 }
 
-func jwtDecode(jwt string, body interface{}) error {
+func JwtDecode(jwt string, body interface{}) error {
 	jwtparts := strings.Split(jwt, ".")
 	if jwtparts == nil || len(jwtparts) < 2 {
 		return errors.New("Not a JWT")
@@ -128,7 +128,7 @@ func jwtDecode(jwt string, body interface{}) error {
 	return json.Unmarshal(bodybytes, body)
 }
 
-func parseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
+func ParseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
 	var retval RequestorJwt
 	switch action {
 	case ActionDisclosing:
@@ -140,7 +140,7 @@ func parseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
 	default:
 		return nil, errors.New("Invalid session type")
 	}
-	err := jwtDecode(jwt, retval)
+	err := JwtDecode(jwt, retval)
 	if err != nil {
 		return nil, err
 	}

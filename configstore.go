@@ -14,6 +14,7 @@ import (
 
 	"strings"
 
+	"github.com/credentials/irmago/internal/fs"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -38,7 +39,7 @@ func NewConfigurationStore(path string, assets string) (store *ConfigurationStor
 		path: path,
 	}
 
-	if err = ensureDirectoryExists(store.path); err != nil {
+	if err = fs.EnsureDirectoryExists(store.path); err != nil {
 		return nil, err
 	}
 	if assets != "" {
@@ -226,7 +227,7 @@ func (store *ConfigurationStore) Contains(cred CredentialTypeIdentifier) bool {
 }
 
 func (store *ConfigurationStore) Copy(source string, parse bool) error {
-	if err := ensureDirectoryExists(store.path); err != nil {
+	if err := fs.EnsureDirectoryExists(store.path); err != nil {
 		return err
 	}
 
@@ -237,7 +238,7 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 			}
 			subpath := path[len(source):]
 			if info.IsDir() {
-				if err := ensureDirectoryExists(store.path + subpath); err != nil {
+				if err := fs.EnsureDirectoryExists(store.path + subpath); err != nil {
 					return err
 				}
 			} else {
@@ -250,7 +251,7 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 				if err != nil {
 					return err
 				}
-				if err := saveFile(store.path+subpath, bytes); err != nil {
+				if err := fs.SaveFile(store.path+subpath, bytes); err != nil {
 					return err
 				}
 			}
@@ -314,14 +315,14 @@ func (store *ConfigurationStore) RemoveSchemeManager(id SchemeManagerIdentifier)
 
 func (store *ConfigurationStore) AddSchemeManager(manager *SchemeManager) error {
 	name := manager.ID
-	if err := ensureDirectoryExists(fmt.Sprintf("%s/%s", store.path, name)); err != nil {
+	if err := fs.EnsureDirectoryExists(fmt.Sprintf("%s/%s", store.path, name)); err != nil {
 		return err
 	}
 	b, err := xml.Marshal(manager)
 	if err != nil {
 		return err
 	}
-	if err := saveFile(fmt.Sprintf("%s/%s/description.xml", store.path, name), b); err != nil {
+	if err := fs.SaveFile(fmt.Sprintf("%s/%s/description.xml", store.path, name), b); err != nil {
 		return err
 	}
 	store.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
@@ -378,7 +379,7 @@ func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) (*IrmaIdentifi
 			issuer := credid.IssuerIdentifier()
 			manager := issuer.SchemeManagerIdentifier()
 			local := fmt.Sprintf("%s/%s/%s/Issues", store.path, manager.Name(), issuer.Name())
-			if err := ensureDirectoryExists(local); err != nil {
+			if err := fs.EnsureDirectoryExists(local); err != nil {
 				return nil, err
 			}
 			if transport.GetFile(

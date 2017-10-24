@@ -1,14 +1,12 @@
-package irmago
+package irmaclient
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"io/ioutil"
 	"os"
-	"path"
 
-	"github.com/go-errors/errors"
+	"github.com/credentials/irmago"
+	"github.com/credentials/irmago/internal/fs"
 	"github.com/mhe/gabi"
 )
 
@@ -18,7 +16,7 @@ import (
 // Storage provider for a Client
 type storage struct {
 	storagePath        string
-	ConfigurationStore *ConfigurationStore
+	ConfigurationStore *irmago.ConfigurationStore
 }
 
 // Filenames in which we store stuff
@@ -32,66 +30,6 @@ const (
 	signaturesDir  = "sigs"
 )
 
-// AssertPathExists returns nil only if it has been successfully
-// verified that the specified path exists.
-func AssertPathExists(path string) error {
-	exist, err := PathExists(path)
-	if err != nil {
-		return err
-	}
-	if !exist {
-		return errors.Errorf("Path %s does not exist", path)
-	}
-	return nil
-}
-
-// PathExists checks if the specified path exists.
-func PathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return true, err
-}
-
-func ensureDirectoryExists(path string) error {
-	exists, err := PathExists(path)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	return os.Mkdir(path, 0700)
-}
-
-// Save the filecontents at the specified path atomically:
-// - first save the content in a temp file with a random filename in the same dir
-// - then rename the temp file to the specified filepath, overwriting the old file
-func saveFile(filepath string, content []byte) (err error) {
-	dir := path.Dir(filepath)
-
-	// Read random data for filename and convert to hex
-	randBytes := make([]byte, 16)
-	_, err = rand.Read(randBytes)
-	if err != nil {
-		return
-	}
-	tempfilename := hex.EncodeToString(randBytes)
-
-	// Create temp file
-	err = ioutil.WriteFile(dir+"/"+tempfilename, content, 0600)
-	if err != nil {
-		return
-	}
-
-	// Rename, overwriting old file
-	return os.Rename(dir+"/"+tempfilename, filepath)
-}
-
 func (s *storage) path(p string) string {
 	return s.storagePath + "/" + p
 }
@@ -102,14 +40,14 @@ func (s *storage) path(p string) string {
 // Setting it up in a properly protected location (e.g., with automatic
 // backups to iCloud/Google disabled) is the responsibility of the user.
 func (s *storage) EnsureStorageExists() error {
-	if err := AssertPathExists(s.storagePath); err != nil {
+	if err := fs.AssertPathExists(s.storagePath); err != nil {
 		return err
 	}
-	return ensureDirectoryExists(s.path(signaturesDir))
+	return fs.EnsureDirectoryExists(s.path(signaturesDir))
 }
 
 func (s *storage) load(dest interface{}, path string) (err error) {
-	exists, err := PathExists(s.path(path))
+	exists, err := fs.PathExists(s.path(path))
 	if err != nil || !exists {
 		return
 	}
@@ -125,19 +63,19 @@ func (s *storage) store(contents interface{}, file string) error {
 	if err != nil {
 		return err
 	}
-	return saveFile(s.path(file), bts)
+	return fs.SaveFile(s.path(file), bts)
 }
 
-func (s *storage) signatureFilename(attrs *AttributeList) string {
+func (s *storage) signatureFilename(attrs *irmago.AttributeList) string {
 	// We take the SHA256 hash over all attributes as the filename for the signature.
 	// This means that the signatures of two credentials that have identical attributes
 	// will be written to the same file, one overwriting the other - but that doesn't
 	// matter, because either one of the signatures is valid over both attribute lists,
 	// so keeping one of them suffices.
-	return signaturesDir + "/" + attrs.hash()
+	return signaturesDir + "/" + attrs.Hash()
 }
 
-func (s *storage) DeleteSignature(attrs *AttributeList) error {
+func (s *storage) DeleteSignature(attrs *irmago.AttributeList) error {
 	return os.Remove(s.path(s.signatureFilename(attrs)))
 }
 
@@ -149,8 +87,8 @@ func (s *storage) StoreSecretKey(sk *secretKey) error {
 	return s.store(sk, skFile)
 }
 
-func (s *storage) StoreAttributes(attributes map[CredentialTypeIdentifier][]*AttributeList) error {
-	temp := []*AttributeList{}
+func (s *storage) StoreAttributes(attributes map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList) error {
+	temp := []*irmago.AttributeList{}
 	for _, attrlistlist := range attributes {
 		for _, attrlist := range attrlistlist {
 			temp = append(temp, attrlist)
@@ -160,7 +98,7 @@ func (s *storage) StoreAttributes(attributes map[CredentialTypeIdentifier][]*Att
 	return s.store(temp, attributesFile)
 }
 
-func (s *storage) StoreKeyshareServers(keyshareServers map[SchemeManagerIdentifier]*keyshareServer) (err error) {
+func (s *storage) StoreKeyshareServers(keyshareServers map[irmago.SchemeManagerIdentifier]*keyshareServer) (err error) {
 	return s.store(keyshareServers, kssFile)
 }
 
@@ -176,9 +114,9 @@ func (s *storage) StoreUpdates(updates []update) (err error) {
 	return s.store(updates, updatesFile)
 }
 
-func (s *storage) LoadSignature(attrs *AttributeList) (signature *gabi.CLSignature, err error) {
+func (s *storage) LoadSignature(attrs *irmago.AttributeList) (signature *gabi.CLSignature, err error) {
 	sigpath := s.signatureFilename(attrs)
-	if err := AssertPathExists(s.path(sigpath)); err != nil {
+	if err := fs.AssertPathExists(s.path(sigpath)); err != nil {
 		return nil, err
 	}
 	signature = new(gabi.CLSignature)
@@ -209,23 +147,23 @@ func (s *storage) LoadSecretKey() (*secretKey, error) {
 	return sk, nil
 }
 
-func (s *storage) LoadAttributes() (list map[CredentialTypeIdentifier][]*AttributeList, err error) {
+func (s *storage) LoadAttributes() (list map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList, err error) {
 	// The attributes are stored as a list of instances of AttributeList
-	temp := []*AttributeList{}
+	temp := []*irmago.AttributeList{}
 	if err = s.load(&temp, attributesFile); err != nil {
 		return
 	}
 
-	list = make(map[CredentialTypeIdentifier][]*AttributeList)
+	list = make(map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList)
 	for _, attrlist := range temp {
-		attrlist.MetadataAttribute = MetadataFromInt(attrlist.Ints[0], s.ConfigurationStore)
+		attrlist.MetadataAttribute = irmago.MetadataFromInt(attrlist.Ints[0], s.ConfigurationStore)
 		id := attrlist.CredentialType()
-		var ct CredentialTypeIdentifier
+		var ct irmago.CredentialTypeIdentifier
 		if id != nil {
 			ct = id.Identifier()
 		}
 		if _, contains := list[ct]; !contains {
-			list[ct] = []*AttributeList{}
+			list[ct] = []*irmago.AttributeList{}
 		}
 		list[ct] = append(list[ct], attrlist)
 	}
@@ -233,8 +171,8 @@ func (s *storage) LoadAttributes() (list map[CredentialTypeIdentifier][]*Attribu
 	return list, nil
 }
 
-func (s *storage) LoadKeyshareServers() (ksses map[SchemeManagerIdentifier]*keyshareServer, err error) {
-	ksses = make(map[SchemeManagerIdentifier]*keyshareServer)
+func (s *storage) LoadKeyshareServers() (ksses map[irmago.SchemeManagerIdentifier]*keyshareServer, err error) {
+	ksses = make(map[irmago.SchemeManagerIdentifier]*keyshareServer)
 	if err := s.load(&ksses, kssFile); err != nil {
 		return nil, err
 	}

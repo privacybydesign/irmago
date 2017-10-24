@@ -1,4 +1,4 @@
-package irmago
+package irmaclient
 
 import (
 	"encoding/json"
@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/credentials/irmago"
+	"github.com/credentials/irmago/internal/fs"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -16,7 +18,7 @@ import (
 // as well as updates themselves.
 
 type update struct {
-	When    Timestamp
+	When    irmago.Timestamp
 	Number  int
 	Success bool
 	Error   *string
@@ -43,7 +45,7 @@ func (client *Client) update() error {
 	for i := len(client.updates); i < len(clientUpdates); i++ {
 		err = clientUpdates[i](client)
 		u := update{
-			When:    Timestamp(time.Now()),
+			When:    irmago.Timestamp(time.Now()),
 			Number:  i,
 			Success: err == nil,
 		}
@@ -67,7 +69,7 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 	}
 
 	cardemuXML := client.androidStoragePath + "/shared_prefs/cardemu.xml"
-	present, err = PathExists(cardemuXML)
+	present, err = fs.PathExists(cardemuXML)
 	if err != nil || !present {
 		return
 	}
@@ -93,7 +95,7 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 		Attributes   []*big.Int        `json:"attributes"`
 		SharedPoints []*big.Int        `json:"public_sks"`
 	})
-	client.keyshareServers = make(map[SchemeManagerIdentifier]*keyshareServer)
+	client.keyshareServers = make(map[irmago.SchemeManagerIdentifier]*keyshareServer)
 	for _, xmltag := range parsedxml.Strings {
 		if xmltag.Name == "credentials" {
 			jsontag := html.UnescapeString(xmltag.Content)

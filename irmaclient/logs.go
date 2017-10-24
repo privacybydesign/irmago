@@ -1,36 +1,37 @@
-package irmago
+package irmaclient
 
 import (
 	"encoding/json"
 	"time"
 
+	"github.com/credentials/irmago"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
 
 type LogEntry struct {
 	// General info
-	Type        Action
-	Time        Timestamp    // Time at which the session was completed
-	SessionInfo *SessionInfo // Message that started the session
+	Type        irmago.Action
+	Time        irmago.Timestamp    // Time at which the session was completed
+	SessionInfo *irmago.SessionInfo // Message that started the session
 
 	// Session type-specific info
-	Disclosed         map[CredentialTypeIdentifier]map[int]TranslatedString // Any session type
-	Received          map[CredentialTypeIdentifier][]TranslatedString       // In case of issuance session
-	Removed           map[CredentialTypeIdentifier][]TranslatedString       // In case of credential removal
-	SignedMessage     []byte                                                // In case of signature sessions
-	SignedMessageType string                                                // In case of signature sessions
+	Disclosed         map[irmago.CredentialTypeIdentifier]map[int]irmago.TranslatedString // Any session type
+	Received          map[irmago.CredentialTypeIdentifier][]irmago.TranslatedString       // In case of issuance session
+	Removed           map[irmago.CredentialTypeIdentifier][]irmago.TranslatedString       // In case of credential removal
+	SignedMessage     []byte                                                              // In case of signature sessions
+	SignedMessageType string                                                              // In case of signature sessions
 
 	response    interface{}     // Our response (ProofList or IssueCommitmentMessage)
 	rawResponse json.RawMessage // Unparsed []byte version of response
 }
 
-const actionRemoval = Action("removal")
+const actionRemoval = irmago.Action("removal")
 
 func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
 		Type:        session.Action,
-		Time:        Timestamp(time.Now()),
+		Time:        irmago.Timestamp(time.Now()),
 		SessionInfo: session.info,
 		response:    response,
 	}
@@ -39,19 +40,19 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	var prooflist gabi.ProofList
 	var ok bool
 	switch entry.Type {
-	case ActionSigning:
-		entry.SignedMessage = []byte(session.jwt.(*SignatureRequestorJwt).Request.Request.Message)
-		entry.SignedMessageType = session.jwt.(*SignatureRequestorJwt).Request.Request.MessageType
+	case irmago.ActionSigning:
+		entry.SignedMessage = []byte(session.jwt.(*irmago.SignatureRequestorJwt).Request.Request.Message)
+		entry.SignedMessageType = session.jwt.(*irmago.SignatureRequestorJwt).Request.Request.MessageType
 		fallthrough
-	case ActionDisclosing:
+	case irmago.ActionDisclosing:
 		if prooflist, ok = response.(gabi.ProofList); !ok {
 			return nil, errors.New("Response was not a ProofList")
 		}
-	case ActionIssuing:
+	case irmago.ActionIssuing:
 		if entry.Received == nil {
-			entry.Received = map[CredentialTypeIdentifier][]TranslatedString{}
+			entry.Received = map[irmago.CredentialTypeIdentifier][]irmago.TranslatedString{}
 		}
-		for _, req := range session.jwt.(*IdentityProviderJwt).Request.Request.Credentials {
+		for _, req := range session.jwt.(*irmago.IdentityProviderJwt).Request.Request.Credentials {
 			list, err := req.AttributeList(session.client.ConfigurationStore)
 			if err != nil {
 				continue // TODO?
@@ -72,17 +73,17 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	for _, proof := range prooflist {
 		if proofd, isproofd := proof.(*gabi.ProofD); isproofd {
 			if entry.Disclosed == nil {
-				entry.Disclosed = map[CredentialTypeIdentifier]map[int]TranslatedString{}
+				entry.Disclosed = map[irmago.CredentialTypeIdentifier]map[int]irmago.TranslatedString{}
 			}
-			meta := MetadataFromInt(proofd.ADisclosed[1], session.client.ConfigurationStore)
+			meta := irmago.MetadataFromInt(proofd.ADisclosed[1], session.client.ConfigurationStore)
 			id := meta.CredentialType().Identifier()
-			entry.Disclosed[id] = map[int]TranslatedString{}
+			entry.Disclosed[id] = map[int]irmago.TranslatedString{}
 			for i, attr := range proofd.ADisclosed {
 				if i == 1 {
 					continue
 				}
 				val := string(attr.Bytes())
-				entry.Disclosed[id][i] = TranslatedString{"en": val, "nl": val}
+				entry.Disclosed[id][i] = irmago.TranslatedString{"en": val, "nl": val}
 			}
 		}
 	}
@@ -90,8 +91,8 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	return entry, nil
 }
 
-func (entry *LogEntry) Jwt() (RequestorJwt, error) {
-	return parseRequestorJwt(entry.Type, entry.SessionInfo.Jwt)
+func (entry *LogEntry) Jwt() (irmago.RequestorJwt, error) {
+	return irmago.ParseRequestorJwt(entry.Type, entry.SessionInfo.Jwt)
 }
 
 func (entry *LogEntry) GetResponse() (interface{}, error) {
@@ -99,11 +100,11 @@ func (entry *LogEntry) GetResponse() (interface{}, error) {
 		switch entry.Type {
 		case actionRemoval:
 			return nil, nil
-		case ActionSigning:
+		case irmago.ActionSigning:
 			fallthrough
-		case ActionDisclosing:
+		case irmago.ActionDisclosing:
 			entry.response = []*gabi.ProofD{}
-		case ActionIssuing:
+		case irmago.ActionIssuing:
 			entry.response = &gabi.IssueCommitmentMessage{}
 		default:
 			return nil, errors.New("Invalid log type")
@@ -118,15 +119,15 @@ func (entry *LogEntry) GetResponse() (interface{}, error) {
 }
 
 type jsonLogEntry struct {
-	Type        Action
-	Time        Timestamp
+	Type        irmago.Action
+	Time        irmago.Timestamp
 	SessionInfo *logSessionInfo
 
-	Disclosed         map[CredentialTypeIdentifier]map[int]TranslatedString `json:",omitempty"`
-	Received          map[CredentialTypeIdentifier][]TranslatedString       `json:",omitempty"`
-	Removed           map[CredentialTypeIdentifier][]TranslatedString       `json:",omitempty"`
-	SignedMessage     []byte                                                `json:",omitempty"`
-	SignedMessageType string                                                `json:",omitempty"`
+	Disclosed         map[irmago.CredentialTypeIdentifier]map[int]irmago.TranslatedString `json:",omitempty"`
+	Received          map[irmago.CredentialTypeIdentifier][]irmago.TranslatedString       `json:",omitempty"`
+	Removed           map[irmago.CredentialTypeIdentifier][]irmago.TranslatedString       `json:",omitempty"`
+	SignedMessage     []byte                                                              `json:",omitempty"`
+	SignedMessageType string                                                              `json:",omitempty"`
 
 	Response json.RawMessage
 }
@@ -141,11 +142,11 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 	*entry = LogEntry{
 		Type: temp.Type,
 		Time: temp.Time,
-		SessionInfo: &SessionInfo{
+		SessionInfo: &irmago.SessionInfo{
 			Jwt:     temp.SessionInfo.Jwt,
 			Nonce:   temp.SessionInfo.Nonce,
 			Context: temp.SessionInfo.Context,
-			Keys:    make(map[IssuerIdentifier]int),
+			Keys:    make(map[irmago.IssuerIdentifier]int),
 		},
 		Removed:           temp.Removed,
 		Disclosed:         temp.Disclosed,
@@ -157,7 +158,7 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 
 	// TODO remove on protocol upgrade
 	for iss, count := range temp.SessionInfo.Keys {
-		entry.SessionInfo.Keys[NewIssuerIdentifier(iss)] = count
+		entry.SessionInfo.Keys[irmago.NewIssuerIdentifier(iss)] = count
 	}
 
 	return nil

@@ -1,4 +1,4 @@
-package irmago
+package irmaclient
 
 import (
 	"crypto/rand"
@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/credentials/go-go-gadget-paillier"
+	"github.com/credentials/irmago"
+	"github.com/credentials/irmago/internal/fs"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -35,9 +37,9 @@ import (
 type Client struct {
 	// Stuff we manage on disk
 	secretkey        *secretKey
-	attributes       map[CredentialTypeIdentifier][]*AttributeList
-	credentials      map[CredentialTypeIdentifier]map[int]*credential
-	keyshareServers  map[SchemeManagerIdentifier]*keyshareServer
+	attributes       map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList
+	credentials      map[irmago.CredentialTypeIdentifier]map[int]*credential
+	keyshareServers  map[irmago.SchemeManagerIdentifier]*keyshareServer
 	paillierKeyCache *paillierPrivateKey
 	logs             []*LogEntry
 	updates          []update
@@ -46,24 +48,25 @@ type Client struct {
 	storage storage
 
 	// Other state
-	ConfigurationStore       *ConfigurationStore
-	UnenrolledSchemeManagers []SchemeManagerIdentifier
+	ConfigurationStore       *irmago.ConfigurationStore
+	UnenrolledSchemeManagers []irmago.SchemeManagerIdentifier
 	irmaConfigurationPath    string
 	androidStoragePath       string
 	handler                  ClientHandler
+	state                    *issuanceState
 }
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
 // for enrolling at a keyshare server.
 type KeyshareHandler interface {
-	EnrollmentError(manager SchemeManagerIdentifier, err error)
-	EnrollmentSuccess(manager SchemeManagerIdentifier)
+	EnrollmentError(manager irmago.SchemeManagerIdentifier, err error)
+	EnrollmentSuccess(manager irmago.SchemeManagerIdentifier)
 }
 
 type ClientHandler interface {
 	KeyshareHandler
 
-	UpdateConfigurationStore(new *IrmaIdentifierSet)
+	UpdateConfigurationStore(new *irmago.IrmaIdentifierSet)
 	UpdateAttributes()
 }
 
@@ -90,23 +93,23 @@ func NewClient(
 	handler ClientHandler,
 ) (*Client, error) {
 	var err error
-	if err = AssertPathExists(storagePath); err != nil {
+	if err = fs.AssertPathExists(storagePath); err != nil {
 		return nil, err
 	}
-	if err = AssertPathExists(irmaConfigurationPath); err != nil {
+	if err = fs.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
 
 	cm := &Client{
-		credentials:           make(map[CredentialTypeIdentifier]map[int]*credential),
-		keyshareServers:       make(map[SchemeManagerIdentifier]*keyshareServer),
-		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
+		credentials:           make(map[irmago.CredentialTypeIdentifier]map[int]*credential),
+		keyshareServers:       make(map[irmago.SchemeManagerIdentifier]*keyshareServer),
+		attributes:            make(map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		androidStoragePath:    androidStoragePath,
 		handler:               handler,
 	}
 
-	cm.ConfigurationStore, err = NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath)
+	cm.ConfigurationStore, err = irmago.NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath)
 	if err != nil {
 		return nil, err
 	}
@@ -151,8 +154,8 @@ func NewClient(
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
-func (client *Client) CredentialInfoList() CredentialInfoList {
-	list := CredentialInfoList([]*CredentialInfo{})
+func (client *Client) CredentialInfoList() irmago.CredentialInfoList {
+	list := irmago.CredentialInfoList([]*irmago.CredentialInfo{})
 
 	for _, attrlistlist := range client.attributes {
 		for index, attrlist := range attrlistlist {
@@ -174,7 +177,7 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 	// Don't add duplicate creds
 	for _, attrlistlist := range client.attributes {
 		for _, attrs := range attrlistlist {
-			if attrs.hash() == cred.AttributeList().hash() {
+			if attrs.Hash() == cred.AttributeList().Hash() {
 				return nil
 			}
 		}
@@ -212,7 +215,7 @@ func generateSecretKey() (*secretKey, error) {
 
 // Removal methods
 
-func (client *Client) remove(id CredentialTypeIdentifier, index int, storenow bool) error {
+func (client *Client) remove(id irmago.CredentialTypeIdentifier, index int, storenow bool) error {
 	// Remove attributes
 	list, exists := client.attributes[id]
 	if !exists || index >= len(list) {
@@ -239,20 +242,20 @@ func (client *Client) remove(id CredentialTypeIdentifier, index int, storenow bo
 		return err
 	}
 
-	removed := map[CredentialTypeIdentifier][]TranslatedString{}
+	removed := map[irmago.CredentialTypeIdentifier][]irmago.TranslatedString{}
 	removed[id] = attrs.Strings()
 
 	if storenow {
 		return client.addLogEntry(&LogEntry{
 			Type:    actionRemoval,
-			Time:    Timestamp(time.Now()),
+			Time:    irmago.Timestamp(time.Now()),
 			Removed: removed,
 		})
 	}
 	return nil
 }
 
-func (client *Client) RemoveCredential(id CredentialTypeIdentifier, index int) error {
+func (client *Client) RemoveCredential(id irmago.CredentialTypeIdentifier, index int) error {
 	return client.remove(id, index, true)
 }
 
@@ -265,7 +268,7 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 }
 
 func (client *Client) RemoveAllCredentials() error {
-	removed := map[CredentialTypeIdentifier][]TranslatedString{}
+	removed := map[irmago.CredentialTypeIdentifier][]irmago.TranslatedString{}
 	for _, attrlistlist := range client.attributes {
 		for _, attrs := range attrlistlist {
 			if attrs.CredentialType() != nil {
@@ -274,14 +277,14 @@ func (client *Client) RemoveAllCredentials() error {
 			client.storage.DeleteSignature(attrs)
 		}
 	}
-	client.attributes = map[CredentialTypeIdentifier][]*AttributeList{}
+	client.attributes = map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList{}
 	if err := client.storage.StoreAttributes(client.attributes); err != nil {
 		return err
 	}
 
 	logentry := &LogEntry{
 		Type:    actionRemoval,
-		Time:    Timestamp(time.Now()),
+		Time:    irmago.Timestamp(time.Now()),
 		Removed: removed,
 	}
 	if err := client.addLogEntry(logentry); err != nil {
@@ -293,17 +296,17 @@ func (client *Client) RemoveAllCredentials() error {
 // Attribute and credential getter methods
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
-func (client *Client) attrs(id CredentialTypeIdentifier) []*AttributeList {
+func (client *Client) attrs(id irmago.CredentialTypeIdentifier) []*irmago.AttributeList {
 	list, exists := client.attributes[id]
 	if !exists {
-		list = make([]*AttributeList, 0, 1)
+		list = make([]*irmago.AttributeList, 0, 1)
 		client.attributes[id] = list
 	}
 	return list
 }
 
 // creds returns cm.credentials[id], initializing it to an empty map if neccesary
-func (client *Client) creds(id CredentialTypeIdentifier) map[int]*credential {
+func (client *Client) creds(id irmago.CredentialTypeIdentifier) map[int]*credential {
 	list, exists := client.credentials[id]
 	if !exists {
 		list = make(map[int]*credential)
@@ -313,7 +316,7 @@ func (client *Client) creds(id CredentialTypeIdentifier) map[int]*credential {
 }
 
 // Attributes returns the attribute list of the requested credential, or nil if we do not have it.
-func (client *Client) Attributes(id CredentialTypeIdentifier, counter int) (attributes *AttributeList) {
+func (client *Client) Attributes(id irmago.CredentialTypeIdentifier, counter int) (attributes *irmago.AttributeList) {
 	list := client.attrs(id)
 	if len(list) <= counter {
 		return
@@ -324,7 +327,7 @@ func (client *Client) Attributes(id CredentialTypeIdentifier, counter int) (attr
 func (client *Client) credentialByHash(hash string) (*credential, int, error) {
 	for _, attrlistlist := range client.attributes {
 		for index, attrs := range attrlistlist {
-			if attrs.hash() == hash {
+			if attrs.Hash() == hash {
 				cred, err := client.credential(attrs.CredentialType().Identifier(), index)
 				return cred, index, err
 			}
@@ -333,12 +336,12 @@ func (client *Client) credentialByHash(hash string) (*credential, int, error) {
 	return nil, 0, nil
 }
 
-func (client *Client) credentialByID(id CredentialIdentifier) (*credential, error) {
+func (client *Client) credentialByID(id irmago.CredentialIdentifier) (*credential, error) {
 	if _, exists := client.attributes[id.Type]; !exists {
 		return nil, nil
 	}
 	for index, attrs := range client.attributes[id.Type] {
-		if attrs.hash() == id.Hash {
+		if attrs.Hash() == id.Hash {
 			return client.credential(attrs.CredentialType().Identifier(), index)
 		}
 	}
@@ -346,7 +349,7 @@ func (client *Client) credentialByID(id CredentialIdentifier) (*credential, erro
 }
 
 // credential returns the requested credential, or nil if we do not have it.
-func (client *Client) credential(id CredentialTypeIdentifier, counter int) (cred *credential, err error) {
+func (client *Client) credential(id irmago.CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during NewClient(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
@@ -388,8 +391,8 @@ func (client *Client) credential(id CredentialTypeIdentifier, counter int) (cred
 
 // Candidates returns a list of attributes present in this client
 // that satisfy the specified attribute disjunction.
-func (client *Client) Candidates(disjunction *AttributeDisjunction) []*AttributeIdentifier {
-	candidates := make([]*AttributeIdentifier, 0, 10)
+func (client *Client) Candidates(disjunction *irmago.AttributeDisjunction) []*irmago.AttributeIdentifier {
+	candidates := make([]*irmago.AttributeIdentifier, 0, 10)
 
 	for _, attribute := range disjunction.Attributes {
 		credID := attribute.CredentialTypeIdentifier()
@@ -402,11 +405,11 @@ func (client *Client) Candidates(disjunction *AttributeDisjunction) []*Attribute
 			continue
 		}
 		for _, attrs := range creds {
-			id := &AttributeIdentifier{Type: attribute, Hash: attrs.hash()}
+			id := &irmago.AttributeIdentifier{Type: attribute, Hash: attrs.Hash()}
 			if attribute.IsCredential() {
 				candidates = append(candidates, id)
 			} else {
-				val := attrs.untranslatedAttribute(attribute)
+				val := attrs.UntranslatedAttribute(attribute)
 				if val == "" { // This won't handle empty attributes correctly
 					continue
 				}
@@ -424,12 +427,12 @@ func (client *Client) Candidates(disjunction *AttributeDisjunction) []*Attribute
 // to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
 // are returned.
 func (client *Client) CheckSatisfiability(
-	disjunctions AttributeDisjunctionList,
-) ([][]*AttributeIdentifier, AttributeDisjunctionList) {
-	candidates := [][]*AttributeIdentifier{}
-	missing := AttributeDisjunctionList{}
+	disjunctions irmago.AttributeDisjunctionList,
+) ([][]*irmago.AttributeIdentifier, irmago.AttributeDisjunctionList) {
+	candidates := [][]*irmago.AttributeIdentifier{}
+	missing := irmago.AttributeDisjunctionList{}
 	for i, disjunction := range disjunctions {
-		candidates = append(candidates, []*AttributeIdentifier{})
+		candidates = append(candidates, []*irmago.AttributeIdentifier{})
 		candidates[i] = client.Candidates(disjunction)
 		if len(candidates[i]) == 0 {
 			missing = append(missing, disjunction)
@@ -438,8 +441,8 @@ func (client *Client) CheckSatisfiability(
 	return candidates, missing
 }
 
-func (client *Client) groupCredentials(choice *DisclosureChoice) (map[CredentialIdentifier][]int, error) {
-	grouped := make(map[CredentialIdentifier][]int)
+func (client *Client) groupCredentials(choice *irmago.DisclosureChoice) (map[irmago.CredentialIdentifier][]int, error) {
+	grouped := make(map[irmago.CredentialIdentifier][]int)
 	if choice == nil || choice.Attributes == nil {
 		return grouped, nil
 	}
@@ -473,7 +476,7 @@ func (client *Client) groupCredentials(choice *DisclosureChoice) (map[Credential
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
-func (client *Client) ProofBuilders(choice *DisclosureChoice) (gabi.ProofBuilderList, error) {
+func (client *Client) ProofBuilders(choice *irmago.DisclosureChoice) (gabi.ProofBuilderList, error) {
 	todisclose, err := client.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -491,7 +494,7 @@ func (client *Client) ProofBuilders(choice *DisclosureChoice) (gabi.ProofBuilder
 }
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.
-func (client *Client) Proofs(choice *DisclosureChoice, request IrmaSession, issig bool) (gabi.ProofList, error) {
+func (client *Client) Proofs(choice *irmago.DisclosureChoice, request irmago.IrmaSession, issig bool) (gabi.ProofList, error) {
 	builders, err := client.ProofBuilders(choice)
 	if err != nil {
 		return nil, err
@@ -501,12 +504,12 @@ func (client *Client) Proofs(choice *DisclosureChoice, request IrmaSession, issi
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
 // for the future credentials as well as possibly any disclosed attributes.
-func (client *Client) IssuanceProofBuilders(request *IssuanceRequest) (gabi.ProofBuilderList, error) {
+func (client *Client) IssuanceProofBuilders(request *irmago.IssuanceRequest) (gabi.ProofBuilderList, error) {
 	state, err := newIssuanceState()
 	if err != nil {
 		return nil, err
 	}
-	request.state = state
+	client.state = state
 
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
@@ -517,11 +520,11 @@ func (client *Client) IssuanceProofBuilders(request *IssuanceRequest) (gabi.Proo
 		}
 		credBuilder := gabi.NewCredentialBuilder(
 			pk, request.GetContext(), client.secretkey.Key, state.nonce2)
-		request.state.builders = append(request.state.builders, credBuilder)
+		state.builders = append(state.builders, credBuilder)
 		proofBuilders = append(proofBuilders, credBuilder)
 	}
 
-	disclosures, err := client.ProofBuilders(request.choice)
+	disclosures, err := client.ProofBuilders(request.Choice)
 	if err != nil {
 		return nil, err
 	}
@@ -531,19 +534,19 @@ func (client *Client) IssuanceProofBuilders(request *IssuanceRequest) (gabi.Proo
 
 // IssueCommitments computes issuance commitments, along with disclosure proofs
 // specified by choice.
-func (client *Client) IssueCommitments(request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
+func (client *Client) IssueCommitments(request *irmago.IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
 	proofBuilders, err := client.IssuanceProofBuilders(request)
 	if err != nil {
 		return nil, err
 	}
 	list := proofBuilders.BuildProofList(request.GetContext(), request.GetNonce(), false)
-	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: request.state.nonce2}, nil
+	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: client.state.nonce2}, nil
 }
 
 // ConstructCredentials constructs and saves new credentials
 // using the specified issuance signature messages.
-func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *IssuanceRequest) error {
-	if len(msg) != len(request.state.builders) {
+func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *irmago.IssuanceRequest) error {
+	if len(msg) != len(client.state.builders) {
 		return errors.New("Received unexpected amount of signatures")
 	}
 
@@ -555,7 +558,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 		if err != nil {
 			return err
 		}
-		cred, err := request.state.builders[i].ConstructCredential(sig, attrs.Ints)
+		cred, err := client.state.builders[i].ConstructCredential(sig, attrs.Ints)
 		if err != nil {
 			return err
 		}
@@ -603,8 +606,8 @@ func (client *Client) paillierKeyWorker(wait bool, ch chan bool) {
 	}
 }
 
-func (client *Client) unenrolledSchemeManagers() []SchemeManagerIdentifier {
-	list := []SchemeManagerIdentifier{}
+func (client *Client) unenrolledSchemeManagers() []irmago.SchemeManagerIdentifier {
+	list := []irmago.SchemeManagerIdentifier{}
 	for name, manager := range client.ConfigurationStore.SchemeManagers {
 		if _, contains := client.keyshareServers[name]; manager.Distributed() && !contains {
 			list = append(list, manager.Identifier())
@@ -614,10 +617,10 @@ func (client *Client) unenrolledSchemeManagers() []SchemeManagerIdentifier {
 }
 
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
-func (client *Client) KeyshareEnroll(manager SchemeManagerIdentifier, email, pin string) {
+func (client *Client) KeyshareEnroll(manager irmago.SchemeManagerIdentifier, email, pin string) {
 	go func() {
 		defer func() {
-			handlePanic(func(err *SessionError) {
+			handlePanic(func(err *irmago.SessionError) {
 				if client.handler != nil {
 					client.handler.EnrollmentError(manager, err)
 				}
@@ -635,7 +638,7 @@ func (client *Client) KeyshareEnroll(manager SchemeManagerIdentifier, email, pin
 
 }
 
-func (client *Client) keyshareEnrollWorker(managerID SchemeManagerIdentifier, email, pin string) error {
+func (client *Client) keyshareEnrollWorker(managerID irmago.SchemeManagerIdentifier, email, pin string) error {
 	manager, ok := client.ConfigurationStore.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
@@ -647,7 +650,7 @@ func (client *Client) keyshareEnrollWorker(managerID SchemeManagerIdentifier, em
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
-	transport := NewHTTPTransport(manager.KeyshareServer)
+	transport := irmago.NewHTTPTransport(manager.KeyshareServer)
 	kss, err := newKeyshareServer(client.paillierKey(true), manager.KeyshareServer, email)
 	if err != nil {
 		return err
@@ -669,7 +672,7 @@ func (client *Client) keyshareEnrollWorker(managerID SchemeManagerIdentifier, em
 }
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
-func (client *Client) KeyshareRemove(manager SchemeManagerIdentifier) error {
+func (client *Client) KeyshareRemove(manager irmago.SchemeManagerIdentifier) error {
 	if _, contains := client.keyshareServers[manager]; !contains {
 		return errors.New("Can't uninstall unknown keyshare server")
 	}
@@ -678,7 +681,7 @@ func (client *Client) KeyshareRemove(manager SchemeManagerIdentifier) error {
 }
 
 func (client *Client) KeyshareRemoveAll() error {
-	client.keyshareServers = map[SchemeManagerIdentifier]*keyshareServer{}
+	client.keyshareServers = map[irmago.SchemeManagerIdentifier]*keyshareServer{}
 	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
 	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }

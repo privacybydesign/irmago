@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/credentials/irmago/internal/fs"
 )
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
@@ -154,10 +156,10 @@ func (transport *HTTPTransport) GetFile(url string, dest string) error {
 	if err != nil {
 		return err
 	}
-	if err = ensureDirectoryExists(filepath.Dir(dest)); err != nil {
+	if err = fs.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
 		return err
 	}
-	return saveFile(dest, b)
+	return fs.SaveFile(dest, b)
 }
 
 // Post sends the object to the server and parses its response into result.
