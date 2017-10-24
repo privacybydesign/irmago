@@ -63,7 +63,7 @@ func s2big(s string) (r *big.Int) {
 	return
 }
 
-func verifyManagerIsUnmarshaled(t *testing.T, client *Client) {
+func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
@@ -173,7 +173,7 @@ func verifyStoreIsLoaded(t *testing.T, store *irma.ConfigurationStore, android b
 func TestAndroidParse(t *testing.T) {
 	client := parseStorage(t)
 	verifyStoreIsLoaded(t, client.ConfigurationStore, true)
-	verifyManagerIsUnmarshaled(t, client)
+	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
 	verifyKeyshareIsUnmarshaled(t, client)
 
@@ -191,7 +191,7 @@ func TestUnmarshaling(t *testing.T) {
 
 	newclient, err := New("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
 	require.NoError(t, err)
-	verifyManagerIsUnmarshaled(t, newclient)
+	verifyClientIsUnmarshaled(t, newclient)
 	verifyCredentials(t, newclient)
 	verifyKeyshareIsUnmarshaled(t, newclient)
 
