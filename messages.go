@@ -1,4 +1,4 @@
-package irmago
+package irma
 
 import (
 	"encoding/base64"

@@ -16,7 +16,7 @@ import (
 // Storage provider for a Client
 type storage struct {
 	storagePath        string
-	ConfigurationStore *irmago.ConfigurationStore
+	ConfigurationStore *irma.ConfigurationStore
 }
 
 // Filenames in which we store stuff
@@ -66,7 +66,7 @@ func (s *storage) store(contents interface{}, file string) error {
 	return fs.SaveFile(s.path(file), bts)
 }
 
-func (s *storage) signatureFilename(attrs *irmago.AttributeList) string {
+func (s *storage) signatureFilename(attrs *irma.AttributeList) string {
 	// We take the SHA256 hash over all attributes as the filename for the signature.
 	// This means that the signatures of two credentials that have identical attributes
 	// will be written to the same file, one overwriting the other - but that doesn't
@@ -75,7 +75,7 @@ func (s *storage) signatureFilename(attrs *irmago.AttributeList) string {
 	return signaturesDir + "/" + attrs.Hash()
 }
 
-func (s *storage) DeleteSignature(attrs *irmago.AttributeList) error {
+func (s *storage) DeleteSignature(attrs *irma.AttributeList) error {
 	return os.Remove(s.path(s.signatureFilename(attrs)))
 }
 
@@ -87,8 +87,8 @@ func (s *storage) StoreSecretKey(sk *secretKey) error {
 	return s.store(sk, skFile)
 }
 
-func (s *storage) StoreAttributes(attributes map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList) error {
-	temp := []*irmago.AttributeList{}
+func (s *storage) StoreAttributes(attributes map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
+	temp := []*irma.AttributeList{}
 	for _, attrlistlist := range attributes {
 		for _, attrlist := range attrlistlist {
 			temp = append(temp, attrlist)
@@ -98,7 +98,7 @@ func (s *storage) StoreAttributes(attributes map[irmago.CredentialTypeIdentifier
 	return s.store(temp, attributesFile)
 }
 
-func (s *storage) StoreKeyshareServers(keyshareServers map[irmago.SchemeManagerIdentifier]*keyshareServer) (err error) {
+func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) (err error) {
 	return s.store(keyshareServers, kssFile)
 }
 
@@ -114,7 +114,7 @@ func (s *storage) StoreUpdates(updates []update) (err error) {
 	return s.store(updates, updatesFile)
 }
 
-func (s *storage) LoadSignature(attrs *irmago.AttributeList) (signature *gabi.CLSignature, err error) {
+func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
 	sigpath := s.signatureFilename(attrs)
 	if err := fs.AssertPathExists(s.path(sigpath)); err != nil {
 		return nil, err
@@ -147,23 +147,23 @@ func (s *storage) LoadSecretKey() (*secretKey, error) {
 	return sk, nil
 }
 
-func (s *storage) LoadAttributes() (list map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList, err error) {
+func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*irma.AttributeList, err error) {
 	// The attributes are stored as a list of instances of AttributeList
-	temp := []*irmago.AttributeList{}
+	temp := []*irma.AttributeList{}
 	if err = s.load(&temp, attributesFile); err != nil {
 		return
 	}
 
-	list = make(map[irmago.CredentialTypeIdentifier][]*irmago.AttributeList)
+	list = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
 	for _, attrlist := range temp {
-		attrlist.MetadataAttribute = irmago.MetadataFromInt(attrlist.Ints[0], s.ConfigurationStore)
+		attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.ConfigurationStore)
 		id := attrlist.CredentialType()
-		var ct irmago.CredentialTypeIdentifier
+		var ct irma.CredentialTypeIdentifier
 		if id != nil {
 			ct = id.Identifier()
 		}
 		if _, contains := list[ct]; !contains {
-			list[ct] = []*irmago.AttributeList{}
+			list[ct] = []*irma.AttributeList{}
 		}
 		list[ct] = append(list[ct], attrlist)
 	}
@@ -171,8 +171,8 @@ func (s *storage) LoadAttributes() (list map[irmago.CredentialTypeIdentifier][]*
 	return list, nil
 }
 
-func (s *storage) LoadKeyshareServers() (ksses map[irmago.SchemeManagerIdentifier]*keyshareServer, err error) {
-	ksses = make(map[irmago.SchemeManagerIdentifier]*keyshareServer)
+func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]*keyshareServer, err error) {
+	ksses = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	if err := s.load(&ksses, kssFile); err != nil {
 		return nil, err
 	}

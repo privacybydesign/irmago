@@ -32,11 +32,11 @@ type keyshareSession struct {
 	sessionHandler  keyshareSessionHandler
 	pinRequestor    KeysharePinRequestor
 	builders        gabi.ProofBuilderList
-	session         irmago.IrmaSession
-	store           *irmago.ConfigurationStore
-	keyshareServers map[irmago.SchemeManagerIdentifier]*keyshareServer
+	session         irma.IrmaSession
+	store           *irma.ConfigurationStore
+	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer
 	keyshareServer  *keyshareServer // The one keyshare server in use in case of issuance
-	transports      map[irmago.SchemeManagerIdentifier]*irmago.HTTPTransport
+	transports      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
 	state           *issuanceState
 }
 
@@ -135,9 +135,9 @@ func startKeyshareSession(
 	sessionHandler keyshareSessionHandler,
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
-	session irmago.IrmaSession,
-	store *irmago.ConfigurationStore,
-	keyshareServers map[irmago.SchemeManagerIdentifier]*keyshareServer,
+	session irma.IrmaSession,
+	store *irma.ConfigurationStore,
+	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
 	state *issuanceState,
 ) {
 	ksscount := 0
@@ -151,7 +151,7 @@ func startKeyshareSession(
 			}
 		}
 	}
-	if _, issuing := session.(*irmago.IssuanceRequest); issuing && ksscount > 1 {
+	if _, issuing := session.(*irma.IssuanceRequest); issuing && ksscount > 1 {
 		err := errors.New("Issuance session involving more than one keyshare servers are not supported")
 		sessionHandler.KeyshareError(err)
 		return
@@ -161,7 +161,7 @@ func startKeyshareSession(
 		session:         session,
 		builders:        builders,
 		sessionHandler:  sessionHandler,
-		transports:      map[irmago.SchemeManagerIdentifier]*irmago.HTTPTransport{},
+		transports:      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
 		pinRequestor:    pin,
 		store:           store,
 		keyshareServers: keyshareServers,
@@ -176,7 +176,7 @@ func startKeyshareSession(
 		}
 
 		ks.keyshareServer = ks.keyshareServers[managerID]
-		transport := irmago.NewHTTPTransport(ks.keyshareServer.URL)
+		transport := irma.NewHTTPTransport(ks.keyshareServer.URL)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
 		ks.transports[managerID] = transport
@@ -283,14 +283,14 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int
 // of all keyshare servers of their part of the private key, and merges these commitments
 // in our own proof builders.
 func (ks *keyshareSession) GetCommitments() {
-	pkids := map[irmago.SchemeManagerIdentifier][]*publicKeyIdentifier{}
+	pkids := map[irma.SchemeManagerIdentifier][]*publicKeyIdentifier{}
 	commitments := map[publicKeyIdentifier]*gabi.ProofPCommitment{}
 
 	// For each scheme manager, build a list of public keys under this manager
 	// that we will use in the keyshare protocol with the keyshare server of this manager
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
-		managerID := irmago.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
+		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
 		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
@@ -337,8 +337,8 @@ func (ks *keyshareSession) GetCommitments() {
 // to calculate the challenge, which is sent to the keyshare servers in order to
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
 func (ks *keyshareSession) GetProofPs() {
-	_, issig := ks.session.(*irmago.SignatureRequest)
-	_, issuing := ks.session.(*irmago.IssuanceRequest)
+	_, issig := ks.session.(*irma.SignatureRequest)
+	_, issuing := ks.session.(*irma.IssuanceRequest)
 	challenge := ks.builders.Challenge(ks.session.GetContext(), ks.session.GetNonce(), issig)
 	kssChallenge := challenge
 
@@ -352,7 +352,7 @@ func (ks *keyshareSession) GetProofPs() {
 	}
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
-	responses := map[irmago.SchemeManagerIdentifier]string{}
+	responses := map[irma.SchemeManagerIdentifier]string{}
 	for managerID := range ks.session.Identifiers().SchemeManagers {
 		transport, distributed := ks.transports[managerID]
 		if !distributed {
@@ -373,13 +373,13 @@ func (ks *keyshareSession) GetProofPs() {
 // Finish the keyshare protocol: in case of issuance, put the keyshare jwt in the
 // IssueCommitmentMessage; in case of disclosure and signing, parse each keyshare jwt,
 // merge in the received ProofP's, and finish.
-func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irmago.SchemeManagerIdentifier]string) {
+func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeManagerIdentifier]string) {
 	switch ks.session.(type) {
-	case *irmago.DisclosureRequest: // Can't use fallthrough in a type switch in go
+	case *irma.DisclosureRequest: // Can't use fallthrough in a type switch in go
 		ks.finishDisclosureOrSigning(challenge, responses)
-	case *irmago.SignatureRequest: // So we have to do this in a separate method
+	case *irma.SignatureRequest: // So we have to do this in a separate method
 		ks.finishDisclosureOrSigning(challenge, responses)
-	case *irmago.IssuanceRequest:
+	case *irma.IssuanceRequest:
 		// Calculate IssueCommitmentMessage, without merging in any of the received ProofP's:
 		// instead, include the keyshare server's JWT in the IssueCommitmentMessage for the
 		// issuance server to verify
@@ -402,18 +402,18 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irmago.Schem
 	}
 }
 
-func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, responses map[irmago.SchemeManagerIdentifier]string) {
+func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, responses map[irma.SchemeManagerIdentifier]string) {
 	proofPs := make([]*gabi.ProofP, len(ks.builders))
 	for i, builder := range ks.builders {
 		// Parse each received JWT
-		managerID := irmago.NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
+		managerID := irma.NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
 		if !ks.store.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		msg := struct {
 			ProofP *gabi.ProofP
 		}{}
-		if err := irmago.JwtDecode(responses[managerID], &msg); err != nil {
+		if err := irma.JwtDecode(responses[managerID], &msg); err != nil {
 			ks.sessionHandler.KeyshareError(err)
 			return
 		}

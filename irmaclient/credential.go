@@ -9,12 +9,12 @@ import (
 // is always the secret key and the first attribute the metadata attribute.
 type credential struct {
 	*gabi.Credential
-	*irmago.MetadataAttribute
-	attrs *irmago.AttributeList
+	*irma.MetadataAttribute
+	attrs *irma.AttributeList
 }
 
-func newCredential(gabicred *gabi.Credential, store *irmago.ConfigurationStore) (*credential, error) {
-	meta := irmago.MetadataFromInt(gabicred.Attributes[1], store)
+func newCredential(gabicred *gabi.Credential, store *irma.ConfigurationStore) (*credential, error) {
+	meta := irma.MetadataFromInt(gabicred.Attributes[1], store)
 	cred := &credential{
 		Credential:        gabicred,
 		MetadataAttribute: meta,
@@ -27,9 +27,9 @@ func newCredential(gabicred *gabi.Credential, store *irmago.ConfigurationStore) 
 	return cred, nil
 }
 
-func (cred *credential) AttributeList() *irmago.AttributeList {
+func (cred *credential) AttributeList() *irma.AttributeList {
 	if cred.attrs == nil {
-		cred.attrs = irmago.NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.Store)
+		cred.attrs = irma.NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.Store)
 	}
 	return cred.attrs
 }

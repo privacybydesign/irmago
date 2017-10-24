@@ -17,38 +17,38 @@ import (
 
 type TestHandler struct {
 	t      *testing.T
-	c      chan *irmago.SessionError
+	c      chan *irma.SessionError
 	client *Client
 }
 
-func (th TestHandler) MissingKeyshareEnrollment(manager irmago.SchemeManagerIdentifier) {
-	th.Failure(irmago.ActionUnknown, &irmago.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
+func (th TestHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
+	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 
-func (th TestHandler) StatusUpdate(action irmago.Action, status irmago.Status) {}
-func (th TestHandler) Success(action irmago.Action) {
+func (th TestHandler) StatusUpdate(action irma.Action, status irma.Status) {}
+func (th TestHandler) Success(action irma.Action) {
 	th.c <- nil
 }
-func (th TestHandler) Cancelled(action irmago.Action) {
-	th.c <- &irmago.SessionError{}
+func (th TestHandler) Cancelled(action irma.Action) {
+	th.c <- &irma.SessionError{}
 }
-func (th TestHandler) Failure(action irmago.Action, err *irmago.SessionError) {
+func (th TestHandler) Failure(action irma.Action, err *irma.SessionError) {
 	select {
 	case th.c <- err:
 	default:
 		th.t.Fatal(err)
 	}
 }
-func (th TestHandler) UnsatisfiableRequest(action irmago.Action, missing irmago.AttributeDisjunctionList) {
-	th.c <- &irmago.SessionError{
-		ErrorType: irmago.ErrorType("UnsatisfiableRequest"),
+func (th TestHandler) UnsatisfiableRequest(action irma.Action, missing irma.AttributeDisjunctionList) {
+	th.c <- &irma.SessionError{
+		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 	}
 }
-func (th TestHandler) RequestVerificationPermission(request irmago.DisclosureRequest, ServerName string, callback PermissionHandler) {
-	choice := &irmago.DisclosureChoice{
-		Attributes: []*irmago.AttributeIdentifier{},
+func (th TestHandler) RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler) {
+	choice := &irma.DisclosureChoice{
+		Attributes: []*irma.AttributeIdentifier{},
 	}
-	var candidates []*irmago.AttributeIdentifier
+	var candidates []*irma.AttributeIdentifier
 	for _, disjunction := range request.Content {
 		candidates = th.client.Candidates(disjunction)
 		require.NotNil(th.t, candidates)
@@ -57,51 +57,51 @@ func (th TestHandler) RequestVerificationPermission(request irmago.DisclosureReq
 	}
 	callback(true, choice)
 }
-func (th TestHandler) RequestIssuancePermission(request irmago.IssuanceRequest, ServerName string, callback PermissionHandler) {
-	dreq := irmago.DisclosureRequest{
+func (th TestHandler) RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler) {
+	dreq := irma.DisclosureRequest{
 		SessionRequest: request.SessionRequest,
 		Content:        request.Disclose,
 	}
 	th.RequestVerificationPermission(dreq, ServerName, callback)
 }
-func (th TestHandler) RequestSignaturePermission(request irmago.SignatureRequest, ServerName string, callback PermissionHandler) {
+func (th TestHandler) RequestSignaturePermission(request irma.SignatureRequest, ServerName string, callback PermissionHandler) {
 	th.RequestVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
-func (th TestHandler) RequestSchemeManagerPermission(manager *irmago.SchemeManager, callback func(proceed bool)) {
+func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(true)
 }
 func (th TestHandler) RequestPin(remainingAttempts int, callback PinHandler) {
 	callback(true, "12345")
 }
 
-func getDisclosureJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	return irmago.NewServiceProviderJwt(name, &irmago.DisclosureRequest{
-		Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{{
+func getDisclosureJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
+	return irma.NewServiceProviderJwt(name, &irma.DisclosureRequest{
+		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 			Label:      "foo",
-			Attributes: []irmago.AttributeTypeIdentifier{id},
+			Attributes: []irma.AttributeTypeIdentifier{id},
 		}}),
 	})
 }
 
-func getSigningJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	return irmago.NewSignatureRequestorJwt(name, &irmago.SignatureRequest{
+func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
+	return irma.NewSignatureRequestorJwt(name, &irma.SignatureRequest{
 		Message:     "test",
 		MessageType: "STRING",
-		DisclosureRequest: irmago.DisclosureRequest{
-			Content: irmago.AttributeDisjunctionList([]*irmago.AttributeDisjunction{{
+		DisclosureRequest: irma.DisclosureRequest{
+			Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 				Label:      "foo",
-				Attributes: []irmago.AttributeTypeIdentifier{id},
+				Attributes: []irma.AttributeTypeIdentifier{id},
 			}}),
 		},
 	})
 }
 
-func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} {
-	expiry := irmago.Timestamp(irmago.NewMetadataAttribute().Expiry())
-	credid1 := irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	credid2 := irmago.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
-	return irmago.NewIdentityProviderJwt(name, &irmago.IssuanceRequest{
-		Credentials: []*irmago.CredentialRequest{
+func getIssuanceJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
+	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
+	credid1 := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	credid2 := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	return irma.NewIdentityProviderJwt(name, &irma.IssuanceRequest{
+		Credentials: []*irma.CredentialRequest{
 			{
 				Validity:         &expiry,
 				CredentialTypeID: &credid1,
@@ -119,17 +119,17 @@ func getIssuanceJwt(name string, id irmago.AttributeTypeIdentifier) interface{} 
 				},
 			},
 		},
-		Disclose: irmago.AttributeDisjunctionList{
-			&irmago.AttributeDisjunction{Label: "foo", Attributes: []irmago.AttributeTypeIdentifier{id}},
+		Disclose: irma.AttributeDisjunctionList{
+			&irma.AttributeDisjunction{Label: "foo", Attributes: []irma.AttributeTypeIdentifier{id}},
 		},
 	})
 }
 
 // StartSession starts an IRMA session by posting the request,
 // and retrieving the QR contents from the specified url.
-func StartSession(request interface{}, url string) (*irmago.Qr, error) {
-	server := irmago.NewHTTPTransport(url)
-	var response irmago.Qr
+func StartSession(request interface{}, url string) (*irma.Qr, error) {
+	server := irma.NewHTTPTransport(url)
+	var response irma.Qr
 	err := server.Post("", &response, request)
 	if err != nil {
 		return nil, err
@@ -138,7 +138,7 @@ func StartSession(request interface{}, url string) (*irmago.Qr, error) {
 }
 
 func TestSigningSession(t *testing.T) {
-	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testsigclient"
 
 	jwtcontents := getSigningJwt(name, id)
@@ -146,7 +146,7 @@ func TestSigningSession(t *testing.T) {
 }
 
 func TestDisclosureSession(t *testing.T) {
-	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testsp"
 
 	jwtcontents := getDisclosureJwt(name, id)
@@ -154,7 +154,7 @@ func TestDisclosureSession(t *testing.T) {
 }
 
 func TestIssuanceSession(t *testing.T) {
-	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testip"
 
 	jwtcontents := getIssuanceJwt(name, id)
@@ -183,7 +183,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Cl
 	require.NoError(t, transportErr)
 	qr.URL = url + "/" + qr.URL
 
-	c := make(chan *irmago.SessionError)
+	c := make(chan *irma.SessionError)
 	client.NewSession(qr, TestHandler{t, c, client})
 
 	if err := <-c; err != nil {
@@ -199,7 +199,7 @@ func enrollKeyshareServer(t *testing.T, client *Client) {
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
 	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
-	require.NoError(t, client.keyshareEnrollWorker(irmago.NewSchemeManagerIdentifier("test"), email, "12345"))
+	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), email, "12345"))
 }
 
 // Enroll at a keyshare server and do an issuance, disclosure,
@@ -207,19 +207,19 @@ func enrollKeyshareServer(t *testing.T, client *Client) {
 func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	client := parseStorage(t)
 
-	client.credentials[irmago.NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
-	test := irmago.NewSchemeManagerIdentifier("test")
+	client.credentials[irma.NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
+	test := irma.NewSchemeManagerIdentifier("test")
 	err := client.KeyshareRemove(test)
 	require.NoError(t, err)
 	enrollKeyshareServer(t, client)
 
-	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	expiry := irmago.Timestamp(irmago.NewMetadataAttribute().Expiry())
-	credid := irmago.NewCredentialTypeIdentifier("test.test.mijnirma")
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
+	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
 	jwt := getIssuanceJwt("testip", id)
-	jwt.(*irmago.IdentityProviderJwt).Request.Request.Credentials = append(
-		jwt.(*irmago.IdentityProviderJwt).Request.Request.Credentials,
-		&irmago.CredentialRequest{
+	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
+		jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials,
+		&irma.CredentialRequest{
 			Validity:         &expiry,
 			CredentialTypeID: &credid,
 			Attributes:       map[string]string{"email": "example@example.com"},
@@ -228,21 +228,21 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	sessionHelper(t, jwt, "issue", client)
 
 	jwt = getDisclosureJwt("testsp", id)
-	jwt.(*irmago.ServiceProviderJwt).Request.Request.Content = append(
-		jwt.(*irmago.ServiceProviderJwt).Request.Request.Content,
-		&irmago.AttributeDisjunction{
+	jwt.(*irma.ServiceProviderJwt).Request.Request.Content = append(
+		jwt.(*irma.ServiceProviderJwt).Request.Request.Content,
+		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irmago.AttributeTypeIdentifier{irmago.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
 	sessionHelper(t, jwt, "verification", client)
 
 	jwt = getSigningJwt("testsigclient", id)
-	jwt.(*irmago.SignatureRequestorJwt).Request.Request.Content = append(
-		jwt.(*irmago.SignatureRequestorJwt).Request.Request.Content,
-		&irmago.AttributeDisjunction{
+	jwt.(*irma.SignatureRequestorJwt).Request.Request.Content = append(
+		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content,
+		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irmago.AttributeTypeIdentifier{irmago.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
 	sessionHelper(t, jwt, "signature", client)
@@ -255,14 +255,14 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
 	client := parseStorage(t)
-	id := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
-	expiry := irmago.Timestamp(irmago.NewMetadataAttribute().Expiry())
-	credid := irmago.NewCredentialTypeIdentifier("test.test.mijnirma")
+	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
+	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
 	jwt := getIssuanceJwt("testip", id)
-	jwt.(*irmago.IdentityProviderJwt).Request.Request.Credentials = append(
-		jwt.(*irmago.IdentityProviderJwt).Request.Request.Credentials,
-		&irmago.CredentialRequest{
+	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
+		jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials,
+		&irma.CredentialRequest{
 			Validity:         &expiry,
 			CredentialTypeID: &credid,
 			Attributes:       map[string]string{"email": "example@example.com"},
@@ -271,21 +271,21 @@ func TestKeyshareSessions(t *testing.T) {
 	sessionHelper(t, jwt, "issue", client)
 
 	jwt = getDisclosureJwt("testsp", id)
-	jwt.(*irmago.ServiceProviderJwt).Request.Request.Content = append(
-		jwt.(*irmago.ServiceProviderJwt).Request.Request.Content, //[]*AttributeDisjunction{},
-		&irmago.AttributeDisjunction{
+	jwt.(*irma.ServiceProviderJwt).Request.Request.Content = append(
+		jwt.(*irma.ServiceProviderJwt).Request.Request.Content, //[]*AttributeDisjunction{},
+		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irmago.AttributeTypeIdentifier{irmago.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
 	sessionHelper(t, jwt, "verification", client)
 
 	jwt = getSigningJwt("testsigclient", id)
-	jwt.(*irmago.SignatureRequestorJwt).Request.Request.Content = append(
-		jwt.(*irmago.SignatureRequestorJwt).Request.Request.Content, //[]*AttributeDisjunction{},
-		&irmago.AttributeDisjunction{
+	jwt.(*irma.SignatureRequestorJwt).Request.Request.Content = append(
+		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content, //[]*AttributeDisjunction{},
+		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irmago.AttributeTypeIdentifier{irmago.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
 	sessionHelper(t, jwt, "signature", client)

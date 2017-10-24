@@ -18,7 +18,7 @@ import (
 // as well as updates themselves.
 
 type update struct {
-	When    irmago.Timestamp
+	When    irma.Timestamp
 	Number  int
 	Success bool
 	Error   *string
@@ -45,7 +45,7 @@ func (client *Client) update() error {
 	for i := len(client.updates); i < len(clientUpdates); i++ {
 		err = clientUpdates[i](client)
 		u := update{
-			When:    irmago.Timestamp(time.Now()),
+			When:    irma.Timestamp(time.Now()),
 			Number:  i,
 			Success: err == nil,
 		}
@@ -95,7 +95,7 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 		Attributes   []*big.Int        `json:"attributes"`
 		SharedPoints []*big.Int        `json:"public_sks"`
 	})
-	client.keyshareServers = make(map[irmago.SchemeManagerIdentifier]*keyshareServer)
+	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	for _, xmltag := range parsedxml.Strings {
 		if xmltag.Name == "credentials" {
 			jsontag := html.UnescapeString(xmltag.Content)

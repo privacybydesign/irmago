@@ -31,10 +31,10 @@ func TestMain(m *testing.M) {
 
 type IgnoringClientHandler struct{}
 
-func (i *IgnoringClientHandler) UpdateConfigurationStore(new *irmago.IrmaIdentifierSet)            {}
-func (i *IgnoringClientHandler) UpdateAttributes()                                                 {}
-func (i *IgnoringClientHandler) EnrollmentError(manager irmago.SchemeManagerIdentifier, err error) {}
-func (i *IgnoringClientHandler) EnrollmentSuccess(manager irmago.SchemeManagerIdentifier)          {}
+func (i *IgnoringClientHandler) UpdateConfigurationStore(new *irma.IrmaIdentifierSet)            {}
+func (i *IgnoringClientHandler) UpdateAttributes()                                               {}
+func (i *IgnoringClientHandler) EnrollmentError(manager irma.SchemeManagerIdentifier, err error) {}
+func (i *IgnoringClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier)          {}
 
 func parseStorage(t *testing.T) *Client {
 	exists, err := fs.PathExists("testdata/storage/test")
@@ -64,12 +64,12 @@ func s2big(s string) (r *big.Int) {
 }
 
 func verifyManagerIsUnmarshaled(t *testing.T, client *Client) {
-	cred, err := client.credential(irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
+	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
 	require.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")
 
-	cred, err = client.credential(irmago.NewCredentialTypeIdentifier("test.test.mijnirma"), 0)
+	cred, err = client.credential(irma.NewCredentialTypeIdentifier("test.test.mijnirma"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
 	require.NotNil(t, cred.Signature.KeyshareP)
@@ -123,7 +123,7 @@ func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
 func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 	require.NotNil(t, client.paillierKeyCache)
 	require.NotNil(t, client.keyshareServers)
-	test := irmago.NewSchemeManagerIdentifier("test")
+	test := irma.NewSchemeManagerIdentifier("test")
 	require.Contains(t, client.keyshareServers, test)
 	kss := client.keyshareServers[test]
 	require.NotEmpty(t, kss.Nonce)
@@ -133,33 +133,33 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 }
 
 // TODO move up to irmago?
-func verifyStoreIsLoaded(t *testing.T, store *irmago.ConfigurationStore, android bool) {
-	require.Contains(t, store.SchemeManagers, irmago.NewSchemeManagerIdentifier("irma-demo"))
-	require.Contains(t, store.SchemeManagers, irmago.NewSchemeManagerIdentifier("test"))
+func verifyStoreIsLoaded(t *testing.T, store *irma.ConfigurationStore, android bool) {
+	require.Contains(t, store.SchemeManagers, irma.NewSchemeManagerIdentifier("irma-demo"))
+	require.Contains(t, store.SchemeManagers, irma.NewSchemeManagerIdentifier("test"))
 	if android {
-		require.Contains(t, store.SchemeManagers, irmago.NewSchemeManagerIdentifier("test2"))
+		require.Contains(t, store.SchemeManagers, irma.NewSchemeManagerIdentifier("test2"))
 	}
 
-	pk, err := store.PublicKey(irmago.NewIssuerIdentifier("irma-demo.RU"), 0)
+	pk, err := store.PublicKey(irma.NewIssuerIdentifier("irma-demo.RU"), 0)
 	require.NoError(t, err)
 	require.NotNil(t, pk)
 	require.NotNil(t, pk.N, "irma-demo.RU public key has no modulus")
 	require.Equal(t,
 		"Irma Demo",
-		store.SchemeManagers[irmago.NewSchemeManagerIdentifier("irma-demo")].Name["en"],
+		store.SchemeManagers[irma.NewSchemeManagerIdentifier("irma-demo")].Name["en"],
 		"irma-demo scheme manager has unexpected name")
 	require.Equal(t,
 		"Radboud University Nijmegen",
-		store.Issuers[irmago.NewIssuerIdentifier("irma-demo.RU")].Name["en"],
+		store.Issuers[irma.NewIssuerIdentifier("irma-demo.RU")].Name["en"],
 		"irma-demo.RU issuer has unexpected name")
 	require.Equal(t,
 		"Student Card",
-		store.CredentialTypes[irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
+		store.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
 		"irma-demo.RU.studentCard has unexpected name")
 
 	require.Equal(t,
 		"studentID",
-		store.CredentialTypes[irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
+		store.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
 		"irma-demo.RU.studentCard.studentID has unexpected name")
 
 	// Hash algorithm pseudocode:
@@ -186,7 +186,7 @@ func TestUnmarshaling(t *testing.T) {
 	// Do session so we can examine its log item later
 	logs, err := client.Logs()
 	require.NoError(t, err)
-	jwt := getIssuanceJwt("testip", irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	jwt := getIssuanceJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
 	newclient, err := New("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
@@ -203,7 +203,7 @@ func TestUnmarshaling(t *testing.T) {
 	require.NotNil(t, entry)
 	sessionjwt, err := entry.Jwt()
 	require.NoError(t, err)
-	require.Equal(t, "testip", sessionjwt.(*irmago.IdentityProviderJwt).ServerName)
+	require.Equal(t, "testip", sessionjwt.(*irma.IdentityProviderJwt).ServerName)
 	require.NoError(t, err)
 	require.NotEmpty(t, entry.Disclosed)
 	require.NotEmpty(t, entry.Received)
@@ -216,12 +216,12 @@ func TestUnmarshaling(t *testing.T) {
 }
 
 func TestMetadataAttribute(t *testing.T) {
-	metadata := irmago.NewMetadataAttribute()
+	metadata := irma.NewMetadataAttribute()
 	if metadata.Version() != 0x02 {
 		t.Errorf("Unexpected metadata version: %d", metadata.Version())
 	}
 
-	expiry := metadata.SigningDate().Unix() + int64(metadata.ValidityDuration()*irmago.ExpiryFactor)
+	expiry := metadata.SigningDate().Unix() + int64(metadata.ValidityDuration()*irma.ExpiryFactor)
 	if !time.Unix(expiry, 0).Equal(metadata.Expiry()) {
 		t.Errorf("Invalid signing date")
 	}
@@ -232,16 +232,16 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	store, err := irmago.NewConfigurationStore("testdata/irma_configuration", "")
+	store, err := irma.NewConfigurationStore("testdata/irma_configuration", "")
 	require.NoError(t, err)
 	require.NoError(t, store.ParseFolder())
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
-	attr := irmago.MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"), store)
+	attr := irma.MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"), store)
 	require.NotNil(t, attr.CredentialType(), "attr.CredentialType() should not be nil")
 
 	require.Equal(t,
-		irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
 		attr.CredentialType().Identifier(),
 		"Metadata credential type was not irma-demo.RU.studentCard",
 	)
@@ -256,9 +256,9 @@ func TestMetadataCompatibility(t *testing.T) {
 func TestCandidates(t *testing.T) {
 	client := parseStorage(t)
 
-	attrtype := irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	disjunction := &irmago.AttributeDisjunction{
-		Attributes: []irmago.AttributeTypeIdentifier{attrtype},
+	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	disjunction := &irma.AttributeDisjunction{
+		Attributes: []irma.AttributeTypeIdentifier{attrtype},
 	}
 	attrs := client.Candidates(disjunction)
 	require.NotNil(t, attrs)
@@ -268,17 +268,17 @@ func TestCandidates(t *testing.T) {
 	require.NotNil(t, attr)
 	require.Equal(t, attr.Type, attrtype)
 
-	disjunction = &irmago.AttributeDisjunction{
-		Attributes: []irmago.AttributeTypeIdentifier{attrtype},
-		Values:     map[irmago.AttributeTypeIdentifier]string{attrtype: "456"},
+	disjunction = &irma.AttributeDisjunction{
+		Attributes: []irma.AttributeTypeIdentifier{attrtype},
+		Values:     map[irma.AttributeTypeIdentifier]string{attrtype: "456"},
 	}
 	attrs = client.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 
-	disjunction = &irmago.AttributeDisjunction{
-		Attributes: []irmago.AttributeTypeIdentifier{attrtype},
-		Values:     map[irmago.AttributeTypeIdentifier]string{attrtype: "foobarbaz"},
+	disjunction = &irma.AttributeDisjunction{
+		Attributes: []irma.AttributeTypeIdentifier{attrtype},
+		Values:     map[irma.AttributeTypeIdentifier]string{attrtype: "foobarbaz"},
 	}
 	attrs = client.Candidates(disjunction)
 	require.NotNil(t, attrs)
@@ -288,18 +288,18 @@ func TestCandidates(t *testing.T) {
 }
 
 func TestTimestamp(t *testing.T) {
-	mytime := irmago.Timestamp(time.Unix(1500000000, 0))
-	timestruct := struct{ Time *irmago.Timestamp }{Time: &mytime}
+	mytime := irma.Timestamp(time.Unix(1500000000, 0))
+	timestruct := struct{ Time *irma.Timestamp }{Time: &mytime}
 	bytes, err := json.Marshal(timestruct)
 	require.NoError(t, err)
 
-	timestruct = struct{ Time *irmago.Timestamp }{}
+	timestruct = struct{ Time *irma.Timestamp }{}
 	require.NoError(t, json.Unmarshal(bytes, &timestruct))
 	require.Equal(t, time.Time(*timestruct.Time).Unix(), int64(1500000000))
 }
 
 func TestServiceProvider(t *testing.T) {
-	var spjwt irmago.ServiceProviderJwt
+	var spjwt irma.ServiceProviderJwt
 
 	var spjson = `{
 		"sprequest": {
@@ -325,7 +325,7 @@ func TestServiceProvider(t *testing.T) {
 	require.NotEmpty(t, spjwt.Request.Request.Content[0].Attributes)
 	require.Equal(t, spjwt.Request.Request.Content[0].Attributes[0].Name(), "studentID")
 
-	require.NotNil(t, spjwt.Request.Request.Content.Find(irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")))
+	require.NotNil(t, spjwt.Request.Request.Content.Find(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")))
 }
 
 func TestPaillier(t *testing.T) {
@@ -360,8 +360,8 @@ func TestPaillier(t *testing.T) {
 
 func TestCredentialRemoval(t *testing.T) {
 	client := parseStorage(t)
-	id := irmago.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	id2 := irmago.NewCredentialTypeIdentifier("test.test.mijnirma")
+	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
 
 	cred, err := client.credential(id, 0)
 	require.NoError(t, err)
@@ -386,7 +386,7 @@ func TestCredentialRemoval(t *testing.T) {
 
 func TestDownloadSchemeManager(t *testing.T) {
 	client := parseStorage(t)
-	require.NoError(t, client.ConfigurationStore.RemoveSchemeManager(irmago.NewSchemeManagerIdentifier("irma-demo")))
+	require.NoError(t, client.ConfigurationStore.RemoveSchemeManager(irma.NewSchemeManagerIdentifier("irma-demo")))
 	url := "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo"
 	sm, err := client.ConfigurationStore.DownloadSchemeManager(url)
 	require.NoError(t, err)
@@ -394,7 +394,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 
 	require.NoError(t, client.ConfigurationStore.AddSchemeManager(sm))
 
-	jwt := getIssuanceJwt("testip", irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	jwt := getIssuanceJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
 	teardown(t)

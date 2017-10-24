@@ -18,23 +18,23 @@ import (
 
 // PermissionHandler is a callback for providing permission for an IRMA session
 // and specifying the attributes to be disclosed.
-type PermissionHandler func(proceed bool, choice *irmago.DisclosureChoice)
+type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
 type PinHandler func(proceed bool, pin string)
 
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
-	StatusUpdate(action irmago.Action, status irmago.Status)
-	Success(action irmago.Action)
-	Cancelled(action irmago.Action)
-	Failure(action irmago.Action, err *irmago.SessionError)
-	UnsatisfiableRequest(action irmago.Action, missing irmago.AttributeDisjunctionList)
-	MissingKeyshareEnrollment(manager irmago.SchemeManagerIdentifier)
+	StatusUpdate(action irma.Action, status irma.Status)
+	Success(action irma.Action)
+	Cancelled(action irma.Action)
+	Failure(action irma.Action, err *irma.SessionError)
+	UnsatisfiableRequest(action irma.Action, missing irma.AttributeDisjunctionList)
+	MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier)
 
-	RequestIssuancePermission(request irmago.IssuanceRequest, ServerName string, callback PermissionHandler)
-	RequestVerificationPermission(request irmago.DisclosureRequest, ServerName string, callback PermissionHandler)
-	RequestSignaturePermission(request irmago.SignatureRequest, ServerName string, callback PermissionHandler)
-	RequestSchemeManagerPermission(manager *irmago.SchemeManager, callback func(proceed bool))
+	RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler)
+	RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler)
+	RequestSignaturePermission(request irma.SignatureRequest, ServerName string, callback PermissionHandler)
+	RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }
@@ -45,18 +45,18 @@ type SessionDismisser interface {
 
 // A session is an IRMA session.
 type session struct {
-	Action    irmago.Action
-	Version   irmago.Version
+	Action    irma.Action
+	Version   irma.Version
 	ServerURL string
 	Handler   Handler
 
-	info        *irmago.SessionInfo
+	info        *irma.SessionInfo
 	client      *Client
-	jwt         irmago.RequestorJwt
-	irmaSession irmago.IrmaSession
-	transport   *irmago.HTTPTransport
-	choice      *irmago.DisclosureChoice
-	downloaded  *irmago.IrmaIdentifierSet
+	jwt         irma.RequestorJwt
+	irmaSession irma.IrmaSession
+	transport   *irma.HTTPTransport
+	choice      *irma.DisclosureChoice
+	downloaded  *irma.IrmaIdentifierSet
 	done        bool
 }
 
@@ -68,7 +68,7 @@ var supportedVersions = map[int][]int{
 	2: {2, 1},
 }
 
-func calcVersion(qr *irmago.Qr) (string, error) {
+func calcVersion(qr *irma.Qr) (string, error) {
 	// Parse range supported by server
 	var minmajor, minminor, maxmajor, maxminor int
 	var err error
@@ -104,31 +104,31 @@ func calcVersion(qr *irmago.Qr) (string, error) {
 }
 
 // NewSession creates and starts a new IRMA session.
-func (client *Client) NewSession(qr *irmago.Qr, handler Handler) SessionDismisser {
+func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser {
 	session := &session{
-		Action:    irmago.Action(qr.Type),
+		Action:    irma.Action(qr.Type),
 		ServerURL: qr.URL,
 		Handler:   handler,
-		transport: irmago.NewHTTPTransport(qr.URL),
+		transport: irma.NewHTTPTransport(qr.URL),
 		client:    client,
 	}
 	version, err := calcVersion(qr)
 	if err != nil {
-		session.fail(&irmago.SessionError{ErrorType: irmago.ErrorProtocolVersionNotSupported, Err: err})
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorProtocolVersionNotSupported, Err: err})
 		return nil
 	}
-	session.Version = irmago.Version(version)
+	session.Version = irma.Version(version)
 
 	// Check if the action is one of the supported types
 	switch session.Action {
-	case irmago.ActionDisclosing: // nop
-	case irmago.ActionSigning: // nop
-	case irmago.ActionIssuing: // nop
+	case irma.ActionDisclosing: // nop
+	case irma.ActionSigning: // nop
+	case irma.ActionIssuing: // nop
 	//case irmago.ActionSchemeManager: // nop
-	case irmago.ActionUnknown:
+	case irma.ActionUnknown:
 		fallthrough
 	default:
-		session.fail(&irmago.SessionError{ErrorType: irmago.ErrorUnknownAction, Info: string(session.Action)})
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownAction, Info: string(session.Action)})
 		return nil
 	}
 
@@ -145,39 +145,39 @@ func (client *Client) NewSession(qr *irmago.Qr, handler Handler) SessionDismisse
 // the request, and informs the user of the outcome.
 func (session *session) start() {
 	defer func() {
-		handlePanic(func(err *irmago.SessionError) {
+		handlePanic(func(err *irma.SessionError) {
 			if session.Handler != nil {
 				session.Handler.Failure(session.Action, err)
 			}
 		})
 	}()
 
-	session.Handler.StatusUpdate(session.Action, irmago.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
-	if session.Action == irmago.ActionSchemeManager {
+	if session.Action == irma.ActionSchemeManager {
 		session.managerSession()
 		return
 	}
 
 	// Get the first IRMA protocol message and parse it
-	session.info = &irmago.SessionInfo{}
+	session.info = &irma.SessionInfo{}
 	Err := session.transport.Get("jwt", session.info)
 	if Err != nil {
-		session.fail(Err.(*irmago.SessionError))
+		session.fail(Err.(*irma.SessionError))
 		return
 	}
 
 	var err error
-	session.jwt, err = irmago.ParseRequestorJwt(session.Action, session.info.Jwt)
+	session.jwt, err = irma.ParseRequestorJwt(session.Action, session.info.Jwt)
 	if err != nil {
-		session.fail(&irmago.SessionError{ErrorType: irmago.ErrorInvalidJWT, Err: err})
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorInvalidJWT, Err: err})
 		return
 	}
 	session.irmaSession = session.jwt.IrmaSession()
 	session.irmaSession.SetContext(session.info.Context)
 	session.irmaSession.SetNonce(session.info.Nonce)
-	if session.Action == irmago.ActionIssuing {
-		ir := session.irmaSession.(*irmago.IssuanceRequest)
+	if session.Action == irma.ActionIssuing {
+		ir := session.irmaSession.(*irma.IssuanceRequest)
 		// Store which public keys the server will use
 		for _, credreq := range ir.Credentials {
 			credreq.KeyCounter = session.info.Keys[credreq.CredentialTypeID.IssuerIdentifier()]
@@ -188,7 +188,7 @@ func (session *session) start() {
 	for id := range session.irmaSession.Identifiers().SchemeManagers {
 		manager, ok := session.client.ConfigurationStore.SchemeManagers[id]
 		if !ok {
-			session.fail(&irmago.SessionError{ErrorType: irmago.ErrorUnknownSchemeManager, Info: id.String()})
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
 			return
 		}
 		distributed := manager.Distributed()
@@ -204,17 +204,17 @@ func (session *session) start() {
 	if session.downloaded, err = session.client.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
 		session.Handler.Failure(
 			session.Action,
-			&irmago.SessionError{ErrorType: irmago.ErrorConfigurationStoreDownload, Err: err},
+			&irma.SessionError{ErrorType: irma.ErrorConfigurationStoreDownload, Err: err},
 		)
 		return
 	}
 
-	if session.Action == irmago.ActionIssuing {
-		ir := session.irmaSession.(*irmago.IssuanceRequest)
+	if session.Action == irma.ActionIssuing {
+		ir := session.irmaSession.(*irma.IssuanceRequest)
 		for _, credreq := range ir.Credentials {
 			info, err := credreq.Info(session.client.ConfigurationStore)
 			if err != nil {
-				session.fail(&irmago.SessionError{ErrorType: irmago.ErrorUnknownCredentialType, Err: err})
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownCredentialType, Err: err})
 				return
 			}
 			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
@@ -230,22 +230,22 @@ func (session *session) start() {
 	session.irmaSession.SetCandidates(candidates)
 
 	// Ask for permission to execute the session
-	callback := PermissionHandler(func(proceed bool, choice *irmago.DisclosureChoice) {
+	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 		session.choice = choice
 		session.irmaSession.SetDisclosureChoice(choice)
 		go session.do(proceed)
 	})
-	session.Handler.StatusUpdate(session.Action, irmago.StatusConnected)
+	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
 	switch session.Action {
-	case irmago.ActionDisclosing:
+	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			*session.irmaSession.(*irmago.DisclosureRequest), session.jwt.Requestor(), callback)
-	case irmago.ActionSigning:
+			*session.irmaSession.(*irma.DisclosureRequest), session.jwt.Requestor(), callback)
+	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			*session.irmaSession.(*irmago.SignatureRequest), session.jwt.Requestor(), callback)
-	case irmago.ActionIssuing:
+			*session.irmaSession.(*irma.SignatureRequest), session.jwt.Requestor(), callback)
+	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			*session.irmaSession.(*irmago.IssuanceRequest), session.jwt.Requestor(), callback)
+			*session.irmaSession.(*irma.IssuanceRequest), session.jwt.Requestor(), callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -253,7 +253,7 @@ func (session *session) start() {
 
 func (session *session) do(proceed bool) {
 	defer func() {
-		handlePanic(func(err *irmago.SessionError) {
+		handlePanic(func(err *irma.SessionError) {
 			if session.Handler != nil {
 				session.Handler.Failure(session.Action, err)
 			}
@@ -264,21 +264,21 @@ func (session *session) do(proceed bool) {
 		session.cancel()
 		return
 	}
-	session.Handler.StatusUpdate(session.Action, irmago.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
 	if !session.irmaSession.Identifiers().Distributed(session.client.ConfigurationStore) {
 		var message interface{}
 		var err error
 		switch session.Action {
-		case irmago.ActionSigning:
+		case irma.ActionSigning:
 			message, err = session.client.Proofs(session.choice, session.irmaSession, true)
-		case irmago.ActionDisclosing:
+		case irma.ActionDisclosing:
 			message, err = session.client.Proofs(session.choice, session.irmaSession, false)
-		case irmago.ActionIssuing:
-			message, err = session.client.IssueCommitments(session.irmaSession.(*irmago.IssuanceRequest))
+		case irma.ActionIssuing:
+			message, err = session.client.IssueCommitments(session.irmaSession.(*irma.IssuanceRequest))
 		}
 		if err != nil {
-			session.fail(&irmago.SessionError{ErrorType: irmago.ErrorCrypto, Err: err})
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 			return
 		}
 		session.sendResponse(message)
@@ -286,15 +286,15 @@ func (session *session) do(proceed bool) {
 		var builders gabi.ProofBuilderList
 		var err error
 		switch session.Action {
-		case irmago.ActionSigning:
+		case irma.ActionSigning:
 			fallthrough
-		case irmago.ActionDisclosing:
+		case irma.ActionDisclosing:
 			builders, err = session.client.ProofBuilders(session.choice)
-		case irmago.ActionIssuing:
-			builders, err = session.client.IssuanceProofBuilders(session.irmaSession.(*irmago.IssuanceRequest))
+		case irma.ActionIssuing:
+			builders, err = session.client.IssuanceProofBuilders(session.irmaSession.(*irma.IssuanceRequest))
 		}
 		if err != nil {
-			session.fail(&irmago.SessionError{ErrorType: irmago.ErrorCrypto, Err: err})
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 		}
 
 		startKeyshareSession(
@@ -318,11 +318,11 @@ func (session *session) KeyshareCancelled() {
 }
 
 func (session *session) KeyshareBlocked(duration int) {
-	session.fail(&irmago.SessionError{ErrorType: irmago.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
 }
 
 func (session *session) KeyshareError(err error) {
-	session.fail(&irmago.SessionError{ErrorType: irmago.ErrorKeyshare, Err: err})
+	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err})
 }
 
 type disclosureResponse string
@@ -332,27 +332,27 @@ func (session *session) sendResponse(message interface{}) {
 	var err error
 
 	switch session.Action {
-	case irmago.ActionSigning:
+	case irma.ActionSigning:
 		fallthrough
-	case irmago.ActionDisclosing:
+	case irma.ActionDisclosing:
 		var response disclosureResponse
 		if err = session.transport.Post("proofs", &response, message); err != nil {
-			session.fail(err.(*irmago.SessionError))
+			session.fail(err.(*irma.SessionError))
 			return
 		}
 		if response != "VALID" {
-			session.fail(&irmago.SessionError{ErrorType: irmago.ErrorRejected, Info: string(response)})
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
 			return
 		}
 		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
-	case irmago.ActionIssuing:
+	case irma.ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
-			session.fail(err.(*irmago.SessionError))
+			session.fail(err.(*irma.SessionError))
 			return
 		}
-		if err = session.client.ConstructCredentials(response, session.irmaSession.(*irmago.IssuanceRequest)); err != nil {
-			session.fail(&irmago.SessionError{ErrorType: irmago.ErrorCrypto, Err: err})
+		if err = session.client.ConstructCredentials(response, session.irmaSession.(*irma.IssuanceRequest)); err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 			return
 		}
 		log, _ = session.createLogEntry(message) // TODO err
@@ -362,7 +362,7 @@ func (session *session) sendResponse(message interface{}) {
 	if !session.downloaded.Empty() {
 		session.client.handler.UpdateConfigurationStore(session.downloaded)
 	}
-	if session.Action == irmago.ActionIssuing {
+	if session.Action == irma.ActionIssuing {
 		session.client.handler.UpdateAttributes()
 	}
 	session.done = true
@@ -372,7 +372,7 @@ func (session *session) sendResponse(message interface{}) {
 func (session *session) managerSession() {
 	manager, err := session.client.ConfigurationStore.DownloadSchemeManager(session.ServerURL)
 	if err != nil {
-		session.Handler.Failure(session.Action, &irmago.SessionError{Err: err}) // TODO
+		session.Handler.Failure(session.Action, &irma.SessionError{Err: err}) // TODO
 		return
 	}
 	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
@@ -381,17 +381,17 @@ func (session *session) managerSession() {
 			return
 		}
 		if err := session.client.ConfigurationStore.AddSchemeManager(manager); err != nil {
-			session.Handler.Failure(session.Action, &irmago.SessionError{})
+			session.Handler.Failure(session.Action, &irma.SessionError{})
 			return
 		}
 		if manager.Distributed() {
 			session.client.UnenrolledSchemeManagers = session.client.unenrolledSchemeManagers()
 		}
 		session.client.handler.UpdateConfigurationStore(
-			&irmago.IrmaIdentifierSet{
-				SchemeManagers:  map[irmago.SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
-				Issuers:         map[irmago.IssuerIdentifier]struct{}{},
-				CredentialTypes: map[irmago.CredentialTypeIdentifier]struct{}{},
+			&irma.IrmaIdentifierSet{
+				SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
+				Issuers:         map[irma.IssuerIdentifier]struct{}{},
+				CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
 			},
 		)
 		session.Handler.Success(session.Action)
@@ -401,7 +401,7 @@ func (session *session) managerSession() {
 
 // Session lifetime functions
 
-func handlePanic(callback func(*irmago.SessionError)) {
+func handlePanic(callback func(*irma.SessionError)) {
 	if e := recover(); e != nil {
 		var info string
 		switch x := e.(type) {
@@ -415,7 +415,7 @@ func handlePanic(callback func(*irmago.SessionError)) {
 		}
 		fmt.Printf("Recovered from panic: '%v'\n%s\n", e, info)
 		if callback != nil {
-			callback(&irmago.SessionError{ErrorType: irmago.ErrorPanic, Info: info})
+			callback(&irma.SessionError{ErrorType: irma.ErrorPanic, Info: info})
 		}
 	}
 }
@@ -430,7 +430,7 @@ func (session *session) delete() bool {
 	return false
 }
 
-func (session *session) fail(err *irmago.SessionError) {
+func (session *session) fail(err *irma.SessionError) {
 	if session.delete() {
 		err.Err = errors.Wrap(err.Err, 0)
 		if session.downloaded != nil && !session.downloaded.Empty() {
