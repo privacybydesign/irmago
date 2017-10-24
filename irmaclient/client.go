@@ -74,7 +74,7 @@ type secretKey struct {
 	Key *big.Int
 }
 
-// NewClient creates a new Client that uses the directory
+// New creates a new Client that uses the directory
 // specified by storagePath for (de)serializing itself. irmaConfigurationPath
 // is the path to a (possibly readonly) folder containing irma_configuration;
 // androidStoragePath is an optional path to the files of the old android app
@@ -86,7 +86,7 @@ type secretKey struct {
 //
 // NOTE: It is the responsibility of the caller that there exists a (properly
 // protected) directory at storagePath!
-func NewClient(
+func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	androidStoragePath string,
@@ -351,7 +351,7 @@ func (client *Client) credentialByID(id irmago.CredentialIdentifier) (*credentia
 // credential returns the requested credential, or nil if we do not have it.
 func (client *Client) credential(id irmago.CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
-	// deserialized during NewClient(). If so, there should be a corresponding signature file,
+	// deserialized during New(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
 	if _, exists := client.creds(id)[counter]; !exists {
 		attrs := client.Attributes(id, counter)

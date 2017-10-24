@@ -42,7 +42,7 @@ func parseStorage(t *testing.T) *Client {
 	if !exists {
 		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
 	}
-	manager, err := NewClient(
+	manager, err := New(
 		"testdata/storage/test",
 		"testdata/irma_configuration",
 		"testdata/oldstorage",
@@ -189,7 +189,7 @@ func TestUnmarshaling(t *testing.T) {
 	jwt := getIssuanceJwt("testip", irmago.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
-	newclient, err := NewClient("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
+	newclient, err := New("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
 	require.NoError(t, err)
 	verifyManagerIsUnmarshaled(t, newclient)
 	verifyCredentials(t, newclient)
