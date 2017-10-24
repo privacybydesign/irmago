@@ -11,7 +11,7 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// This file contains most methods of the CredentialManager (c.f. session.go
+// This file contains most methods of the Client (c.f. session.go
 // and updates.go).
 //
 // The storage of credentials is split up in several parts:
@@ -27,12 +27,12 @@ import (
 // across all credentials, is stored only once in a separate file (storing this
 // in multiple places would be bad).
 
-// CredentialManager (de)serializes credentials and keyshare server information
+// Client (de)serializes credentials and keyshare server information
 // from storage; as well as logs of earlier IRMA sessions; it provides access
 // to the attributes and all related information of its credentials;
 // it is the starting point for new IRMA sessions; and it computes some
 // of the messages in the client side of the IRMA protocol.
-type CredentialManager struct {
+type Client struct {
 	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[CredentialTypeIdentifier][]*AttributeList
@@ -71,24 +71,24 @@ type secretKey struct {
 	Key *big.Int
 }
 
-// NewCredentialManager creates a new CredentialManager that uses the directory
+// NewClient creates a new Client that uses the directory
 // specified by storagePath for (de)serializing itself. irmaConfigurationPath
 // is the path to a (possibly readonly) folder containing irma_configuration;
 // androidStoragePath is an optional path to the files of the old android app
 // (specify "" if you do not want to parse the old android app files),
 // and handler is used for informing the user of new stuff, and when a
 // enrollment to a keyshare server needs to happen.
-// The credential manager returned by this function has been fully deserialized
+// The client returned by this function has been fully deserialized
 // and is ready for use.
 //
 // NOTE: It is the responsibility of the caller that there exists a (properly
 // protected) directory at storagePath!
-func NewCredentialManager(
+func NewClient(
 	storagePath string,
 	irmaConfigurationPath string,
 	androidStoragePath string,
 	handler ClientHandler,
-) (*CredentialManager, error) {
+) (*Client, error) {
 	var err error
 	if err = AssertPathExists(storagePath); err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func NewCredentialManager(
 		return nil, err
 	}
 
-	cm := &CredentialManager{
+	cm := &Client{
 		credentials:           make(map[CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[CredentialTypeIdentifier][]*AttributeList),
@@ -120,7 +120,7 @@ func NewCredentialManager(
 		return nil, err
 	}
 
-	// Perform new update functions from credentialManagerUpdates, if any
+	// Perform new update functions from clientUpdates, if any
 	if err = cm.update(); err != nil {
 		return nil, err
 	}
@@ -151,10 +151,10 @@ func NewCredentialManager(
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
-func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
+func (client *Client) CredentialInfoList() CredentialInfoList {
 	list := CredentialInfoList([]*CredentialInfo{})
 
-	for _, attrlistlist := range cm.attributes {
+	for _, attrlistlist := range client.attributes {
 		for index, attrlist := range attrlistlist {
 			info := attrlist.Info()
 			info.Index = index
@@ -166,13 +166,13 @@ func (cm *CredentialManager) CredentialInfoList() CredentialInfoList {
 	return list
 }
 
-// addCredential adds the specified credential to the CredentialManager, saving its signature
+// addCredential adds the specified credential to the Client, saving its signature
 // imediately, and optionally cm.attributes as well.
-func (cm *CredentialManager) addCredential(cred *credential, storeAttributes bool) (err error) {
+func (client *Client) addCredential(cred *credential, storeAttributes bool) (err error) {
 	id := cred.CredentialType().Identifier()
 
 	// Don't add duplicate creds
-	for _, attrlistlist := range cm.attributes {
+	for _, attrlistlist := range client.attributes {
 		for _, attrs := range attrlistlist {
 			if attrs.hash() == cred.AttributeList().hash() {
 				return nil
@@ -181,23 +181,23 @@ func (cm *CredentialManager) addCredential(cred *credential, storeAttributes boo
 	}
 
 	// If this is a singleton credential type, ensure we have at most one by removing any previous instance
-	if cred.CredentialType().IsSingleton && len(cm.creds(id)) > 0 {
-		cm.remove(id, 0, false) // Index is 0, because if we're here we have exactly one
+	if cred.CredentialType().IsSingleton && len(client.creds(id)) > 0 {
+		client.remove(id, 0, false) // Index is 0, because if we're here we have exactly one
 	}
 
 	// Append the new cred to our attributes and credentials
-	cm.attributes[id] = append(cm.attrs(id), cred.AttributeList())
-	if _, exists := cm.credentials[id]; !exists {
-		cm.credentials[id] = make(map[int]*credential)
+	client.attributes[id] = append(client.attrs(id), cred.AttributeList())
+	if _, exists := client.credentials[id]; !exists {
+		client.credentials[id] = make(map[int]*credential)
 	}
-	counter := len(cm.attributes[id]) - 1
-	cm.credentials[id][counter] = cred
+	counter := len(client.attributes[id]) - 1
+	client.credentials[id][counter] = cred
 
-	if err = cm.storage.StoreSignature(cred); err != nil {
+	if err = client.storage.StoreSignature(cred); err != nil {
 		return
 	}
 	if storeAttributes {
-		err = cm.storage.StoreAttributes(cm.attributes)
+		err = client.storage.StoreAttributes(client.attributes)
 	}
 	return
 }
@@ -212,30 +212,30 @@ func generateSecretKey() (*secretKey, error) {
 
 // Removal methods
 
-func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, storenow bool) error {
+func (client *Client) remove(id CredentialTypeIdentifier, index int, storenow bool) error {
 	// Remove attributes
-	list, exists := cm.attributes[id]
+	list, exists := client.attributes[id]
 	if !exists || index >= len(list) {
 		return errors.Errorf("Can't remove credential %s-%d: no such credential", id.String(), index)
 	}
 	attrs := list[index]
-	cm.attributes[id] = append(list[:index], list[index+1:]...)
+	client.attributes[id] = append(list[:index], list[index+1:]...)
 	if storenow {
-		if err := cm.storage.StoreAttributes(cm.attributes); err != nil {
+		if err := client.storage.StoreAttributes(client.attributes); err != nil {
 			return err
 		}
 	}
 
 	// Remove credential
-	if creds, exists := cm.credentials[id]; exists {
+	if creds, exists := client.credentials[id]; exists {
 		if _, exists := creds[index]; exists {
 			delete(creds, index)
-			cm.credentials[id] = creds
+			client.credentials[id] = creds
 		}
 	}
 
 	// Remove signature from storage
-	if err := cm.storage.DeleteSignature(attrs); err != nil {
+	if err := client.storage.DeleteSignature(attrs); err != nil {
 		return err
 	}
 
@@ -243,7 +243,7 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	removed[id] = attrs.Strings()
 
 	if storenow {
-		return cm.addLogEntry(&LogEntry{
+		return client.addLogEntry(&LogEntry{
 			Type:    actionRemoval,
 			Time:    Timestamp(time.Now()),
 			Removed: removed,
@@ -252,30 +252,30 @@ func (cm *CredentialManager) remove(id CredentialTypeIdentifier, index int, stor
 	return nil
 }
 
-func (cm *CredentialManager) RemoveCredential(id CredentialTypeIdentifier, index int) error {
-	return cm.remove(id, index, true)
+func (client *Client) RemoveCredential(id CredentialTypeIdentifier, index int) error {
+	return client.remove(id, index, true)
 }
 
-func (cm *CredentialManager) RemoveCredentialByHash(hash string) error {
-	cred, index, err := cm.credentialByHash(hash)
+func (client *Client) RemoveCredentialByHash(hash string) error {
+	cred, index, err := client.credentialByHash(hash)
 	if err != nil {
 		return err
 	}
-	return cm.RemoveCredential(cred.CredentialType().Identifier(), index)
+	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
-func (cm *CredentialManager) RemoveAllCredentials() error {
+func (client *Client) RemoveAllCredentials() error {
 	removed := map[CredentialTypeIdentifier][]TranslatedString{}
-	for _, attrlistlist := range cm.attributes {
+	for _, attrlistlist := range client.attributes {
 		for _, attrs := range attrlistlist {
 			if attrs.CredentialType() != nil {
 				removed[attrs.CredentialType().Identifier()] = attrs.Strings()
 			}
-			cm.storage.DeleteSignature(attrs)
+			client.storage.DeleteSignature(attrs)
 		}
 	}
-	cm.attributes = map[CredentialTypeIdentifier][]*AttributeList{}
-	if err := cm.storage.StoreAttributes(cm.attributes); err != nil {
+	client.attributes = map[CredentialTypeIdentifier][]*AttributeList{}
+	if err := client.storage.StoreAttributes(client.attributes); err != nil {
 		return err
 	}
 
@@ -284,48 +284,48 @@ func (cm *CredentialManager) RemoveAllCredentials() error {
 		Time:    Timestamp(time.Now()),
 		Removed: removed,
 	}
-	if err := cm.addLogEntry(logentry); err != nil {
+	if err := client.addLogEntry(logentry); err != nil {
 		return err
 	}
-	return cm.storage.StoreLogs(cm.logs)
+	return client.storage.StoreLogs(client.logs)
 }
 
 // Attribute and credential getter methods
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
-func (cm *CredentialManager) attrs(id CredentialTypeIdentifier) []*AttributeList {
-	list, exists := cm.attributes[id]
+func (client *Client) attrs(id CredentialTypeIdentifier) []*AttributeList {
+	list, exists := client.attributes[id]
 	if !exists {
 		list = make([]*AttributeList, 0, 1)
-		cm.attributes[id] = list
+		client.attributes[id] = list
 	}
 	return list
 }
 
 // creds returns cm.credentials[id], initializing it to an empty map if neccesary
-func (cm *CredentialManager) creds(id CredentialTypeIdentifier) map[int]*credential {
-	list, exists := cm.credentials[id]
+func (client *Client) creds(id CredentialTypeIdentifier) map[int]*credential {
+	list, exists := client.credentials[id]
 	if !exists {
 		list = make(map[int]*credential)
-		cm.credentials[id] = list
+		client.credentials[id] = list
 	}
 	return list
 }
 
 // Attributes returns the attribute list of the requested credential, or nil if we do not have it.
-func (cm *CredentialManager) Attributes(id CredentialTypeIdentifier, counter int) (attributes *AttributeList) {
-	list := cm.attrs(id)
+func (client *Client) Attributes(id CredentialTypeIdentifier, counter int) (attributes *AttributeList) {
+	list := client.attrs(id)
 	if len(list) <= counter {
 		return
 	}
 	return list[counter]
 }
 
-func (cm *CredentialManager) credentialByHash(hash string) (*credential, int, error) {
-	for _, attrlistlist := range cm.attributes {
+func (client *Client) credentialByHash(hash string) (*credential, int, error) {
+	for _, attrlistlist := range client.attributes {
 		for index, attrs := range attrlistlist {
 			if attrs.hash() == hash {
-				cred, err := cm.credential(attrs.CredentialType().Identifier(), index)
+				cred, err := client.credential(attrs.CredentialType().Identifier(), index)
 				return cred, index, err
 			}
 		}
@@ -333,29 +333,29 @@ func (cm *CredentialManager) credentialByHash(hash string) (*credential, int, er
 	return nil, 0, nil
 }
 
-func (cm *CredentialManager) credentialByID(id CredentialIdentifier) (*credential, error) {
-	if _, exists := cm.attributes[id.Type]; !exists {
+func (client *Client) credentialByID(id CredentialIdentifier) (*credential, error) {
+	if _, exists := client.attributes[id.Type]; !exists {
 		return nil, nil
 	}
-	for index, attrs := range cm.attributes[id.Type] {
+	for index, attrs := range client.attributes[id.Type] {
 		if attrs.hash() == id.Hash {
-			return cm.credential(attrs.CredentialType().Identifier(), index)
+			return client.credential(attrs.CredentialType().Identifier(), index)
 		}
 	}
 	return nil, nil
 }
 
 // credential returns the requested credential, or nil if we do not have it.
-func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int) (cred *credential, err error) {
+func (client *Client) credential(id CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
-	// deserialized during NewCredentialManager(). If so, there should be a corresponding signature file,
+	// deserialized during NewClient(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
-	if _, exists := cm.creds(id)[counter]; !exists {
-		attrs := cm.Attributes(id, counter)
+	if _, exists := client.creds(id)[counter]; !exists {
+		attrs := client.Attributes(id, counter)
 		if attrs == nil { // We do not have the requested cred
 			return
 		}
-		sig, err := cm.storage.LoadSignature(attrs)
+		sig, err := client.storage.LoadSignature(attrs)
 		if err != nil {
 			return nil, err
 		}
@@ -371,32 +371,32 @@ func (cm *CredentialManager) credential(id CredentialTypeIdentifier, counter int
 			return nil, errors.New("unknown public key")
 		}
 		cred, err := newCredential(&gabi.Credential{
-			Attributes: append([]*big.Int{cm.secretkey.Key}, attrs.Ints...),
+			Attributes: append([]*big.Int{client.secretkey.Key}, attrs.Ints...),
 			Signature:  sig,
 			Pk:         pk,
-		}, cm.ConfigurationStore)
+		}, client.ConfigurationStore)
 		if err != nil {
 			return nil, err
 		}
-		cm.credentials[id][counter] = cred
+		client.credentials[id][counter] = cred
 	}
 
-	return cm.credentials[id][counter], nil
+	return client.credentials[id][counter], nil
 }
 
 // Methods used in the IRMA protocol
 
-// Candidates returns a list of attributes present in this credential manager
+// Candidates returns a list of attributes present in this client
 // that satisfy the specified attribute disjunction.
-func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*AttributeIdentifier {
+func (client *Client) Candidates(disjunction *AttributeDisjunction) []*AttributeIdentifier {
 	candidates := make([]*AttributeIdentifier, 0, 10)
 
 	for _, attribute := range disjunction.Attributes {
 		credID := attribute.CredentialTypeIdentifier()
-		if !cm.ConfigurationStore.Contains(credID) {
+		if !client.ConfigurationStore.Contains(credID) {
 			continue
 		}
-		creds := cm.attributes[credID]
+		creds := client.attributes[credID]
 		count := len(creds)
 		if count == 0 {
 			continue
@@ -420,17 +420,17 @@ func (cm *CredentialManager) Candidates(disjunction *AttributeDisjunction) []*At
 	return candidates
 }
 
-// CheckSatisfiability checks if this credential manager has the required attributes
+// CheckSatisfiability checks if this client has the required attributes
 // to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
 // are returned.
-func (cm *CredentialManager) CheckSatisfiability(
+func (client *Client) CheckSatisfiability(
 	disjunctions AttributeDisjunctionList,
 ) ([][]*AttributeIdentifier, AttributeDisjunctionList) {
 	candidates := [][]*AttributeIdentifier{}
 	missing := AttributeDisjunctionList{}
 	for i, disjunction := range disjunctions {
 		candidates = append(candidates, []*AttributeIdentifier{})
-		candidates[i] = cm.Candidates(disjunction)
+		candidates[i] = client.Candidates(disjunction)
 		if len(candidates[i]) == 0 {
 			missing = append(missing, disjunction)
 		}
@@ -438,7 +438,7 @@ func (cm *CredentialManager) CheckSatisfiability(
 	return candidates, missing
 }
 
-func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[CredentialIdentifier][]int, error) {
+func (client *Client) groupCredentials(choice *DisclosureChoice) (map[CredentialIdentifier][]int, error) {
 	grouped := make(map[CredentialIdentifier][]int)
 	if choice == nil || choice.Attributes == nil {
 		return grouped, nil
@@ -459,7 +459,7 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 		if identifier.IsCredential() {
 			continue // In this case we only disclose the metadata attribute, which is already handled
 		}
-		index, err := cm.ConfigurationStore.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
+		index, err := client.ConfigurationStore.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
 			return nil, err
 		}
@@ -473,15 +473,15 @@ func (cm *CredentialManager) groupCredentials(choice *DisclosureChoice) (map[Cre
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
-func (cm *CredentialManager) ProofBuilders(choice *DisclosureChoice) (gabi.ProofBuilderList, error) {
-	todisclose, err := cm.groupCredentials(choice)
+func (client *Client) ProofBuilders(choice *DisclosureChoice) (gabi.ProofBuilderList, error) {
+	todisclose, err := client.groupCredentials(choice)
 	if err != nil {
 		return nil, err
 	}
 
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for id, list := range todisclose {
-		cred, err := cm.credentialByID(id)
+		cred, err := client.credentialByID(id)
 		if err != nil {
 			return nil, err
 		}
@@ -491,8 +491,8 @@ func (cm *CredentialManager) ProofBuilders(choice *DisclosureChoice) (gabi.Proof
 }
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.
-func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request IrmaSession, issig bool) (gabi.ProofList, error) {
-	builders, err := cm.ProofBuilders(choice)
+func (client *Client) Proofs(choice *DisclosureChoice, request IrmaSession, issig bool) (gabi.ProofList, error) {
+	builders, err := client.ProofBuilders(choice)
 	if err != nil {
 		return nil, err
 	}
@@ -501,7 +501,7 @@ func (cm *CredentialManager) Proofs(choice *DisclosureChoice, request IrmaSessio
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
 // for the future credentials as well as possibly any disclosed attributes.
-func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (gabi.ProofBuilderList, error) {
+func (client *Client) IssuanceProofBuilders(request *IssuanceRequest) (gabi.ProofBuilderList, error) {
 	state, err := newIssuanceState()
 	if err != nil {
 		return nil, err
@@ -511,17 +511,17 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
 		var pk *gabi.PublicKey
-		pk, err = cm.ConfigurationStore.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
+		pk, err = client.ConfigurationStore.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, err
 		}
 		credBuilder := gabi.NewCredentialBuilder(
-			pk, request.GetContext(), cm.secretkey.Key, state.nonce2)
+			pk, request.GetContext(), client.secretkey.Key, state.nonce2)
 		request.state.builders = append(request.state.builders, credBuilder)
 		proofBuilders = append(proofBuilders, credBuilder)
 	}
 
-	disclosures, err := cm.ProofBuilders(request.choice)
+	disclosures, err := client.ProofBuilders(request.choice)
 	if err != nil {
 		return nil, err
 	}
@@ -531,8 +531,8 @@ func (cm *CredentialManager) IssuanceProofBuilders(request *IssuanceRequest) (ga
 
 // IssueCommitments computes issuance commitments, along with disclosure proofs
 // specified by choice.
-func (cm *CredentialManager) IssueCommitments(request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
-	proofBuilders, err := cm.IssuanceProofBuilders(request)
+func (client *Client) IssueCommitments(request *IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
+	proofBuilders, err := client.IssuanceProofBuilders(request)
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +542,7 @@ func (cm *CredentialManager) IssueCommitments(request *IssuanceRequest) (*gabi.I
 
 // ConstructCredentials constructs and saves new credentials
 // using the specified issuance signature messages.
-func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *IssuanceRequest) error {
+func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *IssuanceRequest) error {
 	if len(msg) != len(request.state.builders) {
 		return errors.New("Received unexpected amount of signatures")
 	}
@@ -551,7 +551,7 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	// we save none of them to fail the session cleanly
 	gabicreds := []*gabi.Credential{}
 	for i, sig := range msg {
-		attrs, err := request.Credentials[i].AttributeList(cm.ConfigurationStore)
+		attrs, err := request.Credentials[i].AttributeList(client.ConfigurationStore)
 		if err != nil {
 			return err
 		}
@@ -563,11 +563,11 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 	}
 
 	for _, gabicred := range gabicreds {
-		newcred, err := newCredential(gabicred, cm.ConfigurationStore)
+		newcred, err := newCredential(gabicred, client.ConfigurationStore)
 		if err != nil {
 			return err
 		}
-		if err = cm.addCredential(newcred, true); err != nil {
+		if err = client.addCredential(newcred, true); err != nil {
 			return err
 		}
 	}
@@ -578,35 +578,35 @@ func (cm *CredentialManager) ConstructCredentials(msg []*gabi.IssueSignatureMess
 // Keyshare server handling
 
 // PaillierKey returns a new Paillier key (and generates a new one in a goroutine).
-func (cm *CredentialManager) paillierKey(wait bool) *paillierPrivateKey {
-	cached := cm.paillierKeyCache
+func (client *Client) paillierKey(wait bool) *paillierPrivateKey {
+	cached := client.paillierKeyCache
 	ch := make(chan bool)
 
-	// Would just write cm.paillierKeyCache instead of cached here, but the worker
-	// modifies cm.paillierKeyCache, and we must be sure that the boolean here and
+	// Would just write client.paillierKeyCache instead of cached here, but the worker
+	// modifies client.paillierKeyCache, and we must be sure that the boolean here and
 	// the if-clause below match.
-	go cm.paillierKeyWorker(cached == nil && wait, ch)
+	go client.paillierKeyWorker(cached == nil && wait, ch)
 	if cached == nil && wait {
 		<-ch
 		// generate yet another one for future calls, but no need to wait now
-		go cm.paillierKeyWorker(false, ch)
+		go client.paillierKeyWorker(false, ch)
 	}
-	return cm.paillierKeyCache
+	return client.paillierKeyCache
 }
 
-func (cm *CredentialManager) paillierKeyWorker(wait bool, ch chan bool) {
+func (client *Client) paillierKeyWorker(wait bool, ch chan bool) {
 	newkey, _ := paillier.GenerateKey(rand.Reader, 2048)
-	cm.paillierKeyCache = (*paillierPrivateKey)(newkey)
-	cm.storage.StorePaillierKeys(cm.paillierKeyCache)
+	client.paillierKeyCache = (*paillierPrivateKey)(newkey)
+	client.storage.StorePaillierKeys(client.paillierKeyCache)
 	if wait {
 		ch <- true
 	}
 }
 
-func (cm *CredentialManager) unenrolledSchemeManagers() []SchemeManagerIdentifier {
+func (client *Client) unenrolledSchemeManagers() []SchemeManagerIdentifier {
 	list := []SchemeManagerIdentifier{}
-	for name, manager := range cm.ConfigurationStore.SchemeManagers {
-		if _, contains := cm.keyshareServers[name]; manager.Distributed() && !contains {
+	for name, manager := range client.ConfigurationStore.SchemeManagers {
+		if _, contains := client.keyshareServers[name]; manager.Distributed() && !contains {
 			list = append(list, manager.Identifier())
 		}
 	}
@@ -614,29 +614,29 @@ func (cm *CredentialManager) unenrolledSchemeManagers() []SchemeManagerIdentifie
 }
 
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
-func (cm *CredentialManager) KeyshareEnroll(manager SchemeManagerIdentifier, email, pin string) {
+func (client *Client) KeyshareEnroll(manager SchemeManagerIdentifier, email, pin string) {
 	go func() {
 		defer func() {
 			handlePanic(func(err *SessionError) {
-				if cm.handler != nil {
-					cm.handler.EnrollmentError(manager, err)
+				if client.handler != nil {
+					client.handler.EnrollmentError(manager, err)
 				}
 			})
 		}()
 
-		err := cm.keyshareEnrollWorker(manager, email, pin)
-		cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
+		err := client.keyshareEnrollWorker(manager, email, pin)
+		client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
 		if err != nil {
-			cm.handler.EnrollmentError(manager, err)
+			client.handler.EnrollmentError(manager, err)
 		} else {
-			cm.handler.EnrollmentSuccess(manager)
+			client.handler.EnrollmentSuccess(manager)
 		}
 	}()
 
 }
 
-func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentifier, email, pin string) error {
-	manager, ok := cm.ConfigurationStore.SchemeManagers[managerID]
+func (client *Client) keyshareEnrollWorker(managerID SchemeManagerIdentifier, email, pin string) error {
+	manager, ok := client.ConfigurationStore.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
 	}
@@ -648,7 +648,7 @@ func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentif
 	}
 
 	transport := NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(cm.paillierKey(true), manager.KeyshareServer, email)
+	kss, err := newKeyshareServer(client.paillierKey(true), manager.KeyshareServer, email)
 	if err != nil {
 		return err
 	}
@@ -664,40 +664,40 @@ func (cm *CredentialManager) keyshareEnrollWorker(managerID SchemeManagerIdentif
 		return err
 	}
 
-	cm.keyshareServers[managerID] = kss
-	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
+	client.keyshareServers[managerID] = kss
+	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
-func (cm *CredentialManager) KeyshareRemove(manager SchemeManagerIdentifier) error {
-	if _, contains := cm.keyshareServers[manager]; !contains {
+func (client *Client) KeyshareRemove(manager SchemeManagerIdentifier) error {
+	if _, contains := client.keyshareServers[manager]; !contains {
 		return errors.New("Can't uninstall unknown keyshare server")
 	}
-	delete(cm.keyshareServers, manager)
-	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
+	delete(client.keyshareServers, manager)
+	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 
-func (cm *CredentialManager) KeyshareRemoveAll() error {
-	cm.keyshareServers = map[SchemeManagerIdentifier]*keyshareServer{}
-	cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
-	return cm.storage.StoreKeyshareServers(cm.keyshareServers)
+func (client *Client) KeyshareRemoveAll() error {
+	client.keyshareServers = map[SchemeManagerIdentifier]*keyshareServer{}
+	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
+	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 
 // Add, load and store log entries
 
-func (cm *CredentialManager) addLogEntry(entry *LogEntry) error {
-	cm.logs = append(cm.logs, entry)
-	return cm.storage.StoreLogs(cm.logs)
+func (client *Client) addLogEntry(entry *LogEntry) error {
+	client.logs = append(client.logs, entry)
+	return client.storage.StoreLogs(client.logs)
 	return nil
 }
 
-func (cm *CredentialManager) Logs() ([]*LogEntry, error) {
-	if cm.logs == nil || len(cm.logs) == 0 {
+func (client *Client) Logs() ([]*LogEntry, error) {
+	if client.logs == nil || len(client.logs) == 0 {
 		var err error
-		cm.logs, err = cm.storage.LoadLogs()
+		client.logs, err = client.storage.LoadLogs()
 		if err != nil {
 			return nil, err
 		}
 	}
-	return cm.logs, nil
+	return client.logs, nil
 }

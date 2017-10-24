@@ -34,13 +34,13 @@ func (i *IgnoringClientHandler) UpdateAttributes()                              
 func (i *IgnoringClientHandler) EnrollmentError(manager SchemeManagerIdentifier, err error) {}
 func (i *IgnoringClientHandler) EnrollmentSuccess(manager SchemeManagerIdentifier)          {}
 
-func parseStorage(t *testing.T) *CredentialManager {
+func parseStorage(t *testing.T) *Client {
 	exists, err := PathExists("testdata/storage/test")
 	require.NoError(t, err, "pathexists() failed")
 	if !exists {
 		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
 	}
-	manager, err := NewCredentialManager(
+	manager, err := NewClient(
 		"testdata/storage/test",
 		"testdata/irma_configuration",
 		"testdata/oldstorage",
@@ -61,18 +61,18 @@ func s2big(s string) (r *big.Int) {
 	return
 }
 
-func verifyManagerIsUnmarshaled(t *testing.T, manager *CredentialManager) {
-	cred, err := manager.credential(NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
+func verifyManagerIsUnmarshaled(t *testing.T, client *Client) {
+	cred, err := client.credential(NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
 	require.NotNil(t, cred.Attributes[0], "Metadata attribute of irma-demo.RU.studentCard should not be nil")
 
-	cred, err = manager.credential(NewCredentialTypeIdentifier("test.test.mijnirma"), 0)
+	cred, err = client.credential(NewCredentialTypeIdentifier("test.test.mijnirma"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
 	require.NotNil(t, cred.Signature.KeyshareP)
 
-	require.NotEmpty(t, manager.CredentialInfoList())
+	require.NotEmpty(t, client.CredentialInfoList())
 
 	pk, err := cred.PublicKey()
 	require.NoError(t, err)
@@ -82,10 +82,10 @@ func verifyManagerIsUnmarshaled(t *testing.T, manager *CredentialManager) {
 	)
 }
 
-func verifyCredentials(t *testing.T, manager *CredentialManager) {
+func verifyCredentials(t *testing.T, client *Client) {
 	var pk *gabi.PublicKey
 	var err error
-	for credtype, credsmap := range manager.credentials {
+	for credtype, credsmap := range client.credentials {
 		for index, cred := range credsmap {
 			pk, err = cred.PublicKey()
 			require.NoError(t, err)
@@ -93,7 +93,7 @@ func verifyCredentials(t *testing.T, manager *CredentialManager) {
 				cred.Credential.Signature.Verify(pk, cred.Attributes),
 				"Credential %s-%d was invalid", credtype.String(), index,
 			)
-			require.Equal(t, cred.Attributes[0], manager.secretkey.Key,
+			require.Equal(t, cred.Attributes[0], client.secretkey.Key,
 				"Secret key of credential %s-%d unequal to main secret key",
 				cred.CredentialType().Identifier().String(), index,
 			)
@@ -118,16 +118,16 @@ func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
 	require.Equal(t, plaintext, string(decrypted))
 }
 
-func verifyKeyshareIsUnmarshaled(t *testing.T, manager *CredentialManager) {
-	require.NotNil(t, manager.paillierKeyCache)
-	require.NotNil(t, manager.keyshareServers)
+func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
+	require.NotNil(t, client.paillierKeyCache)
+	require.NotNil(t, client.keyshareServers)
 	test := NewSchemeManagerIdentifier("test")
-	require.Contains(t, manager.keyshareServers, test)
-	kss := manager.keyshareServers[test]
+	require.Contains(t, client.keyshareServers, test)
+	kss := client.keyshareServers[test]
 	require.NotEmpty(t, kss.Nonce)
 
 	verifyPaillierKey(t, kss.PrivateKey)
-	verifyPaillierKey(t, manager.paillierKeyCache)
+	verifyPaillierKey(t, client.paillierKeyCache)
 }
 
 func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore, android bool) {
@@ -168,31 +168,31 @@ func verifyStoreIsLoaded(t *testing.T, store *ConfigurationStore, android bool) 
 }
 
 func TestAndroidParse(t *testing.T) {
-	manager := parseStorage(t)
-	verifyStoreIsLoaded(t, manager.ConfigurationStore, true)
-	verifyManagerIsUnmarshaled(t, manager)
-	verifyCredentials(t, manager)
-	verifyKeyshareIsUnmarshaled(t, manager)
+	client := parseStorage(t)
+	verifyStoreIsLoaded(t, client.ConfigurationStore, true)
+	verifyManagerIsUnmarshaled(t, client)
+	verifyCredentials(t, client)
+	verifyKeyshareIsUnmarshaled(t, client)
 
 	teardown(t)
 }
 
 func TestUnmarshaling(t *testing.T) {
-	manager := parseStorage(t)
+	client := parseStorage(t)
 
 	// Do session so we can examine its log item later
-	logs, err := manager.Logs()
+	logs, err := client.Logs()
 	require.NoError(t, err)
 	jwt := getIssuanceJwt("testip", NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sessionHelper(t, jwt, "issue", manager)
+	sessionHelper(t, jwt, "issue", client)
 
-	newmanager, err := NewCredentialManager("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
+	newclient, err := NewClient("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
 	require.NoError(t, err)
-	verifyManagerIsUnmarshaled(t, newmanager)
-	verifyCredentials(t, newmanager)
-	verifyKeyshareIsUnmarshaled(t, newmanager)
+	verifyManagerIsUnmarshaled(t, newclient)
+	verifyCredentials(t, newclient)
+	verifyKeyshareIsUnmarshaled(t, newclient)
 
-	newlogs, err := newmanager.Logs()
+	newlogs, err := newclient.Logs()
 	require.NoError(t, err)
 	require.True(t, len(newlogs) == len(logs)+1)
 
@@ -296,13 +296,13 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 }
 
 func TestCandidates(t *testing.T) {
-	manager := parseStorage(t)
+	client := parseStorage(t)
 
 	attrtype := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	disjunction := &AttributeDisjunction{
 		Attributes: []AttributeTypeIdentifier{attrtype},
 	}
-	attrs := manager.Candidates(disjunction)
+	attrs := client.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 
@@ -314,7 +314,7 @@ func TestCandidates(t *testing.T) {
 		Attributes: []AttributeTypeIdentifier{attrtype},
 		Values:     map[AttributeTypeIdentifier]string{attrtype: "456"},
 	}
-	attrs = manager.Candidates(disjunction)
+	attrs = client.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 
@@ -322,7 +322,7 @@ func TestCandidates(t *testing.T) {
 		Attributes: []AttributeTypeIdentifier{attrtype},
 		Values:     map[AttributeTypeIdentifier]string{attrtype: "foobarbaz"},
 	}
-	attrs = manager.Candidates(disjunction)
+	attrs = client.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Empty(t, attrs)
 
@@ -385,13 +385,13 @@ func TestTransport(t *testing.T) {
 }
 
 func TestPaillier(t *testing.T) {
-	manager := parseStorage(t)
+	client := parseStorage(t)
 
 	challenge, _ := gabi.RandomBigInt(256)
 	comm, _ := gabi.RandomBigInt(1000)
 	resp, _ := gabi.RandomBigInt(1000)
 
-	sk := manager.paillierKey(true)
+	sk := client.paillierKey(true)
 	bytes, err := sk.Encrypt(challenge.Bytes())
 	require.NoError(t, err)
 	cipher := new(big.Int).SetBytes(bytes)
@@ -415,25 +415,25 @@ func TestPaillier(t *testing.T) {
 }
 
 func TestCredentialRemoval(t *testing.T) {
-	manager := parseStorage(t)
+	client := parseStorage(t)
 	id := NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := NewCredentialTypeIdentifier("test.test.mijnirma")
 
-	cred, err := manager.credential(id, 0)
+	cred, err := client.credential(id, 0)
 	require.NoError(t, err)
 	require.NotNil(t, cred)
-	err = manager.RemoveCredentialByHash(cred.AttributeList().hash())
+	err = client.RemoveCredentialByHash(cred.AttributeList().hash())
 	require.NoError(t, err)
-	cred, err = manager.credential(id, 0)
+	cred, err = client.credential(id, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
 
-	cred, err = manager.credential(id2, 0)
+	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.NotNil(t, cred)
-	err = manager.RemoveCredential(id2, 0)
+	err = client.RemoveCredential(id2, 0)
 	require.NoError(t, err)
-	cred, err = manager.credential(id2, 0)
+	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
 
@@ -441,17 +441,17 @@ func TestCredentialRemoval(t *testing.T) {
 }
 
 func TestDownloadSchemeManager(t *testing.T) {
-	manager := parseStorage(t)
-	require.NoError(t, manager.ConfigurationStore.RemoveSchemeManager(NewSchemeManagerIdentifier("irma-demo")))
+	client := parseStorage(t)
+	require.NoError(t, client.ConfigurationStore.RemoveSchemeManager(NewSchemeManagerIdentifier("irma-demo")))
 	url := "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo"
-	sm, err := manager.ConfigurationStore.DownloadSchemeManager(url)
+	sm, err := client.ConfigurationStore.DownloadSchemeManager(url)
 	require.NoError(t, err)
 	require.NotNil(t, sm)
 
-	require.NoError(t, manager.ConfigurationStore.AddSchemeManager(sm))
+	require.NoError(t, client.ConfigurationStore.AddSchemeManager(sm))
 
 	jwt := getIssuanceJwt("testip", NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sessionHelper(t, jwt, "issue", manager)
+	sessionHelper(t, jwt, "issue", client)
 
 	teardown(t)
 }

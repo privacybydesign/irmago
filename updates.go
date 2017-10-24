@@ -12,7 +12,7 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// This file contains the update mechanism for CredentialManager
+// This file contains the update mechanism for Client
 // as well as updates themselves.
 
 type update struct {
@@ -22,26 +22,26 @@ type update struct {
 	Error   *string
 }
 
-var credentialManagerUpdates = []func(manager *CredentialManager) error{
-	func(manager *CredentialManager) error {
-		_, err := manager.ParseAndroidStorage()
+var clientUpdates = []func(client *Client) error{
+	func(client *Client) error {
+		_, err := client.ParseAndroidStorage()
 		return err
 	},
 }
 
-// update performs any function from credentialManagerUpdates that has not
+// update performs any function from clientUpdates that has not
 // already been executed in the past, keeping track of previously executed updates
 // in the file at updatesFile.
-func (cm *CredentialManager) update() error {
+func (client *Client) update() error {
 	// Load and parse file containing info about already performed updates
 	var err error
-	if cm.updates, err = cm.storage.LoadUpdates(); err != nil {
+	if client.updates, err = client.storage.LoadUpdates(); err != nil {
 		return err
 	}
 
 	// Perform all new updates
-	for i := len(cm.updates); i < len(credentialManagerUpdates); i++ {
-		err = credentialManagerUpdates[i](cm)
+	for i := len(client.updates); i < len(clientUpdates); i++ {
+		err = clientUpdates[i](client)
 		u := update{
 			When:    Timestamp(time.Now()),
 			Number:  i,
@@ -51,22 +51,22 @@ func (cm *CredentialManager) update() error {
 			str := err.Error()
 			u.Error = &str
 		}
-		cm.updates = append(cm.updates, u)
+		client.updates = append(client.updates, u)
 	}
 
-	return cm.storage.StoreUpdates(cm.updates)
+	return client.storage.StoreUpdates(client.updates)
 }
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file
 // from the old Android IRMA app, parsing its credentials into the current instance,
 // and saving them to storage.
 // CAREFUL: this method overwrites any existing secret keys and attributes on storage.
-func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
-	if cm.androidStoragePath == "" {
+func (client *Client) ParseAndroidStorage() (present bool, err error) {
+	if client.androidStoragePath == "" {
 		return false, nil
 	}
 
-	cardemuXML := cm.androidStoragePath + "/shared_prefs/cardemu.xml"
+	cardemuXML := client.androidStoragePath + "/shared_prefs/cardemu.xml"
 	present, err = PathExists(cardemuXML)
 	if err != nil || !present {
 		return
@@ -93,7 +93,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 		Attributes   []*big.Int        `json:"attributes"`
 		SharedPoints []*big.Int        `json:"public_sks"`
 	})
-	cm.keyshareServers = make(map[SchemeManagerIdentifier]*keyshareServer)
+	client.keyshareServers = make(map[SchemeManagerIdentifier]*keyshareServer)
 	for _, xmltag := range parsedxml.Strings {
 		if xmltag.Name == "credentials" {
 			jsontag := html.UnescapeString(xmltag.Content)
@@ -103,7 +103,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 		}
 		if xmltag.Name == "keyshare" {
 			jsontag := html.UnescapeString(xmltag.Content)
-			if err = json.Unmarshal([]byte(jsontag), &cm.keyshareServers); err != nil {
+			if err = json.Unmarshal([]byte(jsontag), &client.keyshareServers); err != nil {
 				return
 			}
 		}
@@ -113,12 +113,12 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 			if err = json.Unmarshal([]byte(jsontag), &keys); err != nil {
 				return
 			}
-			cm.paillierKeyCache = keys[0]
+			client.paillierKeyCache = keys[0]
 		}
 	}
 
 	for _, list := range parsedjson {
-		cm.secretkey = &secretKey{Key: list[0].Attributes[0]}
+		client.secretkey = &secretKey{Key: list[0].Attributes[0]}
 		for _, oldcred := range list {
 			gabicred := &gabi.Credential{
 				Attributes: oldcred.Attributes,
@@ -128,7 +128,7 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 				gabicred.Signature.KeyshareP = oldcred.SharedPoints[0]
 			}
 			var cred *credential
-			if cred, err = newCredential(gabicred, cm.ConfigurationStore); err != nil {
+			if cred, err = newCredential(gabicred, client.ConfigurationStore); err != nil {
 				return
 			}
 			if cred.CredentialType() == nil {
@@ -136,38 +136,38 @@ func (cm *CredentialManager) ParseAndroidStorage() (present bool, err error) {
 				return
 			}
 
-			if err = cm.addCredential(cred, false); err != nil {
+			if err = client.addCredential(cred, false); err != nil {
 				return
 			}
 		}
 	}
 
-	if len(cm.credentials) > 0 {
-		if err = cm.storage.StoreAttributes(cm.attributes); err != nil {
+	if len(client.credentials) > 0 {
+		if err = client.storage.StoreAttributes(client.attributes); err != nil {
 			return
 		}
-		if err = cm.storage.StoreSecretKey(cm.secretkey); err != nil {
+		if err = client.storage.StoreSecretKey(client.secretkey); err != nil {
 			return
 		}
 	}
 
-	if len(cm.keyshareServers) > 0 {
-		if err = cm.storage.StoreKeyshareServers(cm.keyshareServers); err != nil {
+	if len(client.keyshareServers) > 0 {
+		if err = client.storage.StoreKeyshareServers(client.keyshareServers); err != nil {
 			return
 		}
 	}
-	cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
+	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
 
-	if err = cm.storage.StorePaillierKeys(cm.paillierKeyCache); err != nil {
+	if err = client.storage.StorePaillierKeys(client.paillierKeyCache); err != nil {
 		return
 	}
-	if cm.paillierKeyCache == nil {
-		cm.paillierKey(false) // trigger calculating a new one
+	if client.paillierKeyCache == nil {
+		client.paillierKey(false) // trigger calculating a new one
 	}
 
-	if err = cm.ConfigurationStore.Copy(cm.androidStoragePath+"/app_store/irma_configuration", false); err != nil {
+	if err = client.ConfigurationStore.Copy(client.androidStoragePath+"/app_store/irma_configuration", false); err != nil {
 		return
 	}
 	// Copy from assets again to ensure we have the latest versions
-	return present, cm.ConfigurationStore.Copy(cm.irmaConfigurationPath, true)
+	return present, client.ConfigurationStore.Copy(client.irmaConfigurationPath, true)
 }

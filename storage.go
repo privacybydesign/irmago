@@ -15,7 +15,7 @@ import (
 // This file contains the storage struct and its methods,
 // and some general filesystem functions.
 
-// Storage provider for a CredentialManager
+// Storage provider for a Client
 type storage struct {
 	storagePath        string
 	ConfigurationStore *ConfigurationStore

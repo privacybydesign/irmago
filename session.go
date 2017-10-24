@@ -48,7 +48,7 @@ type session struct {
 	Handler   Handler
 
 	info        *SessionInfo
-	credManager *CredentialManager
+	client      *Client
 	jwt         RequestorJwt
 	irmaSession IrmaSession
 	transport   *HTTPTransport
@@ -101,13 +101,13 @@ func calcVersion(qr *Qr) (string, error) {
 }
 
 // NewSession creates and starts a new IRMA session.
-func (cm *CredentialManager) NewSession(qr *Qr, handler Handler) SessionDismisser {
+func (client *Client) NewSession(qr *Qr, handler Handler) SessionDismisser {
 	session := &session{
-		Action:      Action(qr.Type),
-		ServerURL:   qr.URL,
-		Handler:     handler,
-		transport:   NewHTTPTransport(qr.URL),
-		credManager: cm,
+		Action:    Action(qr.Type),
+		ServerURL: qr.URL,
+		Handler:   handler,
+		transport: NewHTTPTransport(qr.URL),
+		client:    client,
 	}
 	version, err := calcVersion(qr)
 	if err != nil {
@@ -183,13 +183,13 @@ func (session *session) start() {
 
 	// Check if we are enrolled into all involved keyshare servers
 	for id := range session.irmaSession.Identifiers().SchemeManagers {
-		manager, ok := session.credManager.ConfigurationStore.SchemeManagers[id]
+		manager, ok := session.client.ConfigurationStore.SchemeManagers[id]
 		if !ok {
 			session.fail(&SessionError{ErrorType: ErrorUnknownSchemeManager, Info: id.String()})
 			return
 		}
 		distributed := manager.Distributed()
-		_, enrolled := session.credManager.keyshareServers[id]
+		_, enrolled := session.client.keyshareServers[id]
 		if distributed && !enrolled {
 			session.delete()
 			session.Handler.MissingKeyshareEnrollment(id)
@@ -198,7 +198,7 @@ func (session *session) start() {
 	}
 
 	// Download missing credential types/issuers/public keys from the scheme manager
-	if session.downloaded, err = session.credManager.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
+	if session.downloaded, err = session.client.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
 		session.Handler.Failure(
 			session.Action,
 			&SessionError{ErrorType: ErrorConfigurationStoreDownload, Err: err},
@@ -209,7 +209,7 @@ func (session *session) start() {
 	if session.Action == ActionIssuing {
 		ir := session.irmaSession.(*IssuanceRequest)
 		for _, credreq := range ir.Credentials {
-			info, err := credreq.Info(session.credManager.ConfigurationStore)
+			info, err := credreq.Info(session.client.ConfigurationStore)
 			if err != nil {
 				session.fail(&SessionError{ErrorType: ErrorUnknownCredentialType, Err: err})
 				return
@@ -218,7 +218,7 @@ func (session *session) start() {
 		}
 	}
 
-	candidates, missing := session.credManager.CheckSatisfiability(session.irmaSession.ToDisclose())
+	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, missing)
 		// TODO: session.transport.Delete() on dialog cancel
@@ -263,16 +263,16 @@ func (session *session) do(proceed bool) {
 	}
 	session.Handler.StatusUpdate(session.Action, StatusCommunicating)
 
-	if !session.irmaSession.Identifiers().Distributed(session.credManager.ConfigurationStore) {
+	if !session.irmaSession.Identifiers().Distributed(session.client.ConfigurationStore) {
 		var message interface{}
 		var err error
 		switch session.Action {
 		case ActionSigning:
-			message, err = session.credManager.Proofs(session.choice, session.irmaSession, true)
+			message, err = session.client.Proofs(session.choice, session.irmaSession, true)
 		case ActionDisclosing:
-			message, err = session.credManager.Proofs(session.choice, session.irmaSession, false)
+			message, err = session.client.Proofs(session.choice, session.irmaSession, false)
 		case ActionIssuing:
-			message, err = session.credManager.IssueCommitments(session.irmaSession.(*IssuanceRequest))
+			message, err = session.client.IssueCommitments(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
 			session.fail(&SessionError{ErrorType: ErrorCrypto, Err: err})
@@ -286,9 +286,9 @@ func (session *session) do(proceed bool) {
 		case ActionSigning:
 			fallthrough
 		case ActionDisclosing:
-			builders, err = session.credManager.ProofBuilders(session.choice)
+			builders, err = session.client.ProofBuilders(session.choice)
 		case ActionIssuing:
-			builders, err = session.credManager.IssuanceProofBuilders(session.irmaSession.(*IssuanceRequest))
+			builders, err = session.client.IssuanceProofBuilders(session.irmaSession.(*IssuanceRequest))
 		}
 		if err != nil {
 			session.fail(&SessionError{ErrorType: ErrorCrypto, Err: err})
@@ -299,8 +299,8 @@ func (session *session) do(proceed bool) {
 			session.Handler,
 			builders,
 			session.irmaSession,
-			session.credManager.ConfigurationStore,
-			session.credManager.keyshareServers,
+			session.client.ConfigurationStore,
+			session.client.keyshareServers,
 		)
 	}
 }
@@ -347,26 +347,26 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(err.(*SessionError))
 			return
 		}
-		if err = session.credManager.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
+		if err = session.client.ConstructCredentials(response, session.irmaSession.(*IssuanceRequest)); err != nil {
 			session.fail(&SessionError{ErrorType: ErrorCrypto, Err: err})
 			return
 		}
 		log, _ = session.createLogEntry(message) // TODO err
 	}
 
-	_ = session.credManager.addLogEntry(log) // TODO err
+	_ = session.client.addLogEntry(log) // TODO err
 	if !session.downloaded.Empty() {
-		session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+		session.client.handler.UpdateConfigurationStore(session.downloaded)
 	}
 	if session.Action == ActionIssuing {
-		session.credManager.handler.UpdateAttributes()
+		session.client.handler.UpdateAttributes()
 	}
 	session.done = true
 	session.Handler.Success(session.Action)
 }
 
 func (session *session) managerSession() {
-	manager, err := session.credManager.ConfigurationStore.DownloadSchemeManager(session.ServerURL)
+	manager, err := session.client.ConfigurationStore.DownloadSchemeManager(session.ServerURL)
 	if err != nil {
 		session.Handler.Failure(session.Action, &SessionError{Err: err}) // TODO
 		return
@@ -376,14 +376,14 @@ func (session *session) managerSession() {
 			session.Handler.Cancelled(session.Action) // No need to DELETE session here
 			return
 		}
-		if err := session.credManager.ConfigurationStore.AddSchemeManager(manager); err != nil {
+		if err := session.client.ConfigurationStore.AddSchemeManager(manager); err != nil {
 			session.Handler.Failure(session.Action, &SessionError{})
 			return
 		}
 		if manager.Distributed() {
-			session.credManager.UnenrolledSchemeManagers = session.credManager.unenrolledSchemeManagers()
+			session.client.UnenrolledSchemeManagers = session.client.unenrolledSchemeManagers()
 		}
-		session.credManager.handler.UpdateConfigurationStore(
+		session.client.handler.UpdateConfigurationStore(
 			&IrmaIdentifierSet{
 				SchemeManagers:  map[SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
 				Issuers:         map[IssuerIdentifier]struct{}{},
@@ -430,7 +430,7 @@ func (session *session) fail(err *SessionError) {
 	if session.delete() {
 		err.Err = errors.Wrap(err.Err, 0)
 		if session.downloaded != nil && !session.downloaded.Empty() {
-			session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+			session.client.handler.UpdateConfigurationStore(session.downloaded)
 		}
 		session.Handler.Failure(session.Action, err)
 	}
@@ -439,7 +439,7 @@ func (session *session) fail(err *SessionError) {
 func (session *session) cancel() {
 	if session.delete() {
 		if session.downloaded != nil && !session.downloaded.Empty() {
-			session.credManager.handler.UpdateConfigurationStore(session.downloaded)
+			session.client.handler.UpdateConfigurationStore(session.downloaded)
 		}
 		session.Handler.Cancelled(session.Action)
 	}

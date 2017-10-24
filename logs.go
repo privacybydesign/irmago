@@ -52,7 +52,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 			entry.Received = map[CredentialTypeIdentifier][]TranslatedString{}
 		}
 		for _, req := range session.jwt.(*IdentityProviderJwt).Request.Request.Credentials {
-			list, err := req.AttributeList(session.credManager.ConfigurationStore)
+			list, err := req.AttributeList(session.client.ConfigurationStore)
 			if err != nil {
 				continue // TODO?
 			}
@@ -74,7 +74,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 			if entry.Disclosed == nil {
 				entry.Disclosed = map[CredentialTypeIdentifier]map[int]TranslatedString{}
 			}
-			meta := MetadataFromInt(proofd.ADisclosed[1], session.credManager.ConfigurationStore)
+			meta := MetadataFromInt(proofd.ADisclosed[1], session.client.ConfigurationStore)
 			id := meta.CredentialType().Identifier()
 			entry.Disclosed[id] = map[int]TranslatedString{}
 			for i, attr := range proofd.ADisclosed {

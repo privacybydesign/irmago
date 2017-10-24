@@ -13,7 +13,7 @@ import (
 
 // This file contains an implementation of the client side of the keyshare protocol,
 // as well as the keyshareSessionHandler which is used to communicate with the user
-// (currently only CredentialManager).
+// (currently only Client).
 
 // KeysharePinRequestor is used to asking the user for his PIN.
 type KeysharePinRequestor interface {
