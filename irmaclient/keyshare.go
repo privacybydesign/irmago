@@ -26,6 +26,8 @@ type keyshareSessionHandler interface {
 	KeyshareCancelled()
 	KeyshareBlocked(duration int)
 	KeyshareError(err error)
+	KeysharePin()
+	KeysharePinOK()
 }
 
 type keyshareSession struct {
@@ -198,6 +200,7 @@ func startKeyshareSession(
 	}
 
 	if requestPin {
+		ks.sessionHandler.KeysharePin()
 		ks.VerifyPin(-1)
 	} else {
 		ks.GetCommitments()
@@ -222,6 +225,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 			return
 		}
 		if success {
+			ks.sessionHandler.KeysharePinOK()
 			ks.GetCommitments()
 			return
 		}

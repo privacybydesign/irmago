@@ -325,6 +325,14 @@ func (session *session) KeyshareError(err error) {
 	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err})
 }
 
+func (session *session) KeysharePin() {
+	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+}
+
+func (session *session) KeysharePinOK() {
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+}
+
 type disclosureResponse string
 
 func (session *session) sendResponse(message interface{}) {
