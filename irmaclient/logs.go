@@ -53,7 +53,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 			entry.Received = map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
 		}
 		for _, req := range session.jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials {
-			list, err := req.AttributeList(session.client.ConfigurationStore)
+			list, err := req.AttributeList(session.client.Configuration)
 			if err != nil {
 				continue // TODO?
 			}
@@ -75,7 +75,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 			if entry.Disclosed == nil {
 				entry.Disclosed = map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString{}
 			}
-			meta := irma.MetadataFromInt(proofd.ADisclosed[1], session.client.ConfigurationStore)
+			meta := irma.MetadataFromInt(proofd.ADisclosed[1], session.client.Configuration)
 			id := meta.CredentialType().Identifier()
 			entry.Disclosed[id] = map[int]irma.TranslatedString{}
 			for i, attr := range proofd.ADisclosed {

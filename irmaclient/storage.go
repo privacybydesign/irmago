@@ -15,8 +15,8 @@ import (
 
 // Storage provider for a Client
 type storage struct {
-	storagePath        string
-	ConfigurationStore *irma.ConfigurationStore
+	storagePath   string
+	Configuration *irma.Configuration
 }
 
 // Filenames in which we store stuff
@@ -156,7 +156,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 
 	list = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
 	for _, attrlist := range temp {
-		attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.ConfigurationStore)
+		attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.Configuration)
 		id := attrlist.CredentialType()
 		var ct irma.CredentialTypeIdentifier
 		if id != nil {

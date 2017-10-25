@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 
 type IgnoringClientHandler struct{}
 
-func (i *IgnoringClientHandler) UpdateConfigurationStore(new *irma.IrmaIdentifierSet)            {}
+func (i *IgnoringClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet)                 {}
 func (i *IgnoringClientHandler) UpdateAttributes()                                               {}
 func (i *IgnoringClientHandler) EnrollmentError(manager irma.SchemeManagerIdentifier, err error) {}
 func (i *IgnoringClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier)          {}
@@ -133,46 +133,46 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 }
 
 // TODO move up to irmago?
-func verifyStoreIsLoaded(t *testing.T, store *irma.ConfigurationStore, android bool) {
-	require.Contains(t, store.SchemeManagers, irma.NewSchemeManagerIdentifier("irma-demo"))
-	require.Contains(t, store.SchemeManagers, irma.NewSchemeManagerIdentifier("test"))
+func verifyConfigurationIsLoaded(t *testing.T, conf *irma.Configuration, android bool) {
+	require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("irma-demo"))
+	require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("test"))
 	if android {
-		require.Contains(t, store.SchemeManagers, irma.NewSchemeManagerIdentifier("test2"))
+		require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("test2"))
 	}
 
-	pk, err := store.PublicKey(irma.NewIssuerIdentifier("irma-demo.RU"), 0)
+	pk, err := conf.PublicKey(irma.NewIssuerIdentifier("irma-demo.RU"), 0)
 	require.NoError(t, err)
 	require.NotNil(t, pk)
 	require.NotNil(t, pk.N, "irma-demo.RU public key has no modulus")
 	require.Equal(t,
 		"Irma Demo",
-		store.SchemeManagers[irma.NewSchemeManagerIdentifier("irma-demo")].Name["en"],
+		conf.SchemeManagers[irma.NewSchemeManagerIdentifier("irma-demo")].Name["en"],
 		"irma-demo scheme manager has unexpected name")
 	require.Equal(t,
 		"Radboud University Nijmegen",
-		store.Issuers[irma.NewIssuerIdentifier("irma-demo.RU")].Name["en"],
+		conf.Issuers[irma.NewIssuerIdentifier("irma-demo.RU")].Name["en"],
 		"irma-demo.RU issuer has unexpected name")
 	require.Equal(t,
 		"Student Card",
-		store.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
+		conf.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
 		"irma-demo.RU.studentCard has unexpected name")
 
 	require.Equal(t,
 		"studentID",
-		store.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
+		conf.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
 		"irma-demo.RU.studentCard.studentID has unexpected name")
 
 	// Hash algorithm pseudocode:
 	// Base64(SHA256("irma-demo.RU.studentCard")[0:16])
-	//require.Contains(t, store.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
+	//require.Contains(t, conf.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
 	//	"irma-demo.RU.studentCard had improper hash")
-	//require.Contains(t, store.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
+	//require.Contains(t, conf.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
 	//	"irma-demo.MijnOverheid.root had improper hash")
 }
 
 func TestAndroidParse(t *testing.T) {
 	client := parseStorage(t)
-	verifyStoreIsLoaded(t, client.ConfigurationStore, true)
+	verifyConfigurationIsLoaded(t, client.Configuration, true)
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
 	verifyKeyshareIsUnmarshaled(t, client)
@@ -232,12 +232,12 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	store, err := irma.NewConfigurationStore("testdata/irma_configuration", "")
+	conf, err := irma.NewConfiguration("testdata/irma_configuration", "")
 	require.NoError(t, err)
-	require.NoError(t, store.ParseFolder())
+	require.NoError(t, conf.ParseFolder())
 
 	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
-	attr := irma.MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"), store)
+	attr := irma.MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"), conf)
 	require.NotNil(t, attr.CredentialType(), "attr.CredentialType() should not be nil")
 
 	require.Equal(t,
@@ -386,13 +386,13 @@ func TestCredentialRemoval(t *testing.T) {
 
 func TestDownloadSchemeManager(t *testing.T) {
 	client := parseStorage(t)
-	require.NoError(t, client.ConfigurationStore.RemoveSchemeManager(irma.NewSchemeManagerIdentifier("irma-demo")))
+	require.NoError(t, client.Configuration.RemoveSchemeManager(irma.NewSchemeManagerIdentifier("irma-demo")))
 	url := "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo"
-	sm, err := client.ConfigurationStore.DownloadSchemeManager(url)
+	sm, err := client.Configuration.DownloadSchemeManager(url)
 	require.NoError(t, err)
 	require.NotNil(t, sm)
 
-	require.NoError(t, client.ConfigurationStore.AddSchemeManager(sm))
+	require.NoError(t, client.Configuration.AddSchemeManager(sm))
 
 	jwt := getIssuanceJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)

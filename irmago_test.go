@@ -22,9 +22,9 @@ func TestTransport(t *testing.T) {
 }
 
 func TestAttributeDisjunctionMarshaling(t *testing.T) {
-	store, err := NewConfigurationStore("testdata/irma_configuration", "")
+	conf, err := NewConfiguration("testdata/irma_configuration", "")
 	require.NoError(t, err)
-	require.NoError(t, store.ParseFolder())
+	require.NoError(t, conf.ParseFolder())
 	disjunction := AttributeDisjunction{}
 
 	var _ json.Unmarshaler = &disjunction
@@ -59,7 +59,7 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 	require.False(t, disjunction.HasValues())
 	require.Contains(t, disjunction.Attributes, id)
 
-	require.True(t, disjunction.MatchesStore(store))
+	require.True(t, disjunction.MatchesConfig(conf))
 
 	require.False(t, disjunction.Satisfied())
 	disjunction.selected = &disjunction.Attributes[0]

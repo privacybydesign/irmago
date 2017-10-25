@@ -38,9 +38,9 @@ type metadataField struct {
 
 // MetadataAttribute represent a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
 type MetadataAttribute struct {
-	Int   *big.Int
-	pk    *gabi.PublicKey
-	Store *ConfigurationStore
+	Int  *big.Int
+	pk   *gabi.PublicKey
+	Conf *Configuration
 }
 
 // AttributeList contains attributes, excluding the secret key,
@@ -54,16 +54,16 @@ type AttributeList struct {
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
-func NewAttributeListFromInts(ints []*big.Int, store *ConfigurationStore) *AttributeList {
+func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeList {
 	return &AttributeList{
 		Ints:              ints,
-		MetadataAttribute: MetadataFromInt(ints[0], store),
+		MetadataAttribute: MetadataFromInt(ints[0], conf),
 	}
 }
 
 func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
-		al.info = NewCredentialInfo(al.Ints, al.Store)
+		al.info = NewCredentialInfo(al.Ints, al.Conf)
 	}
 	return al.info
 }
@@ -117,8 +117,8 @@ func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) Translate
 }
 
 // MetadataFromInt wraps the given Int
-func MetadataFromInt(i *big.Int, store *ConfigurationStore) *MetadataAttribute {
-	return &MetadataAttribute{Int: i, Store: store}
+func MetadataFromInt(i *big.Int, conf *Configuration) *MetadataAttribute {
+	return &MetadataAttribute{Int: i, Conf: conf}
 }
 
 // NewMetadataAttribute constructs a new instance containing the default values:
@@ -149,7 +149,7 @@ func (attr *MetadataAttribute) Bytes() []byte {
 func (attr *MetadataAttribute) PublicKey() (*gabi.PublicKey, error) {
 	if attr.pk == nil {
 		var err error
-		attr.pk, err = attr.Store.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
+		attr.pk, err = attr.Conf.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
 		if err != nil {
 			return nil, err
 		}
@@ -204,9 +204,9 @@ func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
 }
 
 // CredentialType returns the credential type of the current instance
-// using the MetaStore.
+// using the Configuration.
 func (attr *MetadataAttribute) CredentialType() *CredentialType {
-	return attr.Store.hashToCredentialType(attr.field(credentialID))
+	return attr.Conf.hashToCredentialType(attr.field(credentialID))
 }
 
 func (attr *MetadataAttribute) setCredentialTypeIdentifier(id string) {
@@ -303,11 +303,11 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 	return false
 }
 
-// MatchesStore returns true if all attributes contained in the disjunction are
-// present in the specified configuration store.
-func (disjunction *AttributeDisjunction) MatchesStore(store *ConfigurationStore) bool {
+// MatchesConfig returns true if all attributes contained in the disjunction are
+// present in the specified configuration.
+func (disjunction *AttributeDisjunction) MatchesConfig(conf *Configuration) bool {
 	for ai := range disjunction.Values {
-		creddescription, exists := store.CredentialTypes[ai.CredentialTypeIdentifier()]
+		creddescription, exists := conf.CredentialTypes[ai.CredentialTypeIdentifier()]
 		if !exists {
 			return false
 		}

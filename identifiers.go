@@ -166,9 +166,9 @@ func (id *AttributeTypeIdentifier) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func (set *IrmaIdentifierSet) Distributed(store *ConfigurationStore) bool {
+func (set *IrmaIdentifierSet) Distributed(conf *Configuration) bool {
 	for id := range set.SchemeManagers {
-		if store.SchemeManagers[id].Distributed() {
+		if conf.SchemeManagers[id].Distributed() {
 			return true
 		}
 	}

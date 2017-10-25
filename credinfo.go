@@ -25,8 +25,8 @@ type CredentialInfo struct {
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
 type CredentialInfoList []*CredentialInfo
 
-func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialInfo {
-	meta := MetadataFromInt(ints[0], store)
+func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
+	meta := MetadataFromInt(ints[0], conf)
 	credtype := meta.CredentialType()
 
 	attrs := make([]TranslatedString, len(credtype.Attributes))
@@ -35,7 +35,7 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
 	}
 
-	path := fmt.Sprintf("%s/%s/%s/Issues/%s/logo.png", store.path, credtype.SchemeManagerID, credtype.IssuerID, credtype.ID)
+	path := fmt.Sprintf("%s/%s/%s/Issues/%s/logo.png", conf.path, credtype.SchemeManagerID, credtype.IssuerID, credtype.ID)
 	exists, err := fs.PathExists(path)
 	if err != nil {
 		return nil
@@ -54,7 +54,7 @@ func NewCredentialInfo(ints []*big.Int, store *ConfigurationStore) *CredentialIn
 		Expires:          Timestamp(meta.Expiry()),
 		Attributes:       attrs,
 		Logo:             path,
-		Hash:             NewAttributeListFromInts(ints, store).Hash(),
+		Hash:             NewAttributeListFromInts(ints, conf).Hash(),
 	}
 }
 

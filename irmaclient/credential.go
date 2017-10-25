@@ -13,14 +13,14 @@ type credential struct {
 	attrs *irma.AttributeList
 }
 
-func newCredential(gabicred *gabi.Credential, store *irma.ConfigurationStore) (*credential, error) {
-	meta := irma.MetadataFromInt(gabicred.Attributes[1], store)
+func newCredential(gabicred *gabi.Credential, conf *irma.Configuration) (*credential, error) {
+	meta := irma.MetadataFromInt(gabicred.Attributes[1], conf)
 	cred := &credential{
 		Credential:        gabicred,
 		MetadataAttribute: meta,
 	}
 	var err error
-	cred.Pk, err = store.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
+	cred.Pk, err = conf.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func newCredential(gabicred *gabi.Credential, store *irma.ConfigurationStore) (*
 
 func (cred *credential) AttributeList() *irma.AttributeList {
 	if cred.attrs == nil {
-		cred.attrs = irma.NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.Store)
+		cred.attrs = irma.NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.Conf)
 	}
 	return cred.attrs
 }

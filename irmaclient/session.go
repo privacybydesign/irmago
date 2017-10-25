@@ -186,7 +186,7 @@ func (session *session) start() {
 
 	// Check if we are enrolled into all involved keyshare servers
 	for id := range session.irmaSession.Identifiers().SchemeManagers {
-		manager, ok := session.client.ConfigurationStore.SchemeManagers[id]
+		manager, ok := session.client.Configuration.SchemeManagers[id]
 		if !ok {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
 			return
@@ -201,10 +201,10 @@ func (session *session) start() {
 	}
 
 	// Download missing credential types/issuers/public keys from the scheme manager
-	if session.downloaded, err = session.client.ConfigurationStore.Download(session.irmaSession.Identifiers()); err != nil {
+	if session.downloaded, err = session.client.Configuration.Download(session.irmaSession.Identifiers()); err != nil {
 		session.Handler.Failure(
 			session.Action,
-			&irma.SessionError{ErrorType: irma.ErrorConfigurationStoreDownload, Err: err},
+			&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err},
 		)
 		return
 	}
@@ -212,7 +212,7 @@ func (session *session) start() {
 	if session.Action == irma.ActionIssuing {
 		ir := session.irmaSession.(*irma.IssuanceRequest)
 		for _, credreq := range ir.Credentials {
-			info, err := credreq.Info(session.client.ConfigurationStore)
+			info, err := credreq.Info(session.client.Configuration)
 			if err != nil {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownCredentialType, Err: err})
 				return
@@ -266,7 +266,7 @@ func (session *session) do(proceed bool) {
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
-	if !session.irmaSession.Identifiers().Distributed(session.client.ConfigurationStore) {
+	if !session.irmaSession.Identifiers().Distributed(session.client.Configuration) {
 		var message interface{}
 		var err error
 		switch session.Action {
@@ -302,7 +302,7 @@ func (session *session) do(proceed bool) {
 			session.Handler,
 			builders,
 			session.irmaSession,
-			session.client.ConfigurationStore,
+			session.client.Configuration,
 			session.client.keyshareServers,
 			session.client.state,
 		)
@@ -360,7 +360,7 @@ func (session *session) sendResponse(message interface{}) {
 
 	_ = session.client.addLogEntry(log) // TODO err
 	if !session.downloaded.Empty() {
-		session.client.handler.UpdateConfigurationStore(session.downloaded)
+		session.client.handler.UpdateConfiguration(session.downloaded)
 	}
 	if session.Action == irma.ActionIssuing {
 		session.client.handler.UpdateAttributes()
@@ -370,7 +370,7 @@ func (session *session) sendResponse(message interface{}) {
 }
 
 func (session *session) managerSession() {
-	manager, err := session.client.ConfigurationStore.DownloadSchemeManager(session.ServerURL)
+	manager, err := session.client.Configuration.DownloadSchemeManager(session.ServerURL)
 	if err != nil {
 		session.Handler.Failure(session.Action, &irma.SessionError{Err: err}) // TODO
 		return
@@ -380,14 +380,14 @@ func (session *session) managerSession() {
 			session.Handler.Cancelled(session.Action) // No need to DELETE session here
 			return
 		}
-		if err := session.client.ConfigurationStore.AddSchemeManager(manager); err != nil {
+		if err := session.client.Configuration.AddSchemeManager(manager); err != nil {
 			session.Handler.Failure(session.Action, &irma.SessionError{})
 			return
 		}
 		if manager.Distributed() {
 			session.client.UnenrolledSchemeManagers = session.client.unenrolledSchemeManagers()
 		}
-		session.client.handler.UpdateConfigurationStore(
+		session.client.handler.UpdateConfiguration(
 			&irma.IrmaIdentifierSet{
 				SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
 				Issuers:         map[irma.IssuerIdentifier]struct{}{},
@@ -434,7 +434,7 @@ func (session *session) fail(err *irma.SessionError) {
 	if session.delete() {
 		err.Err = errors.Wrap(err.Err, 0)
 		if session.downloaded != nil && !session.downloaded.Empty() {
-			session.client.handler.UpdateConfigurationStore(session.downloaded)
+			session.client.handler.UpdateConfiguration(session.downloaded)
 		}
 		session.Handler.Failure(session.Action, err)
 	}
@@ -443,7 +443,7 @@ func (session *session) fail(err *irma.SessionError) {
 func (session *session) cancel() {
 	if session.delete() {
 		if session.downloaded != nil && !session.downloaded.Empty() {
-			session.client.handler.UpdateConfigurationStore(session.downloaded)
+			session.client.handler.UpdateConfiguration(session.downloaded)
 		}
 		session.Handler.Cancelled(session.Action)
 	}

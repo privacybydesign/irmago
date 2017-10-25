@@ -48,7 +48,7 @@ type Client struct {
 	storage storage
 
 	// Other state
-	ConfigurationStore       *irma.ConfigurationStore
+	Configuration            *irma.Configuration
 	UnenrolledSchemeManagers []irma.SchemeManagerIdentifier
 	irmaConfigurationPath    string
 	androidStoragePath       string
@@ -66,7 +66,7 @@ type KeyshareHandler interface {
 type ClientHandler interface {
 	KeyshareHandler
 
-	UpdateConfigurationStore(new *irma.IrmaIdentifierSet)
+	UpdateConfiguration(new *irma.IrmaIdentifierSet)
 	UpdateAttributes()
 }
 
@@ -109,16 +109,16 @@ func New(
 		handler:               handler,
 	}
 
-	cm.ConfigurationStore, err = irma.NewConfigurationStore(storagePath+"/irma_configuration", irmaConfigurationPath)
+	cm.Configuration, err = irma.NewConfiguration(storagePath+"/irma_configuration", irmaConfigurationPath)
 	if err != nil {
 		return nil, err
 	}
-	if err = cm.ConfigurationStore.ParseFolder(); err != nil {
+	if err = cm.Configuration.ParseFolder(); err != nil {
 		return nil, err
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	cm.storage = storage{storagePath: storagePath, ConfigurationStore: cm.ConfigurationStore}
+	cm.storage = storage{storagePath: storagePath, Configuration: cm.Configuration}
 	if err = cm.storage.EnsureStorageExists(); err != nil {
 		return nil, err
 	}
@@ -377,7 +377,7 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 			Attributes: append([]*big.Int{client.secretkey.Key}, attrs.Ints...),
 			Signature:  sig,
 			Pk:         pk,
-		}, client.ConfigurationStore)
+		}, client.Configuration)
 		if err != nil {
 			return nil, err
 		}
@@ -396,7 +396,7 @@ func (client *Client) Candidates(disjunction *irma.AttributeDisjunction) []*irma
 
 	for _, attribute := range disjunction.Attributes {
 		credID := attribute.CredentialTypeIdentifier()
-		if !client.ConfigurationStore.Contains(credID) {
+		if !client.Configuration.Contains(credID) {
 			continue
 		}
 		creds := client.attributes[credID]
@@ -462,7 +462,7 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.
 		if identifier.IsCredential() {
 			continue // In this case we only disclose the metadata attribute, which is already handled
 		}
-		index, err := client.ConfigurationStore.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
+		index, err := client.Configuration.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
 			return nil, err
 		}
@@ -514,7 +514,7 @@ func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest) (gabi
 	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
 		var pk *gabi.PublicKey
-		pk, err = client.ConfigurationStore.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
+		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, err
 		}
@@ -554,7 +554,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 	// we save none of them to fail the session cleanly
 	gabicreds := []*gabi.Credential{}
 	for i, sig := range msg {
-		attrs, err := request.Credentials[i].AttributeList(client.ConfigurationStore)
+		attrs, err := request.Credentials[i].AttributeList(client.Configuration)
 		if err != nil {
 			return err
 		}
@@ -566,7 +566,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 	}
 
 	for _, gabicred := range gabicreds {
-		newcred, err := newCredential(gabicred, client.ConfigurationStore)
+		newcred, err := newCredential(gabicred, client.Configuration)
 		if err != nil {
 			return err
 		}
@@ -608,7 +608,7 @@ func (client *Client) paillierKeyWorker(wait bool, ch chan bool) {
 
 func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	list := []irma.SchemeManagerIdentifier{}
-	for name, manager := range client.ConfigurationStore.SchemeManagers {
+	for name, manager := range client.Configuration.SchemeManagers {
 		if _, contains := client.keyshareServers[name]; manager.Distributed() && !contains {
 			list = append(list, manager.Identifier())
 		}
@@ -639,7 +639,7 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 }
 
 func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifier, email, pin string) error {
-	manager, ok := client.ConfigurationStore.SchemeManagers[managerID]
+	manager, ok := client.Configuration.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
 	}

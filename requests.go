@@ -123,16 +123,16 @@ type IrmaSession interface {
 // Timestamp is a time.Time that marshals to Unix timestamps.
 type Timestamp time.Time
 
-func (cr *CredentialRequest) Info(store *ConfigurationStore) (*CredentialInfo, error) {
-	list, err := cr.AttributeList(store)
+func (cr *CredentialRequest) Info(conf *Configuration) (*CredentialInfo, error) {
+	list, err := cr.AttributeList(conf)
 	if err != nil {
 		return nil, err
 	}
-	return NewCredentialInfo(list.Ints, store), nil
+	return NewCredentialInfo(list.Ints, conf), nil
 }
 
 // AttributeList returns the list of attributes from this credential request.
-func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*AttributeList, error) {
+func (cr *CredentialRequest) AttributeList(conf *Configuration) (*AttributeList, error) {
 	meta := NewMetadataAttribute()
 	meta.setKeyCounter(cr.KeyCounter)
 	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
@@ -143,7 +143,7 @@ func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*Attribut
 	}
 
 	attrs := make([]*big.Int, len(cr.Attributes)+1, len(cr.Attributes)+1)
-	credtype := store.CredentialTypes[*cr.CredentialTypeID]
+	credtype := conf.CredentialTypes[*cr.CredentialTypeID]
 	if credtype == nil {
 		return nil, errors.New("Unknown credential type")
 	}
@@ -160,7 +160,7 @@ func (cr *CredentialRequest) AttributeList(store *ConfigurationStore) (*Attribut
 		}
 	}
 
-	return NewAttributeListFromInts(attrs, store), nil
+	return NewAttributeListFromInts(attrs, conf), nil
 }
 
 func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {

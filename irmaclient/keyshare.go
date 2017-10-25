@@ -33,7 +33,7 @@ type keyshareSession struct {
 	pinRequestor    KeysharePinRequestor
 	builders        gabi.ProofBuilderList
 	session         irma.IrmaSession
-	store           *irma.ConfigurationStore
+	conf            *irma.Configuration
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer
 	keyshareServer  *keyshareServer // The one keyshare server in use in case of issuance
 	transports      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
@@ -136,13 +136,13 @@ func startKeyshareSession(
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
 	session irma.IrmaSession,
-	store *irma.ConfigurationStore,
+	conf *irma.Configuration,
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
 	state *issuanceState,
 ) {
 	ksscount := 0
 	for managerID := range session.Identifiers().SchemeManagers {
-		if store.SchemeManagers[managerID].Distributed() {
+		if conf.SchemeManagers[managerID].Distributed() {
 			ksscount++
 			if _, enrolled := keyshareServers[managerID]; !enrolled {
 				err := errors.New("Not enrolled to keyshare server of scheme manager " + managerID.String())
@@ -163,7 +163,7 @@ func startKeyshareSession(
 		sessionHandler:  sessionHandler,
 		transports:      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
 		pinRequestor:    pin,
-		store:           store,
+		conf:            conf,
 		keyshareServers: keyshareServers,
 		state:           state,
 	}
@@ -171,7 +171,7 @@ func startKeyshareSession(
 	requestPin := false
 
 	for managerID := range session.Identifiers().SchemeManagers {
-		if !ks.store.SchemeManagers[managerID].Distributed() {
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -240,7 +240,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 // If all is ok, success will be true.
 func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int, blocked int, err error) {
 	for managerID := range ks.session.Identifiers().SchemeManagers {
-		if !ks.store.SchemeManagers[managerID].Distributed() {
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -291,7 +291,7 @@ func (ks *keyshareSession) GetCommitments() {
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
 		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
-		if !ks.store.SchemeManagers[managerID].Distributed() {
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		if _, contains := pkids[managerID]; !contains {
@@ -303,7 +303,7 @@ func (ks *keyshareSession) GetCommitments() {
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
 	for managerID := range ks.session.Identifiers().SchemeManagers {
-		if !ks.store.SchemeManagers[managerID].Distributed() {
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -407,7 +407,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 	for i, builder := range ks.builders {
 		// Parse each received JWT
 		managerID := irma.NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
-		if !ks.store.SchemeManagers[managerID].Distributed() {
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		msg := struct {

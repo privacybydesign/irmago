@@ -99,10 +99,10 @@ const (
 	ErrorApi = ErrorType("api")
 	// Server returned unexpected or malformed response
 	ErrorServerResponse = ErrorType("serverResponse")
-	// Credential type not present in our ConfigurationStore
+	// Credential type not present in our Configuration
 	ErrorUnknownCredentialType = ErrorType("unknownCredentialType")
 	// Error during downloading of credential type, issuer, or public keys
-	ErrorConfigurationStoreDownload = ErrorType("configurationStoreDownload")
+	ErrorConfigurationDownload = ErrorType("configurationDownload")
 	// IRMA requests refers to unknown scheme manager
 	ErrorUnknownSchemeManager = ErrorType("unknownSchemeManager")
 	// Recovered panic

@@ -19,9 +19,9 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// ConfigurationStore keeps track of scheme managers, issuers, credential types and public keys,
+// Configuration keeps track of scheme managers, issuers, credential types and public keys,
 // dezerializing them from an irma_configuration folder, and downloads and saves new ones on demand.
-type ConfigurationStore struct {
+type Configuration struct {
 	SchemeManagers  map[SchemeManagerIdentifier]*SchemeManager
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
@@ -32,18 +32,18 @@ type ConfigurationStore struct {
 	initialized   bool
 }
 
-// NewConfigurationStore returns a new configuration store. After this
+// NewConfiguration returns a new configuration. After this
 // ParseFolder() should be called to parse the specified path.
-func NewConfigurationStore(path string, assets string) (store *ConfigurationStore, err error) {
-	store = &ConfigurationStore{
+func NewConfiguration(path string, assets string) (conf *Configuration, err error) {
+	conf = &Configuration{
 		path: path,
 	}
 
-	if err = fs.EnsureDirectoryExists(store.path); err != nil {
+	if err = fs.EnsureDirectoryExists(conf.path); err != nil {
 		return nil, err
 	}
 	if assets != "" {
-		if err = store.Copy(assets, false); err != nil {
+		if err = conf.Copy(assets, false); err != nil {
 			return nil, err
 		}
 	}
@@ -51,65 +51,65 @@ func NewConfigurationStore(path string, assets string) (store *ConfigurationStor
 	return
 }
 
-// ParseFolder populates the current store by parsing the storage path,
+// ParseFolder populates the current Configuration by parsing the storage path,
 // listing the containing scheme managers, issuers and credential types.
-func (store *ConfigurationStore) ParseFolder() error {
+func (conf *Configuration) ParseFolder() error {
 	// Init all maps
-	store.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
-	store.Issuers = make(map[IssuerIdentifier]*Issuer)
-	store.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
-	store.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
+	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
+	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
+	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
+	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 
-	store.reverseHashes = make(map[string]CredentialTypeIdentifier)
+	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 
-	err := iterateSubfolders(store.path, func(dir string) error {
+	err := iterateSubfolders(conf.path, func(dir string) error {
 		manager := &SchemeManager{}
 		exists, err := pathToDescription(dir+"/description.xml", manager)
 		if err != nil {
 			return err
 		}
 		if exists {
-			store.SchemeManagers[manager.Identifier()] = manager
-			return store.parseIssuerFolders(dir)
+			conf.SchemeManagers[manager.Identifier()] = manager
+			return conf.parseIssuerFolders(dir)
 		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	store.initialized = true
+	conf.initialized = true
 	return nil
 }
 
-// PublicKey returns the specified public key, or nil if not present in the ConfigurationStore.
-func (store *ConfigurationStore) PublicKey(id IssuerIdentifier, counter int) (*gabi.PublicKey, error) {
-	if _, contains := store.publicKeys[id]; !contains {
-		store.publicKeys[id] = map[int]*gabi.PublicKey{}
-		if err := store.parseKeysFolder(id); err != nil {
+// PublicKey returns the specified public key, or nil if not present in the Configuration.
+func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.PublicKey, error) {
+	if _, contains := conf.publicKeys[id]; !contains {
+		conf.publicKeys[id] = map[int]*gabi.PublicKey{}
+		if err := conf.parseKeysFolder(id); err != nil {
 			return nil, err
 		}
 	}
-	return store.publicKeys[id][counter], nil
+	return conf.publicKeys[id][counter], nil
 }
 
-func (store *ConfigurationStore) addReverseHash(credid CredentialTypeIdentifier) {
+func (conf *Configuration) addReverseHash(credid CredentialTypeIdentifier) {
 	hash := sha256.Sum256([]byte(credid.String()))
-	store.reverseHashes[base64.StdEncoding.EncodeToString(hash[:16])] = credid
+	conf.reverseHashes[base64.StdEncoding.EncodeToString(hash[:16])] = credid
 }
 
-func (store *ConfigurationStore) hashToCredentialType(hash []byte) *CredentialType {
-	if str, exists := store.reverseHashes[base64.StdEncoding.EncodeToString(hash)]; exists {
-		return store.CredentialTypes[str]
+func (conf *Configuration) hashToCredentialType(hash []byte) *CredentialType {
+	if str, exists := conf.reverseHashes[base64.StdEncoding.EncodeToString(hash)]; exists {
+		return conf.CredentialTypes[str]
 	}
 	return nil
 }
 
 // IsInitialized indicates whether this instance has successfully been initialized.
-func (store *ConfigurationStore) IsInitialized() bool {
-	return store.initialized
+func (conf *Configuration) IsInitialized() bool {
+	return conf.initialized
 }
 
-func (store *ConfigurationStore) parseIssuerFolders(path string) error {
+func (conf *Configuration) parseIssuerFolders(path string) error {
 	return iterateSubfolders(path, func(dir string) error {
 		issuer := &Issuer{}
 		exists, err := pathToDescription(dir+"/description.xml", issuer)
@@ -117,8 +117,8 @@ func (store *ConfigurationStore) parseIssuerFolders(path string) error {
 			return err
 		}
 		if exists {
-			store.Issuers[issuer.Identifier()] = issuer
-			if err = store.parseCredentialsFolder(dir + "/Issues/"); err != nil {
+			conf.Issuers[issuer.Identifier()] = issuer
+			if err = conf.parseCredentialsFolder(dir + "/Issues/"); err != nil {
 				return err
 			}
 		}
@@ -127,8 +127,8 @@ func (store *ConfigurationStore) parseIssuerFolders(path string) error {
 }
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
-func (store *ConfigurationStore) parseKeysFolder(issuerid IssuerIdentifier) error {
-	path := fmt.Sprintf("%s/%s/%s/PublicKeys/*.xml", store.path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
+	path := fmt.Sprintf("%s/%s/%s/PublicKeys/*.xml", conf.path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(path)
 	if err != nil {
 		return err
@@ -146,14 +146,14 @@ func (store *ConfigurationStore) parseKeysFolder(issuerid IssuerIdentifier) erro
 			return err
 		}
 		pk.Issuer = issuerid.String()
-		store.publicKeys[issuerid][i] = pk
+		conf.publicKeys[issuerid][i] = pk
 	}
 
 	return nil
 }
 
 // parse $schememanager/$issuer/Issues/*/description.xml
-func (store *ConfigurationStore) parseCredentialsFolder(path string) error {
+func (conf *Configuration) parseCredentialsFolder(path string) error {
 	return iterateSubfolders(path, func(dir string) error {
 		cred := &CredentialType{}
 		exists, err := pathToDescription(dir+"/description.xml", cred)
@@ -162,8 +162,8 @@ func (store *ConfigurationStore) parseCredentialsFolder(path string) error {
 		}
 		if exists {
 			credid := cred.Identifier()
-			store.CredentialTypes[credid] = cred
-			store.addReverseHash(credid)
+			conf.CredentialTypes[credid] = cred
+			conf.addReverseHash(credid)
 		}
 		return nil
 	})
@@ -219,15 +219,15 @@ func pathToDescription(path string, description interface{}) (bool, error) {
 	return true, nil
 }
 
-// Contains checks if the store contains the specified credential type.
-func (store *ConfigurationStore) Contains(cred CredentialTypeIdentifier) bool {
-	return store.SchemeManagers[cred.IssuerIdentifier().SchemeManagerIdentifier()] != nil &&
-		store.Issuers[cred.IssuerIdentifier()] != nil &&
-		store.CredentialTypes[cred] != nil
+// Contains checks if the configuration contains the specified credential type.
+func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
+	return conf.SchemeManagers[cred.IssuerIdentifier().SchemeManagerIdentifier()] != nil &&
+		conf.Issuers[cred.IssuerIdentifier()] != nil &&
+		conf.CredentialTypes[cred] != nil
 }
 
-func (store *ConfigurationStore) Copy(source string, parse bool) error {
-	if err := fs.EnsureDirectoryExists(store.path); err != nil {
+func (conf *Configuration) Copy(source string, parse bool) error {
+	if err := fs.EnsureDirectoryExists(conf.path); err != nil {
 		return err
 	}
 
@@ -238,7 +238,7 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 			}
 			subpath := path[len(source):]
 			if info.IsDir() {
-				if err := fs.EnsureDirectoryExists(store.path + subpath); err != nil {
+				if err := fs.EnsureDirectoryExists(conf.path + subpath); err != nil {
 					return err
 				}
 			} else {
@@ -251,7 +251,7 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 				if err != nil {
 					return err
 				}
-				if err := fs.SaveFile(store.path+subpath, bytes); err != nil {
+				if err := fs.SaveFile(conf.path+subpath, bytes); err != nil {
 					return err
 				}
 			}
@@ -263,12 +263,12 @@ func (store *ConfigurationStore) Copy(source string, parse bool) error {
 		return err
 	}
 	if parse {
-		return store.ParseFolder()
+		return conf.ParseFolder()
 	}
 	return nil
 }
 
-func (store *ConfigurationStore) DownloadSchemeManager(url string) (*SchemeManager, error) {
+func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, error) {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
@@ -291,45 +291,45 @@ func (store *ConfigurationStore) DownloadSchemeManager(url string) (*SchemeManag
 	return manager, nil
 }
 
-func (store *ConfigurationStore) RemoveSchemeManager(id SchemeManagerIdentifier) error {
+func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier) error {
 	// Remove everything falling under the manager's responsibility
-	for credid := range store.CredentialTypes {
+	for credid := range conf.CredentialTypes {
 		if credid.IssuerIdentifier().SchemeManagerIdentifier() == id {
-			delete(store.CredentialTypes, credid)
+			delete(conf.CredentialTypes, credid)
 		}
 	}
-	for issid := range store.Issuers {
+	for issid := range conf.Issuers {
 		if issid.SchemeManagerIdentifier() == id {
-			delete(store.Issuers, issid)
+			delete(conf.Issuers, issid)
 		}
 	}
-	for issid := range store.publicKeys {
+	for issid := range conf.publicKeys {
 		if issid.SchemeManagerIdentifier() == id {
-			delete(store.publicKeys, issid)
+			delete(conf.publicKeys, issid)
 		}
 	}
 	// Remove from storage
-	return os.RemoveAll(fmt.Sprintf("%s/%s", store.path, id.String()))
+	return os.RemoveAll(fmt.Sprintf("%s/%s", conf.path, id.String()))
 	// or, remove above iterations and call .ParseFolder()?
 }
 
-func (store *ConfigurationStore) AddSchemeManager(manager *SchemeManager) error {
+func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	name := manager.ID
-	if err := fs.EnsureDirectoryExists(fmt.Sprintf("%s/%s", store.path, name)); err != nil {
+	if err := fs.EnsureDirectoryExists(fmt.Sprintf("%s/%s", conf.path, name)); err != nil {
 		return err
 	}
 	b, err := xml.Marshal(manager)
 	if err != nil {
 		return err
 	}
-	if err := fs.SaveFile(fmt.Sprintf("%s/%s/description.xml", store.path, name), b); err != nil {
+	if err := fs.SaveFile(fmt.Sprintf("%s/%s/description.xml", conf.path, name), b); err != nil {
 		return err
 	}
-	store.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
+	conf.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
 	return nil
 }
 
-func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet, error) {
+func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet, error) {
 	var contains bool
 	var err error
 	downloaded := &IrmaIdentifierSet{
@@ -339,16 +339,16 @@ func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) (*IrmaIdentifi
 	}
 
 	for manid := range set.SchemeManagers {
-		if _, contains = store.SchemeManagers[manid]; !contains {
+		if _, contains = conf.SchemeManagers[manid]; !contains {
 			return nil, errors.Errorf("Unknown scheme manager: %s", manid)
 		}
 	}
 
 	transport := NewHTTPTransport("")
 	for issid := range set.Issuers {
-		if _, contains = store.Issuers[issid]; !contains {
-			url := store.SchemeManagers[issid.SchemeManagerIdentifier()].URL + "/" + issid.Name()
-			path := fmt.Sprintf("%s/%s/%s", store.path, issid.SchemeManagerIdentifier().String(), issid.Name())
+		if _, contains = conf.Issuers[issid]; !contains {
+			url := conf.SchemeManagers[issid.SchemeManagerIdentifier()].URL + "/" + issid.Name()
+			path := fmt.Sprintf("%s/%s/%s", conf.path, issid.SchemeManagerIdentifier().String(), issid.Name())
 			if err = transport.GetFile(url+"/description.xml", path+"/description.xml"); err != nil {
 				return nil, err
 			}
@@ -360,31 +360,31 @@ func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) (*IrmaIdentifi
 	}
 	for issid, list := range set.PublicKeys {
 		for _, count := range list {
-			pk, err := store.PublicKey(issid, count)
+			pk, err := conf.PublicKey(issid, count)
 			if err != nil {
 				return nil, err
 			}
 			if pk == nil {
 				manager := issid.SchemeManagerIdentifier()
 				suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
-				path := fmt.Sprintf("%s/%s/%s", store.path, manager.String(), suffix)
-				if transport.GetFile(store.SchemeManagers[manager].URL+suffix, path); err != nil {
+				path := fmt.Sprintf("%s/%s/%s", conf.path, manager.String(), suffix)
+				if transport.GetFile(conf.SchemeManagers[manager].URL+suffix, path); err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
 	for credid := range set.CredentialTypes {
-		if _, contains := store.CredentialTypes[credid]; !contains {
+		if _, contains := conf.CredentialTypes[credid]; !contains {
 			issuer := credid.IssuerIdentifier()
 			manager := issuer.SchemeManagerIdentifier()
-			local := fmt.Sprintf("%s/%s/%s/Issues", store.path, manager.Name(), issuer.Name())
+			local := fmt.Sprintf("%s/%s/%s/Issues", conf.path, manager.Name(), issuer.Name())
 			if err := fs.EnsureDirectoryExists(local); err != nil {
 				return nil, err
 			}
 			if transport.GetFile(
 				fmt.Sprintf("%s/%s/Issues/%s/description.xml",
-					store.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
+					conf.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
 				fmt.Sprintf("%s/%s/description.xml", local, credid.Name()),
 			); err != nil {
 				return nil, err
@@ -393,5 +393,5 @@ func (store *ConfigurationStore) Download(set *IrmaIdentifierSet) (*IrmaIdentifi
 		}
 	}
 
-	return downloaded, store.ParseFolder()
+	return downloaded, conf.ParseFolder()
 }
