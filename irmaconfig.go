@@ -68,11 +68,14 @@ func (conf *Configuration) ParseFolder() error {
 		if err != nil {
 			return err
 		}
-		if exists {
-			conf.SchemeManagers[manager.Identifier()] = manager
-			return conf.parseIssuerFolders(dir)
+		if !exists {
+			return nil
 		}
-		return nil
+		if manager.XMLVersion < 7 {
+			return errors.New("Unsupported scheme manager description")
+		}
+		conf.SchemeManagers[manager.Identifier()] = manager
+		return conf.parseIssuerFolders(dir)
 	})
 	if err != nil {
 		return err
@@ -116,13 +119,14 @@ func (conf *Configuration) parseIssuerFolders(path string) error {
 		if err != nil {
 			return err
 		}
-		if exists {
-			conf.Issuers[issuer.Identifier()] = issuer
-			if err = conf.parseCredentialsFolder(dir + "/Issues/"); err != nil {
-				return err
-			}
+		if !exists {
+			return nil
 		}
-		return nil
+		if issuer.XMLVersion < 4 {
+			return errors.New("Unsupported issuer description")
+		}
+		conf.Issuers[issuer.Identifier()] = issuer
+		return conf.parseCredentialsFolder(dir + "/Issues/")
 	})
 }
 
@@ -160,11 +164,15 @@ func (conf *Configuration) parseCredentialsFolder(path string) error {
 		if err != nil {
 			return err
 		}
-		if exists {
-			credid := cred.Identifier()
-			conf.CredentialTypes[credid] = cred
-			conf.addReverseHash(credid)
+		if !exists {
+			return nil
 		}
+		if cred.XMLVersion < 4 {
+			return errors.New("Unsupported credential type description")
+		}
+		credid := cred.Identifier()
+		conf.CredentialTypes[credid] = cred
+		conf.addReverseHash(credid)
 		return nil
 	})
 }
