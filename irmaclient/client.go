@@ -9,6 +9,7 @@ import (
 	"github.com/credentials/go-go-gadget-paillier"
 	"github.com/credentials/irmago"
 	"github.com/credentials/irmago/internal/fs"
+	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -47,6 +48,9 @@ type Client struct {
 	// Where we store/load it to/from
 	storage storage
 
+	// configuration
+	config clientConfiguration
+
 	// Other state
 	Configuration            *irma.Configuration
 	UnenrolledSchemeManagers []irma.SchemeManagerIdentifier
@@ -54,6 +58,16 @@ type Client struct {
 	androidStoragePath       string
 	handler                  ClientHandler
 	state                    *issuanceState
+}
+
+type clientConfiguration struct {
+	SendCrashReports bool
+	ravenDSN         string
+}
+
+var defaultClientConfig clientConfiguration = clientConfiguration{
+	SendCrashReports: true,
+	ravenDSN:         "", // Set this in the init() function, empty string -> no crash reports
 }
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
@@ -122,6 +136,11 @@ func New(
 	if err = cm.storage.EnsureStorageExists(); err != nil {
 		return nil, err
 	}
+
+	if cm.config, err = cm.storage.LoadClientConfig(); err != nil {
+		return nil, err
+	}
+	cm.applyClientConfig()
 
 	// Perform new update functions from clientUpdates, if any
 	if err = cm.update(); err != nil {
@@ -703,4 +722,22 @@ func (client *Client) Logs() ([]*LogEntry, error) {
 		}
 	}
 	return client.logs, nil
+}
+
+func (client *Client) SendCrashReports(val bool) {
+	if val == client.config.SendCrashReports {
+		return
+	}
+
+	client.config.SendCrashReports = val
+	if val {
+		raven.SetDSN(client.config.ravenDSN)
+	}
+	_ = client.storage.StoreClientConfig(client.config)
+}
+
+func (client *Client) applyClientConfig() {
+	if client.config.SendCrashReports && client.config.ravenDSN != "" {
+		raven.SetDSN(client.config.ravenDSN)
+	}
 }

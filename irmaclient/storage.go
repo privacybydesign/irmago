@@ -27,6 +27,7 @@ const (
 	paillierFile   = "paillier"
 	updatesFile    = "updates"
 	logsFile       = "logs"
+	configFile     = "config"
 	signaturesDir  = "sigs"
 )
 
@@ -98,16 +99,20 @@ func (s *storage) StoreAttributes(attributes map[irma.CredentialTypeIdentifier][
 	return s.store(temp, attributesFile)
 }
 
-func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) (err error) {
+func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
 	return s.store(keyshareServers, kssFile)
 }
 
-func (s *storage) StorePaillierKeys(key *paillierPrivateKey) (err error) {
+func (s *storage) StorePaillierKeys(key *paillierPrivateKey) error {
 	return s.store(key, paillierFile)
 }
 
-func (s *storage) StoreLogs(logs []*LogEntry) (err error) {
+func (s *storage) StoreLogs(logs []*LogEntry) error {
 	return s.store(logs, logsFile)
+}
+
+func (s *storage) StoreClientConfig(config clientConfiguration) error {
+	return s.store(config, configFile)
 }
 
 func (s *storage) StoreUpdates(updates []update) (err error) {
@@ -204,4 +209,9 @@ func (s *storage) LoadUpdates() (updates []update, err error) {
 		return nil, err
 	}
 	return updates, nil
+}
+
+func (s *storage) LoadClientConfig() (clientConfiguration, error) {
+	config := defaultClientConfig
+	return config, s.load(&config, configFile)
 }
