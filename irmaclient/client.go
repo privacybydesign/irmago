@@ -24,7 +24,7 @@ import (
 // at initialization.
 //
 // - The attributes of all credentials are stored together, as they all
-// immediately need to be available anyway,
+// immediately need to be available anyway.
 //
 // - The secret key (the zeroth attribute of every credential), being the same
 // across all credentials, is stored only once in a separate file (storing this

@@ -112,6 +112,12 @@ func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser 
 		transport: irma.NewHTTPTransport(qr.URL),
 		client:    client,
 	}
+
+	if session.Action == irma.ActionSchemeManager {
+		go session.managerSession()
+		return session
+	}
+
 	version, err := calcVersion(qr)
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorProtocolVersionNotSupported, Err: err})
@@ -124,7 +130,6 @@ func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser 
 	case irma.ActionDisclosing: // nop
 	case irma.ActionSigning: // nop
 	case irma.ActionIssuing: // nop
-	//case irmago.ActionSchemeManager: // nop
 	case irma.ActionUnknown:
 		fallthrough
 	default:
@@ -153,11 +158,6 @@ func (session *session) start() {
 	}()
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-
-	if session.Action == irma.ActionSchemeManager {
-		session.managerSession()
-		return
-	}
 
 	// Get the first IRMA protocol message and parse it
 	session.info = &irma.SessionInfo{}
@@ -378,20 +378,34 @@ func (session *session) sendResponse(message interface{}) {
 }
 
 func (session *session) managerSession() {
+	defer func() {
+		handlePanic(func(err *irma.SessionError) {
+			if session.Handler != nil {
+				session.Handler.Failure(session.Action, err)
+			}
+		})
+	}()
+
+	// We have to download the scheme manager description.xml here before installing it,
+	// because we need to show its contents (name, description, website) to the user
+	// when asking installation permission.
 	manager, err := session.client.Configuration.DownloadSchemeManager(session.ServerURL)
 	if err != nil {
-		session.Handler.Failure(session.Action, &irma.SessionError{Err: err}) // TODO
+		session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 		return
 	}
+
 	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
 		if !proceed {
 			session.Handler.Cancelled(session.Action) // No need to DELETE session here
 			return
 		}
 		if err := session.client.Configuration.AddSchemeManager(manager); err != nil {
-			session.Handler.Failure(session.Action, &irma.SessionError{})
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 			return
 		}
+
+		// Update state and inform user of success
 		if manager.Distributed() {
 			session.client.UnenrolledSchemeManagers = session.client.unenrolledSchemeManagers()
 		}

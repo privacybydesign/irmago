@@ -276,6 +276,8 @@ func (conf *Configuration) Copy(source string, parse bool) error {
 	return nil
 }
 
+// DownloadSchemeManager downloads and returns a scheme manager description.xml file
+// from the specified URL.
 func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, error) {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
@@ -316,6 +318,7 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier) error
 			delete(conf.publicKeys, issid)
 		}
 	}
+	delete(conf.SchemeManagers, id)
 	// Remove from storage
 	return os.RemoveAll(fmt.Sprintf("%s/%s", conf.path, id.String()))
 	// or, remove above iterations and call .ParseFolder()?
@@ -360,7 +363,7 @@ func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet,
 			if err = transport.GetFile(url+"/description.xml", path+"/description.xml"); err != nil {
 				return nil, err
 			}
-			if transport.GetFile(url+"/logo.png", path+"/logo.png"); err != nil {
+			if err = transport.GetFile(url+"/logo.png", path+"/logo.png"); err != nil {
 				return nil, err
 			}
 			downloaded.Issuers[issid] = struct{}{}
@@ -376,7 +379,7 @@ func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet,
 				manager := issid.SchemeManagerIdentifier()
 				suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
 				path := fmt.Sprintf("%s/%s/%s", conf.path, manager.String(), suffix)
-				if transport.GetFile(conf.SchemeManagers[manager].URL+suffix, path); err != nil {
+				if err = transport.GetFile(conf.SchemeManagers[manager].URL+suffix, path); err != nil {
 					return nil, err
 				}
 			}
@@ -390,13 +393,16 @@ func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet,
 			if err := fs.EnsureDirectoryExists(local); err != nil {
 				return nil, err
 			}
-			if transport.GetFile(
-				fmt.Sprintf("%s/%s/Issues/%s/description.xml",
-					conf.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
+			if err = transport.GetFile(
+				fmt.Sprintf("%s/%s/Issues/%s/description.xml", conf.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
 				fmt.Sprintf("%s/%s/description.xml", local, credid.Name()),
 			); err != nil {
 				return nil, err
 			}
+			_ = transport.GetFile( // Get logo but ignore errors, it is optional
+				fmt.Sprintf("%s/%s/Issues/%s/logo.png", conf.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
+				fmt.Sprintf("%s/%s/logo.png", local, credid.Name()),
+			)
 			downloaded.CredentialTypes[credid] = struct{}{}
 		}
 	}

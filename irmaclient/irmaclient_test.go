@@ -384,16 +384,31 @@ func TestCredentialRemoval(t *testing.T) {
 	teardown(t)
 }
 
+// Test installing a new scheme manager from a qr, and do a(n issuance) session
+// within this manager to test the autmatic downloading of credential definitions,
+// issuers, and public keys.
 func TestDownloadSchemeManager(t *testing.T) {
 	client := parseStorage(t)
-	require.NoError(t, client.Configuration.RemoveSchemeManager(irma.NewSchemeManagerIdentifier("irma-demo")))
-	url := "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo"
-	sm, err := client.Configuration.DownloadSchemeManager(url)
-	require.NoError(t, err)
-	require.NotNil(t, sm)
 
-	require.NoError(t, client.Configuration.AddSchemeManager(sm))
+	// Remove irma-demo scheme manager as we need to test adding it
+	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+	require.NoError(t, client.Configuration.RemoveSchemeManager(irmademo))
+	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
 
+	// Do an add-scheme-manager-session
+	qr := &irma.Qr{
+		Type: irma.ActionSchemeManager,
+		URL:  "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo",
+	}
+	c := make(chan *irma.SessionError)
+	client.NewSession(qr, TestHandler{t, c, client})
+	if err := <-c; err != nil {
+		t.Fatal(*err)
+	}
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+
+	// Do a session to test downloading of cred types, issuers and keys
 	jwt := getIssuanceJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
