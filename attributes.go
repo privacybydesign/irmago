@@ -214,6 +214,10 @@ func (attr *MetadataAttribute) setCredentialTypeIdentifier(id string) {
 	attr.setField(credentialID, bytes[:16])
 }
 
+func (attr *MetadataAttribute) CredentialTypeHash() []byte {
+	return attr.field(credentialID)
+}
+
 // Expiry returns the expiry date of this instance
 func (attr *MetadataAttribute) Expiry() time.Time {
 	expiry := attr.SigningDate().Unix() + int64(attr.ValidityDuration()*ExpiryFactor)
