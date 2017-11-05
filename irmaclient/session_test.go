@@ -207,10 +207,10 @@ func enrollKeyshareServer(t *testing.T, client *Client) {
 func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	client := parseStorage(t)
 
-	client.credentials[irma.NewCredentialTypeIdentifier("test.test.mijnirma")] = map[int]*credential{}
-	test := irma.NewSchemeManagerIdentifier("test")
-	err := client.KeyshareRemove(test)
-	require.NoError(t, err)
+	require.NoError(t, client.RemoveCredentialByHash(
+		client.Attributes(irma.NewCredentialTypeIdentifier("test.test.mijnirma"), 0).Hash(),
+	))
+	require.NoError(t, client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test")))
 	enrollKeyshareServer(t, client)
 
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
