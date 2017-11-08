@@ -144,6 +144,10 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
+
+	if res.StatusCode != 200 {
+		return nil, &SessionError{ErrorType: ErrorServerResponse, Status: res.StatusCode}
+	}
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode}

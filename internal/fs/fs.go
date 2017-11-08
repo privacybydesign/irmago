@@ -11,14 +11,16 @@ import (
 )
 
 // AssertPathExists returns nil only if it has been successfully
-// verified that the specified path exists.
-func AssertPathExists(path string) error {
-	exist, err := PathExists(path)
-	if err != nil {
-		return err
-	}
-	if !exist {
-		return errors.Errorf("Path %s does not exist", path)
+// verified that all specified paths exists.
+func AssertPathExists(paths ...string) error {
+	for _, p := range paths {
+		exist, err := PathExists(p)
+		if err != nil {
+			return err
+		}
+		if !exist {
+			return errors.Errorf("Path %s does not exist", p)
+		}
 	}
 	return nil
 }

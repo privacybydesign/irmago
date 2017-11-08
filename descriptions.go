@@ -21,6 +21,8 @@ type SchemeManager struct {
 	KeyshareAttribute string
 	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
+
+	index SchemeManagerIndex
 }
 
 // Issuer describes an issuer.
