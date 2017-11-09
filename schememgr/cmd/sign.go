@@ -1,34 +1,47 @@
-package main
+package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/pem"
-	"fmt"
 	"io/ioutil"
 	"math/big"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/credentials/irmago"
 	"github.com/credentials/irmago/internal/fs"
+	"github.com/spf13/cobra"
 )
 
-func main() {
-	if len(os.Args) != 3 {
-		fmt.Println("Usage: irmasig path_to_private_key path_to_irma_configuration")
-		os.Exit(0)
-	}
+// signCmd represents the sign command
+var signCmd = &cobra.Command{
+	Use:   "sign path_to_private_key path_to_irma_configuration",
+	Short: "Sign a scheme manager directory",
+	Long:  "Sign a scheme manager directory, using the specified ECDSA key. Outputs an index file, signature over the index file, and the public key in the specified directory.",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		signManager(args)
+	},
+}
+
+func init() {
+	RootCmd.AddCommand(signCmd)
+}
+
+func signManager(args []string) {
 	// Validate arguments
-	privatekey, err := readPrivateKey(os.Args[1])
+	privatekey, err := readPrivateKey(args[0])
 	if err != nil {
 		die("Failed to read private key:", err)
 	}
-	confpath, err := filepath.Abs(os.Args[2])
+	confpath, err := filepath.Abs(args[1])
 	if err != nil {
 		die("Invalid path", err)
 	}
