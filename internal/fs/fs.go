@@ -25,6 +25,19 @@ func AssertPathExists(paths ...string) error {
 	return nil
 }
 
+func AssertPathNotExists(paths ...string) error {
+	for _, p := range paths {
+		exist, err := PathExists(p)
+		if err != nil {
+			return err
+		}
+		if exist {
+			return errors.Errorf("Path %s exists but should not", p)
+		}
+	}
+	return nil
+}
+
 // PathExists checks if the specified path exists.
 func PathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
