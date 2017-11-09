@@ -136,9 +136,6 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 func verifyConfigurationIsLoaded(t *testing.T, conf *irma.Configuration, android bool) {
 	require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("test"))
-	if android {
-		require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("test2"))
-	}
 
 	pk, err := conf.PublicKey(irma.NewIssuerIdentifier("irma-demo.RU"), 0)
 	require.NoError(t, err)

@@ -52,7 +52,7 @@ func (client *Client) update() error {
 		if err != nil {
 			str := err.Error()
 			u.Error = &str
-		}
+		} // TODO: err is only stored but not passed on!
 		client.updates = append(client.updates, u)
 	}
 
@@ -166,10 +166,5 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 	if client.paillierKeyCache == nil {
 		client.paillierKey(false) // trigger calculating a new one
 	}
-
-	if err = client.Configuration.Copy(client.androidStoragePath+"/app_store/irma_configuration", false); err != nil {
-		return
-	}
-	// Copy from assets again to ensure we have the latest versions
-	return present, client.Configuration.Copy(client.irmaConfigurationPath, true)
+	return
 }
