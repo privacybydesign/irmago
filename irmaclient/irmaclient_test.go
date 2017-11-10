@@ -396,7 +396,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 	// Do an add-scheme-manager-session
 	qr := &irma.Qr{
 		Type: irma.ActionSchemeManager,
-		URL:  "https://raw.githubusercontent.com/credentials/irma_configuration/translate/irma-demo",
+		URL:  "https://raw.githubusercontent.com/credentials/irma-demo-schememanager/master",
 	}
 	c := make(chan *irma.SessionError)
 	client.NewSession(qr, TestHandler{t, c, client})
