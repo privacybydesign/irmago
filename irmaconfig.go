@@ -225,6 +225,9 @@ func iterateSubfolders(path string, handler func(string) error) error {
 		if !stat.IsDir() {
 			continue
 		}
+		if strings.HasSuffix(dir, "/.git") {
+			continue
+		}
 		err = handler(dir)
 		if err != nil {
 			return err
@@ -513,15 +516,15 @@ func (conf *Configuration) ParseIndex(manager *SchemeManager, dir string) error 
 	if err != nil {
 		return err
 	}
-	manager.index = make(map[string]ConfigurationFileHash)
-	return manager.index.FromString(string(indexbts))
+	manager.Index = make(map[string]ConfigurationFileHash)
+	return manager.Index.FromString(string(indexbts))
 }
 
 // ReadAuthenticatedFile reads the file at the specified path
 // and verifies its authenticity by checking that the file hash
 // is present in the (signed) scheme manager index file.
 func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path string) ([]byte, error) {
-	signedHash, ok := manager.index[path]
+	signedHash, ok := manager.Index[path]
 	if !ok {
 		return nil, errors.New("File not present in scheme manager index")
 	}
@@ -533,7 +536,7 @@ func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path st
 	computedHash := sha256.Sum256(bts)
 
 	if !bytes.Equal(computedHash[:], signedHash) {
-		return nil, errors.New("File hash invalid")
+		return nil, errors.Errorf("Hash of %s does not match scheme manager index", path)
 	}
 	return bts, nil
 }
@@ -541,7 +544,18 @@ func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path st
 // VerifySignature verifies the signature on the scheme manager index file
 // (which contains the SHA256 hashes of all files under this scheme manager,
 // which are used for verifying file authenticity).
-func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (bool, error) {
+func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (valid bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			valid = false
+			if e, ok := r.(error); ok {
+				err = errors.Errorf("Scheme manager index signature failed to verify: %s", e.Error())
+			} else {
+				err = errors.New("Scheme manager index signature failed to verify")
+			}
+		}
+	}()
+
 	dir := filepath.Join(conf.path, id.String())
 	if err := fs.AssertPathExists(dir+"/index", dir+"/index.sig", dir+"/pk.pem"); err != nil {
 		return false, errors.New("Missing scheme manager index file, signature, or public key")
@@ -579,4 +593,8 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (bool, er
 
 	// Verify signature
 	return ecdsa.Verify(pk, indexhash[:], ints[0], ints[1]), nil
+}
+
+func (hash ConfigurationFileHash) String() string {
+	return hex.EncodeToString(hash)
 }

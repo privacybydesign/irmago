@@ -22,7 +22,7 @@ type SchemeManager struct {
 	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
 
-	index SchemeManagerIndex
+	Index SchemeManagerIndex `xml:"-"`
 }
 
 // Issuer describes an issuer.
