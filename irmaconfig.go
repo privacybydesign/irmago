@@ -316,7 +316,7 @@ func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, er
 	if strings.HasSuffix(url, "/description.xml") {
 		url = url[:len(url)-len("/description.xml")]
 	}
-	b, err := NewHTTPTransport(url).GetBytes("/description.xml")
+	b, err := NewHTTPTransport(url).GetBytes("description.xml")
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +363,7 @@ func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	if err := t.GetFile("description.xml", path+"/description.xml"); err != nil {
 		return err
 	}
-	if err := t.GetFile("/pk.pem", path+"/pk.pem"); err != nil {
+	if err := t.GetFile("pk.pem", path+"/pk.pem"); err != nil {
 		return err
 	}
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
@@ -378,10 +378,10 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	t := NewHTTPTransport(manager.URL)
 	path := fmt.Sprintf("%s/%s", conf.path, manager.ID)
 
-	if err := t.GetFile("/index", path+"/index"); err != nil {
+	if err := t.GetFile("index", path+"/index"); err != nil {
 		return err
 	}
-	if err := t.GetFile("/index.sig", path+"/index.sig"); err != nil {
+	if err := t.GetFile("index.sig", path+"/index.sig"); err != nil {
 		return err
 	}
 	return nil
