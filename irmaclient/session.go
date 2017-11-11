@@ -20,6 +20,7 @@ import (
 // and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
+// PinHandler is used to provide the user's PIN code.
 type PinHandler func(proceed bool, pin string)
 
 // A Handler contains callbacks for communication to the user.
@@ -39,6 +40,7 @@ type Handler interface {
 	RequestPin(remainingAttempts int, callback PinHandler)
 }
 
+// SessionDismisser can dismiss the current IRMA session.
 type SessionDismisser interface {
 	Dismiss()
 }

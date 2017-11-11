@@ -9,6 +9,7 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// LogEntry is a log entry of a past event.
 type LogEntry struct {
 	// General info
 	Type        irma.Action
@@ -91,10 +92,13 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	return entry, nil
 }
 
+// Jwt returns the JWT from the requestor that started the IRMA session which the
+// current log entry tracks.
 func (entry *LogEntry) Jwt() (irma.RequestorJwt, error) {
 	return irma.ParseRequestorJwt(entry.Type, entry.SessionInfo.Jwt)
 }
 
+// GetResponse returns our response to the requestor from the log entry.
 func (entry *LogEntry) GetResponse() (interface{}, error) {
 	if entry.response == nil {
 		switch entry.Type {
@@ -132,6 +136,7 @@ type jsonLogEntry struct {
 	Response json.RawMessage
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 	var err error
 	temp := &jsonLogEntry{}
@@ -164,6 +169,7 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 	return nil
 }
 
+// MarshalJSON implements json.Marshaler.
 func (entry *LogEntry) MarshalJSON() ([]byte, error) {
 	// If the entry was created using createLogEntry(), then entry.rawResponse == nil
 	if len(entry.rawResponse) == 0 && entry.response != nil {

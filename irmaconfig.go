@@ -44,8 +44,12 @@ type Configuration struct {
 	initialized   bool
 }
 
+// ConfigurationFileHash encodes the SHA256 hash of an authenticated
+// file under a scheme manager within the configuration folder.
 type ConfigurationFileHash []byte
 
+// SchemeManagerIndex is a (signed) list of files under a scheme manager
+// along with their SHA266 hash
 type SchemeManagerIndex map[string]ConfigurationFileHash
 
 // NewConfiguration returns a new configuration. After this
@@ -80,7 +84,7 @@ func (conf *Configuration) ParseFolder() error {
 
 	err := iterateSubfolders(conf.path, func(dir string) error {
 		manager := &SchemeManager{}
-		if err := conf.ParseIndex(manager, dir); err != nil {
+		if err := conf.ParseIndex(manager); err != nil {
 			return err
 		}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", manager)
@@ -262,6 +266,8 @@ func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
 		conf.CredentialTypes[cred] != nil
 }
 
+// Copy recursively copies the directory tree at source into the directory
+// of this Configuration.
 func (conf *Configuration) Copy(source string, parse bool) error {
 	if err := fs.EnsureDirectoryExists(conf.path); err != nil {
 		return err
@@ -329,6 +335,8 @@ func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, er
 	return manager, nil
 }
 
+// RemoveSchemeManager removes the specified scheme manager and all associated issuers,
+// public keys and credential types from this Configuration.
 func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier) error {
 	// Remove everything falling under the manager's responsibility
 	for credid := range conf.CredentialTypes {
@@ -352,6 +360,8 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier) error
 	// or, remove above iterations and call .ParseFolder()?
 }
 
+// AddSchemeManager adds the specified scheme manager to this Configuration,
+// provided its signature is valid.
 func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	name := manager.ID
 	if err := fs.EnsureDirectoryExists(fmt.Sprintf("%s/%s", conf.path, name)); err != nil {
@@ -369,11 +379,20 @@ func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
 		return err
 	}
+	valid, err := conf.VerifySignature(manager.Identifier())
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return errors.New("Scheme manager signature invalid")
+	}
 
 	conf.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
 	return nil
 }
 
+// DownloadSchemeManagerSignature downloads and stores the latest version
+// of the index file and signature of the specified manager.
 func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager) error {
 	t := NewHTTPTransport(manager.URL)
 	path := fmt.Sprintf("%s/%s", conf.path, manager.ID)
@@ -387,6 +406,9 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	return nil
 }
 
+// Download downloads the issuers, credential types and public keys specified in set
+// if the current Configuration does not already have them,  and checks their authenticity
+// using the scheme manager index.
 func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet, error) {
 	var contains bool
 	var err error
@@ -489,6 +511,7 @@ func (i SchemeManagerIndex) String() string {
 	return b.String()
 }
 
+// FromString populates this index by parsing the specified string.
 func (i SchemeManagerIndex) FromString(s string) error {
 	for j, line := range strings.Split(s, "\n") {
 		if len(line) == 0 {
@@ -508,11 +531,13 @@ func (i SchemeManagerIndex) FromString(s string) error {
 	return nil
 }
 
-func (conf *Configuration) ParseIndex(manager *SchemeManager, dir string) error {
-	if err := fs.AssertPathExists(dir + "/index"); err != nil {
+// ParseIndex parses the index file of the specified manager.
+func (conf *Configuration) ParseIndex(manager *SchemeManager) error {
+	path := filepath.Join(conf.path, manager.ID, "index")
+	if err := fs.AssertPathExists(path); err != nil {
 		return errors.New("Missing scheme manager index file")
 	}
-	indexbts, err := ioutil.ReadFile(dir + "/index")
+	indexbts, err := ioutil.ReadFile(path)
 	if err != nil {
 		return err
 	}

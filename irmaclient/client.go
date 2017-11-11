@@ -65,7 +65,7 @@ type clientConfiguration struct {
 	ravenDSN         string
 }
 
-var defaultClientConfig clientConfiguration = clientConfiguration{
+var defaultClientConfig = clientConfiguration{
 	SendCrashReports: true,
 	ravenDSN:         "", // Set this in the init() function, empty string -> no crash reports
 }
@@ -77,6 +77,8 @@ type KeyshareHandler interface {
 	EnrollmentSuccess(manager irma.SchemeManagerIdentifier)
 }
 
+// ClientHandler informs the user that the configuration or the list of attributes
+// that this client uses has been updated.
 type ClientHandler interface {
 	KeyshareHandler
 
@@ -274,10 +276,12 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	return nil
 }
 
+// RemoveCredential removes the specified credential.
 func (client *Client) RemoveCredential(id irma.CredentialTypeIdentifier, index int) error {
 	return client.remove(id, index, true)
 }
 
+// RemoveCredentialByHash removes the specified credential.
 func (client *Client) RemoveCredentialByHash(hash string) error {
 	cred, index, err := client.credentialByHash(hash)
 	if err != nil {
@@ -286,6 +290,7 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
+// RemoveAllCredentials removes all credentials.
 func (client *Client) RemoveAllCredentials() error {
 	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
 	for _, attrlistlist := range client.attributes {
@@ -699,6 +704,7 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 
+// KeyshareRemoveAll removes all keyshare server registrations.
 func (client *Client) KeyshareRemoveAll() error {
 	client.keyshareServers = map[irma.SchemeManagerIdentifier]*keyshareServer{}
 	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
@@ -710,9 +716,9 @@ func (client *Client) KeyshareRemoveAll() error {
 func (client *Client) addLogEntry(entry *LogEntry) error {
 	client.logs = append(client.logs, entry)
 	return client.storage.StoreLogs(client.logs)
-	return nil
 }
 
+// Logs returns the log entries of past events.
 func (client *Client) Logs() ([]*LogEntry, error) {
 	if client.logs == nil || len(client.logs) == 0 {
 		var err error
@@ -724,6 +730,8 @@ func (client *Client) Logs() ([]*LogEntry, error) {
 	return client.logs, nil
 }
 
+// SendCrashReports toggles whether or not crash reports should be sent to Sentry.
+// Has effect only after restarting.
 func (client *Client) SendCrashReports(val bool) {
 	if val == client.config.SendCrashReports {
 		return
