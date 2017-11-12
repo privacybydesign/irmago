@@ -379,28 +379,58 @@ func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
 		return err
 	}
-	valid, err := conf.VerifySignature(manager.Identifier())
-	if err != nil {
-		return err
-	}
-	if !valid {
-		return errors.New("Scheme manager signature invalid")
-	}
 
 	conf.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
 	return nil
 }
 
-// DownloadSchemeManagerSignature downloads and stores the latest version
+// DownloadSchemeManagerSignature downloads, stores and verifies the latest version
 // of the index file and signature of the specified manager.
-func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager) error {
+func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager) (err error) {
 	t := NewHTTPTransport(manager.URL)
 	path := fmt.Sprintf("%s/%s", conf.path, manager.ID)
+	index := filepath.Join(path, "index")
+	sig := filepath.Join(path, "index.sig")
 
-	if err := t.GetFile("index", path+"/index"); err != nil {
+	// Backup so we can restore last valid signature if the new signature is invalid
+	if err := conf.backupManagerSignature(index, sig); err != nil {
 		return err
 	}
-	if err := t.GetFile("index.sig", path+"/index.sig"); err != nil {
+
+	if err = t.GetFile("index", index); err != nil {
+		return err
+	}
+	if err = t.GetFile("index.sig", sig); err != nil {
+		return err
+	}
+	valid, err := conf.VerifySignature(manager.Identifier())
+	if err != nil {
+		_ = conf.restoreManagerSignature(index, sig)
+		return err
+	}
+	if !valid {
+		_ = conf.restoreManagerSignature(index, sig)
+		return errors.New("Scheme manager signature invalid")
+	}
+
+	return nil
+}
+
+func (conf *Configuration) backupManagerSignature(index, sig string) error {
+	if err := fs.Copy(index, index+".backup"); err != nil {
+		return err
+	}
+	if err := fs.Copy(sig, sig+".backup"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (conf *Configuration) restoreManagerSignature(index, sig string) error {
+	if err := fs.Copy(index+".backup", index); err != nil {
+		return err
+	}
+	if err := fs.Copy(sig+".backup", sig); err != nil {
 		return err
 	}
 	return nil

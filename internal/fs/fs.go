@@ -61,6 +61,17 @@ func EnsureDirectoryExists(path string) error {
 	return os.Mkdir(path, 0700)
 }
 
+func Copy(src, dest string) error {
+	if err := AssertPathExists(src); err != nil {
+		return err
+	}
+	bts, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return SaveFile(dest, bts)
+}
+
 // Save the filecontents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
