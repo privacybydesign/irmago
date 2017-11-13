@@ -40,8 +40,9 @@ type Configuration struct {
 
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
-	path          string
 	initialized   bool
+	path          string
+	assets        string
 }
 
 // ConfigurationFileHash encodes the SHA256 hash of an authenticated
@@ -56,14 +57,15 @@ type SchemeManagerIndex map[string]ConfigurationFileHash
 // ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string, assets string) (conf *Configuration, err error) {
 	conf = &Configuration{
-		path: path,
+		path:   path,
+		assets: assets,
 	}
 
 	if err = fs.EnsureDirectoryExists(conf.path); err != nil {
 		return nil, err
 	}
-	if assets != "" {
-		if err = conf.Copy(assets, false); err != nil {
+	if conf.assets != "" {
+		if err = conf.CopyFromAssets(false); err != nil {
 			return nil, err
 		}
 	}
@@ -266,19 +268,19 @@ func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
 		conf.CredentialTypes[cred] != nil
 }
 
-// Copy recursively copies the directory tree at source into the directory
-// of this Configuration.
-func (conf *Configuration) Copy(source string, parse bool) error {
+// CopyFromAssets recursively copies the directory tree from the assets folder
+// into the directory of this Configuration.
+func (conf *Configuration) CopyFromAssets(parse bool) error {
 	if err := fs.EnsureDirectoryExists(conf.path); err != nil {
 		return err
 	}
 
-	err := filepath.Walk(source, filepath.WalkFunc(
+	err := filepath.Walk(conf.assets, filepath.WalkFunc(
 		func(path string, info os.FileInfo, err error) error {
-			if path == source {
+			if path == conf.assets {
 				return nil
 			}
-			subpath := path[len(source):]
+			subpath := path[len(conf.assets):]
 			if info.IsDir() {
 				if err := fs.EnsureDirectoryExists(conf.path + subpath); err != nil {
 					return err
@@ -289,11 +291,11 @@ func (conf *Configuration) Copy(source string, parse bool) error {
 					return err
 				}
 				defer srcfile.Close()
-				bytes, err := ioutil.ReadAll(srcfile)
+				bts, err := ioutil.ReadAll(srcfile)
 				if err != nil {
 					return err
 				}
-				if err := fs.SaveFile(conf.path+subpath, bytes); err != nil {
+				if err := fs.SaveFile(conf.path+subpath, bts); err != nil {
 					return err
 				}
 			}

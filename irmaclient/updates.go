@@ -29,6 +29,19 @@ var clientUpdates = []func(client *Client) error{
 		_, err := client.ParseAndroidStorage()
 		return err
 	},
+	func(client *Client) error {
+		// Adding scheme manager index, signature and public key
+		// Check the signatures of all scheme managers, if any is not ok,
+		// copy the entire irma_configuration folder from assets
+		conf := client.Configuration
+		for manager := range conf.SchemeManagers {
+			valid, err := conf.VerifySignature(manager)
+			if err != nil || !valid {
+				return conf.CopyFromAssets(false)
+			}
+		}
+		return nil
+	},
 }
 
 // update performs any function from clientUpdates that has not

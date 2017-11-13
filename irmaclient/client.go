@@ -129,9 +129,6 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	if err = cm.Configuration.ParseFolder(); err != nil {
-		return nil, err
-	}
 
 	// Ensure storage path exists, and populate it with necessary files
 	cm.storage = storage{storagePath: storagePath, Configuration: cm.Configuration}
@@ -146,6 +143,10 @@ func New(
 
 	// Perform new update functions from clientUpdates, if any
 	if err = cm.update(); err != nil {
+		return nil, err
+	}
+
+	if err = cm.Configuration.ParseFolder(); err != nil {
 		return nil, err
 	}
 
