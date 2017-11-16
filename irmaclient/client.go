@@ -129,6 +129,9 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+	if err = cm.Configuration.ParseFolder(); err != nil {
+		return nil, err
+	}
 
 	// Ensure storage path exists, and populate it with necessary files
 	cm.storage = storage{storagePath: storagePath, Configuration: cm.Configuration}
@@ -143,10 +146,6 @@ func New(
 
 	// Perform new update functions from clientUpdates, if any
 	if err = cm.update(); err != nil {
-		return nil, err
-	}
-
-	if err = cm.Configuration.ParseFolder(); err != nil {
 		return nil, err
 	}
 
@@ -182,6 +181,9 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	for _, attrlistlist := range client.attributes {
 		for index, attrlist := range attrlistlist {
 			info := attrlist.Info()
+			if info == nil {
+				continue
+			}
 			info.Index = index
 			list = append(list, info)
 		}
@@ -194,7 +196,10 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 // addCredential adds the specified credential to the Client, saving its signature
 // imediately, and optionally cm.attributes as well.
 func (client *Client) addCredential(cred *credential, storeAttributes bool) (err error) {
-	id := cred.CredentialType().Identifier()
+	id := irma.NewCredentialTypeIdentifier("")
+	if cred.CredentialType() != nil {
+		id = cred.CredentialType().Identifier()
+	}
 
 	// Don't add duplicate creds
 	for _, attrlistlist := range client.attributes {
@@ -206,17 +211,19 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 	}
 
 	// If this is a singleton credential type, ensure we have at most one by removing any previous instance
-	if cred.CredentialType().IsSingleton && len(client.creds(id)) > 0 {
+	if !id.Empty() && cred.CredentialType().IsSingleton && len(client.creds(id)) > 0 {
 		client.remove(id, 0, false) // Index is 0, because if we're here we have exactly one
 	}
 
 	// Append the new cred to our attributes and credentials
 	client.attributes[id] = append(client.attrs(id), cred.AttributeList())
-	if _, exists := client.credentials[id]; !exists {
-		client.credentials[id] = make(map[int]*credential)
+	if !id.Empty() {
+		if _, exists := client.credentials[id]; !exists {
+			client.credentials[id] = make(map[int]*credential)
+		}
+		counter := len(client.attributes[id]) - 1
+		client.credentials[id][counter] = cred
 	}
-	counter := len(client.attributes[id]) - 1
-	client.credentials[id][counter] = cred
 
 	if err = client.storage.StoreSignature(cred); err != nil {
 		return

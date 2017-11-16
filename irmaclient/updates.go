@@ -65,11 +65,18 @@ func (client *Client) update() error {
 		if err != nil {
 			str := err.Error()
 			u.Error = &str
-		} // TODO: err is only stored but not passed on!
+		}
 		client.updates = append(client.updates, u)
+		if err != nil {
+			break
+		}
 	}
 
-	return client.storage.StoreUpdates(client.updates)
+	storeErr := client.storage.StoreUpdates(client.updates)
+	if storeErr != nil {
+		return storeErr
+	}
+	return err
 }
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file

@@ -38,6 +38,8 @@ type Configuration struct {
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 
+	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManager
+
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
@@ -52,6 +54,15 @@ type ConfigurationFileHash []byte
 // SchemeManagerIndex is a (signed) list of files under a scheme manager
 // along with their SHA266 hash
 type SchemeManagerIndex map[string]ConfigurationFileHash
+
+type SchemeManagerError struct {
+	Manager SchemeManagerIdentifier
+	Err     error
+}
+
+func (sme SchemeManagerError) Error() string {
+	return fmt.Sprintf("Error parsing scheme manager %s: %s", sme.Manager.Name(), sme.Err.Error())
+}
 
 // NewConfiguration returns a new configuration. After this
 // ParseFolder() should be called to parse the specified path.
@@ -80,37 +91,72 @@ func (conf *Configuration) ParseFolder() error {
 	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
 	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
 	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
-	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 
+	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
+	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 
+	var mgrerr *SchemeManagerError
 	err := iterateSubfolders(conf.path, func(dir string) error {
-		manager := &SchemeManager{}
-		if err := conf.ParseIndex(manager); err != nil {
-			return err
+		err := conf.parseSchemeManagerFolder(dir)
+		if err == nil {
+			return nil // OK, do next scheme manager folder
 		}
-		exists, err := conf.pathToDescription(manager, dir+"/description.xml", manager)
-		if err != nil || !exists {
-			return err
+		// If there is an error, and it is of type SchemeManagerError, return nil
+		// so as to continue parsing other managers.
+		var ok bool
+		if mgrerr, ok = err.(*SchemeManagerError); ok {
+			return nil
 		}
-		if manager.XMLVersion < 7 {
-			return errors.New("Unsupported scheme manager description")
-		}
-		valid, err := conf.VerifySignature(manager.Identifier())
-		if err != nil {
-			return err
-		}
-		if !valid {
-			return errors.New("Scheme manager signature was invalid")
-		}
-		conf.SchemeManagers[manager.Identifier()] = manager
-		return conf.parseIssuerFolders(manager, dir)
+		return err // Not a SchemeManagerError? return it & halt parsing now
 	})
 	if err != nil {
 		return err
 	}
 	conf.initialized = true
+	if mgrerr != nil {
+		return mgrerr
+	}
 	return nil
+}
+
+func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error) {
+	exists, err := fs.PathExists(dir + "/description.xml")
+	if err != nil || !exists {
+		return err
+	}
+
+	// Put the directory name in the ID field in case we return early due to errors
+	manager := &SchemeManager{ID: filepath.Base(dir)}
+	defer func() {
+		if err != nil {
+			conf.DisabledSchemeManagers[manager.Identifier()] = manager
+			err = &SchemeManagerError{Manager: manager.Identifier(), Err: err}
+			_ = conf.RemoveSchemeManager(manager.Identifier(), false) // does not return errors
+		}
+	}()
+
+	if err = conf.parseIndex(filepath.Base(dir), manager); err != nil {
+		return err
+	}
+	_, err = conf.pathToDescription(manager, dir+"/description.xml", manager)
+	if err != nil || !exists {
+		return err
+	}
+
+	if manager.XMLVersion < 7 {
+		return errors.New("Unsupported scheme manager description")
+	}
+	valid, err := conf.VerifySignature(manager.Identifier())
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return errors.New("Scheme manager signature was invalid")
+	}
+	conf.SchemeManagers[manager.Identifier()] = manager
+	err = conf.parseIssuerFolders(manager, dir)
+	return
 }
 
 func relativePath(absolute string, relative string) string {
@@ -339,7 +385,7 @@ func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, er
 
 // RemoveSchemeManager removes the specified scheme manager and all associated issuers,
 // public keys and credential types from this Configuration.
-func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier) error {
+func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromStorage bool) error {
 	// Remove everything falling under the manager's responsibility
 	for credid := range conf.CredentialTypes {
 		if credid.IssuerIdentifier().SchemeManagerIdentifier() == id {
@@ -357,9 +403,11 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier) error
 		}
 	}
 	delete(conf.SchemeManagers, id)
-	// Remove from storage
-	return os.RemoveAll(fmt.Sprintf("%s/%s", conf.path, id.String()))
-	// or, remove above iterations and call .ParseFolder()?
+
+	if fromStorage {
+		return os.RemoveAll(fmt.Sprintf("%s/%s", conf.path, id.String()))
+	}
+	return nil
 }
 
 // AddSchemeManager adds the specified scheme manager to this Configuration,
@@ -563,9 +611,9 @@ func (i SchemeManagerIndex) FromString(s string) error {
 	return nil
 }
 
-// ParseIndex parses the index file of the specified manager.
-func (conf *Configuration) ParseIndex(manager *SchemeManager) error {
-	path := filepath.Join(conf.path, manager.ID, "index")
+// parseIndex parses the index file of the specified manager.
+func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error {
+	path := filepath.Join(conf.path, name, "index")
 	if err := fs.AssertPathExists(path); err != nil {
 		return errors.New("Missing scheme manager index file")
 	}

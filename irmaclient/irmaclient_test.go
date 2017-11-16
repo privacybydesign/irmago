@@ -381,6 +381,21 @@ func TestCredentialRemoval(t *testing.T) {
 	teardown(t)
 }
 
+func TestWrongSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+
+	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+	require.NoError(t, os.Remove("testdata/storage/test/irma_configuration/irma-demo/index"))
+
+	err := client.Configuration.ParseFolder()
+	_, ok := err.(*irma.SchemeManagerError)
+	require.True(t, ok)
+	require.Contains(t, client.Configuration.DisabledSchemeManagers, irmademo)
+
+	teardown(t)
+}
+
 // Test installing a new scheme manager from a qr, and do a(n issuance) session
 // within this manager to test the autmatic downloading of credential definitions,
 // issuers, and public keys.
@@ -390,7 +405,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 	// Remove irma-demo scheme manager as we need to test adding it
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, client.Configuration.RemoveSchemeManager(irmademo))
+	require.NoError(t, client.Configuration.RemoveSchemeManager(irmademo, true))
 	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
 
 	// Do an add-scheme-manager-session

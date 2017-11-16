@@ -62,7 +62,8 @@ func EnsureDirectoryExists(path string) error {
 }
 
 func Copy(src, dest string) error {
-	if err := AssertPathExists(src); err != nil {
+	exists, err := PathExists(src)
+	if err != nil || !exists {
 		return err
 	}
 	bts, err := ioutil.ReadFile(src)
