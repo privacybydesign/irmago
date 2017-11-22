@@ -322,7 +322,14 @@ func (session *session) KeyshareBlocked(duration int) {
 }
 
 func (session *session) KeyshareError(err error) {
-	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err})
+	var serr *irma.SessionError
+	var ok bool
+	if serr, ok = err.(*irma.SessionError); !ok {
+		serr = &irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err}
+	} else {
+		serr.ErrorType = irma.ErrorKeyshare
+	}
+	session.fail(serr)
 }
 
 func (session *session) KeysharePin() {
