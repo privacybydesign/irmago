@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 )
@@ -59,6 +60,11 @@ func EnsureDirectoryExists(path string) error {
 		return nil
 	}
 	return os.Mkdir(path, 0700)
+}
+
+func Empty(path string) bool {
+	matches, _ := filepath.Glob(filepath.Join(path, "*"))
+	return len(matches) == 0
 }
 
 func Copy(src, dest string) error {

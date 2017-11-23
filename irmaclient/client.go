@@ -129,7 +129,9 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	if err = cm.Configuration.ParseFolder(); err != nil {
+	err = cm.Configuration.ParseFolder()
+	_, isSchemeMgrErr := err.(*irma.SchemeManagerError)
+	if err != nil && !isSchemeMgrErr {
 		return nil, err
 	}
 

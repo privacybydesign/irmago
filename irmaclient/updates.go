@@ -34,10 +34,13 @@ var clientUpdates = []func(client *Client) error{
 		// Check the signatures of all scheme managers, if any is not ok,
 		// copy the entire irma_configuration folder from assets
 		conf := client.Configuration
+		if len(conf.DisabledSchemeManagers) > 0 {
+			return conf.CopyFromAssets(true)
+		}
 		for manager := range conf.SchemeManagers {
 			valid, err := conf.VerifySignature(manager)
 			if err != nil || !valid {
-				return conf.CopyFromAssets(false)
+				return conf.CopyFromAssets(true)
 			}
 		}
 		return nil

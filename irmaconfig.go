@@ -75,7 +75,7 @@ func NewConfiguration(path string, assets string) (conf *Configuration, err erro
 	if err = fs.EnsureDirectoryExists(conf.path); err != nil {
 		return nil, err
 	}
-	if conf.assets != "" {
+	if conf.assets != "" && fs.Empty(conf.path) {
 		if err = conf.CopyFromAssets(false); err != nil {
 			return nil, err
 		}
