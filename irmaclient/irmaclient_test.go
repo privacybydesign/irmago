@@ -392,6 +392,7 @@ func TestWrongSchemeManager(t *testing.T) {
 	_, ok := err.(*irma.SchemeManagerError)
 	require.True(t, ok)
 	require.Contains(t, client.Configuration.DisabledSchemeManagers, irmademo)
+	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
 
 	teardown(t)
 }

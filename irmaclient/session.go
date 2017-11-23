@@ -152,11 +152,11 @@ func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser 
 // the request, and informs the user of the outcome.
 func (session *session) start() {
 	defer func() {
-		handlePanic(func(err *irma.SessionError) {
+		if e := recover(); e != nil {
 			if session.Handler != nil {
-				session.Handler.Failure(session.Action, err)
+				session.Handler.Failure(session.Action, panicToError(e))
 			}
-		})
+		}
 	}()
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
@@ -255,11 +255,11 @@ func (session *session) start() {
 
 func (session *session) do(proceed bool) {
 	defer func() {
-		handlePanic(func(err *irma.SessionError) {
+		if e := recover(); e != nil {
 			if session.Handler != nil {
-				session.Handler.Failure(session.Action, err)
+				session.Handler.Failure(session.Action, panicToError(e))
 			}
-		})
+		}
 	}()
 
 	if !proceed {
@@ -388,11 +388,11 @@ func (session *session) sendResponse(message interface{}) {
 
 func (session *session) managerSession() {
 	defer func() {
-		handlePanic(func(err *irma.SessionError) {
+		if e := recover(); e != nil {
 			if session.Handler != nil {
-				session.Handler.Failure(session.Action, err)
+				session.Handler.Failure(session.Action, panicToError(e))
 			}
-		})
+		}
 	}()
 
 	// We have to download the scheme manager description.xml here before installing it,
@@ -432,23 +432,18 @@ func (session *session) managerSession() {
 
 // Session lifetime functions
 
-func handlePanic(callback func(*irma.SessionError)) {
-	if e := recover(); e != nil {
-		var info string
-		switch x := e.(type) {
-		case string:
-			info = x
-		case error:
-			info = x.Error()
-		case fmt.Stringer:
-			info = x.String()
-		default: // nop
-		}
-		fmt.Printf("Recovered from panic: '%v'\n%s\n", e, info)
-		if callback != nil {
-			callback(&irma.SessionError{ErrorType: irma.ErrorPanic, Info: info})
-		}
+func panicToError(e interface{}) *irma.SessionError {
+	var info string
+	switch x := e.(type) {
+	case string:
+		info = x
+	case error:
+		info = x.Error()
+	case fmt.Stringer:
+		info = x.String()
+	default: // nop
 	}
+	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info}
 }
 
 // Idempotently send DELETE to remote server, returning whether or not we did something

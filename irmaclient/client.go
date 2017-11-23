@@ -652,11 +652,11 @@ func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier 
 func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email, pin string) {
 	go func() {
 		defer func() {
-			handlePanic(func(err *irma.SessionError) {
+			if e := recover(); e != nil {
 				if client.handler != nil {
-					client.handler.EnrollmentError(manager, err)
+					client.handler.EnrollmentError(manager, panicToError(e))
 				}
-			})
+			}
 		}()
 
 		err := client.keyshareEnrollWorker(manager, email, pin)
