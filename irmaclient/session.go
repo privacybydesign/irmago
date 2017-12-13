@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+  "encoding/json"
 
 	"math/big"
 
@@ -62,8 +63,18 @@ type session struct {
 	done        bool
 }
 
+type manualSession struct {
+	Action    irma.Action
+	Handler     Handler
+	client      *Client
+	request     *irma.SignatureRequest
+	version  irma.Version
+	choice      *irma.DisclosureChoice
+}
+
 // We implement the handler for the keyshare protocol
 var _ keyshareSessionHandler = (*session)(nil)
+var _ keyshareSessionHandler = (*manualSession)(nil)
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
@@ -103,6 +114,112 @@ func calcVersion(qr *irma.Qr) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
+}
+
+func parseSigrequestJSON(sigrequestJSONString string) (*irma.SignatureRequest, error) {
+  sigrequestJSON := []byte(sigrequestJSONString)
+  sigrequest := &irma.SignatureRequest{}
+  err := json.Unmarshal(sigrequestJSON, sigrequest)
+
+  return sigrequest, err
+}
+
+// Start a manual session
+func (client *Client) NewManualSession(sigrequestJSONString string, handler Handler) {
+	sigrequest, err := parseSigrequestJSON(sigrequestJSONString);
+	if err != nil {
+		handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
+		return
+	}
+
+	session := &manualSession{
+		Action: irma.ActionSigning, // TODO hardcoded for now
+		Handler:  handler,
+		client:   client,
+		request:  sigrequest,
+		version:  irma.Version("2"), // TODO hardcoded for now
+	}
+
+	// Check if we are enrolled into all involved keyshare servers
+	for id := range session.request.Identifiers().SchemeManagers {
+		manager, ok := session.client.Configuration.SchemeManagers[id]
+		if !ok {
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
+			return
+		}
+		distributed := manager.Distributed()
+		_, enrolled := session.client.keyshareServers[id]
+		if distributed && !enrolled {
+			session.Handler.MissingKeyshareEnrollment(id)
+			return
+		}
+	}
+
+	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
+	if len(missing) > 0 {
+		session.Handler.UnsatisfiableRequest(session.Action, missing)
+		// TODO: session.transport.Delete() on dialog cancel
+		return
+	}
+	session.request.SetCandidates(candidates)
+
+	// Ask for permission to execute the session
+	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+		session.choice = choice
+		session.request.SetDisclosureChoice(choice)
+		fmt.Println("Starting session.do()")
+		 go session.do(proceed)
+	})
+	session.Handler.RequestSignaturePermission(
+		*session.request, "TODO: NAME", callback)
+
+	fmt.Println(session)
+}
+
+func (session *manualSession) do(proceed bool) {
+	if !proceed {
+		fmt.Println("Cancel..")
+		session.Handler.Cancelled(session.Action)
+		return
+	}
+
+	fmt.Println("Do manual session for session: ")
+	if !session.request.Identifiers().Distributed(session.client.Configuration) {
+		fmt.Println("No keyshare session needed...")
+		var message interface{}
+		var err error
+
+		message, err = session.client.Proofs(session.choice, session.request, true)
+		if err != nil {
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
+		}
+
+		mar, _ := json.Marshal(message)
+		fmt.Println(string(mar))
+
+		session.Handler.Success(session.Action)
+	} else {
+		fmt.Println("Starting keyshare session...")
+		var builders gabi.ProofBuilderList
+		var err error
+
+		builders, err = session.client.ProofBuilders(session.choice)
+		if err != nil {
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+		}
+
+		startKeyshareSession(
+			session,
+			session.Handler,
+			builders,
+			session.request,
+			session.client.Configuration,
+			session.client.keyshareServers,
+			session.client.state,
+		)
+		fmt.Println("DONE")
+	}
 }
 
 // NewSession creates and starts a new IRMA session.
@@ -315,12 +432,26 @@ func (session *session) KeyshareDone(message interface{}) {
 	session.sendResponse(message)
 }
 
+func (session *manualSession) KeyshareDone(message interface{}) {
+	messageString, _ := json.Marshal(message)
+	fmt.Println(string(messageString))
+	session.Handler.Success(session.Action)
+}
+
 func (session *session) KeyshareCancelled() {
 	session.cancel()
 }
 
+func (session *manualSession) KeyshareCancelled() {
+	session.Handler.Cancelled(session.Action)
+}
+
 func (session *session) KeyshareBlocked(duration int) {
 	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+}
+
+func (session *manualSession) KeyshareBlocked(duration int) {
+	session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
 }
 
 func (session *session) KeyshareError(err error) {
@@ -334,11 +465,28 @@ func (session *session) KeyshareError(err error) {
 	session.fail(serr)
 }
 
+func (session *manualSession) KeyshareError(err error) {
+	var serr *irma.SessionError
+	var ok bool
+	if serr, ok = err.(*irma.SessionError); !ok {
+		serr = &irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err}
+	} else {
+		serr.ErrorType = irma.ErrorKeyshare
+	}
+	session.Handler.Failure(session.Action, serr)
+}
+
 func (session *session) KeysharePin() {
+	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+}
+func (session *manualSession) KeysharePin() {
 	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
 }
 
 func (session *session) KeysharePinOK() {
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+}
+func (session *manualSession) KeysharePinOK() {
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 }
 
