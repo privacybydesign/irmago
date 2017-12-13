@@ -167,7 +167,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Cl
 		client = parseStorage(t)
 	}
 
-	url = "http://localhost:8088/irma_api_server/api/v2/" + url
+	url = "http://localhost:8081/irma_api_server/api/v2/" + url
 	//url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
 
 	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
