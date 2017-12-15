@@ -615,7 +615,7 @@ func (i SchemeManagerIndex) FromString(s string) error {
 func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error {
 	path := filepath.Join(conf.path, name, "index")
 	if err := fs.AssertPathExists(path); err != nil {
-		return errors.New("Missing scheme manager index file")
+		return fmt.Errorf("Missing scheme manager index file; tried %s", path)
 	}
 	indexbts, err := ioutil.ReadFile(path)
 	if err != nil {
