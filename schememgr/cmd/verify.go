@@ -17,35 +17,41 @@ var verifyCmd = &cobra.Command{
 	Long:  `The verify command parses the specified irma_configuration folder and checks the signatures of the contained scheme managers.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path, err := filepath.Abs(args[0])
-		if err != nil {
-			return err
+		err := RunVerify(args[0])
+		if err == nil {
+			fmt.Println()
+			fmt.Println("irma_configuration parsed and authenticated successfully.")
 		}
-		if filepath.Base(path) != "irma_configuration" {
-			return errors.New("Path is not irma_configuration")
-		}
+		return err
+	},
+}
 
-		conf, err := irma.NewConfiguration(path, "")
-		if err != nil {
-			return err
-		}
-		if err := conf.ParseFolder(); err != nil {
-			return err
-		}
+func RunVerify(path string) error {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if filepath.Base(path) != "irma_configuration" {
+		return errors.New("Path is not irma_configuration")
+	}
 
-		for _, manager := range conf.SchemeManagers {
-			for file := range manager.Index {
-				// Don't care about the actual bytes
-				if _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
-					return err
-				}
+	conf, err := irma.NewConfiguration(path, "")
+	if err != nil {
+		return err
+	}
+	if err := conf.ParseFolder(); err != nil {
+		return err
+	}
+
+	for _, manager := range conf.SchemeManagers {
+		for file := range manager.Index {
+			// Don't care about the actual bytes
+			if _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
+				return err
 			}
 		}
-
-		fmt.Println()
-		fmt.Println("irma_configuration parsed and authenticated successfully.")
-		return nil
-	},
+	}
+	return nil
 }
 
 func init() {
