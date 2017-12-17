@@ -28,6 +28,9 @@ type CredentialInfoList []*CredentialInfo
 func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 	meta := MetadataFromInt(ints[0], conf)
 	credtype := meta.CredentialType()
+	if credtype == nil {
+		return nil
+	}
 
 	attrs := make([]TranslatedString, len(credtype.Attributes))
 	for i := range credtype.Attributes {

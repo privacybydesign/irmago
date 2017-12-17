@@ -29,6 +29,22 @@ var clientUpdates = []func(client *Client) error{
 		_, err := client.ParseAndroidStorage()
 		return err
 	},
+	func(client *Client) error {
+		// Adding scheme manager index, signature and public key
+		// Check the signatures of all scheme managers, if any is not ok,
+		// copy the entire irma_configuration folder from assets
+		conf := client.Configuration
+		if len(conf.DisabledSchemeManagers) > 0 {
+			return conf.CopyFromAssets(true)
+		}
+		for manager := range conf.SchemeManagers {
+			valid, err := conf.VerifySignature(manager)
+			if err != nil || !valid {
+				return conf.CopyFromAssets(true)
+			}
+		}
+		return nil
+	},
 }
 
 // update performs any function from clientUpdates that has not
@@ -52,11 +68,18 @@ func (client *Client) update() error {
 		if err != nil {
 			str := err.Error()
 			u.Error = &str
-		} // TODO: err is only stored but not passed on!
+		}
 		client.updates = append(client.updates, u)
+		if err != nil {
+			break
+		}
 	}
 
-	return client.storage.StoreUpdates(client.updates)
+	storeErr := client.storage.StoreUpdates(client.updates)
+	if storeErr != nil {
+		return storeErr
+	}
+	return err
 }
 
 // ParseAndroidStorage parses an Android cardemu.xml shared preferences file

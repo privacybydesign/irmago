@@ -110,18 +110,18 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode}
+		return &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode, StatusMessage: res.Status}
 	}
 	if res.StatusCode != 200 {
 		apierr := &ApiError{}
 		err = json.Unmarshal(body, apierr)
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &SessionError{ErrorType: ErrorServerResponse, Status: res.StatusCode}
+			return &SessionError{ErrorType: ErrorServerResponse, Status: res.StatusCode, StatusMessage: res.Status}
 		}
 		if verbose {
 			fmt.Printf("ERROR: %+v\n", apierr)
 		}
-		return &SessionError{ErrorType: ErrorApi, Status: res.StatusCode, ApiError: apierr}
+		return &SessionError{ErrorType: ErrorApi, Status: res.StatusCode, ApiError: apierr, StatusMessage: res.Status}
 	}
 
 	if verbose {
@@ -132,7 +132,7 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	} else {
 		err = json.Unmarshal(body, result)
 		if err != nil {
-			return &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode}
+			return &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode, StatusMessage: res.Status}
 		}
 	}
 
@@ -144,9 +144,13 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
+
+	if res.StatusCode != 200 {
+		return nil, &SessionError{ErrorType: ErrorServerResponse, Status: res.StatusCode}
+	}
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode}
+		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode, StatusMessage: res.Status}
 	}
 	return b, nil
 }

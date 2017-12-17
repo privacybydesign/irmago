@@ -6,19 +6,35 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 )
 
 // AssertPathExists returns nil only if it has been successfully
-// verified that the specified path exists.
-func AssertPathExists(path string) error {
-	exist, err := PathExists(path)
-	if err != nil {
-		return err
+// verified that all specified paths exists.
+func AssertPathExists(paths ...string) error {
+	for _, p := range paths {
+		exist, err := PathExists(p)
+		if err != nil {
+			return err
+		}
+		if !exist {
+			return errors.Errorf("Path %s does not exist", p)
+		}
 	}
-	if !exist {
-		return errors.Errorf("Path %s does not exist", path)
+	return nil
+}
+
+func AssertPathNotExists(paths ...string) error {
+	for _, p := range paths {
+		exist, err := PathExists(p)
+		if err != nil {
+			return err
+		}
+		if exist {
+			return errors.Errorf("Path %s exists but should not", p)
+		}
 	}
 	return nil
 }
@@ -44,6 +60,23 @@ func EnsureDirectoryExists(path string) error {
 		return nil
 	}
 	return os.Mkdir(path, 0700)
+}
+
+func Empty(path string) bool {
+	matches, _ := filepath.Glob(filepath.Join(path, "*"))
+	return len(matches) == 0
+}
+
+func Copy(src, dest string) error {
+	exists, err := PathExists(src)
+	if err != nil || !exists {
+		return err
+	}
+	bts, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return SaveFile(dest, bts)
 }
 
 // Save the filecontents at the specified path atomically:

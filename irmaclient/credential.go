@@ -19,6 +19,12 @@ func newCredential(gabicred *gabi.Credential, conf *irma.Configuration) (*creden
 		Credential:        gabicred,
 		MetadataAttribute: meta,
 	}
+
+	if cred.CredentialType() == nil {
+		// Unknown credtype, populate Pk field later
+		return cred, nil
+	}
+
 	var err error
 	cred.Pk, err = conf.PublicKey(meta.CredentialType().IssuerIdentifier(), cred.KeyCounter())
 	if err != nil {

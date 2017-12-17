@@ -66,6 +66,10 @@ func (oi metaObjectIdentifier) String() string {
 	return string(oi)
 }
 
+func (oi metaObjectIdentifier) Empty() bool {
+	return len(oi) == 0
+}
+
 func (oi metaObjectIdentifier) Root() string {
 	str := string(oi)
 	if i := strings.Index(str, "."); i != -1 {

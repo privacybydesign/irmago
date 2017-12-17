@@ -65,7 +65,7 @@ type clientConfiguration struct {
 	ravenDSN         string
 }
 
-var defaultClientConfig clientConfiguration = clientConfiguration{
+var defaultClientConfig = clientConfiguration{
 	SendCrashReports: true,
 	ravenDSN:         "", // Set this in the init() function, empty string -> no crash reports
 }
@@ -77,6 +77,8 @@ type KeyshareHandler interface {
 	EnrollmentSuccess(manager irma.SchemeManagerIdentifier)
 }
 
+// ClientHandler informs the user that the configuration or the list of attributes
+// that this client uses has been updated.
 type ClientHandler interface {
 	KeyshareHandler
 
@@ -127,7 +129,9 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	if err = cm.Configuration.ParseFolder(); err != nil {
+	err = cm.Configuration.ParseFolder()
+	_, isSchemeMgrErr := err.(*irma.SchemeManagerError)
+	if err != nil && !isSchemeMgrErr {
 		return nil, err
 	}
 
@@ -179,6 +183,9 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	for _, attrlistlist := range client.attributes {
 		for index, attrlist := range attrlistlist {
 			info := attrlist.Info()
+			if info == nil {
+				continue
+			}
 			info.Index = index
 			list = append(list, info)
 		}
@@ -191,7 +198,10 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 // addCredential adds the specified credential to the Client, saving its signature
 // imediately, and optionally cm.attributes as well.
 func (client *Client) addCredential(cred *credential, storeAttributes bool) (err error) {
-	id := cred.CredentialType().Identifier()
+	id := irma.NewCredentialTypeIdentifier("")
+	if cred.CredentialType() != nil {
+		id = cred.CredentialType().Identifier()
+	}
 
 	// Don't add duplicate creds
 	for _, attrlistlist := range client.attributes {
@@ -203,17 +213,19 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 	}
 
 	// If this is a singleton credential type, ensure we have at most one by removing any previous instance
-	if cred.CredentialType().IsSingleton && len(client.creds(id)) > 0 {
+	if !id.Empty() && cred.CredentialType().IsSingleton && len(client.creds(id)) > 0 {
 		client.remove(id, 0, false) // Index is 0, because if we're here we have exactly one
 	}
 
 	// Append the new cred to our attributes and credentials
 	client.attributes[id] = append(client.attrs(id), cred.AttributeList())
-	if _, exists := client.credentials[id]; !exists {
-		client.credentials[id] = make(map[int]*credential)
+	if !id.Empty() {
+		if _, exists := client.credentials[id]; !exists {
+			client.credentials[id] = make(map[int]*credential)
+		}
+		counter := len(client.attributes[id]) - 1
+		client.credentials[id][counter] = cred
 	}
-	counter := len(client.attributes[id]) - 1
-	client.credentials[id][counter] = cred
 
 	if err = client.storage.StoreSignature(cred); err != nil {
 		return
@@ -274,10 +286,12 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	return nil
 }
 
+// RemoveCredential removes the specified credential.
 func (client *Client) RemoveCredential(id irma.CredentialTypeIdentifier, index int) error {
 	return client.remove(id, index, true)
 }
 
+// RemoveCredentialByHash removes the specified credential.
 func (client *Client) RemoveCredentialByHash(hash string) error {
 	cred, index, err := client.credentialByHash(hash)
 	if err != nil {
@@ -286,6 +300,7 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
+// RemoveAllCredentials removes all credentials.
 func (client *Client) RemoveAllCredentials() error {
 	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
 	for _, attrlistlist := range client.attributes {
@@ -639,11 +654,11 @@ func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier 
 func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email, pin string) {
 	go func() {
 		defer func() {
-			handlePanic(func(err *irma.SessionError) {
+			if e := recover(); e != nil {
 				if client.handler != nil {
-					client.handler.EnrollmentError(manager, err)
+					client.handler.EnrollmentError(manager, panicToError(e))
 				}
-			})
+			}
 		}()
 
 		err := client.keyshareEnrollWorker(manager, email, pin)
@@ -699,6 +714,7 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 
+// KeyshareRemoveAll removes all keyshare server registrations.
 func (client *Client) KeyshareRemoveAll() error {
 	client.keyshareServers = map[irma.SchemeManagerIdentifier]*keyshareServer{}
 	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
@@ -710,9 +726,9 @@ func (client *Client) KeyshareRemoveAll() error {
 func (client *Client) addLogEntry(entry *LogEntry) error {
 	client.logs = append(client.logs, entry)
 	return client.storage.StoreLogs(client.logs)
-	return nil
 }
 
+// Logs returns the log entries of past events.
 func (client *Client) Logs() ([]*LogEntry, error) {
 	if client.logs == nil || len(client.logs) == 0 {
 		var err error
@@ -724,6 +740,8 @@ func (client *Client) Logs() ([]*LogEntry, error) {
 	return client.logs, nil
 }
 
+// SendCrashReports toggles whether or not crash reports should be sent to Sentry.
+// Has effect only after restarting.
 func (client *Client) SendCrashReports(val bool) {
 	if val == client.config.SendCrashReports {
 		return
