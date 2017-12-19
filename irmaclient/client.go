@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/credentials/go-go-gadget-paillier"
-	"github.com/credentials/irmago"
-	"github.com/credentials/irmago/internal/fs"
+	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"

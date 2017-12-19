@@ -9,8 +9,8 @@ import (
 
 	"encoding/json"
 
-	"github.com/credentials/irmago"
-	"github.com/credentials/irmago/internal/fs"
+	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/mhe/gabi"
 	"github.com/stretchr/testify/require"
 )

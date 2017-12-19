@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/credentials/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // CredentialInfo contains all information of an IRMA credential.

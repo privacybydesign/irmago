@@ -8,8 +8,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/credentials/irmago"
-	"github.com/credentials/irmago/internal/fs"
+	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )

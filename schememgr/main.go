@@ -1,6 +1,6 @@
 package main
 
-import "github.com/credentials/irmago/schememgr/cmd"
+import "github.com/privacybydesign/irmago/schememgr/cmd"
 
 func main() {
 	cmd.Execute()
