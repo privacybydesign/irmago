@@ -1,7 +1,7 @@
 package irmaclient
 
 import (
-	"github.com/credentials/irmago"
+	"github.com/privacybydesign/irmago"
 	"github.com/mhe/gabi"
 )
 

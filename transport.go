@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/credentials/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.

@@ -26,7 +26,7 @@ import (
 	"encoding/pem"
 	"math/big"
 
-	"github.com/credentials/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
