@@ -26,7 +26,7 @@ func (th TestHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdenti
 }
 
 func (th TestHandler) StatusUpdate(action irma.Action, status irma.Status) {}
-func (th TestHandler) Success(action irma.Action) {
+func (th TestHandler) Success(action irma.Action, result string) {
 	th.c <- nil
 }
 func (th TestHandler) Cancelled(action irma.Action) {

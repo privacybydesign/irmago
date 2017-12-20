@@ -29,7 +29,7 @@ type LogEntry struct {
 
 const actionRemoval = irma.Action("removal")
 
-func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
+func (session *interactiveSession) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
 		Type:        session.Action,
 		Time:        irma.Timestamp(time.Now()),

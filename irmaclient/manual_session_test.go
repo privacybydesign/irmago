@@ -52,7 +52,8 @@ func TestManualKeyShareSession(t *testing.T) {
 }
 
 
-func (sh *ManualSessionHandler) Success(irmaAction irma.Action) {
+func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
+  fmt.Println("Result: " + result)
 	sh.c <- nil
 }
 func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, missingAttributes irma.AttributeDisjunctionList) {  sh.t.Fail() }
@@ -67,7 +68,7 @@ func (sh *ManualSessionHandler) RequestSignaturePermission(request irma.Signatur
 	ph(true, &c)
 }
 
-// These handler should not be called, fail test if they are called
+// These handlers should not be called, fail test if they are called
 func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) { sh.t.Fail() }
 func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {  sh.t.Fail() }
 func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {  sh.t.Fail() }
