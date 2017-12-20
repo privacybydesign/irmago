@@ -1,16 +1,16 @@
 package irmaclient
 
 import (
-  "fmt"
-  "testing"
-  "github.com/credentials/irmago"
+	"fmt"
+	"github.com/privacybydesign/irmago"
+	"testing"
 )
 
 type ManualSessionHandler struct {
 	permissionHandler PermissionHandler
 	pinHandler        PinHandler
-	t				  *testing.T
-	c				  chan *irma.SessionError
+	t                 *testing.T
+	c                 chan *irma.SessionError
 }
 
 var client *Client
@@ -51,15 +51,15 @@ func TestManualKeyShareSession(t *testing.T) {
 	}
 }
 
-
 func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
-  fmt.Println("Result: " + result)
 	sh.c <- nil
 }
-func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, missingAttributes irma.AttributeDisjunctionList) {  sh.t.Fail() }
+func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, missingAttributes irma.AttributeDisjunctionList) {
+	sh.t.Fail()
+}
 
 // Done in irma bridge?
-func (sh *ManualSessionHandler) StatusUpdate(irmaAction irma.Action, status irma.Status) { }
+func (sh *ManualSessionHandler) StatusUpdate(irmaAction irma.Action, status irma.Status) {}
 func (sh *ManualSessionHandler) RequestPin(remainingAttempts int, ph PinHandler) {
 	ph(true, "12345")
 }
@@ -70,10 +70,18 @@ func (sh *ManualSessionHandler) RequestSignaturePermission(request irma.Signatur
 
 // These handlers should not be called, fail test if they are called
 func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) { sh.t.Fail() }
-func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {  sh.t.Fail() }
-func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {  sh.t.Fail() }
-func (sh *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {  sh.t.Fail() }
-func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {  sh.t.Fail() }
+func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
+	sh.t.Fail()
+}
+func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
+	sh.t.Fail()
+}
+func (sh *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
+	sh.t.Fail()
+}
+func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
+	sh.t.Fail()
+}
 func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.SessionError) {
 	fmt.Println(err.Err)
 	sh.t.Fail()
