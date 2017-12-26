@@ -183,7 +183,7 @@ func TestUnmarshaling(t *testing.T) {
 	// Do session so we can examine its log item later
 	logs, err := client.Logs()
 	require.NoError(t, err)
-	jwt := getIssuanceJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
 	newclient, err := New("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
@@ -422,7 +422,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
 
 	// Do a session to test downloading of cred types, issuers and keys
-	jwt := getIssuanceJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
 	teardown(t)
