@@ -631,7 +631,7 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error
 func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path string) ([]byte, error) {
 	signedHash, ok := manager.Index[path]
 	if !ok {
-		return nil, errors.New("File not present in scheme manager index")
+		return nil, errors.Errorf("File %s not present in scheme manager index", path)
 	}
 
 	bts, err := ioutil.ReadFile(filepath.Join(conf.path, path))

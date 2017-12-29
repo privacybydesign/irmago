@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/privacybydesign/irmago"
-	"github.com/go-errors/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -32,7 +31,7 @@ func RunVerify(path string) error {
 		return err
 	}
 	if filepath.Base(path) != "irma_configuration" {
-		return errors.New("Path is not irma_configuration")
+		fmt.Printf("Notice: specified folder name is '%s'; when using in IRMA applications it should be called 'irma_configuration'\n", filepath.Base(path))
 	}
 
 	conf, err := irma.NewConfiguration(path, "")
