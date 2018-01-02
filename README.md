@@ -31,6 +31,6 @@ For running the unit tests, you need to run [irma_keyshare_server](https://githu
 ### Running the tests
 The tests can be run by using:
 
-    go test
+    go test -v ./...
 
 <!-- vim: set ts=4 sw=4: -->
