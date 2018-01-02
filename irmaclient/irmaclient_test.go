@@ -16,13 +16,30 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	retCode := m.Run()
-
-	// TODO make testdata/storage
-
+	// Remove any output from previously run to ensure a clean state
+	// Some of the tests don't like it when there is existing state in storage
 	err := os.RemoveAll("testdata/storage/test")
 	if err != nil {
-		fmt.Println("Could not delete test storage")
+		fmt.Println("Could not delete test storage", err.Error())
+		os.Exit(1)
+	}
+
+	// EnsureDirectoryExists eventually uses mkdir from the OS which is not recursive
+	// so we have to create the temporary test storage by two function calls.
+	// We ignore any error possibly returned by creating the first one, because if it errors,
+	// then the second one certainly will as well.
+	_ = fs.EnsureDirectoryExists("testdata/storage")
+	err = fs.EnsureDirectoryExists("testdata/storage/test")
+	if err != nil {
+		fmt.Println("Could not create test storage: ", err.Error())
+		os.Exit(1)
+	}
+
+	retCode := m.Run()
+
+	err = os.RemoveAll("testdata/storage/test")
+	if err != nil {
+		fmt.Println("Could not delete test storage", err.Error())
 		os.Exit(1)
 	}
 
@@ -38,7 +55,7 @@ func (i *IgnoringClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIden
 
 func parseStorage(t *testing.T) *Client {
 	exists, err := fs.PathExists("testdata/storage/test")
-	require.NoError(t, err, "pathexists() failed")
+	require.NoError(t, err, "fs.PathExists() failed")
 	if !exists {
 		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
 	}
