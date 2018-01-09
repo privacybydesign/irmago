@@ -55,7 +55,6 @@ type baseSession interface {
 }
 
 type session struct {
-	baseSession
 	Action  irma.Action
 	Handler Handler
 	Version irma.Version
@@ -65,6 +64,9 @@ type session struct {
 	downloaded  *irma.IrmaIdentifierSet
 	irmaSession irma.IrmaSession
 }
+
+// We implement baseSessino for a session
+var _ baseSession = (*session)(nil)
 
 // A interactiveSession is an interactive IRMA session
 type interactiveSession struct {
