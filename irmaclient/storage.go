@@ -5,9 +5,9 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/mhe/gabi"
 )
 
 // This file contains the storage struct and its methods,
@@ -21,14 +21,14 @@ type storage struct {
 
 // Filenames in which we store stuff
 const (
-	skFile         = "sk"
-	attributesFile = "attrs"
-	kssFile        = "kss"
-	paillierFile   = "paillier"
-	updatesFile    = "updates"
-	logsFile       = "logs"
-	configFile     = "config"
-	signaturesDir  = "sigs"
+	skFile          = "sk"
+	attributesFile  = "attrs"
+	kssFile         = "kss"
+	paillierFile    = "paillier"
+	updatesFile     = "updates"
+	logsFile        = "logs"
+	preferencesFile = "preferences"
+	signaturesDir   = "sigs"
 )
 
 func (s *storage) path(p string) string {
@@ -111,8 +111,8 @@ func (s *storage) StoreLogs(logs []*LogEntry) error {
 	return s.store(logs, logsFile)
 }
 
-func (s *storage) StoreClientConfig(config clientConfiguration) error {
-	return s.store(config, configFile)
+func (s *storage) StorePreferences(prefs Preferences) error {
+	return s.store(prefs, preferencesFile)
 }
 
 func (s *storage) StoreUpdates(updates []update) (err error) {
@@ -211,7 +211,7 @@ func (s *storage) LoadUpdates() (updates []update, err error) {
 	return updates, nil
 }
 
-func (s *storage) LoadClientConfig() (clientConfiguration, error) {
+func (s *storage) LoadClientConfig() (Preferences, error) {
 	config := defaultClientConfig
-	return config, s.load(&config, configFile)
+	return config, s.load(&config, preferencesFile)
 }

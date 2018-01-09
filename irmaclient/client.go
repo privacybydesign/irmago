@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/credentials/go-go-gadget-paillier"
-	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -48,10 +48,8 @@ type Client struct {
 	// Where we store/load it to/from
 	storage storage
 
-	// configuration
-	config clientConfiguration
-
 	// Other state
+	Preferences              Preferences
 	Configuration            *irma.Configuration
 	UnenrolledSchemeManagers []irma.SchemeManagerIdentifier
 	irmaConfigurationPath    string
@@ -60,14 +58,14 @@ type Client struct {
 	state                    *issuanceState
 }
 
-type clientConfiguration struct {
-	SendCrashReports bool
-	ravenDSN         string
+type Preferences struct {
+	EnableCrashReporting bool
+	SentryDSN            string
 }
 
-var defaultClientConfig = clientConfiguration{
-	SendCrashReports: true,
-	ravenDSN:         "", // Set this in the init() function, empty string -> no crash reports
+var defaultClientConfig = Preferences{
+	EnableCrashReporting: true,
+	SentryDSN:            "", // Set this in the init() function, empty string -> no crash reports
 }
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
@@ -141,10 +139,10 @@ func New(
 		return nil, err
 	}
 
-	if cm.config, err = cm.storage.LoadClientConfig(); err != nil {
+	if cm.Preferences, err = cm.storage.LoadClientConfig(); err != nil {
 		return nil, err
 	}
-	cm.applyClientConfig()
+	cm.applyPreferences()
 
 	// Perform new update functions from clientUpdates, if any
 	if err = cm.update(); err != nil {
@@ -742,20 +740,16 @@ func (client *Client) Logs() ([]*LogEntry, error) {
 
 // SendCrashReports toggles whether or not crash reports should be sent to Sentry.
 // Has effect only after restarting.
-func (client *Client) SendCrashReports(val bool) {
-	if val == client.config.SendCrashReports {
-		return
-	}
-
-	client.config.SendCrashReports = val
-	if val {
-		raven.SetDSN(client.config.ravenDSN)
-	}
-	_ = client.storage.StoreClientConfig(client.config)
+func (client *Client) SetCrashReportingPreference(enable bool) {
+	client.Preferences.EnableCrashReporting = enable
+	_ = client.storage.StorePreferences(client.Preferences)
+	client.applyPreferences()
 }
 
-func (client *Client) applyClientConfig() {
-	if client.config.SendCrashReports && client.config.ravenDSN != "" {
-		raven.SetDSN(client.config.ravenDSN)
+func (client *Client) applyPreferences() {
+	if client.Preferences.EnableCrashReporting {
+		raven.SetDSN(client.Preferences.SentryDSN)
+	} else {
+		raven.SetDSN("")
 	}
 }
