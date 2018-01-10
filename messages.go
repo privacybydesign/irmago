@@ -76,6 +76,7 @@ type SessionInfo struct {
 const (
 	StatusConnected     = Status("connected")
 	StatusCommunicating = Status("communicating")
+	StatusManualStarted = Status("manualStarted")
 )
 
 // Actions

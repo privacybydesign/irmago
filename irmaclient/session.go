@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -26,7 +27,7 @@ type PinHandler func(proceed bool, pin string)
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
 	StatusUpdate(action irma.Action, status irma.Status)
-	Success(action irma.Action)
+	Success(action irma.Action, result string)
 	Cancelled(action irma.Action)
 	Failure(action irma.Action, err *irma.SessionError)
 	UnsatisfiableRequest(action irma.Action, missing irma.AttributeDisjunctionList)
@@ -45,25 +46,48 @@ type SessionDismisser interface {
 	Dismiss()
 }
 
-// A session is an IRMA session.
-type session struct {
-	Action    irma.Action
-	Version   irma.Version
-	ServerURL string
-	Handler   Handler
+// baseSession contains methods generic to both manual and interactive sessions
+type baseSession interface {
+	getBuilders() (gabi.ProofBuilderList, error)
+	getProof() (interface{}, error)
+	panicFailure()
+	checkKeyshareEnrollment() bool
+}
 
-	info        *irma.SessionInfo
-	client      *Client
-	jwt         irma.RequestorJwt
-	irmaSession irma.IrmaSession
-	transport   *irma.HTTPTransport
+type session struct {
+	Action  irma.Action
+	Handler Handler
+	Version irma.Version
+
 	choice      *irma.DisclosureChoice
+	client      *Client
 	downloaded  *irma.IrmaIdentifierSet
-	done        bool
+	irmaSession irma.IrmaSession
+}
+
+// We implement baseSessino for a session
+var _ baseSession = (*session)(nil)
+
+// A interactiveSession is an interactive IRMA session
+type interactiveSession struct {
+	session
+
+	ServerURL string
+
+	info      *irma.SessionInfo
+	jwt       irma.RequestorJwt
+	transport *irma.HTTPTransport
+	done      bool
+}
+
+// A manualSession is a session started from a request
+type manualSession struct {
+	session
 }
 
 // We implement the handler for the keyshare protocol
-var _ keyshareSessionHandler = (*session)(nil)
+var _ keyshareSessionHandler = (*interactiveSession)(nil)
+var _ keyshareSessionHandler = (*manualSession)(nil)
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
@@ -105,14 +129,158 @@ func calcVersion(qr *irma.Qr) (string, error) {
 	return "", fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
 }
 
-// NewSession creates and starts a new IRMA session.
+func (session *session) getBuilders() (gabi.ProofBuilderList, error) {
+	var builders gabi.ProofBuilderList
+	var err error
+
+	switch session.Action {
+	case irma.ActionSigning:
+		fallthrough
+	case irma.ActionDisclosing:
+		builders, err = session.client.ProofBuilders(session.choice)
+	case irma.ActionIssuing:
+		builders, err = session.client.IssuanceProofBuilders(session.irmaSession.(*irma.IssuanceRequest))
+	}
+
+	return builders, err
+}
+
+func (session *session) getProof() (interface{}, error) {
+	var message interface{}
+	var err error
+
+	switch session.Action {
+	case irma.ActionSigning:
+		message, err = session.client.Proofs(session.choice, session.irmaSession, true)
+	case irma.ActionDisclosing:
+		message, err = session.client.Proofs(session.choice, session.irmaSession, false)
+	case irma.ActionIssuing:
+		message, err = session.client.IssueCommitments(session.irmaSession.(*irma.IssuanceRequest))
+	}
+
+	return message, err
+}
+
+// Check if we are enrolled into all involved keyshare servers
+func (session *session) checkKeyshareEnrollment() bool {
+	for id := range session.irmaSession.Identifiers().SchemeManagers {
+		manager, ok := session.client.Configuration.SchemeManagers[id]
+		if !ok {
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
+			return false
+		}
+		distributed := manager.Distributed()
+		_, enrolled := session.client.keyshareServers[id]
+		if distributed && !enrolled {
+			session.Handler.MissingKeyshareEnrollment(id)
+			return false
+		}
+	}
+	return true
+}
+
+func (session *session) panicFailure() {
+	if e := recover(); e != nil {
+		if session.Handler != nil {
+			session.Handler.Failure(session.Action, panicToError(e))
+		}
+	}
+}
+
+func parseSigrequestJSON(sigrequestJSONString string) (*irma.SignatureRequest, error) {
+	sigrequestJSON := []byte(sigrequestJSONString)
+	sigrequest := &irma.SignatureRequest{}
+	err := json.Unmarshal(sigrequestJSON, sigrequest)
+
+	return sigrequest, err
+}
+
+// Start a manual session
+func (client *Client) NewManualSession(sigrequestJSONString string, handler Handler) {
+	sigrequest, err := parseSigrequestJSON(sigrequestJSONString)
+	if err != nil {
+		handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
+		return
+	}
+
+	session := &manualSession{
+		session: session{
+			Action:      irma.ActionSigning, // TODO hardcoded for now
+			Handler:     handler,
+			client:      client,
+			Version:     irma.Version("2"), // TODO hardcoded for now
+			irmaSession: sigrequest,
+		},
+	}
+
+	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
+
+	// Check if we are enrolled into all involved keyshare servers
+	if !session.checkKeyshareEnrollment() {
+		return
+	}
+
+	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
+	if len(missing) > 0 {
+		session.Handler.UnsatisfiableRequest(session.Action, missing)
+		// TODO: session.transport.Delete() on dialog cancel
+		return
+	}
+	session.irmaSession.SetCandidates(candidates)
+
+	// Ask for permission to execute the session
+	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+		session.choice = choice
+		session.irmaSession.SetDisclosureChoice(choice)
+		go session.do(proceed)
+	})
+	session.Handler.RequestSignaturePermission(
+		*session.irmaSession.(*irma.SignatureRequest), "E-mail request", callback)
+}
+
+func (session *manualSession) do(proceed bool) {
+	defer session.panicFailure()
+
+	if !proceed {
+		session.Handler.Cancelled(session.Action)
+		return
+	}
+
+	if !session.irmaSession.Identifiers().Distributed(session.client.Configuration) {
+		message, err := session.getProof()
+		if err != nil {
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
+		}
+		session.sendResponse(message)
+	} else {
+		builders, err := session.getBuilders()
+		if err != nil {
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+		}
+
+		startKeyshareSession(
+			session,
+			session.Handler,
+			builders,
+			session.irmaSession,
+			session.client.Configuration,
+			session.client.keyshareServers,
+			session.client.state,
+		)
+	}
+}
+
+// NewSession creates and starts a new interactive IRMA session
 func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser {
-	session := &session{
-		Action:    irma.Action(qr.Type),
+	session := &interactiveSession{
 		ServerURL: qr.URL,
-		Handler:   handler,
 		transport: irma.NewHTTPTransport(qr.URL),
-		client:    client,
+		session: session{
+			Action:  irma.Action(qr.Type),
+			Handler: handler,
+			client:  client,
+		},
 	}
 
 	if session.Action == irma.ActionSchemeManager {
@@ -150,14 +318,8 @@ func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser 
 
 // start retrieves the first message in the IRMA protocol, checks if we can perform
 // the request, and informs the user of the outcome.
-func (session *session) start() {
-	defer func() {
-		if e := recover(); e != nil {
-			if session.Handler != nil {
-				session.Handler.Failure(session.Action, panicToError(e))
-			}
-		}
-	}()
+func (session *interactiveSession) start() {
+	defer session.panicFailure()
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
@@ -187,19 +349,8 @@ func (session *session) start() {
 	}
 
 	// Check if we are enrolled into all involved keyshare servers
-	for id := range session.irmaSession.Identifiers().SchemeManagers {
-		manager, ok := session.client.Configuration.SchemeManagers[id]
-		if !ok {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
-			return
-		}
-		distributed := manager.Distributed()
-		_, enrolled := session.client.keyshareServers[id]
-		if distributed && !enrolled {
-			session.delete()
-			session.Handler.MissingKeyshareEnrollment(id)
-			return
-		}
+	if !session.checkKeyshareEnrollment() {
+		return
 	}
 
 	// Download missing credential types/issuers/public keys from the scheme manager
@@ -253,14 +404,8 @@ func (session *session) start() {
 	}
 }
 
-func (session *session) do(proceed bool) {
-	defer func() {
-		if e := recover(); e != nil {
-			if session.Handler != nil {
-				session.Handler.Failure(session.Action, panicToError(e))
-			}
-		}
-	}()
+func (session *interactiveSession) do(proceed bool) {
+	defer session.panicFailure()
 
 	if !proceed {
 		session.cancel()
@@ -269,36 +414,17 @@ func (session *session) do(proceed bool) {
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
 	if !session.irmaSession.Identifiers().Distributed(session.client.Configuration) {
-		var message interface{}
-		var err error
-		switch session.Action {
-		case irma.ActionSigning:
-			message, err = session.client.Proofs(session.choice, session.irmaSession, true)
-		case irma.ActionDisclosing:
-			message, err = session.client.Proofs(session.choice, session.irmaSession, false)
-		case irma.ActionIssuing:
-			message, err = session.client.IssueCommitments(session.irmaSession.(*irma.IssuanceRequest))
-		}
+		message, err := session.getProof()
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 			return
 		}
 		session.sendResponse(message)
 	} else {
-		var builders gabi.ProofBuilderList
-		var err error
-		switch session.Action {
-		case irma.ActionSigning:
-			fallthrough
-		case irma.ActionDisclosing:
-			builders, err = session.client.ProofBuilders(session.choice)
-		case irma.ActionIssuing:
-			builders, err = session.client.IssuanceProofBuilders(session.irmaSession.(*irma.IssuanceRequest))
-		}
+		builders, err := session.getBuilders()
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 		}
-
 		startKeyshareSession(
 			session,
 			session.Handler,
@@ -311,19 +437,36 @@ func (session *session) do(proceed bool) {
 	}
 }
 
-func (session *session) KeyshareDone(message interface{}) {
+func (session *interactiveSession) KeyshareDone(message interface{}) {
 	session.sendResponse(message)
 }
 
-func (session *session) KeyshareCancelled() {
+func (session *manualSession) KeyshareDone(message interface{}) {
+	messageJson, err := json.Marshal(message)
+	if err != nil {
+		session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
+		return
+	}
+	session.Handler.Success(session.Action, string(messageJson))
+}
+
+func (session *interactiveSession) KeyshareCancelled() {
 	session.cancel()
 }
 
-func (session *session) KeyshareBlocked(duration int) {
+func (session *manualSession) KeyshareCancelled() {
+	session.Handler.Cancelled(session.Action)
+}
+
+func (session *interactiveSession) KeyshareBlocked(duration int) {
 	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
 }
 
-func (session *session) KeyshareError(err error) {
+func (session *manualSession) KeyshareBlocked(duration int) {
+	session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+}
+
+func (session *interactiveSession) KeyshareError(err error) {
 	var serr *irma.SessionError
 	var ok bool
 	if serr, ok = err.(*irma.SessionError); !ok {
@@ -332,6 +475,17 @@ func (session *session) KeyshareError(err error) {
 		serr.ErrorType = irma.ErrorKeyshare
 	}
 	session.fail(serr)
+}
+
+func (session *manualSession) KeyshareError(err error) {
+	var serr *irma.SessionError
+	var ok bool
+	if serr, ok = err.(*irma.SessionError); !ok {
+		serr = &irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err}
+	} else {
+		serr.ErrorType = irma.ErrorKeyshare
+	}
+	session.Handler.Failure(session.Action, serr)
 }
 
 func (session *session) KeysharePin() {
@@ -344,7 +498,7 @@ func (session *session) KeysharePinOK() {
 
 type disclosureResponse string
 
-func (session *session) sendResponse(message interface{}) {
+func (session *interactiveSession) sendResponse(message interface{}) {
 	var log *LogEntry
 	var err error
 
@@ -383,10 +537,20 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.done = true
-	session.Handler.Success(session.Action)
+	session.Handler.Success(session.Action, "")
 }
 
-func (session *session) managerSession() {
+func (session *manualSession) sendResponse(message interface{}) {
+	messageJson, err := json.Marshal(message)
+	if err != nil {
+		session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
+		return
+	}
+
+	session.Handler.Success(session.Action, string(messageJson))
+}
+
+func (session *interactiveSession) managerSession() {
 	defer func() {
 		if e := recover(); e != nil {
 			if session.Handler != nil {
@@ -425,7 +589,7 @@ func (session *session) managerSession() {
 				CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
 			},
 		)
-		session.Handler.Success(session.Action)
+		session.Handler.Success(session.Action, "")
 	})
 	return
 }
@@ -447,7 +611,7 @@ func panicToError(e interface{}) *irma.SessionError {
 }
 
 // Idempotently send DELETE to remote server, returning whether or not we did something
-func (session *session) delete() bool {
+func (session *interactiveSession) delete() bool {
 	if !session.done {
 		session.transport.Delete()
 		session.done = true
@@ -456,7 +620,7 @@ func (session *session) delete() bool {
 	return false
 }
 
-func (session *session) fail(err *irma.SessionError) {
+func (session *interactiveSession) fail(err *irma.SessionError) {
 	if session.delete() {
 		err.Err = errors.Wrap(err.Err, 0)
 		if session.downloaded != nil && !session.downloaded.Empty() {
@@ -466,7 +630,7 @@ func (session *session) fail(err *irma.SessionError) {
 	}
 }
 
-func (session *session) cancel() {
+func (session *interactiveSession) cancel() {
 	if session.delete() {
 		if session.downloaded != nil && !session.downloaded.Empty() {
 			session.client.handler.UpdateConfiguration(session.downloaded)
@@ -475,7 +639,7 @@ func (session *session) cancel() {
 	}
 }
 
-func (session *session) Dismiss() {
+func (session *interactiveSession) Dismiss() {
 	session.cancel()
 }
 
