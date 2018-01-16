@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/credentials/go-go-gadget-paillier"
-	"github.com/getsentry/raven-go"
+	raven "github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -58,14 +58,16 @@ type Client struct {
 	state                    *issuanceState
 }
 
+// SentryDSN should be set in the init() function
+// Setting it to an empty string means no crash reports
+var SentryDSN = ""
+
 type Preferences struct {
 	EnableCrashReporting bool
-	SentryDSN            string
 }
 
-var defaultClientConfig = Preferences{
+var defaultPreferences = Preferences{
 	EnableCrashReporting: true,
-	SentryDSN:            "", // Set this in the init() function, empty string -> no crash reports
 }
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
@@ -139,7 +141,7 @@ func New(
 		return nil, err
 	}
 
-	if cm.Preferences, err = cm.storage.LoadClientConfig(); err != nil {
+	if cm.Preferences, err = cm.storage.LoadPreferences(); err != nil {
 		return nil, err
 	}
 	cm.applyPreferences()
@@ -738,7 +740,7 @@ func (client *Client) Logs() ([]*LogEntry, error) {
 	return client.logs, nil
 }
 
-// SendCrashReports toggles whether or not crash reports should be sent to Sentry.
+// SetCrashReportingPreference toggles whether or not crash reports should be sent to Sentry.
 // Has effect only after restarting.
 func (client *Client) SetCrashReportingPreference(enable bool) {
 	client.Preferences.EnableCrashReporting = enable
@@ -748,7 +750,7 @@ func (client *Client) SetCrashReportingPreference(enable bool) {
 
 func (client *Client) applyPreferences() {
 	if client.Preferences.EnableCrashReporting {
-		raven.SetDSN(client.Preferences.SentryDSN)
+		raven.SetDSN(SentryDSN)
 	} else {
 		raven.SetDSN("")
 	}

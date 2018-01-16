@@ -211,7 +211,7 @@ func (s *storage) LoadUpdates() (updates []update, err error) {
 	return updates, nil
 }
 
-func (s *storage) LoadClientConfig() (Preferences, error) {
-	config := defaultClientConfig
+func (s *storage) LoadPreferences() (Preferences, error) {
+	config := defaultPreferences
 	return config, s.load(&config, preferencesFile)
 }
