@@ -8,10 +8,10 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // This file contains the update mechanism for Client
@@ -44,6 +44,20 @@ var clientUpdates = []func(client *Client) error{
 			}
 		}
 		return nil
+	},
+	func(client *Client) error {
+		oldStruct := &struct {
+			SendCrashReports bool
+		}{}
+		// Load old file, convert to new struct, and save
+		err := client.storage.load(oldStruct, "config")
+		if err != nil {
+			return err
+		}
+		client.Preferences = Preferences{
+			EnableCrashReporting: oldStruct.SendCrashReports,
+		}
+		return client.storage.StorePreferences(client.Preferences)
 	},
 }
 
