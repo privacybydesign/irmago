@@ -59,7 +59,7 @@ type Client struct {
 }
 
 // SentryDSN should be set in the init() function
-// Settings it to an empty string means no crash reports
+// Setting it to an empty string means no crash reports
 var SentryDSN = ""
 
 type Preferences struct {
