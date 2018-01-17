@@ -45,12 +45,16 @@ var clientUpdates = []func(client *Client) error{
 		}
 		return nil
 	},
-	func(client *Client) error {
+	func(client *Client) (err error) {
+		exists, err := fs.PathExists(client.storage.path("config"))
+		if !exists || err != nil {
+			return
+		}
 		oldStruct := &struct {
 			SendCrashReports bool
 		}{}
 		// Load old file, convert to new struct, and save
-		err := client.storage.load(oldStruct, "config")
+		err = client.storage.load(oldStruct, "config")
 		if err != nil {
 			return err
 		}
