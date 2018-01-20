@@ -129,10 +129,13 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	err = cm.Configuration.ParseFolder()
-	_, isSchemeMgrErr := err.(*irma.SchemeManagerError)
-	if err != nil && !isSchemeMgrErr {
-		return nil, err
+
+	schemeMgrErr := cm.Configuration.ParseFolder()
+	// If schemMgrErr is of type SchemeManagerError, we continue and
+	// return it at the end; otherwise bail out now
+	_, isSchemeMgrErr := schemeMgrErr.(*irma.SchemeManagerError)
+	if schemeMgrErr != nil && !isSchemeMgrErr {
+		return nil, schemeMgrErr
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
@@ -173,7 +176,7 @@ func New(
 		return nil, errors.New("Too many keyshare servers")
 	}
 
-	return cm, nil
+	return cm, schemeMgrErr
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
