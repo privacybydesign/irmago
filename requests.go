@@ -201,7 +201,13 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 }
 
 // ToDisclose returns the attributes that must be disclosed in this issuance session.
-func (ir *IssuanceRequest) ToDisclose() AttributeDisjunctionList { return ir.Disclose }
+func (ir *IssuanceRequest) ToDisclose() AttributeDisjunctionList {
+	if ir.Disclose == nil {
+		return AttributeDisjunctionList{}
+	}
+
+	return ir.Disclose
+}
 
 // GetContext returns the context of this session.
 func (ir *IssuanceRequest) GetContext() *big.Int { return ir.Context }
