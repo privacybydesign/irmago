@@ -77,6 +77,7 @@ func (ct *CredentialType) ContainsAttribute(ai AttributeTypeIdentifier) bool {
 // AttributeDescription is a description of an attribute within a credential type.
 type AttributeDescription struct {
 	ID          string `xml:"id,attr"`
+	Optional    string `xml:"optional,attr"`
 	Name        TranslatedString
 	Description TranslatedString
 }

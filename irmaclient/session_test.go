@@ -137,6 +137,32 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 	}
 }
 
+func getNameIssuanceRequest(prefix bool) *irma.IssuanceRequest {
+	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName")
+
+	req := &irma.IssuanceRequest{
+		Credentials: []*irma.CredentialRequest{
+			{
+				Validity:         &expiry,
+				CredentialTypeID: &credid,
+				Attributes: map[string]string{
+					"firstnames": "Johan Pieter",
+					"firstname":  "Johan",
+					"familyname": "Stuivezand",
+					"prefix":     "",
+				},
+			},
+		},
+	}
+
+	if (prefix) {
+		req.Credentials[0].Attributes["prefix"] = "van"
+	}
+
+	return req
+}
+
 func getIssuanceJwt(name string, defaultValidity bool) interface{} {
 	return irma.NewIdentityProviderJwt(name, getIssuanceRequest(defaultValidity))
 }
@@ -189,6 +215,16 @@ func TestDefaultCredentialValidity(t *testing.T) {
 	client := parseStorage(t)
 	jwtcontents := getIssuanceJwt("testip", true)
 	sessionHelper(t, jwtcontents, "issue", client)
+}
+
+func TestIssuanceOptionalEmptyAttributes(t *testing.T) {
+	jwt := irma.NewIdentityProviderJwt("testip", getNameIssuanceRequest(false))
+	sessionHelper(t, jwt, "issue", nil)
+}
+
+func TestIssuanceOptionalSetAttributes(t *testing.T) {
+	jwt := irma.NewIdentityProviderJwt("testip", getNameIssuanceRequest(true))
+	sessionHelper(t, jwt, "issue", nil)
 }
 
 func TestLargeAttribute(t *testing.T) {

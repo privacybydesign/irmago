@@ -142,21 +142,36 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration) (*AttributeList,
 		return nil, err
 	}
 
-	attrs := make([]*big.Int, len(cr.Attributes)+1, len(cr.Attributes)+1)
 	credtype := conf.CredentialTypes[*cr.CredentialTypeID]
 	if credtype == nil {
 		return nil, errors.New("Unknown credential type")
 	}
-	if len(credtype.Attributes) != len(cr.Attributes) {
-		return nil, errors.New("Received unexpected amount of attributes")
+
+	// Check that there are no attributes in the credential request that aren't
+	// in the credential descriptor.
+	for crName := range cr.Attributes {
+		found := false
+		for _, ad := range credtype.Attributes {
+			if ad.ID == crName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, errors.New("Unknown CR attribute")
+		}
 	}
 
+	attrs := make([]*big.Int, len(credtype.Attributes)+1)
 	attrs[0] = meta.Int
 	for i, attrtype := range credtype.Attributes {
+		attrs[i+1] = new(big.Int)
 		if str, present := cr.Attributes[attrtype.ID]; present {
-			attrs[i+1] = new(big.Int).SetBytes([]byte(str))
+			attrs[i+1].SetBytes([]byte(str))
 		} else {
-			return nil, errors.New("Unknown attribute")
+			if (attrtype.Optional != "true") {
+				return nil, errors.New("Required attribute not provided")
+			}
 		}
 	}
 
