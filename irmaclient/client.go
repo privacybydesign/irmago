@@ -688,7 +688,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	}
 
 	transport := irma.NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(client.paillierKey(true), manager.KeyshareServer, email)
+	kss, err := newKeyshareServer(managerID, client.paillierKey(true), manager.KeyshareServer, email)
 	if err != nil {
 		return err
 	}

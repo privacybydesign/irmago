@@ -9,9 +9,9 @@ import (
 
 	"math/big"
 
-	"github.com/privacybydesign/irmago"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago"
 )
 
 // This file contains the client side of the IRMA protocol, as well as the Handler interface
@@ -31,7 +31,9 @@ type Handler interface {
 	Cancelled(action irma.Action)
 	Failure(action irma.Action, err *irma.SessionError)
 	UnsatisfiableRequest(action irma.Action, missing irma.AttributeDisjunctionList)
+
 	MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier)
+	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 
 	RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler)
 	RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler)
@@ -65,7 +67,7 @@ type session struct {
 	irmaSession irma.IrmaSession
 }
 
-// We implement baseSessino for a session
+// session implements baseSession
 var _ baseSession = (*session)(nil)
 
 // A interactiveSession is an interactive IRMA session
@@ -458,15 +460,21 @@ func (session *manualSession) KeyshareCancelled() {
 	session.Handler.Cancelled(session.Action)
 }
 
-func (session *interactiveSession) KeyshareBlocked(duration int) {
-	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+func (session *interactiveSession) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	if session.delete() {
+		if session.downloaded != nil && !session.downloaded.Empty() {
+			session.client.handler.UpdateConfiguration(session.downloaded)
+		}
+	}
+	session.Handler.KeyshareBlocked(manager, duration)
 }
 
-func (session *manualSession) KeyshareBlocked(duration int) {
-	session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+func (session *manualSession) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	// TODO: fire UpdateConfiguration()?
+	session.Handler.KeyshareBlocked(manager, duration)
 }
 
-func (session *interactiveSession) KeyshareError(err error) {
+func (session *interactiveSession) KeyshareError(manager *irma.SchemeManagerIdentifier, err error) {
 	var serr *irma.SessionError
 	var ok bool
 	if serr, ok = err.(*irma.SessionError); !ok {
@@ -477,7 +485,7 @@ func (session *interactiveSession) KeyshareError(err error) {
 	session.fail(serr)
 }
 
-func (session *manualSession) KeyshareError(err error) {
+func (session *manualSession) KeyshareError(manager *irma.SchemeManagerIdentifier, err error) {
 	var serr *irma.SessionError
 	var ok bool
 	if serr, ok = err.(*irma.SessionError); !ok {

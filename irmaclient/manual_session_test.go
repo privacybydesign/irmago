@@ -2,8 +2,9 @@ package irmaclient
 
 import (
 	"fmt"
-	"github.com/privacybydesign/irmago"
 	"testing"
+
+	"github.com/privacybydesign/irmago"
 )
 
 type ManualSessionHandler struct {
@@ -85,4 +86,7 @@ func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.Discl
 func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.SessionError) {
 	fmt.Println(err.Err)
 	sh.t.Fail()
+}
+func (sh *ManualSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked})
 }

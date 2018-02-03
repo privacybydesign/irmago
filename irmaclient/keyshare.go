@@ -7,9 +7,9 @@ import (
 	"math/big"
 	"strconv"
 
-	"github.com/privacybydesign/irmago"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago"
 )
 
 // This file contains an implementation of the client side of the keyshare protocol,
@@ -24,8 +24,9 @@ type KeysharePinRequestor interface {
 type keyshareSessionHandler interface {
 	KeyshareDone(message interface{})
 	KeyshareCancelled()
-	KeyshareBlocked(duration int)
-	KeyshareError(err error)
+	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
+	// In errors the manager may be nil, as not all keyshare errors have a clearly associated scheme manager
+	KeyshareError(manager *irma.SchemeManagerIdentifier, err error)
 	KeysharePin()
 	KeysharePinOK()
 }
@@ -43,11 +44,12 @@ type keyshareSession struct {
 }
 
 type keyshareServer struct {
-	URL        string              `json:"url"`
-	Username   string              `json:"username"`
-	Nonce      []byte              `json:"nonce"`
-	PrivateKey *paillierPrivateKey `json:"keyPair"`
-	token      string
+	URL                     string              `json:"url"`
+	Username                string              `json:"username"`
+	Nonce                   []byte              `json:"nonce"`
+	PrivateKey              *paillierPrivateKey `json:"keyPair"`
+	SchemeManagerIdentifier irma.SchemeManagerIdentifier
+	token                   string
 }
 
 type keyshareEnrollment struct {
@@ -109,12 +111,17 @@ const (
 	kssPinError       = "error"
 )
 
-func newKeyshareServer(privatekey *paillierPrivateKey, url, email string) (ks *keyshareServer, err error) {
+func newKeyshareServer(
+	schemeManagerIdentifier irma.SchemeManagerIdentifier,
+	privatekey *paillierPrivateKey,
+	url, email string,
+) (ks *keyshareServer, err error) {
 	ks = &keyshareServer{
-		Nonce:      make([]byte, 32),
-		URL:        url,
-		Username:   email,
-		PrivateKey: privatekey,
+		Nonce:                   make([]byte, 32),
+		URL:                     url,
+		Username:                email,
+		PrivateKey:              privatekey,
+		SchemeManagerIdentifier: schemeManagerIdentifier,
 	}
 	_, err = rand.Read(ks.Nonce)
 	return
@@ -148,14 +155,14 @@ func startKeyshareSession(
 			ksscount++
 			if _, enrolled := keyshareServers[managerID]; !enrolled {
 				err := errors.New("Not enrolled to keyshare server of scheme manager " + managerID.String())
-				sessionHandler.KeyshareError(err)
+				sessionHandler.KeyshareError(&managerID, err)
 				return
 			}
 		}
 	}
 	if _, issuing := session.(*irma.IssuanceRequest); issuing && ksscount > 1 {
 		err := errors.New("Issuance session involving more than one keyshare servers are not supported")
-		sessionHandler.KeyshareError(err)
+		sessionHandler.KeyshareError(nil, err)
 		return
 	}
 
@@ -186,7 +193,7 @@ func startKeyshareSession(
 		authstatus := &keyshareAuthorization{}
 		err := transport.Post("users/isAuthorized", authstatus, "")
 		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
 		switch authstatus.Status {
@@ -194,7 +201,7 @@ func startKeyshareSession(
 		case kssTokenExpired:
 			requestPin = true
 		default:
-			ks.sessionHandler.KeyshareError(errors.New("Keyshare server returned unrecognized authorization status"))
+			ks.sessionHandler.KeyshareError(&managerID, errors.New("Keyshare server returned unrecognized authorization status"))
 			return
 		}
 	}
@@ -215,13 +222,13 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 			ks.sessionHandler.KeyshareCancelled()
 			return
 		}
-		success, attemptsRemaining, blocked, err := ks.verifyPinAttempt(pin)
+		success, attemptsRemaining, blocked, manager, err := ks.verifyPinAttempt(pin)
 		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&manager, err)
 			return
 		}
 		if blocked != 0 {
-			ks.sessionHandler.KeyshareBlocked(blocked)
+			ks.sessionHandler.KeyshareBlocked(manager, blocked)
 			return
 		}
 		if success {
@@ -242,14 +249,15 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 // parameter.
 // - If this or anything else (specified in err) goes wrong, success will be false.
 // If all is ok, success will be true.
-func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int, blocked int, err error) {
-	for managerID := range ks.session.Identifiers().SchemeManagers {
-		if !ks.conf.SchemeManagers[managerID].Distributed() {
+func (ks *keyshareSession) verifyPinAttempt(pin string) (
+	success bool, tries int, blocked int, manager irma.SchemeManagerIdentifier, err error) {
+	for manager = range ks.session.Identifiers().SchemeManagers {
+		if !ks.conf.SchemeManagers[manager].Distributed() {
 			continue
 		}
 
-		kss := ks.keyshareServers[managerID]
-		transport := ks.transports[managerID]
+		kss := ks.keyshareServers[manager]
+		transport := ks.transports[manager]
 		pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
 		pinresult := &keysharePinStatus{}
 		err = transport.Post("users/verify/pin", pinresult, pinmsg)
@@ -263,15 +271,9 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (success bool, tries int
 			transport.SetHeader(kssAuthHeader, kss.token)
 		case kssPinFailure:
 			tries, err = strconv.Atoi(pinresult.Message)
-			if err != nil {
-				return
-			}
 			return
 		case kssPinError:
 			blocked, err = strconv.Atoi(pinresult.Message)
-			if err != nil {
-				return
-			}
 			return
 		default:
 			err = errors.New("Keyshare server returned unrecognized PIN status")
@@ -315,7 +317,7 @@ func (ks *keyshareSession) GetCommitments() {
 		comms := &proofPCommitmentMap{}
 		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
 		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
 		for pki, c := range comms.Commitments {
@@ -350,7 +352,7 @@ func (ks *keyshareSession) GetProofPs() {
 	if !issuing {
 		bytes, err := ks.keyshareServer.PrivateKey.Encrypt(challenge.Bytes())
 		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
 		}
 		kssChallenge = new(big.Int).SetBytes(bytes)
 	}
@@ -365,7 +367,7 @@ func (ks *keyshareSession) GetProofPs() {
 		var jwt string
 		err := transport.Post("prove/getResponse", &jwt, kssChallenge)
 		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
 		responses[managerID] = jwt
@@ -389,7 +391,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 		// issuance server to verify
 		list, err := ks.builders.BuildDistributedProofList(challenge, nil)
 		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
 			return
 		}
 		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.state.nonce2}
@@ -418,7 +420,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			ProofP *gabi.ProofP
 		}{}
 		if err := irma.JwtDecode(responses[managerID], &msg); err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
 
@@ -426,7 +428,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		proofPs[i] = msg.ProofP
 		bytes, err := ks.keyshareServer.PrivateKey.Decrypt(proofPs[i].SResponse.Bytes())
 		if err != nil {
-			ks.sessionHandler.KeyshareError(err)
+			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
 		proofPs[i].SResponse = new(big.Int).SetBytes(bytes)
@@ -435,7 +437,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 	// Create merged proofs and finish protocol
 	list, err := ks.builders.BuildDistributedProofList(challenge, proofPs)
 	if err != nil {
-		ks.sessionHandler.KeyshareError(err)
+		ks.sessionHandler.KeyshareError(nil, err)
 		return
 	}
 	ks.sessionHandler.KeyshareDone(list)
