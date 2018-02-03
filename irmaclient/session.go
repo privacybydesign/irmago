@@ -170,18 +170,11 @@ func (session *session) panicFailure() {
 	}
 }
 
-func parseSigrequestJSON(sigrequestJSONString string) (*irma.SignatureRequest, error) {
-	sigrequestJSON := []byte(sigrequestJSONString)
-	sigrequest := &irma.SignatureRequest{}
-	err := json.Unmarshal(sigrequestJSON, sigrequest)
-
-	return sigrequest, err
-}
-
-// Start a manual session
+// NewManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) NewManualSession(sigrequestJSONString string, handler Handler) {
-	sigrequest, err := parseSigrequestJSON(sigrequestJSONString)
-	if err != nil {
+	var err error
+	sigrequest := &irma.SignatureRequest{}
+	if err = json.Unmarshal([]byte(sigrequestJSONString), sigrequest); err != nil {
 		handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
 		return
 	}
