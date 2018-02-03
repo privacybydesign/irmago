@@ -3,3 +3,4 @@
 testdata/storage/*
 !testdata/storage/cardemu.xml
 errors_*.go
+vendor/
