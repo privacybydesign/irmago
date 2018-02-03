@@ -7,20 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTransport(t *testing.T) {
-	transport := NewHTTPTransport("https://xkcd.com")
-	obj := &struct {
-		Num   int    `json:"num"`
-		Img   string `json:"img"`
-		Title string `json:"title"`
-	}{}
-
-	err := transport.Get("614/info.0.json", obj)
-	if err != nil { // require.NoError() does not work because of the type of err
-		t.Fatalf("%+v\n", err)
-	}
-}
-
 func TestAttributeDisjunctionMarshaling(t *testing.T) {
 	conf, err := NewConfiguration("testdata/irma_configuration", "")
 	require.NoError(t, err)
