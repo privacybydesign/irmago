@@ -7,9 +7,9 @@ import (
 	"math/big"
 	"strconv"
 
-	"github.com/privacybydesign/irmago"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago"
 )
 
 // This file contains an implementation of the client side of the keyshare protocol,

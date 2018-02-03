@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/privacybydesign/irmago"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago"
 )
 
 // LogEntry is a log entry of a past event.
@@ -29,7 +29,7 @@ type LogEntry struct {
 
 const actionRemoval = irma.Action("removal")
 
-func (session *interactiveSession) createLogEntry(response interface{}) (*LogEntry, error) {
+func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
 		Type:        session.Action,
 		Time:        irma.Timestamp(time.Now()),

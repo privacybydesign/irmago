@@ -2,8 +2,12 @@ package irmaclient
 
 import (
 	"fmt"
-	"github.com/privacybydesign/irmago"
+
+	"github.com/go-errors/errors"
+
 	"testing"
+
+	"github.com/privacybydesign/irmago"
 )
 
 type ManualSessionHandler struct {
@@ -69,20 +73,22 @@ func (sh *ManualSessionHandler) RequestSignaturePermission(request irma.Signatur
 }
 
 // These handlers should not be called, fail test if they are called
-func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) { sh.t.Fail() }
+func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) {
+	sh.c <- &irma.SessionError{Err: errors.New("Session was cancelled")}
+}
 func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
-	sh.t.Fail()
+	sh.c <- &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())}
 }
 func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
-	sh.t.Fail()
+	sh.c <- &irma.SessionError{Err: errors.New("Unexpected session type")}
 }
 func (sh *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
-	sh.t.Fail()
+	sh.c <- &irma.SessionError{Err: errors.New("Unexpected session type")}
 }
 func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
-	sh.t.Fail()
+	sh.c <- &irma.SessionError{Err: errors.New("Unexpected session type")}
 }
 func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.SessionError) {
 	fmt.Println(err.Err)
-	sh.t.Fail()
+	sh.c <- err
 }
