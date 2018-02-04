@@ -34,6 +34,7 @@ type Handler interface {
 
 	MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier)
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
+	KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier)
 
 	RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler)
 	RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler)
@@ -85,6 +86,10 @@ type interactiveSession struct {
 // A manualSession is a session started from a request
 type manualSession struct {
 	session
+}
+
+func (session *session) KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier) {
+	session.Handler.KeyshareRegistrationIncomplete(manager)
 }
 
 // We implement the handler for the keyshare protocol
