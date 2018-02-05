@@ -112,7 +112,8 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	var mgrerr *SchemeManagerError
 	err = iterateSubfolders(conf.path, func(dir string) error {
-		err, manager := conf.parseSchemeManagerFolder(dir)
+		manager := &SchemeManager{ID: filepath.Base(dir), Status: SchemeManagerStatusUnprocessed, Valid: false}
+		err := conf.parseSchemeManagerFolder(dir, manager)
 		if err == nil {
 			return nil // OK, do next scheme manager folder
 		}
@@ -137,9 +138,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 // parseSchemeManagerFolder parses the entire tree of the specified scheme manager
 // If err != nil then a problem occured
-func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error, manager *SchemeManager) {
-	// Put the directory name in the ID field in case we return early due to errors
-	manager = &SchemeManager{ID: filepath.Base(dir), Status: SchemeManagerStatusUnprocessed, Valid: false}
+func (conf *Configuration) parseSchemeManagerFolder(dir string, manager *SchemeManager) (err error) {
 	// From this point, keep it in our map even if it has an error. The user must check either:
 	// - manager.Status == SchemeManagerStatusValid, aka "VALID"
 	// - or equivalently, manager.Valid == true
@@ -181,7 +180,7 @@ func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error, mana
 
 	if manager.XMLVersion < 7 {
 		manager.Status = SchemeManagerStatusParsingError
-		return errors.New("Unsupported scheme manager description"), manager
+		return errors.New("Unsupported scheme manager description")
 	}
 
 	err = conf.parseIssuerFolders(manager, dir)
@@ -444,16 +443,7 @@ func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 		return err
 	}
 
-	if err := conf.VerifySchemeManager(manager); err != nil {
-		manager.Status = SchemeManagerStatusInvalidSignature
-		manager.Valid = false
-	} else {
-		manager.Status = SchemeManagerStatusValid
-		manager.Valid = true
-	}
-
-	conf.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
-	return nil
+	return conf.parseSchemeManagerFolder(filepath.Join(conf.path, name), manager)
 }
 
 // DownloadSchemeManagerSignature downloads, stores and verifies the latest version
@@ -469,23 +459,26 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 		return err
 	}
 
+	defer func() {
+		if err != nil {
+			_ = conf.restoreManagerSignature(index, sig)
+		}
+	}()
+
 	if err = t.GetFile("index", index); err != nil {
-		return err
+		return
 	}
 	if err = t.GetFile("index.sig", sig); err != nil {
-		return err
+		return
 	}
 	valid, err := conf.VerifySignature(manager.Identifier())
 	if err != nil {
-		_ = conf.restoreManagerSignature(index, sig)
-		return err
+		return
 	}
 	if !valid {
-		_ = conf.restoreManagerSignature(index, sig)
-		return errors.New("Scheme manager signature invalid")
+		err = errors.New("Scheme manager signature invalid")
 	}
-
-	return nil
+	return
 }
 
 func (conf *Configuration) backupManagerSignature(index, sig string) error {
