@@ -636,12 +636,12 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error
 	if err != nil {
 		return err
 	}
-	manager.Index = make(map[string]ConfigurationFileHash)
-	return manager.Index.FromString(string(indexbts))
+	manager.index = make(map[string]ConfigurationFileHash)
+	return manager.index.FromString(string(indexbts))
 }
 
 func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
-	for file := range manager.Index {
+	for file := range manager.index {
 		exists, err := fs.PathExists(filepath.Join(conf.path, file))
 		if err != nil {
 			return err
@@ -662,7 +662,7 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 // and verifies its authenticity by checking that the file hash
 // is present in the (signed) scheme manager index file.
 func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path string) ([]byte, error) {
-	signedHash, ok := manager.Index[path]
+	signedHash, ok := manager.index[path]
 	if !ok {
 		return nil, errors.Errorf("File %s not present in scheme manager index", path)
 	}

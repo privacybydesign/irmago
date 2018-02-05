@@ -22,9 +22,10 @@ type SchemeManager struct {
 	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
 
-	Index  SchemeManagerIndex  `xml:"-"`
 	Status SchemeManagerStatus `xml:"-"`
 	Valid  bool                `xml:"-"` // true iff Status == SchemeManagerStatusValid
+
+	index SchemeManagerIndex
 }
 
 // Issuer describes an issuer.
