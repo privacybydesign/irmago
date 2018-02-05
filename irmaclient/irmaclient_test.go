@@ -290,9 +290,6 @@ func TestWrongSchemeManager(t *testing.T) {
 // within this manager to test the autmatic downloading of credential definitions,
 // issuers, and public keys.
 func TestDownloadSchemeManager(t *testing.T) {
-	// Disabled
-	//return
-
 	client := parseStorage(t)
 
 	// Remove irma-demo scheme manager as we need to test adding it
@@ -316,6 +313,21 @@ func TestDownloadSchemeManager(t *testing.T) {
 	// Do a session to test downloading of cred types, issuers and keys
 	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
+
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
+	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
+
+	basepath := "testdata/storage/test/irma_configuration/irma-demo"
+	exists, err := fs.PathExists(basepath + "/description.xml")
+	require.NoError(t, err)
+	require.True(t, exists)
+	exists, err = fs.PathExists(basepath + "/RU/description.xml")
+	require.NoError(t, err)
+	require.True(t, exists)
+	exists, err = fs.PathExists(basepath + "/RU/Issues/studentCard/description.xml")
+	require.NoError(t, err)
+	require.True(t, exists)
 
 	teardown(t)
 }
