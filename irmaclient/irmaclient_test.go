@@ -9,16 +9,16 @@ import (
 
 	"encoding/json"
 
+	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/mhe/gabi"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
 	// Remove any output from previously run to ensure a clean state
 	// Some of the tests don't like it when there is existing state in storage
-	err := os.RemoveAll("testdata/storage/test")
+	err := os.RemoveAll("../testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not delete test storage", err.Error())
 		os.Exit(1)
@@ -28,8 +28,8 @@ func TestMain(m *testing.M) {
 	// so we have to create the temporary test storage by two function calls.
 	// We ignore any error possibly returned by creating the first one, because if it errors,
 	// then the second one certainly will as well.
-	_ = fs.EnsureDirectoryExists("testdata/storage")
-	err = fs.EnsureDirectoryExists("testdata/storage/test")
+	_ = fs.EnsureDirectoryExists("../testdata/storage")
+	err = fs.EnsureDirectoryExists("../testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not create test storage: ", err.Error())
 		os.Exit(1)
@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 
 	retCode := m.Run()
 
-	err = os.RemoveAll("testdata/storage/test")
+	err = os.RemoveAll("../testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not delete test storage", err.Error())
 		os.Exit(1)
@@ -54,15 +54,15 @@ func (i *IgnoringClientHandler) EnrollmentError(manager irma.SchemeManagerIdenti
 func (i *IgnoringClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier)          {}
 
 func parseStorage(t *testing.T) *Client {
-	exists, err := fs.PathExists("testdata/storage/test")
+	exists, err := fs.PathExists("../testdata/storage/test")
 	require.NoError(t, err, "fs.PathExists() failed")
 	if !exists {
-		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
+		require.NoError(t, os.Mkdir("../testdata/storage/test", 0755), "Could not create test storage")
 	}
 	manager, err := New(
-		"testdata/storage/test",
-		"testdata/irma_configuration",
-		"testdata/oldstorage",
+		"../testdata/storage/test",
+		"../testdata/irma_configuration",
+		"../testdata/oldstorage",
 		&IgnoringClientHandler{},
 	)
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func parseStorage(t *testing.T) *Client {
 }
 
 func teardown(t *testing.T) {
-	require.NoError(t, os.RemoveAll("testdata/storage/test"))
+	require.NoError(t, os.RemoveAll("../testdata/storage/test"))
 }
 
 // A convenience function for initializing big integers from known correct (10
@@ -203,7 +203,7 @@ func TestUnmarshaling(t *testing.T) {
 	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
-	newclient, err := New("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
+	newclient, err := New("../testdata/storage/test", "../testdata/irma_configuration", "../testdata/oldstorage", nil)
 	require.NoError(t, err)
 	verifyClientIsUnmarshaled(t, newclient)
 	verifyCredentials(t, newclient)
@@ -246,7 +246,7 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	conf, err := irma.NewConfiguration("testdata/irma_configuration", "")
+	conf, err := irma.NewConfiguration("../testdata/irma_configuration", "")
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 
@@ -403,7 +403,7 @@ func TestWrongSchemeManager(t *testing.T) {
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove("testdata/storage/test/irma_configuration/irma-demo/index"))
+	require.NoError(t, os.Remove("../testdata/storage/test/irma_configuration/irma-demo/index"))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)
