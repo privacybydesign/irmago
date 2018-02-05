@@ -9,9 +9,9 @@ import (
 
 	"encoding/json"
 
+	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/mhe/gabi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -409,7 +409,11 @@ func TestWrongSchemeManager(t *testing.T) {
 	_, ok := err.(*irma.SchemeManagerError)
 	require.True(t, ok)
 	require.Contains(t, client.Configuration.DisabledSchemeManagers, irmademo)
-	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+	require.NotEqual(t,
+		client.Configuration.SchemeManagers[irmademo].Status,
+		irma.SchemeManagerStatusValid,
+	)
 
 	teardown(t)
 }

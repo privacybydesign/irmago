@@ -22,7 +22,9 @@ type SchemeManager struct {
 	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
 
-	Index SchemeManagerIndex `xml:"-"`
+	Index  SchemeManagerIndex  `xml:"-"`
+	Status SchemeManagerStatus `xml:"-"`
+	Valid  bool                `xml:"-"` // true iff Status == SchemeManagerStatusValid
 }
 
 // Issuer describes an issuer.
@@ -35,6 +37,8 @@ type Issuer struct {
 	ContactEMail    string
 	URL             string `xml:"baseURL"`
 	XMLVersion      int    `xml:"version,attr"`
+
+	Valid bool `xml:"-"`
 }
 
 // CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
@@ -49,6 +53,8 @@ type CredentialType struct {
 	Attributes      []AttributeDescription `xml:"Attributes>Attribute"`
 	XMLVersion      int                    `xml:"version,attr"`
 	XMLName         xml.Name               `xml:"IssueSpecification"`
+
+	Valid bool `xml:"-"`
 }
 
 // ContainsAttribute tests whether the specified attribute is contained in this
@@ -136,9 +142,17 @@ func (ct *CredentialType) IssuerIdentifier() IssuerIdentifier {
 	return NewIssuerIdentifier(ct.SchemeManagerID + "." + ct.IssuerID)
 }
 
+func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
+	return NewSchemeManagerIdentifier(ct.SchemeManagerID)
+}
+
 // Identifier returns the identifier of the specified issuer description.
 func (id *Issuer) Identifier() IssuerIdentifier {
 	return NewIssuerIdentifier(id.SchemeManagerID + "." + id.ID)
+}
+
+func (id *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
+	return NewSchemeManagerIdentifier(id.SchemeManagerID)
 }
 
 // Identifier returns the identifier of the specified scheme manager.

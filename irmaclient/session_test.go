@@ -1,7 +1,5 @@
 package irmaclient
 
-// TODO +build integration
-
 import (
 	"crypto/rand"
 	"encoding/base64"
@@ -10,8 +8,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/privacybydesign/irmago"
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago"
 	"github.com/stretchr/testify/require"
 )
 

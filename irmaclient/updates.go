@@ -25,14 +25,16 @@ type update struct {
 }
 
 var clientUpdates = []func(client *Client) error{
+	// Convert old cardemu.xml Android storage to our own storage format
 	func(client *Client) error {
 		_, err := client.ParseAndroidStorage()
 		return err
 	},
+
+	// Adding scheme manager index, signature and public key
+	// Check the signatures of all scheme managers, if any is not ok,
+	// copy the entire irma_configuration folder from assets
 	func(client *Client) error {
-		// Adding scheme manager index, signature and public key
-		// Check the signatures of all scheme managers, if any is not ok,
-		// copy the entire irma_configuration folder from assets
 		conf := client.Configuration
 		if len(conf.DisabledSchemeManagers) > 0 {
 			return conf.CopyFromAssets(true)
@@ -45,6 +47,8 @@ var clientUpdates = []func(client *Client) error{
 		}
 		return nil
 	},
+
+	// Rename config -> preferences
 	func(client *Client) (err error) {
 		exists, err := fs.PathExists(client.storage.path("config"))
 		if !exists || err != nil {
@@ -77,6 +81,9 @@ func (client *Client) update() error {
 
 	// Perform all new updates
 	for i := len(client.updates); i < len(clientUpdates); i++ {
+		if clientUpdates[i] == nil {
+			continue
+		}
 		err = clientUpdates[i](client)
 		u := update{
 			When:    irma.Timestamp(time.Now()),

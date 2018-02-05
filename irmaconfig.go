@@ -26,9 +26,9 @@ import (
 	"encoding/pem"
 	"math/big"
 
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // Configuration keeps track of scheme managers, issuers, credential types and public keys,
@@ -38,7 +38,10 @@ type Configuration struct {
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 
-	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManager
+	// DisabledSchemeManagers keeps track of scheme managers that did not parse  succesfully
+	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
+	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
+	// TODO: what can we say about the consistency of this Configuration if this is not empty?
 
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
@@ -55,10 +58,22 @@ type ConfigurationFileHash []byte
 // along with their SHA266 hash
 type SchemeManagerIndex map[string]ConfigurationFileHash
 
+type SchemeManagerStatus string
+
 type SchemeManagerError struct {
 	Manager SchemeManagerIdentifier
+	Status  SchemeManagerStatus
 	Err     error
 }
+
+const (
+	SchemeManagerStatusValid               = SchemeManagerStatus("Valid")
+	SchemeManagerStatusUnprocessed         = SchemeManagerStatus("Unprocessed")
+	SchemeManagerStatusInvalidIndex        = SchemeManagerStatus("InvalidIndex")
+	SchemeManagerStatusInvalidSignature    = SchemeManagerStatus("InvalidSignature")
+	SchemeManagerStatusParsingError        = SchemeManagerStatus("ParsingError")
+	SchemeManagerStatusContentParsingError = SchemeManagerStatus("ContentParsingError")
+)
 
 func (sme SchemeManagerError) Error() string {
 	return fmt.Sprintf("Error parsing scheme manager %s: %s", sme.Manager.Name(), sme.Err.Error())
@@ -86,19 +101,18 @@ func NewConfiguration(path string, assets string) (conf *Configuration, err erro
 
 // ParseFolder populates the current Configuration by parsing the storage path,
 // listing the containing scheme managers, issuers and credential types.
-func (conf *Configuration) ParseFolder() error {
+func (conf *Configuration) ParseFolder() (err error) {
 	// Init all maps
 	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
 	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
 	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
-
-	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
+	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 
 	var mgrerr *SchemeManagerError
-	err := iterateSubfolders(conf.path, func(dir string) error {
-		err := conf.parseSchemeManagerFolder(dir)
+	err = iterateSubfolders(conf.path, func(dir string) error {
+		err, manager := conf.parseSchemeManagerFolder(dir)
 		if err == nil {
 			return nil // OK, do next scheme manager folder
 		}
@@ -106,56 +120,79 @@ func (conf *Configuration) ParseFolder() error {
 		// so as to continue parsing other managers.
 		var ok bool
 		if mgrerr, ok = err.(*SchemeManagerError); ok {
+			conf.DisabledSchemeManagers[manager.Identifier()] = mgrerr
 			return nil
 		}
 		return err // Not a SchemeManagerError? return it & halt parsing now
 	})
 	if err != nil {
-		return err
+		return
 	}
 	conf.initialized = true
 	if mgrerr != nil {
 		return mgrerr
 	}
-	return nil
+	return
 }
 
-func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error) {
-	exists, err := fs.PathExists(dir + "/description.xml")
-	if err != nil || !exists {
-		return err
-	}
-
+// parseSchemeManagerFolder parses the entire tree of the specified scheme manager
+// If err != nil then a problem occured
+func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error, manager *SchemeManager) {
 	// Put the directory name in the ID field in case we return early due to errors
-	manager := &SchemeManager{ID: filepath.Base(dir)}
+	manager = &SchemeManager{ID: filepath.Base(dir), Status: SchemeManagerStatusUnprocessed, Valid: false}
+	// From this point, keep it in our map even if it has an error. The user must check either:
+	// - manager.Status == SchemeManagerStatusValid, aka "VALID"
+	// - or equivalently, manager.Valid == true
+	// before using any scheme manager for anything, and handle accordingly
+	conf.SchemeManagers[manager.Identifier()] = manager
+
+	// Ensure we return a SchemeManagerError when any error occurs
 	defer func() {
 		if err != nil {
-			conf.DisabledSchemeManagers[manager.Identifier()] = manager
-			err = &SchemeManagerError{Manager: manager.Identifier(), Err: err}
-			_ = conf.RemoveSchemeManager(manager.Identifier(), false) // does not return errors
+			err = &SchemeManagerError{
+				Manager: manager.Identifier(),
+				Err:     err,
+				Status:  manager.Status,
+			}
 		}
 	}()
 
+	err = fs.AssertPathExists(dir + "/description.xml")
+	if err != nil {
+		return
+	}
+
 	if err = conf.parseIndex(filepath.Base(dir), manager); err != nil {
-		return err
+		manager.Status = SchemeManagerStatusInvalidIndex
+		return
 	}
 	_, err = conf.pathToDescription(manager, dir+"/description.xml", manager)
-	if err != nil || !exists {
-		return err
+	if err != nil {
+		manager.Status = SchemeManagerStatusParsingError
+		return
 	}
 
 	if manager.XMLVersion < 7 {
-		return errors.New("Unsupported scheme manager description")
+		manager.Status = SchemeManagerStatusParsingError
+		return errors.New("Unsupported scheme manager description"), manager
 	}
 	valid, err := conf.VerifySignature(manager.Identifier())
 	if err != nil {
-		return err
+		manager.Status = SchemeManagerStatusInvalidSignature
+		return
 	}
 	if !valid {
-		return errors.New("Scheme manager signature was invalid")
+		manager.Status = SchemeManagerStatusInvalidSignature
+		return errors.New("Scheme manager signature was invalid"), manager
 	}
-	conf.SchemeManagers[manager.Identifier()] = manager
+
 	err = conf.parseIssuerFolders(manager, dir)
+	if err != nil {
+		manager.Status = SchemeManagerStatusContentParsingError
+		return
+	}
+	manager.Status = SchemeManagerStatusValid
+	manager.Valid = true
 	return
 }
 
@@ -191,6 +228,15 @@ func (conf *Configuration) IsInitialized() bool {
 	return conf.initialized
 }
 
+// Prune removes any invalid scheme managers and everything they own from this Configuration
+func (conf *Configuration) Prune() {
+	for _, manager := range conf.SchemeManagers {
+		if !manager.Valid {
+			_ = conf.RemoveSchemeManager(manager.Identifier(), false) // does not return errors
+		}
+	}
+}
+
 func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path string) error {
 	return iterateSubfolders(path, func(dir string) error {
 		issuer := &Issuer{}
@@ -205,6 +251,7 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 			return errors.New("Unsupported issuer description")
 		}
 		conf.Issuers[issuer.Identifier()] = issuer
+		issuer.Valid = conf.SchemeManagers[issuer.SchemeManagerIdentifier()].Valid
 		return conf.parseCredentialsFolder(manager, dir+"/Issues/")
 	})
 }
@@ -253,6 +300,7 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, path s
 		if cred.XMLVersion < 4 {
 			return errors.New("Unsupported credential type description")
 		}
+		cred.Valid = conf.SchemeManagers[cred.SchemeManagerIdentifier()].Valid
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
