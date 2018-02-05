@@ -5,9 +5,6 @@ import (
 	"math/big"
 	"os"
 	"testing"
-	"time"
-
-	"encoding/json"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -71,13 +68,6 @@ func parseStorage(t *testing.T) *Client {
 
 func teardown(t *testing.T) {
 	require.NoError(t, os.RemoveAll("testdata/storage/test"))
-}
-
-// A convenience function for initializing big integers from known correct (10
-// base) strings. Use with care, errors are ignored.
-func s2big(s string) (r *big.Int) {
-	r, _ = new(big.Int).SetString(s, 10)
-	return
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
@@ -149,44 +139,8 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 	verifyPaillierKey(t, client.paillierKeyCache)
 }
 
-// TODO move up to irmago?
-func verifyConfigurationIsLoaded(t *testing.T, conf *irma.Configuration, android bool) {
-	require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("irma-demo"))
-	require.Contains(t, conf.SchemeManagers, irma.NewSchemeManagerIdentifier("test"))
-
-	pk, err := conf.PublicKey(irma.NewIssuerIdentifier("irma-demo.RU"), 0)
-	require.NoError(t, err)
-	require.NotNil(t, pk)
-	require.NotNil(t, pk.N, "irma-demo.RU public key has no modulus")
-	require.Equal(t,
-		"Irma Demo",
-		conf.SchemeManagers[irma.NewSchemeManagerIdentifier("irma-demo")].Name["en"],
-		"irma-demo scheme manager has unexpected name")
-	require.Equal(t,
-		"Radboud University Nijmegen",
-		conf.Issuers[irma.NewIssuerIdentifier("irma-demo.RU")].Name["en"],
-		"irma-demo.RU issuer has unexpected name")
-	require.Equal(t,
-		"Student Card",
-		conf.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
-		"irma-demo.RU.studentCard has unexpected name")
-
-	require.Equal(t,
-		"studentID",
-		conf.CredentialTypes[irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
-		"irma-demo.RU.studentCard.studentID has unexpected name")
-
-	// Hash algorithm pseudocode:
-	// Base64(SHA256("irma-demo.RU.studentCard")[0:16])
-	//require.Contains(t, conf.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
-	//	"irma-demo.RU.studentCard had improper hash")
-	//require.Contains(t, conf.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
-	//	"irma-demo.MijnOverheid.root had improper hash")
-}
-
 func TestAndroidParse(t *testing.T) {
 	client := parseStorage(t)
-	verifyConfigurationIsLoaded(t, client.Configuration, true)
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
 	verifyKeyshareIsUnmarshaled(t, client)
@@ -229,44 +183,6 @@ func TestUnmarshaling(t *testing.T) {
 	teardown(t)
 }
 
-func TestMetadataAttribute(t *testing.T) {
-	metadata := irma.NewMetadataAttribute()
-	if metadata.Version() != 0x02 {
-		t.Errorf("Unexpected metadata version: %d", metadata.Version())
-	}
-
-	expiry := metadata.SigningDate().Unix() + int64(metadata.ValidityDuration()*irma.ExpiryFactor)
-	if !time.Unix(expiry, 0).Equal(metadata.Expiry()) {
-		t.Errorf("Invalid signing date")
-	}
-
-	if metadata.KeyCounter() != 0 {
-		t.Errorf("Unexpected key counter")
-	}
-}
-
-func TestMetadataCompatibility(t *testing.T) {
-	conf, err := irma.NewConfiguration("testdata/irma_configuration", "")
-	require.NoError(t, err)
-	require.NoError(t, conf.ParseFolder())
-
-	// An actual metadata attribute of an IRMA credential extracted from the IRMA app
-	attr := irma.MetadataFromInt(s2big("49043481832371145193140299771658227036446546573739245068"), conf)
-	require.NotNil(t, attr.CredentialType(), "attr.CredentialType() should not be nil")
-
-	require.Equal(t,
-		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
-		attr.CredentialType().Identifier(),
-		"Metadata credential type was not irma-demo.RU.studentCard",
-	)
-	require.Equal(t, byte(0x02), attr.Version(), "Unexpected metadata version")
-	require.Equal(t, time.Unix(1499904000, 0), attr.SigningDate(), "Unexpected signing date")
-	require.Equal(t, time.Unix(1516233600, 0), attr.Expiry(), "Unexpected expiry date")
-	require.Equal(t, 2, attr.KeyCounter(), "Unexpected key counter")
-
-	teardown(t)
-}
-
 func TestCandidates(t *testing.T) {
 	client := parseStorage(t)
 
@@ -299,47 +215,6 @@ func TestCandidates(t *testing.T) {
 	require.Empty(t, attrs)
 
 	teardown(t)
-}
-
-func TestTimestamp(t *testing.T) {
-	mytime := irma.Timestamp(time.Unix(1500000000, 0))
-	timestruct := struct{ Time *irma.Timestamp }{Time: &mytime}
-	bytes, err := json.Marshal(timestruct)
-	require.NoError(t, err)
-
-	timestruct = struct{ Time *irma.Timestamp }{}
-	require.NoError(t, json.Unmarshal(bytes, &timestruct))
-	require.Equal(t, time.Time(*timestruct.Time).Unix(), int64(1500000000))
-}
-
-func TestServiceProvider(t *testing.T) {
-	var spjwt irma.ServiceProviderJwt
-
-	var spjson = `{
-		"sprequest": {
-			"validity": 60,
-			"timeout": 60,
-			"request": {
-				"content": [
-					{
-						"label": "ID",
-						"attributes": ["irma-demo.RU.studentCard.studentID"]
-					}
-				]
-			}
-		}
-	}`
-
-	require.NoError(t, json.Unmarshal([]byte(spjson), &spjwt))
-	require.NotNil(t, spjwt.Request.Request.Content)
-	require.NotEmpty(t, spjwt.Request.Request.Content)
-	require.NotNil(t, spjwt.Request.Request.Content[0])
-	require.NotEmpty(t, spjwt.Request.Request.Content[0])
-	require.NotNil(t, spjwt.Request.Request.Content[0].Attributes)
-	require.NotEmpty(t, spjwt.Request.Request.Content[0].Attributes)
-	require.Equal(t, spjwt.Request.Request.Content[0].Attributes[0].Name(), "studentID")
-
-	require.NotNil(t, spjwt.Request.Request.Content.Find(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")))
 }
 
 func TestPaillier(t *testing.T) {
