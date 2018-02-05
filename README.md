@@ -8,6 +8,15 @@
 
 For example, the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmago`.
 
+## Dependencies
+
+`irmago` uses [`dep`](https://github.com/golang/dep) for its dependencies. After [Installing `dep`](https://golang.github.io/dep/docs/installation.html) if necesssary, run
+
+    dep ensure
+
+to download and [`vendor`](https://golang.org/cmd/go/#hdr-Vendor_Directories) the correct version of
+each dependency.
+
 ## Running the unit tests
 
 For running the unit tests, you need to run [irma_keyshare_server](https://github.com/credentials/irma_keyshare_server) and [irma_api_server](https://github.com/credentials/irma_api_server) locally.
