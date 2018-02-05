@@ -15,7 +15,7 @@ import (
 func TestMain(m *testing.M) {
 	// Remove any output from previously run to ensure a clean state
 	// Some of the tests don't like it when there is existing state in storage
-	err := os.RemoveAll("testdata/storage/test")
+	err := os.RemoveAll("../testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not delete test storage", err.Error())
 		os.Exit(1)
@@ -25,8 +25,8 @@ func TestMain(m *testing.M) {
 	// so we have to create the temporary test storage by two function calls.
 	// We ignore any error possibly returned by creating the first one, because if it errors,
 	// then the second one certainly will as well.
-	_ = fs.EnsureDirectoryExists("testdata/storage")
-	err = fs.EnsureDirectoryExists("testdata/storage/test")
+	_ = fs.EnsureDirectoryExists("../testdata/storage")
+	err = fs.EnsureDirectoryExists("../testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not create test storage: ", err.Error())
 		os.Exit(1)
@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 
 	retCode := m.Run()
 
-	err = os.RemoveAll("testdata/storage/test")
+	err = os.RemoveAll("../testdata/storage/test")
 	if err != nil {
 		fmt.Println("Could not delete test storage", err.Error())
 		os.Exit(1)
@@ -51,10 +51,10 @@ func (i *IgnoringClientHandler) EnrollmentError(manager irma.SchemeManagerIdenti
 func (i *IgnoringClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier)          {}
 
 func parseStorage(t *testing.T) *Client {
-	require.NoError(t, fs.CopyDirectory("testdata/teststorage", "testdata/storage/test"))
+	require.NoError(t, fs.CopyDirectory("../testdata/teststorage", "../testdata/storage/test"))
 	manager, err := New(
-		"testdata/storage/test",
-		"testdata/irma_configuration",
+		"../testdata/storage/test",
+		"../testdata/irma_configuration",
 		"",
 		&IgnoringClientHandler{},
 	)
@@ -63,7 +63,7 @@ func parseStorage(t *testing.T) *Client {
 }
 
 func teardown(t *testing.T) {
-	require.NoError(t, os.RemoveAll("testdata/storage/test"))
+	require.NoError(t, os.RemoveAll("../testdata/storage/test"))
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
@@ -271,7 +271,7 @@ func TestWrongSchemeManager(t *testing.T) {
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove("testdata/storage/test/irma_configuration/irma-demo/index"))
+	require.NoError(t, os.Remove("../testdata/storage/test/irma_configuration/irma-demo/index"))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)
@@ -318,7 +318,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
 	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
-	basepath := "testdata/storage/test/irma_configuration/irma-demo"
+	basepath := "../testdata/storage/test/irma_configuration/irma-demo"
 	exists, err := fs.PathExists(basepath + "/description.xml")
 	require.NoError(t, err)
 	require.True(t, exists)
