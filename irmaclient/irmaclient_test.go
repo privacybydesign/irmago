@@ -51,15 +51,11 @@ func (i *IgnoringClientHandler) EnrollmentError(manager irma.SchemeManagerIdenti
 func (i *IgnoringClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier)          {}
 
 func parseStorage(t *testing.T) *Client {
-	exists, err := fs.PathExists("testdata/storage/test")
-	require.NoError(t, err, "fs.PathExists() failed")
-	if !exists {
-		require.NoError(t, os.Mkdir("testdata/storage/test", 0755), "Could not create test storage")
-	}
+	require.NoError(t, fs.CopyDirectory("testdata/teststorage", "testdata/storage/test"))
 	manager, err := New(
 		"testdata/storage/test",
 		"testdata/irma_configuration",
-		"testdata/oldstorage",
+		"",
 		&IgnoringClientHandler{},
 	)
 	require.NoError(t, err)
@@ -139,7 +135,7 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 	verifyPaillierKey(t, client.paillierKeyCache)
 }
 
-func TestAndroidParse(t *testing.T) {
+func TestStorageDeserialization(t *testing.T) {
 	client := parseStorage(t)
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
@@ -148,26 +144,22 @@ func TestAndroidParse(t *testing.T) {
 	teardown(t)
 }
 
-func TestUnmarshaling(t *testing.T) {
+func TestLogging(t *testing.T) {
 	client := parseStorage(t)
 
-	// Do session so we can examine its log item later
 	logs, err := client.Logs()
+	oldLogLength := len(logs)
 	require.NoError(t, err)
+
+	// Do session so we can examine its log item later
 	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "issue", client)
 
-	newclient, err := New("testdata/storage/test", "testdata/irma_configuration", "testdata/oldstorage", nil)
+	logs, err = client.Logs()
 	require.NoError(t, err)
-	verifyClientIsUnmarshaled(t, newclient)
-	verifyCredentials(t, newclient)
-	verifyKeyshareIsUnmarshaled(t, newclient)
+	require.True(t, len(logs) == oldLogLength+1)
 
-	newlogs, err := newclient.Logs()
-	require.NoError(t, err)
-	require.True(t, len(newlogs) == len(logs)+1)
-
-	entry := newlogs[len(newlogs)-1]
+	entry := logs[len(logs)-1]
 	require.NotNil(t, entry)
 	sessionjwt, err := entry.Jwt()
 	require.NoError(t, err)
@@ -249,6 +241,7 @@ func TestPaillier(t *testing.T) {
 
 func TestCredentialRemoval(t *testing.T) {
 	client := parseStorage(t)
+
 	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
 

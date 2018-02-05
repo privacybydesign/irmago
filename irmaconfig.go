@@ -365,39 +365,7 @@ func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
 // CopyFromAssets recursively copies the directory tree from the assets folder
 // into the directory of this Configuration.
 func (conf *Configuration) CopyFromAssets(parse bool) error {
-	if err := fs.EnsureDirectoryExists(conf.path); err != nil {
-		return err
-	}
-
-	err := filepath.Walk(conf.assets, filepath.WalkFunc(
-		func(path string, info os.FileInfo, err error) error {
-			if path == conf.assets {
-				return nil
-			}
-			subpath := path[len(conf.assets):]
-			if info.IsDir() {
-				if err := fs.EnsureDirectoryExists(conf.path + subpath); err != nil {
-					return err
-				}
-			} else {
-				srcfile, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-				defer srcfile.Close()
-				bts, err := ioutil.ReadAll(srcfile)
-				if err != nil {
-					return err
-				}
-				if err := fs.SaveFile(conf.path+subpath, bts); err != nil {
-					return err
-				}
-			}
-			return nil
-		}),
-	)
-
-	if err != nil {
+	if err := fs.CopyDirectory(conf.assets, conf.path); err != nil {
 		return err
 	}
 	if parse {

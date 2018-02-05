@@ -20,13 +20,12 @@ type ManualSessionHandler struct {
 var client *Client
 
 func TestManualSession(t *testing.T) {
+	client = parseStorage(t)
+
 	request := "{\"nonce\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 
 	channel := make(chan *irma.SessionError)
 	manualSessionHandler := ManualSessionHandler{t: t, c: channel}
-
-	client = parseStorage(t)
-	TestAndroidParse(t)
 
 	client.NewManualSession(request, &manualSessionHandler)
 
@@ -38,13 +37,12 @@ func TestManualSession(t *testing.T) {
 }
 
 func TestManualKeyShareSession(t *testing.T) {
+	client = parseStorage(t)
+
 	keyshareRequest := "{\"nonce\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
 
 	channel := make(chan *irma.SessionError)
 	manualSessionHandler := ManualSessionHandler{t: t, c: channel}
-
-	client = parseStorage(t)
-	TestAndroidParse(t)
 
 	client.NewManualSession(keyshareRequest, &manualSessionHandler)
 

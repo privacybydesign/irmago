@@ -102,3 +102,37 @@ func SaveFile(filepath string, content []byte) (err error) {
 	// Rename, overwriting old file
 	return os.Rename(dir+"/"+tempfilename, filepath)
 }
+
+func CopyDirectory(src, dest string) error {
+	if err := EnsureDirectoryExists(dest); err != nil {
+		return err
+	}
+
+	return filepath.Walk(src, filepath.WalkFunc(
+		func(path string, info os.FileInfo, err error) error {
+			if path == src {
+				return nil
+			}
+			subpath := path[len(src):]
+			if info.IsDir() {
+				if err := EnsureDirectoryExists(dest + subpath); err != nil {
+					return err
+				}
+			} else {
+				srcfile, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer srcfile.Close()
+				bts, err := ioutil.ReadAll(srcfile)
+				if err != nil {
+					return err
+				}
+				if err := SaveFile(dest+subpath, bts); err != nil {
+					return err
+				}
+			}
+			return nil
+		}),
+	)
+}
