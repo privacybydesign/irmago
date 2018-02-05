@@ -118,6 +118,8 @@ const (
 	ErrorConfigurationDownload = ErrorType("configurationDownload")
 	// IRMA requests refers to unknown scheme manager
 	ErrorUnknownSchemeManager = ErrorType("unknownSchemeManager")
+	// A session is requested involving a scheme manager that has some problem
+	ErrorInvalidSchemeManager = ErrorType("invalidSchemeManager")
 	// Recovered panic
 	ErrorPanic = ErrorType("panic")
 )

@@ -170,6 +170,39 @@ func (session *session) panicFailure() {
 	}
 }
 
+func (session *session) checkAndUpateConfiguration(client *Client) bool {
+	var err error
+	for id := range session.irmaSession.Identifiers().SchemeManagers {
+		manager, contains := client.Configuration.SchemeManagers[id]
+		if !contains {
+			session.fail(&irma.SessionError{
+				ErrorType: irma.ErrorUnknownSchemeManager,
+				Info:      id.String(),
+			})
+			return false
+		}
+		if !manager.Valid {
+			session.fail(&irma.SessionError{
+				ErrorType: irma.ErrorInvalidSchemeManager,
+				Info:      string(manager.Status),
+			})
+			return false
+		}
+	}
+
+	// Check if we are enrolled into all involved keyshare servers
+	if !session.checkKeyshareEnrollment() {
+		return false
+	}
+
+	// Download missing credential types/issuers/public keys from the scheme manager
+	if session.downloaded, err = session.client.Configuration.Download(session.irmaSession.Identifiers()); err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+		return false
+	}
+	return true
+}
+
 // NewManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) NewManualSession(sigrequestJSONString string, handler Handler) {
 	var err error
@@ -189,14 +222,7 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
-	// Check if we are enrolled into all involved keyshare servers
-	if !session.checkKeyshareEnrollment() {
-		return
-	}
-
-	// Download missing credential types/issuers/public keys from the scheme manager
-	if session.downloaded, err = session.client.Configuration.Download(session.irmaSession.Identifiers()); err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+	if !session.checkAndUpateConfiguration(client) {
 		return
 	}
 
@@ -293,14 +319,7 @@ func (session *session) start() {
 		}
 	}
 
-	// Check if we are enrolled into all involved keyshare servers
-	if !session.checkKeyshareEnrollment() {
-		return
-	}
-
-	// Download missing credential types/issuers/public keys from the scheme manager
-	if session.downloaded, err = session.client.Configuration.Download(session.irmaSession.Identifiers()); err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+	if !session.checkAndUpateConfiguration(session.client) {
 		return
 	}
 

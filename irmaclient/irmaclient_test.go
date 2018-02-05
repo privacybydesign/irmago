@@ -290,6 +290,9 @@ func TestWrongSchemeManager(t *testing.T) {
 // within this manager to test the autmatic downloading of credential definitions,
 // issuers, and public keys.
 func TestDownloadSchemeManager(t *testing.T) {
+	// Disabled
+	//return
+
 	client := parseStorage(t)
 
 	// Remove irma-demo scheme manager as we need to test adding it

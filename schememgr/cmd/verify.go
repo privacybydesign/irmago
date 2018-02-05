@@ -43,7 +43,7 @@ func RunVerify(path string) error {
 	}
 
 	for _, manager := range conf.SchemeManagers {
-		if err := conf.VerifySchemeManager(manager.Identifier()); err != nil {
+		if err := conf.VerifySchemeManager(manager); err != nil {
 			return err
 		}
 	}

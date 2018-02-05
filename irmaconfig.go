@@ -167,7 +167,7 @@ func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error, mana
 		return
 	}
 
-	err = conf.VerifySchemeManager(manager.Identifier())
+	err = conf.VerifySchemeManager(manager)
 	if err != nil {
 		manager.Status = SchemeManagerStatusInvalidSignature
 		return
@@ -388,7 +388,7 @@ func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, er
 	if err != nil {
 		return nil, err
 	}
-	manager := &SchemeManager{}
+	manager := &SchemeManager{Status: SchemeManagerStatusUnprocessed, Valid: false}
 	if err = xml.Unmarshal(b, manager); err != nil {
 		return nil, err
 	}
@@ -442,6 +442,14 @@ func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	}
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
 		return err
+	}
+
+	if err := conf.VerifySchemeManager(manager); err != nil {
+		manager.Status = SchemeManagerStatusInvalidSignature
+		manager.Valid = false
+	} else {
+		manager.Status = SchemeManagerStatusValid
+		manager.Valid = true
 	}
 
 	conf.SchemeManagers[NewSchemeManagerIdentifier(name)] = manager
@@ -639,12 +647,15 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error
 	return manager.Index.FromString(string(indexbts))
 }
 
-func (conf *Configuration) VerifySchemeManager(id SchemeManagerIdentifier) error {
-	manager := conf.SchemeManagers[id]
-	if manager == nil {
-		return errors.New("Can't verify unknown scheme manager")
-	}
+func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 	for file := range manager.Index {
+		exists, err := fs.PathExists(filepath.Join(conf.path, file))
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
 		// Don't care about the actual bytes
 		if _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
 			return err
