@@ -43,11 +43,8 @@ func RunVerify(path string) error {
 	}
 
 	for _, manager := range conf.SchemeManagers {
-		for file := range manager.Index {
-			// Don't care about the actual bytes
-			if _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
-				return err
-			}
+		if err := conf.VerifySchemeManager(manager.Identifier()); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -23,6 +23,26 @@ func s2big(s string) (r *big.Int) {
 	return
 }
 
+func TestParseInvalidIrmaConfiguration(t *testing.T) {
+	// The description.xml of the scheme manager under this folder has been edited
+	// to invalidate the scheme manager signature
+	conf, err := NewConfiguration("testdata/irma_configuration_invalid", "")
+	require.NoError(t, err)
+
+	// Parsing it should return a SchemeManagerError
+	err = conf.ParseFolder()
+	require.Error(t, err)
+	smerr, ok := err.(*SchemeManagerError)
+	require.True(t, ok)
+	require.Equal(t, SchemeManagerStatusInvalidSignature, smerr.Status)
+
+	// The manager should still be in conf.SchemeManagers, but also in DisabledSchemeManagers
+	require.Contains(t, conf.SchemeManagers, smerr.Manager)
+	require.Contains(t, conf.DisabledSchemeManagers, smerr.Manager)
+	require.Equal(t, SchemeManagerStatusInvalidSignature, conf.SchemeManagers[smerr.Manager].Status)
+	require.Equal(t, false, conf.SchemeManagers[smerr.Manager].Valid)
+}
+
 func TestParseIrmaConfiguration(t *testing.T) {
 	conf := parseConfiguration(t)
 

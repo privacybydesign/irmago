@@ -166,6 +166,13 @@ func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error, mana
 		manager.Status = SchemeManagerStatusInvalidIndex
 		return
 	}
+
+	err = conf.VerifySchemeManager(manager.Identifier())
+	if err != nil {
+		manager.Status = SchemeManagerStatusInvalidSignature
+		return
+	}
+
 	_, err = conf.pathToDescription(manager, dir+"/description.xml", manager)
 	if err != nil {
 		manager.Status = SchemeManagerStatusParsingError
@@ -175,15 +182,6 @@ func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error, mana
 	if manager.XMLVersion < 7 {
 		manager.Status = SchemeManagerStatusParsingError
 		return errors.New("Unsupported scheme manager description"), manager
-	}
-	valid, err := conf.VerifySignature(manager.Identifier())
-	if err != nil {
-		manager.Status = SchemeManagerStatusInvalidSignature
-		return
-	}
-	if !valid {
-		manager.Status = SchemeManagerStatusInvalidSignature
-		return errors.New("Scheme manager signature was invalid"), manager
 	}
 
 	err = conf.parseIssuerFolders(manager, dir)
@@ -639,6 +637,21 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error
 	}
 	manager.Index = make(map[string]ConfigurationFileHash)
 	return manager.Index.FromString(string(indexbts))
+}
+
+func (conf *Configuration) VerifySchemeManager(id SchemeManagerIdentifier) error {
+	manager := conf.SchemeManagers[id]
+	if manager == nil {
+		return errors.New("Can't verify unknown scheme manager")
+	}
+	for file := range manager.Index {
+		// Don't care about the actual bytes
+		if _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // ReadAuthenticatedFile reads the file at the specified path
