@@ -641,6 +641,14 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error
 }
 
 func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
+	valid, err := conf.VerifySignature(manager.Identifier())
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return errors.New("Scheme manager signature was invalid")
+	}
+
 	for file := range manager.index {
 		exists, err := fs.PathExists(filepath.Join(conf.path, file))
 		if err != nil {
