@@ -136,6 +136,18 @@ func (conf *Configuration) ParseFolder() (err error) {
 	return
 }
 
+func (conf *Configuration) ParseOrRestoreFolder() error {
+	err := conf.ParseFolder()
+	var parse bool
+	for id := range conf.DisabledSchemeManagers {
+		parse = conf.CopyManagerFromAssets(id)
+	}
+	if parse {
+		return conf.ParseFolder()
+	}
+	return err
+}
+
 // parseSchemeManagerFolder parses the entire tree of the specified scheme manager
 // If err != nil then a problem occured
 func (conf *Configuration) parseSchemeManagerFolder(dir string, manager *SchemeManager) (err error) {
@@ -172,7 +184,11 @@ func (conf *Configuration) parseSchemeManagerFolder(dir string, manager *SchemeM
 		return
 	}
 
-	_, err = conf.pathToDescription(manager, dir+"/description.xml", manager)
+	exists, err := conf.pathToDescription(manager, dir+"/description.xml", manager)
+	if !exists {
+		manager.Status = SchemeManagerStatusParsingError
+		return errors.New("Scheme manager description not found")
+	}
 	if err != nil {
 		manager.Status = SchemeManagerStatusParsingError
 		return
@@ -268,8 +284,8 @@ func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid Issu
 		if err != nil {
 			continue
 		}
-		bts, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.path, file))
-		if err != nil {
+		bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.path, file))
+		if err != nil || !found {
 			return err
 		}
 		pk, err := gabi.NewPublicKeyFromBytes(bts)
@@ -339,7 +355,10 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 		return false, nil
 	}
 
-	bts, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.path, path))
+	bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.path, path))
+	if !found {
+		return false, nil
+	}
 	if err != nil {
 		return true, err
 	}
@@ -362,6 +381,9 @@ func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
 // CopyFromAssets recursively copies the directory tree from the assets folder
 // into the directory of this Configuration.
 func (conf *Configuration) CopyFromAssets(parse bool) error {
+	if conf.assets == "" {
+		return nil
+	}
 	if err := fs.CopyDirectory(conf.assets, conf.path); err != nil {
 		return err
 	}
@@ -369,6 +391,18 @@ func (conf *Configuration) CopyFromAssets(parse bool) error {
 		return conf.ParseFolder()
 	}
 	return nil
+}
+
+func (conf *Configuration) CopyManagerFromAssets(managerID SchemeManagerIdentifier) bool {
+	manager := conf.SchemeManagers[managerID]
+	if conf.assets == "" {
+		return false
+	}
+	_ = fs.CopyDirectory(
+		filepath.Join(conf.assets, manager.ID),
+		filepath.Join(conf.path, manager.ID),
+	)
+	return true
 }
 
 // DownloadSchemeManager downloads and returns a scheme manager description.xml file
@@ -658,7 +692,7 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 			continue
 		}
 		// Don't care about the actual bytes
-		if _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
+		if _, _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
 			return err
 		}
 	}
@@ -669,22 +703,22 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 // ReadAuthenticatedFile reads the file at the specified path
 // and verifies its authenticity by checking that the file hash
 // is present in the (signed) scheme manager index file.
-func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path string) ([]byte, error) {
+func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path string) ([]byte, bool, error) {
 	signedHash, ok := manager.index[path]
 	if !ok {
-		return nil, errors.Errorf("File %s not present in scheme manager index", path)
+		return nil, false, nil
 	}
 
 	bts, err := ioutil.ReadFile(filepath.Join(conf.path, path))
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	computedHash := sha256.Sum256(bts)
 
 	if !bytes.Equal(computedHash[:], signedHash) {
-		return nil, errors.Errorf("Hash of %s does not match scheme manager index", path)
+		return nil, true, errors.Errorf("Hash of %s does not match scheme manager index", path)
 	}
-	return bts, nil
+	return bts, true, nil
 }
 
 // VerifySignature verifies the signature on the scheme manager index file

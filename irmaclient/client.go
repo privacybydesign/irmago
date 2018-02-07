@@ -130,7 +130,7 @@ func New(
 		return nil, err
 	}
 
-	schemeMgrErr := cm.Configuration.ParseFolder()
+	schemeMgrErr := cm.Configuration.ParseOrRestoreFolder()
 	// If schemMgrErr is of type SchemeManagerError, we continue and
 	// return it at the end; otherwise bail out now
 	_, isSchemeMgrErr := schemeMgrErr.(*irma.SchemeManagerError)
