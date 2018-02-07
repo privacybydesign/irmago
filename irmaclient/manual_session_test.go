@@ -56,7 +56,7 @@ func TestManualKeyShareSession(t *testing.T) {
 func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 	sh.c <- nil
 }
-func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, missingAttributes irma.AttributeDisjunctionList) {
+func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, serverName string, missingAttributes irma.AttributeDisjunctionList) {
 	sh.t.Fail()
 }
 

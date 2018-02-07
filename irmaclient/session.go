@@ -30,7 +30,7 @@ type Handler interface {
 	Success(action irma.Action, result string)
 	Cancelled(action irma.Action)
 	Failure(action irma.Action, err *irma.SessionError)
-	UnsatisfiableRequest(action irma.Action, missing irma.AttributeDisjunctionList)
+	UnsatisfiableRequest(action irma.Action, ServerName string, missing irma.AttributeDisjunctionList)
 	MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier)
 
 	RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler)
@@ -228,7 +228,7 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 
 	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, missing)
+		session.Handler.UnsatisfiableRequest(session.Action, "E-mail request", missing)
 		// TODO: session.transport.Delete() on dialog cancel
 		return
 	}
@@ -337,7 +337,7 @@ func (session *session) start() {
 
 	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, missing)
+		session.Handler.UnsatisfiableRequest(session.Action, session.jwt.Requestor(), missing)
 		// TODO: session.transport.Delete() on dialog cancel
 		return
 	}
