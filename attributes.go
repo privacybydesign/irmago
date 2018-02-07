@@ -59,6 +59,16 @@ func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeLi
 	}
 }
 
+// NewAttributeListFromInts initializes a new AttributeList from disclosed attributes of a prooflist
+func NewAttributeListFromADisclosed(aResponses map[int]*big.Int, aDisclosed map[int]*big.Int, conf *Configuration) (*AttributeList, error) {
+	ints, err := convertProofResponsesToInts(aResponses, aDisclosed)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewAttributeListFromInts(ints, conf), nil
+}
+
 func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
 		al.info = NewCredentialInfo(al.Ints, al.Conf)
@@ -70,7 +80,9 @@ func (al *AttributeList) Hash() string {
 	if al.h == "" {
 		bytes := []byte{}
 		for _, i := range al.Ints {
-			bytes = append(bytes, i.Bytes()...)
+			if i != nil {
+				bytes = append(bytes, i.Bytes()...)
+			}
 		}
 		shasum := sha256.Sum256(bytes)
 		al.h = hex.EncodeToString(shasum[:])
@@ -83,7 +95,11 @@ func (al *AttributeList) Strings() []TranslatedString {
 	if al.strings == nil {
 		al.strings = make([]TranslatedString, len(al.Ints)-1)
 		for index, num := range al.Ints[1:] { // skip metadata
-			al.strings[index] = map[string]string{"en": string(num.Bytes()), "nl": string(num.Bytes())} // TODO
+			if num == nil {
+				al.strings[index] = nil
+			} else {
+				al.strings[index] = map[string]string{"en": string(num.Bytes()), "nl": string(num.Bytes())} // TODO
+			}
 		}
 	}
 	return al.strings
@@ -307,6 +323,45 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 			return true
 		}
 	}
+	return false
+}
+
+// Helper function to check if an attribute is satisfied against a list of disclosed attributes
+// This is the case if:
+// attribute is contained in disclosed AND if a value is present: equal to that value
+func isAttributeSatisfied(attribute AttributeTypeIdentifier, value string, disclosed []*CredentialInfo, conf *Configuration) bool {
+	for _, cred := range disclosed {
+		credentialType := cred.GetCredentialType(conf)
+		index, err := credentialType.IndexOf(attribute)
+
+		if err != nil {
+			// Specified credential does not contain this attribute, move to next cred in list of disclosed credentials
+			continue
+		}
+
+		disclosedAttributeValue := cred.Attributes[index]
+		// If it contains this attribute, check if value match (it must be disclosed (i.e. not nil) and match the value)
+		// Attribute is Statiisfied if:
+		// - Attribute is disclosed (i.e. not nil)
+		// - Value is empty OR value equal to disclosedValue
+		if disclosedAttributeValue != nil && (value == "" || disclosedAttributeValue["en"] == value) { // TODO: fix translation/attr typing
+			return true
+		}
+	}
+	return false
+}
+
+// Check whether specified attributedisjunction satisfy a list of disclosed attributes
+// We return true if one of the attributes in the disjunction is satisfied
+func (disjunction *AttributeDisjunction) SatisfyDisclosed(disclosed []*CredentialInfo, conf *Configuration) bool {
+	for _, attr := range disjunction.Attributes {
+		value := disjunction.Values[attr]
+
+		if isAttributeSatisfied(attr, value, disclosed, conf) {
+			return true
+		}
+	}
+
 	return false
 }
 

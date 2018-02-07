@@ -7,16 +7,16 @@ import (
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
-	CredentialTypeID string             // e.g., "irma-demo.RU.studentCard"
-	Name             string             // e.g., "studentCard"
-	IssuerID         string             // e.g., "RU"
-	SchemeManagerID  string             // e.g., "irma-demo"
-	Index            int                // This is the Index-th credential instance of this type
-	SignedOn         Timestamp          // Unix timestamp
-	Expires          Timestamp          // Unix timestamp
-	Attributes       []TranslatedString // Human-readable rendered attributes
-	Logo             string             // Path to logo on storage
-	Hash             string             // SHA256 hash over the attributes
+	CredentialTypeID CredentialTypeIdentifier // e.g., "irma-demo.RU.studentCard"
+	Name             string                   // e.g., "studentCard"
+	IssuerID         IssuerIdentifier         // e.g., "RU"
+	SchemeManagerID  SchemeManagerIdentifier  // e.g., "irma-demo"
+	Index            int                      // This is the Index-th credential instance of this type
+	SignedOn         Timestamp                // Unix timestamp
+	Expires          Timestamp                // Unix timestamp
+	Attributes       []TranslatedString       // Human-readable rendered attributes
+	Logo             string                   // Path to logo on storage
+	Hash             string                   // SHA256 hash over the attributes
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
@@ -29,25 +29,60 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 		return nil
 	}
 
-	attrs := make([]TranslatedString, len(credtype.Attributes))
-	for i := range credtype.Attributes {
-		val := string(ints[i+1].Bytes())
-		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
-	}
+	attrs := NewAttributeListFromInts(ints, conf)
 
 	id := credtype.Identifier()
 	issid := id.IssuerIdentifier()
 	return &CredentialInfo{
-		CredentialTypeID: id.String(),
+		CredentialTypeID: NewCredentialTypeIdentifier(id.String()),
 		Name:             id.Name(),
-		IssuerID:         issid.Name(),
-		SchemeManagerID:  issid.SchemeManagerIdentifier().String(),
+		IssuerID:         NewIssuerIdentifier(issid.Name()),
+		SchemeManagerID:  NewSchemeManagerIdentifier(issid.SchemeManagerIdentifier().String()),
 		SignedOn:         Timestamp(meta.SigningDate()),
 		Expires:          Timestamp(meta.Expiry()),
-		Attributes:       attrs,
+		Attributes:       attrs.Strings(),
 		Logo:             credtype.Logo(conf),
-		Hash:             NewAttributeListFromInts(ints, conf).Hash(),
+		Hash:             attrs.Hash(),
 	}
+}
+
+// Convert proof responses to Ints, adding nils for undislosed attributes
+func convertProofResponsesToInts(aResponses map[int]*big.Int, aDisclosed map[int]*big.Int) ([]*big.Int, error) {
+	var ints []*big.Int
+
+	length := len(aResponses) + len(aDisclosed)
+
+	for i := 1; i < length; i++ {
+		if aResponses[i] == nil {
+			if aDisclosed[i] == nil {
+				// If index not found in aResponses it must be in aDisclosed
+				return nil, &SessionError{
+					ErrorType: ErrorCrypto,
+					Info:      fmt.Sprintf("Missing attribute index: %v", i),
+				} // TODO: error type?
+			}
+
+			ints = append(ints, aDisclosed[i])
+		} else {
+			// Don't include value of hidden attributes
+			ints = append(ints, nil)
+		}
+	}
+	return ints, nil
+}
+
+// NewAttributeListFromInts initializes a new AttributeList from disclosed attributes of a prooflist
+func NewCredentialInfoFromADisclosed(aResponses map[int]*big.Int, aDisclosed map[int]*big.Int, conf *Configuration) (*CredentialInfo, error) {
+	ints, err := convertProofResponsesToInts(aResponses, aDisclosed)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCredentialInfo(ints, conf), nil
+}
+
+func (ci CredentialInfo) GetCredentialType(conf *Configuration) *CredentialType {
+	return conf.CredentialTypes[ci.CredentialTypeID]
 }
 
 // Len implements sort.Interface.
