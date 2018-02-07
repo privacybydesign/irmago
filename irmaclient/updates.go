@@ -67,6 +67,11 @@ var clientUpdates = []func(client *Client) error{
 		}
 		return client.storage.StorePreferences(client.Preferences)
 	},
+
+	// Copy new irma_configuration out of assets
+	func(client *Client) (err error) {
+		return client.Configuration.CopyFromAssets(true)
+	},
 }
 
 // update performs any function from clientUpdates that has not
