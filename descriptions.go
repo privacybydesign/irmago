@@ -2,8 +2,10 @@ package irma
 
 import (
 	"encoding/xml"
+	"fmt"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -145,6 +147,15 @@ func (ct *CredentialType) IssuerIdentifier() IssuerIdentifier {
 
 func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(ct.SchemeManagerID)
+}
+
+func (ct *CredentialType) Logo(conf *Configuration) string {
+	path := fmt.Sprintf("%s/%s/%s/Issues/%s/logo.png", conf.Path, ct.SchemeManagerID, ct.IssuerID, ct.ID)
+	exists, err := fs.PathExists(path)
+	if err != nil || !exists {
+		return ""
+	}
+	return path
 }
 
 // Identifier returns the identifier of the specified issuer description.

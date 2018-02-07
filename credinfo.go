@@ -1,11 +1,8 @@
 package irma
 
 import (
-	"fmt"
 	"math/big"
 	"strings"
-
-	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // CredentialInfo contains all information of an IRMA credential.
@@ -38,14 +35,6 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 		attrs[i] = TranslatedString(map[string]string{"en": val, "nl": val})
 	}
 
-	path := fmt.Sprintf("%s/%s/%s/Issues/%s/logo.png", conf.path, credtype.SchemeManagerID, credtype.IssuerID, credtype.ID)
-	exists, err := fs.PathExists(path)
-	if err != nil {
-		return nil
-	}
-	if !exists {
-		path = ""
-	}
 	id := credtype.Identifier()
 	issid := id.IssuerIdentifier()
 	return &CredentialInfo{
@@ -56,7 +45,7 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 		SignedOn:         Timestamp(meta.SigningDate()),
 		Expires:          Timestamp(meta.Expiry()),
 		Attributes:       attrs,
-		Logo:             path,
+		Logo:             credtype.Logo(conf),
 		Hash:             NewAttributeListFromInts(ints, conf).Hash(),
 	}
 }

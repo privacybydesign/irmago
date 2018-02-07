@@ -38,15 +38,16 @@ type Configuration struct {
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 
+	// Path to the irma_configuration folder that this instance represents
+	Path string
+
 	// DisabledSchemeManagers keeps track of scheme managers that did not parse  succesfully
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
 	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
-	// TODO: what can we say about the consistency of this Configuration if this is not empty?
 
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
-	path          string
 	assets        string
 }
 
@@ -83,14 +84,14 @@ func (sme SchemeManagerError) Error() string {
 // ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string, assets string) (conf *Configuration, err error) {
 	conf = &Configuration{
-		path:   path,
+		Path:   path,
 		assets: assets,
 	}
 
-	if err = fs.EnsureDirectoryExists(conf.path); err != nil {
+	if err = fs.EnsureDirectoryExists(conf.Path); err != nil {
 		return nil, err
 	}
-	if conf.assets != "" && fs.Empty(conf.path) {
+	if conf.assets != "" && fs.Empty(conf.Path) {
 		if err = conf.CopyFromAssets(false); err != nil {
 			return nil, err
 		}
@@ -111,7 +112,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 
 	var mgrerr *SchemeManagerError
-	err = iterateSubfolders(conf.path, func(dir string) error {
+	err = iterateSubfolders(conf.Path, func(dir string) error {
 		manager := &SchemeManager{ID: filepath.Base(dir), Status: SchemeManagerStatusUnprocessed, Valid: false}
 		err := conf.parseSchemeManagerFolder(dir, manager)
 		if err == nil {
@@ -271,7 +272,7 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid IssuerIdentifier) error {
-	path := fmt.Sprintf("%s/%s/%s/PublicKeys/*.xml", conf.path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+	path := fmt.Sprintf("%s/%s/%s/PublicKeys/*.xml", conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(path)
 	if err != nil {
 		return err
@@ -284,7 +285,7 @@ func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid Issu
 		if err != nil {
 			continue
 		}
-		bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.path, file))
+		bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.Path, file))
 		if err != nil || !found {
 			return err
 		}
@@ -355,7 +356,7 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 		return false, nil
 	}
 
-	bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.path, path))
+	bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.Path, path))
 	if !found {
 		return false, nil
 	}
@@ -384,7 +385,7 @@ func (conf *Configuration) CopyFromAssets(parse bool) error {
 	if conf.assets == "" {
 		return nil
 	}
-	if err := fs.CopyDirectory(conf.assets, conf.path); err != nil {
+	if err := fs.CopyDirectory(conf.assets, conf.Path); err != nil {
 		return err
 	}
 	if parse {
@@ -400,7 +401,7 @@ func (conf *Configuration) CopyManagerFromAssets(managerID SchemeManagerIdentifi
 	}
 	_ = fs.CopyDirectory(
 		filepath.Join(conf.assets, manager.ID),
-		filepath.Join(conf.path, manager.ID),
+		filepath.Join(conf.Path, manager.ID),
 	)
 	return true
 }
@@ -452,7 +453,7 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromS
 	delete(conf.SchemeManagers, id)
 
 	if fromStorage {
-		return os.RemoveAll(fmt.Sprintf("%s/%s", conf.path, id.String()))
+		return os.RemoveAll(fmt.Sprintf("%s/%s", conf.Path, id.String()))
 	}
 	return nil
 }
@@ -461,12 +462,12 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromS
 // provided its signature is valid.
 func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	name := manager.ID
-	if err := fs.EnsureDirectoryExists(fmt.Sprintf("%s/%s", conf.path, name)); err != nil {
+	if err := fs.EnsureDirectoryExists(fmt.Sprintf("%s/%s", conf.Path, name)); err != nil {
 		return err
 	}
 
 	t := NewHTTPTransport(manager.URL)
-	path := fmt.Sprintf("%s/%s", conf.path, name)
+	path := fmt.Sprintf("%s/%s", conf.Path, name)
 	if err := t.GetFile("description.xml", path+"/description.xml"); err != nil {
 		return err
 	}
@@ -477,14 +478,14 @@ func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 		return err
 	}
 
-	return conf.parseSchemeManagerFolder(filepath.Join(conf.path, name), manager)
+	return conf.parseSchemeManagerFolder(filepath.Join(conf.Path, name), manager)
 }
 
 // DownloadSchemeManagerSignature downloads, stores and verifies the latest version
 // of the index file and signature of the specified manager.
 func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager) (err error) {
 	t := NewHTTPTransport(manager.URL)
-	path := fmt.Sprintf("%s/%s", conf.path, manager.ID)
+	path := fmt.Sprintf("%s/%s", conf.Path, manager.ID)
 	index := filepath.Join(path, "index")
 	sig := filepath.Join(path, "index.sig")
 
@@ -559,7 +560,7 @@ func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet,
 		if _, contains = conf.Issuers[issid]; !contains {
 			manager := issid.SchemeManagerIdentifier()
 			url := conf.SchemeManagers[manager].URL + "/" + issid.Name()
-			path := fmt.Sprintf("%s/%s/%s", conf.path, manager.String(), issid.Name())
+			path := fmt.Sprintf("%s/%s/%s", conf.Path, manager.String(), issid.Name())
 			if err = transport.GetFile(url+"/description.xml", path+"/description.xml"); err != nil {
 				return nil, err
 			}
@@ -579,7 +580,7 @@ func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet,
 			if pk == nil {
 				manager := issid.SchemeManagerIdentifier()
 				suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
-				path := fmt.Sprintf("%s/%s/%s", conf.path, manager.String(), suffix)
+				path := fmt.Sprintf("%s/%s/%s", conf.Path, manager.String(), suffix)
 				if err = transport.GetFile(conf.SchemeManagers[manager].URL+suffix, path); err != nil {
 					return nil, err
 				}
@@ -591,7 +592,7 @@ func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet,
 		if _, contains := conf.CredentialTypes[credid]; !contains {
 			issuer := credid.IssuerIdentifier()
 			manager := issuer.SchemeManagerIdentifier()
-			local := fmt.Sprintf("%s/%s/%s/Issues", conf.path, manager.Name(), issuer.Name())
+			local := fmt.Sprintf("%s/%s/%s/Issues", conf.Path, manager.Name(), issuer.Name())
 			if err := fs.EnsureDirectoryExists(local); err != nil {
 				return nil, err
 			}
@@ -662,7 +663,7 @@ func (i SchemeManagerIndex) FromString(s string) error {
 
 // parseIndex parses the index file of the specified manager.
 func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error {
-	path := filepath.Join(conf.path, name, "index")
+	path := filepath.Join(conf.Path, name, "index")
 	if err := fs.AssertPathExists(path); err != nil {
 		return fmt.Errorf("Missing scheme manager index file; tried %s", path)
 	}
@@ -684,7 +685,7 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 	}
 
 	for file := range manager.index {
-		exists, err := fs.PathExists(filepath.Join(conf.path, file))
+		exists, err := fs.PathExists(filepath.Join(conf.Path, file))
 		if err != nil {
 			return err
 		}
@@ -709,7 +710,7 @@ func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path st
 		return nil, false, nil
 	}
 
-	bts, err := ioutil.ReadFile(filepath.Join(conf.path, path))
+	bts, err := ioutil.ReadFile(filepath.Join(conf.Path, path))
 	if err != nil {
 		return nil, true, err
 	}
@@ -736,7 +737,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (valid bo
 		}
 	}()
 
-	dir := filepath.Join(conf.path, id.String())
+	dir := filepath.Join(conf.Path, id.String())
 	if err := fs.AssertPathExists(dir+"/index", dir+"/index.sig", dir+"/pk.pem"); err != nil {
 		return false, errors.New("Missing scheme manager index file, signature, or public key")
 	}
