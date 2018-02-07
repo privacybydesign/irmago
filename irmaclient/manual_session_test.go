@@ -64,11 +64,12 @@ func TestManualSession(t *testing.T) {
 
 	client.NewManualSession(request, &ms)
 
-	test.ClearTestStorage(t)
-
 	if err := <-channel; err != nil {
+	  test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
+
+	test.ClearTestStorage(t)
 }
 
 func TestManualKeyShareSession(t *testing.T) {
@@ -90,11 +91,11 @@ func TestManualKeyShareSession(t *testing.T) {
 
 	client.NewManualSession(keyshareRequestString, &manualSessionHandler)
 
-	teardown(t)
-
 	if err := <-channel; err != nil {
+	  test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
+	test.ClearTestStorage(t)
 }
 
 func TestManualSessionMultiProof(t *testing.T) {
@@ -125,11 +126,11 @@ func TestManualSessionMultiProof(t *testing.T) {
 
 	client.NewManualSession(request, &ms)
 
-	test.ClearTestStorage(t)
-
 	if err := <-channel; err != nil {
+	  test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
+	test.ClearTestStorage(t)
 }
 
 func TestManualSessionInvalidProof(t *testing.T) {
@@ -150,11 +151,11 @@ func TestManualSessionInvalidProof(t *testing.T) {
 
 	client.NewManualSession(request, &ms)
 
-	teardown(t)
-
 	if err := <-channel; err.ErrorType != "Proof does not verify" {
+    test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
+	test.ClearTestStorage(t)
 }
 
 func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
