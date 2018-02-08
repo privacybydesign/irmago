@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
@@ -94,15 +95,20 @@ func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 	})
 }
 
-func getIssuanceRequest() *irma.IssuanceRequest {
-	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
+func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
+	temp := irma.Timestamp(time.Now().AddDate(1, 0, 0))
+	var expiry *irma.Timestamp
 	credid1 := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	credid2 := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+
+	if !defaultValidity {
+		expiry = &temp
+	}
 
 	return &irma.IssuanceRequest{
 		Credentials: []*irma.CredentialRequest{
 			{
-				Validity:         &expiry,
+				Validity:         expiry,
 				CredentialTypeID: &credid1,
 				Attributes: map[string]string{
 					"university":        "Radboud",
@@ -111,7 +117,7 @@ func getIssuanceRequest() *irma.IssuanceRequest {
 					"level":             "42",
 				},
 			}, {
-				Validity:         &expiry,
+				Validity:         expiry,
 				CredentialTypeID: &credid2,
 				Attributes: map[string]string{
 					"BSN": "299792458",
@@ -121,12 +127,12 @@ func getIssuanceRequest() *irma.IssuanceRequest {
 	}
 }
 
-func getIssuanceJwt(name string) interface{} {
-	return irma.NewIdentityProviderJwt(name, getIssuanceRequest())
+func getIssuanceJwt(name string, defaultValidity bool) interface{} {
+	return irma.NewIdentityProviderJwt(name, getIssuanceRequest(defaultValidity))
 }
 
 func getCombinedJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
-	isreq := getIssuanceRequest()
+	isreq := getIssuanceRequest(false)
 	isreq.Disclose = irma.AttributeDisjunctionList{
 		&irma.AttributeDisjunction{Label: "foo", Attributes: []irma.AttributeTypeIdentifier{id}},
 	}
@@ -169,11 +175,17 @@ func TestIssuanceSession(t *testing.T) {
 	sessionHelper(t, jwtcontents, "issue", nil)
 }
 
+func TestDefaultCredentialValidity(t *testing.T) {
+	client := parseStorage(t)
+	jwtcontents := getIssuanceJwt("testip", true)
+	sessionHelper(t, jwtcontents, "issue", client)
+}
+
 func TestLargeAttribute(t *testing.T) {
 	client := parseStorage(t)
 	require.NoError(t, client.RemoveAllCredentials())
 
-	jwtcontents := getIssuanceJwt("testip")
+	jwtcontents := getIssuanceJwt("testip", false)
 	sessionHelper(t, jwtcontents, "issue", client)
 
 	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)

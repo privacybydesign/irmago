@@ -14,10 +14,8 @@ import (
 
 const (
 	// ExpiryFactor is the precision for the expiry attribute. Value is one week.
-	ExpiryFactor = 60 * 60 * 24 * 7
-	// ValidityDefault is the default validity of new credentials (half a year).
-	ValidityDefault = 52 / 2
-	metadataLength  = 1 + 3 + 2 + 2 + 16
+	ExpiryFactor   = 60 * 60 * 24 * 7
+	metadataLength = 1 + 3 + 2 + 2 + 16
 )
 
 var (
@@ -131,7 +129,7 @@ func NewMetadataAttribute() *MetadataAttribute {
 	val.setField(versionField, metadataVersion)
 	val.setSigningDate()
 	val.setKeyCounter(0)
-	val.setValidityDuration(ValidityDefault)
+	val.setDefaultValidityDuration()
 	return &val
 }
 
@@ -192,12 +190,17 @@ func (attr *MetadataAttribute) setValidityDuration(weeks int) {
 	attr.setField(validityField, shortToByte(weeks))
 }
 
+func (attr *MetadataAttribute) setDefaultValidityDuration() {
+	attr.setExpiryDate(nil)
+}
+
 func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
+	var expiry int64
 	if timestamp == nil {
-		attr.setValidityDuration(ValidityDefault)
-		return nil
+		expiry = attr.SigningDate().AddDate(0, 6, 0).Unix()
+	} else {
+		expiry = time.Time(*timestamp).Unix()
 	}
-	expiry := time.Time(*timestamp).Unix()
 	signing := attr.SigningDate().Unix()
 	attr.setValidityDuration(int((expiry - signing) / ExpiryFactor))
 	return nil
