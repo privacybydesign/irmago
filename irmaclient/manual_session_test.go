@@ -2,11 +2,9 @@ package irmaclient
 
 import (
 	"fmt"
-
-	"github.com/go-errors/errors"
-
 	"testing"
 
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 )
 
@@ -72,21 +70,32 @@ func (sh *ManualSessionHandler) RequestSignaturePermission(request irma.Signatur
 
 // These handlers should not be called, fail test if they are called
 func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) {
-	sh.c <- &irma.SessionError{Err: errors.New("Session was cancelled")}
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Session was cancelled")})
 }
 func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
-	sh.c <- &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())}
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
-	sh.c <- &irma.SessionError{Err: errors.New("Unexpected session type")}
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Unexpected session type")})
 }
 func (sh *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
-	sh.c <- &irma.SessionError{Err: errors.New("Unexpected session type")}
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Unexpected session type")})
 }
 func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
-	sh.c <- &irma.SessionError{Err: errors.New("Unexpected session type")}
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Unexpected session type")})
 }
 func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.SessionError) {
 	fmt.Println(err.Err)
-	sh.c <- err
+	select {
+	case sh.c <- err:
+		// nop
+	default:
+		sh.t.Fatal(err)
+	}
+}
+func (sh *ManualSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked})
+}
+func (sh *ManualSessionHandler) KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier) {
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareRegistrationIncomplete")})
 }

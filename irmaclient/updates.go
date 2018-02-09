@@ -72,6 +72,18 @@ var clientUpdates = []func(client *Client) error{
 	func(client *Client) (err error) {
 		return client.Configuration.CopyFromAssets(true)
 	},
+
+	// For each keyshare server, include in its struct the identifier of its scheme manager
+	func(client *Client) (err error) {
+		keyshareServers, err := client.storage.LoadKeyshareServers()
+		if err != nil {
+			return err
+		}
+		for smi, kss := range keyshareServers {
+			kss.SchemeManagerIdentifier = smi
+		}
+		return client.storage.StoreKeyshareServers(keyshareServers)
+	},
 }
 
 // update performs any function from clientUpdates that has not

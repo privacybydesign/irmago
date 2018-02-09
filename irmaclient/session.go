@@ -31,7 +31,10 @@ type Handler interface {
 	Cancelled(action irma.Action)
 	Failure(action irma.Action, err *irma.SessionError)
 	UnsatisfiableRequest(action irma.Action, ServerName string, missing irma.AttributeDisjunctionList)
+
 	MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier)
+	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
+	KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier)
 
 	RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler)
 	RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler)
@@ -406,11 +409,15 @@ func (session *session) KeyshareCancelled() {
 	session.cancel()
 }
 
-func (session *session) KeyshareBlocked(duration int) {
-	session.fail(&irma.SessionError{ErrorType: irma.ErrorKeyshareBlocked, Info: strconv.Itoa(duration)})
+func (session *session) KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier) {
+	session.Handler.KeyshareRegistrationIncomplete(manager)
 }
 
-func (session *session) KeyshareError(err error) {
+func (session *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	session.Handler.KeyshareBlocked(manager, duration)
+}
+
+func (session *session) KeyshareError(manager *irma.SchemeManagerIdentifier, err error) {
 	var serr *irma.SessionError
 	var ok bool
 	if serr, ok = err.(*irma.SessionError); !ok {
