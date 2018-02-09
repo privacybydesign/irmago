@@ -197,7 +197,7 @@ func (attr *MetadataAttribute) setDefaultValidityDuration() {
 func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
 	var expiry int64
 	if timestamp == nil {
-		expiry = attr.SigningDate().AddDate(0, 6, 0).Unix()
+		expiry = time.Now().AddDate(0, 6, 0).Unix()
 	} else {
 		expiry = time.Time(*timestamp).Unix()
 	}
