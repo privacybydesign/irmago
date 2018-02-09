@@ -34,19 +34,7 @@ var clientUpdates = []func(client *Client) error{
 	// Adding scheme manager index, signature and public key
 	// Check the signatures of all scheme managers, if any is not ok,
 	// copy the entire irma_configuration folder from assets
-	func(client *Client) error {
-		conf := client.Configuration
-		if len(conf.DisabledSchemeManagers) > 0 {
-			return conf.CopyFromAssets(true)
-		}
-		for manager := range conf.SchemeManagers {
-			valid, err := conf.VerifySignature(manager)
-			if err != nil || !valid {
-				return conf.CopyFromAssets(true)
-			}
-		}
-		return nil
-	},
+	nil, // made irrelevant by irma_configuration-autocopying
 
 	// Rename config -> preferences
 	func(client *Client) (err error) {
@@ -69,9 +57,7 @@ var clientUpdates = []func(client *Client) error{
 	},
 
 	// Copy new irma_configuration out of assets
-	func(client *Client) (err error) {
-		return client.Configuration.CopyFromAssets(true)
-	},
+	nil, // made irrelevant by irma_configuration-autocopying
 
 	// For each keyshare server, include in its struct the identifier of its scheme manager
 	func(client *Client) (err error) {
@@ -98,10 +84,10 @@ func (client *Client) update() error {
 
 	// Perform all new updates
 	for i := len(client.updates); i < len(clientUpdates); i++ {
-		if clientUpdates[i] == nil {
-			continue
+		err = nil
+		if clientUpdates[i] != nil {
+			err = clientUpdates[i](client)
 		}
-		err = clientUpdates[i](client)
 		u := update{
 			When:    irma.Timestamp(time.Now()),
 			Number:  i,

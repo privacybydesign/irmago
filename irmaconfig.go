@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"crypto/sha256"
 
@@ -91,7 +92,11 @@ func NewConfiguration(path string, assets string) (conf *Configuration, err erro
 	if err = fs.EnsureDirectoryExists(conf.Path); err != nil {
 		return nil, err
 	}
-	if conf.assets != "" && fs.Empty(conf.Path) {
+	isUpToDate, err := conf.isUpToDate()
+	if err != nil {
+		return nil, err
+	}
+	if conf.assets != "" && !isUpToDate {
 		if err = conf.CopyFromAssets(false); err != nil {
 			return nil, err
 		}
@@ -377,6 +382,42 @@ func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
 	return conf.SchemeManagers[cred.IssuerIdentifier().SchemeManagerIdentifier()] != nil &&
 		conf.Issuers[cred.IssuerIdentifier()] != nil &&
 		conf.CredentialTypes[cred] != nil
+}
+
+func (conf *Configuration) readTimestamp(path string) (timestamp *time.Time, exists bool, err error) {
+	filename := filepath.Join(path, "timestamp")
+	exists, err = fs.PathExists(filename)
+	if err != nil || !exists {
+		return
+	}
+	bts, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return
+	}
+	i, err := strconv.ParseInt(string(bts), 10, 64)
+	if err != nil {
+		return
+	}
+	t := time.Unix(i, 0)
+	return &t, true, nil
+}
+
+func (conf *Configuration) isUpToDate() (bool, error) {
+	if conf.assets == "" {
+		return true, nil
+	}
+	var err error
+	newTime, exists, err := conf.readTimestamp(conf.assets)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, errors.New("Timestamp in assets irma_configuration not found")
+	}
+
+	// conf.Path does not need to have a timestamp. If it does not, it is outdated
+	oldTime, exists, err := conf.readTimestamp(conf.Path)
+	return exists && !newTime.After(*oldTime), err
 }
 
 // CopyFromAssets recursively copies the directory tree from the assets folder
