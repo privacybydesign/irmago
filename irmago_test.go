@@ -231,11 +231,8 @@ func TestServiceProvider(t *testing.T) {
 	}`
 
 	require.NoError(t, json.Unmarshal([]byte(spjson), &spjwt))
-	require.NotNil(t, spjwt.Request.Request.Content)
 	require.NotEmpty(t, spjwt.Request.Request.Content)
-	require.NotNil(t, spjwt.Request.Request.Content[0])
 	require.NotEmpty(t, spjwt.Request.Request.Content[0])
-	require.NotNil(t, spjwt.Request.Request.Content[0].Attributes)
 	require.NotEmpty(t, spjwt.Request.Request.Content[0].Attributes)
 	require.Equal(t, spjwt.Request.Request.Content[0].Attributes[0].Name(), "studentID")
 

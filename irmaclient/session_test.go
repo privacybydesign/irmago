@@ -59,8 +59,9 @@ func (th TestHandler) RequestVerificationPermission(request irma.DisclosureReque
 	var candidates []*irma.AttributeIdentifier
 	for _, disjunction := range request.Content {
 		candidates = th.client.Candidates(disjunction)
-		require.NotNil(th.t, candidates)
-		require.NotEmpty(th.t, candidates, 1)
+		if len(candidates) == 0 {
+			th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("No disclosure candidates found")})
+		}
 		choice.Attributes = append(choice.Attributes, candidates[0])
 	}
 	callback(true, choice)
