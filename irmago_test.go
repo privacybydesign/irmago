@@ -2,12 +2,26 @@ package irma
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"math/big"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	test.ClearTestStorage(nil)
+	test.CreateTestStorage(nil)
+	retCode := m.Run()
+	test.ClearTestStorage(nil)
+	os.Exit(retCode)
+}
 
 func parseConfiguration(t *testing.T) *Configuration {
 	conf, err := NewConfiguration("testdata/irma_configuration", "")

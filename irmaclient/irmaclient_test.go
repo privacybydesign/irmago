@@ -1,7 +1,6 @@
 package irmaclient
 
 import (
-	"fmt"
 	"math/big"
 	"os"
 	"testing"
@@ -9,37 +8,15 @@ import (
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
-	// Remove any output from previously run to ensure a clean state
-	// Some of the tests don't like it when there is existing state in storage
-	err := os.RemoveAll("../testdata/storage/test")
-	if err != nil {
-		fmt.Println("Could not delete test storage", err.Error())
-		os.Exit(1)
-	}
-
-	// EnsureDirectoryExists eventually uses mkdir from the OS which is not recursive
-	// so we have to create the temporary test storage by two function calls.
-	// We ignore any error possibly returned by creating the first one, because if it errors,
-	// then the second one certainly will as well.
-	_ = fs.EnsureDirectoryExists("../testdata/storage")
-	err = fs.EnsureDirectoryExists("../testdata/storage/test")
-	if err != nil {
-		fmt.Println("Could not create test storage: ", err.Error())
-		os.Exit(1)
-	}
-
+	test.ClearTestStorage(nil)
+	test.CreateTestStorage(nil)
 	retCode := m.Run()
-
-	err = os.RemoveAll("../testdata/storage/test")
-	if err != nil {
-		fmt.Println("Could not delete test storage", err.Error())
-		os.Exit(1)
-	}
-
+	test.ClearTestStorage(nil)
 	os.Exit(retCode)
 }
 
@@ -60,10 +37,6 @@ func parseStorage(t *testing.T) *Client {
 	)
 	require.NoError(t, err)
 	return manager
-}
-
-func teardown(t *testing.T) {
-	require.NoError(t, os.RemoveAll("../testdata/storage/test"))
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
@@ -126,9 +99,9 @@ func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
 func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 	require.NotNil(t, client.paillierKeyCache)
 	require.NotNil(t, client.keyshareServers)
-	test := irma.NewSchemeManagerIdentifier("test")
-	require.Contains(t, client.keyshareServers, test)
-	kss := client.keyshareServers[test]
+	testManager := irma.NewSchemeManagerIdentifier("test")
+	require.Contains(t, client.keyshareServers, testManager)
+	kss := client.keyshareServers[testManager]
 	require.NotEmpty(t, kss.Nonce)
 
 	verifyPaillierKey(t, kss.PrivateKey)
@@ -141,7 +114,7 @@ func TestStorageDeserialization(t *testing.T) {
 	verifyCredentials(t, client)
 	verifyKeyshareIsUnmarshaled(t, client)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 func TestLogging(t *testing.T) {
@@ -172,7 +145,7 @@ func TestLogging(t *testing.T) {
 	require.NotNil(t, response)
 	require.IsType(t, &gabi.IssueCommitmentMessage{}, response)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 func TestCandidates(t *testing.T) {
@@ -206,7 +179,7 @@ func TestCandidates(t *testing.T) {
 	require.NotNil(t, attrs)
 	require.Empty(t, attrs)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 func TestPaillier(t *testing.T) {
@@ -236,7 +209,7 @@ func TestPaillier(t *testing.T) {
 
 	require.Equal(t, plaintext, expected)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 func TestCredentialRemoval(t *testing.T) {
@@ -263,7 +236,7 @@ func TestCredentialRemoval(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, cred)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 func TestWrongSchemeManager(t *testing.T) {
@@ -283,7 +256,7 @@ func TestWrongSchemeManager(t *testing.T) {
 		irma.SchemeManagerStatusValid,
 	)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 // Test installing a new scheme manager from a qr, and do a(n issuance) session
@@ -329,5 +302,5 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, exists)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }

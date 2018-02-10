@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -203,7 +204,7 @@ func TestLargeAttribute(t *testing.T) {
 	jwtcontents = getDisclosureJwt("testsp", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
 	sessionHelper(t, jwtcontents, "verification", client)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Client) {
@@ -236,7 +237,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Cl
 	}
 
 	if init {
-		teardown(t)
+		test.ClearTestStorage(t)
 	}
 }
 
@@ -292,7 +293,7 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	)
 	sessionHelper(t, jwt, "signature", client)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }
 
 // Use the existing keyshare enrollment and credentials deserialized from Android storage
@@ -335,5 +336,5 @@ func TestKeyshareSessions(t *testing.T) {
 	)
 	sessionHelper(t, jwt, "signature", client)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 }

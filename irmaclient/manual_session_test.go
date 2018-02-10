@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/test"
 )
 
 type ManualSessionHandler struct {
@@ -27,7 +28,7 @@ func TestManualSession(t *testing.T) {
 
 	client.NewManualSession(request, &manualSessionHandler)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 
 	if err := <-channel; err != nil {
 		t.Fatal(*err)
@@ -44,7 +45,7 @@ func TestManualKeyShareSession(t *testing.T) {
 
 	client.NewManualSession(keyshareRequest, &manualSessionHandler)
 
-	teardown(t)
+	test.ClearTestStorage(t)
 
 	if err := <-channel; err != nil {
 		t.Fatal(*err)
