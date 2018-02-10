@@ -37,6 +37,35 @@ func s2big(s string) (r *big.Int) {
 	return
 }
 
+func TestConfigurationAutocopy(t *testing.T) {
+	test.SetupTestStorage(t)
+	path := filepath.Join("testdata", "storage", "test", "irma_configuration")
+
+	// Put now in a timestamp in our folder, and check that NewConfiguration
+	// does not copy irma_configuration out of the assets
+	now := strconv.FormatInt(time.Now().Unix(), 10)
+	require.NoError(t, fs.EnsureDirectoryExists(path))
+	require.NoError(t, ioutil.WriteFile(filepath.Join(path, "timestamp"), []byte(now), 0600))
+	_, err := NewConfiguration(path, filepath.Join("testdata", "irma_configuration"))
+	require.NoError(t, err)
+	files, err := ioutil.ReadDir(path)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+
+	test.ClearTestStorage(t)
+	test.CreateTestStorage(t)
+
+	// Put an old timestamp in our folder, and check that NewConfiguration
+	// does copy irma_configuration out of the assets
+	require.NoError(t, fs.EnsureDirectoryExists(path))
+	require.NoError(t, ioutil.WriteFile(filepath.Join(path, "timestamp"), []byte("1"), 0600))
+	_, err = NewConfiguration(path, filepath.Join("testdata", "irma_configuration"))
+	require.NoError(t, err)
+	require.NoError(t, fs.AssertPathExists(filepath.Join(path, "irma-demo")))
+
+	test.ClearTestStorage(t)
+}
+
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	// The description.xml of the scheme manager under this folder has been edited
 	// to invalidate the scheme manager signature
