@@ -106,8 +106,6 @@ const (
 	ErrorSerialization = ErrorType("serialization")
 	// Error in keyshare protocol
 	ErrorKeyshare = ErrorType("keyshare")
-	// Keyshare server has blocked us
-	ErrorKeyshareBlocked = ErrorType("keyshareBlocked")
 	// API server error
 	ErrorApi = ErrorType("api")
 	// Server returned unexpected or malformed response
