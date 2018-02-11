@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -179,7 +180,7 @@ func (conf *Configuration) parseSchemeManagerFolder(dir string, manager *SchemeM
 		return
 	}
 
-	if err = conf.parseIndex(filepath.Base(dir), manager); err != nil {
+	if manager.index, err = conf.parseIndex(filepath.Base(dir), manager); err != nil {
 		manager.Status = SchemeManagerStatusInvalidIndex
 		return
 	}
@@ -580,87 +581,46 @@ func (conf *Configuration) restoreManagerSignature(index, sig string) error {
 // Download downloads the issuers, credential types and public keys specified in set
 // if the current Configuration does not already have them,  and checks their authenticity
 // using the scheme manager index.
-func (conf *Configuration) Download(set *IrmaIdentifierSet) (*IrmaIdentifierSet, error) {
-	var contains bool
-	var err error
-	downloaded := &IrmaIdentifierSet{
+func (conf *Configuration) Download(set *IrmaIdentifierSet) (downloaded *IrmaIdentifierSet, err error) {
+	downloaded = &IrmaIdentifierSet{
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
 	}
-	updatedManagers := make(map[SchemeManagerIdentifier]struct{})
 
-	for manid := range set.SchemeManagers {
-		if _, contains = conf.SchemeManagers[manid]; !contains {
-			return nil, errors.Errorf("Unknown scheme manager: %s", manid)
-		}
-	}
-
-	transport := NewHTTPTransport("")
+	managers := make(map[SchemeManagerIdentifier]struct{})
 	for issid := range set.Issuers {
-		if _, contains = conf.Issuers[issid]; !contains {
-			manager := issid.SchemeManagerIdentifier()
-			url := conf.SchemeManagers[manager].URL + "/" + issid.Name()
-			path := fmt.Sprintf("%s/%s/%s", conf.Path, manager.String(), issid.Name())
-			if err = transport.GetFile(url+"/description.xml", path+"/description.xml"); err != nil {
-				return nil, err
-			}
-			if err = transport.GetFile(url+"/logo.png", path+"/logo.png"); err != nil {
-				return nil, err
-			}
-			updatedManagers[manager] = struct{}{}
-			downloaded.Issuers[issid] = struct{}{}
+		if _, contains := conf.Issuers[issid]; !contains {
+			managers[issid.SchemeManagerIdentifier()] = struct{}{}
 		}
 	}
-	for issid, list := range set.PublicKeys {
-		for _, count := range list {
-			pk, err := conf.PublicKey(issid, count)
+	for issid, keyids := range set.PublicKeys {
+		for _, keyid := range keyids {
+			pk, err := conf.PublicKey(issid, keyid)
 			if err != nil {
 				return nil, err
 			}
 			if pk == nil {
-				manager := issid.SchemeManagerIdentifier()
-				suffix := fmt.Sprintf("/%s/PublicKeys/%d.xml", issid.Name(), count)
-				path := fmt.Sprintf("%s/%s/%s", conf.Path, manager.String(), suffix)
-				if err = transport.GetFile(conf.SchemeManagers[manager].URL+suffix, path); err != nil {
-					return nil, err
-				}
-				updatedManagers[manager] = struct{}{}
+				managers[issid.SchemeManagerIdentifier()] = struct{}{}
 			}
 		}
 	}
 	for credid := range set.CredentialTypes {
 		if _, contains := conf.CredentialTypes[credid]; !contains {
-			issuer := credid.IssuerIdentifier()
-			manager := issuer.SchemeManagerIdentifier()
-			local := fmt.Sprintf("%s/%s/%s/Issues", conf.Path, manager.Name(), issuer.Name())
-			if err := fs.EnsureDirectoryExists(local); err != nil {
-				return nil, err
-			}
-			if err = transport.GetFile(
-				fmt.Sprintf("%s/%s/Issues/%s/description.xml", conf.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
-				fmt.Sprintf("%s/%s/description.xml", local, credid.Name()),
-			); err != nil {
-				return nil, err
-			}
-			_ = transport.GetFile( // Get logo but ignore errors, it is optional
-				fmt.Sprintf("%s/%s/Issues/%s/logo.png", conf.SchemeManagers[manager].URL, issuer.Name(), credid.Name()),
-				fmt.Sprintf("%s/%s/logo.png", local, credid.Name()),
-			)
-			updatedManagers[manager] = struct{}{}
-			downloaded.CredentialTypes[credid] = struct{}{}
+			managers[credid.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
 		}
 	}
 
-	for manager := range updatedManagers {
-		if err := conf.DownloadSchemeManagerSignature(conf.SchemeManagers[manager]); err != nil {
-			return nil, err
+	for id := range managers {
+		if err = conf.UpdateSchemeManager(id, downloaded); err != nil {
+			return
 		}
 	}
+
 	if !downloaded.Empty() {
 		return downloaded, conf.ParseFolder()
 	}
-	return downloaded, nil
+	return
 }
 
 func (i SchemeManagerIndex) String() string {
@@ -703,17 +663,17 @@ func (i SchemeManagerIndex) FromString(s string) error {
 }
 
 // parseIndex parses the index file of the specified manager.
-func (conf *Configuration) parseIndex(name string, manager *SchemeManager) error {
+func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (SchemeManagerIndex, error) {
 	path := filepath.Join(conf.Path, name, "index")
 	if err := fs.AssertPathExists(path); err != nil {
-		return fmt.Errorf("Missing scheme manager index file; tried %s", path)
+		return nil, fmt.Errorf("Missing scheme manager index file; tried %s", path)
 	}
 	indexbts, err := ioutil.ReadFile(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	manager.index = make(map[string]ConfigurationFileHash)
-	return manager.index.FromString(string(indexbts))
+	index := SchemeManagerIndex(make(map[string]ConfigurationFileHash))
+	return index, index.FromString(string(indexbts))
 }
 
 func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
@@ -819,4 +779,73 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (valid bo
 
 func (hash ConfigurationFileHash) String() string {
 	return hex.EncodeToString(hash)
+}
+
+func (hash ConfigurationFileHash) Equal(other ConfigurationFileHash) bool {
+	return bytes.Equal(hash, other)
+}
+
+// UpdateSchemeManager syncs the stored version within the irma_configuration directory
+// with the remote version at the scheme manager's URL, downloading and storing
+// new and modified files, according to the index files of both versions.
+// It stores the identifiers of new or updated credential types or issuers in the second parameter.
+// Note: any newly downloaded files are not yet parsed and inserted into conf.
+func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downloaded *IrmaIdentifierSet) (err error) {
+	manager, contains := conf.SchemeManagers[id]
+	if !contains {
+		return errors.Errorf("Cannot update unknown scheme manager %s", id)
+	}
+
+	// Download the new index and its signature, and check that the new index
+	// is validly signed by the new signature
+	// By aborting immediately in case of error, and restoring backup versions
+	// of the index and signature, we leave our stored copy of the scheme manager
+	// intact.
+	if err = conf.DownloadSchemeManagerSignature(manager); err != nil {
+		return
+	}
+	newIndex, err := conf.parseIndex(manager.ID, manager)
+	if err != nil {
+		return
+	}
+
+	issPattern := regexp.MustCompile("(.+)/(.+)/description\\.xml")
+	credPattern := regexp.MustCompile("(.+)/(.+)/Issues/(.+)/description\\.xml")
+	transport := NewHTTPTransport("")
+
+	// TODO: how to recover/fix local copy if err != nil below?
+	for filename, newHash := range newIndex {
+		oldHash, known := manager.index[filename]
+		if known && oldHash.Equal(newHash) {
+			continue // nothing to do, we already have this file
+		}
+		// Ensure that the folder in which to write the file exists
+		path := filepath.Join(conf.Path, filename)
+		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		stripped := filename[len(manager.ID)+1:] // Scheme manager URL already ends with its name
+		// Download the new file, store it in our own irma_configuration folder
+		if err = transport.GetFile(manager.URL+"/"+stripped, path); err != nil {
+			return
+		}
+		// See if the file is a credential type or issuer, and add it to the downloaded set if so
+		if downloaded == nil {
+			continue
+		}
+		var matches []string
+		matches = issPattern.FindStringSubmatch(filename)
+		if len(matches) == 3 {
+			issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", matches[1], matches[2]))
+			downloaded.Issuers[issid] = struct{}{}
+		}
+		matches = credPattern.FindStringSubmatch(filename)
+		if len(matches) == 4 {
+			credid := NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", matches[1], matches[2], matches[3]))
+			downloaded.CredentialTypes[credid] = struct{}{}
+		}
+	}
+
+	manager.index = newIndex
+	return
 }
