@@ -28,7 +28,7 @@ func (th TestHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, dura
 	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareBlocked")})
 }
 
-func (th TestHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
+func (th TestHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 

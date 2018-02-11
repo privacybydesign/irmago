@@ -72,7 +72,7 @@ func (sh *ManualSessionHandler) RequestSignaturePermission(request irma.Signatur
 func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) {
 	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Session was cancelled")})
 }
-func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
+func (sh *ManualSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
