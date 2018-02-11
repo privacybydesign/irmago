@@ -96,6 +96,6 @@ func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.Sessio
 func (sh *ManualSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareBlocked")})
 }
-func (sh *ManualSessionHandler) KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareRegistrationIncomplete")})
+func (sh *ManualSessionHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")})
 }
