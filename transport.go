@@ -32,14 +32,6 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 		url += "/"
 	}
 
-	transport := &HTTPTransport{
-		Server:  url,
-		headers: map[string]string{},
-		client: &http.Client{
-			Timeout: time.Second * 15,
-		},
-	}
-
 	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS)
 	var innerTransport http.Transport
 
@@ -54,9 +46,14 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 		return c, nil
 	}
 
-	transport.client.Transport = &innerTransport
-
-	return transport
+	return &HTTPTransport{
+		Server:  url,
+		headers: map[string]string{},
+		client: &http.Client{
+			Timeout:   time.Second * 15,
+			Transport: &innerTransport,
+		},
+	}
 }
 
 // SetHeader sets a header to be sent in requests.
