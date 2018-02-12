@@ -501,7 +501,7 @@ func (session *session) managerSession() {
 	// We have to download the scheme manager description.xml here before installing it,
 	// because we need to show its contents (name, description, website) to the user
 	// when asking installation permission.
-	manager, err := session.client.Configuration.DownloadSchemeManager(session.ServerURL)
+	manager, err := irma.DownloadSchemeManager(session.ServerURL)
 	if err != nil {
 		session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 		return
@@ -512,7 +512,7 @@ func (session *session) managerSession() {
 			session.Handler.Cancelled(session.Action) // No need to DELETE session here
 			return
 		}
-		if err := session.client.Configuration.AddSchemeManager(manager); err != nil {
+		if err := session.client.Configuration.InstallSchemeManager(manager); err != nil {
 			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 			return
 		}

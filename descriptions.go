@@ -167,6 +167,10 @@ func (id *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(id.SchemeManagerID)
 }
 
+func NewSchemeManager(name string) *SchemeManager {
+	return &SchemeManager{ID: name, Status: SchemeManagerStatusUnprocessed, Valid: false}
+}
+
 // Identifier returns the identifier of the specified scheme manager.
 func (sm *SchemeManager) Identifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(sm.ID)

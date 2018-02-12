@@ -103,24 +103,31 @@ func NewConfiguration(path string, assets string) (conf *Configuration, err erro
 		}
 	}
 
+	// Init all maps
+	conf.clear()
+
 	return
 }
 
-// ParseFolder populates the current Configuration by parsing the storage path,
-// listing the containing scheme managers, issuers and credential types.
-func (conf *Configuration) ParseFolder() (err error) {
-	// Init all maps
+func (conf *Configuration) clear() {
 	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
 	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
 	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
+}
+
+// ParseFolder populates the current Configuration by parsing the storage path,
+// listing the containing scheme managers, issuers and credential types.
+func (conf *Configuration) ParseFolder() (err error) {
+	// Init all maps
+	conf.clear()
 
 	var mgrerr *SchemeManagerError
 	err = iterateSubfolders(conf.Path, func(dir string) error {
-		manager := &SchemeManager{ID: filepath.Base(dir), Status: SchemeManagerStatusUnprocessed, Valid: false}
-		err := conf.parseSchemeManagerFolder(dir, manager)
+		manager := NewSchemeManager(filepath.Base(dir))
+		err := conf.ParseSchemeManagerFolder(dir, manager)
 		if err == nil {
 			return nil // OK, do next scheme manager folder
 		}
@@ -155,9 +162,9 @@ func (conf *Configuration) ParseOrRestoreFolder() error {
 	return err
 }
 
-// parseSchemeManagerFolder parses the entire tree of the specified scheme manager
+// ParseSchemeManagerFolder parses the entire tree of the specified scheme manager
 // If err != nil then a problem occured
-func (conf *Configuration) parseSchemeManagerFolder(dir string, manager *SchemeManager) (err error) {
+func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeManager) (err error) {
 	// From this point, keep it in our map even if it has an error. The user must check either:
 	// - manager.Status == SchemeManagerStatusValid, aka "VALID"
 	// - or equivalently, manager.Valid == true
@@ -450,7 +457,7 @@ func (conf *Configuration) CopyManagerFromAssets(managerID SchemeManagerIdentifi
 
 // DownloadSchemeManager downloads and returns a scheme manager description.xml file
 // from the specified URL.
-func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, error) {
+func DownloadSchemeManager(url string) (*SchemeManager, error) {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
@@ -464,7 +471,7 @@ func (conf *Configuration) DownloadSchemeManager(url string) (*SchemeManager, er
 	if err != nil {
 		return nil, err
 	}
-	manager := &SchemeManager{Status: SchemeManagerStatusUnprocessed, Valid: false}
+	manager := NewSchemeManager("")
 	if err = xml.Unmarshal(b, manager); err != nil {
 		return nil, err
 	}
@@ -500,11 +507,11 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromS
 	return nil
 }
 
-// AddSchemeManager adds the specified scheme manager to this Configuration,
+// InstallSchemeManager downloads and adds the specified scheme manager to this Configuration,
 // provided its signature is valid.
-func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
+func (conf *Configuration) InstallSchemeManager(manager *SchemeManager) error {
 	name := manager.ID
-	if err := fs.EnsureDirectoryExists(fmt.Sprintf("%s/%s", conf.Path, name)); err != nil {
+	if err := fs.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
 	}
 
@@ -519,8 +526,12 @@ func (conf *Configuration) AddSchemeManager(manager *SchemeManager) error {
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
 		return err
 	}
+	conf.SchemeManagers[manager.Identifier()] = manager
+	if err := conf.UpdateSchemeManager(manager.Identifier(), nil); err != nil {
+		return err
+	}
 
-	return conf.parseSchemeManagerFolder(filepath.Join(conf.Path, name), manager)
+	return conf.ParseSchemeManagerFolder(filepath.Join(conf.Path, name), manager)
 }
 
 // DownloadSchemeManagerSignature downloads, stores and verifies the latest version
@@ -815,12 +826,17 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 
 	// TODO: how to recover/fix local copy if err != nil below?
 	for filename, newHash := range newIndex {
+		path := filepath.Join(conf.Path, filename)
 		oldHash, known := manager.index[filename]
-		if known && oldHash.Equal(newHash) {
+		var have bool
+		have, err = fs.PathExists(path)
+		if err != nil {
+			return err
+		}
+		if known && have && oldHash.Equal(newHash) {
 			continue // nothing to do, we already have this file
 		}
 		// Ensure that the folder in which to write the file exists
-		path := filepath.Join(conf.Path, filename)
 		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return err
 		}

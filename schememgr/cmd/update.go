@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// TODO: add flag to update timestamp of irma_configuration folder
 var updateCmd = &cobra.Command{
 	Use:   "update path...",
 	Short: "[Experimental] Update a scheme manager",
