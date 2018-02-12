@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
@@ -36,9 +34,7 @@ func updateSchemeManager(paths []string) error {
 	}
 
 	for _, path := range paths {
-		if strings.HasSuffix(path, string(os.PathSeparator)) {
-			path = path[:len(path)-1]
-		}
+		path, err := filepath.Abs(path)
 		irmaconf, manager := filepath.Dir(path), filepath.Base(path)
 
 		// TODO: this parses all managers within the irma_configuration folder, not just the one specified
