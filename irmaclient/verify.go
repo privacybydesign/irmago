@@ -8,14 +8,24 @@ import (
 	"math/big"
 )
 
-func extractPublicKeys(client *Client, proofList *gabi.ProofList) ([]*gabi.PublicKey, error) {
+type ProofStatus string
+
+const (
+	VALID              = ProofStatus("VALID")
+	EXPIRED            = ProofStatus("EXPIRED")
+	INVALID_CRYPTO     = ProofStatus("INVALID_CRYPTO")
+	INVALID_JSON       = ProofStatus("INVALID_JSON")
+	MISSING_ATTRIBUTES = ProofStatus("MISSING_ATTRIBUTES")
+)
+
+func extractPublicKeys(configuration *irma.Configuration, proofList *gabi.ProofList) ([]*gabi.PublicKey, error) {
 	var publicKeys []*gabi.PublicKey
 
 	for _, v := range *proofList {
 		switch v.(type) {
 		case *gabi.ProofD:
 			proof := v.(*gabi.ProofD)
-			metadata := irma.MetadataFromInt(proof.ADisclosed[1], client.Configuration) // index 1 is metadata attribute
+			metadata := irma.MetadataFromInt(proof.ADisclosed[1], configuration) // index 1 is metadata attribute
 			publicKey, err := metadata.PublicKey()
 			if err != nil {
 				return nil, err
@@ -29,14 +39,14 @@ func extractPublicKeys(client *Client, proofList *gabi.ProofList) ([]*gabi.Publi
 	return publicKeys, nil
 }
 
-func extractDisclosedCredentials(client *Client, proofList *gabi.ProofList) ([]*irma.CredentialInfo, error) {
+func extractDisclosedCredentials(configuration *irma.Configuration, proofList *gabi.ProofList) ([]*irma.CredentialInfo, error) {
 	var credentials []*irma.CredentialInfo
 
 	for _, v := range *proofList {
 		switch v.(type) {
 		case *gabi.ProofD:
 			proof := v.(*gabi.ProofD)
-			irmaCredentialInfo, err := irma.NewCredentialInfoFromADisclosed(proof.AResponses, proof.ADisclosed, client.Configuration)
+			irmaCredentialInfo, err := irma.NewCredentialInfoFromADisclosed(proof.AResponses, proof.ADisclosed, configuration)
 			if err != nil {
 				return nil, err
 			}
@@ -48,25 +58,34 @@ func extractDisclosedCredentials(client *Client, proofList *gabi.ProofList) ([]*
 	return credentials, nil
 }
 
-func checkProofWithRequest(client *Client, proofList *gabi.ProofList, sigRequest *irma.SignatureRequest) bool {
-	credentials, err := extractDisclosedCredentials(client, proofList)
+func checkProofWithRequest(configuration *irma.Configuration, proofList *gabi.ProofList, sigRequest *irma.SignatureRequest) ProofStatus {
+	credentials, err := extractDisclosedCredentials(configuration, proofList)
 
 	if err != nil {
 		fmt.Println(err)
-		return false
+		return INVALID_CRYPTO
 	}
 
 	for _, content := range sigRequest.Content {
-		if !content.SatisfyDisclosed(credentials, client.Configuration) {
-			return false
+		if !content.SatisfyDisclosed(credentials, configuration) {
+			return MISSING_ATTRIBUTES
 		}
 	}
-	return true
+
+	// Check if a credential is expired
+	for _, cred := range credentials {
+		if cred.IsExpired() {
+			return EXPIRED
+		}
+	}
+
+	return VALID
 }
 
-func verify(client *Client, proofList *gabi.ProofList, context *big.Int, nonce *big.Int, isSig bool) bool {
+// Verify an IRMA proof cryptographically
+func verify(configuration *irma.Configuration, proofList *gabi.ProofList, context *big.Int, nonce *big.Int, isSig bool) bool {
 	// Extract public keys
-	pks, err := extractPublicKeys(client, proofList)
+	pks, err := extractPublicKeys(configuration, proofList)
 	if err != nil {
 		fmt.Printf("Error extracting public key: %v\n", err)
 		return false
@@ -76,7 +95,7 @@ func verify(client *Client, proofList *gabi.ProofList, context *big.Int, nonce *
 }
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
-func verifySig(client *Client, proofString string, sigRequest *irma.SignatureRequest) bool {
+func VerifySig(configuration *irma.Configuration, proofString string, sigRequest *irma.SignatureRequest) ProofStatus {
 
 	// First, unmarshal proof and check if all the attributes in the proofstring match the signature request
 	var proofList gabi.ProofList
@@ -85,14 +104,14 @@ func verifySig(client *Client, proofString string, sigRequest *irma.SignatureReq
 	err := proofList.UnmarshalJSON(proofBytes)
 	if err != nil {
 		fmt.Printf("Error unmarshalling JSON: %v\n", err)
-		return false
+		return INVALID_JSON
 	}
 
 	// Now, cryptographically verify the signature
-	if !verify(client, &proofList, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
-		return false
+	if !verify(configuration, &proofList, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
+		return INVALID_CRYPTO
 	}
 
 	// Finally, check whether attribute values in proof satisfy the original signature request
-	return checkProofWithRequest(client, &proofList, sigRequest)
+	return checkProofWithRequest(configuration, &proofList, sigRequest)
 }

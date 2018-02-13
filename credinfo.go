@@ -3,6 +3,8 @@ package irma
 import (
 	"math/big"
 	"strings"
+	"github.com/privacybydesign/irmago/internal/fs"
+	"time"
 )
 
 // CredentialInfo contains all information of an IRMA credential.
@@ -83,6 +85,11 @@ func NewCredentialInfoFromADisclosed(aResponses map[int]*big.Int, aDisclosed map
 
 func (ci CredentialInfo) GetCredentialType(conf *Configuration) *CredentialType {
 	return conf.CredentialTypes[ci.CredentialTypeID]
+}
+
+// Returns true if credential is expired at moment of calling this function
+func (ci CredentialInfo) IsExpired() bool {
+	return ci.Expires.Before(Timestamp(time.Now()))
 }
 
 // Len implements sort.Interface.

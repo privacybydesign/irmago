@@ -269,6 +269,11 @@ func (sr *SignatureRequest) GetNonce() *big.Int {
 	return new(big.Int).SetBytes(asn1hash[:])
 }
 
+// Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
+func (t Timestamp) Before(u Timestamp) bool {
+	return time.Time(t).Before(time.Time(u))
+}
+
 // MarshalJSON marshals a timestamp.
 func (t *Timestamp) MarshalJSON() ([]byte, error) {
 	ts := time.Time(*t).Unix()

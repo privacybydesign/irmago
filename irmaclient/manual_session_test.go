@@ -3,19 +3,21 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
-	"testing"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago"
+	"testing"
 )
 
 type ManualSessionHandler struct {
 	permissionHandler PermissionHandler
 	pinHandler        PinHandler
 	t                 *testing.T
-	c                 chan *irma.SessionError
-	sigRequest        *irma.SignatureRequest
+	errorChannel      chan *irma.SessionError
+	resultChannel     chan ProofStatus
+	sigRequest        *irma.SignatureRequest // Request used to create signature
+	sigVerifyRequest  *irma.SignatureRequest // Request used to verify signature
 }
 
 var client *Client
@@ -46,54 +48,161 @@ func corruptProofString(proof string) string {
 	return proof
 }
 
+// Create a ManualSessionHandler for unit tests
+func createManualSessionHandler(request string, invalidRequest string, t *testing.T) ManualSessionHandler {
+	errorChannel := make(chan *irma.SessionError)
+	resultChannel := make(chan ProofStatus)
+
+	sigRequestJSON := []byte(request)
+	invalidSigRequestJSON := []byte(invalidRequest)
+	sigRequest := &irma.SignatureRequest{}
+	invalidSigRequest := &irma.SignatureRequest{}
+	json.Unmarshal(sigRequestJSON, sigRequest)
+	json.Unmarshal(invalidSigRequestJSON, invalidSigRequest)
+
+	return ManualSessionHandler{
+		t:                t,
+		errorChannel:     errorChannel,
+		resultChannel:    resultChannel,
+		sigRequest:       sigRequest,
+		sigVerifyRequest: invalidSigRequest,
+	}
+}
+
 func TestManualSession(t *testing.T) {
 	invalidate = false
-	channel := make(chan *irma.SessionError)
-	client = parseStorage(t)
 
 	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	sigRequestJSON := []byte(request)
-	sigRequest := &irma.SignatureRequest{}
-	json.Unmarshal(sigRequestJSON, sigRequest)
+	ms := createManualSessionHandler(request, request, t)
 
-	ms := ManualSessionHandler{
-		t:          t,
-		c:          channel,
-		sigRequest: sigRequest,
-	}
-
+	client = parseStorage(t)
 	client.NewManualSession(request, &ms)
 
-	if err := <-channel; err != nil {
+	if err := <-ms.errorChannel; err != nil {
 	  test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
+	// No errors, obtain proof result from channel
+	if result := <-ms.resultChannel; result != VALID {
+		t.Logf("Invalid proof result: %v Expected: %v", result, VALID)
+		t.Fail()
+	}
+	test.ClearTestStorage(t)
+}
+
+// Test if the session fails with unsatisfiable error if we cannot satify the signature request
+func TestManualSessionUnsatisfiable(t *testing.T) {
+	invalidate = false
+
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
+	ms := createManualSessionHandler(request, request, t)
+
+	client = parseStorage(t)
+	client.NewManualSession(request, &ms)
+
+	// Fail test if we won't get UnsatisfiableRequest error
+	if err := <-ms.errorChannel; err.ErrorType != irma.ErrorType("UnsatisfiableRequest") {
+	  test.ClearTestStorage(t)
+		t.Fatal(*err)
+	}
+	test.ClearTestStorage(t)
+}
+
+// Test if proof verification fails with status 'ERROR_CRYPTO' if we verify it with an invalid nonce
+func TestManualSessionInvalidNonce(t *testing.T) {
+	invalidate = false
+
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	invalidRequest := "{\"nonce\": 1, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+
+	ms := createManualSessionHandler(request, invalidRequest, t)
+
+	client = parseStorage(t)
+	client.NewManualSession(request, &ms)
+
+	if err := <-ms.errorChannel; err != nil {
+	  test.ClearTestStorage(t)
+		t.Fatal(*err)
+	}
+
+	// No errors, obtain proof result from channel
+	if result := <-ms.resultChannel; result != INVALID_CRYPTO {
+		t.Logf("Invalid proof result: %v Expected: %v", result, INVALID_CRYPTO)
+		t.Fail()
+	}
+	test.ClearTestStorage(t)
+}
+
+// Test if proof verification fails with status 'MISSING_ATTRIBUTES' if we provide it with a non-matching signature request
+func TestManualSessionInvalidRequest(t *testing.T) {
+	invalidate = false
+
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.university\"]}]}"
+
+	ms := createManualSessionHandler(request, invalidRequest, t)
+
+	client = parseStorage(t)
+	client.NewManualSession(request, &ms)
+
+	if err := <-ms.errorChannel; err != nil {
+	  test.ClearTestStorage(t)
+		t.Fatal(*err)
+	}
+
+	// No errors, obtain proof result from channel
+	if result := <-ms.resultChannel; result != MISSING_ATTRIBUTES {
+		t.Logf("Invalid proof result: %v Expected: %v", result, MISSING_ATTRIBUTES)
+		t.Fail()
+	}
+	test.ClearTestStorage(t)
+}
+
+// Test if proof verification fails with status 'MISSING_ATTRIBUTES' if we provide it with invalid attribute values
+func TestManualSessionInvalidAttributeValue(t *testing.T) {
+	invalidate = false
+
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"456\"}}]}"
+	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
+
+	ms := createManualSessionHandler(request, invalidRequest, t)
+
+	client = parseStorage(t)
+	client.NewManualSession(request, &ms)
+
+	if err := <-ms.errorChannel; err != nil {
+	  test.ClearTestStorage(t)
+		t.Fatal(*err)
+	}
+
+	// No errors, obtain proof result from channel
+	if result := <-ms.resultChannel; result != MISSING_ATTRIBUTES {
+		t.Logf("Invalid proof result: %v Expected: %v", result, MISSING_ATTRIBUTES)
+		t.Fail()
+	}
 	test.ClearTestStorage(t)
 }
 
 func TestManualKeyShareSession(t *testing.T) {
 	invalidate = false
-	channel := make(chan *irma.SessionError)
 
-	keyshareRequestString := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
-	keyshareRequestJSON := []byte(keyshareRequestString)
-	keyshareRequest := &irma.SignatureRequest{}
-	json.Unmarshal(keyshareRequestJSON, keyshareRequest)
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
 
-	manualSessionHandler := ManualSessionHandler{
-		t:          t,
-		c:          channel,
-		sigRequest: keyshareRequest,
-	}
+	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
+	client.NewManualSession(request, &ms)
 
-	client.NewManualSession(keyshareRequestString, &manualSessionHandler)
-
-	if err := <-channel; err != nil {
+	if err := <-ms.errorChannel; err != nil {
 	  test.ClearTestStorage(t)
 		t.Fatal(*err)
+	}
+
+	// No errors, obtain proof result from channel
+	if result := <-ms.resultChannel; result != VALID {
+		t.Logf("Invalid proof result: %v Expected: %v", result, VALID)
+		t.Fail()
 	}
 	test.ClearTestStorage(t)
 }
@@ -103,9 +212,9 @@ func TestManualSessionMultiProof(t *testing.T) {
 	client = parseStorage(t)
 
 	// First, we need to issue an extra credential (BSN)
-	is := ManualSessionHandler{t: t, c: make(chan *irma.SessionError)}
+	is := ManualSessionHandler{t: t, errorChannel: make(chan *irma.SessionError)}
 	go issue(t, is)
-	if err := <-is.c; err != nil {
+	if err := <-is.errorChannel; err != nil {
 		fmt.Println("Error during initial issueing!")
 		t.Fatal(*err)
 	}
@@ -113,47 +222,41 @@ func TestManualSessionMultiProof(t *testing.T) {
 	// Request to sign with both BSN and StudentID
 	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]},{\"label\":\"BSN\",\"attributes\":[\"irma-demo.MijnOverheid.root.BSN\"]}]}"
 
-	channel := make(chan *irma.SessionError)
-	sigRequestJSON := []byte(request)
-	sigRequest := &irma.SignatureRequest{}
-	json.Unmarshal(sigRequestJSON, sigRequest)
-
-	ms := ManualSessionHandler{
-		t:          t,
-		c:          channel,
-		sigRequest: sigRequest,
-	}
+	ms := createManualSessionHandler(request, request, t)
 
 	client.NewManualSession(request, &ms)
 
-	if err := <-channel; err != nil {
+	if err := <-ms.errorChannel; err != nil {
 	  test.ClearTestStorage(t)
 		t.Fatal(*err)
+	}
+
+	// No errors, obtain proof result from channel
+	if result := <-ms.resultChannel; result != VALID {
+		t.Logf("Invalid proof result: %v Expected: %v", result, VALID)
+		t.Fail()
 	}
 	test.ClearTestStorage(t)
 }
 
 func TestManualSessionInvalidProof(t *testing.T) {
 	invalidate = true
-	channel := make(chan *irma.SessionError)
-	client = parseStorage(t)
 
 	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	sigRequestJSON := []byte(request)
-	sigRequest := &irma.SignatureRequest{}
-	json.Unmarshal(sigRequestJSON, sigRequest)
+	ms := createManualSessionHandler(request, request, t)
 
-	ms := ManualSessionHandler{
-		t:          t,
-		c:          channel,
-		sigRequest: sigRequest,
-	}
-
+	client = parseStorage(t)
 	client.NewManualSession(request, &ms)
 
-	if err := <-channel; err.ErrorType != "Proof does not verify" {
-    test.ClearTestStorage(t)
+	if err := <-ms.errorChannel; err != nil {
+	  test.ClearTestStorage(t)
 		t.Fatal(*err)
+	}
+
+	// No errors, obtain proof result from channel
+	if result := <-ms.resultChannel; result != INVALID_CRYPTO {
+		t.Logf("Invalid proof result: %v Expected: %v", result, INVALID_CRYPTO)
+		t.Fail()
 	}
 	test.ClearTestStorage(t)
 }
@@ -164,19 +267,16 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 		// Make proof corrupt if we want to test invalid proofs
 		result = corruptProofString(result)
 
-		if !verifySig(client, result, sh.sigRequest) {
-			sh.c <- &irma.SessionError{
-				ErrorType: irma.ErrorType("Proof does not verify"),
-			}
-			return
-		}
+		go func() {
+			sh.resultChannel <- VerifySig(client.Configuration, result, sh.sigVerifyRequest)
+		}()
 	}
-	sh.c <- nil
+	sh.errorChannel <- nil
 }
 func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, missingAttributes irma.AttributeDisjunctionList) {
 	// This function is called from main thread, which blocks go channel, so need go routine here
 	go func() {
-		sh.c <- &irma.SessionError{
+		sh.errorChannel <- &irma.SessionError{
 			ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 		}
 	}()
@@ -201,29 +301,18 @@ func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceR
 
 // These handlers should not be called, fail test if they are called
 func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Session was cancelled")})
+	sh.errorChannel <- &irma.SessionError{Err: errors.New("Session was cancelled")}
 }
-func (sh *ManualSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
+func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
+	sh.errorChannel <- &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())}
 }
 func (sh *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Unexpected session type")})
+	sh.errorChannel <- &irma.SessionError{Err: errors.New("Unexpected session type")}
 }
 func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Unexpected session type")})
+	sh.errorChannel <- &irma.SessionError{Err: errors.New("Unexpected session type")}
 }
 func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.SessionError) {
 	fmt.Println(err.Err)
-	select {
-	case sh.c <- err:
-		// nop
-	default:
-		sh.t.Fatal(err)
-	}
-}
-func (sh *ManualSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareBlocked")})
-}
-func (sh *ManualSessionHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")})
+	sh.errorChannel <- err
 }
