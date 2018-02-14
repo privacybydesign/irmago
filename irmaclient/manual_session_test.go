@@ -10,12 +10,17 @@ import (
 	"testing"
 )
 
+type Result struct {
+	proofStatus ProofStatus
+	attributes  *irma.AttributeResultList
+}
+
 type ManualSessionHandler struct {
 	permissionHandler PermissionHandler
 	pinHandler        PinHandler
 	t                 *testing.T
 	errorChannel      chan *irma.SessionError
-	resultChannel     chan ProofStatus
+	resultChannel     chan Result
 	sigRequest        *irma.SignatureRequest // Request used to create signature
 	sigVerifyRequest  *irma.SignatureRequest // Request used to verify signature
 }
@@ -51,7 +56,7 @@ func corruptProofString(proof string) string {
 // Create a ManualSessionHandler for unit tests
 func createManualSessionHandler(request string, invalidRequest string, t *testing.T) ManualSessionHandler {
 	errorChannel := make(chan *irma.SessionError)
-	resultChannel := make(chan ProofStatus)
+	resultChannel := make(chan Result)
 
 	sigRequestJSON := []byte(request)
 	invalidSigRequestJSON := []byte(invalidRequest)
@@ -84,8 +89,13 @@ func TestManualSession(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result != VALID {
-		t.Logf("Invalid proof result: %v Expected: %v", result, VALID)
+	result := <-ms.resultChannel
+	if ps := result.proofStatus; ps != VALID {
+		t.Logf("Invalid proof result: %v Expected: %v", ps, VALID)
+		t.Fail()
+	}
+	if attrStatus := result.attributes.AttributeResults[0].AttributeProofStatus; attrStatus != irma.PRESENT {
+		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.PRESENT)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -127,8 +137,8 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result != INVALID_CRYPTO {
-		t.Logf("Invalid proof result: %v Expected: %v", result, INVALID_CRYPTO)
+	if result := <-ms.resultChannel; result.proofStatus != INVALID_CRYPTO {
+		t.Logf("Invalid proof result: %v Expected: %v", result.proofStatus, INVALID_CRYPTO)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -152,8 +162,19 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result != MISSING_ATTRIBUTES {
-		t.Logf("Invalid proof result: %v Expected: %v", result, MISSING_ATTRIBUTES)
+	result := <-ms.resultChannel
+	if ps := result.proofStatus; ps != MISSING_ATTRIBUTES {
+		t.Logf("Invalid proof result: %v Expected: %v", ps, MISSING_ATTRIBUTES)
+		t.Fail()
+	}
+	// First attribute result is UNKOWN, since it is disclosed, but not matching the sigrequest
+	if attrStatus := result.attributes.AttributeResults[0].AttributeProofStatus; attrStatus != irma.UNKNOWN {
+		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.UNKNOWN)
+		t.Fail()
+	}
+	// Second attribute result is MISSING, because it is in the request but not disclosed
+	if attrStatus := result.attributes.AttributeResults[1].AttributeProofStatus; attrStatus != irma.MISSING {
+		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.MISSING)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -177,8 +198,13 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result != MISSING_ATTRIBUTES {
-		t.Logf("Invalid proof result: %v Expected: %v", result, MISSING_ATTRIBUTES)
+	result := <-ms.resultChannel
+	if ps := result.proofStatus; ps != MISSING_ATTRIBUTES {
+		t.Logf("Invalid proof result: %v Expected: %v", ps, MISSING_ATTRIBUTES)
+		t.Fail()
+	}
+	if attrStatus := result.attributes.AttributeResults[0].AttributeProofStatus; attrStatus != irma.INVALID_VALUE {
+		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.INVALID_VALUE)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -200,8 +226,8 @@ func TestManualKeyShareSession(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result != VALID {
-		t.Logf("Invalid proof result: %v Expected: %v", result, VALID)
+	if result := <-ms.resultChannel; result.proofStatus != VALID {
+		t.Logf("Invalid proof result: %v Expected: %v", result.proofStatus, VALID)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -232,8 +258,8 @@ func TestManualSessionMultiProof(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result != VALID {
-		t.Logf("Invalid proof result: %v Expected: %v", result, VALID)
+	if result := <-ms.resultChannel; result.proofStatus != VALID {
+		t.Logf("Invalid proof result: %v Expected: %v", result.proofStatus, VALID)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -254,8 +280,8 @@ func TestManualSessionInvalidProof(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result != INVALID_CRYPTO {
-		t.Logf("Invalid proof result: %v Expected: %v", result, INVALID_CRYPTO)
+	if result := <-ms.resultChannel; result.proofStatus != INVALID_CRYPTO {
+		t.Logf("Invalid proof result: %v Expected: %v", result.proofStatus, INVALID_CRYPTO)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -268,7 +294,8 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 		result = corruptProofString(result)
 
 		go func() {
-			sh.resultChannel <- VerifySig(client.Configuration, result, sh.sigVerifyRequest)
+			proofStatus, attributeResultList := VerifySig(client.Configuration, result, sh.sigVerifyRequest)
+			sh.resultChannel <- Result{proofStatus, attributeResultList}
 		}()
 	}
 	sh.errorChannel <- nil

@@ -8,6 +8,12 @@ import (
 	"math/big"
 )
 
+// TODO: move to irma package?
+type ProofResult struct {
+	proofStatus ProofStatus // The overall proofstatus, should be VALID in order to accept the proof
+	attributes  []irma.AttributeResult
+}
+
 type ProofStatus string
 
 const (
@@ -58,28 +64,29 @@ func extractDisclosedCredentials(configuration *irma.Configuration, proofList *g
 	return credentials, nil
 }
 
-func checkProofWithRequest(configuration *irma.Configuration, proofList *gabi.ProofList, sigRequest *irma.SignatureRequest) ProofStatus {
+func checkProofWithRequest(configuration *irma.Configuration, proofList *gabi.ProofList, sigRequest *irma.SignatureRequest) (ProofStatus, *irma.AttributeResultList) {
 	credentials, err := extractDisclosedCredentials(configuration, proofList)
 
 	if err != nil {
 		fmt.Println(err)
-		return INVALID_CRYPTO
+		return INVALID_CRYPTO, nil
 	}
 
+	al := irma.AttributeResultListFromDisclosed(credentials, configuration)
 	for _, content := range sigRequest.Content {
-		if !content.SatisfyDisclosed(credentials, configuration) {
-			return MISSING_ATTRIBUTES
+		if !content.SatisfyDisclosed(credentials, configuration, al) {
+			return MISSING_ATTRIBUTES, al
 		}
 	}
 
 	// Check if a credential is expired
 	for _, cred := range credentials {
 		if cred.IsExpired() {
-			return EXPIRED
+			return EXPIRED, al
 		}
 	}
 
-	return VALID
+	return VALID, al
 }
 
 // Verify an IRMA proof cryptographically
@@ -95,7 +102,7 @@ func verify(configuration *irma.Configuration, proofList *gabi.ProofList, contex
 }
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
-func VerifySig(configuration *irma.Configuration, proofString string, sigRequest *irma.SignatureRequest) ProofStatus {
+func VerifySig(configuration *irma.Configuration, proofString string, sigRequest *irma.SignatureRequest) (ProofStatus, *irma.AttributeResultList) {
 
 	// First, unmarshal proof and check if all the attributes in the proofstring match the signature request
 	var proofList gabi.ProofList
@@ -104,12 +111,12 @@ func VerifySig(configuration *irma.Configuration, proofString string, sigRequest
 	err := proofList.UnmarshalJSON(proofBytes)
 	if err != nil {
 		fmt.Printf("Error unmarshalling JSON: %v\n", err)
-		return INVALID_JSON
+		return INVALID_JSON, nil
 	}
 
 	// Now, cryptographically verify the signature
 	if !verify(configuration, &proofList, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
-		return INVALID_CRYPTO
+		return INVALID_CRYPTO, nil
 	}
 
 	// Finally, check whether attribute values in proof satisfy the original signature request
