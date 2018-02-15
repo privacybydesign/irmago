@@ -14,8 +14,9 @@ import (
 	"github.com/privacybydesign/irmago"
 )
 
-// This file contains the client side of the IRMA protocol, as well as the Handler interface
-// which is used to communicate session info with the user.
+// This file contains the logic and state of performing IRMA sessions, communicates
+// with IRMA API servers, and uses the calling Client to construct messages and replies
+// in the IRMA protocol.
 
 // PermissionHandler is a callback for providing permission for an IRMA session
 // and specifying the attributes to be disclosed.

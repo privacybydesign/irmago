@@ -17,6 +17,14 @@ import (
 // This file contains most methods of the Client (c.f. session.go
 // and updates.go).
 //
+// Clients are the main entry point into this package for the user of this package.
+// The Client struct:
+// - (De)serializes credentials and keyshare server information
+// from storage, as well as logs of earlier IRMA sessions
+// - it provides access to the attributes and all related information of its credentials,
+// - it is the starting point for new IRMA sessions;
+// - and it computes some of the messages in the client side of the IRMA protocol.
+//
 // The storage of credentials is split up in several parts:
 //
 // - The CL-signature of each credential is stored separately, so that we can
@@ -30,11 +38,6 @@ import (
 // across all credentials, is stored only once in a separate file (storing this
 // in multiple places would be bad).
 
-// Client (de)serializes credentials and keyshare server information
-// from storage; as well as logs of earlier IRMA sessions; it provides access
-// to the attributes and all related information of its credentials;
-// it is the starting point for new IRMA sessions; and it computes some
-// of the messages in the client side of the IRMA protocol.
 type Client struct {
 	// Stuff we manage on disk
 	secretkey        *secretKey
