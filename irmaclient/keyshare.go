@@ -25,7 +25,7 @@ type keyshareSessionHandler interface {
 	KeyshareDone(message interface{})
 	KeyshareCancelled()
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
-	KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier)
+	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
 	// In errors the manager may be nil, as not all keyshare errors have a clearly associated scheme manager
 	KeyshareError(manager *irma.SchemeManagerIdentifier, err error)
 	KeysharePin()
@@ -221,7 +221,7 @@ func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error)
 		if serr.ApiError != nil && len(serr.ApiError.ErrorName) > 0 {
 			switch serr.ApiError.ErrorName {
 			case "USER_NOT_REGISTERED":
-				ks.sessionHandler.KeyshareRegistrationIncomplete(manager)
+				ks.sessionHandler.KeyshareEnrollmentIncomplete(manager)
 			case "USER_BLOCKED":
 				duration, err := strconv.Atoi(serr.ApiError.Message)
 				if err != nil { // Not really clear what to do with duration, but should never happen anyway

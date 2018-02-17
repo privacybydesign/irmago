@@ -21,15 +21,15 @@ type TestHandler struct {
 	client *Client
 }
 
-func (th TestHandler) KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier) {
-	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareRegistrationIncomplete")})
+func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")})
 }
 
 func (th TestHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareBlocked")})
 }
 
-func (th TestHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
+func (th TestHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 

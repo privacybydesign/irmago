@@ -73,7 +73,7 @@ func (sh *ManualSessionHandler) RequestSignaturePermission(request irma.Signatur
 func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) {
 	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Session was cancelled")})
 }
-func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
+func (sh *ManualSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
@@ -97,6 +97,6 @@ func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.Sessio
 func (sh *ManualSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareBlocked")})
 }
-func (sh *ManualSessionHandler) KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier) {
-	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareRegistrationIncomplete")})
+func (sh *ManualSessionHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	sh.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")})
 }
