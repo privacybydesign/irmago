@@ -409,7 +409,7 @@ func (session *session) KeyshareCancelled() {
 	session.cancel()
 }
 
-func (session *session) KeyshareRegistrationIncomplete(manager irma.SchemeManagerIdentifier) {
+func (session *session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
 	session.Handler.KeyshareEnrollmentIncomplete(manager)
 }
 
