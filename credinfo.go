@@ -3,7 +3,6 @@ package irma
 import (
 	"math/big"
 	"strings"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"time"
 )
 

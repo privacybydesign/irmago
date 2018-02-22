@@ -32,8 +32,8 @@ type AttributeResult struct {
 type AttributeProofStatus string
 
 const (
-	PRESENT       = AttributeProofStatus("PRESENT") // Attribute is disclosed and matches the value
-	EXTRA         = AttributeProofStatus("EXTRA")
+	PRESENT       = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
+	EXTRA         = AttributeProofStatus("EXTRA")         // Attribute is disclosed, but wasn't requested in request
 	MISSING       = AttributeProofStatus("MISSING")       // Attribute is NOT disclosed, but should be according to request
 	INVALID_VALUE = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
 )
@@ -313,7 +313,7 @@ type AttributeDisjunction struct {
 	selected *AttributeTypeIdentifier
 }
 
-// AttributeDisjunction with the disclosed value. Label, Attributes,Valued can be nil if there is no matching disjunction
+// AttributeDisjunction with the disclosed value that is used to satisfy the disjunction
 type DisclosedAttributeDisjunction struct {
 	AttributeDisjunction
 

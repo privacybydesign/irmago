@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/test"
 	"testing"
 )
 
@@ -26,7 +26,7 @@ var client *Client
 func issue(t *testing.T, ms ManualSessionHandler) {
 	name := "testip"
 
-	jwtcontents := getIssuanceJwt(name)
+	jwtcontents := getIssuanceJwt(name, true)
 	sessionHandlerHelper(t, jwtcontents, "issue", client, &ms)
 }
 
@@ -79,7 +79,7 @@ func TestManualSession(t *testing.T) {
 	client.NewManualSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
@@ -108,7 +108,7 @@ func TestManualSessionUnsatisfiable(t *testing.T) {
 
 	// Fail test if we won't get UnsatisfiableRequest error
 	if err := <-ms.errorChannel; err.ErrorType != irma.ErrorType("UnsatisfiableRequest") {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 	test.ClearTestStorage(t)
@@ -127,7 +127,7 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 	client.NewManualSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
@@ -152,7 +152,7 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 	client.NewManualSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
@@ -189,7 +189,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 	client.NewManualSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
@@ -217,7 +217,7 @@ func TestManualKeyShareSession(t *testing.T) {
 	client.NewManualSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
@@ -249,7 +249,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 	client.NewManualSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
@@ -280,7 +280,7 @@ func TestManualSessionInvalidProof(t *testing.T) {
 	client.NewManualSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
-	  test.ClearTestStorage(t)
+		test.ClearTestStorage(t)
 		t.Fatal(*err)
 	}
 
@@ -304,7 +304,7 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 	}
 	sh.errorChannel <- nil
 }
-func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, missingAttributes irma.AttributeDisjunctionList) {
+func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, serverName string, missingAttributes irma.AttributeDisjunctionList) {
 	// This function is called from main thread, which blocks go channel, so need go routine here
 	go func() {
 		sh.errorChannel <- &irma.SessionError{
@@ -346,4 +346,13 @@ func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.Discl
 func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.SessionError) {
 	fmt.Println(err.Err)
 	sh.errorChannel <- err
+}
+func (sh *ManualSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	sh.errorChannel <- &irma.SessionError{Err: errors.New("KeyshareBlocked")}
+}
+func (sh *ManualSessionHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	sh.errorChannel <- &irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")}
+}
+func (sh *ManualSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
+	sh.errorChannel <- &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())}
 }
