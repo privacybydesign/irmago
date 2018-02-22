@@ -48,41 +48,6 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 	}
 }
 
-// Convert proof responses to Ints, adding nils for undislosed attributes
-func convertProofResponsesToInts(aResponses map[int]*big.Int, aDisclosed map[int]*big.Int) ([]*big.Int, error) {
-	var ints []*big.Int
-
-	length := len(aResponses) + len(aDisclosed)
-
-	for i := 1; i < length; i++ {
-		if aResponses[i] == nil {
-			if aDisclosed[i] == nil {
-				// If index not found in aResponses it must be in aDisclosed
-				return nil, &SessionError{
-					ErrorType: ErrorCrypto,
-					Info:      fmt.Sprintf("Missing attribute index: %v", i),
-				} // TODO: error type?
-			}
-
-			ints = append(ints, aDisclosed[i])
-		} else {
-			// Don't include value of hidden attributes
-			ints = append(ints, nil)
-		}
-	}
-	return ints, nil
-}
-
-// NewAttributeListFromInts initializes a new AttributeList from disclosed attributes of a prooflist
-func NewCredentialInfoFromADisclosed(aResponses map[int]*big.Int, aDisclosed map[int]*big.Int, conf *Configuration) (*CredentialInfo, error) {
-	ints, err := convertProofResponsesToInts(aResponses, aDisclosed)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCredentialInfo(ints, conf), nil
-}
-
 func (ci CredentialInfo) GetCredentialType(conf *Configuration) *CredentialType {
 	return conf.CredentialTypes[ci.CredentialTypeID]
 }

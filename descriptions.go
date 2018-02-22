@@ -81,6 +81,10 @@ type AttributeDescription struct {
 	Description TranslatedString
 }
 
+func (ad AttributeDescription) GetAttributeTypeIdentifier(cred CredentialTypeIdentifier) AttributeTypeIdentifier {
+	return NewAttributeTypeIdentifier(cred.String() + "." + ad.ID)
+}
+
 // IndexOf returns the index of the specified attribute if present,
 // or an error (and -1) if not present.
 func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {

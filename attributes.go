@@ -22,18 +22,18 @@ const (
 type AttributeResultList struct {
 	AttributeResults []*AttributeResult
 }
-
 type AttributeResult struct {
-	AttributeValue       TranslatedString // Value of the disclosed attribute
-	AttributeId          AttributeTypeIdentifier
-	AttributeProofStatus AttributeProofStatus
+	AttributeValue       string                  `json:"value"` // Value of the disclosed attribute
+	AttributeId          AttributeTypeIdentifier `json:"id"`
+	AttributeProofStatus AttributeProofStatus    `json:"status"`
 }
 
+// AttributeProofStatus is the proof status of a single attribute
 type AttributeProofStatus string
 
 const (
-	PRESENT       = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
-	UNKNOWN       = AttributeProofStatus("UNKNOWN")       // Attribute is disclosed, but status is yet unknown
+	PRESENT       = AttributeProofStatus("PRESENT") // Attribute is disclosed and matches the value
+	EXTRA         = AttributeProofStatus("EXTRA")
 	MISSING       = AttributeProofStatus("MISSING")       // Attribute is NOT disclosed, but should be according to request
 	INVALID_VALUE = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
 )
@@ -54,7 +54,7 @@ type metadataField struct {
 	offset int
 }
 
-// MetadataAttribute represent a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
+// metadataAttribute represents a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
 type MetadataAttribute struct {
 	Int  *big.Int
 	pk   *gabi.PublicKey
@@ -77,16 +77,6 @@ func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeLi
 		Ints:              ints,
 		MetadataAttribute: MetadataFromInt(ints[0], conf),
 	}
-}
-
-// NewAttributeListFromInts initializes a new AttributeList from disclosed attributes of a prooflist
-func NewAttributeListFromADisclosed(aResponses map[int]*big.Int, aDisclosed map[int]*big.Int, conf *Configuration) (*AttributeList, error) {
-	ints, err := convertProofResponsesToInts(aResponses, aDisclosed)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewAttributeListFromInts(ints, conf), nil
 }
 
 func (al *AttributeList) Info() *CredentialInfo {
@@ -323,8 +313,26 @@ type AttributeDisjunction struct {
 	selected *AttributeTypeIdentifier
 }
 
+// AttributeDisjunction with the disclosed value. Label, Attributes,Valued can be nil if there is no matching disjunction
+type DisclosedAttributeDisjunction struct {
+	AttributeDisjunction
+
+	DisclosedValue string
+	DisclosedId    AttributeTypeIdentifier
+	ProofStatus    AttributeProofStatus
+}
+
 // An AttributeDisjunctionList is a list of AttributeDisjunctions.
 type AttributeDisjunctionList []*AttributeDisjunction
+
+func NewDisclosedDisjunctionFromList(ad *AttributeDisjunction, ar *AttributeResult) *DisclosedAttributeDisjunction {
+	return &DisclosedAttributeDisjunction{
+		AttributeDisjunction: *ad,
+		DisclosedValue:       ar.AttributeValue,
+		DisclosedId:          ar.AttributeId,
+		ProofStatus:          ar.AttributeProofStatus,
+	}
+}
 
 // HasValues indicates if the attributes of this disjunction have values
 // that should be satisfied.
@@ -350,58 +358,60 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 // This is the case if:
 // attribute is contained in disclosed AND if a value is present: equal to that value
 // al can be nil if you don't want to include attribute status for proof
-func isAttributeSatisfied(attribute AttributeTypeIdentifier, value string, disclosed []*CredentialInfo, conf *Configuration, al *AttributeResultList) bool {
-	for _, cred := range disclosed {
-		credentialType := cred.GetCredentialType(conf)
-		index, err := credentialType.IndexOf(attribute)
+func isAttributeSatisfied(attributeId AttributeTypeIdentifier, requestedValue string, disclosed []*DisclosedCredential) (bool, *AttributeResult) {
+	ar := AttributeResult{
+		AttributeId: attributeId,
+	}
 
-		if err != nil {
-			// Specified credential does not contain this attribute, move to next cred in list of disclosed credentials
+	for _, cred := range disclosed {
+		disclosedAttributeValue := cred.GetAttributeValue(attributeId)
+
+		// Continue to next credential if requested attribute isn't disclosed in this credential
+		if disclosedAttributeValue == "" {
 			continue
 		}
 
-		disclosedAttributeValue := cred.Attributes[index]
-		// If it contains this attribute, check if value matches (it must be disclosed (i.e. not nil) and match the value)
+		// If this is the disclosed attribute, check if value matches
 		// Attribute is satisfied if:
 		// - Attribute is disclosed (i.e. not nil)
 		// - Value is empty OR value equal to disclosedValue
-		if disclosedAttributeValue != nil {
-			if value == "" || disclosedAttributeValue["en"] == value { // TODO: fix translation/attr typing
-				al.SetProofStatus(attribute, disclosedAttributeValue, PRESENT)
-				return true
-			} else {
-				// If attribute is disclosed and present, but not equal to required value, mark it as invalid_value
-				// We won't return true and continue searching in other disclosed attributes
-				al.SetProofStatus(attribute, disclosedAttributeValue, INVALID_VALUE)
-			}
+		ar.AttributeValue = disclosedAttributeValue
+
+		if requestedValue == "" || disclosedAttributeValue == requestedValue {
+			ar.AttributeProofStatus = PRESENT
+			return true, &ar
+		} else {
+			// If attribute is disclosed and present, but not equal to required value, mark it as invalid_value
+			// We won't return true and continue searching in other disclosed attributes
+			ar.AttributeProofStatus = INVALID_VALUE
 		}
 	}
-	return false
+
+	// If there is never a value assigned, then this attribute isn't disclosed, and thus missing
+	if ar.AttributeValue == "" {
+		ar.AttributeProofStatus = MISSING
+	}
+	return false, &ar
 }
 
 // Check whether specified attributedisjunction satisfy a list of disclosed attributes
 // We return true if one of the attributes in the disjunction is satisfied
-func (disjunction *AttributeDisjunction) SatisfyDisclosed(disclosed []*CredentialInfo, conf *Configuration, al *AttributeResultList) bool {
+func (disjunction *AttributeDisjunction) SatisfyDisclosed(disclosed []*DisclosedCredential, conf *Configuration) (bool, *DisclosedAttributeDisjunction) {
+	var attributeResult *AttributeResult
 	for _, attr := range disjunction.Attributes {
-		value := disjunction.Values[attr]
+		requestedValue := disjunction.Values[attr]
 
-		if isAttributeSatisfied(attr, value, disclosed, conf, al) {
-			return true
+		var isSatisfied bool
+		isSatisfied, attributeResult = isAttributeSatisfied(attr, requestedValue, disclosed)
+
+		if isSatisfied {
+			return true, NewDisclosedDisjunctionFromList(disjunction, attributeResult)
 		}
 	}
 
-	// Add all missing attributes
-	for _, attr := range disjunction.Attributes {
-		ar := AttributeResult{
-			AttributeId:          attr,
-			AttributeProofStatus: MISSING,
-		}
-		if !al.ContainsAttributeId(ar.AttributeId) {
-			al.Append(ar)
-		}
-	}
-
-	return false
+	// Nothing satisfied, attributeResult will contain the last attribute of the original request
+	// TODO: do we want this?
+	return false, NewDisclosedDisjunctionFromList(disjunction, attributeResult)
 }
 
 // MatchesConfig returns true if all attributes contained in the disjunction are
@@ -517,19 +527,8 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	return nil
 }
 
-// From here attributeResult related functions. TODO: move to separate file?
-
-func (al *AttributeResultList) Append(result AttributeResult) {
-	al.AttributeResults = append(al.AttributeResults, &result)
-}
-
-func (al *AttributeResultList) ContainsAttributeId(attrId AttributeTypeIdentifier) bool {
-	for _, ar := range al.AttributeResults {
-		if ar.AttributeId == attrId {
-			return true
-		}
-	}
-	return false
+func (al *AttributeResultList) Append(result *AttributeResult) {
+	al.AttributeResults = append(al.AttributeResults, result)
 }
 
 func (al *AttributeResultList) String() string {
@@ -541,62 +540,9 @@ func (al *AttributeResultList) String() string {
 	return str
 }
 
-// Set the proof status to a new status for a specified attribute. An attribute is specified by an attributeTypeIdentifier
-func (al *AttributeResultList) SetProofStatus(attrID AttributeTypeIdentifier, attrValue TranslatedString, status AttributeProofStatus) bool {
-	for _, ar := range al.AttributeResults {
-		// TODO: translation
-		if ar.AttributeId == attrID && ar.AttributeValue["en"] == attrValue["en"] {
-			ar.AttributeProofStatus = status
-			return true
-		}
-	}
-	return false
-}
-
-func (ar *AttributeResult) GetAttributeDescription(conf *Configuration) (*AttributeDescription, error) {
-	cred := conf.CredentialTypes[NewCredentialTypeIdentifier(ar.AttributeId.Parent())]
-	index, err := cred.IndexOf(ar.AttributeId)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &cred.Attributes[index], nil
-}
-
 func (ar *AttributeResult) String() string {
-	// TODO: translated string!
 	return fmt.Sprintf("%v --- %v --- %v",
 		ar.AttributeId,
-		ar.AttributeValue["en"],
+		ar.AttributeValue,
 		ar.AttributeProofStatus)
-}
-
-func AttributeResultListFromDisclosed(disclosed []*CredentialInfo, conf *Configuration) *AttributeResultList {
-	al := AttributeResultList{}
-
-	for _, cred := range disclosed {
-		credentialType := cred.GetCredentialType(conf)
-
-		for _, attr := range credentialType.Attributes {
-			attrId := NewAttributeTypeIdentifier(cred.CredentialTypeID.String() + "." + attr.ID)
-
-			index, err := credentialType.IndexOf(attrId)
-			if err != nil {
-				// Specified credential does not contain this attribute, move to next
-				break
-			}
-
-			disclosedAttributeValue := cred.Attributes[index]
-
-			if disclosedAttributeValue != nil {
-				al.Append(AttributeResult{
-					AttributeValue:       disclosedAttributeValue,
-					AttributeId:          attrId,
-					AttributeProofStatus: UNKNOWN,
-				})
-			}
-		}
-	}
-	return &al
 }
