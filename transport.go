@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -29,11 +31,27 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 	if serverURL != "" && !strings.HasSuffix(url, "/") { // TODO fix this
 		url += "/"
 	}
+
+	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS)
+	var innerTransport http.Transport
+
+	innerTransport.Dial = func(network, addr string) (c net.Conn, err error) {
+		c, err = net.Dial(network, addr)
+		if err != nil {
+			return c, err
+		}
+		if err = disable_sigpipe.DisableSigPipe(c); err != nil {
+			return c, err
+		}
+		return c, nil
+	}
+
 	return &HTTPTransport{
 		Server:  url,
 		headers: map[string]string{},
 		client: &http.Client{
-			Timeout: time.Second * 15,
+			Timeout:   time.Second * 15,
+			Transport: &innerTransport,
 		},
 	}
 }
