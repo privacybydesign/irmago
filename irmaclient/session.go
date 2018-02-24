@@ -174,10 +174,10 @@ func (session *session) panicFailure() {
 	}
 }
 
-func (session *session) checkAndUpateConfiguration(client *Client) bool {
+func (session *session) checkAndUpateConfiguration() bool {
 	var err error
 	for id := range session.irmaSession.Identifiers().SchemeManagers {
-		manager, contains := client.Configuration.SchemeManagers[id]
+		manager, contains := session.client.Configuration.SchemeManagers[id]
 		if !contains {
 			session.fail(&irma.SessionError{
 				ErrorType: irma.ErrorUnknownSchemeManager,
@@ -226,7 +226,7 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
-	if !session.checkAndUpateConfiguration(client) {
+	if !session.checkAndUpateConfiguration() {
 		return
 	}
 
@@ -323,7 +323,7 @@ func (session *session) start() {
 		}
 	}
 
-	if !session.checkAndUpateConfiguration(session.client) {
+	if !session.checkAndUpateConfiguration() {
 		return
 	}
 
