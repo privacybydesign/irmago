@@ -249,24 +249,7 @@ func sessionHandlerHelper(t *testing.T, jwtcontents interface{}, url string, cli
 	}
 }
 
-func enrollKeyshareServer(t *testing.T, client *Client) {
-	bytes := make([]byte, 8, 8)
-	rand.Read(bytes)
-	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
-	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), email, "12345"))
-}
-
-// Enroll at a keyshare server and do an issuance, disclosure,
-// and issuance session, also using irma-demo credentials deserialized from Android storage
-func TestKeyshareEnrollmentAndSessions(t *testing.T) {
-	client := parseStorage(t)
-
-	require.NoError(t, client.RemoveCredentialByHash(
-		client.Attributes(irma.NewCredentialTypeIdentifier("test.test.mijnirma"), 0).Hash(),
-	))
-	require.NoError(t, client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test")))
-	enrollKeyshareServer(t, client)
-
+func keyshareSessions(t *testing.T, client *Client) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
 	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -300,6 +283,34 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 		},
 	)
 	sessionHelper(t, jwt, "signature", client)
+}
+
+// Enroll at a keyshare server and do an issuance, disclosure,
+// and issuance session, also using irma-demo credentials deserialized from Android storage
+func TestKeyshareEnrollmentAndSessions(t *testing.T) {
+	client := parseStorage(t)
+	credtype := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
+
+	// Remove existing registration at test keyshare server
+	require.NoError(t, client.RemoveCredentialByHash(
+		client.Attributes(credtype, 0).Hash(),
+	))
+	require.NoError(t, client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test")))
+
+	// Do a new registration session
+	c := make(chan error) // channel for TestClientHandler to inform us of result
+	client.handler.(*TestClientHandler).c = c
+	bytes := make([]byte, 8, 8)
+	rand.Read(bytes)
+	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
+	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), email, "12345"))
+	if err := <-c; err != nil {
+		t.Fatal(err)
+	}
+
+	require.NotNil(t, client.Attributes(credtype, 0))
+
+	keyshareSessions(t, client)
 
 	test.ClearTestStorage(t)
 }
@@ -309,40 +320,8 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
 	client := parseStorage(t)
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
-	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
-	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
-	jwt := getCombinedJwt("testip", id)
-	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
-		jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials,
-		&irma.CredentialRequest{
-			Validity:         &expiry,
-			CredentialTypeID: &credid,
-			Attributes:       map[string]string{"email": "example@example.com"},
-		},
-	)
-	sessionHelper(t, jwt, "issue", client)
-
-	jwt = getDisclosureJwt("testsp", id)
-	jwt.(*irma.ServiceProviderJwt).Request.Request.Content = append(
-		jwt.(*irma.ServiceProviderJwt).Request.Request.Content, //[]*AttributeDisjunction{},
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
-	sessionHelper(t, jwt, "verification", client)
-
-	jwt = getSigningJwt("testsigclient", id)
-	jwt.(*irma.SignatureRequestorJwt).Request.Request.Content = append(
-		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content, //[]*AttributeDisjunction{},
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
-	sessionHelper(t, jwt, "signature", client)
+	keyshareSessions(t, client)
 
 	test.ClearTestStorage(t)
 }

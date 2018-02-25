@@ -20,12 +20,26 @@ func TestMain(m *testing.M) {
 	os.Exit(retCode)
 }
 
-type IgnoringClientHandler struct{}
+type TestClientHandler struct {
+	t *testing.T
+	c chan error
+}
 
-func (i *IgnoringClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet)                 {}
-func (i *IgnoringClientHandler) UpdateAttributes()                                               {}
-func (i *IgnoringClientHandler) EnrollmentError(manager irma.SchemeManagerIdentifier, err error) {}
-func (i *IgnoringClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier)          {}
+func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
+func (i *TestClientHandler) UpdateAttributes()                               {}
+func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
+	select {
+	case i.c <- nil: // nop
+	default: // nop
+	}
+}
+func (i *TestClientHandler) EnrollmentError(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: // nop
+	default:
+		i.t.Fatal(err)
+	}
+}
 
 func parseStorage(t *testing.T) *Client {
 	require.NoError(t, fs.CopyDirectory("../testdata/teststorage", "../testdata/storage/test"))
@@ -33,7 +47,7 @@ func parseStorage(t *testing.T) *Client {
 		"../testdata/storage/test",
 		"../testdata/irma_configuration",
 		"",
-		&IgnoringClientHandler{},
+		&TestClientHandler{t: t},
 	)
 	require.NoError(t, err)
 	return manager
