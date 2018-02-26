@@ -20,6 +20,8 @@ type SessionRequest struct {
 
 	Choice *DisclosureChoice  `json:"-"`
 	Ids    *IrmaIdentifierSet `json:"-"`
+
+	version *ProtocolVersion
 }
 
 func (sr *SessionRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
@@ -34,6 +36,16 @@ func (sr *SessionRequest) DisclosureChoice() *DisclosureChoice {
 // SetDisclosureChoice sets the attributes to be disclosed in this session.
 func (sr *SessionRequest) SetDisclosureChoice(choice *DisclosureChoice) {
 	sr.Choice = choice
+}
+
+// ...
+func (sr *SessionRequest) SetVersion(v *ProtocolVersion) {
+	sr.version = v
+}
+
+// ...
+func (sr *SessionRequest) GetVersion() *ProtocolVersion {
+	return sr.version
 }
 
 // A DisclosureRequest is a request to disclose certain attributes.
@@ -113,6 +125,7 @@ type IrmaSession interface {
 	SetNonce(*big.Int)
 	GetContext() *big.Int
 	SetContext(*big.Int)
+	SetVersion(*ProtocolVersion)
 	ToDisclose() AttributeDisjunctionList
 	DisclosureChoice() *DisclosureChoice
 	SetDisclosureChoice(choice *DisclosureChoice)
@@ -123,8 +136,8 @@ type IrmaSession interface {
 // Timestamp is a time.Time that marshals to Unix timestamps.
 type Timestamp time.Time
 
-func (cr *CredentialRequest) Info(conf *Configuration) (*CredentialInfo, error) {
-	list, err := cr.AttributeList(conf)
+func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*CredentialInfo, error) {
+	list, err := cr.AttributeList(conf, metadataVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +145,8 @@ func (cr *CredentialRequest) Info(conf *Configuration) (*CredentialInfo, error) 
 }
 
 // AttributeList returns the list of attributes from this credential request.
-func (cr *CredentialRequest) AttributeList(conf *Configuration) (*AttributeList, error) {
-	meta := NewMetadataAttribute()
+func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion byte) (*AttributeList, error) {
+	meta := NewMetadataAttribute(metadataVersion)
 	meta.setKeyCounter(cr.KeyCounter)
 	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
 	meta.setSigningDate()
@@ -167,7 +180,12 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration) (*AttributeList,
 	for i, attrtype := range credtype.Attributes {
 		attrs[i+1] = new(big.Int)
 		if str, present := cr.Attributes[attrtype.ID]; present {
+			// Set attribute to str << 1 + 1
 			attrs[i+1].SetBytes([]byte(str))
+			if meta.Version() >= 0x03 {
+				attrs[i+1].Lsh(attrs[i+1], 1)             // attr <<= 1
+				attrs[i+1].Add(attrs[i+1], big.NewInt(1)) // attr += 1
+			}
 		} else {
 			if (attrtype.Optional != "true") {
 				return nil, errors.New("Required attribute not provided")

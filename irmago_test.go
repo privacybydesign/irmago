@@ -166,7 +166,7 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 }
 
 func TestMetadataAttribute(t *testing.T) {
-	metadata := NewMetadataAttribute()
+	metadata := NewMetadataAttribute(0x02)
 	if metadata.Version() != 0x02 {
 		t.Errorf("Unexpected metadata version: %d", metadata.Version())
 	}

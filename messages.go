@@ -16,8 +16,27 @@ import (
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
 
-// Version encodes the IRMA protocol version of an IRMA session.
-type Version string
+// ProtocolVersion encodes the IRMA protocol version of an IRMA session.
+type ProtocolVersion struct {
+	major int
+	minor int
+}
+
+func NewVersion(major, minor int) *ProtocolVersion {
+	return &ProtocolVersion{major, minor}
+}
+
+func (v *ProtocolVersion) String() string {
+	return fmt.Sprintf("%d.%d", v.major, v.minor)
+}
+
+// Returns true if v is below the given version.
+func (v *ProtocolVersion) Below(major, minor int) bool {
+	if v.major < major {
+		return true
+	}
+	return v.major == major && v.minor < minor
+}
 
 // Action encodes the session type of an IRMA session (e.g., disclosing).
 type Action string

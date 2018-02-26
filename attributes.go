@@ -19,8 +19,6 @@ const (
 )
 
 var (
-	metadataVersion = []byte{0x02}
-
 	versionField     = metadataField{1, 0}
 	signingDateField = metadataField{3, 1}
 	validityField    = metadataField{2, 4}
@@ -120,13 +118,13 @@ func MetadataFromInt(i *big.Int, conf *Configuration) *MetadataAttribute {
 }
 
 // NewMetadataAttribute constructs a new instance containing the default values:
-// 0x02 as versionField
+// provided version as versionField
 // now as signing date
 // 0 as keycounter
 // ValidityDefault (half a year) as default validity.
-func NewMetadataAttribute() *MetadataAttribute {
+func NewMetadataAttribute(version byte) *MetadataAttribute {
 	val := MetadataAttribute{new(big.Int), nil, nil}
-	val.setField(versionField, metadataVersion)
+	val.setField(versionField, []byte{version})
 	val.setSigningDate()
 	val.setKeyCounter(0)
 	val.setDefaultValidityDuration()

@@ -54,7 +54,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 			entry.Received = map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
 		}
 		for _, req := range session.jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials {
-			list, err := req.AttributeList(session.client.Configuration)
+			list, err := req.AttributeList(session.client.Configuration, getMetadataVersion(session.Version))
 			if err != nil {
 				continue // TODO?
 			}
