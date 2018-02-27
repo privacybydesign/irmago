@@ -26,7 +26,7 @@ type ProofResult struct {
 }
 
 type SignatureProofResult struct {
-	ProofResult
+	*ProofResult
 	message string
 }
 
@@ -34,6 +34,82 @@ type SignatureProofResult struct {
 type DisclosedCredential struct {
 	metadataAttribute *MetadataAttribute
 	Attributes        map[AttributeTypeIdentifier]*big.Int
+}
+
+type DisclosedCredentialList []*DisclosedCredential
+
+// Helper function to check if an attribute is satisfied against a list of disclosed attributes
+// This is the case if:
+// attribute is contained in disclosed AND if a value is present: equal to that value
+// al can be nil if you don't want to include attribute status for proof
+func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId AttributeTypeIdentifier, requestedValue string) (bool, *AttributeResult) {
+	ar := AttributeResult{
+		AttributeId: attributeId,
+	}
+
+	for _, cred := range disclosed {
+		disclosedAttributeValue := cred.GetAttributeValue(attributeId)
+
+		// Continue to next credential if requested attribute isn't disclosed in this credential
+		if disclosedAttributeValue == "" {
+			continue
+		}
+
+		// If this is the disclosed attribute, check if value matches
+		// Attribute is satisfied if:
+		// - Attribute is disclosed (i.e. not nil)
+		// - Value is empty OR value equal to disclosedValue
+		ar.AttributeValue = disclosedAttributeValue
+
+		if requestedValue == "" || disclosedAttributeValue == requestedValue {
+			ar.AttributeProofStatus = PRESENT
+			return true, &ar
+		} else {
+			// If attribute is disclosed and present, but not equal to required value, mark it as invalid_value
+			// We won't return true and continue searching in other disclosed attributes
+			ar.AttributeProofStatus = INVALID_VALUE
+		}
+	}
+
+	// If there is never a value assigned, then this attribute isn't disclosed, and thus missing
+	if ar.AttributeValue == "" {
+		ar.AttributeProofStatus = MISSING
+	}
+	return false, &ar
+}
+
+// Create a signature proof result and check disclosed credentials against a signature request
+func (disclosed DisclosedCredentialList) createAndCheckSignatureProofResult(configuration *Configuration, sigRequest *SignatureRequest) *SignatureProofResult {
+	signatureProofResult := SignatureProofResult{
+		ProofResult: &ProofResult{},
+		message:     sigRequest.Message,
+	}
+	for _, content := range sigRequest.Content {
+		isSatisfied, disjunction := content.SatisfyDisclosed(disclosed, configuration)
+		signatureProofResult.disjunctions = append(signatureProofResult.disjunctions, disjunction)
+
+		// If satisfied, continue to next one
+		if isSatisfied {
+			continue
+		}
+
+		// Else, set proof status to missing_attributes, but check other as well to add other disjunctions to result
+		// (so user also knows attribute status of other disjunctions)
+		signatureProofResult.ProofStatus = MISSING_ATTRIBUTES
+	}
+
+	signatureProofResult.disjunctions = addExtraAttributes(disclosed, signatureProofResult.ProofResult)
+	return &signatureProofResult
+}
+
+// Returns true if one of the disclosed credentials is expired
+func (disclosed DisclosedCredentialList) IsExpired() bool {
+	for _, cred := range disclosed {
+		if cred.IsExpired() {
+			return true
+		}
+	}
+	return false
 }
 
 func (proofResult *ProofResult) ToAttributeResultList() *AttributeResultList {
@@ -99,10 +175,10 @@ func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configura
 	}
 }
 
-func extractPublicKeys(configuration *Configuration, proofList *gabi.ProofList) ([]*gabi.PublicKey, error) {
-	var publicKeys []*gabi.PublicKey
+func extractPublicKeys(configuration *Configuration, proofList gabi.ProofList) ([]*gabi.PublicKey, error) {
+	var publicKeys = make([]*gabi.PublicKey, 0, len(proofList))
 
-	for _, v := range *proofList {
+	for _, v := range proofList {
 		switch v.(type) {
 		case *gabi.ProofD:
 			proof := v.(*gabi.ProofD)
@@ -112,7 +188,6 @@ func extractPublicKeys(configuration *Configuration, proofList *gabi.ProofList) 
 				return nil, err
 			}
 			publicKeys = append(publicKeys, publicKey)
-
 		default:
 			return nil, errors.New("Cannot extract public key, not a disclosure proofD!")
 		}
@@ -120,10 +195,10 @@ func extractPublicKeys(configuration *Configuration, proofList *gabi.ProofList) 
 	return publicKeys, nil
 }
 
-func extractDisclosedCredentials(conf *Configuration, proofList *gabi.ProofList) ([]*DisclosedCredential, error) {
-	var credentials []*DisclosedCredential
+func extractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) (DisclosedCredentialList, error) {
+	var credentials = make(DisclosedCredentialList, 0, len(proofList))
 
-	for _, v := range *proofList {
+	for _, v := range proofList {
 		switch v.(type) {
 		case *gabi.ProofD:
 			proof := v.(*gabi.ProofD)
@@ -138,10 +213,11 @@ func extractDisclosedCredentials(conf *Configuration, proofList *gabi.ProofList)
 }
 
 // Add extra disclosed attributes to an existing and checked ProofResult in 'dummy disjunctions'
-func addExtraAttributes(credentials []*DisclosedCredential, proofResult *ProofResult) []*DisclosedAttributeDisjunction {
-	returnDisjunctions := append(proofResult.disjunctions)
+func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofResult) []*DisclosedAttributeDisjunction {
+	returnDisjunctions := make([]*DisclosedAttributeDisjunction, len(proofResult.disjunctions))
+	copy(returnDisjunctions, proofResult.disjunctions)
 
-	for _, cred := range credentials {
+	for _, cred := range disclosed {
 		for attrId := range cred.Attributes {
 			if proofResult.ContainsAttribute(attrId) {
 				continue
@@ -159,43 +235,20 @@ func addExtraAttributes(credentials []*DisclosedCredential, proofResult *ProofRe
 	return returnDisjunctions
 }
 
-// Create a signature proof result and check disclosed credentials against a signature request
-func createAndCheckSignatureProofResult(configuration *Configuration, credentials []*DisclosedCredential, sigRequest *SignatureRequest) *SignatureProofResult {
-	signatureProofResult := SignatureProofResult{
-		message: sigRequest.Message,
-	}
-	for _, content := range sigRequest.Content {
-		isSatisfied, disjunction := content.SatisfyDisclosed(credentials, configuration)
-		signatureProofResult.disjunctions = append(signatureProofResult.disjunctions, disjunction)
-
-		// If satisfied, continue to next one
-		if isSatisfied {
-			continue
-		}
-
-		// Else, set proof status to missing_attributes, but check other as well to add other disjunctions to result
-		// (so user also knows attribute status of other disjunctions)
-		signatureProofResult.ProofStatus = MISSING_ATTRIBUTES
-	}
-
-	signatureProofResult.disjunctions = addExtraAttributes(credentials, &signatureProofResult.ProofResult)
-	return &signatureProofResult
-}
-
 // Check an gabi prooflist against a signature proofrequest
-func checkProofWithRequest(configuration *Configuration, proofList *gabi.ProofList, sigRequest *SignatureRequest) *SignatureProofResult {
-	credentials, err := extractDisclosedCredentials(configuration, proofList)
+func checkProofWithRequest(configuration *Configuration, proofList gabi.ProofList, sigRequest *SignatureRequest) *SignatureProofResult {
+	disclosed, err := extractDisclosedCredentials(configuration, proofList)
 
 	if err != nil {
 		fmt.Println(err)
 		return &SignatureProofResult{
-			ProofResult: ProofResult{
+			ProofResult: &ProofResult{
 				ProofStatus: INVALID_CRYPTO,
 			},
 		}
 	}
 
-	signatureProofResult := createAndCheckSignatureProofResult(configuration, credentials, sigRequest)
+	signatureProofResult := disclosed.createAndCheckSignatureProofResult(configuration, sigRequest)
 
 	// Return MISSING_ATTRIBUTES as proofstatus if one attribute is missing
 	// This status takes priority over 'EXPIRED'
@@ -204,11 +257,9 @@ func checkProofWithRequest(configuration *Configuration, proofList *gabi.ProofLi
 	}
 
 	// If all disjunctions are satisfied, check if a credential is expired
-	for _, cred := range credentials {
-		if cred.IsExpired() {
-			signatureProofResult.ProofStatus = EXPIRED
-			return signatureProofResult
-		}
+	if disclosed.IsExpired() {
+		signatureProofResult.ProofStatus = EXPIRED
+		return signatureProofResult
 	}
 
 	// All disjunctions satisfied and nothing expired, proof is valid!
@@ -217,7 +268,7 @@ func checkProofWithRequest(configuration *Configuration, proofList *gabi.ProofLi
 }
 
 // Verify an IRMA proof cryptographically
-func verify(configuration *Configuration, proofList *gabi.ProofList, context *big.Int, nonce *big.Int, isSig bool) bool {
+func verify(configuration *Configuration, proofList gabi.ProofList, context *big.Int, nonce *big.Int, isSig bool) bool {
 	// Extract public keys
 	pks, err := extractPublicKeys(configuration, proofList)
 	if err != nil {
@@ -237,21 +288,21 @@ func VerifySig(configuration *Configuration, proofString string, sigRequest *Sig
 	err := proofList.UnmarshalJSON(proofBytes)
 	if err != nil {
 		return &SignatureProofResult{
-			ProofResult: ProofResult{
+			ProofResult: &ProofResult{
 				ProofStatus: INVALID_SYNTAX,
 			},
 		}
 	}
 
 	// Now, cryptographically verify the signature
-	if !verify(configuration, &proofList, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
+	if !verify(configuration, proofList, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
 		return &SignatureProofResult{
-			ProofResult: ProofResult{
+			ProofResult: &ProofResult{
 				ProofStatus: INVALID_CRYPTO,
 			},
 		}
 	}
 
 	// Finally, check whether attribute values in proof satisfy the original signature request
-	return checkProofWithRequest(configuration, &proofList, sigRequest)
+	return checkProofWithRequest(configuration, proofList, sigRequest)
 }

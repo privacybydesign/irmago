@@ -90,9 +90,7 @@ func (al *AttributeList) Hash() string {
 	if al.h == "" {
 		bytes := []byte{}
 		for _, i := range al.Ints {
-			if i != nil {
-				bytes = append(bytes, i.Bytes()...)
-			}
+			bytes = append(bytes, i.Bytes()...)
 		}
 		shasum := sha256.Sum256(bytes)
 		al.h = hex.EncodeToString(shasum[:])
@@ -105,11 +103,7 @@ func (al *AttributeList) Strings() []TranslatedString {
 	if al.strings == nil {
 		al.strings = make([]TranslatedString, len(al.Ints)-1)
 		for index, num := range al.Ints[1:] { // skip metadata
-			if num == nil {
-				al.strings[index] = nil
-			} else {
-				al.strings[index] = map[string]string{"en": string(num.Bytes()), "nl": string(num.Bytes())} // TODO
-			}
+			al.strings[index] = map[string]string{"en": string(num.Bytes()), "nl": string(num.Bytes())} // TODO
 		}
 	}
 	return al.strings
@@ -325,9 +319,10 @@ type DisclosedAttributeDisjunction struct {
 // An AttributeDisjunctionList is a list of AttributeDisjunctions.
 type AttributeDisjunctionList []*AttributeDisjunction
 
-func NewDisclosedDisjunctionFromList(ad *AttributeDisjunction, ar *AttributeResult) *DisclosedAttributeDisjunction {
+// Convert disjunction to a DisclosedAttributeDisjunction that contains disclosed attribute+value
+func (disjunction *AttributeDisjunction) ToDisclosedAttributeDisjunction(ar *AttributeResult) *DisclosedAttributeDisjunction {
 	return &DisclosedAttributeDisjunction{
-		AttributeDisjunction: *ad,
+		AttributeDisjunction: *disjunction,
 		DisclosedValue:       ar.AttributeValue,
 		DisclosedId:          ar.AttributeId,
 		ProofStatus:          ar.AttributeProofStatus,
@@ -354,64 +349,24 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 	return false
 }
 
-// Helper function to check if an attribute is satisfied against a list of disclosed attributes
-// This is the case if:
-// attribute is contained in disclosed AND if a value is present: equal to that value
-// al can be nil if you don't want to include attribute status for proof
-func isAttributeSatisfied(attributeId AttributeTypeIdentifier, requestedValue string, disclosed []*DisclosedCredential) (bool, *AttributeResult) {
-	ar := AttributeResult{
-		AttributeId: attributeId,
-	}
-
-	for _, cred := range disclosed {
-		disclosedAttributeValue := cred.GetAttributeValue(attributeId)
-
-		// Continue to next credential if requested attribute isn't disclosed in this credential
-		if disclosedAttributeValue == "" {
-			continue
-		}
-
-		// If this is the disclosed attribute, check if value matches
-		// Attribute is satisfied if:
-		// - Attribute is disclosed (i.e. not nil)
-		// - Value is empty OR value equal to disclosedValue
-		ar.AttributeValue = disclosedAttributeValue
-
-		if requestedValue == "" || disclosedAttributeValue == requestedValue {
-			ar.AttributeProofStatus = PRESENT
-			return true, &ar
-		} else {
-			// If attribute is disclosed and present, but not equal to required value, mark it as invalid_value
-			// We won't return true and continue searching in other disclosed attributes
-			ar.AttributeProofStatus = INVALID_VALUE
-		}
-	}
-
-	// If there is never a value assigned, then this attribute isn't disclosed, and thus missing
-	if ar.AttributeValue == "" {
-		ar.AttributeProofStatus = MISSING
-	}
-	return false, &ar
-}
-
 // Check whether specified attributedisjunction satisfy a list of disclosed attributes
 // We return true if one of the attributes in the disjunction is satisfied
-func (disjunction *AttributeDisjunction) SatisfyDisclosed(disclosed []*DisclosedCredential, conf *Configuration) (bool, *DisclosedAttributeDisjunction) {
+func (disjunction *AttributeDisjunction) SatisfyDisclosed(disclosed DisclosedCredentialList, conf *Configuration) (bool, *DisclosedAttributeDisjunction) {
 	var attributeResult *AttributeResult
 	for _, attr := range disjunction.Attributes {
 		requestedValue := disjunction.Values[attr]
 
 		var isSatisfied bool
-		isSatisfied, attributeResult = isAttributeSatisfied(attr, requestedValue, disclosed)
+		isSatisfied, attributeResult = disclosed.isAttributeSatisfied(attr, requestedValue)
 
 		if isSatisfied {
-			return true, NewDisclosedDisjunctionFromList(disjunction, attributeResult)
+			return true, disjunction.ToDisclosedAttributeDisjunction(attributeResult)
 		}
 	}
 
 	// Nothing satisfied, attributeResult will contain the last attribute of the original request
 	// TODO: do we want this?
-	return false, NewDisclosedDisjunctionFromList(disjunction, attributeResult)
+	return false, disjunction.ToDisclosedAttributeDisjunction(attributeResult)
 }
 
 // MatchesConfig returns true if all attributes contained in the disjunction are

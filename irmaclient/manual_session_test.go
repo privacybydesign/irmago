@@ -37,12 +37,8 @@ func corruptProofString(proof string) string {
 	if invalidate {
 		proofBytes := []byte(proof)
 
-		flipLoc := 15
-		if proofBytes[flipLoc] == 0x33 {
-			proofBytes[flipLoc] = 0x32
-		} else {
-			proofBytes[flipLoc] = 0x33
-		}
+		// 15 because this is somewhere in a bigint in the json string
+		proofBytes[15] ^= 0x02
 		return string(proofBytes)
 	}
 	return proof
