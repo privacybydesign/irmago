@@ -38,7 +38,7 @@ func corruptProofString(proof string) string {
 		proofBytes := []byte(proof)
 
 		// 15 because this is somewhere in a bigint in the json string
-		proofBytes[15] ^= 0x02
+		proofBytes[15] ^= 0x01
 		return string(proofBytes)
 	}
 	return proof
@@ -85,7 +85,7 @@ func TestManualSession(t *testing.T) {
 		t.Logf("Invalid proof result: %v Expected: %v", ps, irma.VALID)
 		t.Fail()
 	}
-	if attrStatus := result.ToAttributeResultList().AttributeResults[0].AttributeProofStatus; attrStatus != irma.PRESENT {
+	if attrStatus := result.ToAttributeResultList()[0].AttributeProofStatus; attrStatus != irma.PRESENT {
 		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.PRESENT)
 		t.Fail()
 	}
@@ -160,12 +160,12 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 	}
 
 	// First attribute result is MISSING, because it is in the request but not disclosed
-	if attrStatus := result.ToAttributeResultList().AttributeResults[0].AttributeProofStatus; attrStatus != irma.MISSING {
+	if attrStatus := result.ToAttributeResultList()[0].AttributeProofStatus; attrStatus != irma.MISSING {
 		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.MISSING)
 		t.Fail()
 	}
 	// Second attribute result is EXTRA, since it is disclosed, but not matching the sigrequest
-	if attrStatus := result.ToAttributeResultList().AttributeResults[1].AttributeProofStatus; attrStatus != irma.EXTRA {
+	if attrStatus := result.ToAttributeResultList()[1].AttributeProofStatus; attrStatus != irma.EXTRA {
 		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.EXTRA)
 		t.Fail()
 	}
@@ -195,7 +195,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 		t.Logf("Invalid proof result: %v Expected: %v", ps, irma.MISSING_ATTRIBUTES)
 		t.Fail()
 	}
-	if attrStatus := result.ToAttributeResultList().AttributeResults[0].AttributeProofStatus; attrStatus != irma.INVALID_VALUE {
+	if attrStatus := result.ToAttributeResultList()[0].AttributeProofStatus; attrStatus != irma.INVALID_VALUE {
 		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.INVALID_VALUE)
 		t.Fail()
 	}
@@ -255,11 +255,11 @@ func TestManualSessionMultiProof(t *testing.T) {
 		t.Logf("Invalid proof result: %v Expected: %v", result.ProofStatus, irma.VALID)
 		t.Fail()
 	}
-	if attrStatus := result.ToAttributeResultList().AttributeResults[0].AttributeProofStatus; attrStatus != irma.PRESENT {
+	if attrStatus := result.ToAttributeResultList()[0].AttributeProofStatus; attrStatus != irma.PRESENT {
 		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.PRESENT)
 		t.Fail()
 	}
-	if attrStatus := result.ToAttributeResultList().AttributeResults[1].AttributeProofStatus; attrStatus != irma.PRESENT {
+	if attrStatus := result.ToAttributeResultList()[1].AttributeProofStatus; attrStatus != irma.PRESENT {
 		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.PRESENT)
 		t.Fail()
 	}

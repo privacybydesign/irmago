@@ -112,7 +112,7 @@ func (disclosed DisclosedCredentialList) IsExpired() bool {
 	return false
 }
 
-func (proofResult *ProofResult) ToAttributeResultList() *AttributeResultList {
+func (proofResult *ProofResult) ToAttributeResultList() AttributeResultList {
 	var resultList AttributeResultList
 
 	for _, v := range proofResult.disjunctions {
@@ -122,9 +122,9 @@ func (proofResult *ProofResult) ToAttributeResultList() *AttributeResultList {
 			AttributeProofStatus: v.ProofStatus,
 		}
 
-		resultList.Append(&result)
+		resultList = append(resultList, &result)
 	}
-	return &resultList
+	return resultList
 }
 
 // Returns true if this attrId is present in one of the disjunctions

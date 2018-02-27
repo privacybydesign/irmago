@@ -19,14 +19,13 @@ const (
 	metadataLength = 1 + 3 + 2 + 2 + 16
 )
 
-type AttributeResultList struct {
-	AttributeResults []*AttributeResult
-}
 type AttributeResult struct {
 	AttributeValue       string                  `json:"value"` // Value of the disclosed attribute
 	AttributeId          AttributeTypeIdentifier `json:"id"`
 	AttributeProofStatus AttributeProofStatus    `json:"status"`
 }
+
+type AttributeResultList []*AttributeResult
 
 // AttributeProofStatus is the proof status of a single attribute
 type AttributeProofStatus string
@@ -482,14 +481,10 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	return nil
 }
 
-func (al *AttributeResultList) Append(result *AttributeResult) {
-	al.AttributeResults = append(al.AttributeResults, result)
-}
-
 func (al *AttributeResultList) String() string {
 	// TODO: pretty print?
 	str := "Attribute --- Value --- ProofStatus:"
-	for _, v := range al.AttributeResults {
+	for _, v := range *al {
 		str = str + "\n" + v.String()
 	}
 	return str
