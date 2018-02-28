@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"time"
 
+	"fmt"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -16,6 +17,24 @@ const (
 	// ExpiryFactor is the precision for the expiry attribute. Value is one week.
 	ExpiryFactor   = 60 * 60 * 24 * 7
 	metadataLength = 1 + 3 + 2 + 2 + 16
+)
+
+type AttributeResult struct {
+	AttributeValue       string                  `json:"value"` // Value of the disclosed attribute
+	AttributeId          AttributeTypeIdentifier `json:"id"`
+	AttributeProofStatus AttributeProofStatus    `json:"status"`
+}
+
+type AttributeResultList []*AttributeResult
+
+// AttributeProofStatus is the proof status of a single attribute
+type AttributeProofStatus string
+
+const (
+	PRESENT       = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
+	EXTRA         = AttributeProofStatus("EXTRA")         // Attribute is disclosed, but wasn't requested in request
+	MISSING       = AttributeProofStatus("MISSING")       // Attribute is NOT disclosed, but should be according to request
+	INVALID_VALUE = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
 )
 
 var (
@@ -34,7 +53,7 @@ type metadataField struct {
 	offset int
 }
 
-// MetadataAttribute represent a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
+// metadataAttribute represents a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
 type MetadataAttribute struct {
 	Int  *big.Int
 	pk   *gabi.PublicKey
@@ -287,8 +306,27 @@ type AttributeDisjunction struct {
 	selected *AttributeTypeIdentifier
 }
 
+// AttributeDisjunction with the disclosed value that is used to satisfy the disjunction
+type DisclosedAttributeDisjunction struct {
+	AttributeDisjunction
+
+	DisclosedValue string
+	DisclosedId    AttributeTypeIdentifier
+	ProofStatus    AttributeProofStatus
+}
+
 // An AttributeDisjunctionList is a list of AttributeDisjunctions.
 type AttributeDisjunctionList []*AttributeDisjunction
+
+// Convert disjunction to a DisclosedAttributeDisjunction that contains disclosed attribute+value
+func (disjunction *AttributeDisjunction) ToDisclosedAttributeDisjunction(ar *AttributeResult) *DisclosedAttributeDisjunction {
+	return &DisclosedAttributeDisjunction{
+		AttributeDisjunction: *disjunction,
+		DisclosedValue:       ar.AttributeValue,
+		DisclosedId:          ar.AttributeId,
+		ProofStatus:          ar.AttributeProofStatus,
+	}
+}
 
 // HasValues indicates if the attributes of this disjunction have values
 // that should be satisfied.
@@ -308,6 +346,26 @@ func (disjunction *AttributeDisjunction) Satisfied() bool {
 		}
 	}
 	return false
+}
+
+// Check whether specified attributedisjunction satisfy a list of disclosed attributes
+// We return true if one of the attributes in the disjunction is satisfied
+func (disjunction *AttributeDisjunction) SatisfyDisclosed(disclosed DisclosedCredentialList, conf *Configuration) (bool, *DisclosedAttributeDisjunction) {
+	var attributeResult *AttributeResult
+	for _, attr := range disjunction.Attributes {
+		requestedValue := disjunction.Values[attr]
+
+		var isSatisfied bool
+		isSatisfied, attributeResult = disclosed.isAttributeSatisfied(attr, requestedValue)
+
+		if isSatisfied {
+			return true, disjunction.ToDisclosedAttributeDisjunction(attributeResult)
+		}
+	}
+
+	// Nothing satisfied, attributeResult will contain the last attribute of the original request
+	// TODO: do we want this?
+	return false, disjunction.ToDisclosedAttributeDisjunction(attributeResult)
 }
 
 // MatchesConfig returns true if all attributes contained in the disjunction are
@@ -421,4 +479,20 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	}
 
 	return nil
+}
+
+func (al *AttributeResultList) String() string {
+	// TODO: pretty print?
+	str := "Attribute --- Value --- ProofStatus:"
+	for _, v := range *al {
+		str = str + "\n" + v.String()
+	}
+	return str
+}
+
+func (ar *AttributeResult) String() string {
+	return fmt.Sprintf("%v --- %v --- %v",
+		ar.AttributeId,
+		ar.AttributeValue,
+		ar.AttributeProofStatus)
 }

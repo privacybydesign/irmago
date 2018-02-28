@@ -209,6 +209,10 @@ func TestLargeAttribute(t *testing.T) {
 }
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Client) {
+	sessionHandlerHelper(t, jwtcontents, url, client, nil)
+}
+
+func sessionHandlerHelper(t *testing.T, jwtcontents interface{}, url string, client *Client, h Handler) {
 	init := client == nil
 	if init {
 		client = parseStorage(t)
@@ -231,7 +235,10 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Cl
 	qr.URL = url + "/" + qr.URL
 
 	c := make(chan *irma.SessionError)
-	client.NewSession(qr, TestHandler{t, c, client})
+	if h == nil {
+		h = TestHandler{t, c, client}
+	}
+	client.NewSession(qr, h)
 
 	if err := <-c; err != nil {
 		t.Fatal(*err)

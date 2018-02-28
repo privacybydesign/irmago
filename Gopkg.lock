@@ -47,7 +47,7 @@
   branch = "master"
   name = "github.com/mhe/gabi"
   packages = ["."]
-  revision = "6123a11fd5206d74c0f01cd1d60a70d96bab366b"
+  revision = "bf5016a5f3005bef1d2416989588cefcf9a73cb7"
 
 [[projects]]
   name = "github.com/pkg/errors"
