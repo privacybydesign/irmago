@@ -256,6 +256,13 @@ func (attr *MetadataAttribute) IsValid() bool {
 	return attr.IsValidOn(time.Now())
 }
 
+// FloorToEpochBoundary returns the greatest time not greater than the argument
+// that falls on the boundary of an epoch for attribute validity or expiry,
+// of which the value is defined by ExpiryFactor (one week).
+func FloorToEpochBoundary(t time.Time) time.Time {
+	return time.Unix((t.Unix()/ExpiryFactor)*ExpiryFactor, 0)
+}
+
 func (attr *MetadataAttribute) field(field metadataField) []byte {
 	return attr.Bytes()[field.offset : field.offset+field.length]
 }

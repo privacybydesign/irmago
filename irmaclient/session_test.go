@@ -106,7 +106,7 @@ func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 }
 
 func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
-	temp := irma.Timestamp(time.Now().AddDate(1, 0, 0))
+	temp := irma.Timestamp(irma.FloorToEpochBoundary(time.Now().AddDate(1, 0, 0)))
 	var expiry *irma.Timestamp
 	credid1 := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	credid2 := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
