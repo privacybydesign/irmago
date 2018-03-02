@@ -9,8 +9,8 @@ import (
 
 	"encoding/json"
 
-	"github.com/privacybydesign/irmago"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago"
 )
 
 func main() {
@@ -51,7 +51,8 @@ func main() {
 	}
 	fmt.Println("Signed          :", meta.SigningDate().String())
 	fmt.Println("Expires         :", meta.Expiry().String())
-	fmt.Println("IsValid()       :", meta.IsValid())
+	fmt.Println("IsValid         :", meta.IsValid())
+	fmt.Println("Version         :", meta.Version())
 	fmt.Println("KeyCounter      :", meta.KeyCounter())
 	if key != nil {
 		fmt.Println("KeyExpires      :", time.Unix(key.ExpiryDate, 0))
