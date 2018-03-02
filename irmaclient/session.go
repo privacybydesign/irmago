@@ -50,10 +50,19 @@ type SessionDismisser interface {
 	Dismiss()
 }
 
+// getMetadataVersion maps a chosen protocol version to a metadata version that
+// the server will use.
+func getMetadataVersion(v *irma.ProtocolVersion) byte {
+	if v.Below(2, 3) {
+		return 0x02 // no support for optional attributes
+	}
+	return 0x03 // current version
+}
+
 type session struct {
 	Action  irma.Action
 	Handler Handler
-	Version irma.Version
+	Version *irma.ProtocolVersion
 
 	choice      *irma.DisclosureChoice
 	client      *Client
@@ -73,24 +82,24 @@ var _ keyshareSessionHandler = (*session)(nil)
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
-	2: {2, 1},
+	2: {3, 2, 1},
 }
 
-func calcVersion(qr *irma.Qr) (string, error) {
+func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
 	// Parse range supported by server
 	var minmajor, minminor, maxmajor, maxminor int
 	var err error
 	if minmajor, err = strconv.Atoi(string(qr.ProtocolVersion[0])); err != nil {
-		return "", err
+		return nil, err
 	}
 	if minminor, err = strconv.Atoi(string(qr.ProtocolVersion[2])); err != nil {
-		return "", err
+		return nil, err
 	}
 	if maxmajor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[0])); err != nil {
-		return "", err
+		return nil, err
 	}
 	if maxminor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[2])); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
@@ -104,11 +113,11 @@ func calcVersion(qr *irma.Qr) (string, error) {
 			aboveMinimum := major > minmajor || (major == minmajor && minor >= minminor)
 			underMaximum := major < maxmajor || (major == maxmajor && minor <= maxminor)
 			if aboveMinimum && underMaximum {
-				return fmt.Sprintf("%d.%d", major, minor), nil
+				return irma.NewVersion(major, minor), nil
 			}
 		}
 	}
-	return "", fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
+	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
 }
 
 func (session *session) IsInteractive() bool {
@@ -220,7 +229,7 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 		Action:      irma.ActionSigning, // TODO hardcoded for now
 		Handler:     handler,
 		client:      client,
-		Version:     irma.Version("2"), // TODO hardcoded for now
+		Version:     irma.NewVersion(2, 0), // TODO hardcoded for now
 		irmaSession: sigrequest,
 	}
 
@@ -268,7 +277,8 @@ func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser 
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorProtocolVersionNotSupported, Err: err})
 		return nil
 	}
-	session.Version = irma.Version(version)
+	session.Version = version
+	session.transport.SetHeader("X-IRMA-ProtocolVersion", version.String())
 
 	// Check if the action is one of the supported types
 	switch session.Action {
@@ -315,6 +325,7 @@ func (session *session) start() {
 	session.irmaSession = session.jwt.IrmaSession()
 	session.irmaSession.SetContext(session.info.Context)
 	session.irmaSession.SetNonce(session.info.Nonce)
+	session.irmaSession.SetVersion(session.Version)
 	if session.Action == irma.ActionIssuing {
 		ir := session.irmaSession.(*irma.IssuanceRequest)
 		// Store which public keys the server will use
@@ -330,7 +341,7 @@ func (session *session) start() {
 	if session.Action == irma.ActionIssuing {
 		ir := session.irmaSession.(*irma.IssuanceRequest)
 		for _, credreq := range ir.Credentials {
-			info, err := credreq.Info(session.client.Configuration)
+			info, err := credreq.Info(session.client.Configuration, getMetadataVersion(session.Version))
 			if err != nil {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownCredentialType, Err: err})
 				return

@@ -31,7 +31,6 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 	}
 
 	attrs := NewAttributeListFromInts(ints, conf)
-
 	id := credtype.Identifier()
 	issid := id.IssuerIdentifier()
 	return &CredentialInfo{

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"fmt"
+
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -38,8 +39,6 @@ const (
 )
 
 var (
-	metadataVersion = []byte{0x02}
-
 	versionField     = metadataField{1, 0}
 	signingDateField = metadataField{3, 1}
 	validityField    = metadataField{2, 4}
@@ -102,7 +101,15 @@ func (al *AttributeList) Strings() []TranslatedString {
 	if al.strings == nil {
 		al.strings = make([]TranslatedString, len(al.Ints)-1)
 		for index, num := range al.Ints[1:] { // skip metadata
-			al.strings[index] = map[string]string{"en": string(num.Bytes()), "nl": string(num.Bytes())} // TODO
+			bi := new(big.Int).Set(num)
+			if al.MetadataAttribute.Version() >= 3 {
+				if bi.Bit(0) == 0 { // attribute does not exist
+					continue
+				}
+				bi = bi.Rsh(bi, 1)
+			}
+			val := string(bi.Bytes())
+			al.strings[index] = map[string]string{"en": val, "nl": val} // TODO
 		}
 	}
 	return al.strings
@@ -139,13 +146,13 @@ func MetadataFromInt(i *big.Int, conf *Configuration) *MetadataAttribute {
 }
 
 // NewMetadataAttribute constructs a new instance containing the default values:
-// 0x02 as versionField
+// provided version as versionField
 // now as signing date
 // 0 as keycounter
 // ValidityDefault (half a year) as default validity.
-func NewMetadataAttribute() *MetadataAttribute {
+func NewMetadataAttribute(version byte) *MetadataAttribute {
 	val := MetadataAttribute{new(big.Int), nil, nil}
-	val.setField(versionField, metadataVersion)
+	val.setField(versionField, []byte{version})
 	val.setSigningDate()
 	val.setKeyCounter(0)
 	val.setDefaultValidityDuration()

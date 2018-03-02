@@ -137,6 +137,27 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 	}
 }
 
+func getNameIssuanceRequest() *irma.IssuanceRequest {
+	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName")
+
+	req := &irma.IssuanceRequest{
+		Credentials: []*irma.CredentialRequest{
+			{
+				Validity:         &expiry,
+				CredentialTypeID: &credid,
+				Attributes: map[string]string{
+					"firstnames": "Johan Pieter",
+					"firstname":  "Johan",
+					"familyname": "Stuivezand",
+				},
+			},
+		},
+	}
+
+	return req
+}
+
 func getIssuanceJwt(name string, defaultValidity bool) interface{} {
 	return irma.NewIdentityProviderJwt(name, getIssuanceRequest(defaultValidity))
 }
@@ -189,6 +210,26 @@ func TestDefaultCredentialValidity(t *testing.T) {
 	client := parseStorage(t)
 	jwtcontents := getIssuanceJwt("testip", true)
 	sessionHelper(t, jwtcontents, "issue", client)
+}
+
+func TestIssuanceOptionalEmptyAttributes(t *testing.T) {
+	req := getNameIssuanceRequest()
+	jwt := irma.NewIdentityProviderJwt("testip", req)
+	sessionHelper(t, jwt, "issue", nil)
+}
+
+func TestIssuanceOptionalZeroLengthAttributes(t *testing.T) {
+	req := getNameIssuanceRequest()
+	req.Credentials[0].Attributes["prefix"] = ""
+	jwt := irma.NewIdentityProviderJwt("testip", req)
+	sessionHelper(t, jwt, "issue", nil)
+}
+
+func TestIssuanceOptionalSetAttributes(t *testing.T) {
+	req := getNameIssuanceRequest()
+	req.Credentials[0].Attributes["prefix"] = "van"
+	jwt := irma.NewIdentityProviderJwt("testip", req)
+	sessionHelper(t, jwt, "issue", nil)
 }
 
 func TestLargeAttribute(t *testing.T) {
@@ -268,7 +309,7 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	enrollKeyshareServer(t, client)
 
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
+	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
 	jwt := getCombinedJwt("testip", id)
 	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
@@ -311,7 +352,7 @@ func TestKeyshareSessions(t *testing.T) {
 	client := parseStorage(t)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
-	expiry := irma.Timestamp(irma.NewMetadataAttribute().Expiry())
+	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
 	jwt := getCombinedJwt("testip", id)
 	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
