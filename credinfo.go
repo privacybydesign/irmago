@@ -31,7 +31,7 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 
 	attrs := make([]TranslatedString, len(credtype.Attributes))
 	for i := range credtype.Attributes {
-		bi := ints[i+1]
+		bi := new(big.Int).Set(ints[i+1])
 		if meta.Version() >= 3 { // has optional attributes
 			if bi.Bit(0) == 0 { // attribute does not exist
 				continue
