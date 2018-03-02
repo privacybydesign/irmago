@@ -215,14 +215,32 @@ func TestDefaultCredentialValidity(t *testing.T) {
 func TestIssuanceOptionalEmptyAttributes(t *testing.T) {
 	req := getNameIssuanceRequest()
 	jwt := irma.NewIdentityProviderJwt("testip", req)
-	sessionHelper(t, jwt, "issue", nil)
+
+	client := parseStorage(t)
+	sessionHelper(t, jwt, "issue", client)
+
+	// Check that the prefix is unset
+	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"), 0)
+	require.NoError(t, err)
+	require.True(t, cred.AttributeList().Info().Attributes[3] == nil, "did not expect an attribute value")
+
+	test.ClearTestStorage(t)
 }
 
 func TestIssuanceOptionalZeroLengthAttributes(t *testing.T) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = ""
 	jwt := irma.NewIdentityProviderJwt("testip", req)
-	sessionHelper(t, jwt, "issue", nil)
+
+	client := parseStorage(t)
+	sessionHelper(t, jwt, "issue", client)
+
+	// Check the prefix is "" (not nil)
+	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"), 0)
+	require.NoError(t, err)
+	require.True(t, cred.AttributeList().Info().Attributes[3]["en"] == "", "expected an attribute value")
+
+	test.ClearTestStorage(t)
 }
 
 func TestIssuanceOptionalSetAttributes(t *testing.T) {

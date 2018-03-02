@@ -171,7 +171,7 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 			}
 		}
 		if !found {
-			return nil, errors.New("Unknown CR attribute")
+			return nil, errors.New("Unknown attribute '" + crName + "' in credential '" + cr.CredentialTypeID.Name() + "'")
 		}
 	}
 
