@@ -450,10 +450,10 @@ func (client *Client) Candidates(disjunction *irma.AttributeDisjunction) []*irma
 				candidates = append(candidates, id)
 			} else {
 				val := attrs.UntranslatedAttribute(attribute)
-				if val == "" { // This won't handle empty attributes correctly
+				if val == nil {
 					continue
 				}
-				if !disjunction.HasValues() || val == disjunction.Values[attribute] {
+				if !disjunction.HasValues() || *val == disjunction.Values[attribute] {
 					candidates = append(candidates, id)
 				}
 			}

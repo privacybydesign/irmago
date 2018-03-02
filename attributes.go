@@ -100,31 +100,40 @@ func (al *AttributeList) Hash() string {
 func (al *AttributeList) Strings() []TranslatedString {
 	if al.strings == nil {
 		al.strings = make([]TranslatedString, len(al.Ints)-1)
-		for index, num := range al.Ints[1:] { // skip metadata
-			bi := new(big.Int).Set(num)
-			if al.MetadataAttribute.Version() >= 3 {
-				if bi.Bit(0) == 0 { // attribute does not exist
-					continue
-				}
-				bi = bi.Rsh(bi, 1)
+		for i := range al.Ints[1:] { // skip metadata
+			val := al.decode(i)
+			if val == nil {
+				continue
 			}
-			val := string(bi.Bytes())
-			al.strings[index] = map[string]string{"en": val, "nl": val} // TODO
+			al.strings[i] = map[string]string{"en": *val, "nl": *val} // TODO
 		}
 	}
 	return al.strings
 }
 
-func (al *AttributeList) UntranslatedAttribute(identifier AttributeTypeIdentifier) string {
+func (al *AttributeList) decode(i int) *string {
+	bi := new(big.Int).Set(al.Ints[i+1])
+	if al.MetadataAttribute.Version() >= 3 {
+		if bi.Bit(0) == 0 { // attribute does not exist
+			return nil
+		}
+		bi.Rsh(bi, 1)
+	}
+	str := string(bi.Bytes())
+	return &str
+}
+
+// UntranslatedAttribute decodes the bigint corresponding to the specified attribute.
+func (al *AttributeList) UntranslatedAttribute(identifier AttributeTypeIdentifier) *string {
 	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
-		return ""
+		return nil
 	}
 	for i, desc := range al.CredentialType().Attributes {
 		if desc.ID == string(identifier.Name()) {
-			return string(al.Ints[i+1].Bytes())
+			return al.decode(i)
 		}
 	}
-	return ""
+	return nil
 }
 
 // Attribute returns the content of the specified attribute, or "" if not present in this attribute list.
