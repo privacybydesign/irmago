@@ -324,7 +324,7 @@ type DisclosureChoice struct {
 type AttributeDisjunction struct {
 	Label      string
 	Attributes []AttributeTypeIdentifier
-	Values     map[AttributeTypeIdentifier]string
+	Values     map[AttributeTypeIdentifier]*string
 
 	selected *AttributeTypeIdentifier
 }
@@ -442,8 +442,8 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 	}
 
 	temp := struct {
-		Label      string                             `json:"label"`
-		Attributes map[AttributeTypeIdentifier]string `json:"attributes"`
+		Label      string                              `json:"label"`
+		Attributes map[AttributeTypeIdentifier]*string `json:"attributes"`
 	}{
 		Label:      disjunction.Label,
 		Attributes: disjunction.Values,
@@ -454,7 +454,7 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON unmarshals an attribute disjunction from JSON.
 func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	if disjunction.Values == nil {
-		disjunction.Values = make(map[AttributeTypeIdentifier]string)
+		disjunction.Values = make(map[AttributeTypeIdentifier]*string)
 	}
 	if disjunction.Attributes == nil {
 		disjunction.Attributes = make([]AttributeTypeIdentifier, 0, 3)
@@ -475,8 +475,8 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	switch temp.Attributes.(type) {
 	case map[string]interface{}:
 		temp := struct {
-			Label      string            `json:"label"`
-			Attributes map[string]string `json:"attributes"`
+			Label      string             `json:"label"`
+			Attributes map[string]*string `json:"attributes"`
 		}{}
 		if err := json.Unmarshal(bytes, &temp); err != nil {
 			return err

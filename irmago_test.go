@@ -143,7 +143,7 @@ func TestAttributeDisjunctionMarshaling(t *testing.T) {
 	require.True(t, disjunction.HasValues())
 	require.Contains(t, disjunction.Attributes, id)
 	require.Contains(t, disjunction.Values, id)
-	require.Equal(t, disjunction.Values[id], "yes")
+	require.Equal(t, *disjunction.Values[id], "yes")
 
 	disjunction = AttributeDisjunction{}
 	attrsjson = `

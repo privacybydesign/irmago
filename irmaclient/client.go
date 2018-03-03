@@ -453,8 +453,13 @@ func (client *Client) Candidates(disjunction *irma.AttributeDisjunction) []*irma
 				if val == nil {
 					continue
 				}
-				if !disjunction.HasValues() || *val == disjunction.Values[attribute] {
+				if !disjunction.HasValues() {
 					candidates = append(candidates, id)
+				} else {
+					requiredValue, present := disjunction.Values[attribute]
+					if !present || requiredValue == nil || *val == *requiredValue {
+						candidates = append(candidates, id)
+					}
 				}
 			}
 		}

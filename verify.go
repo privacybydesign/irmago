@@ -2,10 +2,11 @@ package irma
 
 import (
 	"fmt"
-	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
 	"math/big"
 	"time"
+
+	"github.com/go-errors/errors"
+	"github.com/mhe/gabi"
 )
 
 // ProofStatus is the status of the complete proof
@@ -42,7 +43,7 @@ type DisclosedCredentialList []*DisclosedCredential
 // This is the case if:
 // attribute is contained in disclosed AND if a value is present: equal to that value
 // al can be nil if you don't want to include attribute status for proof
-func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId AttributeTypeIdentifier, requestedValue string) (bool, *AttributeResult) {
+func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId AttributeTypeIdentifier, requestedValue *string) (bool, *AttributeResult) {
 	ar := AttributeResult{
 		AttributeId: attributeId,
 	}
@@ -61,7 +62,7 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 		// - Value is empty OR value equal to disclosedValue
 		ar.AttributeValue = disclosedAttributeValue
 
-		if requestedValue == "" || disclosedAttributeValue == requestedValue {
+		if requestedValue == nil || disclosedAttributeValue == *requestedValue {
 			ar.AttributeProofStatus = PRESENT
 			return true, &ar
 		} else {

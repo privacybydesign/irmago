@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"encoding/json"
 	"math/big"
 	"os"
 	"testing"
@@ -148,35 +149,68 @@ func TestLogging(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
+// TestCandidates tests the correctness of the function of the client that, given a disjunction of attributes
+// requested by the verifier, calculates a list of candidate attributes contained by the client that would
+// satisfy the attribute disjunction.
 func TestCandidates(t *testing.T) {
 	client := parseStorage(t)
 
+	// client contains one instance of the studentCard credential, whose studentID attribute is 456.
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+
+	// If the disjunction contains no required values at all, then our attribute is a candidate
 	disjunction := &irma.AttributeDisjunction{
 		Attributes: []irma.AttributeTypeIdentifier{attrtype},
 	}
 	attrs := client.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.Equal(t, attrs[0].Type, attrtype)
 
-	attr := attrs[0]
-	require.NotNil(t, attr)
-	require.Equal(t, attr.Type, attrtype)
-
+	// If the disjunction requires our attribute to have 456 as value, which it does,
+	// then our attribute is a candidate
+	reqval := "456"
 	disjunction = &irma.AttributeDisjunction{
 		Attributes: []irma.AttributeTypeIdentifier{attrtype},
-		Values:     map[irma.AttributeTypeIdentifier]string{attrtype: "456"},
+		Values:     map[irma.AttributeTypeIdentifier]*string{attrtype: &reqval},
 	}
 	attrs = client.Candidates(disjunction)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.Equal(t, attrs[0].Type, attrtype)
 
-	disjunction = &irma.AttributeDisjunction{
-		Attributes: []irma.AttributeTypeIdentifier{attrtype},
-		Values:     map[irma.AttributeTypeIdentifier]string{attrtype: "foobarbaz"},
-	}
+	// If the disjunction requires our attribute to have a different value than it does,
+	// then it is NOT a match.
+	reqval = "foobarbaz"
+	disjunction.Values[attrtype] = &reqval
 	attrs = client.Candidates(disjunction)
 	require.NotNil(t, attrs)
+	require.Empty(t, attrs)
+
+	// A required value of nil counts as no requirement on the value, so our attribute is a candidate
+	disjunction.Values[attrtype] = nil
+	attrs = client.Candidates(disjunction)
+	require.NotNil(t, attrs)
+	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.Equal(t, attrs[0].Type, attrtype)
+
+	// This test should be equivalent to the one above
+	disjunction = &irma.AttributeDisjunction{}
+	json.Unmarshal([]byte(`{"attributes":{"irma-demo.RU.studentCard.studentID":null}}`), &disjunction)
+	attrs = client.Candidates(disjunction)
+	require.NotNil(t, attrs)
+	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.Equal(t, attrs[0].Type, attrtype)
+
+	// A required value of null counts as no requirement on the value, but we must still satisfy the disjunction
+	// We do not have an instance of this attribute so we have no candidate
+	disjunction = &irma.AttributeDisjunction{}
+	json.Unmarshal([]byte(`{"attributes":{"irma-demo.MijnOverheid.ageLower.over12":null}}`), &disjunction)
+	attrs = client.Candidates(disjunction)
 	require.Empty(t, attrs)
 
 	test.ClearTestStorage(t)
