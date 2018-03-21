@@ -16,7 +16,7 @@ const (
 	VALID              = ProofStatus("VALID")
 	EXPIRED            = ProofStatus("EXPIRED")
 	INVALID_CRYPTO     = ProofStatus("INVALID_CRYPTO")
-	INVALID_SYNTAX     = ProofStatus("INVALID_SYNTAX")
+	UNMATCHED_REQUEST  = ProofStatus("UNMATCHED_REQUEST")
 	MISSING_ATTRIBUTES = ProofStatus("MISSING_ATTRIBUTES")
 )
 
@@ -280,23 +280,18 @@ func verify(configuration *Configuration, proofList gabi.ProofList, context *big
 }
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
-func VerifySig(configuration *Configuration, proofString string, sigRequest *SignatureRequest) *SignatureProofResult {
-
-	// First, unmarshal proof and check if all the attributes in the proofstring match the signature request
-	var proofList gabi.ProofList
-	proofBytes := []byte(proofString)
-
-	err := proofList.UnmarshalJSON(proofBytes)
-	if err != nil {
+func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
+	// First, check if nonce and context of the signature match those of the signature request
+	if !irmaSignature.MatchesNonceAndContext(sigRequest) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
-				ProofStatus: INVALID_SYNTAX,
+				ProofStatus: UNMATCHED_REQUEST,
 			},
 		}
 	}
 
 	// Now, cryptographically verify the signature
-	if !verify(configuration, proofList, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
+	if !verify(configuration, *irmaSignature.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
 				ProofStatus: INVALID_CRYPTO,
@@ -305,5 +300,27 @@ func VerifySig(configuration *Configuration, proofString string, sigRequest *Sig
 	}
 
 	// Finally, check whether attribute values in proof satisfy the original signature request
-	return checkProofWithRequest(configuration, proofList, sigRequest)
+	return checkProofWithRequest(configuration, *irmaSignature.Signature, sigRequest)
+}
+
+// Verify a signature cryptographically, but do not check/compare with a signature request
+func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage) (ProofStatus, DisclosedCredentialList) {
+	// First, cryptographically verify the signature
+	if !verify(configuration, *irmaSignature.Signature, irmaSignature.Context, irmaSignature.GetNonce(), true) {
+		return INVALID_CRYPTO, nil
+	}
+
+	// Extract attributes and return result
+	disclosed, err := extractDisclosedCredentials(configuration, *irmaSignature.Signature)
+
+	if err != nil {
+		fmt.Println(err)
+		return INVALID_CRYPTO, nil
+	}
+
+	if disclosed.IsExpired() {
+		return EXPIRED, disclosed
+	}
+
+	return VALID, disclosed
 }

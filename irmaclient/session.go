@@ -485,13 +485,23 @@ func (session *session) sendResponse(message interface{}) {
 	var err error
 	var messageJson []byte
 
-	if session.IsInteractive() {
-		switch session.Action {
-		case irma.ActionSigning:
-			fallthrough
-		case irma.ActionDisclosing:
+	switch session.Action {
+	case irma.ActionSigning:
+		irmaSignature, ok := irma.SignedMessageFromSession(session.irmaSession, message)
+		if !ok {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
+			return
+		}
+
+		messageJson, err = json.Marshal(irmaSignature)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
+			return
+		}
+
+		if session.IsInteractive() {
 			var response disclosureResponse
-			if err = session.transport.Post("proofs", &response, message); err != nil {
+			if err = session.transport.Post("proofs", &response, irmaSignature); err != nil {
 				session.fail(err.(*irma.SessionError))
 				return
 			}
@@ -499,25 +509,30 @@ func (session *session) sendResponse(message interface{}) {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
 				return
 			}
-			log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
-		case irma.ActionIssuing:
-			response := []*gabi.IssueSignatureMessage{}
-			if err = session.transport.Post("commitments", &response, message); err != nil {
-				session.fail(err.(*irma.SessionError))
-				return
-			}
-			if err = session.client.ConstructCredentials(response, session.irmaSession.(*irma.IssuanceRequest)); err != nil {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-				return
-			}
-			log, _ = session.createLogEntry(message) // TODO err
+			log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err // TODO: also for non-interactive sessions?
 		}
-	} else {
-		messageJson, err = json.Marshal(message)
-		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
+	case irma.ActionDisclosing:
+		var response disclosureResponse
+		if err = session.transport.Post("proofs", &response, message); err != nil {
+			session.fail(err.(*irma.SessionError))
 			return
 		}
+		if response != "VALID" {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
+			return
+		}
+		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
+	case irma.ActionIssuing:
+		response := []*gabi.IssueSignatureMessage{}
+		if err = session.transport.Post("commitments", &response, message); err != nil {
+			session.fail(err.(*irma.SessionError))
+			return
+		}
+		if err = session.client.ConstructCredentials(response, session.irmaSession.(*irma.IssuanceRequest)); err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
+		}
+		log, _ = session.createLogEntry(message) // TODO err
 	}
 
 	_ = session.client.addLogEntry(log) // TODO err

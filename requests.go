@@ -1,10 +1,7 @@
 package irma
 
 import (
-	"crypto/sha256"
-	"encoding/asn1"
 	"fmt"
-	"log"
 	"math/big"
 	"strconv"
 	"time"
@@ -14,9 +11,9 @@ import (
 
 // SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
-	Context    *big.Int `json:"context"`
-	Nonce      *big.Int `json:"nonce"`
-	Candidates [][]*AttributeIdentifier
+	Context    *big.Int                 `json:"context"`
+	Nonce      *big.Int                 `json:"nonce"`
+	Candidates [][]*AttributeIdentifier `json:"-"`
 
 	Choice *DisclosureChoice  `json:"-"`
 	Ids    *IrmaIdentifierSet `json:"-"`
@@ -57,8 +54,7 @@ type DisclosureRequest struct {
 // A SignatureRequest is a a request to sign a message with certain attributes.
 type SignatureRequest struct {
 	DisclosureRequest
-	Message     string `json:"message"`
-	MessageType string `json:"messageType"`
+	Message string `json:"message"`
 }
 
 // An IssuanceRequest is a request to issue certain credentials,
@@ -187,7 +183,7 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 				attrs[i+1].Add(attrs[i+1], big.NewInt(1)) // attr += 1
 			}
 		} else {
-			if (attrtype.Optional != "true") {
+			if attrtype.Optional != "true" {
 				return nil, errors.New("Required attribute not provided")
 			}
 		}
@@ -291,15 +287,7 @@ func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
-	hashbytes := sha256.Sum256([]byte(sr.Message))
-	hashint := new(big.Int).SetBytes(hashbytes[:])
-	// TODO the 2 should be abstracted away
-	asn1bytes, err := asn1.Marshal([]interface{}{big.NewInt(2), sr.Nonce, hashint})
-	if err != nil {
-		log.Print(err) // TODO? does this happen?
-	}
-	asn1hash := sha256.Sum256(asn1bytes)
-	return new(big.Int).SetBytes(asn1hash[:])
+	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce)
 }
 
 // Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
