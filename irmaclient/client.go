@@ -673,14 +673,10 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 		}()
 
 		err := client.keyshareEnrollWorker(manager, email, pin)
-		client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
 		if err != nil {
 			client.handler.EnrollmentError(manager, err)
-		} else {
-			client.handler.EnrollmentSuccess(manager)
 		}
 	}()
-
 }
 
 func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifier, email, pin string) error {
@@ -701,19 +697,30 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return err
 	}
 	message := keyshareEnrollment{
-		Username:  email,
+		Email:     email,
 		Pin:       kss.HashedPin(pin),
 		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
 	}
 
-	result := &struct{}{}
-	err = transport.Post("web/users/selfenroll", result, message)
+	qr := &irma.Qr{}
+	err = transport.Post("client/register", qr, message)
 	if err != nil {
 		return err
 	}
 
+	// We add the new keyshare server to the client here, without saving it to disk,
+	// and start the issuance session for the keyshare server login attribute -
+	// keyshare.go needs the relevant keyshare server to be present in the client.
+	// If the session succeeds or fails, the keyshare server is stored to disk or
+	// removed from the client by the keyshareEnrollmentHandler.
 	client.keyshareServers[managerID] = kss
-	return client.storage.StoreKeyshareServers(client.keyshareServers)
+	client.NewSession(qr, &keyshareEnrollmentHandler{
+		client: client,
+		pin:    pin,
+		kss:    kss,
+	})
+
+	return nil
 }
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
