@@ -445,6 +445,9 @@ func (client *Client) Candidates(disjunction *irma.AttributeDisjunction) []*irma
 			continue
 		}
 		for _, attrs := range creds {
+			if !attrs.IsValid() {
+				continue
+			}
 			id := &irma.AttributeIdentifier{Type: attribute, CredentialHash: attrs.Hash()}
 			if attribute.IsCredential() {
 				candidates = append(candidates, id)
