@@ -664,14 +664,6 @@ func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier 
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
 func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string) {
 	go func() {
-		defer func() {
-			if e := recover(); e != nil {
-				if client.handler != nil {
-					client.handler.EnrollmentError(manager, panicToError(e))
-				}
-			}
-		}()
-
 		err := client.keyshareEnrollWorker(manager, email, pin)
 		if err != nil {
 			client.handler.EnrollmentError(manager, err)
