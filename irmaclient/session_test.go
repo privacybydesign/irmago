@@ -3,7 +3,6 @@ package irmaclient
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -300,7 +299,7 @@ func keyshareSessions(t *testing.T, client *Client) {
 		&irma.CredentialRequest{
 			Validity:         &expiry,
 			CredentialTypeID: &credid,
-			Attributes:       map[string]string{"email": "example@example.com"},
+			Attributes:       map[string]string{"username": "testusername"},
 		},
 	)
 	sessionHelper(t, jwt, "issue", client)
@@ -310,7 +309,7 @@ func keyshareSessions(t *testing.T, client *Client) {
 		jwt.(*irma.ServiceProviderJwt).Request.Request.Content,
 		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.username")},
 		},
 	)
 	sessionHelper(t, jwt, "verification", client)
@@ -320,7 +319,7 @@ func keyshareSessions(t *testing.T, client *Client) {
 		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content,
 		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.username")},
 		},
 	)
 	sessionHelper(t, jwt, "signature", client)
@@ -343,8 +342,7 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	client.handler.(*TestClientHandler).c = c
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
-	email := fmt.Sprintf("%s@example.com", hex.EncodeToString(bytes))
-	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), email, "12345"))
+	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), nil, "12345"))
 	if err := <-c; err != nil {
 		t.Fatal(err)
 	}

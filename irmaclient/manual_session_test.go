@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"testing"
+
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
-	"testing"
 )
 
 type ManualSessionHandler struct {
@@ -205,7 +206,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 func TestManualKeyShareSession(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.username\"]}]}"
 
 	ms := createManualSessionHandler(request, request, t)
 
