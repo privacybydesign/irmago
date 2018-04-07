@@ -23,7 +23,6 @@ func (h *keyshareEnrollmentHandler) RequestIssuancePermission(request irma.Issua
 	smi := request.Credentials[0].CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
 	attr := irma.NewAttributeTypeIdentifier(h.client.Configuration.SchemeManagers[smi].KeyshareAttribute)
 	h.kss.Username = request.Credentials[0].Attributes[attr.Name()]
-	h.client.storage.StoreKeyshareServers(h.client.keyshareServers)
 
 	// Do the issuance
 	callback(true, nil)
