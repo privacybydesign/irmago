@@ -57,7 +57,7 @@ type keyshareEnrollment struct {
 	Username  string             `json:"username"`
 	Pin       string             `json:"pin"`
 	PublicKey *paillierPublicKey `json:"publicKey"`
-	Email     string             `json:"email"`
+	Email     *string            `json:"email"`
 }
 
 type keyshareAuthorization struct {
@@ -116,12 +116,11 @@ const (
 func newKeyshareServer(
 	schemeManagerIdentifier irma.SchemeManagerIdentifier,
 	privatekey *paillierPrivateKey,
-	url, email string,
+	url string,
 ) (ks *keyshareServer, err error) {
 	ks = &keyshareServer{
 		Nonce:                   make([]byte, 32),
 		URL:                     url,
-		Username:                email,
 		PrivateKey:              privatekey,
 		SchemeManagerIdentifier: schemeManagerIdentifier,
 	}
