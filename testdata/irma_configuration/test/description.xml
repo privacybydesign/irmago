@@ -11,6 +11,6 @@
 	</Description>
 	<KeyshareServer>http://localhost:8080/irma_keyshare_server/api/v1</KeyshareServer>
 	<KeyshareWebsite>http://localhost:8080/irma_keyshare_server/mijnirma/</KeyshareWebsite>
-	<KeyshareAttribute>test.test.mijnirma.username</KeyshareAttribute>
+	<KeyshareAttribute>test.test.mijnirma.email</KeyshareAttribute>
 	<Contact>https://privacybydesign.foundation/</Contact>
 </SchemeManager>

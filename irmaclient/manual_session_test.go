@@ -206,7 +206,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 func TestManualKeyShareSession(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.username\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
 
 	ms := createManualSessionHandler(request, request, t)
 

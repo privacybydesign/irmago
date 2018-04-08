@@ -299,7 +299,7 @@ func keyshareSessions(t *testing.T, client *Client) {
 		&irma.CredentialRequest{
 			Validity:         &expiry,
 			CredentialTypeID: &credid,
-			Attributes:       map[string]string{"username": "testusername"},
+			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
 	sessionHelper(t, jwt, "issue", client)
@@ -309,7 +309,7 @@ func keyshareSessions(t *testing.T, client *Client) {
 		jwt.(*irma.ServiceProviderJwt).Request.Request.Content,
 		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.username")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
 	sessionHelper(t, jwt, "verification", client)
@@ -319,7 +319,7 @@ func keyshareSessions(t *testing.T, client *Client) {
 		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content,
 		&irma.AttributeDisjunction{
 			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.username")},
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
 	sessionHelper(t, jwt, "signature", client)

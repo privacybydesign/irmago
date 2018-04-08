@@ -17,7 +17,7 @@
 	<ShouldBeSingleton>true</ShouldBeSingleton>
 
 	<Attributes>
-		<Attribute id="username">
+		<Attribute id="email">
 			<Name>
 				<en>Username</en>
 				<nl>Gebruikersnaam</nl>
