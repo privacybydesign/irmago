@@ -246,10 +246,13 @@ func TestVerifyValidSig(t *testing.T) {
 	irmaSignedMessage := &IrmaSignedMessage{}
 	json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
 
-	request := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	sigRequestJSON := []byte(request)
 	sigRequest := &SignatureRequest{}
 	json.Unmarshal(sigRequestJSON, sigRequest)
+	// Test marshalling of 'string' fields:
+	require.Equal(t, sigRequest.Nonce, big.NewInt(42))
+	require.Equal(t, sigRequest.Context, big.NewInt(1337))
 
 	// Test if we can verify it with the original request
 	sigProofResult := VerifySig(conf, irmaSignedMessage, sigRequest)
@@ -259,8 +262,25 @@ func TestVerifyValidSig(t *testing.T) {
 	require.Equal(t, attributeList[0].AttributeProofStatus, PRESENT)
 	require.Equal(t, attributeList[0].AttributeValue, "456")
 
+	// Test if we can verify it with a request that contains strings instead of ints for nonce and context
+	stringRequest := "{\"nonce\": \"42\", \"context\": \"1337\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	stringSigRequestJSON := []byte(stringRequest)
+	stringSigRequest := &SignatureRequest{}
+	json.Unmarshal(stringSigRequestJSON, stringSigRequest)
+	// Test marshalling of 'string' fields:
+	require.Equal(t, stringSigRequest.Nonce, big.NewInt(42))
+	require.Equal(t, stringSigRequest.Context, big.NewInt(1337))
+
+	// Test if we can verify it with the original request
+	stringSigProofResult := VerifySig(conf, irmaSignedMessage, sigRequest)
+	require.Equal(t, stringSigProofResult.ProofStatus, VALID)
+	stringAttributeList := sigProofResult.ToAttributeResultList()
+	require.Len(t, stringAttributeList, 1)
+	require.Equal(t, stringAttributeList[0].AttributeProofStatus, PRESENT)
+	require.Equal(t, stringAttributeList[0].AttributeValue, "456")
+
 	// Test verify against unmatched request (i.e. different nonce, context or message)
-	unmatched := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you NOTHING\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	unmatched := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you NOTHING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	unmatchedSigRequestJSON := []byte(unmatched)
 	unmatchedSigRequest := &SignatureRequest{}
 	json.Unmarshal(unmatchedSigRequestJSON, unmatchedSigRequest)
@@ -282,7 +302,7 @@ func TestVerifyInValidSig(t *testing.T) {
 	irmaSignedMessage := &IrmaSignedMessage{}
 	json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
 
-	request := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	sigRequestJSON := []byte(request)
 	sigRequest := &SignatureRequest{}
 	json.Unmarshal(sigRequestJSON, sigRequest)
@@ -304,7 +324,7 @@ func TestVerifyInValidNonce(t *testing.T) {
 	json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
 
 	// Original request also has the same invalid nonce (otherwise we would get unmatched_request)
-	request := "{\"nonce\": 4242, \"context\": 1337, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 4242, \"context\": 1337, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	sigRequestJSON := []byte(request)
 	sigRequest := &SignatureRequest{}
 	json.Unmarshal(sigRequestJSON, sigRequest)

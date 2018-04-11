@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"encoding/json"
 	"github.com/go-errors/errors"
 )
 
@@ -288,6 +289,42 @@ func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 // (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
 	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce)
+}
+
+// Convert fields in JSON string to BigInterger if they are string
+// Supply fieldnames as a slice as second argument
+func convertFieldsToBigInt(jsonString []byte, fieldNames []string) ([]byte, error) {
+	var rawRequest map[string]interface{}
+
+	err := json.Unmarshal(jsonString, &rawRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, fieldName := range fieldNames {
+		field := new(big.Int)
+		fieldString := fmt.Sprintf("%v", rawRequest[fieldName])
+		field.SetString(fieldString, 10)
+		rawRequest[fieldName] = field
+	}
+
+	return json.Marshal(rawRequest)
+}
+
+// Custom Unmarshalling to support both json with string and int fields for nonce and context
+// i.e. {"nonce": "42", "context": "1337", ... } and {"nonce": 42, "context": 1337, ... }
+func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
+	type SignatureRequestTemp SignatureRequest // To avoid 'recursive unmarshalling'
+
+	fixedRequest, err := convertFieldsToBigInt(b, []string{"nonce", "context"})
+
+	var result SignatureRequestTemp
+	json.Unmarshal(fixedRequest, &result)
+
+	sr.DisclosureRequest = result.DisclosureRequest
+	sr.Message = result.Message
+
+	return err
 }
 
 // Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
