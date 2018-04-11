@@ -317,9 +317,15 @@ func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
 	type SignatureRequestTemp SignatureRequest // To avoid 'recursive unmarshalling'
 
 	fixedRequest, err := convertFieldsToBigInt(b, []string{"nonce", "context"})
+	if err != nil {
+		return err
+	}
 
 	var result SignatureRequestTemp
-	json.Unmarshal(fixedRequest, &result)
+	err = json.Unmarshal(fixedRequest, &result)
+	if err != nil {
+		return err
+	}
 
 	sr.DisclosureRequest = result.DisclosureRequest
 	sr.Message = result.Message
