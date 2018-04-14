@@ -48,14 +48,13 @@ type ErrorType string
 type SessionError struct {
 	Err error
 	ErrorType
-	*ApiError
-	Info          string
-	Status        int
-	StatusMessage string
+	Info         string
+	RemoteError  *RemoteError
+	RemoteStatus int
 }
 
-// ApiError is an error message returned by the API server on errors.
-type ApiError struct {
+// RemoteError is an error message returned by the API server on errors.
+type RemoteError struct {
 	Status      int    `json:"status"`
 	ErrorName   string `json:"error"`
 	Description string `json:"description"`
@@ -63,7 +62,7 @@ type ApiError struct {
 	Stacktrace  string `json:"stacktrace"`
 }
 
-func (err *ApiError) Error() string {
+func (err *RemoteError) Error() string {
 	var msg string
 	if err.Message != "" {
 		msg = fmt.Sprintf(" (%s)", err.Message)
@@ -154,13 +153,13 @@ func (e *SessionError) Error() string {
 		buffer.WriteString("\nDescription: ")
 		buffer.WriteString(e.Err.Error())
 	}
-	if e.Status != 200 && e.StatusMessage != "" {
-		buffer.WriteString("\nConnection: ")
-		buffer.WriteString(e.StatusMessage)
+	if e.RemoteStatus != 200 {
+		buffer.WriteString("\nStatus code: ")
+		buffer.WriteString(string(e.RemoteStatus))
 	}
-	if e.ApiError != nil {
+	if e.RemoteError != nil {
 		buffer.WriteString("\nIRMA server error: ")
-		buffer.WriteString(e.ApiError.Error())
+		buffer.WriteString(e.RemoteError.Error())
 	}
 
 	return buffer.String()

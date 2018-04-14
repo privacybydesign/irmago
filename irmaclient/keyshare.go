@@ -218,12 +218,12 @@ func startKeyshareSession(
 func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error) {
 	serr, ok := err.(*irma.SessionError)
 	if ok {
-		if serr.ApiError != nil && len(serr.ApiError.ErrorName) > 0 {
-			switch serr.ApiError.ErrorName {
+		if serr.RemoteError != nil && len(serr.RemoteError.ErrorName) > 0 {
+			switch serr.RemoteError.ErrorName {
 			case "USER_NOT_REGISTERED":
 				ks.sessionHandler.KeyshareEnrollmentIncomplete(manager)
 			case "USER_BLOCKED":
-				duration, err := strconv.Atoi(serr.ApiError.Message)
+				duration, err := strconv.Atoi(serr.RemoteError.Message)
 				if err != nil { // Not really clear what to do with duration, but should never happen anyway
 					duration = -1
 				}

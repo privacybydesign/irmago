@@ -128,18 +128,18 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode, StatusMessage: res.Status}
+		return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
 	if res.StatusCode != 200 {
-		apierr := &ApiError{}
+		apierr := &RemoteError{}
 		err = json.Unmarshal(body, apierr)
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &SessionError{ErrorType: ErrorServerResponse, Status: res.StatusCode, StatusMessage: res.Status}
+			return &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
 		}
 		if verbose {
 			fmt.Printf("ERROR: %+v\n", apierr)
 		}
-		return &SessionError{ErrorType: ErrorApi, Status: res.StatusCode, ApiError: apierr, StatusMessage: res.Status}
+		return &SessionError{ErrorType: ErrorApi, RemoteStatus: res.StatusCode, RemoteError: apierr}
 	}
 
 	if verbose {
@@ -150,7 +150,7 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	} else {
 		err = json.Unmarshal(body, result)
 		if err != nil {
-			return &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode, StatusMessage: res.Status}
+			return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 		}
 	}
 
@@ -164,11 +164,11 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 	}
 
 	if res.StatusCode != 200 {
-		return nil, &SessionError{ErrorType: ErrorServerResponse, Status: res.StatusCode}
+		return nil, &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
 	}
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, Status: res.StatusCode, StatusMessage: res.Status}
+		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
 	return b, nil
 }
