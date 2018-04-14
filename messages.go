@@ -166,6 +166,14 @@ func (e *SessionError) Error() string {
 	return buffer.String()
 }
 
+func (e *SessionError) Stack() string {
+	if withStack, ok := e.Err.(*errors.Error); ok {
+		return string(withStack.Stack())
+	}
+
+	return ""
+}
+
 func JwtDecode(jwt string, body interface{}) error {
 	jwtparts := strings.Split(jwt, ".")
 	if jwtparts == nil || len(jwtparts) < 2 {
