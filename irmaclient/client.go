@@ -76,7 +76,7 @@ var defaultPreferences = Preferences{
 // KeyshareHandler is used for asking the user for his email address and PIN,
 // for enrolling at a keyshare server.
 type KeyshareHandler interface {
-	EnrollmentError(manager irma.SchemeManagerIdentifier, err error)
+	EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error)
 	EnrollmentSuccess(manager irma.SchemeManagerIdentifier)
 }
 
@@ -669,7 +669,7 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 	go func() {
 		err := client.keyshareEnrollWorker(manager, email, pin)
 		if err != nil {
-			client.handler.EnrollmentError(manager, err)
+			client.handler.EnrollmentFailure(manager, err)
 		}
 	}()
 }

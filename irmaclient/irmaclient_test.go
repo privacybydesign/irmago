@@ -34,7 +34,7 @@ func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifi
 	default: // nop
 	}
 }
-func (i *TestClientHandler) EnrollmentError(manager irma.SchemeManagerIdentifier, err error) {
+func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error) {
 	select {
 	case i.c <- err: // nop
 	default:

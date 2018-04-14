@@ -49,7 +49,7 @@ func (h *keyshareEnrollmentHandler) Failure(action irma.Action, err *irma.Sessio
 // fail is a helper to ensure the kss is removed from the client in case of any problem
 func (h *keyshareEnrollmentHandler) fail(err error) {
 	delete(h.client.keyshareServers, h.kss.SchemeManagerIdentifier)
-	h.client.handler.EnrollmentError(h.kss.SchemeManagerIdentifier, err)
+	h.client.handler.EnrollmentFailure(h.kss.SchemeManagerIdentifier, err)
 }
 
 // Not interested, ingore
