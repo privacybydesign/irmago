@@ -665,16 +665,16 @@ func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier 
 }
 
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
-func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string) {
+func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string, lang string) {
 	go func() {
-		err := client.keyshareEnrollWorker(manager, email, pin)
+		err := client.keyshareEnrollWorker(manager, email, pin, lang)
 		if err != nil {
 			client.handler.EnrollmentFailure(manager, err)
 		}
 	}()
 }
 
-func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifier, email *string, pin string) error {
+func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifier, email *string, pin string, lang string) error {
 	manager, ok := client.Configuration.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
@@ -694,6 +694,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	message := keyshareEnrollment{
 		Email:     email,
 		Pin:       kss.HashedPin(pin),
+		Language:  lang,
 		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
 	}
 

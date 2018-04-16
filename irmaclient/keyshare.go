@@ -58,6 +58,7 @@ type keyshareEnrollment struct {
 	Pin       string             `json:"pin"`
 	PublicKey *paillierPublicKey `json:"publicKey"`
 	Email     *string            `json:"email"`
+	Language  string             `json:"language"`
 }
 
 type keyshareAuthorization struct {
