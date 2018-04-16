@@ -1,0 +1,22 @@
+// See README.txt for information and build instructions.
+//
+// Note: START and END tags are used in comments to define sections used in
+// tutorials.  They are not part of the syntax for Protocol Buffers.
+//
+// To get an in-depth walkthrough of this file and the related examples, see:
+// https://developers.google.com/protocol-buffers/docs/tutorials
+
+// [START declaration]
+syntax = "proto3";
+package irmaproto;
+
+// This mimicks IRMA issuer description.xml
+message IRMAIssuerPublicKey {
+    int32 Counter = 1;
+    int64 ExpiryDate = 2;
+    bytes N = 3;
+    bytes Z = 4;
+    bytes S = 5;
+    repeated bytes Bases = 6;
+    int32 EpochLength = 7;
+}

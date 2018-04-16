@@ -1,0 +1,40 @@
+// See README.txt for information and build instructions.
+//
+// Note: START and END tags are used in comments to define sections used in
+// tutorials.  They are not part of the syntax for Protocol Buffers.
+//
+// To get an in-depth walkthrough of this file and the related examples, see:
+// https://developers.google.com/protocol-buffers/docs/tutorials
+
+// [START declaration]
+syntax = "proto3";
+package irmaproto;
+
+// This mimicks IRMA issuer description.xml
+message IRMAIssueSpecification {
+    int32 Version = 1;
+    repeated LocalizedName Name = 2;
+    repeated LocalizedName ShortName = 3;
+    string SchemeManager = 4;
+    string IssuerId = 5;
+    string CredentialId = 6;
+    repeated LocalizedDescription Description = 7;
+    bool ShouldBeSingleton = 8;
+    repeated Attribute Attributes = 9;
+
+    message LocalizedName {
+        string Lang = 1;
+        string Name = 2;
+    }
+
+    message LocalizedDescription {
+        string Lang = 1;
+        string Name = 2;
+    }
+
+    message Attribute {
+        string Id = 1;
+        repeated LocalizedName Name = 2;
+        repeated LocalizedDescription Description = 3;
+    }
+}

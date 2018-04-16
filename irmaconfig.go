@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"io/ioutil"
+	"irmaethereumscheme/contracts"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,9 +28,13 @@ import (
 	"encoding/pem"
 	"math/big"
 
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-errors/errors"
+	"github.com/golang/protobuf/proto"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/irmaproto"
 )
 
 // Configuration keeps track of scheme managers, issuers, credential types and public keys,
@@ -120,6 +126,24 @@ func (conf *Configuration) ParseFolder() error {
 	return nil
 }
 
+func (conf *Configuration) InitAndParseEthereumContract(address string) error {
+	// Init all maps
+	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
+	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
+	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
+
+	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
+	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
+	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
+
+	err := conf.parseEthereumContract(address)
+	if err == nil {
+		return nil // OK, do next scheme manager folder
+	}
+	conf.initialized = true
+	return nil
+}
+
 func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error) {
 	exists, err := fs.PathExists(dir + "/description.xml")
 	if err != nil || !exists {
@@ -156,6 +180,43 @@ func (conf *Configuration) parseSchemeManagerFolder(dir string) (err error) {
 	}
 	conf.SchemeManagers[manager.Identifier()] = manager
 	err = conf.parseIssuerFolders(manager, dir)
+	return
+}
+
+func (conf *Configuration) parseEthereumContract(address string) (err error) {
+	schemeContractAddress := common.HexToAddress(address)
+	fmt.Printf("Reading scheme %s\n", address)
+
+	client, err := ethclient.Dial("http://127.0.0.1:8545")
+	if err != nil {
+		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
+	}
+
+	// Opening existing contract
+	contract, err := contracts.NewIRMAScheme(schemeContractAddress, client)
+	if err != nil {
+		log.Fatalf("could not load contract: %v", err)
+	}
+
+	// Reading metadata (proto)buffer
+	schemeMetadataBuffer, err := contract.Metadata(nil)
+	if err != nil {
+		log.Fatalf("could not get metadata: %v", err)
+	}
+	schemeMetadata := &irmaproto.IRMASchemeMetadata{}
+	proto.Unmarshal(schemeMetadataBuffer, schemeMetadata)
+	manager := &SchemeManager{
+		ID:                schemeMetadata.Id,
+		URL:               schemeMetadata.Url,
+		Name:              map[string]string{"en": "Awesome scheme", "nl": "Awesome scheme"},
+		Description:       map[string]string{"en": "Awesome scheme", "nl": "Awesome scheme"},
+		XMLVersion:        int(schemeMetadata.Version),
+		Contact:           schemeMetadata.Contact,
+		KeyshareServer:    schemeMetadata.Keyshareserver,
+		KeyshareWebsite:   schemeMetadata.Keysharewebsite,
+		KeyshareAttribute: schemeMetadata.Keyshareattribute,
+	}
+	conf.SchemeManagers[manager.Identifier()] = manager
 	return
 }
 
