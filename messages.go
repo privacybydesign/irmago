@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math/big"
+	"strconv"
 	"strings"
 
 	"bytes"
@@ -155,7 +156,7 @@ func (e *SessionError) Error() string {
 	}
 	if e.RemoteStatus != 200 {
 		buffer.WriteString("\nStatus code: ")
-		buffer.WriteString(string(e.RemoteStatus))
+		buffer.WriteString(strconv.Itoa(e.RemoteStatus))
 	}
 	if e.RemoteError != nil {
 		buffer.WriteString("\nIRMA server error: ")
