@@ -166,6 +166,14 @@ func (e *SessionError) Error() string {
 	return buffer.String()
 }
 
+func (e *SessionError) WrappedError() string {
+	if e.Err == nil {
+		return ""
+	}
+
+	return e.Err.Error()
+}
+
 func (e *SessionError) Stack() string {
 	if withStack, ok := e.Err.(*errors.Error); ok {
 		return string(withStack.Stack())
