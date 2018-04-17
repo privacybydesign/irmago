@@ -342,7 +342,7 @@ func TestKeyshareEnrollmentAndSessions(t *testing.T) {
 	client.handler.(*TestClientHandler).c = c
 	bytes := make([]byte, 8, 8)
 	rand.Read(bytes)
-	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), nil, "12345"))
+	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en"))
 	if err := <-c; err != nil {
 		t.Fatal(err)
 	}
