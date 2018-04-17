@@ -389,7 +389,7 @@ func (session *session) do(proceed bool) {
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
-	if !session.irmaSession.Identifiers().Distributed(session.client.Configuration) {
+	if !session.Distributed() {
 		message, err := session.getProof()
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
@@ -411,6 +411,31 @@ func (session *session) do(proceed bool) {
 			session.client.state,
 		)
 	}
+}
+
+func (session *session) Distributed() bool {
+	var smi irma.SchemeManagerIdentifier
+	if session.Action == irma.ActionIssuing {
+		for _, credreq := range session.irmaSession.(*irma.IssuanceRequest).Credentials {
+			smi = credreq.CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
+			if session.client.Configuration.SchemeManagers[smi].Distributed() {
+				return true
+			}
+		}
+	}
+
+	if session.choice == nil || session.choice.Attributes == nil {
+		return false
+	}
+
+	for _, ai := range session.choice.Attributes {
+		smi = ai.Type.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()
+		if session.client.Configuration.SchemeManagers[smi].Distributed() {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (session *session) KeyshareDone(message interface{}) {
