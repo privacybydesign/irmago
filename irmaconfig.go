@@ -283,6 +283,12 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 	})
 }
 
+func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error {
+	delete(conf.SchemeManagers, id)
+	delete(conf.DisabledSchemeManagers, id)
+	return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
+}
+
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid IssuerIdentifier) error {
 	path := fmt.Sprintf("%s/%s/%s/PublicKeys/*.xml", conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
