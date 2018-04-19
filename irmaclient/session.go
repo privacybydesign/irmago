@@ -66,7 +66,6 @@ type session struct {
 
 	choice      *irma.DisclosureChoice
 	client      *Client
-	downloaded  *irma.IrmaIdentifierSet
 	irmaSession irma.IrmaSession
 	done        bool
 
@@ -184,7 +183,6 @@ func (session *session) panicFailure() {
 }
 
 func (session *session) checkAndUpateConfiguration() bool {
-	var err error
 	for id := range session.irmaSession.Identifiers().SchemeManagers {
 		manager, contains := session.client.Configuration.SchemeManagers[id]
 		if !contains {
@@ -209,9 +207,13 @@ func (session *session) checkAndUpateConfiguration() bool {
 	}
 
 	// Download missing credential types/issuers/public keys from the scheme manager
-	if session.downloaded, err = session.client.Configuration.Download(session.irmaSession.Identifiers()); err != nil {
+	downloaded, err := session.client.Configuration.Download(session.irmaSession.Identifiers())
+	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 		return false
+	}
+	if downloaded != nil && !downloaded.Empty() {
+		session.client.handler.UpdateConfiguration(downloaded)
 	}
 	return true
 }
@@ -242,7 +244,6 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, "E-mail request", missing)
-		// TODO: session.transport.Delete() on dialog cancel
 		return
 	}
 	session.irmaSession.SetCandidates(candidates)
@@ -353,7 +354,6 @@ func (session *session) start() {
 	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, session.jwt.Requestor(), missing)
-		// TODO: session.transport.Delete() on dialog cancel
 		return
 	}
 	session.irmaSession.SetCandidates(candidates)
@@ -516,9 +516,6 @@ func (session *session) sendResponse(message interface{}) {
 	}
 
 	_ = session.client.addLogEntry(log) // TODO err
-	if !session.downloaded.Empty() {
-		session.client.handler.UpdateConfiguration(session.downloaded)
-	}
 	if session.Action == irma.ActionIssuing {
 		session.client.handler.UpdateAttributes()
 	}
@@ -601,18 +598,12 @@ func (session *session) delete() bool {
 func (session *session) fail(err *irma.SessionError) {
 	if session.delete() {
 		err.Err = errors.Wrap(err.Err, 0)
-		if session.downloaded != nil && !session.downloaded.Empty() {
-			session.client.handler.UpdateConfiguration(session.downloaded)
-		}
 		session.Handler.Failure(session.Action, err)
 	}
 }
 
 func (session *session) cancel() {
 	if session.delete() {
-		if session.downloaded != nil && !session.downloaded.Empty() {
-			session.client.handler.UpdateConfiguration(session.downloaded)
-		}
 		session.Handler.Cancelled(session.Action)
 	}
 }
