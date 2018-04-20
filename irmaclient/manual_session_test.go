@@ -353,3 +353,6 @@ func (sh *ManualSessionHandler) KeyshareEnrollmentIncomplete(manager irma.Scheme
 func (sh *ManualSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	sh.errorChannel <- &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())}
 }
+func (sh *ManualSessionHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	sh.errorChannel <- &irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())}
+}

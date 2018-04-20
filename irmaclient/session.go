@@ -36,6 +36,7 @@ type Handler interface {
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier)
+	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 
 	RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler)
 	RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler)
@@ -448,6 +449,10 @@ func (session *session) KeyshareCancelled() {
 
 func (session *session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
 	session.Handler.KeyshareEnrollmentIncomplete(manager)
+}
+
+func (session *session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	session.Handler.KeyshareEnrollmentDeleted(manager)
 }
 
 func (session *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {

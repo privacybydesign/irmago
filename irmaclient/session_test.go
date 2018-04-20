@@ -32,6 +32,10 @@ func (th TestHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdenti
 	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 
+func (th TestHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())})
+}
+
 func (th TestHandler) StatusUpdate(action irma.Action, status irma.Status) {}
 func (th TestHandler) Success(action irma.Action, result string) {
 	th.c <- nil

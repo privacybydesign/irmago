@@ -74,6 +74,9 @@ func (h *keyshareEnrollmentHandler) KeyshareBlocked(manager irma.SchemeManagerId
 func (h *keyshareEnrollmentHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
 	h.fail(errors.New("Keyshare enrollment failed: registration incomplete"))
 }
+func (h *keyshareEnrollmentHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	h.fail(errors.New("Keyshare enrollment failed: not enrolled"))
+}
 func (h *keyshareEnrollmentHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	h.fail(errors.New("Keyshare enrollment failed: unenrolled"))
 }

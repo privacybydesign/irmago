@@ -26,6 +26,7 @@ type keyshareSessionHandler interface {
 	KeyshareCancelled()
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
+	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 	// In errors the manager may be nil, as not all keyshare errors have a clearly associated scheme manager
 	KeyshareError(manager *irma.SchemeManagerIdentifier, err error)
 	KeysharePin()
@@ -221,6 +222,8 @@ func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error)
 	if ok {
 		if serr.RemoteError != nil && len(serr.RemoteError.ErrorName) > 0 {
 			switch serr.RemoteError.ErrorName {
+			case "USER_NOT_FOUND":
+				ks.sessionHandler.KeyshareEnrollmentDeleted(manager)
 			case "USER_NOT_REGISTERED":
 				ks.sessionHandler.KeyshareEnrollmentIncomplete(manager)
 			case "USER_BLOCKED":
