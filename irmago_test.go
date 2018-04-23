@@ -291,7 +291,7 @@ func TestVerifyValidSig(t *testing.T) {
 	proofStatus, disclosed := VerifySigWithoutRequest(conf, irmaSignedMessage)
 	require.Equal(t, proofStatus, VALID)
 	require.Len(t, disclosed, 1)
-	require.Equal(t, disclosed[0].GetAttributeValue(NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")), "456")
+	require.Equal(t, *disclosed[0].Attributes[NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")], "456")
 }
 
 func TestVerifyInValidSig(t *testing.T) {

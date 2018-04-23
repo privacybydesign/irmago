@@ -34,7 +34,7 @@ type SignatureProofResult struct {
 // DisclosedCredential contains raw disclosed credentials, without any extra parsing information
 type DisclosedCredential struct {
 	metadataAttribute *MetadataAttribute
-	Attributes        map[AttributeTypeIdentifier]*big.Int
+	Attributes        map[AttributeTypeIdentifier]*string `json:"attributes"`
 }
 
 type DisclosedCredentialList []*DisclosedCredential
@@ -49,10 +49,10 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 	}
 
 	for _, cred := range disclosed {
-		disclosedAttributeValue := cred.GetAttributeValue(attributeId)
+		disclosedAttributeValue := cred.Attributes[attributeId]
 
 		// Continue to next credential if requested attribute isn't disclosed in this credential
-		if disclosedAttributeValue == "" {
+		if disclosedAttributeValue == nil {
 			continue
 		}
 
@@ -60,9 +60,9 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 		// Attribute is satisfied if:
 		// - Attribute is disclosed (i.e. not nil)
 		// - Value is empty OR value equal to disclosedValue
-		ar.AttributeValue = disclosedAttributeValue
+		ar.AttributeValue = *disclosedAttributeValue
 
-		if requestedValue == nil || disclosedAttributeValue == *requestedValue {
+		if requestedValue == nil || *disclosedAttributeValue == *requestedValue {
 			ar.AttributeProofStatus = PRESENT
 			return true, &ar
 		} else {
@@ -142,21 +142,20 @@ func (proofResult *ProofResult) ContainsAttribute(attrId AttributeTypeIdentifier
 }
 
 // Get string value of disclosed attribute, or nil if request attribute isn't disclosed in this credential
-func (cred *DisclosedCredential) GetAttributeValue(id AttributeTypeIdentifier) string {
-	attr := cred.Attributes[id]
-	if attr != nil {
-		return string(attr.Bytes())
-	}
-
-	return ""
-}
+//func (cred *DisclosedCredential) GetAttributeValue(id AttributeTypeIdentifier) string {
+//	attr := cred.Attributes[id]
+//	if attr != nil {
+//		return string(attr.Bytes())
+//	}
+//	return ""
+//}
 
 func (cred *DisclosedCredential) IsExpired() bool {
 	return cred.metadataAttribute.Expiry().Before(time.Now())
 }
 
 func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configuration *Configuration) *DisclosedCredential {
-	attributes := make(map[AttributeTypeIdentifier]*big.Int)
+	attributes := make(map[AttributeTypeIdentifier]*string)
 
 	metadata := MetadataFromInt(aDisclosed[1], configuration) // index 1 is metadata attribute
 	cred := metadata.CredentialType()
@@ -167,7 +166,8 @@ func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configura
 		}
 
 		description := cred.Attributes[k-2]
-		attributes[description.GetAttributeTypeIdentifier(cred.Identifier())] = v
+		attributeValue := string(v.Bytes())
+		attributes[description.GetAttributeTypeIdentifier(cred.Identifier())] = &attributeValue
 	}
 
 	return &DisclosedCredential{
@@ -225,7 +225,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 			}
 
 			dummyDisj := DisclosedAttributeDisjunction{
-				DisclosedValue: cred.GetAttributeValue(attrId),
+				DisclosedValue: *cred.Attributes[attrId],
 				DisclosedId:    attrId,
 				ProofStatus:    EXTRA,
 			}
