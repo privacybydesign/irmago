@@ -18,13 +18,13 @@ func main() {
 		fmt.Println("Usage: irmago metadata_attribute_in_decimal path_to_irma_configuration")
 	}
 
-	metaint, ok := new(big.Int).SetString(os.Args[1], 10)
+	metaint, ok := new(big.Int).SetString(os.Args[2], 10)
 	if !ok {
 		fmt.Println("Could not parse argument as decimal integer:")
 		os.Exit(1)
 	}
 
-	confpath := os.Args[2]
+	confpath := os.Args[1]
 	conf, err := irma.NewConfiguration(confpath, "")
 	if err != nil {
 		fmt.Println("Failed to parse irma_configuration:", err)
