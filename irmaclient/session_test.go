@@ -125,7 +125,7 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 				CredentialTypeID: &credid1,
 				Attributes: map[string]string{
 					"university":        "Radboud",
-					"studentCardNumber": "3.1415926535897932384626433832811111111111111111111111111111111111111111",
+					"studentCardNumber": "31415927",
 					"studentID":         "s1234567",
 					"level":             "42",
 				},
@@ -161,8 +161,13 @@ func getNameIssuanceRequest() *irma.IssuanceRequest {
 	return req
 }
 
-func getIssuanceJwt(name string, defaultValidity bool) interface{} {
-	return irma.NewIdentityProviderJwt(name, getIssuanceRequest(defaultValidity))
+func getIssuanceJwt(name string, defaultValidity bool, attribute string) interface{} {
+	jwt := irma.NewIdentityProviderJwt(name, getIssuanceRequest(defaultValidity))
+	if attribute != "" {
+		jwt.Request.Request.Credentials[0].Attributes["studentCardNumber"] = attribute
+	}
+	return jwt
+
 }
 
 func getCombinedJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
@@ -211,7 +216,7 @@ func TestIssuanceSession(t *testing.T) {
 
 func TestDefaultCredentialValidity(t *testing.T) {
 	client := parseStorage(t)
-	jwtcontents := getIssuanceJwt("testip", true)
+	jwtcontents := getIssuanceJwt("testip", true, "")
 	sessionHelper(t, jwtcontents, "issue", client)
 }
 
@@ -239,7 +244,7 @@ func TestLargeAttribute(t *testing.T) {
 	client := parseStorage(t)
 	require.NoError(t, client.RemoveAllCredentials())
 
-	jwtcontents := getIssuanceJwt("testip", false)
+	jwtcontents := getIssuanceJwt("testip", false, "1234567890123456789012345678901234567890") // 40 chars
 	sessionHelper(t, jwtcontents, "issue", client)
 
 	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
@@ -250,6 +255,34 @@ func TestLargeAttribute(t *testing.T) {
 	sessionHelper(t, jwtcontents, "verification", client)
 
 	test.ClearTestStorage(t)
+}
+
+/* There is an annoying difference between how Java and Go convert big integers to and from
+byte arrays: in Java the sign of the integer is taken into account, but not in Go. This means
+that in Java, when converting a bigint to or from a byte array, the most significant bit
+indicates the sign of the integer. In Go this is not the case. This resulted in invalid
+signatures being issued in the issuance protocol in two distinct ways, of which we test here
+that they have been fixed. */
+func TestAttributeByteEncoding(t *testing.T) {
+	client := parseStorage(t)
+	require.NoError(t, client.RemoveAllCredentials())
+
+	/* After bitshifting the presence bit into the large attribute below, the most significant
+	bit is 1. In the bigint->[]byte conversion that happens before hashing this attribute, in
+	Java this results in an extra 0 byte being prepended in order to have a 0 instead as most
+	significant (sign) bit. We test that the Java implementation correctly removes the extraneous
+	0 byte. */
+	jwtcontents := getIssuanceJwt("testip", false, "a23456789012345678901234567890")
+	sessionHelper(t, jwtcontents, "issue", client)
+
+	/* After converting the attribute below to bytes (using UTF8, on which Java and Go do agree),
+	the most significant bit of the byte version of this attribute is 1. In the []byte->bigint
+	conversion that happens at that point in the Java implementation (bitshifting is done
+	afterwards), this results in a negative number in Java and a positive number in Go. We test
+	here that the Java correctly prepends a 0 byte just before this conversion in order to get
+	the same positive bigint. */
+	jwtcontents = getIssuanceJwt("testip", false, "é")
+	sessionHelper(t, jwtcontents, "issue", client)
 }
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Client) {

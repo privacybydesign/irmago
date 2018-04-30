@@ -27,7 +27,7 @@ var client *Client
 func issue(t *testing.T, ms ManualSessionHandler) {
 	name := "testip"
 
-	jwtcontents := getIssuanceJwt(name, true)
+	jwtcontents := getIssuanceJwt(name, true, "")
 	sessionHandlerHelper(t, jwtcontents, "issue", client, &ms)
 }
 
