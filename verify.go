@@ -141,15 +141,6 @@ func (proofResult *ProofResult) ContainsAttribute(attrId AttributeTypeIdentifier
 	return false
 }
 
-// Get string value of disclosed attribute, or nil if request attribute isn't disclosed in this credential
-//func (cred *DisclosedCredential) GetAttributeValue(id AttributeTypeIdentifier) string {
-//	attr := cred.Attributes[id]
-//	if attr != nil {
-//		return string(attr.Bytes())
-//	}
-//	return ""
-//}
-
 func (cred *DisclosedCredential) IsExpired() bool {
 	return cred.metadataAttribute.Expiry().Before(time.Now())
 }

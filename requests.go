@@ -8,6 +8,7 @@ import (
 
 	"encoding/json"
 	"github.com/go-errors/errors"
+	"github.com/mhe/gabi"
 )
 
 // SessionRequest contains the context and nonce for an IRMA session.
@@ -331,6 +332,21 @@ func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
 	sr.Message = result.Message
 
 	return err
+}
+
+func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*IrmaSignedMessage, error) {
+	signature, ok := message.(gabi.ProofList)
+
+	if !ok {
+		return nil, errors.Errorf("Type assertion failed")
+	}
+
+	return &IrmaSignedMessage{
+		Signature: &signature,
+		Nonce:     sr.Nonce,
+		Context:   sr.Context,
+		Message:   sr.Message,
+	}, nil
 }
 
 // Check if Timestamp is before other Timestamp. Used for checking expiry of attributes

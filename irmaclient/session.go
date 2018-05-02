@@ -487,8 +487,14 @@ func (session *session) sendResponse(message interface{}) {
 
 	switch session.Action {
 	case irma.ActionSigning:
-		irmaSignature, ok := irma.SignedMessageFromSession(session.irmaSession, message)
+		request, ok := session.irmaSession.(*irma.SignatureRequest)
 		if !ok {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
+			return
+		}
+
+		irmaSignature, err := request.SignatureFromMessage(message)
+		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
 			return
 		}
@@ -509,8 +515,8 @@ func (session *session) sendResponse(message interface{}) {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
 				return
 			}
-			log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err // TODO: also for non-interactive sessions?
 		}
+		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
 	case irma.ActionDisclosing:
 		var response disclosureResponse
 		if err = session.transport.Post("proofs", &response, message); err != nil {

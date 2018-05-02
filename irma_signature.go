@@ -22,28 +22,9 @@ func (im *IrmaSignedMessage) GetNonce() *big.Int {
 }
 
 func (im *IrmaSignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
-	// TODO: string comparison needed?
-	return im.Nonce.String() == request.Nonce.String() &&
-		im.Context.String() == request.Context.String() &&
-		im.GetNonce().String() == request.GetNonce().String()
-}
-
-// Create an IrmaSignedMessage struct and check if type assertions hold
-// bool is false if type assertion failed
-func SignedMessageFromSession(session IrmaSession, message interface{}) (*IrmaSignedMessage, bool) {
-	signature, ok1 := message.(gabi.ProofList)
-	request, ok2 := session.(*SignatureRequest)
-
-	if !ok1 || !ok2 {
-		return nil, false
-	}
-
-	return &IrmaSignedMessage{
-		Signature: &signature,
-		Nonce:     request.Nonce,
-		Context:   request.Context,
-		Message:   request.Message,
-	}, true
+	return im.Nonce.Cmp(request.Nonce) == 0 &&
+		im.Context.Cmp(request.Context) == 0 &&
+		im.GetNonce().Cmp(request.GetNonce()) == 0
 }
 
 // Convert a Nonce to a nonce of a signature session

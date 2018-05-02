@@ -41,7 +41,15 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	var ok bool
 	switch entry.Type {
 	case irma.ActionSigning:
-		entry.SignedMessage = []byte(session.jwt.(*irma.SignatureRequestorJwt).Request.Request.Message)
+		if session.IsInteractive() {
+			entry.SignedMessage = []byte(session.jwt.(*irma.SignatureRequestorJwt).Request.Request.Message)
+		} else {
+			request, ok := session.irmaSession.(*irma.SignatureRequest)
+			if !ok {
+				return nil, errors.New("Session does not contain a valid Signature Request")
+			}
+			entry.SignedMessage = []byte(request.Message)
+		}
 		fallthrough
 	case irma.ActionDisclosing:
 		if prooflist, ok = response.(gabi.ProofList); !ok {
