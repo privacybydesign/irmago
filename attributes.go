@@ -451,6 +451,27 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 	return json.Marshal(temp)
 }
 
+// Since we have a custom MarshalJSON for AttributeDisjunction, we also need one for every struct that extends AttributeDisjunction...
+func (disclosedAttributeDisjunction *DisclosedAttributeDisjunction) MarshalJSON() ([]byte, error) {
+	temp := struct {
+		Label      string                    `json:"label"`
+		Attributes []AttributeTypeIdentifier `json:"attributes"`
+
+		DisclosedValue string                  `json:"disclosedValue"`
+		DisclosedId    AttributeTypeIdentifier `json:"disclosedId"`
+		ProofStatus    AttributeProofStatus    `json:"proofStatus"`
+	}{
+		Label:      disclosedAttributeDisjunction.Label,
+		Attributes: disclosedAttributeDisjunction.Attributes,
+
+		DisclosedValue: disclosedAttributeDisjunction.DisclosedValue,
+		DisclosedId:    disclosedAttributeDisjunction.DisclosedId,
+		ProofStatus:    disclosedAttributeDisjunction.ProofStatus,
+	}
+
+	return json.Marshal(temp)
+}
+
 // UnmarshalJSON unmarshals an attribute disjunction from JSON.
 func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	if disjunction.Values == nil {

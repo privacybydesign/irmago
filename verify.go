@@ -22,13 +22,13 @@ const (
 
 // ProofResult is a result of a complete proof, containing all the disclosed attributes and corresponding request
 type ProofResult struct {
-	disjunctions []*DisclosedAttributeDisjunction
+	Disjunctions []*DisclosedAttributeDisjunction `json:"disjunctions"`
 	ProofStatus  ProofStatus
 }
 
 type SignatureProofResult struct {
 	*ProofResult
-	message string
+	Message string `json:"message"`
 }
 
 // DisclosedCredential contains raw disclosed credentials, without any extra parsing information
@@ -83,11 +83,11 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 func (disclosed DisclosedCredentialList) createAndCheckSignatureProofResult(configuration *Configuration, sigRequest *SignatureRequest) *SignatureProofResult {
 	signatureProofResult := SignatureProofResult{
 		ProofResult: &ProofResult{},
-		message:     sigRequest.Message,
+		Message:     sigRequest.Message,
 	}
 	for _, content := range sigRequest.Content {
 		isSatisfied, disjunction := content.SatisfyDisclosed(disclosed, configuration)
-		signatureProofResult.disjunctions = append(signatureProofResult.disjunctions, disjunction)
+		signatureProofResult.Disjunctions = append(signatureProofResult.Disjunctions, disjunction)
 
 		// If satisfied, continue to next one
 		if isSatisfied {
@@ -99,7 +99,7 @@ func (disclosed DisclosedCredentialList) createAndCheckSignatureProofResult(conf
 		signatureProofResult.ProofStatus = MISSING_ATTRIBUTES
 	}
 
-	signatureProofResult.disjunctions = addExtraAttributes(disclosed, signatureProofResult.ProofResult)
+	signatureProofResult.Disjunctions = addExtraAttributes(disclosed, signatureProofResult.ProofResult)
 	return &signatureProofResult
 }
 
@@ -116,7 +116,7 @@ func (disclosed DisclosedCredentialList) IsExpired() bool {
 func (proofResult *ProofResult) ToAttributeResultList() AttributeResultList {
 	var resultList AttributeResultList
 
-	for _, v := range proofResult.disjunctions {
+	for _, v := range proofResult.Disjunctions {
 		result := AttributeResult{
 			AttributeValue:       v.DisclosedValue,
 			AttributeId:          v.DisclosedId,
@@ -130,7 +130,7 @@ func (proofResult *ProofResult) ToAttributeResultList() AttributeResultList {
 
 // Returns true if this attrId is present in one of the disjunctions
 func (proofResult *ProofResult) ContainsAttribute(attrId AttributeTypeIdentifier) bool {
-	for _, disj := range proofResult.disjunctions {
+	for _, disj := range proofResult.Disjunctions {
 		for _, attr := range disj.Attributes {
 			if attr == attrId {
 				return true
@@ -215,8 +215,8 @@ func extractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) 
 
 // Add extra disclosed attributes to an existing and checked ProofResult in 'dummy disjunctions'
 func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofResult) []*DisclosedAttributeDisjunction {
-	returnDisjunctions := make([]*DisclosedAttributeDisjunction, len(proofResult.disjunctions))
-	copy(returnDisjunctions, proofResult.disjunctions)
+	returnDisjunctions := make([]*DisclosedAttributeDisjunction, len(proofResult.Disjunctions))
+	copy(returnDisjunctions, proofResult.Disjunctions)
 
 	for _, cred := range disclosed {
 		for attrId := range cred.Attributes {
