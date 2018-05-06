@@ -547,6 +547,24 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.IrmaSes
 	if err != nil {
 		return nil, err
 	}
+
+	if issig {
+		var sigs []*big.Int
+		var disclosed [][]*big.Int
+		var s *big.Int
+		var d []*big.Int
+		for _, builder := range builders {
+			s, d = builder.(*gabi.DisclosureProofBuilder).TimestampRequestContributions()
+			sigs = append(sigs, s)
+			disclosed = append(disclosed, d)
+		}
+		r := request.(*irma.SignatureRequest)
+		r.Timestamp, err = irma.GetTimestamp(r.Message, sigs, disclosed)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
 }
 

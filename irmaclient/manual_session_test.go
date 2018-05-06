@@ -82,7 +82,7 @@ func TestManualSession(t *testing.T) {
 	result := <-ms.resultChannel
 	if ps := result.ProofStatus; ps != irma.VALID {
 		t.Logf("Invalid proof result: %v Expected: %v", ps, irma.VALID)
-		t.Fail()
+		t.Fatal()
 	}
 	if attrStatus := result.ToAttributeResultList()[0].AttributeProofStatus; attrStatus != irma.PRESENT {
 		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.PRESENT)
@@ -293,7 +293,6 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 		// Make proof corrupt if we want to test invalid proofs
 		resultBytes := corruptAndConvertProofString(result)
 		irmaSignedMessage := &irma.IrmaSignedMessage{}
-		json.Unmarshal(resultBytes, irmaSignedMessage)
 
 		if err := json.Unmarshal(resultBytes, irmaSignedMessage); err != nil {
 			sh.errorChannel <- &irma.SessionError{

@@ -14,10 +14,14 @@ type ProofStatus string
 
 const (
 	VALID              = ProofStatus("VALID")
-	EXPIRED            = ProofStatus("EXPIRED")
 	INVALID_CRYPTO     = ProofStatus("INVALID_CRYPTO")
+	INVALID_TIMESTAMP  = ProofStatus("INVALID_TIMESTAMP")
 	UNMATCHED_REQUEST  = ProofStatus("UNMATCHED_REQUEST")
 	MISSING_ATTRIBUTES = ProofStatus("MISSING_ATTRIBUTES")
+
+	// The contained attributes are currently expired, but it is not certain if they already were expired
+	// during creation of the ABS.
+	EXPIRED = ProofStatus("EXPIRED")
 )
 
 // ProofResult is a result of a complete proof, containing all the disclosed attributes and corresponding request
@@ -103,10 +107,10 @@ func (disclosed DisclosedCredentialList) createAndCheckSignatureProofResult(conf
 	return &signatureProofResult
 }
 
-// Returns true if one of the disclosed credentials is expired
-func (disclosed DisclosedCredentialList) IsExpired() bool {
+// Returns true if one of the disclosed credentials is expired at the specified time
+func (disclosed DisclosedCredentialList) IsExpired(t time.Time) bool {
 	for _, cred := range disclosed {
-		if cred.IsExpired() {
+		if cred.IsExpired(t) {
 			return true
 		}
 	}
@@ -141,8 +145,8 @@ func (proofResult *ProofResult) ContainsAttribute(attrId AttributeTypeIdentifier
 	return false
 }
 
-func (cred *DisclosedCredential) IsExpired() bool {
-	return cred.metadataAttribute.Expiry().Before(time.Now())
+func (cred *DisclosedCredential) IsExpired(t time.Time) bool {
+	return cred.metadataAttribute.Expiry().Before(t)
 }
 
 func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configuration *Configuration) *DisclosedCredential {
@@ -228,8 +232,8 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 }
 
 // Check an gabi prooflist against a signature proofrequest
-func checkProofWithRequest(configuration *Configuration, proofList gabi.ProofList, sigRequest *SignatureRequest) *SignatureProofResult {
-	disclosed, err := extractDisclosedCredentials(configuration, proofList)
+func checkProofWithRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
+	disclosed, err := extractDisclosedCredentials(configuration, *irmaSignature.Signature)
 
 	if err != nil {
 		fmt.Println(err)
@@ -249,9 +253,21 @@ func checkProofWithRequest(configuration *Configuration, proofList gabi.ProofLis
 	}
 
 	// If all disjunctions are satisfied, check if a credential is expired
-	if disclosed.IsExpired() {
-		signatureProofResult.ProofStatus = EXPIRED
-		return signatureProofResult
+	if irmaSignature.Timestamp == nil {
+		if disclosed.IsExpired(time.Now()) {
+			// At least one of the contained attributes has currently expired. We don't know the
+			// creation time of the ABS so we can't ascertain that the attributes were still valid then.
+			// Otherwise the signature is valid.
+			signatureProofResult.ProofStatus = EXPIRED
+			return signatureProofResult
+		}
+	} else {
+		if disclosed.IsExpired(time.Unix(irmaSignature.Timestamp.Time, 0)) {
+			// The ABS contains attributes that were expired at the time of creation of the ABS.
+			// This must not happen and in this case the signature is invalid
+			signatureProofResult.ProofStatus = INVALID_CRYPTO
+			return signatureProofResult
+		}
 	}
 
 	// All disjunctions satisfied and nothing expired, proof is valid!
@@ -272,7 +288,19 @@ func verify(configuration *Configuration, proofList gabi.ProofList, context *big
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
 func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
-	// First, check if nonce and context of the signature match those of the signature request
+	// First, verify the timestamp, if any
+	if irmaSignature.Timestamp != nil {
+		if err := VerifyTimestamp(irmaSignature, sigRequest.Message, configuration); err != nil {
+			return &SignatureProofResult{
+				ProofResult: &ProofResult{
+					ProofStatus: INVALID_TIMESTAMP,
+				},
+			}
+		}
+		sigRequest.Timestamp = irmaSignature.Timestamp
+	}
+
+	// Then, check if nonce and context of the signature match those of the signature request
 	if !irmaSignature.MatchesNonceAndContext(sigRequest) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
@@ -291,12 +319,19 @@ func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, s
 	}
 
 	// Finally, check whether attribute values in proof satisfy the original signature request
-	return checkProofWithRequest(configuration, *irmaSignature.Signature, sigRequest)
+	return checkProofWithRequest(configuration, irmaSignature, sigRequest)
 }
 
 // Verify a signature cryptographically, but do not check/compare with a signature request
 func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage) (ProofStatus, DisclosedCredentialList) {
-	// First, cryptographically verify the signature
+	// First, verify the timestamp, if any
+	if irmaSignature.Timestamp != nil {
+		if err := VerifyTimestamp(irmaSignature, irmaSignature.Message, configuration); err != nil {
+			return INVALID_TIMESTAMP, nil
+		}
+	}
+
+	// Cryptographically verify the signature
 	if !verify(configuration, *irmaSignature.Signature, irmaSignature.Context, irmaSignature.GetNonce(), true) {
 		return INVALID_CRYPTO, nil
 	}
@@ -309,8 +344,14 @@ func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSi
 		return INVALID_CRYPTO, nil
 	}
 
-	if disclosed.IsExpired() {
-		return EXPIRED, disclosed
+	if irmaSignature.Timestamp == nil {
+		if disclosed.IsExpired(time.Now()) {
+			return EXPIRED, disclosed
+		}
+	} else {
+		if disclosed.IsExpired(time.Unix(irmaSignature.Timestamp.Time, 0)) {
+			return INVALID_CRYPTO, nil
+		}
 	}
 
 	return VALID, disclosed

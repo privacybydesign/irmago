@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"encoding/json"
+
+	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -56,7 +58,8 @@ type DisclosureRequest struct {
 // A SignatureRequest is a a request to sign a message with certain attributes.
 type SignatureRequest struct {
 	DisclosureRequest
-	Message string `json:"message"`
+	Message   string          `json:"message"`
+	Timestamp *atum.Timestamp `json:"-"`
 }
 
 // An IssuanceRequest is a request to issue certain credentials,
@@ -289,7 +292,7 @@ func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
-	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce)
+	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce, sr.Timestamp)
 }
 
 // Convert fields in JSON string to BigInterger if they are string
@@ -346,6 +349,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*IrmaSign
 		Nonce:     sr.Nonce,
 		Context:   sr.Context,
 		Message:   sr.Message,
+		Timestamp: sr.Timestamp,
 	}, nil
 }
 
