@@ -112,8 +112,15 @@ func (al *AttributeList) Strings() []TranslatedString {
 }
 
 func (al *AttributeList) decode(i int) *string {
-	bi := new(big.Int).Set(al.Ints[i+1])
-	if al.MetadataAttribute.Version() >= 3 {
+	attr := al.Ints[i+1]
+	metadataVersion := al.MetadataAttribute.Version()
+	return decodeAttribute(attr, metadataVersion)
+}
+
+// Decode attribute value into string according to metadataVersion
+func decodeAttribute(attr *big.Int, metadataVersion byte) *string {
+	bi := new(big.Int).Set(attr)
+	if metadataVersion >= 3 {
 		if bi.Bit(0) == 0 { // attribute does not exist
 			return nil
 		}
