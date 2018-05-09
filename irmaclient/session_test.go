@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
+	"math/big"
 )
 
 type TestHandler struct {
@@ -97,9 +98,12 @@ func getDisclosureJwt(name string, id irma.AttributeTypeIdentifier) interface{} 
 
 func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 	return irma.NewSignatureRequestorJwt(name, &irma.SignatureRequest{
-		Message:     "test",
-		MessageType: "STRING",
+		Message: "test",
 		DisclosureRequest: irma.DisclosureRequest{
+			SessionRequest: irma.SessionRequest{
+				Nonce:   big.NewInt(1),
+				Context: big.NewInt(1),
+			},
 			Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 				Label:      "foo",
 				Attributes: []irma.AttributeTypeIdentifier{id},

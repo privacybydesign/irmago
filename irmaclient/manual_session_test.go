@@ -34,15 +34,13 @@ func issue(t *testing.T, ms ManualSessionHandler) {
 // Flip one bit in the proof string if invalidate is set to true
 var invalidate bool
 
-func corruptProofString(proof string) string {
+func corruptAndConvertProofString(proof string) []byte {
+	proofBytes := []byte(proof)
 	if invalidate {
-		proofBytes := []byte(proof)
-
-		// 15 because this is somewhere in a bigint in the json string
-		proofBytes[15] ^= 0x01
-		return string(proofBytes)
+		// 42 because this is somewhere in a bigint in the json string
+		proofBytes[42] ^= 0x01
 	}
-	return proof
+	return proofBytes
 }
 
 // Create a ManualSessionHandler for unit tests
@@ -69,7 +67,7 @@ func createManualSessionHandler(request string, invalidRequest string, t *testin
 func TestManualSession(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
@@ -97,7 +95,7 @@ func TestManualSession(t *testing.T) {
 func TestManualSessionUnsatisfiable(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
@@ -115,8 +113,8 @@ func TestManualSessionUnsatisfiable(t *testing.T) {
 func TestManualSessionInvalidNonce(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	invalidRequest := "{\"nonce\": 1, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	invalidRequest := "{\"nonce\": 1, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
@@ -129,8 +127,8 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 	}
 
 	// No errors, obtain proof result from channel
-	if result := <-ms.resultChannel; result.ProofStatus != irma.INVALID_CRYPTO {
-		t.Logf("Invalid proof result: %v Expected: %v", result.ProofStatus, irma.INVALID_CRYPTO)
+	if result := <-ms.resultChannel; result.ProofStatus != irma.UNMATCHED_REQUEST {
+		t.Logf("Invalid proof result: %v Expected: %v", result.ProofStatus, irma.UNMATCHED_REQUEST)
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
@@ -140,8 +138,8 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 func TestManualSessionInvalidRequest(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.university\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.university\"]}]}"
 
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
@@ -177,8 +175,8 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 func TestManualSessionInvalidAttributeValue(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"456\"}}]}"
-	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"456\"}}]}"
+	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
 
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
@@ -206,7 +204,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 func TestManualKeyShareSession(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
 
 	ms := createManualSessionHandler(request, request, t)
 
@@ -239,7 +237,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 	}
 
 	// Request to sign with both BSN and StudentID
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]},{\"label\":\"BSN\",\"attributes\":[\"irma-demo.MijnOverheid.root.BSN\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]},{\"label\":\"BSN\",\"attributes\":[\"irma-demo.MijnOverheid.root.BSN\"]}]}"
 
 	ms := createManualSessionHandler(request, request, t)
 
@@ -270,7 +268,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 func TestManualSessionInvalidProof(t *testing.T) {
 	invalidate = true
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"messageType\":\"STRING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
@@ -293,10 +291,20 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 	switch irmaAction {
 	case irma.ActionSigning:
 		// Make proof corrupt if we want to test invalid proofs
-		result = corruptProofString(result)
+		resultBytes := corruptAndConvertProofString(result)
+		irmaSignedMessage := &irma.IrmaSignedMessage{}
+		json.Unmarshal(resultBytes, irmaSignedMessage)
+
+		if err := json.Unmarshal(resultBytes, irmaSignedMessage); err != nil {
+			sh.errorChannel <- &irma.SessionError{
+				Err:       err,
+				ErrorType: irma.ErrorSerialization,
+			}
+			return
+		}
 
 		go func() {
-			sh.resultChannel <- irma.VerifySig(client.Configuration, result, sh.sigVerifyRequest)
+			sh.resultChannel <- irma.VerifySig(client.Configuration, irmaSignedMessage, sh.sigVerifyRequest)
 		}()
 	}
 	sh.errorChannel <- nil

@@ -16,25 +16,25 @@ const (
 	VALID              = ProofStatus("VALID")
 	EXPIRED            = ProofStatus("EXPIRED")
 	INVALID_CRYPTO     = ProofStatus("INVALID_CRYPTO")
-	INVALID_SYNTAX     = ProofStatus("INVALID_SYNTAX")
+	UNMATCHED_REQUEST  = ProofStatus("UNMATCHED_REQUEST")
 	MISSING_ATTRIBUTES = ProofStatus("MISSING_ATTRIBUTES")
 )
 
 // ProofResult is a result of a complete proof, containing all the disclosed attributes and corresponding request
 type ProofResult struct {
-	disjunctions []*DisclosedAttributeDisjunction
+	Disjunctions []*DisclosedAttributeDisjunction `json:"disjunctions"`
 	ProofStatus  ProofStatus
 }
 
 type SignatureProofResult struct {
 	*ProofResult
-	message string
+	Message string `json:"message"`
 }
 
 // DisclosedCredential contains raw disclosed credentials, without any extra parsing information
 type DisclosedCredential struct {
 	metadataAttribute *MetadataAttribute
-	Attributes        map[AttributeTypeIdentifier]*big.Int
+	Attributes        map[AttributeTypeIdentifier]*string `json:"attributes"`
 }
 
 type DisclosedCredentialList []*DisclosedCredential
@@ -49,10 +49,10 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 	}
 
 	for _, cred := range disclosed {
-		disclosedAttributeValue := cred.GetAttributeValue(attributeId)
+		disclosedAttributeValue := cred.Attributes[attributeId]
 
 		// Continue to next credential if requested attribute isn't disclosed in this credential
-		if disclosedAttributeValue == "" {
+		if disclosedAttributeValue == nil {
 			continue
 		}
 
@@ -60,9 +60,9 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 		// Attribute is satisfied if:
 		// - Attribute is disclosed (i.e. not nil)
 		// - Value is empty OR value equal to disclosedValue
-		ar.AttributeValue = disclosedAttributeValue
+		ar.AttributeValue = *disclosedAttributeValue
 
-		if requestedValue == nil || disclosedAttributeValue == *requestedValue {
+		if requestedValue == nil || *disclosedAttributeValue == *requestedValue {
 			ar.AttributeProofStatus = PRESENT
 			return true, &ar
 		} else {
@@ -83,11 +83,11 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 func (disclosed DisclosedCredentialList) createAndCheckSignatureProofResult(configuration *Configuration, sigRequest *SignatureRequest) *SignatureProofResult {
 	signatureProofResult := SignatureProofResult{
 		ProofResult: &ProofResult{},
-		message:     sigRequest.Message,
+		Message:     sigRequest.Message,
 	}
 	for _, content := range sigRequest.Content {
 		isSatisfied, disjunction := content.SatisfyDisclosed(disclosed, configuration)
-		signatureProofResult.disjunctions = append(signatureProofResult.disjunctions, disjunction)
+		signatureProofResult.Disjunctions = append(signatureProofResult.Disjunctions, disjunction)
 
 		// If satisfied, continue to next one
 		if isSatisfied {
@@ -99,7 +99,7 @@ func (disclosed DisclosedCredentialList) createAndCheckSignatureProofResult(conf
 		signatureProofResult.ProofStatus = MISSING_ATTRIBUTES
 	}
 
-	signatureProofResult.disjunctions = addExtraAttributes(disclosed, signatureProofResult.ProofResult)
+	signatureProofResult.Disjunctions = addExtraAttributes(disclosed, signatureProofResult.ProofResult)
 	return &signatureProofResult
 }
 
@@ -116,7 +116,7 @@ func (disclosed DisclosedCredentialList) IsExpired() bool {
 func (proofResult *ProofResult) ToAttributeResultList() AttributeResultList {
 	var resultList AttributeResultList
 
-	for _, v := range proofResult.disjunctions {
+	for _, v := range proofResult.Disjunctions {
 		result := AttributeResult{
 			AttributeValue:       v.DisclosedValue,
 			AttributeId:          v.DisclosedId,
@@ -130,7 +130,7 @@ func (proofResult *ProofResult) ToAttributeResultList() AttributeResultList {
 
 // Returns true if this attrId is present in one of the disjunctions
 func (proofResult *ProofResult) ContainsAttribute(attrId AttributeTypeIdentifier) bool {
-	for _, disj := range proofResult.disjunctions {
+	for _, disj := range proofResult.Disjunctions {
 		for _, attr := range disj.Attributes {
 			if attr == attrId {
 				return true
@@ -141,22 +141,12 @@ func (proofResult *ProofResult) ContainsAttribute(attrId AttributeTypeIdentifier
 	return false
 }
 
-// Get string value of disclosed attribute, or nil if request attribute isn't disclosed in this credential
-func (cred *DisclosedCredential) GetAttributeValue(id AttributeTypeIdentifier) string {
-	attr := cred.Attributes[id]
-	if attr != nil {
-		return string(attr.Bytes())
-	}
-
-	return ""
-}
-
 func (cred *DisclosedCredential) IsExpired() bool {
 	return cred.metadataAttribute.Expiry().Before(time.Now())
 }
 
 func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configuration *Configuration) *DisclosedCredential {
-	attributes := make(map[AttributeTypeIdentifier]*big.Int)
+	attributes := make(map[AttributeTypeIdentifier]*string)
 
 	metadata := MetadataFromInt(aDisclosed[1], configuration) // index 1 is metadata attribute
 	cred := metadata.CredentialType()
@@ -167,7 +157,8 @@ func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configura
 		}
 
 		description := cred.Attributes[k-2]
-		attributes[description.GetAttributeTypeIdentifier(cred.Identifier())] = v
+		attributeValue := decodeAttribute(v, metadata.Version())
+		attributes[description.GetAttributeTypeIdentifier(cred.Identifier())] = attributeValue
 	}
 
 	return &DisclosedCredential{
@@ -215,8 +206,8 @@ func extractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) 
 
 // Add extra disclosed attributes to an existing and checked ProofResult in 'dummy disjunctions'
 func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofResult) []*DisclosedAttributeDisjunction {
-	returnDisjunctions := make([]*DisclosedAttributeDisjunction, len(proofResult.disjunctions))
-	copy(returnDisjunctions, proofResult.disjunctions)
+	returnDisjunctions := make([]*DisclosedAttributeDisjunction, len(proofResult.Disjunctions))
+	copy(returnDisjunctions, proofResult.Disjunctions)
 
 	for _, cred := range disclosed {
 		for attrId := range cred.Attributes {
@@ -225,7 +216,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 			}
 
 			dummyDisj := DisclosedAttributeDisjunction{
-				DisclosedValue: cred.GetAttributeValue(attrId),
+				DisclosedValue: *cred.Attributes[attrId],
 				DisclosedId:    attrId,
 				ProofStatus:    EXTRA,
 			}
@@ -280,23 +271,18 @@ func verify(configuration *Configuration, proofList gabi.ProofList, context *big
 }
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
-func VerifySig(configuration *Configuration, proofString string, sigRequest *SignatureRequest) *SignatureProofResult {
-
-	// First, unmarshal proof and check if all the attributes in the proofstring match the signature request
-	var proofList gabi.ProofList
-	proofBytes := []byte(proofString)
-
-	err := proofList.UnmarshalJSON(proofBytes)
-	if err != nil {
+func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
+	// First, check if nonce and context of the signature match those of the signature request
+	if !irmaSignature.MatchesNonceAndContext(sigRequest) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
-				ProofStatus: INVALID_SYNTAX,
+				ProofStatus: UNMATCHED_REQUEST,
 			},
 		}
 	}
 
 	// Now, cryptographically verify the signature
-	if !verify(configuration, proofList, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
+	if !verify(configuration, *irmaSignature.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
 				ProofStatus: INVALID_CRYPTO,
@@ -305,5 +291,27 @@ func VerifySig(configuration *Configuration, proofString string, sigRequest *Sig
 	}
 
 	// Finally, check whether attribute values in proof satisfy the original signature request
-	return checkProofWithRequest(configuration, proofList, sigRequest)
+	return checkProofWithRequest(configuration, *irmaSignature.Signature, sigRequest)
+}
+
+// Verify a signature cryptographically, but do not check/compare with a signature request
+func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage) (ProofStatus, DisclosedCredentialList) {
+	// First, cryptographically verify the signature
+	if !verify(configuration, *irmaSignature.Signature, irmaSignature.Context, irmaSignature.GetNonce(), true) {
+		return INVALID_CRYPTO, nil
+	}
+
+	// Extract attributes and return result
+	disclosed, err := extractDisclosedCredentials(configuration, *irmaSignature.Signature)
+
+	if err != nil {
+		fmt.Println(err)
+		return INVALID_CRYPTO, nil
+	}
+
+	if disclosed.IsExpired() {
+		return EXPIRED, disclosed
+	}
+
+	return VALID, disclosed
 }

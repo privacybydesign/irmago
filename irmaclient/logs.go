@@ -17,11 +17,10 @@ type LogEntry struct {
 	SessionInfo *irma.SessionInfo // Message that started the session
 
 	// Session type-specific info
-	Disclosed         map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString // Any session type
-	Received          map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of issuance session
-	Removed           map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of credential removal
-	SignedMessage     []byte                                                          // In case of signature sessions
-	SignedMessageType string                                                          // In case of signature sessions
+	Disclosed     map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString // Any session type
+	Received      map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of issuance session
+	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of credential removal
+	SignedMessage []byte                                                          // In case of signature sessions
 
 	response    interface{}     // Our response (ProofList or IssueCommitmentMessage)
 	rawResponse json.RawMessage // Unparsed []byte version of response
@@ -42,8 +41,15 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	var ok bool
 	switch entry.Type {
 	case irma.ActionSigning:
-		entry.SignedMessage = []byte(session.jwt.(*irma.SignatureRequestorJwt).Request.Request.Message)
-		entry.SignedMessageType = session.jwt.(*irma.SignatureRequestorJwt).Request.Request.MessageType
+		if session.IsInteractive() {
+			entry.SignedMessage = []byte(session.jwt.(*irma.SignatureRequestorJwt).Request.Request.Message)
+		} else {
+			request, ok := session.irmaSession.(*irma.SignatureRequest)
+			if !ok {
+				return nil, errors.New("Session does not contain a valid Signature Request")
+			}
+			entry.SignedMessage = []byte(request.Message)
+		}
 		fallthrough
 	case irma.ActionDisclosing:
 		if prooflist, ok = response.(gabi.ProofList); !ok {
@@ -127,11 +133,10 @@ type jsonLogEntry struct {
 	Time        irma.Timestamp
 	SessionInfo *logSessionInfo
 
-	Disclosed         map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString `json:",omitempty"`
-	Received          map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
-	Removed           map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
-	SignedMessage     []byte                                                          `json:",omitempty"`
-	SignedMessageType string                                                          `json:",omitempty"`
+	Disclosed     map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString `json:",omitempty"`
+	Received      map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
+	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
+	SignedMessage []byte                                                          `json:",omitempty"`
 
 	Response json.RawMessage
 }
@@ -153,12 +158,11 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 			Context: temp.SessionInfo.Context,
 			Keys:    make(map[irma.IssuerIdentifier]int),
 		},
-		Removed:           temp.Removed,
-		Disclosed:         temp.Disclosed,
-		Received:          temp.Received,
-		SignedMessage:     temp.SignedMessage,
-		SignedMessageType: temp.SignedMessageType,
-		rawResponse:       temp.Response,
+		Removed:       temp.Removed,
+		Disclosed:     temp.Disclosed,
+		Received:      temp.Received,
+		SignedMessage: temp.SignedMessage,
+		rawResponse:   temp.Response,
 	}
 
 	// TODO remove on protocol upgrade
@@ -194,15 +198,14 @@ func (entry *LogEntry) MarshalJSON() ([]byte, error) {
 		}
 	}
 	temp := &jsonLogEntry{
-		Type:              entry.Type,
-		Time:              entry.Time,
-		Response:          entry.rawResponse,
-		SessionInfo:       si,
-		Removed:           entry.Removed,
-		Disclosed:         entry.Disclosed,
-		Received:          entry.Received,
-		SignedMessage:     entry.SignedMessage,
-		SignedMessageType: entry.SignedMessageType,
+		Type:          entry.Type,
+		Time:          entry.Time,
+		Response:      entry.rawResponse,
+		SessionInfo:   si,
+		Removed:       entry.Removed,
+		Disclosed:     entry.Disclosed,
+		Received:      entry.Received,
+		SignedMessage: entry.SignedMessage,
 	}
 
 	return json.Marshal(temp)

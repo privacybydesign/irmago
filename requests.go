@@ -1,22 +1,21 @@
 package irma
 
 import (
-	"crypto/sha256"
-	"encoding/asn1"
 	"fmt"
-	"log"
 	"math/big"
 	"strconv"
 	"time"
 
+	"encoding/json"
 	"github.com/go-errors/errors"
+	"github.com/mhe/gabi"
 )
 
 // SessionRequest contains the context and nonce for an IRMA session.
 type SessionRequest struct {
-	Context    *big.Int `json:"context"`
-	Nonce      *big.Int `json:"nonce"`
-	Candidates [][]*AttributeIdentifier
+	Context    *big.Int                 `json:"context"`
+	Nonce      *big.Int                 `json:"nonce"`
+	Candidates [][]*AttributeIdentifier `json:"-"`
 
 	Choice *DisclosureChoice  `json:"-"`
 	Ids    *IrmaIdentifierSet `json:"-"`
@@ -57,8 +56,7 @@ type DisclosureRequest struct {
 // A SignatureRequest is a a request to sign a message with certain attributes.
 type SignatureRequest struct {
 	DisclosureRequest
-	Message     string `json:"message"`
-	MessageType string `json:"messageType"`
+	Message string `json:"message"`
 }
 
 // An IssuanceRequest is a request to issue certain credentials,
@@ -187,7 +185,7 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 				attrs[i+1].Add(attrs[i+1], big.NewInt(1)) // attr += 1
 			}
 		} else {
-			if (attrtype.Optional != "true") {
+			if attrtype.Optional != "true" {
 				return nil, errors.New("Required attribute not provided")
 			}
 		}
@@ -291,15 +289,64 @@ func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
-	hashbytes := sha256.Sum256([]byte(sr.Message))
-	hashint := new(big.Int).SetBytes(hashbytes[:])
-	// TODO the 2 should be abstracted away
-	asn1bytes, err := asn1.Marshal([]interface{}{big.NewInt(2), sr.Nonce, hashint})
+	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce)
+}
+
+// Convert fields in JSON string to BigInterger if they are string
+// Supply fieldnames as a slice as second argument
+func convertFieldsToBigInt(jsonString []byte, fieldNames []string) ([]byte, error) {
+	var rawRequest map[string]interface{}
+
+	err := json.Unmarshal(jsonString, &rawRequest)
 	if err != nil {
-		log.Print(err) // TODO? does this happen?
+		return nil, err
 	}
-	asn1hash := sha256.Sum256(asn1bytes)
-	return new(big.Int).SetBytes(asn1hash[:])
+
+	for _, fieldName := range fieldNames {
+		field := new(big.Int)
+		fieldString := fmt.Sprintf("%v", rawRequest[fieldName])
+		field.SetString(fieldString, 10)
+		rawRequest[fieldName] = field
+	}
+
+	return json.Marshal(rawRequest)
+}
+
+// Custom Unmarshalling to support both json with string and int fields for nonce and context
+// i.e. {"nonce": "42", "context": "1337", ... } and {"nonce": 42, "context": 1337, ... }
+func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
+	type SignatureRequestTemp SignatureRequest // To avoid 'recursive unmarshalling'
+
+	fixedRequest, err := convertFieldsToBigInt(b, []string{"nonce", "context"})
+	if err != nil {
+		return err
+	}
+
+	var result SignatureRequestTemp
+	err = json.Unmarshal(fixedRequest, &result)
+	if err != nil {
+		return err
+	}
+
+	sr.DisclosureRequest = result.DisclosureRequest
+	sr.Message = result.Message
+
+	return err
+}
+
+func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*IrmaSignedMessage, error) {
+	signature, ok := message.(gabi.ProofList)
+
+	if !ok {
+		return nil, errors.Errorf("Type assertion failed")
+	}
+
+	return &IrmaSignedMessage{
+		Signature: &signature,
+		Nonce:     sr.Nonce,
+		Context:   sr.Context,
+		Message:   sr.Message,
+	}, nil
 }
 
 // Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
