@@ -63,11 +63,12 @@ func VerifyTimestamp(irmaSignature *IrmaSignedMessage, message string, conf *Con
 	disclosed := make([][]*big.Int, size)
 	for i, proof := range irmaSignature.Signature {
 		proofd := proof.(*gabi.ProofD)
-		meta := MetadataFromInt(proofd.ADisclosed[1], conf)
 		sigs[i] = proofd.A
-
-		// TODO check for nil
-		attrcount := len(meta.CredentialType().Attributes) + 2 // plus secret key and metadata
+		ct := MetadataFromInt(proofd.ADisclosed[1], conf).CredentialType()
+		if ct == nil {
+			return errors.New("Cannot verify timestamp: signature contains attributes from unknown credential type")
+		}
+		attrcount := len(ct.Attributes) + 2 // plus secret key and metadata
 		disclosed[i] = make([]*big.Int, attrcount)
 		for j := 0; j < attrcount; j++ {
 			val, ok := proofd.ADisclosed[j]
