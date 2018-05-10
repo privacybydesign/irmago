@@ -30,16 +30,15 @@ func (im *IrmaSignedMessage) MatchesNonceAndContext(request *SignatureRequest) b
 		im.GetNonce().Cmp(request.GetNonce()) == 0
 }
 
-// Convert a Nonce to a nonce of a signature session
-// (with the message already hashed into it).
+// ASN1ConvertSignatureNonce computes the nonce that is used in the creation of the attribute-based signature:
+//    nonce = SHA256(serverNonce, SHA256(message), timestampSignature)
+// where serverNonce is the nonce sent by the signature requestor.
 func ASN1ConvertSignatureNonce(message string, nonce *big.Int, timestamp *atum.Timestamp) *big.Int {
 	msgHash := sha256.Sum256([]byte(message))
 	tohash := []interface{}{nonce, new(big.Int).SetBytes(msgHash[:])}
 	if timestamp != nil {
 		tohash = append(tohash, timestamp.Sig.Data)
 	}
-	// TODO remove the 2, or keep backwards compatible?
-	tohash = append([]interface{}{big.NewInt(int64(len(tohash)))}, tohash...)
 	asn1bytes, err := asn1.Marshal(tohash)
 	if err != nil {
 		log.Print(err) // TODO
