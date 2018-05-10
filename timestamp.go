@@ -58,10 +58,10 @@ func VerifyTimestamp(irmaSignature *IrmaSignedMessage, message string, conf *Con
 	// Extract the disclosed attributes and randomized CL-signatures from the proofs in order to
 	// construct the nonce that should be signed by the timestamp server.
 	zero := big.NewInt(0)
-	size := len(*irmaSignature.Signature)
+	size := len(irmaSignature.Signature)
 	sigs := make([]*big.Int, size)
 	disclosed := make([][]*big.Int, size)
-	for i, proof := range *irmaSignature.Signature {
+	for i, proof := range irmaSignature.Signature {
 		proofd := proof.(*gabi.ProofD)
 		meta := MetadataFromInt(proofd.ADisclosed[1], conf)
 		sigs[i] = proofd.A

@@ -12,9 +12,8 @@ import (
 
 // IrmaSignedMessage is a message signed with an attribute-based signature
 // The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(sha256(message), sha256(nonce))
-// // TODO: remove pointer from Signature
 type IrmaSignedMessage struct {
-	Signature *gabi.ProofList `json:"signature"`
+	Signature gabi.ProofList  `json:"signature"`
 	Nonce     *big.Int        `json:"nonce"`
 	Context   *big.Int        `json:"context"`
 	Message   string          `json:"message"`

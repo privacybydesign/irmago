@@ -233,7 +233,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 
 // Check an gabi prooflist against a signature proofrequest
 func checkProofWithRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
-	disclosed, err := extractDisclosedCredentials(configuration, *irmaSignature.Signature)
+	disclosed, err := extractDisclosedCredentials(configuration, irmaSignature.Signature)
 
 	if err != nil {
 		fmt.Println(err)
@@ -310,7 +310,7 @@ func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, s
 	}
 
 	// Now, cryptographically verify the signature
-	if !verify(configuration, *irmaSignature.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
+	if !verify(configuration, irmaSignature.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
 				ProofStatus: INVALID_CRYPTO,
@@ -332,12 +332,12 @@ func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSi
 	}
 
 	// Cryptographically verify the signature
-	if !verify(configuration, *irmaSignature.Signature, irmaSignature.Context, irmaSignature.GetNonce(), true) {
+	if !verify(configuration, irmaSignature.Signature, irmaSignature.Context, irmaSignature.GetNonce(), true) {
 		return INVALID_CRYPTO, nil
 	}
 
 	// Extract attributes and return result
-	disclosed, err := extractDisclosedCredentials(configuration, *irmaSignature.Signature)
+	disclosed, err := extractDisclosedCredentials(configuration, irmaSignature.Signature)
 
 	if err != nil {
 		fmt.Println(err)

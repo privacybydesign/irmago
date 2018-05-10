@@ -345,7 +345,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*IrmaSign
 	}
 
 	return &IrmaSignedMessage{
-		Signature: &signature,
+		Signature: signature,
 		Nonce:     sr.Nonce,
 		Context:   sr.Context,
 		Message:   sr.Message,
