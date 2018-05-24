@@ -2,10 +2,40 @@
 
 
 [[projects]]
+  branch = "master"
+  name = "github.com/bwesterb/byteswriter"
+  packages = ["."]
+  revision = "c31a76b641f8b94ffccad99eeeabf795e53b1e4a"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/bwesterb/go-atum"
+  packages = ["."]
+  revision = "f48b4b5eb04060a3f982a89795d3d6e36b44d127"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/bwesterb/go-pow"
+  packages = ["."]
+  revision = "b53ca488a9ca0a21ee44c6a6b0ad792693214e1a"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/bwesterb/go-xmssmt"
+  packages = ["."]
+  revision = "58241c99638a738580f8258ac438f0b7f91d346d"
+
+[[projects]]
   name = "github.com/certifi/gocertifi"
   packages = ["."]
   revision = "deb3ae2ef2610fde3330947281941c562861188b"
   version = "2018.01.18"
+
+[[projects]]
+  name = "github.com/cespare/xxhash"
+  packages = ["."]
+  revision = "5c37fe3735342a2e0d01c87a907579987c8936cc"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
@@ -27,6 +57,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/edsrzf/mmap-go"
+  packages = ["."]
+  revision = "0bce6a6887123b67a60366d2c9fe2dfb74289d2e"
+
+[[projects]]
+  branch = "master"
   name = "github.com/getsentry/raven-go"
   packages = ["."]
   revision = "563b81fc02b75d664e54da31f787c2cc2186780b"
@@ -38,16 +74,55 @@
   version = "v1.0.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/hashicorp/errwrap"
+  packages = ["."]
+  revision = "7554cd9344cec97297fa6649b055a8c98c2a1e55"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/hashicorp/go-multierror"
+  packages = ["."]
+  revision = "b7773ae218740a7be65057fc60b366a49b538a44"
+
+[[projects]]
   name = "github.com/inconshreveable/mousetrap"
   packages = ["."]
   revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
   version = "v1.0"
 
 [[projects]]
+  name = "github.com/jinzhu/gorm"
+  packages = [
+    ".",
+    "dialects/sqlite"
+  ]
+  revision = "6ed508ec6a4ecb3531899a69cbc746ccf65a4166"
+  version = "v1.9.1"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/jinzhu/inflection"
+  packages = ["."]
+  revision = "04140366298a54a039076d798123ffa108fff46c"
+
+[[projects]]
+  name = "github.com/mattn/go-sqlite3"
+  packages = ["."]
+  revision = "323a32be5a2421b8c7087225079c6c900ec397cd"
+  version = "v1.7.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/mhe/gabi"
   packages = ["."]
   revision = "bf5016a5f3005bef1d2416989588cefcf9a73cb7"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/nightlyone/lockfile"
+  packages = ["."]
+  revision = "6a197d5ea61168f2ac821de2b7f011b250904900"
 
 [[projects]]
   name = "github.com/pkg/errors"
@@ -88,9 +163,31 @@
   revision = "12b6f73e6084dad08a7c6e575284b177ecafbc71"
   version = "v1.2.1"
 
+[[projects]]
+  branch = "master"
+  name = "github.com/templexxx/cpufeat"
+  packages = ["."]
+  revision = "3794dfbfb04749f896b521032f69383f24c3687e"
+
+[[projects]]
+  name = "github.com/templexxx/xor"
+  packages = ["."]
+  revision = "0af8e873c554da75f37f2049cdffda804533d44c"
+  version = "0.1.2"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/crypto"
+  packages = [
+    "ed25519",
+    "ed25519/internal/edwards25519",
+    "sha3"
+  ]
+  revision = "159ae71589f303f9fbfd7528413e0fe944b9c1cb"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "433c5de1d2120d305bdd6360c51f60b1c9886aab5c2a801c7f06959a41b548a9"
+  inputs-digest = "0f5a3c80145c24a3d4605a3c94c6f71ab36611406006b51c9f636e16ba189df1"
   solver-name = "gps-cdcl"
   solver-version = 1
