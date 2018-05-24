@@ -288,7 +288,17 @@ func verify(configuration *Configuration, proofList gabi.ProofList, context *big
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
 func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
-	// First, verify the timestamp, if any
+	// First check if this signature matches the request
+	sigRequest.Timestamp = irmaSignature.Timestamp
+	if !irmaSignature.MatchesNonceAndContext(sigRequest) {
+		return &SignatureProofResult{
+			ProofResult: &ProofResult{
+				ProofStatus: UNMATCHED_REQUEST,
+			},
+		}
+	}
+
+	// Verify the timestamp
 	if irmaSignature.Timestamp != nil {
 		if err := VerifyTimestamp(irmaSignature, sigRequest.Message, configuration); err != nil {
 			return &SignatureProofResult{
@@ -296,16 +306,6 @@ func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, s
 					ProofStatus: INVALID_TIMESTAMP,
 				},
 			}
-		}
-		sigRequest.Timestamp = irmaSignature.Timestamp
-	}
-
-	// Then, check if nonce and context of the signature match those of the signature request
-	if !irmaSignature.MatchesNonceAndContext(sigRequest) {
-		return &SignatureProofResult{
-			ProofResult: &ProofResult{
-				ProofStatus: UNMATCHED_REQUEST,
-			},
 		}
 	}
 
