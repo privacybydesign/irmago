@@ -67,7 +67,7 @@ func createManualSessionHandler(request string, invalidRequest string, t *testin
 func TestManualSession(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
