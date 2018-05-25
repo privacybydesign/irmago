@@ -71,9 +71,8 @@ var clientUpdates = []func(client *Client) error{
 		return client.storage.StoreKeyshareServers(keyshareServers)
 	},
 
-	func(client *Client) (err error) {
-		return client.Configuration.DeleteSchemeManager(irma.NewSchemeManagerIdentifier("test"))
-	},
+	// Remove the test scheme manager which was erroneously included in a production build
+	nil, // No longer necessary, also broke many unit tests
 }
 
 // update performs any function from clientUpdates that has not
