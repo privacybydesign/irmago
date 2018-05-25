@@ -524,7 +524,7 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
-func (client *Client) ProofBuilders(choice *irma.DisclosureChoice) (gabi.ProofBuilderList, error) {
+func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.IrmaSession, issig bool) (gabi.ProofBuilderList, error) {
 	todisclose, err := client.groupCredentials(choice)
 	if err != nil {
 		return nil, err
@@ -537,15 +537,6 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice) (gabi.ProofBu
 			return nil, err
 		}
 		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(list))
-	}
-	return builders, nil
-}
-
-// Proofs computes disclosure proofs containing the attributes specified by choice.
-func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.IrmaSession, issig bool) (gabi.ProofList, error) {
-	builders, err := client.ProofBuilders(choice)
-	if err != nil {
-		return nil, err
 	}
 
 	if issig {
@@ -563,6 +554,16 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.IrmaSes
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	return builders, nil
+}
+
+// Proofs computes disclosure proofs containing the attributes specified by choice.
+func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.IrmaSession, issig bool) (gabi.ProofList, error) {
+	builders, err := client.ProofBuilders(choice, request, issig)
+	if err != nil {
+		return nil, err
 	}
 
 	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
@@ -590,7 +591,7 @@ func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest) (gabi
 		proofBuilders = append(proofBuilders, credBuilder)
 	}
 
-	disclosures, err := client.ProofBuilders(request.Choice)
+	disclosures, err := client.ProofBuilders(request.Choice, request, false)
 	if err != nil {
 		return nil, err
 	}

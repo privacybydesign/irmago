@@ -130,9 +130,9 @@ func (session *session) getBuilders() (gabi.ProofBuilderList, error) {
 
 	switch session.Action {
 	case irma.ActionSigning:
-		fallthrough
+		builders, err = session.client.ProofBuilders(session.choice, session.irmaSession, true)
 	case irma.ActionDisclosing:
-		builders, err = session.client.ProofBuilders(session.choice)
+		builders, err = session.client.ProofBuilders(session.choice, session.irmaSession, false)
 	case irma.ActionIssuing:
 		builders, err = session.client.IssuanceProofBuilders(session.irmaSession.(*irma.IssuanceRequest))
 	}
