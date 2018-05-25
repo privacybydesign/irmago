@@ -116,7 +116,7 @@
   branch = "master"
   name = "github.com/mhe/gabi"
   packages = ["."]
-  revision = "bf5016a5f3005bef1d2416989588cefcf9a73cb7"
+  revision = "4f733a839b2b9234ef7c2610fbc8270bafe250c7"
 
 [[projects]]
   branch = "master"
