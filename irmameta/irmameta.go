@@ -1,3 +1,4 @@
+// irmameta parses and prints info about the specified metadata attribute.
 package main
 
 import (
@@ -15,7 +16,7 @@ import (
 
 func main() {
 	if len(os.Args) != 3 {
-		fmt.Println("Usage: irmago metadata_attribute_in_decimal path_to_irma_configuration")
+		fmt.Println("Usage: irmago path_to_irma_configuration metadata_attribute_in_decimal")
 	}
 
 	metaint, ok := new(big.Int).SetString(os.Args[2], 10)

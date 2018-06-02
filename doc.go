@@ -1,6 +1,4 @@
-// Package irmago is work in progress on an IRMA client in Go.
-//It will (de)serialize credentials from/to storage,
-// and be the client (like the IRMA Android app,
-// https://github.com/credentials/irma_android_cardemu) in the IRMA protocol (see
-// https://credentials.github.io/protocols/irma-protocol).
+// Package irma contains generic IRMA strucs and logic of use to all IRMA participants.
+// It parses irma_configuration folders to scheme managers, issuers, credential types and public keys,
+// it contains various messages from the IRMA protocol, and parses IRMA metadata attributes.
 package irma
