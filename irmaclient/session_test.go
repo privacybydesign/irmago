@@ -366,6 +366,16 @@ func keyshareSessions(t *testing.T, client *Client) {
 	sessionHelper(t, jwt, "signature", client)
 }
 
+// Test pinchange interaction
+func TestKeyshareChangepin(t *testing.T) {
+	client := parseStorage(t)
+
+	require.NoError(t, client.keyshareChangepinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"));
+	require.NoError(t, client.keyshareChangepinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"));
+
+	test.ClearTestStorage(t)
+}
+
 // Enroll at a keyshare server and do an issuance, disclosure,
 // and issuance session, also using irma-demo credentials deserialized from Android storage
 func TestKeyshareEnrollmentAndSessions(t *testing.T) {

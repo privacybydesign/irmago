@@ -41,6 +41,19 @@ func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifi
 		i.t.Fatal(err)
 	}
 }
+func (i *TestClientHandler) ChangepinSuccess(manager irma.SchemeManagerIdentifier) {
+	select {
+	case i.c <- nil: // nop
+	default: // nop
+	}
+}
+func (i *TestClientHandler) ChangepinFailure(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
 
 func parseStorage(t *testing.T) *Client {
 	require.NoError(t, fs.CopyDirectory("../testdata/teststorage", "../testdata/storage/test"))
