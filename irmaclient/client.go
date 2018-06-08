@@ -83,6 +83,7 @@ type KeyshareHandler interface {
 type ChangepinHandler interface {
 	ChangepinFailure(manager irma.SchemeManagerIdentifier, err error)
 	ChangepinSuccess(manager irma.SchemeManagerIdentifier)
+	ChangepinIncorrect(manager irma.SchemeManagerIdentifier)
 }
 
 // ClientHandler informs the user that the configuration or the list of attributes
@@ -689,6 +690,16 @@ func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier 
 	return list
 }
 
+func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+	list := []irma.SchemeManagerIdentifier{}
+	for name, manager := range client.Configuration.SchemeManagers {
+		if _, contains := client.keyshareServers[name]; manager.Distributed() && contains {
+			list = append(list, manager.Identifier())
+		}
+	}
+	return list
+}
+
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
 func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string, lang string) {
 	go func() {
@@ -749,8 +760,6 @@ func (client *Client) KeyshareChangepin(manager irma.SchemeManagerIdentifier, ol
 		err := client.keyshareChangepinWorker(manager, oldpin, newpin)
 		if err != nil {
 			client.handler.ChangepinFailure(manager, err)
-		} else {
-			client.handler.ChangepinSuccess(manager)
 		}
 	}()
 }
@@ -762,7 +771,7 @@ func (client *Client) keyshareChangepinWorker(managerID irma.SchemeManagerIdenti
 	}
 
 	transport := irma.NewHTTPTransport(kss.URL)
-	message := keysharePinchange{
+	message := keyshareChangepin{
 		Username: kss.Username,
 		Oldpin: kss.HashedPin(oldpin),
 		Newpin: kss.HashedPin(newpin),
@@ -773,9 +782,13 @@ func (client *Client) keyshareChangepinWorker(managerID irma.SchemeManagerIdenti
 	if err != nil {
 		return err
 	}
+
 	if res.Status != kssPinSuccess {
-		return errors.New("Pin change rejected")
+		client.handler.ChangepinIncorrect(managerID)
+	} else {
+		client.handler.ChangepinSuccess(managerID)
 	}
+
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"os"
 	"testing"
+	"errors"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -48,6 +49,14 @@ func (i *TestClientHandler) ChangepinSuccess(manager irma.SchemeManagerIdentifie
 	}
 }
 func (i *TestClientHandler) ChangepinFailure(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangepinIncorrect(manager irma.SchemeManagerIdentifier) {
+	err := errors.New("incorrect pin")
 	select {
 	case i.c <- err: //nop
 	default:
