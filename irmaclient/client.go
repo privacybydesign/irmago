@@ -678,24 +678,22 @@ func (client *Client) paillierKeyWorker(wait bool, ch chan bool) {
 	}
 }
 
-func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+func (client *Client) genSchemeManagersList(enrolled bool) []irma.SchemeManagerIdentifier {
 	list := []irma.SchemeManagerIdentifier{}
 	for name, manager := range client.Configuration.SchemeManagers {
-		if _, contains := client.keyshareServers[name]; manager.Distributed() && !contains {
+		if _, contains := client.keyshareServers[name]; manager.Distributed() && contains == enrolled {
 			list = append(list, manager.Identifier())
 		}
 	}
 	return list
 }
 
+func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+	return client.genSchemeManagersList(false)
+}
+
 func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
-	list := []irma.SchemeManagerIdentifier{}
-	for name, manager := range client.Configuration.SchemeManagers {
-		if _, contains := client.keyshareServers[name]; manager.Distributed() && contains {
-			list = append(list, manager.Identifier())
-		}
-	}
-	return list
+	return client.genSchemeManagersList(true)
 }
 
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
