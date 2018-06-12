@@ -42,20 +42,20 @@ func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifi
 		i.t.Fatal(err)
 	}
 }
-func (i *TestClientHandler) ChangepinSuccess(manager irma.SchemeManagerIdentifier) {
+func (i *TestClientHandler) ChangePinSuccess(manager irma.SchemeManagerIdentifier) {
 	select {
 	case i.c <- nil: // nop
 	default: // nop
 	}
 }
-func (i *TestClientHandler) ChangepinFailure(manager irma.SchemeManagerIdentifier, err error) {
+func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
 	select {
 	case i.c <- err: //nop
 	default:
 		i.t.Fatal(err)
 	}
 }
-func (i *TestClientHandler) ChangepinIncorrect(manager irma.SchemeManagerIdentifier) {
+func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier) {
 	err := errors.New("incorrect pin")
 	select {
 	case i.c <- err: //nop

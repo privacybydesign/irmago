@@ -80,17 +80,17 @@ type KeyshareHandler interface {
 	EnrollmentSuccess(manager irma.SchemeManagerIdentifier)
 }
 
-type ChangepinHandler interface {
-	ChangepinFailure(manager irma.SchemeManagerIdentifier, err error)
-	ChangepinSuccess(manager irma.SchemeManagerIdentifier)
-	ChangepinIncorrect(manager irma.SchemeManagerIdentifier)
+type ChangePinHandler interface {
+	ChangePinFailure(manager irma.SchemeManagerIdentifier, err error)
+	ChangePinSuccess(manager irma.SchemeManagerIdentifier)
+	ChangePinIncorrect(manager irma.SchemeManagerIdentifier)
 }
 
 // ClientHandler informs the user that the configuration or the list of attributes
 // that this client uses has been updated.
 type ClientHandler interface {
 	KeyshareHandler
-	ChangepinHandler
+	ChangePinHandler
 
 	UpdateConfiguration(new *irma.IrmaIdentifierSet)
 	UpdateAttributes()
@@ -755,16 +755,16 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	return nil
 }
 
-func (client *Client) KeyshareChangepin(manager irma.SchemeManagerIdentifier, oldpin string, newpin string) {
+func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
 	go func() {
-		err := client.keyshareChangepinWorker(manager, oldpin, newpin)
+		err := client.keyshareChangePinWorker(manager, oldPin, newPin)
 		if err != nil {
-			client.handler.ChangepinFailure(manager, err)
+			client.handler.ChangePinFailure(manager, err)
 		}
 	}()
 }
 
-func (client *Client) keyshareChangepinWorker(managerID irma.SchemeManagerIdentifier, oldpin string, newpin string) error {
+func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdentifier, oldPin string, newPin string) error {
 	kss, ok := client.keyshareServers[managerID]
 	if !ok {
 		return errors.New("Unknown keyshare server")
@@ -773,8 +773,8 @@ func (client *Client) keyshareChangepinWorker(managerID irma.SchemeManagerIdenti
 	transport := irma.NewHTTPTransport(kss.URL)
 	message := keyshareChangepin{
 		Username: kss.Username,
-		Oldpin: kss.HashedPin(oldpin),
-		Newpin: kss.HashedPin(newpin),
+		OldPin: kss.HashedPin(oldPin),
+		NewPin: kss.HashedPin(newPin),
 	}
 
 	res := &keysharePinStatus{}
@@ -784,9 +784,9 @@ func (client *Client) keyshareChangepinWorker(managerID irma.SchemeManagerIdenti
 	}
 
 	if res.Status != kssPinSuccess {
-		client.handler.ChangepinIncorrect(managerID)
+		client.handler.ChangePinIncorrect(managerID)
 	} else {
-		client.handler.ChangepinSuccess(managerID)
+		client.handler.ChangePinSuccess(managerID)
 	}
 
 	return nil

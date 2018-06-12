@@ -64,8 +64,8 @@ type keyshareEnrollment struct {
 
 type keyshareChangepin struct {
 	Username string `json:"id"`
-	Oldpin string   `json:"oldpin"`
-	Newpin string   `json:"newpin"`
+	OldPin string   `json:"oldpin"`
+	NewPin string   `json:"newpin"`
 }
 
 type keyshareAuthorization struct {

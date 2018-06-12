@@ -367,11 +367,11 @@ func keyshareSessions(t *testing.T, client *Client) {
 }
 
 // Test pinchange interaction
-func TestKeyshareChangepin(t *testing.T) {
+func TestKeyshareChangePin(t *testing.T) {
 	client := parseStorage(t)
 
-	require.NoError(t, client.keyshareChangepinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"));
-	require.NoError(t, client.keyshareChangepinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"));
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"));
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"));
 
 	test.ClearTestStorage(t)
 }
