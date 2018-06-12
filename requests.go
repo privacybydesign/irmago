@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"crypto/rsa"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"encoding/json"
 
 	"github.com/bwesterb/go-atum"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -82,14 +84,19 @@ type CredentialRequest struct {
 
 // ServerJwt contains standard JWT fields.
 type ServerJwt struct {
-	Type       string    `json:"sub"`
-	ServerName string    `json:"iss"`
-	IssuedAt   Timestamp `json:"iat"`
+	Type      string     `json:"sub"`
+	HumanName string     `json:"iss"`
+	IssuedAt  *Timestamp `json:"iat"`
+}
+
+func (jwt ServerJwt) Valid() error {
+	return errors.New("not implemented")
 }
 
 // A ServiceProviderRequest contains a disclosure request.
 type ServiceProviderRequest struct {
-	Request *DisclosureRequest `json:"request"`
+	Validity int                `json:"validity"`
+	Request  *DisclosureRequest `json:"request"`
 }
 
 // A SignatureRequestorRequest contains a signing request.
@@ -136,6 +143,12 @@ type IrmaSession interface {
 
 // Timestamp is a time.Time that marshals to Unix timestamps.
 type Timestamp time.Time
+
+// Return the current time as a Timestamp value.
+func TimestampNow() *Timestamp {
+	t := time.Now()
+	return (*Timestamp)(&t)
+}
 
 func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*CredentialInfo, error) {
 	list, err := cr.AttributeList(conf, metadataVersion)
@@ -376,36 +389,39 @@ func (t *Timestamp) UnmarshalJSON(b []byte) error {
 }
 
 // NewServiceProviderJwt returns a new ServiceProviderJwt.
-func NewServiceProviderJwt(servername string, dr *DisclosureRequest) *ServiceProviderJwt {
+func NewServiceProviderJwt(humanName string, dr *DisclosureRequest) *ServiceProviderJwt {
 	return &ServiceProviderJwt{
 		ServerJwt: ServerJwt{
-			ServerName: servername,
-			IssuedAt:   Timestamp(time.Now()),
-			Type:       "verification_request",
+			HumanName: humanName,
+			IssuedAt:  TimestampNow(),
+			Type:      "verification_request",
 		},
-		Request: ServiceProviderRequest{Request: dr},
+		Request: ServiceProviderRequest{
+			Validity: 120,
+			Request:  dr,
+		},
 	}
 }
 
 // NewSignatureRequestorJwt returns a new SignatureRequestorJwt.
-func NewSignatureRequestorJwt(servername string, sr *SignatureRequest) *SignatureRequestorJwt {
+func NewSignatureRequestorJwt(humanName string, sr *SignatureRequest) *SignatureRequestorJwt {
 	return &SignatureRequestorJwt{
 		ServerJwt: ServerJwt{
-			ServerName: servername,
-			IssuedAt:   Timestamp(time.Now()),
-			Type:       "signature_request",
+			HumanName: humanName,
+			IssuedAt:  TimestampNow(),
+			Type:      "signature_request",
 		},
 		Request: SignatureRequestorRequest{Request: sr},
 	}
 }
 
 // NewIdentityProviderJwt returns a new IdentityProviderJwt.
-func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityProviderJwt {
+func NewIdentityProviderJwt(humanName string, ir *IssuanceRequest) *IdentityProviderJwt {
 	return &IdentityProviderJwt{
 		ServerJwt: ServerJwt{
-			ServerName: servername,
-			IssuedAt:   Timestamp(time.Now()),
-			Type:       "issue_request",
+			HumanName: humanName,
+			IssuedAt:  TimestampNow(),
+			Type:      "issue_request",
 		},
 		Request: IdentityProviderRequest{Request: ir},
 	}
@@ -417,7 +433,7 @@ type RequestorJwt interface {
 	Requestor() string
 }
 
-func (jwt *ServerJwt) Requestor() string { return jwt.ServerName }
+func (jwt *ServerJwt) Requestor() string { return jwt.HumanName }
 
 // IrmaSession returns an IRMA session object.
 func (jwt *ServiceProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
@@ -427,3 +443,15 @@ func (jwt *SignatureRequestorJwt) IrmaSession() IrmaSession { return jwt.Request
 
 // IrmaSession returns an IRMA session object.
 func (jwt *IdentityProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+
+func (claims *ServiceProviderJwt) Sign(serverName string, sk *rsa.PrivateKey) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = serverName
+	return token.SignedString(sk)
+}
+
+func (claims *SignatureRequestorJwt) Sign(serverName string, sk *rsa.PrivateKey) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = serverName
+	return token.SignedString(sk)
+}

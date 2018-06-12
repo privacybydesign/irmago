@@ -329,8 +329,8 @@ type DisclosureChoice struct {
 // An AttributeDisjunction encapsulates a list of possible attributes, one
 // of which should be disclosed.
 type AttributeDisjunction struct {
-	Label      string
-	Attributes []AttributeTypeIdentifier
+	Label      string                    `json:"label"`
+	Attributes []AttributeTypeIdentifier `json:"attributes"`
 	Values     map[AttributeTypeIdentifier]*string
 
 	selected *AttributeTypeIdentifier
