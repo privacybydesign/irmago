@@ -27,6 +27,8 @@ type SchemeManager struct {
 	Status SchemeManagerStatus `xml:"-"`
 	Valid  bool                `xml:"-"` // true iff Status == SchemeManagerStatusValid
 
+	Timestamp Timestamp
+
 	index SchemeManagerIndex
 }
 

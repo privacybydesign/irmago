@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"time"
 
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -49,6 +51,12 @@ func signManager(args []string) {
 		die("Specified path does not exist", nil)
 	}
 
+	// Write timestamp
+	bts := []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
+	if err = ioutil.WriteFile(confpath+"/timestamp", bts, 0644); err != nil {
+		die("Failed to write timestamp", err)
+	}
+
 	// Traverse dir and add file hashes to index
 	var index irma.SchemeManagerIndex = make(map[string]irma.ConfigurationFileHash)
 	err = filepath.Walk(confpath, func(path string, info os.FileInfo, err error) error {
@@ -59,10 +67,10 @@ func signManager(args []string) {
 		die("Failed to calculate file index:", err)
 	}
 
-	// Write index.xml
-	bts := []byte(index.String())
+	// Write index
+	bts = []byte(index.String())
 	if err = ioutil.WriteFile(confpath+"/index", bts, 0644); err != nil {
-		die("Failed to write index.xml", err)
+		die("Failed to write index", err)
 	}
 
 	// Create and write signature
@@ -76,7 +84,7 @@ func signManager(args []string) {
 		die("Failed to serialize signature:", err)
 	}
 	if err = ioutil.WriteFile(confpath+"/index.sig", sigbytes, 0644); err != nil {
-		die("Failed to write index.xml.sig", err)
+		die("Failed to write index.sig", err)
 	}
 
 	// Write public key
@@ -105,7 +113,7 @@ func calculateFileHash(path string, info os.FileInfo, err error, confpath string
 		strings.HasSuffix(path, "index") || // Skip the index file itself
 		strings.Contains(path, "/.git/") || // No need to traverse .git dirs
 		strings.Contains(path, "/PrivateKeys/") || // Don't sign private keys
-		(!strings.HasSuffix(path, ".xml") && !strings.HasSuffix(path, ".png")) {
+		(!strings.HasSuffix(path, ".xml") && !strings.HasSuffix(path, ".png") && !strings.HasSuffix(path, "timestamp")) {
 		return nil
 	}
 

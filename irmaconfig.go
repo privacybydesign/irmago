@@ -208,6 +208,11 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		return
 	}
 
+	manager.Timestamp, err = readTimestamp(dir + "/timestamp")
+	if err != nil {
+		return errors.New("Could not read scheme manager timestamp")
+	}
+
 	if manager.XMLVersion < 7 {
 		manager.Status = SchemeManagerStatusParsingError
 		return errors.New("Unsupported scheme manager description")

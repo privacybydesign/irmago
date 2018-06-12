@@ -2,6 +2,7 @@ package irma
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"strconv"
 	"time"
@@ -360,9 +361,7 @@ func (t Timestamp) Before(u Timestamp) bool {
 
 // MarshalJSON marshals a timestamp.
 func (t *Timestamp) MarshalJSON() ([]byte, error) {
-	ts := time.Time(*t).Unix()
-	stamp := fmt.Sprint(ts)
-	return []byte(stamp), nil
+	return []byte(t.String()), nil
 }
 
 // UnmarshalJSON unmarshals a timestamp.
@@ -373,6 +372,22 @@ func (t *Timestamp) UnmarshalJSON(b []byte) error {
 	}
 	*t = Timestamp(time.Unix(int64(ts), 0))
 	return nil
+}
+
+// Timestamp implements Stringer.
+func (t *Timestamp) String() string {
+	return fmt.Sprint(time.Time(*t).Unix())
+}
+
+func readTimestamp(path string) (Timestamp, error) {
+	bts, err := ioutil.ReadFile(path)
+	if err != nil {
+		return Timestamp(time.Unix(0, 0)), errors.New("Could not read scheme manager timestamp")
+	}
+
+	// Remove final character which is \n; convert from byte slice to string; parse as int
+	str, err := strconv.ParseInt(string(bts[:len(bts)-1]), 10, 64)
+	return Timestamp(time.Unix(str, 0)), nil
 }
 
 // NewServiceProviderJwt returns a new ServiceProviderJwt.
