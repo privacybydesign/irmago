@@ -54,7 +54,6 @@ type Client struct {
 	// Other state
 	Preferences              Preferences
 	Configuration            *irma.Configuration
-	UnenrolledSchemeManagers []irma.SchemeManagerIdentifier
 	irmaConfigurationPath    string
 	androidStoragePath       string
 	handler                  ClientHandler
@@ -181,8 +180,7 @@ func New(
 		cm.paillierKey(false)
 	}
 
-	cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
-	if len(cm.UnenrolledSchemeManagers) > 1 {
+	if len(cm.UnenrolledSchemeManagers()) > 1 {
 		return nil, errors.New("Too many keyshare servers")
 	}
 
@@ -680,7 +678,7 @@ func (client *Client) paillierKeyWorker(wait bool, ch chan bool) {
 	}
 }
 
-func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	list := []irma.SchemeManagerIdentifier{}
 	for name, manager := range client.Configuration.SchemeManagers {
 		if _, contains := client.keyshareServers[name]; manager.Distributed() && !contains {
@@ -804,7 +802,6 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 // KeyshareRemoveAll removes all keyshare server registrations.
 func (client *Client) KeyshareRemoveAll() error {
 	client.keyshareServers = map[irma.SchemeManagerIdentifier]*keyshareServer{}
-	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
 	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 

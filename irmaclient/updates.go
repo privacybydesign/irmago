@@ -212,7 +212,6 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 			return
 		}
 	}
-	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
 
 	if err = client.storage.StorePaillierKeys(client.paillierKeyCache); err != nil {
 		return

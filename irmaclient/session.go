@@ -578,9 +578,6 @@ func (session *session) managerSession() {
 		}
 
 		// Update state and inform user of success
-		if manager.Distributed() {
-			session.client.UnenrolledSchemeManagers = session.client.unenrolledSchemeManagers()
-		}
 		session.client.handler.UpdateConfiguration(
 			&irma.IrmaIdentifierSet{
 				SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},

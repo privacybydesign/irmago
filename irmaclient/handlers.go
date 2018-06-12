@@ -38,7 +38,6 @@ func (h *keyshareEnrollmentHandler) RequestPin(remainingAttempts int, callback P
 
 func (h *keyshareEnrollmentHandler) Success(action irma.Action, result string) {
 	_ = h.client.storage.StoreKeyshareServers(h.client.keyshareServers) // TODO handle err?
-	h.client.UnenrolledSchemeManagers = h.client.unenrolledSchemeManagers()
 	h.client.handler.EnrollmentSuccess(h.kss.SchemeManagerIdentifier)
 }
 
