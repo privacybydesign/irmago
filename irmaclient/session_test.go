@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"math/big"
+
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
-	"math/big"
 )
 
 type TestHandler struct {
@@ -364,6 +365,16 @@ func keyshareSessions(t *testing.T, client *Client) {
 		},
 	)
 	sessionHelper(t, jwt, "signature", client)
+}
+
+// Test pinchange interaction
+func TestKeyshareChangePin(t *testing.T) {
+	client := parseStorage(t)
+
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
+
+	test.ClearTestStorage(t)
 }
 
 // Enroll at a keyshare server and do an issuance, disclosure,

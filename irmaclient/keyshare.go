@@ -62,6 +62,12 @@ type keyshareEnrollment struct {
 	Language  string             `json:"language"`
 }
 
+type keyshareChangepin struct {
+	Username string `json:"id"`
+	OldPin string   `json:"oldpin"`
+	NewPin string   `json:"newpin"`
+}
+
 type keyshareAuthorization struct {
 	Status     string   `json:"status"`
 	Candidates []string `json:"candidates"`

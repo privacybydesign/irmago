@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"os"
 	"testing"
+	"errors"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -37,6 +38,27 @@ func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifi
 func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error) {
 	select {
 	case i.c <- err: // nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinSuccess(manager irma.SchemeManagerIdentifier) {
+	select {
+	case i.c <- nil: // nop
+	default: // nop
+	}
+}
+func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier) {
+	err := errors.New("incorrect pin")
+	select {
+	case i.c <- err: //nop
 	default:
 		i.t.Fatal(err)
 	}

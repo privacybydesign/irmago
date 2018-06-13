@@ -54,7 +54,6 @@ type Client struct {
 	// Other state
 	Preferences              Preferences
 	Configuration            *irma.Configuration
-	UnenrolledSchemeManagers []irma.SchemeManagerIdentifier
 	irmaConfigurationPath    string
 	androidStoragePath       string
 	handler                  ClientHandler
@@ -80,10 +79,17 @@ type KeyshareHandler interface {
 	EnrollmentSuccess(manager irma.SchemeManagerIdentifier)
 }
 
+type ChangePinHandler interface {
+	ChangePinFailure(manager irma.SchemeManagerIdentifier, err error)
+	ChangePinSuccess(manager irma.SchemeManagerIdentifier)
+	ChangePinIncorrect(manager irma.SchemeManagerIdentifier)
+}
+
 // ClientHandler informs the user that the configuration or the list of attributes
 // that this client uses has been updated.
 type ClientHandler interface {
 	KeyshareHandler
+	ChangePinHandler
 
 	UpdateConfiguration(new *irma.IrmaIdentifierSet)
 	UpdateAttributes()
@@ -174,8 +180,7 @@ func New(
 		cm.paillierKey(false)
 	}
 
-	cm.UnenrolledSchemeManagers = cm.unenrolledSchemeManagers()
-	if len(cm.UnenrolledSchemeManagers) > 1 {
+	if len(cm.UnenrolledSchemeManagers()) > 1 {
 		return nil, errors.New("Too many keyshare servers")
 	}
 
@@ -673,14 +678,22 @@ func (client *Client) paillierKeyWorker(wait bool, ch chan bool) {
 	}
 }
 
-func (client *Client) unenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+func (client *Client) genSchemeManagersList(enrolled bool) []irma.SchemeManagerIdentifier {
 	list := []irma.SchemeManagerIdentifier{}
 	for name, manager := range client.Configuration.SchemeManagers {
-		if _, contains := client.keyshareServers[name]; manager.Distributed() && !contains {
+		if _, contains := client.keyshareServers[name]; manager.Distributed() && contains == enrolled {
 			list = append(list, manager.Identifier())
 		}
 	}
 	return list
+}
+
+func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+	return client.genSchemeManagersList(false)
+}
+
+func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+	return client.genSchemeManagersList(true)
 }
 
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
@@ -738,6 +751,43 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	return nil
 }
 
+func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
+	go func() {
+		err := client.keyshareChangePinWorker(manager, oldPin, newPin)
+		if err != nil {
+			client.handler.ChangePinFailure(manager, err)
+		}
+	}()
+}
+
+func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdentifier, oldPin string, newPin string) error {
+	kss, ok := client.keyshareServers[managerID]
+	if !ok {
+		return errors.New("Unknown keyshare server")
+	}
+
+	transport := irma.NewHTTPTransport(kss.URL)
+	message := keyshareChangepin{
+		Username: kss.Username,
+		OldPin: kss.HashedPin(oldPin),
+		NewPin: kss.HashedPin(newPin),
+	}
+
+	res := &keysharePinStatus{}
+	err := transport.Post("users/change/pin", res, message)
+	if err != nil {
+		return err
+	}
+
+	if res.Status != kssPinSuccess {
+		client.handler.ChangePinIncorrect(managerID)
+	} else {
+		client.handler.ChangePinSuccess(managerID)
+	}
+
+	return nil
+}
+
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
 func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
 	if _, contains := client.keyshareServers[manager]; !contains {
@@ -750,7 +800,6 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 // KeyshareRemoveAll removes all keyshare server registrations.
 func (client *Client) KeyshareRemoveAll() error {
 	client.keyshareServers = map[irma.SchemeManagerIdentifier]*keyshareServer{}
-	client.UnenrolledSchemeManagers = client.unenrolledSchemeManagers()
 	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 
