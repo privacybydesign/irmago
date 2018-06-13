@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -15,10 +17,19 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// Create HTTP server for scheme managers
+	server := &http.Server{Addr: ":48681", Handler: http.FileServer(http.Dir("../testdata"))}
+	go func() {
+		server.ListenAndServe()
+	}()
+	time.Sleep(100 * time.Millisecond) // Give server time to start
+
 	test.ClearTestStorage(nil)
 	test.CreateTestStorage(nil)
 	retCode := m.Run()
 	test.ClearTestStorage(nil)
+
+	server.Close()
 	os.Exit(retCode)
 }
 
@@ -330,6 +341,58 @@ func TestWrongSchemeManager(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
+func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
+	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	disclosureRequest := irma.DisclosureRequest{
+		Content: irma.AttributeDisjunctionList{
+			&irma.AttributeDisjunction{
+				Label: "foo",
+				Attributes: []irma.AttributeTypeIdentifier{
+					attrid,
+				},
+			},
+		},
+	}
+
+	client.Configuration.Download(&disclosureRequest)
+	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+}
+
+func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
+	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	issuanceRequest := getIssuanceRequest(true)
+	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
+	client.Configuration.Download(issuanceRequest)
+	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+}
+
+func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
+	require.False(t, client.Configuration.CredentialTypes[credid].AttributeDescription(attrid).IsOptional())
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	issuanceRequest := getIssuanceRequest(true)
+	delete(issuanceRequest.Credentials[0].Attributes, "level")
+	client.Configuration.Download(issuanceRequest)
+	require.True(t, client.Configuration.CredentialTypes[credid].AttributeDescription(attrid).IsOptional())
+}
+
 // Test installing a new scheme manager from a qr, and do a(n issuance) session
 // within this manager to test the autmatic downloading of credential definitions,
 // issuers, and public keys.
@@ -345,7 +408,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 	// Do an add-scheme-manager-session
 	qr := &irma.Qr{
 		Type: irma.ActionSchemeManager,
-		URL:  "https://raw.githubusercontent.com/credentials/irma-demo-schememanager/master",
+		URL:  "http://localhost:48681/irma_configuration/irma-demo",
 	}
 	c := make(chan *irma.SessionError)
 	client.NewSession(qr, TestHandler{t, c, client})

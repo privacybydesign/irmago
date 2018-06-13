@@ -2,6 +2,7 @@ package irma
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
@@ -173,15 +175,23 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 	return b, nil
 }
 
-func (transport *HTTPTransport) GetFile(url string, dest string) error {
+func (transport *HTTPTransport) GetSignedFile(url string, dest string, hash ConfigurationFileHash) error {
 	b, err := transport.GetBytes(url)
 	if err != nil {
 		return err
+	}
+	sha := sha256.Sum256(b)
+	if hash != nil && !bytes.Equal(hash, sha[:]) {
+		return errors.Errorf("Signature over new file %s is not valid", dest)
 	}
 	if err = fs.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
 		return err
 	}
 	return fs.SaveFile(dest, b)
+}
+
+func (transport *HTTPTransport) GetFile(url string, dest string) error {
+	return transport.GetSignedFile(url, dest, nil)
 }
 
 // Post sends the object to the server and parses its response into result.

@@ -208,7 +208,7 @@ func (session *session) checkAndUpateConfiguration() bool {
 	}
 
 	// Download missing credential types/issuers/public keys from the scheme manager
-	downloaded, err := session.client.Configuration.Download(session.irmaSession.Identifiers())
+	downloaded, err := session.client.Configuration.Download(session.irmaSession)
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 		return false

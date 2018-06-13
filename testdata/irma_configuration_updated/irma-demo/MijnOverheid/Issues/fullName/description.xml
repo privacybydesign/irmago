@@ -1,0 +1,62 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Name</en>
+		<nl>Naam</nl>
+	</Name>
+	<ShortName>
+		<en>Name</en>
+		<nl>Naam</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>MijnOverheid</IssuerID>
+	<CredentialID>fullName</CredentialID>
+	<Description>
+		<en>Your full name, as it is known to the government</en>
+		<nl>Uw volledige naam, zoals bekend bij de overheid</nl>
+	</Description>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+	<Attributes>
+		<Attribute id="firstnames">
+			<Name>
+				<en>First names</en>
+				<nl>Voornamen</nl>
+			</Name>
+			<Description>
+				<en>All of your first names</en>
+				<nl>Al uw voornamen</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="firstname">
+			<Name>
+				<en>First name</en>
+				<nl>Voornaam</nl>
+			</Name>
+			<Description>
+				<en>Your first name</en>
+				<nl>Uw voornaam</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="familyname">
+			<Name>
+				<en>Family name</en>
+				<nl>Achternaam</nl>
+			</Name>
+			<Description>
+				<en>Your family name</en>
+				<nl>Uw achternaam</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="prefix" optional="true">
+			<Name>
+				<en>Prefix</en>
+				<nl>Tussenvoegsel</nl>
+			</Name>
+			<Description>
+				<en>Family name prefix</en>
+				<nl>Tussenvoegsel van uw achternaam</nl>
+			</Description>
+		</Attribute>
+
+	</Attributes>
+</IssueSpecification>

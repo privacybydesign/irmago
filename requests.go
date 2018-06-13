@@ -385,8 +385,15 @@ func readTimestamp(path string) (Timestamp, error) {
 		return Timestamp(time.Unix(0, 0)), errors.New("Could not read scheme manager timestamp")
 	}
 
+	return parseTimestamp(bts)
+}
+
+func parseTimestamp(bts []byte) (Timestamp, error) {
 	// Remove final character which is \n; convert from byte slice to string; parse as int
 	str, err := strconv.ParseInt(string(bts[:len(bts)-1]), 10, 64)
+	if err != nil {
+		return Timestamp(time.Unix(0, 0)), err
+	}
 	return Timestamp(time.Unix(str, 0)), nil
 }
 

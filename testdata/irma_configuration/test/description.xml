@@ -1,6 +1,6 @@
 <SchemeManager version="7">
 	<Id>test</Id>
-	<Url>https://privacybydesign.foundation/</Url>
+	<Url>http://localhost:48681/irma_configuration/test</Url>
 	<Name>
 		<en>Test Scheme Manager</en>
 		<nl>Test scheme manager</nl>

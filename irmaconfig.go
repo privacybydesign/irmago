@@ -553,17 +553,6 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	index := filepath.Join(path, "index")
 	sig := filepath.Join(path, "index.sig")
 
-	// Backup so we can restore last valid signature if the new signature is invalid
-	if err := conf.backupManagerSignature(index, sig); err != nil {
-		return err
-	}
-
-	defer func() {
-		if err != nil {
-			_ = conf.restoreManagerSignature(index, sig)
-		}
-	}()
-
 	if err = t.GetFile("index", index); err != nil {
 		return
 	}
@@ -580,69 +569,110 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	return
 }
 
-func (conf *Configuration) backupManagerSignature(index, sig string) error {
-	if err := fs.Copy(index, index+".backup"); err != nil {
-		return err
-	}
-	if err := fs.Copy(sig, sig+".backup"); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (conf *Configuration) restoreManagerSignature(index, sig string) error {
-	if err := fs.Copy(index+".backup", index); err != nil {
-		return err
-	}
-	if err := fs.Copy(sig+".backup", sig); err != nil {
-		return err
-	}
-	return nil
-}
-
 // Download downloads the issuers, credential types and public keys specified in set
 // if the current Configuration does not already have them,  and checks their authenticity
 // using the scheme manager index.
-func (conf *Configuration) Download(set *IrmaIdentifierSet) (downloaded *IrmaIdentifierSet, err error) {
+func (conf *Configuration) Download(session IrmaSession) (downloaded *IrmaIdentifierSet, err error) {
+	managers := make(map[string]struct{}) // Managers that we must update
 	downloaded = &IrmaIdentifierSet{
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
 	}
 
-	managers := make(map[SchemeManagerIdentifier]struct{})
+	// Calculate which scheme managers must be updated
+	if err = conf.checkIssuers(session.Identifiers(), managers); err != nil {
+		return
+	}
+	if err = conf.checkCredentialTypes(session, managers); err != nil {
+		return
+	}
+
+	// Update the scheme managers found above and parse them, if necessary
+	for id := range managers {
+		if err = conf.UpdateSchemeManager(NewSchemeManagerIdentifier(id), downloaded); err != nil {
+			return
+		}
+	}
+	if !downloaded.Empty() {
+		return downloaded, conf.ParseFolder()
+	}
+	return
+}
+
+func (conf *Configuration) checkCredentialTypes(session IrmaSession, managers map[string]struct{}) error {
+	var disjunctions AttributeDisjunctionList
+	var typ *CredentialType
+	var contains bool
+
+	switch s := session.(type) {
+	case *IssuanceRequest:
+		for _, credreq := range s.Credentials {
+			// First check if we have this credential type
+			typ, contains = conf.CredentialTypes[*credreq.CredentialTypeID]
+			if !contains {
+				managers[credreq.CredentialTypeID.Root()] = struct{}{}
+				continue
+			}
+			newAttrs := make(map[string]string)
+			for k, v := range credreq.Attributes {
+				newAttrs[k] = v
+			}
+			// For each of the attributes in the credentialtype, see if it is present; if so remove it from newAttrs
+			// If not, check that it is optional; if not the credentialtype must be updated
+			for _, attrtyp := range typ.Attributes {
+				_, contains = newAttrs[attrtyp.ID]
+				if !contains && !attrtyp.IsOptional() {
+					managers[credreq.CredentialTypeID.Root()] = struct{}{}
+					break
+				}
+				delete(newAttrs, attrtyp.ID)
+			}
+			// If there is anything left in newAttrs, then these are attributes that are not in the credentialtype
+			if len(newAttrs) > 0 {
+				managers[credreq.CredentialTypeID.Root()] = struct{}{}
+			}
+		}
+		disjunctions = s.Disclose
+	case *DisclosureRequest:
+		disjunctions = s.Content
+	case *SignatureRequest:
+		disjunctions = s.Content
+	}
+
+	for _, disjunction := range disjunctions {
+		for _, attrid := range disjunction.Attributes {
+			credid := attrid.CredentialTypeIdentifier()
+			if typ, contains = conf.CredentialTypes[credid]; !contains {
+				managers[credid.Root()] = struct{}{}
+			}
+			if !typ.ContainsAttribute(attrid) {
+				managers[credid.Root()] = struct{}{}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (conf *Configuration) checkIssuers(set *IrmaIdentifierSet, managers map[string]struct{}) error {
 	for issid := range set.Issuers {
 		if _, contains := conf.Issuers[issid]; !contains {
-			managers[issid.SchemeManagerIdentifier()] = struct{}{}
+			managers[issid.Root()] = struct{}{}
 		}
 	}
 	for issid, keyids := range set.PublicKeys {
 		for _, keyid := range keyids {
 			pk, err := conf.PublicKey(issid, keyid)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if pk == nil {
-				managers[issid.SchemeManagerIdentifier()] = struct{}{}
+				managers[issid.Root()] = struct{}{}
 			}
 		}
 	}
-	for credid := range set.CredentialTypes {
-		if _, contains := conf.CredentialTypes[credid]; !contains {
-			managers[credid.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
-		}
-	}
-
-	for id := range managers {
-		if err = conf.UpdateSchemeManager(id, downloaded); err != nil {
-			return
-		}
-	}
-
-	if !downloaded.Empty() {
-		return downloaded, conf.ParseFolder()
-	}
-	return
+	return nil
 }
 
 func (i SchemeManagerIndex) String() string {
@@ -818,6 +848,20 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		return errors.Errorf("Cannot update unknown scheme manager %s", id)
 	}
 
+	// Check remote timestamp and see if we have to do anything
+	transport := NewHTTPTransport(manager.URL + "/")
+	timestampBts, err := transport.GetBytes("timestamp")
+	if err != nil {
+		return err
+	}
+	timestamp, err := parseTimestamp(timestampBts)
+	if err != nil {
+		return err
+	}
+	if !manager.Timestamp.Before(timestamp) {
+		return nil
+	}
+
 	// Download the new index and its signature, and check that the new index
 	// is validly signed by the new signature
 	// By aborting immediately in case of error, and restoring backup versions
@@ -833,7 +877,6 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 
 	issPattern := regexp.MustCompile("(.+)/(.+)/description\\.xml")
 	credPattern := regexp.MustCompile("(.+)/(.+)/Issues/(.+)/description\\.xml")
-	transport := NewHTTPTransport("")
 
 	// TODO: how to recover/fix local copy if err != nil below?
 	for filename, newHash := range newIndex {
@@ -853,7 +896,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		}
 		stripped := filename[len(manager.ID)+1:] // Scheme manager URL already ends with its name
 		// Download the new file, store it in our own irma_configuration folder
-		if err = transport.GetFile(manager.URL+"/"+stripped, path); err != nil {
+		if err = transport.GetSignedFile(stripped, path, newHash); err != nil {
 			return
 		}
 		// See if the file is a credential type or issuer, and add it to the downloaded set if so

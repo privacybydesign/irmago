@@ -62,6 +62,22 @@ type CredentialType struct {
 	Valid bool `xml:"-"`
 }
 
+// AttributeDescription is a description of an attribute within a credential type.
+type AttributeDescription struct {
+	ID          string `xml:"id,attr"`
+	Optional    string `xml:"optional,attr"`
+	Name        TranslatedString
+	Description TranslatedString
+}
+
+func (ad AttributeDescription) GetAttributeTypeIdentifier(cred CredentialTypeIdentifier) AttributeTypeIdentifier {
+	return NewAttributeTypeIdentifier(cred.String() + "." + ad.ID)
+}
+
+func (ad AttributeDescription) IsOptional() bool {
+	return ad.Optional == "true"
+}
+
 // ContainsAttribute tests whether the specified attribute is contained in this
 // credentialtype.
 func (ct *CredentialType) ContainsAttribute(ai AttributeTypeIdentifier) bool {
@@ -76,18 +92,6 @@ func (ct *CredentialType) ContainsAttribute(ai AttributeTypeIdentifier) bool {
 	return false
 }
 
-// AttributeDescription is a description of an attribute within a credential type.
-type AttributeDescription struct {
-	ID          string `xml:"id,attr"`
-	Optional    string `xml:"optional,attr"`
-	Name        TranslatedString
-	Description TranslatedString
-}
-
-func (ad AttributeDescription) GetAttributeTypeIdentifier(cred CredentialTypeIdentifier) AttributeTypeIdentifier {
-	return NewAttributeTypeIdentifier(cred.String() + "." + ad.ID)
-}
-
 // IndexOf returns the index of the specified attribute if present,
 // or an error (and -1) if not present.
 func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
@@ -100,6 +104,14 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 		}
 	}
 	return -1, errors.New("Attribute identifier not found")
+}
+
+func (ct CredentialType) AttributeDescription(ai AttributeTypeIdentifier) *AttributeDescription {
+	i, _ := ct.IndexOf(ai)
+	if i == -1 {
+		return nil
+	}
+	return &ct.Attributes[i]
 }
 
 // TranslatedString is a map of translated strings.
