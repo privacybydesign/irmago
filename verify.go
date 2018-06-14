@@ -191,7 +191,7 @@ func extractPublicKeys(configuration *Configuration, proofList gabi.ProofList) (
 	return publicKeys, nil
 }
 
-func extractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) (DisclosedCredentialList, error) {
+func ExtractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) (DisclosedCredentialList, error) {
 	var credentials = make(DisclosedCredentialList, 0, len(proofList))
 
 	for _, v := range proofList {
@@ -233,7 +233,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 
 // Check an gabi prooflist against a signature proofrequest
 func checkProofWithRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
-	disclosed, err := extractDisclosedCredentials(configuration, irmaSignature.Signature)
+	disclosed, err := ExtractDisclosedCredentials(configuration, irmaSignature.Signature)
 
 	if err != nil {
 		fmt.Println(err)
@@ -337,7 +337,7 @@ func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSi
 	}
 
 	// Extract attributes and return result
-	disclosed, err := extractDisclosedCredentials(configuration, irmaSignature.Signature)
+	disclosed, err := ExtractDisclosedCredentials(configuration, irmaSignature.Signature)
 
 	if err != nil {
 		fmt.Println(err)

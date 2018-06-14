@@ -39,6 +39,15 @@ func (v *ProtocolVersion) Below(major, minor int) bool {
 	return v.major == major && v.minor < minor
 }
 
+// GetMetadataVersion maps a chosen protocol version to a metadata version that
+// the server will use.
+func GetMetadataVersion(v *ProtocolVersion) byte {
+	if v.Below(2, 3) {
+		return 0x02 // no support for optional attributes
+	}
+	return 0x03 // current version
+}
+
 // Action encodes the session type of an IRMA session (e.g., disclosing).
 type Action string
 

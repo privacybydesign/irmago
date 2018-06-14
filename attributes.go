@@ -105,10 +105,18 @@ func (al *AttributeList) Strings() []TranslatedString {
 			if val == nil {
 				continue
 			}
-			al.strings[i] = map[string]string{"en": *val, "nl": *val} // TODO
+			al.strings[i] = translateAttribute(val)
 		}
 	}
 	return al.strings
+}
+
+// Localize raw attribute values (to be implemented)
+func translateAttribute(attr *string) TranslatedString {
+	if attr == nil {
+		return nil
+	}
+	return map[string]string{"en": *attr, "nl": *attr}
 }
 
 func (al *AttributeList) decode(i int) *string {

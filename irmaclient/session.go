@@ -51,15 +51,6 @@ type SessionDismisser interface {
 	Dismiss()
 }
 
-// getMetadataVersion maps a chosen protocol version to a metadata version that
-// the server will use.
-func getMetadataVersion(v *irma.ProtocolVersion) byte {
-	if v.Below(2, 3) {
-		return 0x02 // no support for optional attributes
-	}
-	return 0x03 // current version
-}
-
 type session struct {
 	Action  irma.Action
 	Handler Handler
@@ -341,14 +332,9 @@ func (session *session) start() {
 	}
 
 	if session.Action == irma.ActionIssuing {
-		ir := session.irmaSession.(*irma.IssuanceRequest)
-		for _, credreq := range ir.Credentials {
-			info, err := credreq.Info(session.client.Configuration, getMetadataVersion(session.Version))
-			if err != nil {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownCredentialType, Err: err})
-				return
-			}
-			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
+		_, err = session.irmaSession.(*irma.IssuanceRequest).GetCredentialInfoList(session.client.Configuration, session.Version)
+		if err != nil {
+			return
 		}
 	}
 

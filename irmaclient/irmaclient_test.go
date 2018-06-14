@@ -2,10 +2,10 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 	"os"
 	"testing"
-	"errors"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -175,8 +175,6 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "testip", sessionjwt.(*irma.IdentityProviderJwt).ServerName)
 	require.NoError(t, err)
-	require.NotEmpty(t, entry.Disclosed)
-	require.NotEmpty(t, entry.Received)
 	response, err := entry.GetResponse()
 	require.NoError(t, err)
 	require.NotNil(t, response)

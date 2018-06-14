@@ -17,16 +17,36 @@ type LogEntry struct {
 	SessionInfo *irma.SessionInfo // Message that started the session
 
 	// Session type-specific info
-	Disclosed     map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString // Any session type
-	Received      map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of issuance session
-	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of credential removal
-	SignedMessage []byte                                                          // In case of signature sessions
+	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString // In case of credential removal
+	SignedMessage []byte                                                    // In case of signature sessions
 
 	response    interface{}     // Our response (ProofList or IssueCommitmentMessage)
 	rawResponse json.RawMessage // Unparsed []byte version of response
 }
 
 const actionRemoval = irma.Action("removal")
+
+func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) (irma.DisclosedCredentialList, error) {
+	var proofs gabi.ProofList
+	if entry.Type == irma.ActionIssuing {
+		proofs = entry.response.(*gabi.IssueCommitmentMessage).Proofs
+	} else {
+		proofs = entry.response.(gabi.ProofList)
+	}
+	return irma.ExtractDisclosedCredentials(conf, proofs)
+}
+
+func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma.CredentialInfoList, err error) {
+	if entry.Type != irma.ActionIssuing {
+		return nil, nil
+	}
+	jwt, err := irma.ParseRequestorJwt(irma.ActionIssuing, entry.SessionInfo.Jwt)
+	if err != nil {
+		return
+	}
+	ir := jwt.IrmaSession().(*irma.IssuanceRequest)
+	return ir.GetCredentialInfoList(conf, ir.GetVersion())
+}
 
 func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
@@ -36,11 +56,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 		response:    response,
 	}
 
-	// Populate session type-specific fields of the log entry (except for .Disclosed which is handled below)
-	var prooflist gabi.ProofList
-	var ok bool
-	switch entry.Type {
-	case irma.ActionSigning:
+	if entry.Type == irma.ActionSigning {
 		if session.IsInteractive() {
 			entry.SignedMessage = []byte(session.jwt.(*irma.SignatureRequestorJwt).Request.Request.Message)
 		} else {
@@ -49,49 +65,6 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 				return nil, errors.New("Session does not contain a valid Signature Request")
 			}
 			entry.SignedMessage = []byte(request.Message)
-		}
-		fallthrough
-	case irma.ActionDisclosing:
-		if prooflist, ok = response.(gabi.ProofList); !ok {
-			return nil, errors.New("Response was not a ProofList")
-		}
-	case irma.ActionIssuing:
-		if entry.Received == nil {
-			entry.Received = map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
-		}
-		for _, req := range session.jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials {
-			list, err := req.AttributeList(session.client.Configuration, getMetadataVersion(session.Version))
-			if err != nil {
-				continue // TODO?
-			}
-			entry.Received[list.CredentialType().Identifier()] = list.Strings()
-		}
-		var msg *gabi.IssueCommitmentMessage
-		if msg, ok = response.(*gabi.IssueCommitmentMessage); ok {
-			prooflist = msg.Proofs
-		} else {
-			return nil, errors.New("Response was not a *IssueCommitmentMessage")
-		}
-	default:
-		return nil, errors.New("Invalid log type")
-	}
-
-	// Populate the list of disclosed attributes .Disclosed
-	for _, proof := range prooflist {
-		if proofd, isproofd := proof.(*gabi.ProofD); isproofd {
-			if entry.Disclosed == nil {
-				entry.Disclosed = map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString{}
-			}
-			meta := irma.MetadataFromInt(proofd.ADisclosed[1], session.client.Configuration)
-			id := meta.CredentialType().Identifier()
-			entry.Disclosed[id] = map[int]irma.TranslatedString{}
-			for i, attr := range proofd.ADisclosed {
-				if i == 1 {
-					continue
-				}
-				val := string(attr.Bytes())
-				entry.Disclosed[id][i] = irma.TranslatedString{"en": val, "nl": val}
-			}
 		}
 	}
 
@@ -133,10 +106,8 @@ type jsonLogEntry struct {
 	Time        irma.Timestamp
 	SessionInfo *logSessionInfo
 
-	Disclosed     map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString `json:",omitempty"`
-	Received      map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
-	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
-	SignedMessage []byte                                                          `json:",omitempty"`
+	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
+	SignedMessage []byte                                                    `json:",omitempty"`
 
 	Response json.RawMessage
 }
@@ -159,8 +130,6 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 			Keys:    make(map[irma.IssuerIdentifier]int),
 		},
 		Removed:       temp.Removed,
-		Disclosed:     temp.Disclosed,
-		Received:      temp.Received,
 		SignedMessage: temp.SignedMessage,
 		rawResponse:   temp.Response,
 	}
@@ -203,8 +172,6 @@ func (entry *LogEntry) MarshalJSON() ([]byte, error) {
 		Response:      entry.rawResponse,
 		SessionInfo:   si,
 		Removed:       entry.Removed,
-		Disclosed:     entry.Disclosed,
-		Received:      entry.Received,
 		SignedMessage: entry.SignedMessage,
 	}
 

@@ -52,12 +52,12 @@ type Client struct {
 	storage storage
 
 	// Other state
-	Preferences              Preferences
-	Configuration            *irma.Configuration
-	irmaConfigurationPath    string
-	androidStoragePath       string
-	handler                  ClientHandler
-	state                    *issuanceState
+	Preferences           Preferences
+	Configuration         *irma.Configuration
+	irmaConfigurationPath string
+	androidStoragePath    string
+	handler               ClientHandler
+	state                 *issuanceState
 }
 
 // SentryDSN should be set in the init() function
@@ -626,7 +626,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 	// we save none of them to fail the session cleanly
 	gabicreds := []*gabi.Credential{}
 	for i, sig := range msg {
-		attrs, err := request.Credentials[i].AttributeList(client.Configuration, getMetadataVersion(request.GetVersion()))
+		attrs, err := request.Credentials[i].AttributeList(client.Configuration, irma.GetMetadataVersion(request.GetVersion()))
 		if err != nil {
 			return err
 		}
@@ -769,8 +769,8 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 	transport := irma.NewHTTPTransport(kss.URL)
 	message := keyshareChangepin{
 		Username: kss.Username,
-		OldPin: kss.HashedPin(oldPin),
-		NewPin: kss.HashedPin(newPin),
+		OldPin:   kss.HashedPin(oldPin),
+		NewPin:   kss.HashedPin(newPin),
 	}
 
 	res := &keysharePinStatus{}
