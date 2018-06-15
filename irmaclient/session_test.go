@@ -211,6 +211,14 @@ func TestDisclosureSession(t *testing.T) {
 	sessionHelper(t, jwtcontents, "verification", nil)
 }
 
+func TestNoAttributeDisclosureSession(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard")
+	name := "testsp"
+
+	jwtcontents := getDisclosureJwt(name, id)
+	sessionHelper(t, jwtcontents, "verification", nil)
+}
+
 func TestIssuanceSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testip"
