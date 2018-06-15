@@ -55,8 +55,16 @@ func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifie
 		i.t.Fatal(err)
 	}
 }
-func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier) {
+func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, message string) {
 	err := errors.New("incorrect pin")
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, message string) {
+	err := errors.New("blocked account")
 	select {
 	case i.c <- err: //nop
 	default:

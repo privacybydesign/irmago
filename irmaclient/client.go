@@ -82,7 +82,8 @@ type KeyshareHandler interface {
 type ChangePinHandler interface {
 	ChangePinFailure(manager irma.SchemeManagerIdentifier, err error)
 	ChangePinSuccess(manager irma.SchemeManagerIdentifier)
-	ChangePinIncorrect(manager irma.SchemeManagerIdentifier)
+	ChangePinIncorrect(manager irma.SchemeManagerIdentifier, message string)
+	ChangePinBlocked(manager irma.SchemeManagerIdentifier, message string)
 }
 
 // ClientHandler informs the user that the configuration or the list of attributes
@@ -779,10 +780,15 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 		return err
 	}
 
-	if res.Status != kssPinSuccess {
-		client.handler.ChangePinIncorrect(managerID)
-	} else {
+	switch res.Status {
+	case kssPinSuccess:
 		client.handler.ChangePinSuccess(managerID)
+	case kssPinFailure:
+		client.handler.ChangePinIncorrect(managerID, res.Message)
+	case kssPinError:
+		client.handler.ChangePinBlocked(managerID, res.Message)
+	default:
+		return errors.New("Unknown keyshare response")
 	}
 
 	return nil
