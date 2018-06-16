@@ -6,6 +6,7 @@ import (
 	"html"
 	"io/ioutil"
 	"math/big"
+	"regexp"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -73,6 +74,38 @@ var clientUpdates = []func(client *Client) error{
 
 	// Remove the test scheme manager which was erroneously included in a production build
 	nil, // No longer necessary, also broke many unit tests
+
+	// Guess and include version protocol in issuance logs
+	func(client *Client) (err error) {
+		logs, err := client.Logs()
+		if err != nil {
+			return
+		}
+		for _, log := range logs {
+			if log.Type != irma.ActionIssuing {
+				continue
+			}
+			// Ugly hack alert: unfortunately the protocol version that was used in the session is nowhere recorded.
+			// This means that we cannot be sure whether or not we should byteshift the presence bit out of the attributes
+			// that was introduced in version 2.3 of the protocol. The only thing that I can think of to determine this
+			// is to check if the attributes are human-readable, i.e., alphanumeric: if the presence bit is present and
+			// we do not shift it away, then they almost certainly will not be.
+			var jwt irma.RequestorJwt
+			jwt, err = log.Jwt()
+			if err != nil {
+				return
+			}
+			for _, attr := range jwt.IrmaSession().(*irma.IssuanceRequest).Credentials[0].Attributes {
+				if regexp.MustCompile("^\\w").Match([]byte(attr)) {
+					log.Version = irma.NewVersion(2, 2)
+				} else {
+					log.Version = irma.NewVersion(2, 3)
+				}
+				break
+			}
+		}
+		return client.storage.StoreLogs(logs)
+	},
 }
 
 // update performs any function from clientUpdates that has not

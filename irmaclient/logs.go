@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -13,12 +14,14 @@ import (
 type LogEntry struct {
 	// General info
 	Type        irma.Action
-	Time        irma.Timestamp    // Time at which the session was completed
-	SessionInfo *irma.SessionInfo // Message that started the session
+	Time        irma.Timestamp        // Time at which the session was completed
+	SessionInfo *irma.SessionInfo     // Message that started the session
+	Version     *irma.ProtocolVersion // Protocol version that was used in the session
 
 	// Session type-specific info
 	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString // In case of credential removal
 	SignedMessage []byte                                                    // In case of signature sessions
+	Timestamp     *atum.Timestamp                                           // In case of signature sessions
 
 	response    interface{}     // Our response (ProofList or IssueCommitmentMessage)
 	rawResponse json.RawMessage // Unparsed []byte version of response
@@ -45,27 +48,22 @@ func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma
 		return
 	}
 	ir := jwt.IrmaSession().(*irma.IssuanceRequest)
-	return ir.GetCredentialInfoList(conf, ir.GetVersion())
+	return ir.GetCredentialInfoList(conf, entry.Version)
 }
 
 func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
 		Type:        session.Action,
 		Time:        irma.Timestamp(time.Now()),
+		Version:     session.Version,
 		SessionInfo: session.info,
 		response:    response,
 	}
 
 	if entry.Type == irma.ActionSigning {
-		if session.IsInteractive() {
-			entry.SignedMessage = []byte(session.jwt.(*irma.SignatureRequestorJwt).Request.Request.Message)
-		} else {
-			request, ok := session.irmaSession.(*irma.SignatureRequest)
-			if !ok {
-				return nil, errors.New("Session does not contain a valid Signature Request")
-			}
-			entry.SignedMessage = []byte(request.Message)
-		}
+		request := session.irmaSession.(*irma.SignatureRequest)
+		entry.SignedMessage = []byte(request.Message)
+		entry.Timestamp = request.Timestamp
 	}
 
 	return entry, nil
@@ -101,15 +99,39 @@ func (entry *LogEntry) GetResponse() (interface{}, error) {
 	return entry.response, nil
 }
 
+func (entry *LogEntry) GetSignature() (abs *irma.IrmaSignedMessage, err error) {
+	if entry.Type != irma.ActionSigning {
+		return nil, nil
+	}
+	response, err := entry.GetResponse()
+	if err != nil {
+		return
+	}
+	proofds := response.([]*gabi.ProofD)
+	signature := make(gabi.ProofList, len(proofds))
+	for i, proof := range proofds {
+		signature[i] = proof
+	}
+	return &irma.IrmaSignedMessage{
+		Signature: signature,
+		Nonce:     entry.SessionInfo.Nonce,
+		Context:   entry.SessionInfo.Context,
+		Message:   string(entry.SignedMessage),
+		Timestamp: entry.Timestamp,
+	}, nil
+}
+
 type jsonLogEntry struct {
 	Type        irma.Action
 	Time        irma.Timestamp
-	SessionInfo *logSessionInfo
+	SessionInfo *logSessionInfo       `json:",omitempty"`
+	Version     *irma.ProtocolVersion `json:",omitempty"`
 
 	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
 	SignedMessage []byte                                                    `json:",omitempty"`
+	Timestamp     *atum.Timestamp                                           `json:",omitempty"`
 
-	Response json.RawMessage
+	Response json.RawMessage `json:",omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -121,8 +143,9 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 	}
 
 	*entry = LogEntry{
-		Type: temp.Type,
-		Time: temp.Time,
+		Type:    temp.Type,
+		Time:    temp.Time,
+		Version: temp.Version,
 		SessionInfo: &irma.SessionInfo{
 			Jwt:     temp.SessionInfo.Jwt,
 			Nonce:   temp.SessionInfo.Nonce,
@@ -131,6 +154,7 @@ func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
 		},
 		Removed:       temp.Removed,
 		SignedMessage: temp.SignedMessage,
+		Timestamp:     temp.Timestamp,
 		rawResponse:   temp.Response,
 	}
 
@@ -169,10 +193,12 @@ func (entry *LogEntry) MarshalJSON() ([]byte, error) {
 	temp := &jsonLogEntry{
 		Type:          entry.Type,
 		Time:          entry.Time,
+		Version:       entry.Version,
 		Response:      entry.rawResponse,
 		SessionInfo:   si,
 		Removed:       entry.Removed,
 		SignedMessage: entry.SignedMessage,
+		Timestamp:     entry.Timestamp,
 	}
 
 	return json.Marshal(temp)

@@ -204,6 +204,7 @@ func ExtractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) 
 			proof := v.(*gabi.ProofD)
 			cred := NewDisclosedCredentialFromADisclosed(proof.ADisclosed, conf)
 			credentials = append(credentials, cred)
+		case *gabi.ProofU: // nop
 		default:
 			return nil, errors.New("Cannot extract credentials from proof, not a disclosure proofD!")
 		}

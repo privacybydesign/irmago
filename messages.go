@@ -31,6 +31,22 @@ func (v *ProtocolVersion) String() string {
 	return fmt.Sprintf("%d.%d", v.major, v.minor)
 }
 
+func (v *ProtocolVersion) UnmarshalJSON(b []byte) (err error) {
+	parts := strings.Split(string(b), ".")
+	if len(parts) != 2 {
+		return errors.New("Invalid protocol version number: not of form x.y")
+	}
+	if v.major, err = strconv.Atoi(parts[0]); err != nil {
+		return
+	}
+	v.minor, err = strconv.Atoi(parts[1])
+	return
+}
+
+func (v *ProtocolVersion) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.String())
+}
+
 // Returns true if v is below the given version.
 func (v *ProtocolVersion) Below(major, minor int) bool {
 	if v.major < major {
