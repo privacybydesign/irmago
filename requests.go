@@ -484,13 +484,22 @@ func (jwt *SignatureRequestorJwt) IrmaSession() IrmaSession { return jwt.Request
 // IrmaSession returns an IRMA session object.
 func (jwt *IdentityProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
 
+// Sign returns the signed and serialized JWT.
 func (claims *ServiceProviderJwt) Sign(serverName string, sk *rsa.PrivateKey) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = serverName
 	return token.SignedString(sk)
 }
 
+// Sign returns the signed and serialized JWT.
 func (claims *SignatureRequestorJwt) Sign(serverName string, sk *rsa.PrivateKey) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = serverName
+	return token.SignedString(sk)
+}
+
+// Sign returns the signed and serialized JWT.
+func (claims *IdentityProviderJwt) Sign(serverName string, sk *rsa.PrivateKey) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = serverName
 	return token.SignedString(sk)
