@@ -389,8 +389,12 @@ func readTimestamp(path string) (Timestamp, error) {
 }
 
 func parseTimestamp(bts []byte) (Timestamp, error) {
-	// Remove final character which is \n; convert from byte slice to string; parse as int
-	str, err := strconv.ParseInt(string(bts[:len(bts)-1]), 10, 64)
+	// Remove final character \n if present
+	if bts[len(bts)-1] == '\n' {
+		bts = bts[:len(bts)-1]
+	}
+	// convert from byte slice to string; parse as int
+	str, err := strconv.ParseInt(string(bts), 10, 64)
 	if err != nil {
 		return Timestamp(time.Unix(0, 0)), err
 	}
