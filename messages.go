@@ -32,7 +32,11 @@ func (v *ProtocolVersion) String() string {
 }
 
 func (v *ProtocolVersion) UnmarshalJSON(b []byte) (err error) {
-	parts := strings.Split(string(b), ".")
+	var str string
+	if err := json.Unmarshal(b, &str); err != nil {
+		return err
+	}
+	parts := strings.Split(str, ".")
 	if len(parts) != 2 {
 		return errors.New("Invalid protocol version number: not of form x.y")
 	}
