@@ -363,6 +363,8 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 
 	client.Configuration.Download(&disclosureRequest)
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	test.ClearTestStorage(t)
 }
 
 func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
@@ -377,6 +379,8 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
 	client.Configuration.Download(issuanceRequest)
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	test.ClearTestStorage(t)
 }
 
 func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
@@ -391,6 +395,8 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 	client.Configuration.Download(issuanceRequest)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeDescription(attrid).IsOptional())
+
+	test.ClearTestStorage(t)
 }
 
 // Test installing a new scheme manager from a qr, and do a(n issuance) session
