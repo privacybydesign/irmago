@@ -12,6 +12,7 @@ import (
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // SessionRequest contains the context and nonce for an IRMA session.
@@ -359,6 +360,10 @@ func (t Timestamp) Before(u Timestamp) bool {
 	return time.Time(t).Before(time.Time(u))
 }
 
+func (t Timestamp) After(u Timestamp) bool {
+	return time.Time(t).After(time.Time(u))
+}
+
 // MarshalJSON marshals a timestamp.
 func (t *Timestamp) MarshalJSON() ([]byte, error) {
 	return []byte(t.String()), nil
@@ -379,16 +384,23 @@ func (t *Timestamp) String() string {
 	return fmt.Sprint(time.Time(*t).Unix())
 }
 
-func readTimestamp(path string) (Timestamp, error) {
+func readTimestamp(path string) (*Timestamp, bool, error) {
+	exists, err := fs.PathExists(path)
+	if err != nil {
+		return nil, false, err
+	}
+	if !exists {
+		return nil, false, nil
+	}
 	bts, err := ioutil.ReadFile(path)
 	if err != nil {
-		return Timestamp(time.Unix(0, 0)), errors.New("Could not read scheme manager timestamp")
+		return nil, true, errors.New("Could not read scheme manager timestamp")
 	}
-
-	return parseTimestamp(bts)
+	ts, err := parseTimestamp(bts)
+	return ts, true, err
 }
 
-func parseTimestamp(bts []byte) (Timestamp, error) {
+func parseTimestamp(bts []byte) (*Timestamp, error) {
 	// Remove final character \n if present
 	if bts[len(bts)-1] == '\n' {
 		bts = bts[:len(bts)-1]
@@ -396,9 +408,10 @@ func parseTimestamp(bts []byte) (Timestamp, error) {
 	// convert from byte slice to string; parse as int
 	str, err := strconv.ParseInt(string(bts), 10, 64)
 	if err != nil {
-		return Timestamp(time.Unix(0, 0)), err
+		return nil, err
 	}
-	return Timestamp(time.Unix(str, 0)), nil
+	ts := Timestamp(time.Unix(str, 0))
+	return &ts, nil
 }
 
 // NewServiceProviderJwt returns a new ServiceProviderJwt.

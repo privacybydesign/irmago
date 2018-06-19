@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"time"
 
 	"crypto/sha256"
 
@@ -90,17 +89,13 @@ func NewConfiguration(path string, assets string) (conf *Configuration, err erro
 		assets: assets,
 	}
 
+	if conf.assets != "" { // If an assets folder is specified, then it must exist
+		if err = fs.AssertPathExists(conf.assets); err != nil {
+			return nil, errors.WrapPrefix(err, "Nonexistent assets folder specified", 0)
+		}
+	}
 	if err = fs.EnsureDirectoryExists(conf.Path); err != nil {
 		return nil, err
-	}
-	isUpToDate, err := conf.isUpToDate()
-	if err != nil {
-		return nil, err
-	}
-	if conf.assets != "" && !isUpToDate {
-		if err = conf.CopyFromAssets(false); err != nil {
-			return nil, err
-		}
 	}
 
 	// Init all maps
@@ -124,6 +119,25 @@ func (conf *Configuration) ParseFolder() (err error) {
 	// Init all maps
 	conf.clear()
 
+	// Copy any new or updated scheme managers out of the assets into storage
+	if conf.assets != "" {
+		err = iterateSubfolders(conf.assets, func(dir string) error {
+			scheme := NewSchemeManagerIdentifier(filepath.Base(dir))
+			uptodate, err := conf.isUpToDate(scheme)
+			if err != nil {
+				return err
+			}
+			if !uptodate {
+				_, err = conf.CopyManagerFromAssets(scheme)
+			}
+			return err
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parse scheme managers in storage
 	var mgrerr *SchemeManagerError
 	err = iterateSubfolders(conf.Path, func(dir string) error {
 		manager := NewSchemeManager(filepath.Base(dir))
@@ -154,7 +168,7 @@ func (conf *Configuration) ParseOrRestoreFolder() error {
 	err := conf.ParseFolder()
 	var parse bool
 	for id := range conf.DisabledSchemeManagers {
-		parse = conf.CopyManagerFromAssets(id)
+		parse, _ = conf.CopyManagerFromAssets(id)
 	}
 	if parse {
 		return conf.ParseFolder()
@@ -208,10 +222,11 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		return
 	}
 
-	manager.Timestamp, err = readTimestamp(dir + "/timestamp")
-	if err != nil {
-		return errors.New("Could not read scheme manager timestamp")
+	ts, exists, err := readTimestamp(dir + "/timestamp")
+	if err != nil || !exists {
+		return errors.WrapPrefix(err, "Could not read scheme manager timestamp", 0)
 	}
+	manager.Timestamp = *ts
 
 	if manager.XMLVersion < 7 {
 		manager.Status = SchemeManagerStatusParsingError
@@ -403,67 +418,37 @@ func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
 		conf.CredentialTypes[cred] != nil
 }
 
-func (conf *Configuration) readTimestamp(path string) (timestamp *time.Time, exists bool, err error) {
-	filename := filepath.Join(path, "timestamp")
-	exists, err = fs.PathExists(filename)
-	if err != nil || !exists {
-		return
-	}
-	bts, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return
-	}
-	i, err := strconv.ParseInt(string(bts), 10, 64)
-	if err != nil {
-		return
-	}
-	t := time.Unix(i, 0)
-	return &t, true, nil
-}
-
-func (conf *Configuration) isUpToDate() (bool, error) {
+func (conf *Configuration) isUpToDate(scheme SchemeManagerIdentifier) (bool, error) {
 	if conf.assets == "" {
 		return true, nil
 	}
-	var err error
-	newTime, exists, err := conf.readTimestamp(conf.assets)
+	name := scheme.String()
+	newTime, exists, err := readTimestamp(filepath.Join(conf.assets, name, "timestamp"))
+	if err != nil || !exists {
+		return true, errors.WrapPrefix(err, "Could not read asset timestamp of scheme "+name, 0)
+	}
+	// The storage version of the manager does not need to have a timestamp. If it does not, it is outdated.
+	oldTime, exists, err := readTimestamp(filepath.Join(conf.Path, name, "timestamp"))
 	if err != nil {
+		return true, err
+	}
+	return exists && !newTime.After(*oldTime), nil
+}
+
+func (conf *Configuration) CopyManagerFromAssets(scheme SchemeManagerIdentifier) (bool, error) {
+	if conf.assets == "" {
+		return false, nil
+	}
+	// Remove old version; we want an exact copy of the assets version
+	// not a merge of the assets version and the storage version
+	name := scheme.String()
+	if err := os.RemoveAll(filepath.Join(conf.Path, name)); err != nil {
 		return false, err
 	}
-	if !exists {
-		return false, errors.New("Timestamp in assets irma_configuration not found")
-	}
-
-	// conf.Path does not need to have a timestamp. If it does not, it is outdated
-	oldTime, exists, err := conf.readTimestamp(conf.Path)
-	return exists && !newTime.After(*oldTime), err
-}
-
-// CopyFromAssets recursively copies the directory tree from the assets folder
-// into the directory of this Configuration.
-func (conf *Configuration) CopyFromAssets(parse bool) error {
-	if conf.assets == "" {
-		return nil
-	}
-	if err := fs.CopyDirectory(conf.assets, conf.Path); err != nil {
-		return err
-	}
-	if parse {
-		return conf.ParseFolder()
-	}
-	return nil
-}
-
-func (conf *Configuration) CopyManagerFromAssets(managerID SchemeManagerIdentifier) bool {
-	manager := conf.SchemeManagers[managerID]
-	if conf.assets == "" {
-		return false
-	}
-	_ = fs.CopyDirectory(
-		filepath.Join(conf.assets, manager.ID),
-		filepath.Join(conf.Path, manager.ID),
+	return true, fs.CopyDirectory(
+		filepath.Join(conf.assets, name),
+		filepath.Join(conf.Path, name),
 	)
-	return true
 }
 
 // DownloadSchemeManager downloads and returns a scheme manager description.xml file
@@ -858,7 +843,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 	if err != nil {
 		return err
 	}
-	if !manager.Timestamp.Before(timestamp) {
+	if !manager.Timestamp.Before(*timestamp) {
 		return nil
 	}
 
