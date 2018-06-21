@@ -111,6 +111,9 @@ func (id CredentialTypeIdentifier) IssuerIdentifier() IssuerIdentifier {
 
 // CredentialTypeIdentifier returns the CredentialTypeIdentifier of the attribute identifier.
 func (id AttributeTypeIdentifier) CredentialTypeIdentifier() CredentialTypeIdentifier {
+	if id.IsCredential() {
+		return NewCredentialTypeIdentifier(id.String())
+	}
 	return NewCredentialTypeIdentifier(id.Parent())
 }
 

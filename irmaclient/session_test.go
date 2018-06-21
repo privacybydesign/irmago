@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"math/big"
+
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
-	"math/big"
 )
 
 type TestHandler struct {
@@ -210,6 +211,14 @@ func TestDisclosureSession(t *testing.T) {
 	sessionHelper(t, jwtcontents, "verification", nil)
 }
 
+func TestNoAttributeDisclosureSession(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard")
+	name := "testsp"
+
+	jwtcontents := getDisclosureJwt(name, id)
+	sessionHelper(t, jwtcontents, "verification", nil)
+}
+
 func TestIssuanceSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testip"
@@ -370,8 +379,8 @@ func keyshareSessions(t *testing.T, client *Client) {
 func TestKeyshareChangePin(t *testing.T) {
 	client := parseStorage(t)
 
-	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"));
-	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"));
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
 
 	test.ClearTestStorage(t)
 }
