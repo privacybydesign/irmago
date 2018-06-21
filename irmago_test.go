@@ -69,9 +69,10 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	require.Equal(t, false, conf.SchemeManagers[smerr.Manager].Valid)
 }
 
-func TestRestoreInvalidIrmaConfiguration(t *testing.T) {
+func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	test.StartSchemeManagerServer()
 
+	require.NoError(t, fs.EnsureDirectoryExists("testdata/storage/test"))
 	conf, err := NewConfiguration("testdata/storage/test/irma_configuration", "testdata/irma_configuration_invalid")
 	require.NoError(t, err)
 
@@ -79,8 +80,30 @@ func TestRestoreInvalidIrmaConfiguration(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, conf.DisabledSchemeManagers)
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
+	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
 	test.StopSchemeManagerServer()
+	test.ClearTestStorage(t)
+}
+
+func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
+	require.NoError(t, fs.EnsureDirectoryExists("testdata/storage/test"))
+	conf, err := NewConfiguration("testdata/storage/test/irma_configuration", "testdata/irma_configuration_invalid")
+	require.NoError(t, err)
+
+	// Fails: no remote and the version in the assets is broken
+	err = conf.ParseOrRestoreFolder()
+	require.Error(t, err)
+	require.NotEmpty(t, conf.DisabledSchemeManagers)
+
+	// Try again from correct assets
+	conf.assets = "testdata/irma_configuration"
+	err = conf.ParseOrRestoreFolder()
+	require.NoError(t, err)
+	require.Empty(t, conf.DisabledSchemeManagers)
+	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
+	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
+
 	test.ClearTestStorage(t)
 }
 

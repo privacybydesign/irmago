@@ -178,14 +178,16 @@ func (conf *Configuration) ParseOrRestoreFolder() error {
 		return err
 	}
 
-	err = nil
 	for id := range conf.DisabledSchemeManagers {
-		if reinstallErr := conf.ReinstallSchemeManager(conf.SchemeManagers[id]); reinstallErr != nil {
-			// Again, we can recover only from a *SchemeManagerError, so bail out now otherwise
-			if _, isSchemeMgrErr := reinstallErr.(*SchemeManagerError); !isSchemeMgrErr {
-				return err
-			}
-			err = reinstallErr
+		if err = conf.ReinstallSchemeManager(conf.SchemeManagers[id]); err == nil {
+			continue
+		}
+		if _, err = conf.CopyManagerFromAssets(id); err != nil {
+			return err // File system error, too serious, bail out now
+		}
+		name := id.String()
+		if err = conf.ParseSchemeManagerFolder(filepath.Join(conf.Path, name), NewSchemeManager(name)); err == nil {
+			delete(conf.DisabledSchemeManagers, id)
 		}
 	}
 
