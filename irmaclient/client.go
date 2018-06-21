@@ -224,7 +224,7 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 	}
 
 	// If this is a singleton credential type, ensure we have at most one by removing any previous instance
-	if !id.Empty() && cred.CredentialType().IsSingleton && len(client.creds(id)) > 0 {
+	if !id.Empty() && cred.CredentialType().IsSingleton && len(client.attrs(id)) > 0 {
 		client.remove(id, 0, false) // Index is 0, because if we're here we have exactly one
 	}
 
