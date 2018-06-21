@@ -164,15 +164,31 @@ func (conf *Configuration) ParseFolder() (err error) {
 	return
 }
 
+// ParseOrRestoreFolder parses the irma_configuration folder, and when possible attempts to restore
+// any broken scheme managers from their remote.
+// Any error encountered during parsing is considered recoverable only if it is of type *SchemeManagerError;
+// In this case the scheme in which it occured is downloaded from its remote and re-parsed.
+// If any other error is encountered at any time, it is returned immediately.
+// If no error is returned, parsing and possibly restoring has been succesfull, and there should be no
+// disabled scheme managers.
 func (conf *Configuration) ParseOrRestoreFolder() error {
 	err := conf.ParseFolder()
-	var parse bool
+	// Only in case of a *SchemeManagerError might we be able to recover
+	if _, isSchemeMgrErr := err.(*SchemeManagerError); !isSchemeMgrErr {
+		return err
+	}
+
+	err = nil
 	for id := range conf.DisabledSchemeManagers {
-		parse, _ = conf.CopyManagerFromAssets(id)
+		if reinstallErr := conf.ReinstallSchemeManager(conf.SchemeManagers[id]); reinstallErr != nil {
+			// Again, we can recover only from a *SchemeManagerError, so bail out now otherwise
+			if _, isSchemeMgrErr := reinstallErr.(*SchemeManagerError); !isSchemeMgrErr {
+				return err
+			}
+			err = reinstallErr
+		}
 	}
-	if parse {
-		return conf.ParseFolder()
-	}
+
 	return err
 }
 
@@ -196,22 +212,14 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		}
 	}()
 
-	err = fs.AssertPathExists(dir + "/description.xml")
-	if err != nil {
+	// Verify signature and read scheme manager description
+	if err = conf.VerifySignature(manager.Identifier()); err != nil {
 		return
 	}
-
 	if manager.index, err = conf.parseIndex(filepath.Base(dir), manager); err != nil {
 		manager.Status = SchemeManagerStatusInvalidIndex
 		return
 	}
-
-	err = conf.VerifySchemeManager(manager)
-	if err != nil {
-		manager.Status = SchemeManagerStatusInvalidSignature
-		return
-	}
-
 	exists, err := conf.pathToDescription(manager, dir+"/description.xml", manager)
 	if !exists {
 		manager.Status = SchemeManagerStatusParsingError
@@ -221,18 +229,26 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		manager.Status = SchemeManagerStatusParsingError
 		return
 	}
+	if manager.XMLVersion < 7 {
+		manager.Status = SchemeManagerStatusParsingError
+		return errors.New("Unsupported scheme manager description")
+	}
 
+	// Verify that all other files are validly signed
+	err = conf.VerifySchemeManager(manager)
+	if err != nil {
+		manager.Status = SchemeManagerStatusInvalidSignature
+		return
+	}
+
+	// Read timestamp indicating time of last modification
 	ts, exists, err := readTimestamp(dir + "/timestamp")
 	if err != nil || !exists {
 		return errors.WrapPrefix(err, "Could not read scheme manager timestamp", 0)
 	}
 	manager.Timestamp = *ts
 
-	if manager.XMLVersion < 7 {
-		manager.Status = SchemeManagerStatusParsingError
-		return errors.New("Unsupported scheme manager description")
-	}
-
+	// Parse contained issuers and credential types
 	err = conf.parseIssuerFolders(manager, dir)
 	if err != nil {
 		manager.Status = SchemeManagerStatusContentParsingError
@@ -306,6 +322,22 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error {
 	delete(conf.SchemeManagers, id)
 	delete(conf.DisabledSchemeManagers, id)
+	name := id.String()
+	for iss := range conf.Issuers {
+		if iss.Root() == name {
+			delete(conf.Issuers, iss)
+		}
+	}
+	for iss := range conf.publicKeys {
+		if iss.Root() == name {
+			delete(conf.publicKeys, iss)
+		}
+	}
+	for cred := range conf.CredentialTypes {
+		if cred.Root() == name {
+			delete(conf.CredentialTypes, cred)
+		}
+	}
 	return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
 }
 
@@ -503,6 +535,20 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromS
 	return nil
 }
 
+func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err error) {
+	// Check if downloading stuff from the remote works before we uninstall the specified manager:
+	// If we can't download anything we should keep the broken version
+	manager, err = DownloadSchemeManager(manager.URL)
+	if err != nil {
+		return
+	}
+	if err = conf.DeleteSchemeManager(manager.Identifier()); err != nil {
+		return
+	}
+	err = conf.InstallSchemeManager(manager)
+	return
+}
+
 // InstallSchemeManager downloads and adds the specified scheme manager to this Configuration,
 // provided its signature is valid.
 func (conf *Configuration) InstallSchemeManager(manager *SchemeManager) error {
@@ -544,13 +590,7 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	if err = t.GetFile("index.sig", sig); err != nil {
 		return
 	}
-	valid, err := conf.VerifySignature(manager.Identifier())
-	if err != nil {
-		return
-	}
-	if !valid {
-		err = errors.New("Scheme manager signature invalid")
-	}
+	err = conf.VerifySignature(manager.Identifier())
 	return
 }
 
@@ -714,16 +754,14 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (Sche
 }
 
 func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
-	valid, err := conf.VerifySignature(manager.Identifier())
+	err := conf.VerifySignature(manager.Identifier())
 	if err != nil {
 		return err
 	}
-	if !valid {
-		return errors.New("Scheme manager signature was invalid")
-	}
 
+	var exists bool
 	for file := range manager.index {
-		exists, err := fs.PathExists(filepath.Join(conf.Path, file))
+		exists, err = fs.PathExists(filepath.Join(conf.Path, file))
 		if err != nil {
 			return err
 		}
@@ -731,7 +769,7 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 			continue
 		}
 		// Don't care about the actual bytes
-		if _, _, err := conf.ReadAuthenticatedFile(manager, file); err != nil {
+		if _, _, err = conf.ReadAuthenticatedFile(manager, file); err != nil {
 			return err
 		}
 	}
@@ -763,10 +801,9 @@ func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path st
 // VerifySignature verifies the signature on the scheme manager index file
 // (which contains the SHA256 hashes of all files under this scheme manager,
 // which are used for verifying file authenticity).
-func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (valid bool, err error) {
+func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			valid = false
 			if e, ok := r.(error); ok {
 				err = errors.Errorf("Scheme manager index signature failed to verify: %s", e.Error())
 			} else {
@@ -777,41 +814,44 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (valid bo
 
 	dir := filepath.Join(conf.Path, id.String())
 	if err := fs.AssertPathExists(dir+"/index", dir+"/index.sig", dir+"/pk.pem"); err != nil {
-		return false, errors.New("Missing scheme manager index file, signature, or public key")
+		return errors.New("Missing scheme manager index file, signature, or public key")
 	}
 
 	// Read and hash index file
 	indexbts, err := ioutil.ReadFile(dir + "/index")
 	if err != nil {
-		return false, err
+		return err
 	}
 	indexhash := sha256.Sum256(indexbts)
 
 	// Read and parse scheme manager public key
 	pkbts, err := ioutil.ReadFile(dir + "/pk.pem")
 	if err != nil {
-		return false, err
+		return err
 	}
 	pkblk, _ := pem.Decode(pkbts)
 	genericPk, err := x509.ParsePKIXPublicKey(pkblk.Bytes)
 	if err != nil {
-		return false, err
+		return err
 	}
 	pk, ok := genericPk.(*ecdsa.PublicKey)
 	if !ok {
-		return false, errors.New("Invalid scheme manager public key")
+		return errors.New("Invalid scheme manager public key")
 	}
 
 	// Read and parse signature
 	sig, err := ioutil.ReadFile(dir + "/index.sig")
 	if err != nil {
-		return false, err
+		return err
 	}
 	ints := make([]*big.Int, 0, 2)
 	_, err = asn1.Unmarshal(sig, &ints)
 
 	// Verify signature
-	return ecdsa.Verify(pk, indexhash[:], ints[0], ints[1]), nil
+	if !ecdsa.Verify(pk, indexhash[:], ints[0], ints[1]) {
+		return errors.New("Scheme manager signature was invalid")
+	}
+	return nil
 }
 
 func (hash ConfigurationFileHash) String() string {

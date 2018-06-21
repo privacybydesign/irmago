@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
-	"net/http"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -18,18 +16,14 @@ import (
 
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
-	server := &http.Server{Addr: ":48681", Handler: http.FileServer(http.Dir("../testdata"))}
-	go func() {
-		server.ListenAndServe()
-	}()
-	time.Sleep(100 * time.Millisecond) // Give server time to start
+	test.StartSchemeManagerServer()
 
 	test.ClearTestStorage(nil)
 	test.CreateTestStorage(nil)
 	retCode := m.Run()
 	test.ClearTestStorage(nil)
 
-	server.Close()
+	test.StopSchemeManagerServer()
 	os.Exit(retCode)
 }
 

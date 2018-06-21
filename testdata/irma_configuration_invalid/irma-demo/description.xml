@@ -1,6 +1,6 @@
 <SchemeManager version="7">
 	<Id>irma-demo</Id>
-	<Url>https://credentials.github.io/irma_configuration/irma-demo</Url>
+	<Url>http://localhost:48681/irma_configuration/irma-demo</Url>
 	<Name>
 		<en>Irma Demo</en>
 		<nl>Irma Demo</nl>
@@ -10,7 +10,5 @@
 		<nl>Demo IRMA-credentials</nl>
 	</Description>
 	<Contact>https://www.irmacard.org
-phone@demo.irmacard.org
-
-This line was added after signing to invalidate the signature</Contact>
+phone@demo.irmacard.org</Contact>
 </SchemeManager>

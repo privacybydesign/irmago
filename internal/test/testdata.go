@@ -3,9 +3,11 @@
 package test
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/fs"
@@ -21,6 +23,21 @@ func checkError(t *testing.T, err error) {
 	} else {
 		panic(err)
 	}
+}
+
+var schemeServer *http.Server
+
+func StartSchemeManagerServer() {
+	path := findTestdataFolder(nil)
+	schemeServer = &http.Server{Addr: ":48681", Handler: http.FileServer(http.Dir(path))}
+	go func() {
+		schemeServer.ListenAndServe()
+	}()
+	time.Sleep(100 * time.Millisecond) // Give server time to start
+}
+
+func StopSchemeManagerServer() {
+	schemeServer.Close()
 }
 
 // findTestdataFolder finds the "testdata" folder which is in . or ..

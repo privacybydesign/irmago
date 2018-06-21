@@ -69,6 +69,21 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	require.Equal(t, false, conf.SchemeManagers[smerr.Manager].Valid)
 }
 
+func TestRestoreInvalidIrmaConfiguration(t *testing.T) {
+	test.StartSchemeManagerServer()
+
+	conf, err := NewConfiguration("testdata/storage/test/irma_configuration", "testdata/irma_configuration_invalid")
+	require.NoError(t, err)
+
+	err = conf.ParseOrRestoreFolder()
+	require.NoError(t, err)
+	require.Empty(t, conf.DisabledSchemeManagers)
+	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
+
+	test.StopSchemeManagerServer()
+	test.ClearTestStorage(t)
+}
+
 func TestParseIrmaConfiguration(t *testing.T) {
 	conf := parseConfiguration(t)
 
