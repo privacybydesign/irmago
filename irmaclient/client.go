@@ -42,7 +42,7 @@ type Client struct {
 	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
-	credentials      map[irma.CredentialTypeIdentifier]map[int]*credential
+	credentialsCache map[irma.CredentialTypeIdentifier]map[int]*credential
 	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
 	paillierKeyCache *paillierPrivateKey
 	logs             []*LogEntry
@@ -52,12 +52,12 @@ type Client struct {
 	storage storage
 
 	// Other state
-	Preferences              Preferences
-	Configuration            *irma.Configuration
-	irmaConfigurationPath    string
-	androidStoragePath       string
-	handler                  ClientHandler
-	state                    *issuanceState
+	Preferences           Preferences
+	Configuration         *irma.Configuration
+	irmaConfigurationPath string
+	androidStoragePath    string
+	handler               ClientHandler
+	state                 *issuanceState
 }
 
 // SentryDSN should be set in the init() function
@@ -126,7 +126,7 @@ func New(
 	}
 
 	cm := &Client{
-		credentials:           make(map[irma.CredentialTypeIdentifier]map[int]*credential),
+		credentialsCache:      make(map[irma.CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
@@ -231,11 +231,11 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 	// Append the new cred to our attributes and credentials
 	client.attributes[id] = append(client.attrs(id), cred.AttributeList())
 	if !id.Empty() {
-		if _, exists := client.credentials[id]; !exists {
-			client.credentials[id] = make(map[int]*credential)
+		if _, exists := client.credentialsCache[id]; !exists {
+			client.credentialsCache[id] = make(map[int]*credential)
 		}
 		counter := len(client.attributes[id]) - 1
-		client.credentials[id][counter] = cred
+		client.credentialsCache[id][counter] = cred
 	}
 
 	if err = client.storage.StoreSignature(cred); err != nil {
@@ -272,10 +272,10 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	}
 
 	// Remove credential
-	if creds, exists := client.credentials[id]; exists {
+	if creds, exists := client.credentialsCache[id]; exists {
 		if _, exists := creds[index]; exists {
 			delete(creds, index)
-			client.credentials[id] = creds
+			client.credentialsCache[id] = creds
 		}
 	}
 
@@ -352,10 +352,10 @@ func (client *Client) attrs(id irma.CredentialTypeIdentifier) []*irma.AttributeL
 
 // creds returns cm.credentials[id], initializing it to an empty map if neccesary
 func (client *Client) creds(id irma.CredentialTypeIdentifier) map[int]*credential {
-	list, exists := client.credentials[id]
+	list, exists := client.credentialsCache[id]
 	if !exists {
 		list = make(map[int]*credential)
-		client.credentials[id] = list
+		client.credentialsCache[id] = list
 	}
 	return list
 }
@@ -426,10 +426,10 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 		if err != nil {
 			return nil, err
 		}
-		client.credentials[id][counter] = cred
+		client.credentialsCache[id][counter] = cred
 	}
 
-	return client.credentials[id][counter], nil
+	return client.credentialsCache[id][counter], nil
 }
 
 // Methods used in the IRMA protocol
@@ -769,8 +769,8 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 	transport := irma.NewHTTPTransport(kss.URL)
 	message := keyshareChangepin{
 		Username: kss.Username,
-		OldPin: kss.HashedPin(oldPin),
-		NewPin: kss.HashedPin(newPin),
+		OldPin:   kss.HashedPin(oldPin),
+		NewPin:   kss.HashedPin(newPin),
 	}
 
 	res := &keysharePinStatus{}

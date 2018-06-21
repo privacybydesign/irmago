@@ -2,10 +2,10 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 	"os"
 	"testing"
-	"errors"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -99,9 +99,10 @@ func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 
 func verifyCredentials(t *testing.T, client *Client) {
 	var pk *gabi.PublicKey
-	var err error
-	for credtype, credsmap := range client.credentials {
-		for index, cred := range credsmap {
+	for credtype, credsmap := range client.attributes {
+		for index, attrs := range credsmap {
+			cred, err := client.credential(attrs.CredentialType().Identifier(), index)
+			require.NoError(t, err)
 			pk, err = cred.PublicKey()
 			require.NoError(t, err)
 			require.True(t,
