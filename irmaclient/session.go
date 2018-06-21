@@ -349,6 +349,10 @@ func (session *session) start() {
 				return
 			}
 			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
+			preexistingCredentials := session.client.attrs(*credreq.CredentialTypeID)
+			if len(preexistingCredentials) != 0 && preexistingCredentials[0].IsValid() && preexistingCredentials[0].CredentialType().IsSingleton {
+				ir.RemovalCredentialInfoList = append(ir.RemovalCredentialInfoList, preexistingCredentials[0].Info())
+			}
 		}
 	}
 
