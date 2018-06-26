@@ -52,7 +52,7 @@ func (th TestHandler) Failure(action irma.Action, err *irma.SessionError) {
 		th.t.Fatal(err)
 	}
 }
-func (th TestHandler) UnsatisfiableRequest(action irma.Action, serverName string, missing irma.AttributeDisjunctionList) {
+func (th TestHandler) UnsatisfiableRequest(action irma.Action, serverName string, missing irma.AttributeDisjunctionList, retry func()) {
 	th.c <- &irma.SessionError{
 		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 	}

@@ -31,7 +31,7 @@ type Handler interface {
 	Success(action irma.Action, result string)
 	Cancelled(action irma.Action)
 	Failure(action irma.Action, err *irma.SessionError)
-	UnsatisfiableRequest(action irma.Action, ServerName string, missing irma.AttributeDisjunctionList)
+	UnsatisfiableRequest(action irma.Action, ServerName string, missing irma.AttributeDisjunctionList, retry func())
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -241,10 +241,17 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 	if !session.checkAndUpateConfiguration() {
 		return
 	}
+	
+	session.manualCheckSatisfiabilityAndRequestPermission()
+}
 
+func (session *session) manualCheckSatisfiabilityAndRequestPermission() {
 	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, "E-mail request", missing)
+		callback := func() {
+			go session.manualCheckSatisfiabilityAndRequestPermission()
+		}
+		session.Handler.UnsatisfiableRequest(session.Action, "E-mail request", missing, callback)
 		return
 	}
 	session.irmaSession.SetCandidates(candidates)
@@ -351,10 +358,17 @@ func (session *session) start() {
 			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
 		}
 	}
+	
+	session.checkSatisfiableAndRequestPermission()
+}
 
+func (session *session) checkSatisfiableAndRequestPermission() {
 	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, session.jwt.Requestor(), missing)
+		callback := func() {
+			go session.checkSatisfiableAndRequestPermission()
+		}
+		session.Handler.UnsatisfiableRequest(session.Action, session.jwt.Requestor(), missing, callback)
 		return
 	}
 	session.irmaSession.SetCandidates(candidates)

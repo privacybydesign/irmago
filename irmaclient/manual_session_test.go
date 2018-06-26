@@ -308,7 +308,7 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 	}
 	sh.errorChannel <- nil
 }
-func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, serverName string, missingAttributes irma.AttributeDisjunctionList) {
+func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, serverName string, missingAttributes irma.AttributeDisjunctionList, retry func()) {
 	// This function is called from main thread, which blocks go channel, so need go routine here
 	go func() {
 		sh.errorChannel <- &irma.SessionError{
