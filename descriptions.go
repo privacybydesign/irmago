@@ -50,6 +50,7 @@ type CredentialType struct {
 	Name            TranslatedString `xml:"Name"`
 	ShortName       TranslatedString `xml:"ShortName"`
 	IssuerID        string           `xml:"IssuerID"`
+	IssueURL        string           `xml:"IssueURL"`
 	SchemeManagerID string           `xml:"SchemeManager"`
 	IsSingleton     bool             `xml:"ShouldBeSingleton"`
 	Description     TranslatedString
