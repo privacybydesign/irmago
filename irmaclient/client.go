@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"sort"
 	"time"
+	"strconv"
 
 	"github.com/credentials/go-go-gadget-paillier"
 	raven "github.com/getsentry/raven-go"
@@ -82,7 +83,8 @@ type KeyshareHandler interface {
 type ChangePinHandler interface {
 	ChangePinFailure(manager irma.SchemeManagerIdentifier, err error)
 	ChangePinSuccess(manager irma.SchemeManagerIdentifier)
-	ChangePinIncorrect(manager irma.SchemeManagerIdentifier)
+	ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int)
+	ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int)
 }
 
 // ClientHandler informs the user that the configuration or the list of attributes
@@ -781,10 +783,23 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 		return err
 	}
 
-	if res.Status != kssPinSuccess {
-		client.handler.ChangePinIncorrect(managerID)
-	} else {
+	switch res.Status {
+	case kssPinSuccess:
 		client.handler.ChangePinSuccess(managerID)
+	case kssPinFailure:
+		attempts, err := strconv.Atoi(res.Message)
+		if err != nil {
+			return err
+		}
+		client.handler.ChangePinIncorrect(managerID, attempts)
+	case kssPinError:
+		timeout, err := strconv.Atoi(res.Message)
+		if err != nil {
+			return err
+		}
+		client.handler.ChangePinBlocked(managerID, timeout)
+	default:
+		return errors.New("Unknown keyshare response")
 	}
 
 	return nil
