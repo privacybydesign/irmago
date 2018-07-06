@@ -55,8 +55,16 @@ func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifie
 		i.t.Fatal(err)
 	}
 }
-func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier) {
+func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
 	err := errors.New("incorrect pin")
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
+	err := errors.New("blocked account")
 	select {
 	case i.c <- err: //nop
 	default:
@@ -99,9 +107,10 @@ func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 
 func verifyCredentials(t *testing.T, client *Client) {
 	var pk *gabi.PublicKey
-	var err error
-	for credtype, credsmap := range client.credentials {
-		for index, cred := range credsmap {
+	for credtype, credsmap := range client.attributes {
+		for index, attrs := range credsmap {
+			cred, err := client.credential(attrs.CredentialType().Identifier(), index)
+			require.NoError(t, err)
 			pk, err = cred.PublicKey()
 			require.NoError(t, err)
 			require.True(t,

@@ -270,6 +270,20 @@ func TestLargeAttribute(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
+func TestIssuanceSingletonCredential(t *testing.T) {
+	client := parseStorage(t)
+	jwtcontents := getIssuanceJwt("testip", true, "")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+
+	require.Len(t, client.attrs(credid), 0)
+
+	sessionHelper(t, jwtcontents, "issue", client)
+	require.Len(t, client.attrs(credid), 1)
+
+	sessionHelper(t, jwtcontents, "issue", client)
+	require.Len(t, client.attrs(credid), 1)
+}
+
 /* There is an annoying difference between how Java and Go convert big integers to and from
 byte arrays: in Java the sign of the integer is taken into account, but not in Go. This means
 that in Java, when converting a bigint to or from a byte array, the most significant bit

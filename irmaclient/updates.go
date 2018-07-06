@@ -231,7 +231,7 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 		}
 	}
 
-	if len(client.credentials) > 0 {
+	if len(client.credentialsCache) > 0 {
 		if err = client.storage.StoreAttributes(client.attributes); err != nil {
 			return
 		}
