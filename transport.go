@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/hashicorp/go-retryablehttp"
+
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
@@ -21,7 +23,7 @@ import (
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
 	Server  string
-	client  *http.Client
+	client  *retryablehttp.Client
 	headers map[string]string
 }
 
@@ -48,13 +50,20 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 		return c, nil
 	}
 
+	client := retryablehttp.NewClient()
+	client.RetryMax = 3
+	client.RetryWaitMin = 100 * time.Millisecond
+	client.RetryWaitMax = 500 * time.Millisecond
+	client.Logger = nil
+	client.HTTPClient = &http.Client{
+		Timeout:   time.Second * 5,
+		Transport: &innerTransport,
+	}
+
 	return &HTTPTransport{
 		Server:  url,
 		headers: map[string]string{},
-		client: &http.Client{
-			Timeout:   time.Second * 15,
-			Transport: &innerTransport,
-		},
+		client:  client,
 	}
 }
 
@@ -66,7 +75,8 @@ func (transport *HTTPTransport) SetHeader(name, val string) {
 func (transport *HTTPTransport) request(
 	url string, method string, reader io.Reader, isstr bool,
 ) (response *http.Response, err error) {
-	req, err := http.NewRequest(method, transport.Server+url, reader)
+	var req retryablehttp.Request
+	req.Request, err = http.NewRequest(method, transport.Server+url, reader)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
@@ -83,7 +93,7 @@ func (transport *HTTPTransport) request(
 		req.Header.Set(name, val)
 	}
 
-	res, err := transport.client.Do(req)
+	res, err := transport.client.Do(&req)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}

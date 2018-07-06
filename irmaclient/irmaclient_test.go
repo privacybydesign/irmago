@@ -16,14 +16,14 @@ import (
 
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
-	test.StartSchemeManagerServer()
+	test.StartSchemeManagerHttpServer()
 
 	test.ClearTestStorage(nil)
 	test.CreateTestStorage(nil)
 	retCode := m.Run()
 	test.ClearTestStorage(nil)
 
-	test.StopSchemeManagerServer()
+	test.StopSchemeManagerHttpServer()
 	os.Exit(retCode)
 }
 

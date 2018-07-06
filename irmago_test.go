@@ -69,8 +69,20 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	require.Equal(t, false, conf.SchemeManagers[smerr.Manager].Valid)
 }
 
+func TestRetryHTTPRequest(t *testing.T) {
+	test.StartBadHttpServer(3, 1*time.Second, "42")
+
+	transport := NewHTTPTransport("http://localhost:48682")
+	transport.client.HTTPClient.Timeout = 500 * time.Millisecond
+	bts, err := transport.GetBytes("")
+	require.NoError(t, err)
+	require.Equal(t, "42\n", string(bts))
+
+	test.StopBadHttpServer()
+}
+
 func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
-	test.StartSchemeManagerServer()
+	test.StartSchemeManagerHttpServer()
 
 	require.NoError(t, fs.EnsureDirectoryExists("testdata/storage/test"))
 	conf, err := NewConfiguration("testdata/storage/test/irma_configuration", "testdata/irma_configuration_invalid")
@@ -82,7 +94,7 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
-	test.StopSchemeManagerServer()
+	test.StopSchemeManagerHttpServer()
 	test.ClearTestStorage(t)
 }
 

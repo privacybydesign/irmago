@@ -3,13 +3,14 @@
 package test
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/stretchr/testify/require"
 )
@@ -26,8 +27,10 @@ func checkError(t *testing.T, err error) {
 }
 
 var schemeServer *http.Server
+var badServer *http.Server
+var badServerCount int
 
-func StartSchemeManagerServer() {
+func StartSchemeManagerHttpServer() {
 	path := findTestdataFolder(nil)
 	schemeServer = &http.Server{Addr: ":48681", Handler: http.FileServer(http.Dir(path))}
 	go func() {
@@ -36,8 +39,32 @@ func StartSchemeManagerServer() {
 	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
-func StopSchemeManagerServer() {
+func StopSchemeManagerHttpServer() {
 	schemeServer.Close()
+}
+
+// StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.
+func StartBadHttpServer(count int, timeout time.Duration, success string) {
+	badServer = &http.Server{Addr: ":48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if badServerCount >= count {
+			fmt.Fprintln(w, success)
+			return
+		}
+		badServerCount++
+		if badServerCount == 1 {
+			time.Sleep(timeout)
+		}
+		w.WriteHeader(500)
+	})}
+
+	go func() {
+		badServer.ListenAndServe()
+	}()
+	time.Sleep(100 * time.Millisecond) // Give server time to start
+}
+
+func StopBadHttpServer() {
+	badServer.Close()
 }
 
 // findTestdataFolder finds the "testdata" folder which is in . or ..
