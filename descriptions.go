@@ -65,7 +65,8 @@ type CredentialType struct {
 // AttributeDescription is a description of an attribute within a credential type.
 type AttributeDescription struct {
 	ID          string `xml:"id,attr"`
-	Optional    string `xml:"optional,attr"`
+	Optional    string `xml:"optional,attr"  json:",omitempty"`
+	Index       *int   `xml:"index,attr" json:",omitempty"`
 	Name        TranslatedString
 	Description TranslatedString
 }
