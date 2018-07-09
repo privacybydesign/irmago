@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 
@@ -235,12 +236,8 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		manager.Status = SchemeManagerStatusParsingError
 		return
 	}
-	if manager.XMLVersion < 7 {
-		manager.Status = SchemeManagerStatusParsingError
-		return errors.New("Unsupported scheme manager description")
-	}
-	if filepath.Base(dir) != manager.ID {
-		return errors.Errorf("Scheme %s has wrong directory name %s", manager.ID, filepath.Base(dir))
+	if err = conf.checkScheme(manager, dir); err != nil {
+		return
 	}
 
 	// Verify that all other files are validly signed
@@ -968,8 +965,9 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 // Methods containing consistency checks on irma_configuration
 
 func (conf *Configuration) checkIssuer(manager *SchemeManager, issuer *Issuer, dir string) error {
-	// Check that the issuer has public keys
 	issuerid := issuer.Identifier()
+	conf.checkTranslations(fmt.Sprintf("Issuer %s", issuerid.String()), issuer)
+	// Check that the issuer has public keys
 	pkpath := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(pkpath)
 	if err != nil {
@@ -993,6 +991,7 @@ func (conf *Configuration) checkIssuer(manager *SchemeManager, issuer *Issuer, d
 
 func (conf *Configuration) checkCredentialType(manager *SchemeManager, issuer *Issuer, cred *CredentialType, dir string) error {
 	credid := cred.Identifier()
+	conf.checkTranslations(fmt.Sprintf("Credential type %s", credid.String()), cred)
 	if cred.XMLVersion < 4 {
 		return errors.New("Unsupported credential type description")
 	}
@@ -1019,6 +1018,7 @@ func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 		return errors.Errorf("Credenial type %s has no attributes", name)
 	}
 	for i, attr := range cred.Attributes {
+		conf.checkTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
 		index := i
 		if attr.Index != nil {
 			index = *attr.Index
@@ -1032,4 +1032,40 @@ func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the index-tags", name))
 	}
 	return nil
+}
+
+func (conf *Configuration) checkScheme(scheme *SchemeManager, dir string) error {
+	if scheme.XMLVersion < 7 {
+		scheme.Status = SchemeManagerStatusParsingError
+		return errors.New("Unsupported scheme manager description")
+	}
+	if filepath.Base(dir) != scheme.ID {
+		scheme.Status = SchemeManagerStatusParsingError
+		return errors.Errorf("Scheme %s has wrong directory name %s", scheme.ID, filepath.Base(dir))
+	}
+	conf.checkTranslations(fmt.Sprintf("Scheme %s", scheme.ID), scheme)
+	return nil
+}
+
+// checkTranslations checks for each member of the interface o that is of type TranslatedString
+// that it contains all necessary translations.
+func (conf *Configuration) checkTranslations(file string, o interface{}) {
+	langs := []string{"en", "nl"} // Hardcode these for now, TODO make configurable
+	v := reflect.ValueOf(o)
+
+	// Dereference in case of pointer or interface
+	if v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		v = v.Elem()
+	}
+
+	for i := 0; i < v.NumField(); i++ {
+		if v.Field(i).Type() == reflect.TypeOf(TranslatedString{}) {
+			val := v.Field(i).Interface().(TranslatedString)
+			for _, lang := range langs {
+				if _, exists := val[lang]; !exists {
+					conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, v.Type().Field(i).Name))
+				}
+			}
+		}
+	}
 }
