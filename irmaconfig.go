@@ -322,29 +322,12 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 		if issuer.XMLVersion < 4 {
 			return errors.New("Unsupported issuer description")
 		}
-		issuerid := issuer.Identifier()
 
-		// Check that the issuer has public keys
-		pkpath := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
-		files, err := filepath.Glob(pkpath)
-		if err != nil {
+		if err = conf.checkIssuer(manager, issuer, dir); err != nil {
 			return err
 		}
-		if len(files) == 0 {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no public keys", issuerid.String()))
-		}
 
-		if filepath.Base(dir) != issuer.ID {
-			return errors.Errorf("Issuer %s has wrong directory name %s", issuerid.String(), filepath.Base(dir))
-		}
-		if manager.ID != issuer.SchemeManagerID {
-			return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
-		}
-		if err = fs.AssertPathExists(dir + "/logo.png"); err != nil {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
-		}
-
-		conf.Issuers[issuerid] = issuer
+		conf.Issuers[issuer.Identifier()] = issuer
 		issuer.Valid = conf.SchemeManagers[issuer.SchemeManagerIdentifier()].Valid
 		return conf.parseCredentialsFolder(manager, issuer, dir+"/Issues/")
 	})
@@ -414,29 +397,12 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 		if !exists {
 			return nil
 		}
-		if cred.XMLVersion < 4 {
-			return errors.New("Unsupported credential type description")
-		}
-		credid := cred.Identifier()
-		if cred.ID != filepath.Base(dir) {
-			return errors.Errorf("Credential type %s has wrong directory name %s", credid.String(), filepath.Base(dir))
-		}
-		if cred.IssuerID != issuer.ID {
-			return errors.Errorf("Credential type %s has wrong IssuerID %s", credid.String(), cred.IssuerID)
-		}
-		if cred.SchemeManagerID != manager.ID {
-			return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
-		}
-		if err = fs.AssertPathExists(dir + "/logo.png"); err != nil {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
-		}
-		if err = conf.checkAttributes(cred); err != nil {
+		if err = conf.checkCredentialType(manager, issuer, cred, dir); err != nil {
 			return err
 		}
-
 		foundcred = true
 		cred.Valid = conf.SchemeManagers[cred.SchemeManagerIdentifier()].Valid
-
+		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
 		return nil
@@ -445,29 +411,6 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no credential types", issuer.Identifier().String()))
 	}
 	return err
-}
-
-func (conf *Configuration) checkAttributes(cred *CredentialType) error {
-	name := cred.Identifier().String()
-	indices := make(map[int]struct{})
-	count := len(cred.Attributes)
-	if count == 0 {
-		return errors.Errorf("Credenial type %s has no attributes", name)
-	}
-	for i, attr := range cred.Attributes {
-		index := i
-		if attr.Index != nil {
-			index = *attr.Index
-		}
-		if index >= count {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute index at attribute %d", name, i))
-		}
-		indices[index] = struct{}{}
-	}
-	if len(indices) != count {
-		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the index-tags", name))
-	}
-	return nil
 }
 
 // iterateSubfolders iterates over the subfolders of the specified path,
@@ -1020,4 +963,73 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 
 	manager.index = newIndex
 	return
+}
+
+// Methods containing consistency checks on irma_configuration
+
+func (conf *Configuration) checkIssuer(manager *SchemeManager, issuer *Issuer, dir string) error {
+	// Check that the issuer has public keys
+	issuerid := issuer.Identifier()
+	pkpath := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+	files, err := filepath.Glob(pkpath)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no public keys", issuerid.String()))
+	}
+
+	if filepath.Base(dir) != issuer.ID {
+		return errors.Errorf("Issuer %s has wrong directory name %s", issuerid.String(), filepath.Base(dir))
+	}
+	if manager.ID != issuer.SchemeManagerID {
+		return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
+	}
+	if err = fs.AssertPathExists(dir + "/logo.png"); err != nil {
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
+	}
+	return nil
+}
+
+func (conf *Configuration) checkCredentialType(manager *SchemeManager, issuer *Issuer, cred *CredentialType, dir string) error {
+	credid := cred.Identifier()
+	if cred.XMLVersion < 4 {
+		return errors.New("Unsupported credential type description")
+	}
+	if cred.ID != filepath.Base(dir) {
+		return errors.Errorf("Credential type %s has wrong directory name %s", credid.String(), filepath.Base(dir))
+	}
+	if cred.IssuerID != issuer.ID {
+		return errors.Errorf("Credential type %s has wrong IssuerID %s", credid.String(), cred.IssuerID)
+	}
+	if cred.SchemeManagerID != manager.ID {
+		return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
+	}
+	if err := fs.AssertPathExists(dir + "/logo.png"); err != nil {
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
+	}
+	return conf.checkAttributes(cred)
+}
+
+func (conf *Configuration) checkAttributes(cred *CredentialType) error {
+	name := cred.Identifier().String()
+	indices := make(map[int]struct{})
+	count := len(cred.Attributes)
+	if count == 0 {
+		return errors.Errorf("Credenial type %s has no attributes", name)
+	}
+	for i, attr := range cred.Attributes {
+		index := i
+		if attr.Index != nil {
+			index = *attr.Index
+		}
+		if index >= count {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute index at attribute %d", name, i))
+		}
+		indices[index] = struct{}{}
+	}
+	if len(indices) != count {
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the index-tags", name))
+	}
+	return nil
 }
