@@ -47,6 +47,11 @@ func RunVerify(path string) error {
 			return err
 		}
 	}
+
+	for _, warning := range conf.Warnings {
+		fmt.Println("Warning: " + warning)
+	}
+
 	return nil
 }
 

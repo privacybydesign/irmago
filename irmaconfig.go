@@ -46,6 +46,8 @@ type Configuration struct {
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
 	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
 
+	Warnings []string
+
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
@@ -75,6 +77,8 @@ const (
 	SchemeManagerStatusInvalidSignature    = SchemeManagerStatus("InvalidSignature")
 	SchemeManagerStatusParsingError        = SchemeManagerStatus("ParsingError")
 	SchemeManagerStatusContentParsingError = SchemeManagerStatus("ContentParsingError")
+
+	pubkeyPattern = "%s/%s/%s/PublicKeys/*.xml"
 )
 
 func (sme SchemeManagerError) Error() string {
@@ -235,6 +239,9 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		manager.Status = SchemeManagerStatusParsingError
 		return errors.New("Unsupported scheme manager description")
 	}
+	if filepath.Base(dir) != manager.ID {
+		return errors.Errorf("Scheme %s has wrong directory name %s", manager.ID, filepath.Base(dir))
+	}
 
 	// Verify that all other files are validly signed
 	err = conf.VerifySchemeManager(manager)
@@ -315,9 +322,31 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 		if issuer.XMLVersion < 4 {
 			return errors.New("Unsupported issuer description")
 		}
-		conf.Issuers[issuer.Identifier()] = issuer
+		issuerid := issuer.Identifier()
+
+		// Check that the issuer has public keys
+		pkpath := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+		files, err := filepath.Glob(pkpath)
+		if err != nil {
+			return err
+		}
+		if len(files) == 0 {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no public keys", issuerid.String()))
+		}
+
+		if filepath.Base(dir) != issuer.ID {
+			return errors.Errorf("Issuer %s has wrong directory name %s", issuerid.String(), filepath.Base(dir))
+		}
+		if manager.ID != issuer.SchemeManagerID {
+			return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
+		}
+		if err = fs.AssertPathExists(dir + "/logo.png"); err != nil {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
+		}
+
+		conf.Issuers[issuerid] = issuer
 		issuer.Valid = conf.SchemeManagers[issuer.SchemeManagerIdentifier()].Valid
-		return conf.parseCredentialsFolder(manager, dir+"/Issues/")
+		return conf.parseCredentialsFolder(manager, issuer, dir+"/Issues/")
 	})
 }
 
@@ -345,7 +374,7 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid IssuerIdentifier) error {
-	path := fmt.Sprintf("%s/%s/%s/PublicKeys/*.xml", conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+	path := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(path)
 	if err != nil {
 		return err
@@ -374,8 +403,9 @@ func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid Issu
 }
 
 // parse $schememanager/$issuer/Issues/*/description.xml
-func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, path string) error {
-	return iterateSubfolders(path, func(dir string) error {
+func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer *Issuer, path string) error {
+	var foundcred bool
+	err := iterateSubfolders(path, func(dir string) error {
 		cred := &CredentialType{}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", cred)
 		if err != nil {
@@ -387,12 +417,57 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, path s
 		if cred.XMLVersion < 4 {
 			return errors.New("Unsupported credential type description")
 		}
-		cred.Valid = conf.SchemeManagers[cred.SchemeManagerIdentifier()].Valid
 		credid := cred.Identifier()
+		if cred.ID != filepath.Base(dir) {
+			return errors.Errorf("Credential type %s has wrong directory name %s", credid.String(), filepath.Base(dir))
+		}
+		if cred.IssuerID != issuer.ID {
+			return errors.Errorf("Credential type %s has wrong IssuerID %s", credid.String(), cred.IssuerID)
+		}
+		if cred.SchemeManagerID != manager.ID {
+			return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
+		}
+		if err = fs.AssertPathExists(dir + "/logo.png"); err != nil {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
+		}
+		if err = conf.checkAttributes(cred); err != nil {
+			return err
+		}
+
+		foundcred = true
+		cred.Valid = conf.SchemeManagers[cred.SchemeManagerIdentifier()].Valid
+
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
 		return nil
 	})
+	if !foundcred {
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no credential types", issuer.Identifier().String()))
+	}
+	return err
+}
+
+func (conf *Configuration) checkAttributes(cred *CredentialType) error {
+	name := cred.Identifier().String()
+	indices := make(map[int]struct{})
+	count := len(cred.Attributes)
+	if count == 0 {
+		return errors.Errorf("Credenial type %s has no attributes", name)
+	}
+	for i, attr := range cred.Attributes {
+		index := i
+		if attr.Index != nil {
+			index = *attr.Index
+		}
+		if index >= count {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute index at attribute %d", name, i))
+		}
+		indices[index] = struct{}{}
+	}
+	if len(indices) != count {
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the index-tags", name))
+	}
+	return nil
 }
 
 // iterateSubfolders iterates over the subfolders of the specified path,
