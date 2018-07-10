@@ -41,6 +41,9 @@ func RunVerify(path string) error {
 	if err := conf.ParseFolder(); err != nil {
 		return err
 	}
+	if err := conf.CheckKeys(); err != nil {
+		return err
+	}
 
 	for _, manager := range conf.SchemeManagers {
 		if err := conf.VerifySchemeManager(manager); err != nil {

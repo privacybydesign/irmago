@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"time"
 
 	"crypto/sha256"
 
@@ -79,7 +80,8 @@ const (
 	SchemeManagerStatusParsingError        = SchemeManagerStatus("ParsingError")
 	SchemeManagerStatusContentParsingError = SchemeManagerStatus("ContentParsingError")
 
-	pubkeyPattern = "%s/%s/%s/PublicKeys/*.xml"
+	pubkeyPattern  = "%s/%s/%s/PublicKeys/*.xml"
+	privkeyPattern = "%s/%s/%s/PrivateKeys/*.xml"
 )
 
 func (sme SchemeManagerError) Error() string {
@@ -272,7 +274,6 @@ func relativePath(absolute string, relative string) string {
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
 func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.PublicKey, error) {
 	if _, contains := conf.publicKeys[id]; !contains {
-		conf.publicKeys[id] = map[int]*gabi.PublicKey{}
 		if err := conf.parseKeysFolder(conf.SchemeManagers[id.SchemeManagerIdentifier()], id); err != nil {
 			return nil, err
 		}
@@ -354,6 +355,7 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid IssuerIdentifier) error {
+	conf.publicKeys[issuerid] = map[int]*gabi.PublicKey{}
 	path := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(path)
 	if err != nil {
@@ -365,7 +367,7 @@ func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid Issu
 		count := filename[:len(filename)-4]
 		i, err := strconv.Atoi(count)
 		if err != nil {
-			continue
+			return err
 		}
 		bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.Path, file))
 		if err != nil || !found {
@@ -375,11 +377,36 @@ func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid Issu
 		if err != nil {
 			return err
 		}
+		if int(pk.Counter) != i {
+			return errors.Errorf("Public key %s of issuer %s has wrong <Counter>", file, issuerid.String())
+		}
 		pk.Issuer = issuerid.String()
 		conf.publicKeys[issuerid][i] = pk
 	}
 
 	return nil
+}
+
+func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {
+	return conf.matchKeyPattern(issuerid, pubkeyPattern)
+}
+
+func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (i []int, err error) {
+	pkpath := fmt.Sprintf(pattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+	files, err := filepath.Glob(pkpath)
+	if err != nil {
+		return
+	}
+	for _, file := range files {
+		var count int
+		base := filepath.Base(file)
+		if count, err = strconv.Atoi(base[:len(base)-4]); err != nil {
+			return
+		}
+		i = append(i, count)
+	}
+	sort.Ints(i)
+	return
 }
 
 // parse $schememanager/$issuer/Issues/*/description.xml
@@ -1068,4 +1095,63 @@ func (conf *Configuration) checkTranslations(file string, o interface{}) {
 			}
 		}
 	}
+}
+
+func (conf *Configuration) CheckKeys() error {
+	const expiryBoundary = int64(time.Hour/time.Second) * 24 * 31 // 1 month, TODO make configurable
+
+	for issuerid := range conf.Issuers {
+		if err := conf.parseKeysFolder(conf.SchemeManagers[issuerid.SchemeManagerIdentifier()], issuerid); err != nil {
+			return err
+		}
+		indices, err := conf.PublicKeyIndices(issuerid)
+		if err != nil {
+			return err
+		}
+		if len(indices) == 0 {
+			continue
+		}
+		latest, err := conf.PublicKey(issuerid, indices[len(indices)-1])
+		now := time.Now().Unix()
+		if latest == nil || latest.ExpiryDate < now {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no nonexpired public keys", issuerid.String()))
+		}
+		if latest != nil && latest.ExpiryDate > now && latest.ExpiryDate < now+expiryBoundary {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Latest public key of issuer %s expires soon (at %s)",
+				issuerid.String(), time.Unix(latest.ExpiryDate, 0).String()))
+		}
+
+		// Check private keys if any
+		privkeypath := fmt.Sprintf(privkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+		privkeys, err := filepath.Glob(privkeypath)
+		if err != nil {
+			return err
+		}
+		for _, privkey := range privkeys {
+			filename := filepath.Base(privkey)
+			count, err := strconv.Atoi(filename[:len(filename)-4])
+			if err != nil {
+				return err
+			}
+			sk, err := gabi.NewPrivateKeyFromFile(privkey)
+			if err != nil {
+				return err
+			}
+			if int(sk.Counter) != count {
+				return errors.Errorf("Private key %s of issuer %s has wrong <Counter>", filename, issuerid.String())
+			}
+			pk, err := conf.PublicKey(issuerid, count)
+			if err != nil {
+				return err
+			}
+			if pk == nil {
+				return errors.Errorf("Private key %s of issuer %s has no corresponding public key", filename, issuerid.String())
+			}
+			if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
+				return errors.Errorf("Private key %s of issuer %s does not belong to public key %s", filename, issuerid.String(), filename)
+			}
+		}
+	}
+
+	return nil
 }
