@@ -11,7 +11,7 @@
   branch = "master"
   name = "github.com/bwesterb/go-atum"
   packages = ["."]
-  revision = "f48b4b5eb04060a3f982a89795d3d6e36b44d127"
+  revision = "b79a6b33c09b7b8d49d2454bbde06162fdc0cd70"
 
 [[projects]]
   branch = "master"
@@ -36,6 +36,12 @@
   packages = ["."]
   revision = "5c37fe3735342a2e0d01c87a907579987c8936cc"
   version = "v1.0.0"
+
+[[projects]]
+  name = "github.com/coreos/bbolt"
+  packages = ["."]
+  revision = "583e8937c61f1af6513608ccc75c97b6abdf4ff9"
+  version = "v1.3.0"
 
 [[projects]]
   branch = "master"
@@ -104,27 +110,6 @@
   version = "v1.0"
 
 [[projects]]
-  name = "github.com/jinzhu/gorm"
-  packages = [
-    ".",
-    "dialects/sqlite"
-  ]
-  revision = "6ed508ec6a4ecb3531899a69cbc746ccf65a4166"
-  version = "v1.9.1"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/jinzhu/inflection"
-  packages = ["."]
-  revision = "04140366298a54a039076d798123ffa108fff46c"
-
-[[projects]]
-  name = "github.com/mattn/go-sqlite3"
-  packages = ["."]
-  revision = "323a32be5a2421b8c7087225079c6c900ec397cd"
-  version = "v1.7.0"
-
-[[projects]]
   branch = "master"
   name = "github.com/mhe/gabi"
   packages = ["."]
@@ -189,6 +174,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/timshannon/bolthold"
+  packages = ["."]
+  revision = "525de816b1a2c1cfbb67b5e9936a6b76e0c7f3e6"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/crypto"
   packages = [
     "ed25519",
@@ -197,9 +188,15 @@
   ]
   revision = "159ae71589f303f9fbfd7528413e0fe944b9c1cb"
 
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sys"
+  packages = ["unix"]
+  revision = "1b2967e3c290b7c545b3db0deeda16e9be4f98a2"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "80b9bb2987ff9a7090c2011d390c1c1b8e79db9d5054a1dcba213c05f22d5ff3"
+  inputs-digest = "edc6335a88ff851653a42b9198c2f0f2e7f27502e18a9b48d2641de3b0bd69be"
   solver-name = "gps-cdcl"
   solver-version = 1

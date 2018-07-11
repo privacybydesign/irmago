@@ -53,6 +53,10 @@
   name = "github.com/stretchr/testify"
   version = "1.2.1"
 
+[[override]]
+  branch = "master"
+  name = "github.com/timshannon/bolthold"
+
 [prune]
   go-tests = true
   unused-packages = true
