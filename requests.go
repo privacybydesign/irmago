@@ -243,6 +243,19 @@ func (ir *IssuanceRequest) ToDisclose() AttributeDisjunctionList {
 	return ir.Disclose
 }
 
+func (ir *IssuanceRequest) GetCredentialInfoList(conf *Configuration, version *ProtocolVersion) (CredentialInfoList, error) {
+	if ir.CredentialInfoList == nil {
+		for _, credreq := range ir.Credentials {
+			info, err := credreq.Info(conf, GetMetadataVersion(version))
+			if err != nil {
+				return nil, err
+			}
+			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
+		}
+	}
+	return ir.CredentialInfoList, nil
+}
+
 // GetContext returns the context of this session.
 func (ir *IssuanceRequest) GetContext() *big.Int { return ir.Context }
 
