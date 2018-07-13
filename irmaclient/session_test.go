@@ -310,6 +310,8 @@ func TestAttributeByteEncoding(t *testing.T) {
 	the same positive bigint. */
 	jwtcontents = getIssuanceJwt("testip", false, "é")
 	sessionHelper(t, jwtcontents, "issue", client)
+
+	test.ClearTestStorage(t)
 }
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Client) {
