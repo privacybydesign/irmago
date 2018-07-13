@@ -30,18 +30,25 @@ type LogEntry struct {
 const actionRemoval = irma.Action("removal")
 
 func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) (irma.DisclosedCredentialList, error) {
+	if entry.Type == actionRemoval {
+		return irma.DisclosedCredentialList{}, nil
+	}
 	var proofs gabi.ProofList
+	response, err := entry.GetResponse()
+	if err != nil {
+		return nil, err
+	}
 	if entry.Type == irma.ActionIssuing {
-		proofs = entry.response.(*gabi.IssueCommitmentMessage).Proofs
+		proofs = response.(*gabi.IssueCommitmentMessage).Proofs
 	} else {
-		proofs = entry.response.(gabi.ProofList)
+		proofs = response.(gabi.ProofList)
 	}
 	return irma.ExtractDisclosedCredentials(conf, proofs)
 }
 
 func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma.CredentialInfoList, err error) {
 	if entry.Type != irma.ActionIssuing {
-		return nil, nil
+		return irma.CredentialInfoList{}, nil
 	}
 	jwt, err := irma.ParseRequestorJwt(irma.ActionIssuing, entry.SessionInfo.Jwt)
 	if err != nil {
@@ -78,21 +85,24 @@ func (entry *LogEntry) Jwt() (irma.RequestorJwt, error) {
 // GetResponse returns our response to the requestor from the log entry.
 func (entry *LogEntry) GetResponse() (interface{}, error) {
 	if entry.response == nil {
+		var err error
 		switch entry.Type {
 		case actionRemoval:
 			return nil, nil
 		case irma.ActionSigning:
 			fallthrough
 		case irma.ActionDisclosing:
-			entry.response = []*gabi.ProofD{}
+			proofs := &gabi.ProofD{}
+			err = json.Unmarshal(entry.rawResponse, proofs)
+			entry.response = *proofs
 		case irma.ActionIssuing:
 			entry.response = &gabi.IssueCommitmentMessage{}
+			err = json.Unmarshal(entry.rawResponse, entry.response)
 		default:
 			return nil, errors.New("Invalid log type")
 		}
-		err := json.Unmarshal(entry.rawResponse, entry.response)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(err)
 		}
 	}
 
@@ -107,13 +117,8 @@ func (entry *LogEntry) GetSignature() (abs *irma.IrmaSignedMessage, err error) {
 	if err != nil {
 		return
 	}
-	proofds := response.([]*gabi.ProofD)
-	signature := make(gabi.ProofList, len(proofds))
-	for i, proof := range proofds {
-		signature[i] = proof
-	}
 	return &irma.IrmaSignedMessage{
-		Signature: signature,
+		Signature: response.(gabi.ProofList),
 		Nonce:     entry.SessionInfo.Nonce,
 		Context:   entry.SessionInfo.Context,
 		Message:   string(entry.SignedMessage),
@@ -136,31 +141,35 @@ type jsonLogEntry struct {
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
-	var err error
 	temp := &jsonLogEntry{}
-	if err = json.Unmarshal(bytes, temp); err != nil {
-		return err
+	if err := json.Unmarshal(bytes, temp); err != nil {
+		return errors.New(err)
 	}
 
-	*entry = LogEntry{
-		Type:    temp.Type,
-		Time:    temp.Time,
-		Version: temp.Version,
-		SessionInfo: &irma.SessionInfo{
+	var sessionInfo *irma.SessionInfo
+	if temp.SessionInfo != nil {
+		sessionInfo = &irma.SessionInfo{
 			Jwt:     temp.SessionInfo.Jwt,
 			Nonce:   temp.SessionInfo.Nonce,
 			Context: temp.SessionInfo.Context,
 			Keys:    make(map[irma.IssuerIdentifier]int),
-		},
+		}
+
+		// TODO remove on protocol upgrade
+		for iss, count := range temp.SessionInfo.Keys {
+			sessionInfo.Keys[irma.NewIssuerIdentifier(iss)] = count
+		}
+	}
+
+	*entry = LogEntry{
+		Type:          temp.Type,
+		Time:          temp.Time,
+		Version:       temp.Version,
+		SessionInfo:   sessionInfo,
 		Removed:       temp.Removed,
 		SignedMessage: temp.SignedMessage,
 		Timestamp:     temp.Timestamp,
 		rawResponse:   temp.Response,
-	}
-
-	// TODO remove on protocol upgrade
-	for iss, count := range temp.SessionInfo.Keys {
-		entry.SessionInfo.Keys[irma.NewIssuerIdentifier(iss)] = count
 	}
 
 	return nil
@@ -173,7 +182,7 @@ func (entry *LogEntry) MarshalJSON() ([]byte, error) {
 		if bytes, err := json.Marshal(entry.response); err == nil {
 			entry.rawResponse = json.RawMessage(bytes)
 		} else {
-			return nil, err
+			return nil, errors.New(err)
 		}
 	}
 

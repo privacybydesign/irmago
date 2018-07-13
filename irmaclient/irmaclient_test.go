@@ -188,6 +188,9 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, response)
 	require.IsType(t, &gabi.IssueCommitmentMessage{}, response)
+	disclosed, err := entry.GetDisclosedCredentials(client.Configuration)
+	require.NoError(t, err)
+	require.NotEmpty(t, disclosed)
 
 	jwt = getDisclosureJwt("testsp", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	sessionHelper(t, jwt, "verification", client)
@@ -206,7 +209,7 @@ func TestLogging(t *testing.T) {
 	require.NotNil(t, response)
 	require.IsType(t, gabi.ProofList{}, response)
 
-	disclosed, err := entry.GetDisclosedCredentials(client.Configuration)
+	disclosed, err = entry.GetDisclosedCredentials(client.Configuration)
 	require.NoError(t, err)
 	require.NotEmpty(t, disclosed)
 
