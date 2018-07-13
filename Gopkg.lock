@@ -81,9 +81,21 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/hashicorp/go-cleanhttp"
+  packages = ["."]
+  revision = "d5fe4b57a186c716b0e00b8c301cbd9b4182694d"
+
+[[projects]]
+  branch = "master"
   name = "github.com/hashicorp/go-multierror"
   packages = ["."]
   revision = "b7773ae218740a7be65057fc60b366a49b538a44"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/hashicorp/go-retryablehttp"
+  packages = ["."]
+  revision = "3b087ef2d313afe6c55b2f511d20db04ca767075"
 
 [[projects]]
   name = "github.com/inconshreveable/mousetrap"
@@ -188,6 +200,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0f5a3c80145c24a3d4605a3c94c6f71ab36611406006b51c9f636e16ba189df1"
+  inputs-digest = "80b9bb2987ff9a7090c2011d390c1c1b8e79db9d5054a1dcba213c05f22d5ff3"
   solver-name = "gps-cdcl"
   solver-version = 1
