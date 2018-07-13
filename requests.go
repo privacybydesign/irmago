@@ -68,9 +68,10 @@ type SignatureRequest struct {
 // optionally also asking for certain attributes to be simultaneously disclosed.
 type IssuanceRequest struct {
 	SessionRequest
-	Credentials        []*CredentialRequest     `json:"credentials"`
-	Disclose           AttributeDisjunctionList `json:"disclose"`
-	CredentialInfoList CredentialInfoList       `json:",omitempty"`
+	Credentials               []*CredentialRequest     `json:"credentials"`
+	Disclose                  AttributeDisjunctionList `json:"disclose"`
+	CredentialInfoList        CredentialInfoList       `json:",omitempty"`
+	RemovalCredentialInfoList CredentialInfoList
 }
 
 // A CredentialRequest contains the attributes and metadata of a credential
