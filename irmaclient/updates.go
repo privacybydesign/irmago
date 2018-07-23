@@ -26,18 +26,18 @@ type update struct {
 }
 
 var clientUpdates = []func(client *Client) error{
-	// Convert old cardemu.xml Android storage to our own storage format
+	// 0: Convert old cardemu.xml Android storage to our own storage format
 	func(client *Client) error {
 		_, err := client.ParseAndroidStorage()
 		return err
 	},
 
-	// Adding scheme manager index, signature and public key
+	// 1: Adding scheme manager index, signature and public key
 	// Check the signatures of all scheme managers, if any is not ok,
 	// copy the entire irma_configuration folder from assets
 	nil, // made irrelevant by irma_configuration-autocopying
 
-	// Rename config -> preferences
+	// 2: Rename config -> preferences
 	func(client *Client) (err error) {
 		exists, err := fs.PathExists(client.storage.path("config"))
 		if !exists || err != nil {
@@ -57,10 +57,10 @@ var clientUpdates = []func(client *Client) error{
 		return client.storage.StorePreferences(client.Preferences)
 	},
 
-	// Copy new irma_configuration out of assets
+	// 3: Copy new irma_configuration out of assets
 	nil, // made irrelevant by irma_configuration-autocopying
 
-	// For each keyshare server, include in its struct the identifier of its scheme manager
+	// 4: For each keyshare server, include in its struct the identifier of its scheme manager
 	func(client *Client) (err error) {
 		keyshareServers, err := client.storage.LoadKeyshareServers()
 		if err != nil {
@@ -72,17 +72,59 @@ var clientUpdates = []func(client *Client) error{
 		return client.storage.StoreKeyshareServers(keyshareServers)
 	},
 
-	// Remove the test scheme manager which was erroneously included in a production build
+	// 5: Remove the test scheme manager which was erroneously included in a production build
 	nil, // No longer necessary, also broke many unit tests
 
-	// Guess and include version protocol in issuance logs
+	// 6: Guess and include version protocol in issuance logs, and convert log entry structure
+	// from Response to either IssueCommitment or ProofList
 	func(client *Client) (err error) {
 		logs, err := client.Logs()
 		if err != nil {
 			return
 		}
-		for _, log := range logs {
-			if log.Type != irma.ActionIssuing {
+		// The logs read above do not contain the Response field as it has been removed from the LogEntry struct.
+		// So read the logs again into a slice of a temp struct that does contain this field.
+		type oldLogEntry struct {
+			Response json.RawMessage
+		}
+		var oldLogs []*oldLogEntry
+		if err = client.storage.load(&oldLogs, logsFile); err != nil {
+			return
+		}
+		// Sanity check, this should be true as both log slices were read from the same source
+		if len(oldLogs) != len(logs) {
+			return errors.New("Log count does not match")
+		}
+
+		for i, entry := range logs {
+			oldEntry := oldLogs[i]
+
+			if len(oldEntry.Response) == 0 {
+				return errors.New("Log entry had no Response field")
+			}
+
+			switch entry.Type {
+			case actionRemoval: // nop
+			case irma.ActionSigning:
+				fallthrough
+			case irma.ActionDisclosing:
+				proofs := []*gabi.ProofD{}
+				if err = json.Unmarshal(oldEntry.Response, &proofs); err != nil {
+					return
+				}
+				for _, proof := range proofs {
+					entry.ProofList = append(entry.ProofList, proof)
+				}
+			case irma.ActionIssuing:
+				entry.IssueCommitment = &gabi.IssueCommitmentMessage{}
+				if err = json.Unmarshal(oldEntry.Response, entry.IssueCommitment); err != nil {
+					return err
+				}
+			default:
+				return errors.New("Invalid log type")
+			}
+
+			if entry.Type != irma.ActionIssuing {
 				continue
 			}
 			// Ugly hack alert: unfortunately the protocol version that was used in the session is nowhere recorded.
@@ -91,15 +133,15 @@ var clientUpdates = []func(client *Client) error{
 			// is to check if the attributes are human-readable, i.e., alphanumeric: if the presence bit is present and
 			// we do not shift it away, then they almost certainly will not be.
 			var jwt irma.RequestorJwt
-			jwt, err = log.Jwt()
+			jwt, err = entry.Jwt()
 			if err != nil {
 				return
 			}
 			for _, attr := range jwt.IrmaSession().(*irma.IssuanceRequest).Credentials[0].Attributes {
 				if regexp.MustCompile("^\\w").Match([]byte(attr)) {
-					log.Version = irma.NewVersion(2, 2)
+					entry.Version = irma.NewVersion(2, 2)
 				} else {
-					log.Version = irma.NewVersion(2, 3)
+					entry.Version = irma.NewVersion(2, 3)
 				}
 				break
 			}
