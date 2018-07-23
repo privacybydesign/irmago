@@ -54,7 +54,7 @@ func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma
 	if err != nil {
 		return
 	}
-	ir := jwt.IrmaSession().(*irma.IssuanceRequest)
+	ir := jwt.SessionRequest().(*irma.IssuanceRequest)
 	return ir.GetCredentialInfoList(conf, entry.Version)
 }
 
@@ -85,7 +85,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 
 	case irma.ActionSigning:
 		// Get the signed message and timestamp
-		request := session.irmaSession.(*irma.SignatureRequest)
+		request := session.request.(*irma.SignatureRequest)
 		entry.SignedMessage = []byte(request.Message)
 		entry.Timestamp = request.Timestamp
 

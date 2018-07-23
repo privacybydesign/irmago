@@ -641,7 +641,7 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 // Download downloads the issuers, credential types and public keys specified in set
 // if the current Configuration does not already have them,  and checks their authenticity
 // using the scheme manager index.
-func (conf *Configuration) Download(session IrmaSession) (downloaded *IrmaIdentifierSet, err error) {
+func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIdentifierSet, err error) {
 	managers := make(map[string]struct{}) // Managers that we must update
 	downloaded = &IrmaIdentifierSet{
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
@@ -669,7 +669,7 @@ func (conf *Configuration) Download(session IrmaSession) (downloaded *IrmaIdenti
 	return
 }
 
-func (conf *Configuration) checkCredentialTypes(session IrmaSession, managers map[string]struct{}) error {
+func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers map[string]struct{}) error {
 	var disjunctions AttributeDisjunctionList
 	var typ *CredentialType
 	var contains bool

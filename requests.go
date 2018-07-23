@@ -15,8 +15,8 @@ import (
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
-// SessionRequest contains the context and nonce for an IRMA session.
-type SessionRequest struct {
+// BaseRequest contains the context and nonce for an IRMA session.
+type BaseRequest struct {
 	Context    *big.Int                 `json:"context"`
 	Nonce      *big.Int                 `json:"nonce"`
 	Candidates [][]*AttributeIdentifier `json:"-"`
@@ -27,33 +27,33 @@ type SessionRequest struct {
 	version *ProtocolVersion
 }
 
-func (sr *SessionRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
+func (sr *BaseRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
 	sr.Candidates = candidates
 }
 
 // DisclosureChoice returns the attributes to be disclosed in this session.
-func (sr *SessionRequest) DisclosureChoice() *DisclosureChoice {
+func (sr *BaseRequest) DisclosureChoice() *DisclosureChoice {
 	return sr.Choice
 }
 
 // SetDisclosureChoice sets the attributes to be disclosed in this session.
-func (sr *SessionRequest) SetDisclosureChoice(choice *DisclosureChoice) {
+func (sr *BaseRequest) SetDisclosureChoice(choice *DisclosureChoice) {
 	sr.Choice = choice
 }
 
 // ...
-func (sr *SessionRequest) SetVersion(v *ProtocolVersion) {
+func (sr *BaseRequest) SetVersion(v *ProtocolVersion) {
 	sr.version = v
 }
 
 // ...
-func (sr *SessionRequest) GetVersion() *ProtocolVersion {
+func (sr *BaseRequest) GetVersion() *ProtocolVersion {
 	return sr.version
 }
 
 // A DisclosureRequest is a request to disclose certain attributes.
 type DisclosureRequest struct {
-	SessionRequest
+	BaseRequest
 	Content AttributeDisjunctionList `json:"content"`
 }
 
@@ -67,7 +67,7 @@ type SignatureRequest struct {
 // An IssuanceRequest is a request to issue certain credentials,
 // optionally also asking for certain attributes to be simultaneously disclosed.
 type IssuanceRequest struct {
-	SessionRequest
+	BaseRequest
 	Credentials []*CredentialRequest     `json:"credentials"`
 	Disclose    AttributeDisjunctionList `json:"disclose"`
 
@@ -125,8 +125,8 @@ type IdentityProviderJwt struct {
 	Request IdentityProviderRequest `json:"iprequest"`
 }
 
-// IrmaSession is an IRMA session.
-type IrmaSession interface {
+// SessionRequest is an IRMA session.
+type SessionRequest interface {
 	GetNonce() *big.Int
 	SetNonce(*big.Int)
 	GetContext() *big.Int
@@ -468,17 +468,17 @@ func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityPro
 
 // A RequestorJwt contains an IRMA session object.
 type RequestorJwt interface {
-	IrmaSession() IrmaSession
+	SessionRequest() SessionRequest
 	Requestor() string
 }
 
 func (jwt *ServerJwt) Requestor() string { return jwt.ServerName }
 
-// IrmaSession returns an IRMA session object.
-func (jwt *ServiceProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+// SessionRequest returns an IRMA session object.
+func (jwt *ServiceProviderJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
 
-// IrmaSession returns an IRMA session object.
-func (jwt *SignatureRequestorJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+// SessionRequest returns an IRMA session object.
+func (jwt *SignatureRequestorJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
 
-// IrmaSession returns an IRMA session object.
-func (jwt *IdentityProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+// SessionRequest returns an IRMA session object.
+func (jwt *IdentityProviderJwt) SessionRequest() SessionRequest { return jwt.Request.Request }

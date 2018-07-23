@@ -73,8 +73,8 @@ func (th TestHandler) RequestVerificationPermission(request irma.DisclosureReque
 }
 func (th TestHandler) RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler) {
 	dreq := irma.DisclosureRequest{
-		SessionRequest: request.SessionRequest,
-		Content:        request.Disclose,
+		BaseRequest: request.BaseRequest,
+		Content:     request.Disclose,
 	}
 	th.RequestVerificationPermission(dreq, ServerName, callback)
 }
@@ -101,7 +101,7 @@ func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 	return irma.NewSignatureRequestorJwt(name, &irma.SignatureRequest{
 		Message: "test",
 		DisclosureRequest: irma.DisclosureRequest{
-			SessionRequest: irma.SessionRequest{
+			BaseRequest: irma.BaseRequest{
 				Nonce:   big.NewInt(1),
 				Context: big.NewInt(1),
 			},

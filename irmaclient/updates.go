@@ -137,7 +137,7 @@ var clientUpdates = []func(client *Client) error{
 			if err != nil {
 				return
 			}
-			for _, attr := range jwt.IrmaSession().(*irma.IssuanceRequest).Credentials[0].Attributes {
+			for _, attr := range jwt.SessionRequest().(*irma.IssuanceRequest).Credentials[0].Attributes {
 				if regexp.MustCompile("^\\w").Match([]byte(attr)) {
 					entry.Version = irma.NewVersion(2, 2)
 				} else {

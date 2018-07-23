@@ -37,7 +37,7 @@ type keyshareSession struct {
 	sessionHandler  keyshareSessionHandler
 	pinRequestor    KeysharePinRequestor
 	builders        gabi.ProofBuilderList
-	session         irma.IrmaSession
+	session         irma.SessionRequest
 	conf            *irma.Configuration
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer
 	keyshareServer  *keyshareServer // The one keyshare server in use in case of issuance
@@ -64,8 +64,8 @@ type keyshareEnrollment struct {
 
 type keyshareChangepin struct {
 	Username string `json:"id"`
-	OldPin string   `json:"oldpin"`
-	NewPin string   `json:"newpin"`
+	OldPin   string `json:"oldpin"`
+	NewPin   string `json:"newpin"`
 }
 
 type keyshareAuthorization struct {
@@ -153,7 +153,7 @@ func startKeyshareSession(
 	sessionHandler keyshareSessionHandler,
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
-	session irma.IrmaSession,
+	session irma.SessionRequest,
 	conf *irma.Configuration,
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
 	state *issuanceState,
