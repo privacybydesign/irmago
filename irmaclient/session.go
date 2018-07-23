@@ -166,7 +166,7 @@ func (session *session) checkKeyshareEnrollment() bool {
 	return true
 }
 
-func (session *session) panicFailure() {
+func (session *session) recoverFromPanic() {
 	if e := recover(); e != nil {
 		if session.Handler != nil {
 			session.Handler.Failure(session.Action, panicToError(e))
@@ -244,7 +244,7 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 		session.choice = choice
 		session.request.SetDisclosureChoice(choice)
-		go session.do(proceed)
+		go session.doSession(proceed)
 	})
 	session.Handler.RequestSignaturePermission(
 		*session.request.(*irma.SignatureRequest), "E-mail request", callback)
@@ -289,15 +289,15 @@ func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser 
 		session.ServerURL += "/"
 	}
 
-	go session.start()
+	go session.getSessionInfo()
 
 	return session
 }
 
-// start retrieves the first message in the IRMA protocol, checks if we can perform
+// getSessionInfo retrieves the first message in the IRMA protocol, checks if we can perform
 // the request, and informs the user of the outcome.
-func (session *session) start() {
-	defer session.panicFailure()
+func (session *session) getSessionInfo() {
+	defer session.recoverFromPanic()
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
@@ -359,7 +359,7 @@ func (session *session) start() {
 	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 		session.choice = choice
 		session.request.SetDisclosureChoice(choice)
-		go session.do(proceed)
+		go session.doSession(proceed)
 	})
 	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
 	switch session.Action {
@@ -377,8 +377,8 @@ func (session *session) start() {
 	}
 }
 
-func (session *session) do(proceed bool) {
-	defer session.panicFailure()
+func (session *session) doSession(proceed bool) {
+	defer session.recoverFromPanic()
 
 	if !proceed {
 		session.cancel()
