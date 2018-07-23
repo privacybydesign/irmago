@@ -38,7 +38,8 @@ type SignatureProofResult struct {
 // DisclosedCredential contains raw disclosed credentials, without any extra parsing information
 type DisclosedCredential struct {
 	metadataAttribute *MetadataAttribute
-	Attributes        map[AttributeTypeIdentifier]*string `json:"attributes"`
+	rawAttributes     map[AttributeTypeIdentifier]*string
+	Attributes        map[AttributeTypeIdentifier]TranslatedString `json:"attributes"`
 }
 
 type DisclosedCredentialList []*DisclosedCredential
@@ -56,7 +57,7 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 		disclosedAttributeValue := cred.Attributes[attributeId]
 
 		// Continue to next credential if requested attribute isn't disclosed in this credential
-		if disclosedAttributeValue == nil {
+		if disclosedAttributeValue == nil || len(disclosedAttributeValue) == 0 {
 			continue
 		}
 
@@ -64,9 +65,9 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 		// Attribute is satisfied if:
 		// - Attribute is disclosed (i.e. not nil)
 		// - Value is empty OR value equal to disclosedValue
-		ar.AttributeValue = *disclosedAttributeValue
+		ar.AttributeValue = disclosedAttributeValue
 
-		if requestedValue == nil || *disclosedAttributeValue == *requestedValue {
+		if requestedValue == nil || *cred.rawAttributes[attributeId] == *requestedValue {
 			ar.AttributeProofStatus = PRESENT
 			return true, &ar
 		} else {
@@ -77,7 +78,7 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 	}
 
 	// If there is never a value assigned, then this attribute isn't disclosed, and thus missing
-	if ar.AttributeValue == "" {
+	if len(ar.AttributeValue) == 0 {
 		ar.AttributeProofStatus = MISSING
 	}
 	return false, &ar
@@ -150,7 +151,8 @@ func (cred *DisclosedCredential) IsExpired(t time.Time) bool {
 }
 
 func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configuration *Configuration) *DisclosedCredential {
-	attributes := make(map[AttributeTypeIdentifier]*string)
+	rawAttributes := make(map[AttributeTypeIdentifier]*string)
+	attributes := make(map[AttributeTypeIdentifier]TranslatedString)
 
 	metadata := MetadataFromInt(aDisclosed[1], configuration) // index 1 is metadata attribute
 	cred := metadata.CredentialType()
@@ -160,13 +162,15 @@ func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configura
 			continue
 		}
 
-		description := cred.Attributes[k-2]
+		id := cred.Attributes[k-2].GetAttributeTypeIdentifier(cred.Identifier())
 		attributeValue := decodeAttribute(v, metadata.Version())
-		attributes[description.GetAttributeTypeIdentifier(cred.Identifier())] = attributeValue
+		rawAttributes[id] = attributeValue
+		attributes[id] = translateAttribute(attributeValue)
 	}
 
 	return &DisclosedCredential{
 		metadataAttribute: metadata,
+		rawAttributes:     rawAttributes,
 		Attributes:        attributes,
 	}
 }
@@ -191,7 +195,7 @@ func extractPublicKeys(configuration *Configuration, proofList gabi.ProofList) (
 	return publicKeys, nil
 }
 
-func extractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) (DisclosedCredentialList, error) {
+func ExtractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) (DisclosedCredentialList, error) {
 	var credentials = make(DisclosedCredentialList, 0, len(proofList))
 
 	for _, v := range proofList {
@@ -200,6 +204,7 @@ func extractDisclosedCredentials(conf *Configuration, proofList gabi.ProofList) 
 			proof := v.(*gabi.ProofD)
 			cred := NewDisclosedCredentialFromADisclosed(proof.ADisclosed, conf)
 			credentials = append(credentials, cred)
+		case *gabi.ProofU: // nop
 		default:
 			return nil, errors.New("Cannot extract credentials from proof, not a disclosure proofD!")
 		}
@@ -220,7 +225,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 			}
 
 			dummyDisj := DisclosedAttributeDisjunction{
-				DisclosedValue: *cred.Attributes[attrId],
+				DisclosedValue: cred.Attributes[attrId],
 				DisclosedId:    attrId,
 				ProofStatus:    EXTRA,
 			}
@@ -233,7 +238,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 
 // Check an gabi prooflist against a signature proofrequest
 func checkProofWithRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
-	disclosed, err := extractDisclosedCredentials(configuration, irmaSignature.Signature)
+	disclosed, err := ExtractDisclosedCredentials(configuration, irmaSignature.Signature)
 
 	if err != nil {
 		fmt.Println(err)
@@ -337,7 +342,7 @@ func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSi
 	}
 
 	// Extract attributes and return result
-	disclosed, err := extractDisclosedCredentials(configuration, irmaSignature.Signature)
+	disclosed, err := ExtractDisclosedCredentials(configuration, irmaSignature.Signature)
 
 	if err != nil {
 		fmt.Println(err)

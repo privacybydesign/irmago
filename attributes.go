@@ -21,7 +21,7 @@ const (
 )
 
 type AttributeResult struct {
-	AttributeValue       string                  `json:"value"` // Value of the disclosed attribute
+	AttributeValue       TranslatedString        `json:"value"` // Value of the disclosed attribute
 	AttributeId          AttributeTypeIdentifier `json:"id"`
 	AttributeProofStatus AttributeProofStatus    `json:"status"`
 }
@@ -105,10 +105,18 @@ func (al *AttributeList) Strings() []TranslatedString {
 			if val == nil {
 				continue
 			}
-			al.strings[i] = map[string]string{"en": *val, "nl": *val} // TODO
+			al.strings[i] = translateAttribute(val)
 		}
 	}
 	return al.strings
+}
+
+// Localize raw attribute values (to be implemented)
+func translateAttribute(attr *string) TranslatedString {
+	if attr == nil {
+		return nil
+	}
+	return map[string]string{"en": *attr, "nl": *attr}
 }
 
 func (al *AttributeList) decode(i int) *string {
@@ -340,7 +348,7 @@ type AttributeDisjunction struct {
 type DisclosedAttributeDisjunction struct {
 	AttributeDisjunction
 
-	DisclosedValue string
+	DisclosedValue TranslatedString
 	DisclosedId    AttributeTypeIdentifier
 	ProofStatus    AttributeProofStatus
 }
@@ -464,7 +472,7 @@ func (disclosedAttributeDisjunction *DisclosedAttributeDisjunction) MarshalJSON(
 		Label      string                    `json:"label"`
 		Attributes []AttributeTypeIdentifier `json:"attributes"`
 
-		DisclosedValue string                  `json:"disclosedValue"`
+		DisclosedValue TranslatedString        `json:"disclosedValue"`
 		DisclosedId    AttributeTypeIdentifier `json:"disclosedId"`
 		ProofStatus    AttributeProofStatus    `json:"proofStatus"`
 	}{

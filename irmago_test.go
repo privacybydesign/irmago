@@ -293,7 +293,7 @@ func TestVerifyValidSig(t *testing.T) {
 	attributeList := sigProofResult.ToAttributeResultList()
 	require.Len(t, attributeList, 1)
 	require.Equal(t, attributeList[0].AttributeProofStatus, PRESENT)
-	require.Equal(t, attributeList[0].AttributeValue, "456")
+	require.Equal(t, attributeList[0].AttributeValue["en"], "456")
 
 	// Test if we can verify it with a request that contains strings instead of ints for nonce and context
 	stringRequest := "{\"nonce\": \"42\", \"context\": \"1337\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
@@ -310,7 +310,7 @@ func TestVerifyValidSig(t *testing.T) {
 	stringAttributeList := sigProofResult.ToAttributeResultList()
 	require.Len(t, stringAttributeList, 1)
 	require.Equal(t, stringAttributeList[0].AttributeProofStatus, PRESENT)
-	require.Equal(t, stringAttributeList[0].AttributeValue, "456")
+	require.Equal(t, stringAttributeList[0].AttributeValue["en"], "456")
 
 	// Test verify against unmatched request (i.e. different nonce, context or message)
 	unmatched := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you NOTHING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
@@ -324,7 +324,7 @@ func TestVerifyValidSig(t *testing.T) {
 	proofStatus, disclosed := VerifySigWithoutRequest(conf, irmaSignedMessage)
 	require.Equal(t, proofStatus, VALID)
 	require.Len(t, disclosed, 1)
-	require.Equal(t, *disclosed[0].Attributes[NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")], "456")
+	require.Equal(t, disclosed[0].Attributes[NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")]["en"], "456")
 }
 
 func TestVerifyInValidSig(t *testing.T) {

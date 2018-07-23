@@ -2,18 +2,9 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"math/big"
 
 	"github.com/mhe/gabi"
 )
-
-// TODO remove on protocol upgrade
-type logSessionInfo struct {
-	Jwt     string         `json:"jwt"`
-	Nonce   *big.Int       `json:"nonce"`
-	Context *big.Int       `json:"context"`
-	Keys    map[string]int `json:"keys"`
-}
 
 func (pki *publicKeyIdentifier) MarshalJSON() ([]byte, error) {
 	temp := struct {

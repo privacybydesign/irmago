@@ -31,12 +31,41 @@ func (v *ProtocolVersion) String() string {
 	return fmt.Sprintf("%d.%d", v.major, v.minor)
 }
 
+func (v *ProtocolVersion) UnmarshalJSON(b []byte) (err error) {
+	var str string
+	if err := json.Unmarshal(b, &str); err != nil {
+		return err
+	}
+	parts := strings.Split(str, ".")
+	if len(parts) != 2 {
+		return errors.New("Invalid protocol version number: not of form x.y")
+	}
+	if v.major, err = strconv.Atoi(parts[0]); err != nil {
+		return
+	}
+	v.minor, err = strconv.Atoi(parts[1])
+	return
+}
+
+func (v *ProtocolVersion) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.String())
+}
+
 // Returns true if v is below the given version.
 func (v *ProtocolVersion) Below(major, minor int) bool {
 	if v.major < major {
 		return true
 	}
 	return v.major == major && v.minor < minor
+}
+
+// GetMetadataVersion maps a chosen protocol version to a metadata version that
+// the server will use.
+func GetMetadataVersion(v *ProtocolVersion) byte {
+	if v.Below(2, 3) {
+		return 0x02 // no support for optional attributes
+	}
+	return 0x03 // current version
 }
 
 // Action encodes the session type of an IRMA session (e.g., disclosing).

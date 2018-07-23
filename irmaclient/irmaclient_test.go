@@ -189,12 +189,28 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "testip", sessionjwt.(*irma.IdentityProviderJwt).ServerName)
 	require.NoError(t, err)
-	require.NotEmpty(t, entry.Disclosed)
-	require.NotEmpty(t, entry.Received)
-	response, err := entry.GetResponse()
+	require.NotNil(t, entry.IssueCommitment)
+	disclosed, err := entry.GetDisclosedCredentials(client.Configuration)
 	require.NoError(t, err)
-	require.NotNil(t, response)
-	require.IsType(t, &gabi.IssueCommitmentMessage{}, response)
+	require.NotEmpty(t, disclosed)
+
+	jwt = getDisclosureJwt("testsp", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	sessionHelper(t, jwt, "verification", client)
+	logs, err = client.Logs()
+	require.NoError(t, err)
+	require.True(t, len(logs) == oldLogLength+2)
+
+	entry = logs[len(logs)-1]
+	require.NotNil(t, entry)
+	sessionjwt, err = entry.Jwt()
+	require.NoError(t, err)
+	require.Equal(t, "testsp", sessionjwt.(*irma.ServiceProviderJwt).ServerName)
+	require.NoError(t, err)
+	require.NotNil(t, entry.ProofList)
+
+	disclosed, err = entry.GetDisclosedCredentials(client.Configuration)
+	require.NoError(t, err)
+	require.NotEmpty(t, disclosed)
 
 	test.ClearTestStorage(t)
 }

@@ -630,7 +630,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 	// we save none of them to fail the session cleanly
 	gabicreds := []*gabi.Credential{}
 	for i, sig := range msg {
-		attrs, err := request.Credentials[i].AttributeList(client.Configuration, getMetadataVersion(request.GetVersion()))
+		attrs, err := request.Credentials[i].AttributeList(client.Configuration, irma.GetMetadataVersion(request.GetVersion()))
 		if err != nil {
 			return err
 		}
