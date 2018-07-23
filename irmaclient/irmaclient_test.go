@@ -174,9 +174,10 @@ func TestLogging(t *testing.T) {
 	logs, err := client.Logs()
 	oldLogLength := len(logs)
 	require.NoError(t, err)
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
-	// Do session so we can examine its log item later
-	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	// Do issuance session
+	jwt := getCombinedJwt("testip", attrid)
 	sessionHelper(t, jwt, "issue", client)
 
 	logs, err = client.Logs()
@@ -189,12 +190,15 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "testip", sessionjwt.(*irma.IdentityProviderJwt).ServerName)
 	require.NoError(t, err)
-	require.NotNil(t, entry.IssueCommitment)
+	issued, err := entry.GetIssuedCredentials(client.Configuration)
+	require.NoError(t, err)
+	require.NotNil(t, issued)
 	disclosed, err := entry.GetDisclosedCredentials(client.Configuration)
 	require.NoError(t, err)
 	require.NotEmpty(t, disclosed)
 
-	jwt = getDisclosureJwt("testsp", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	// Do disclosure session
+	jwt = getDisclosureJwt("testsp", attrid)
 	sessionHelper(t, jwt, "verification", client)
 	logs, err = client.Logs()
 	require.NoError(t, err)
@@ -206,11 +210,30 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "testsp", sessionjwt.(*irma.ServiceProviderJwt).ServerName)
 	require.NoError(t, err)
-	require.NotNil(t, entry.ProofList)
-
 	disclosed, err = entry.GetDisclosedCredentials(client.Configuration)
 	require.NoError(t, err)
 	require.NotEmpty(t, disclosed)
+
+	// Do signature session
+	jwt = getSigningJwt("testsigclient", attrid)
+	sessionHelper(t, jwt, "signature", client)
+	logs, err = client.Logs()
+	require.NoError(t, err)
+	require.True(t, len(logs) == oldLogLength+3)
+	entry = logs[len(logs)-1]
+	require.NotNil(t, entry)
+	sessionjwt, err = entry.Jwt()
+	require.NoError(t, err)
+	require.Equal(t, "testsigclient", sessionjwt.(*irma.SignatureRequestorJwt).ServerName)
+	require.NoError(t, err)
+	sig, err := entry.GetSignedMessage()
+	require.NoError(t, err)
+	require.NotNil(t, sig)
+	status, list := irma.VerifySigWithoutRequest(client.Configuration, sig)
+	require.Equal(t, irma.VALID, status)
+	require.NotEmpty(t, list)
+	require.Contains(t, list[0].Attributes, attrid)
+	require.Equal(t, "s1234567", list[0].Attributes[attrid]["en"])
 
 	test.ClearTestStorage(t)
 }
