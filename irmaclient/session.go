@@ -61,6 +61,10 @@ type session struct {
 	request irma.SessionRequest
 	done    bool
 
+	// State for issuance protocol
+	issuerProofNonce *big.Int
+	builders         gabi.ProofBuilderList
+
 	// These are empty on manual sessions
 	ServerURL string
 	info      *irma.SessionInfo
@@ -115,22 +119,27 @@ func (session *session) IsInteractive() bool {
 	return session.ServerURL != ""
 }
 
-func (session *session) getBuilders() (gabi.ProofBuilderList, error) {
+// getBuilders computes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
+// and issuing respectively).
+func (session *session) getBuilders() (gabi.ProofBuilderList, *big.Int, error) {
 	var builders gabi.ProofBuilderList
 	var err error
 
+	var issuerProofNonce *big.Int
 	switch session.Action {
 	case irma.ActionSigning:
 		builders, err = session.client.ProofBuilders(session.choice, session.request, true)
 	case irma.ActionDisclosing:
 		builders, err = session.client.ProofBuilders(session.choice, session.request, false)
 	case irma.ActionIssuing:
-		builders, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest))
+		builders, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest))
 	}
 
-	return builders, err
+	return builders, issuerProofNonce, err
 }
 
+// getProofs computes the disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
+// and issuing respectively) to be sent to the server.
 func (session *session) getProof() (interface{}, error) {
 	var message interface{}
 	var err error
@@ -141,7 +150,7 @@ func (session *session) getProof() (interface{}, error) {
 	case irma.ActionDisclosing:
 		message, err = session.client.Proofs(session.choice, session.request, false)
 	case irma.ActionIssuing:
-		message, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest))
+		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest))
 	}
 
 	return message, err
@@ -394,18 +403,19 @@ func (session *session) doSession(proceed bool) {
 		}
 		session.sendResponse(message)
 	} else {
-		builders, err := session.getBuilders()
+		var err error
+		session.builders, session.issuerProofNonce, err = session.getBuilders()
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 		}
 		startKeyshareSession(
 			session,
 			session.Handler,
-			builders,
+			session.builders,
 			session.request,
 			session.client.Configuration,
 			session.client.keyshareServers,
-			session.client.state,
+			session.issuerProofNonce,
 		)
 	}
 }
@@ -530,7 +540,7 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(err.(*irma.SessionError))
 			return
 		}
-		if err = session.client.ConstructCredentials(response, session.request.(*irma.IssuanceRequest)); err != nil {
+		if err = session.client.ConstructCredentials(response, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 			return
 		}
@@ -599,6 +609,7 @@ func panicToError(e interface{}) *irma.SessionError {
 		info = x.String()
 	default: // nop
 	}
+	fmt.Println("Panic: " + info)
 	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info}
 }
 
@@ -629,20 +640,4 @@ func (session *session) cancel() {
 
 func (session *session) Dismiss() {
 	session.cancel()
-}
-
-type issuanceState struct {
-	nonce2   *big.Int
-	builders []*gabi.CredentialBuilder
-}
-
-func newIssuanceState() (*issuanceState, error) {
-	nonce2, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
-	if err != nil {
-		return nil, err
-	}
-	return &issuanceState{
-		nonce2:   nonce2,
-		builders: []*gabi.CredentialBuilder{},
-	}, nil
 }

@@ -58,7 +58,6 @@ type Client struct {
 	irmaConfigurationPath string
 	androidStoragePath    string
 	handler               ClientHandler
-	state                 *issuanceState
 }
 
 // SentryDSN should be set in the init() function
@@ -578,63 +577,73 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.Session
 	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
 }
 
-// IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
-// for the future credentials as well as possibly any disclosed attributes.
-func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest) (gabi.ProofBuilderList, error) {
-	state, err := newIssuanceState()
-	if err != nil {
-		return nil, err
-	}
-	client.state = state
+// generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
+func generateIssuerProofNonce() (*big.Int, error) {
+	return gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
+}
 
-	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
+// IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
+// for the future credentials as well as possibly any disclosed attributes, and generates
+// a nonce against which the issuer's proof of knowledge must verify.
+func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest) (gabi.ProofBuilderList, *big.Int, error) {
+	issuerProofNonce, err := generateIssuerProofNonce()
+	if err != nil {
+		return nil, nil, err
+	}
+	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
 		var pk *gabi.PublicKey
 		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		credBuilder := gabi.NewCredentialBuilder(
-			pk, request.GetContext(), client.secretkey.Key, state.nonce2)
-		state.builders = append(state.builders, credBuilder)
-		proofBuilders = append(proofBuilders, credBuilder)
+			pk, request.GetContext(), client.secretkey.Key, issuerProofNonce)
+		builders = append(builders, credBuilder)
 	}
 
 	disclosures, err := client.ProofBuilders(request.Choice, request, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	proofBuilders = append(disclosures, proofBuilders...)
-	return proofBuilders, nil
+	builders = append(disclosures, builders...)
+	return builders, issuerProofNonce, nil
 }
 
-// IssueCommitments computes issuance commitments, along with disclosure proofs
-// specified by choice.
-func (client *Client) IssueCommitments(request *irma.IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
-	proofBuilders, err := client.IssuanceProofBuilders(request)
+// IssueCommitments computes issuance commitments, along with disclosure proofs specified by choice,
+// and also returns the credential builders which will become the new credentials upon combination with the issuer's signature.
+func (client *Client) IssueCommitments(request *irma.IssuanceRequest) (*gabi.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
+	builders, issuerProofNonce, err := client.IssuanceProofBuilders(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	list := proofBuilders.BuildProofList(request.GetContext(), request.GetNonce(), false)
-	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: client.state.nonce2}, nil
+	list := builders.BuildProofList(request.GetContext(), request.GetNonce(), false)
+	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: issuerProofNonce}, builders, nil
 }
 
-// ConstructCredentials constructs and saves new credentials
-// using the specified issuance signature messages.
-func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *irma.IssuanceRequest) error {
-	if len(msg) != len(client.state.builders) {
+// ConstructCredentials constructs and saves new credentials using the specified issuance signature messages
+// and credential builders.
+func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *irma.IssuanceRequest, builders gabi.ProofBuilderList) error {
+	if len(msg) > len(builders) {
 		return errors.New("Received unexpected amount of signatures")
 	}
 
 	// First collect all credentials in a slice, so that if one of them induces an error,
 	// we save none of them to fail the session cleanly
 	gabicreds := []*gabi.Credential{}
-	for i, sig := range msg {
-		attrs, err := request.Credentials[i].AttributeList(client.Configuration, irma.GetMetadataVersion(request.GetVersion()))
+	offset := 0
+	for i, builder := range builders {
+		credbuilder, ok := builder.(*gabi.CredentialBuilder)
+		if !ok { // Skip builders of disclosure proofs
+			offset++
+			continue
+		}
+		sig := msg[i-offset]
+		attrs, err := request.Credentials[i-offset].AttributeList(client.Configuration, irma.GetMetadataVersion(request.GetVersion()))
 		if err != nil {
 			return err
 		}
-		cred, err := client.state.builders[i].ConstructCredential(sig, attrs.Ints)
+		cred, err := credbuilder.ConstructCredential(sig, attrs.Ints)
 		if err != nil {
 			return err
 		}

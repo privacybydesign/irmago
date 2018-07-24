@@ -34,15 +34,15 @@ type keyshareSessionHandler interface {
 }
 
 type keyshareSession struct {
-	sessionHandler  keyshareSessionHandler
-	pinRequestor    KeysharePinRequestor
-	builders        gabi.ProofBuilderList
-	session         irma.SessionRequest
-	conf            *irma.Configuration
-	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer
-	keyshareServer  *keyshareServer // The one keyshare server in use in case of issuance
-	transports      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
-	state           *issuanceState
+	sessionHandler   keyshareSessionHandler
+	pinRequestor     KeysharePinRequestor
+	builders         gabi.ProofBuilderList
+	session          irma.SessionRequest
+	conf             *irma.Configuration
+	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
+	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
+	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
+	issuerProofNonce *big.Int
 }
 
 type keyshareServer struct {
@@ -156,7 +156,7 @@ func startKeyshareSession(
 	session irma.SessionRequest,
 	conf *irma.Configuration,
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
-	state *issuanceState,
+	issuerProofNonce *big.Int,
 ) {
 	ksscount := 0
 	for managerID := range session.Identifiers().SchemeManagers {
@@ -176,14 +176,14 @@ func startKeyshareSession(
 	}
 
 	ks := &keyshareSession{
-		session:         session,
-		builders:        builders,
-		sessionHandler:  sessionHandler,
-		transports:      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
-		pinRequestor:    pin,
-		conf:            conf,
-		keyshareServers: keyshareServers,
-		state:           state,
+		session:          session,
+		builders:         builders,
+		sessionHandler:   sessionHandler,
+		transports:       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
+		pinRequestor:     pin,
+		conf:             conf,
+		keyshareServers:  keyshareServers,
+		issuerProofNonce: issuerProofNonce,
 	}
 
 	requestPin := false
@@ -427,7 +427,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 			ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
 			return
 		}
-		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.state.nonce2}
+		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.issuerProofNonce}
 		for _, response := range responses {
 			message.ProofPjwt = response
 			break
