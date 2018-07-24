@@ -237,8 +237,8 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 }
 
 // Check an gabi prooflist against a signature proofrequest
-func checkProofWithRequest(configuration *Configuration, irmaSignature *SignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
-	disclosed, err := ExtractDisclosedCredentials(configuration, irmaSignature.Signature)
+func (sm *SignedMessage) checkWithRequest(configuration *Configuration, sigRequest *SignatureRequest) *SignatureProofResult {
+	disclosed, err := ExtractDisclosedCredentials(configuration, sm.Signature)
 
 	if err != nil {
 		fmt.Println(err)
@@ -258,7 +258,7 @@ func checkProofWithRequest(configuration *Configuration, irmaSignature *SignedMe
 	}
 
 	// If all disjunctions are satisfied, check if a credential is expired
-	if irmaSignature.Timestamp == nil {
+	if sm.Timestamp == nil {
 		if disclosed.IsExpired(time.Now()) {
 			// At least one of the contained attributes has currently expired. We don't know the
 			// creation time of the ABS so we can't ascertain that the attributes were still valid then.
@@ -267,7 +267,7 @@ func checkProofWithRequest(configuration *Configuration, irmaSignature *SignedMe
 			return signatureProofResult
 		}
 	} else {
-		if disclosed.IsExpired(time.Unix(irmaSignature.Timestamp.Time, 0)) {
+		if disclosed.IsExpired(time.Unix(sm.Timestamp.Time, 0)) {
 			// The ABS contains attributes that were expired at the time of creation of the ABS.
 			// This must not happen and in this case the signature is invalid
 			signatureProofResult.ProofStatus = INVALID_CRYPTO
@@ -292,10 +292,10 @@ func verify(configuration *Configuration, proofList gabi.ProofList, context *big
 }
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
-func VerifySig(configuration *Configuration, irmaSignature *SignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
+func (sm *SignedMessage) Verify(configuration *Configuration, sigRequest *SignatureRequest) *SignatureProofResult {
 	// First check if this signature matches the request
-	sigRequest.Timestamp = irmaSignature.Timestamp
-	if !irmaSignature.MatchesNonceAndContext(sigRequest) {
+	sigRequest.Timestamp = sm.Timestamp
+	if !sm.MatchesNonceAndContext(sigRequest) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
 				ProofStatus: UNMATCHED_REQUEST,
@@ -304,8 +304,8 @@ func VerifySig(configuration *Configuration, irmaSignature *SignedMessage, sigRe
 	}
 
 	// Verify the timestamp
-	if irmaSignature.Timestamp != nil {
-		if err := VerifyTimestamp(irmaSignature, sigRequest.Message, configuration); err != nil {
+	if sm.Timestamp != nil {
+		if err := sm.VerifyTimestamp(sigRequest.Message, configuration); err != nil {
 			return &SignatureProofResult{
 				ProofResult: &ProofResult{
 					ProofStatus: INVALID_TIMESTAMP,
@@ -315,7 +315,7 @@ func VerifySig(configuration *Configuration, irmaSignature *SignedMessage, sigRe
 	}
 
 	// Now, cryptographically verify the signature
-	if !verify(configuration, irmaSignature.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
+	if !verify(configuration, sm.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
 				ProofStatus: INVALID_CRYPTO,
@@ -324,37 +324,37 @@ func VerifySig(configuration *Configuration, irmaSignature *SignedMessage, sigRe
 	}
 
 	// Finally, check whether attribute values in proof satisfy the original signature request
-	return checkProofWithRequest(configuration, irmaSignature, sigRequest)
+	return sm.checkWithRequest(configuration, sigRequest)
 }
 
 // Verify a signature cryptographically, but do not check/compare with a signature request
-func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *SignedMessage) (ProofStatus, DisclosedCredentialList) {
+func (sm *SignedMessage) VerifyWithoutRequest(configuration *Configuration) (ProofStatus, DisclosedCredentialList) {
 	// First, verify the timestamp, if any
-	if irmaSignature.Timestamp != nil {
-		if err := VerifyTimestamp(irmaSignature, irmaSignature.Message, configuration); err != nil {
+	if sm.Timestamp != nil {
+		if err := sm.VerifyTimestamp(sm.Message, configuration); err != nil {
 			return INVALID_TIMESTAMP, nil
 		}
 	}
 
 	// Cryptographically verify the signature
-	if !verify(configuration, irmaSignature.Signature, irmaSignature.Context, irmaSignature.GetNonce(), true) {
+	if !verify(configuration, sm.Signature, sm.Context, sm.GetNonce(), true) {
 		return INVALID_CRYPTO, nil
 	}
 
 	// Extract attributes and return result
-	disclosed, err := ExtractDisclosedCredentials(configuration, irmaSignature.Signature)
+	disclosed, err := ExtractDisclosedCredentials(configuration, sm.Signature)
 
 	if err != nil {
 		fmt.Println(err)
 		return INVALID_CRYPTO, nil
 	}
 
-	if irmaSignature.Timestamp == nil {
+	if sm.Timestamp == nil {
 		if disclosed.IsExpired(time.Now()) {
 			return EXPIRED, disclosed
 		}
 	} else {
-		if disclosed.IsExpired(time.Unix(irmaSignature.Timestamp.Time, 0)) {
+		if disclosed.IsExpired(time.Unix(sm.Timestamp.Time, 0)) {
 			return INVALID_CRYPTO, nil
 		}
 	}

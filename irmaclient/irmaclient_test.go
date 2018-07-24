@@ -229,7 +229,7 @@ func TestLogging(t *testing.T) {
 	sig, err := entry.GetSignedMessage()
 	require.NoError(t, err)
 	require.NotNil(t, sig)
-	status, list := irma.VerifySigWithoutRequest(client.Configuration, sig)
+	status, list := sig.VerifyWithoutRequest(client.Configuration)
 	require.Equal(t, irma.VALID, status)
 	require.NotEmpty(t, list)
 	require.Contains(t, list[0].Attributes, attrid)

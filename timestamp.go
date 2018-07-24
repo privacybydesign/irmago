@@ -50,18 +50,18 @@ const TimestampServerURL = "https://metrics.privacybydesign.foundation/atum"
 
 // Given an SignedMessage, verify the timestamp over the signed message, disclosed attributes,
 // and rerandomized CL-signatures.
-func VerifyTimestamp(irmaSignature *SignedMessage, message string, conf *Configuration) error {
-	if irmaSignature.Timestamp.ServerUrl != TimestampServerURL {
+func (sm *SignedMessage) VerifyTimestamp(message string, conf *Configuration) error {
+	if sm.Timestamp.ServerUrl != TimestampServerURL {
 		return errors.New("Untrusted timestamp server")
 	}
 
 	// Extract the disclosed attributes and randomized CL-signatures from the proofs in order to
 	// construct the nonce that should be signed by the timestamp server.
 	zero := big.NewInt(0)
-	size := len(irmaSignature.Signature)
+	size := len(sm.Signature)
 	sigs := make([]*big.Int, size)
 	disclosed := make([][]*big.Int, size)
-	for i, proof := range irmaSignature.Signature {
+	for i, proof := range sm.Signature {
 		proofd := proof.(*gabi.ProofD)
 		sigs[i] = proofd.A
 		ct := MetadataFromInt(proofd.ADisclosed[1], conf).CredentialType()
@@ -84,7 +84,7 @@ func VerifyTimestamp(irmaSignature *SignedMessage, message string, conf *Configu
 	if err != nil {
 		return err
 	}
-	valid, err := irmaSignature.Timestamp.Verify(bts)
+	valid, err := sm.Timestamp.Verify(bts)
 	if err != nil {
 		return err
 	}

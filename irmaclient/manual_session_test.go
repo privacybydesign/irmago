@@ -303,7 +303,7 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 		}
 
 		go func() {
-			sh.resultChannel <- irma.VerifySig(client.Configuration, irmaSignedMessage, sh.sigVerifyRequest)
+			sh.resultChannel <- irmaSignedMessage.Verify(client.Configuration, sh.sigVerifyRequest)
 		}()
 	}
 	sh.errorChannel <- nil

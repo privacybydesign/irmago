@@ -20,14 +20,14 @@ type SignedMessage struct {
 	Timestamp *atum.Timestamp `json:"timestamp"`
 }
 
-func (im *SignedMessage) GetNonce() *big.Int {
-	return ASN1ConvertSignatureNonce(im.Message, im.Nonce, im.Timestamp)
+func (sm *SignedMessage) GetNonce() *big.Int {
+	return ASN1ConvertSignatureNonce(sm.Message, sm.Nonce, sm.Timestamp)
 }
 
-func (im *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
-	return im.Nonce.Cmp(request.Nonce) == 0 &&
-		im.Context.Cmp(request.Context) == 0 &&
-		im.GetNonce().Cmp(request.GetNonce()) == 0
+func (sm *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
+	return sm.Nonce.Cmp(request.Nonce) == 0 &&
+		sm.Context.Cmp(request.Context) == 0 &&
+		sm.GetNonce().Cmp(request.GetNonce()) == 0
 }
 
 // ASN1ConvertSignatureNonce computes the nonce that is used in the creation of the attribute-based signature:
