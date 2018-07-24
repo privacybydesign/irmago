@@ -292,7 +292,7 @@ func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
 	case irma.ActionSigning:
 		// Make proof corrupt if we want to test invalid proofs
 		resultBytes := corruptAndConvertProofString(result)
-		irmaSignedMessage := &irma.IrmaSignedMessage{}
+		irmaSignedMessage := &irma.SignedMessage{}
 
 		if err := json.Unmarshal(resultBytes, irmaSignedMessage); err != nil {
 			sh.errorChannel <- &irma.SessionError{

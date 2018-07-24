@@ -10,9 +10,9 @@ import (
 	"github.com/mhe/gabi"
 )
 
-// IrmaSignedMessage is a message signed with an attribute-based signature
+// SignedMessage is a message signed with an attribute-based signature
 // The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(nonce, SHA256(message), timestampSignature)
-type IrmaSignedMessage struct {
+type SignedMessage struct {
 	Signature gabi.ProofList  `json:"signature"`
 	Nonce     *big.Int        `json:"nonce"`
 	Context   *big.Int        `json:"context"`
@@ -20,11 +20,11 @@ type IrmaSignedMessage struct {
 	Timestamp *atum.Timestamp `json:"timestamp"`
 }
 
-func (im *IrmaSignedMessage) GetNonce() *big.Int {
+func (im *SignedMessage) GetNonce() *big.Int {
 	return ASN1ConvertSignatureNonce(im.Message, im.Nonce, im.Timestamp)
 }
 
-func (im *IrmaSignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
+func (im *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
 	return im.Nonce.Cmp(request.Nonce) == 0 &&
 		im.Context.Cmp(request.Context) == 0 &&
 		im.GetNonce().Cmp(request.GetNonce()) == 0

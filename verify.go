@@ -237,7 +237,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 }
 
 // Check an gabi prooflist against a signature proofrequest
-func checkProofWithRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
+func checkProofWithRequest(configuration *Configuration, irmaSignature *SignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
 	disclosed, err := ExtractDisclosedCredentials(configuration, irmaSignature.Signature)
 
 	if err != nil {
@@ -292,7 +292,7 @@ func verify(configuration *Configuration, proofList gabi.ProofList, context *big
 }
 
 // Verify a signature proof and check if the attributes match the attributes in the original request
-func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
+func VerifySig(configuration *Configuration, irmaSignature *SignedMessage, sigRequest *SignatureRequest) *SignatureProofResult {
 	// First check if this signature matches the request
 	sigRequest.Timestamp = irmaSignature.Timestamp
 	if !irmaSignature.MatchesNonceAndContext(sigRequest) {
@@ -328,7 +328,7 @@ func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, s
 }
 
 // Verify a signature cryptographically, but do not check/compare with a signature request
-func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSignedMessage) (ProofStatus, DisclosedCredentialList) {
+func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *SignedMessage) (ProofStatus, DisclosedCredentialList) {
 	// First, verify the timestamp, if any
 	if irmaSignature.Timestamp != nil {
 		if err := VerifyTimestamp(irmaSignature, irmaSignature.Message, configuration); err != nil {

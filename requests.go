@@ -357,14 +357,14 @@ func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*IrmaSignedMessage, error) {
+func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMessage, error) {
 	signature, ok := message.(gabi.ProofList)
 
 	if !ok {
 		return nil, errors.Errorf("Type assertion failed")
 	}
 
-	return &IrmaSignedMessage{
+	return &SignedMessage{
 		Signature: signature,
 		Nonce:     sr.Nonce,
 		Context:   sr.Context,

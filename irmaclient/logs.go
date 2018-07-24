@@ -59,11 +59,11 @@ func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma
 }
 
 // GetSignedMessage gets the signed for a log entry
-func (entry *LogEntry) GetSignedMessage() (abs *irma.IrmaSignedMessage, err error) {
+func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 	if entry.Type != irma.ActionSigning {
 		return nil, nil
 	}
-	return &irma.IrmaSignedMessage{
+	return &irma.SignedMessage{
 		Signature: entry.ProofList,
 		Nonce:     entry.SessionInfo.Nonce,
 		Context:   entry.SessionInfo.Context,

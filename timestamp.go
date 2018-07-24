@@ -48,9 +48,9 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int) (
 
 const TimestampServerURL = "https://metrics.privacybydesign.foundation/atum"
 
-// Given an IrmaSignedMessage, verify the timestamp over the signed message, disclosed attributes,
+// Given an SignedMessage, verify the timestamp over the signed message, disclosed attributes,
 // and rerandomized CL-signatures.
-func VerifyTimestamp(irmaSignature *IrmaSignedMessage, message string, conf *Configuration) error {
+func VerifyTimestamp(irmaSignature *SignedMessage, message string, conf *Configuration) error {
 	if irmaSignature.Timestamp.ServerUrl != TimestampServerURL {
 		return errors.New("Untrusted timestamp server")
 	}
