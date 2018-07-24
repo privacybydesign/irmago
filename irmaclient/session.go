@@ -79,129 +79,7 @@ var supportedVersions = map[int][]int{
 	2: {3, 2, 1},
 }
 
-func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
-	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
-	keys := make([]int, 0, len(supportedVersions))
-	for k := range supportedVersions {
-		keys = append(keys, k)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(keys)))
-	for _, major := range keys {
-		for _, minor := range supportedVersions[major] {
-			aboveMinimum := major > qr.ProtocolVersion.Major || (major == qr.ProtocolVersion.Major && minor >= qr.ProtocolVersion.Minor)
-			underMaximum := major < qr.ProtocolMaxVersion.Major || (major == qr.ProtocolMaxVersion.Major && minor <= qr.ProtocolMaxVersion.Minor)
-			if aboveMinimum && underMaximum {
-				return irma.NewVersion(major, minor), nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion.String(), qr.ProtocolMaxVersion.String())
-}
-
-// IsInteractive returns whether this session uses an API server or not.
-func (session *session) IsInteractive() bool {
-	return session.ServerURL != ""
-}
-
-// getBuilders computes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
-// and issuing respectively).
-func (session *session) getBuilders() (gabi.ProofBuilderList, *big.Int, error) {
-	var builders gabi.ProofBuilderList
-	var err error
-
-	var issuerProofNonce *big.Int
-	switch session.Action {
-	case irma.ActionSigning:
-		builders, err = session.client.ProofBuilders(session.choice, session.request, true)
-	case irma.ActionDisclosing:
-		builders, err = session.client.ProofBuilders(session.choice, session.request, false)
-	case irma.ActionIssuing:
-		builders, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest))
-	}
-
-	return builders, issuerProofNonce, err
-}
-
-// getProofs computes the disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
-// and issuing respectively) to be sent to the server.
-func (session *session) getProof() (interface{}, error) {
-	var message interface{}
-	var err error
-
-	switch session.Action {
-	case irma.ActionSigning:
-		message, err = session.client.Proofs(session.choice, session.request, true)
-	case irma.ActionDisclosing:
-		message, err = session.client.Proofs(session.choice, session.request, false)
-	case irma.ActionIssuing:
-		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest))
-	}
-
-	return message, err
-}
-
-// checkKeyshareEnrollment checks if we are enrolled into all involved keyshare servers,
-// and aborts the session if not
-func (session *session) checkKeyshareEnrollment() bool {
-	for id := range session.request.Identifiers().SchemeManagers {
-		manager, ok := session.client.Configuration.SchemeManagers[id]
-		if !ok {
-			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
-			return false
-		}
-		distributed := manager.Distributed()
-		_, enrolled := session.client.keyshareServers[id]
-		if distributed && !enrolled {
-			session.Handler.KeyshareEnrollmentMissing(id)
-			return false
-		}
-	}
-	return true
-}
-
-func (session *session) recoverFromPanic() {
-	if e := recover(); e != nil {
-		if session.Handler != nil {
-			session.Handler.Failure(session.Action, panicToError(e))
-		}
-	}
-}
-
-func (session *session) checkAndUpateConfiguration() bool {
-	for id := range session.request.Identifiers().SchemeManagers {
-		manager, contains := session.client.Configuration.SchemeManagers[id]
-		if !contains {
-			session.fail(&irma.SessionError{
-				ErrorType: irma.ErrorUnknownSchemeManager,
-				Info:      id.String(),
-			})
-			return false
-		}
-		if !manager.Valid {
-			session.fail(&irma.SessionError{
-				ErrorType: irma.ErrorInvalidSchemeManager,
-				Info:      string(manager.Status),
-			})
-			return false
-		}
-	}
-
-	// Check if we are enrolled into all involved keyshare servers
-	if !session.checkKeyshareEnrollment() {
-		return false
-	}
-
-	// Download missing credential types/issuers/public keys from the scheme manager
-	downloaded, err := session.client.Configuration.Download(session.request)
-	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
-		return false
-	}
-	if downloaded != nil && !downloaded.Empty() {
-		session.client.handler.UpdateConfiguration(downloaded)
-	}
-	return true
-}
+// Session constructors
 
 // NewManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) NewManualSession(sigrequestJSONString string, handler Handler) {
@@ -286,6 +164,8 @@ func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser 
 
 	return session
 }
+
+// Core session methods
 
 // getSessionInfo retrieves the first message in the IRMA protocol, checks if we can perform
 // the request, and informs the user of the outcome.
@@ -407,71 +287,6 @@ func (session *session) doSession(proceed bool) {
 	}
 }
 
-// Distributed returns whether or not this session involves a keyshare server.
-func (session *session) Distributed() bool {
-	var smi irma.SchemeManagerIdentifier
-	if session.Action == irma.ActionIssuing {
-		for _, credreq := range session.request.(*irma.IssuanceRequest).Credentials {
-			smi = credreq.CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
-			if session.client.Configuration.SchemeManagers[smi].Distributed() {
-				return true
-			}
-		}
-	}
-
-	if session.choice == nil || session.choice.Attributes == nil {
-		return false
-	}
-
-	for _, ai := range session.choice.Attributes {
-		smi = ai.Type.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()
-		if session.client.Configuration.SchemeManagers[smi].Distributed() {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (session *session) KeyshareDone(message interface{}) {
-	session.sendResponse(message)
-}
-
-func (session *session) KeyshareCancelled() {
-	session.cancel()
-}
-
-func (session *session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	session.Handler.KeyshareEnrollmentIncomplete(manager)
-}
-
-func (session *session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
-	session.Handler.KeyshareEnrollmentDeleted(manager)
-}
-
-func (session *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
-	session.Handler.KeyshareBlocked(manager, duration)
-}
-
-func (session *session) KeyshareError(manager *irma.SchemeManagerIdentifier, err error) {
-	var serr *irma.SessionError
-	var ok bool
-	if serr, ok = err.(*irma.SessionError); !ok {
-		serr = &irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err}
-	} else {
-		serr.ErrorType = irma.ErrorKeyshare
-	}
-	session.fail(serr)
-}
-
-func (session *session) KeysharePin() {
-	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
-}
-
-func (session *session) KeysharePinOK() {
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-}
-
 type disclosureResponse string
 
 // sendResponse sends the proofs of knowledge of the hidden attributes and/or the secret key, or the constructed
@@ -581,7 +396,161 @@ func (session *session) managerSession() {
 	return
 }
 
+// Response calculation methods
+
+// getBuilders computes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
+// and issuing respectively).
+func (session *session) getBuilders() (gabi.ProofBuilderList, *big.Int, error) {
+	var builders gabi.ProofBuilderList
+	var err error
+
+	var issuerProofNonce *big.Int
+	switch session.Action {
+	case irma.ActionSigning:
+		builders, err = session.client.ProofBuilders(session.choice, session.request, true)
+	case irma.ActionDisclosing:
+		builders, err = session.client.ProofBuilders(session.choice, session.request, false)
+	case irma.ActionIssuing:
+		builders, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest))
+	}
+
+	return builders, issuerProofNonce, err
+}
+
+// getProofs computes the disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
+// and issuing respectively) to be sent to the server.
+func (session *session) getProof() (interface{}, error) {
+	var message interface{}
+	var err error
+
+	switch session.Action {
+	case irma.ActionSigning:
+		message, err = session.client.Proofs(session.choice, session.request, true)
+	case irma.ActionDisclosing:
+		message, err = session.client.Proofs(session.choice, session.request, false)
+	case irma.ActionIssuing:
+		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest))
+	}
+
+	return message, err
+}
+
+// Helper functions
+
+func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
+	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
+	keys := make([]int, 0, len(supportedVersions))
+	for k := range supportedVersions {
+		keys = append(keys, k)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(keys)))
+	for _, major := range keys {
+		for _, minor := range supportedVersions[major] {
+			aboveMinimum := major > qr.ProtocolVersion.Major || (major == qr.ProtocolVersion.Major && minor >= qr.ProtocolVersion.Minor)
+			underMaximum := major < qr.ProtocolMaxVersion.Major || (major == qr.ProtocolMaxVersion.Major && minor <= qr.ProtocolMaxVersion.Minor)
+			if aboveMinimum && underMaximum {
+				return irma.NewVersion(major, minor), nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion.String(), qr.ProtocolMaxVersion.String())
+}
+
+// checkKeyshareEnrollment checks if we are enrolled into all involved keyshare servers,
+// and aborts the session if not
+func (session *session) checkKeyshareEnrollment() bool {
+	for id := range session.request.Identifiers().SchemeManagers {
+		manager, ok := session.client.Configuration.SchemeManagers[id]
+		if !ok {
+			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
+			return false
+		}
+		distributed := manager.Distributed()
+		_, enrolled := session.client.keyshareServers[id]
+		if distributed && !enrolled {
+			session.Handler.KeyshareEnrollmentMissing(id)
+			return false
+		}
+	}
+	return true
+}
+
+func (session *session) checkAndUpateConfiguration() bool {
+	for id := range session.request.Identifiers().SchemeManagers {
+		manager, contains := session.client.Configuration.SchemeManagers[id]
+		if !contains {
+			session.fail(&irma.SessionError{
+				ErrorType: irma.ErrorUnknownSchemeManager,
+				Info:      id.String(),
+			})
+			return false
+		}
+		if !manager.Valid {
+			session.fail(&irma.SessionError{
+				ErrorType: irma.ErrorInvalidSchemeManager,
+				Info:      string(manager.Status),
+			})
+			return false
+		}
+	}
+
+	// Check if we are enrolled into all involved keyshare servers
+	if !session.checkKeyshareEnrollment() {
+		return false
+	}
+
+	// Download missing credential types/issuers/public keys from the scheme manager
+	downloaded, err := session.client.Configuration.Download(session.request)
+	if err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+		return false
+	}
+	if downloaded != nil && !downloaded.Empty() {
+		session.client.handler.UpdateConfiguration(downloaded)
+	}
+	return true
+}
+
+// IsInteractive returns whether this session uses an API server or not.
+func (session *session) IsInteractive() bool {
+	return session.ServerURL != ""
+}
+
+// Distributed returns whether or not this session involves a keyshare server.
+func (session *session) Distributed() bool {
+	var smi irma.SchemeManagerIdentifier
+	if session.Action == irma.ActionIssuing {
+		for _, credreq := range session.request.(*irma.IssuanceRequest).Credentials {
+			smi = credreq.CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
+			if session.client.Configuration.SchemeManagers[smi].Distributed() {
+				return true
+			}
+		}
+	}
+
+	if session.choice == nil || session.choice.Attributes == nil {
+		return false
+	}
+
+	for _, ai := range session.choice.Attributes {
+		smi = ai.Type.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()
+		if session.client.Configuration.SchemeManagers[smi].Distributed() {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Session lifetime functions
+
+func (session *session) recoverFromPanic() {
+	if e := recover(); e != nil {
+		if session.Handler != nil {
+			session.Handler.Failure(session.Action, panicToError(e))
+		}
+	}
+}
 
 func panicToError(e interface{}) *irma.SessionError {
 	var info string
@@ -625,4 +594,45 @@ func (session *session) cancel() {
 
 func (session *session) Dismiss() {
 	session.cancel()
+}
+
+// Keyshare session handler methods
+
+func (session *session) KeyshareDone(message interface{}) {
+	session.sendResponse(message)
+}
+
+func (session *session) KeyshareCancelled() {
+	session.cancel()
+}
+
+func (session *session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	session.Handler.KeyshareEnrollmentIncomplete(manager)
+}
+
+func (session *session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	session.Handler.KeyshareEnrollmentDeleted(manager)
+}
+
+func (session *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	session.Handler.KeyshareBlocked(manager, duration)
+}
+
+func (session *session) KeyshareError(manager *irma.SchemeManagerIdentifier, err error) {
+	var serr *irma.SessionError
+	var ok bool
+	if serr, ok = err.(*irma.SessionError); !ok {
+		serr = &irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err}
+	} else {
+		serr.ErrorType = irma.ErrorKeyshare
+	}
+	session.fail(serr)
+}
+
+func (session *session) KeysharePin() {
+	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+}
+
+func (session *session) KeysharePinOK() {
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 }
