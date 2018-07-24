@@ -230,7 +230,7 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 	status, list := sig.VerifyWithoutRequest(client.Configuration)
-	require.Equal(t, irma.VALID, status)
+	require.Equal(t, irma.ProofStatusValid, status)
 	require.NotEmpty(t, list)
 	require.Contains(t, list[0].Attributes, attrid)
 	require.Equal(t, "s1234567", list[0].Attributes[attrid]["en"])

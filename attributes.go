@@ -32,10 +32,10 @@ type AttributeResultList []*AttributeResult
 type AttributeProofStatus string
 
 const (
-	PRESENT       = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
-	EXTRA         = AttributeProofStatus("EXTRA")         // Attribute is disclosed, but wasn't requested in request
-	MISSING       = AttributeProofStatus("MISSING")       // Attribute is NOT disclosed, but should be according to request
-	INVALID_VALUE = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
+	AttributeProofStatusPresent      = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
+	AttributeProofStatusExtra        = AttributeProofStatus("EXTRA")         // Attribute is disclosed, but wasn't requested in request
+	AttributeProofStatusMissing      = AttributeProofStatus("MISSING")       // Attribute is NOT disclosed, but should be according to request
+	AttributeProofStatusInvalidValue = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
 )
 
 var (

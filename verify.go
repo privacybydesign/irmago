@@ -13,15 +13,15 @@ import (
 type ProofStatus string
 
 const (
-	VALID              = ProofStatus("VALID")
-	INVALID_CRYPTO     = ProofStatus("INVALID_CRYPTO")
-	INVALID_TIMESTAMP  = ProofStatus("INVALID_TIMESTAMP")
-	UNMATCHED_REQUEST  = ProofStatus("UNMATCHED_REQUEST")
-	MISSING_ATTRIBUTES = ProofStatus("MISSING_ATTRIBUTES")
+	ProofStatusValid             = ProofStatus("VALID")
+	ProofStatusInvalidCrypto     = ProofStatus("INVALID_CRYPTO")
+	ProofStatusInvalidTimestamp  = ProofStatus("INVALID_TIMESTAMP")
+	ProofStatusUnmatchedRequest  = ProofStatus("UNMATCHED_REQUEST")
+	ProofStatusMissingAttributes = ProofStatus("MISSING_ATTRIBUTES")
 
 	// The contained attributes are currently expired, but it is not certain if they already were expired
 	// during creation of the ABS.
-	EXPIRED = ProofStatus("EXPIRED")
+	ProofStatusExpired = ProofStatus("EXPIRED")
 )
 
 // ProofResult is a result of a complete proof, containing all the disclosed attributes and corresponding request
@@ -68,18 +68,18 @@ func (disclosed DisclosedCredentialList) isAttributeSatisfied(attributeId Attrib
 		ar.AttributeValue = disclosedAttributeValue
 
 		if requestedValue == nil || *cred.rawAttributes[attributeId] == *requestedValue {
-			ar.AttributeProofStatus = PRESENT
+			ar.AttributeProofStatus = AttributeProofStatusPresent
 			return true, &ar
 		} else {
 			// If attribute is disclosed and present, but not equal to required value, mark it as invalid_value
 			// We won't return true and continue searching in other disclosed attributes
-			ar.AttributeProofStatus = INVALID_VALUE
+			ar.AttributeProofStatus = AttributeProofStatusInvalidValue
 		}
 	}
 
 	// If there is never a value assigned, then this attribute isn't disclosed, and thus missing
 	if len(ar.AttributeValue) == 0 {
-		ar.AttributeProofStatus = MISSING
+		ar.AttributeProofStatus = AttributeProofStatusMissing
 	}
 	return false, &ar
 }
@@ -101,7 +101,7 @@ func (disclosed DisclosedCredentialList) createAndCheckSignatureProofResult(conf
 
 		// Else, set proof status to missing_attributes, but check other as well to add other disjunctions to result
 		// (so user also knows attribute status of other disjunctions)
-		signatureProofResult.ProofStatus = MISSING_ATTRIBUTES
+		signatureProofResult.ProofStatus = ProofStatusMissingAttributes
 	}
 
 	signatureProofResult.Disjunctions = addExtraAttributes(disclosed, signatureProofResult.ProofResult)
@@ -227,7 +227,7 @@ func addExtraAttributes(disclosed DisclosedCredentialList, proofResult *ProofRes
 			dummyDisj := DisclosedAttributeDisjunction{
 				DisclosedValue: cred.Attributes[attrId],
 				DisclosedId:    attrId,
-				ProofStatus:    EXTRA,
+				ProofStatus:    AttributeProofStatusExtra,
 			}
 			returnDisjunctions = append(returnDisjunctions, &dummyDisj)
 		}
@@ -244,7 +244,7 @@ func (sm *SignedMessage) checkWithRequest(configuration *Configuration, sigReque
 		fmt.Println(err)
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
-				ProofStatus: INVALID_CRYPTO,
+				ProofStatus: ProofStatusInvalidCrypto,
 			},
 		}
 	}
@@ -253,7 +253,7 @@ func (sm *SignedMessage) checkWithRequest(configuration *Configuration, sigReque
 
 	// Return MISSING_ATTRIBUTES as proofstatus if one attribute is missing
 	// This status takes priority over 'EXPIRED'
-	if signatureProofResult.ProofStatus == MISSING_ATTRIBUTES {
+	if signatureProofResult.ProofStatus == ProofStatusMissingAttributes {
 		return signatureProofResult
 	}
 
@@ -263,20 +263,20 @@ func (sm *SignedMessage) checkWithRequest(configuration *Configuration, sigReque
 			// At least one of the contained attributes has currently expired. We don't know the
 			// creation time of the ABS so we can't ascertain that the attributes were still valid then.
 			// Otherwise the signature is valid.
-			signatureProofResult.ProofStatus = EXPIRED
+			signatureProofResult.ProofStatus = ProofStatusExpired
 			return signatureProofResult
 		}
 	} else {
 		if disclosed.IsExpired(time.Unix(sm.Timestamp.Time, 0)) {
 			// The ABS contains attributes that were expired at the time of creation of the ABS.
 			// This must not happen and in this case the signature is invalid
-			signatureProofResult.ProofStatus = INVALID_CRYPTO
+			signatureProofResult.ProofStatus = ProofStatusInvalidCrypto
 			return signatureProofResult
 		}
 	}
 
 	// All disjunctions satisfied and nothing expired, proof is valid!
-	signatureProofResult.ProofStatus = VALID
+	signatureProofResult.ProofStatus = ProofStatusValid
 	return signatureProofResult
 }
 
@@ -298,7 +298,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, sigRequest *Signat
 	if !sm.MatchesNonceAndContext(sigRequest) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
-				ProofStatus: UNMATCHED_REQUEST,
+				ProofStatus: ProofStatusUnmatchedRequest,
 			},
 		}
 	}
@@ -308,7 +308,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, sigRequest *Signat
 		if err := sm.VerifyTimestamp(sigRequest.Message, configuration); err != nil {
 			return &SignatureProofResult{
 				ProofResult: &ProofResult{
-					ProofStatus: INVALID_TIMESTAMP,
+					ProofStatus: ProofStatusInvalidTimestamp,
 				},
 			}
 		}
@@ -318,7 +318,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, sigRequest *Signat
 	if !verify(configuration, sm.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
-				ProofStatus: INVALID_CRYPTO,
+				ProofStatus: ProofStatusInvalidCrypto,
 			},
 		}
 	}
@@ -332,13 +332,13 @@ func (sm *SignedMessage) VerifyWithoutRequest(configuration *Configuration) (Pro
 	// First, verify the timestamp, if any
 	if sm.Timestamp != nil {
 		if err := sm.VerifyTimestamp(sm.Message, configuration); err != nil {
-			return INVALID_TIMESTAMP, nil
+			return ProofStatusInvalidTimestamp, nil
 		}
 	}
 
 	// Cryptographically verify the signature
 	if !verify(configuration, sm.Signature, sm.Context, sm.GetNonce(), true) {
-		return INVALID_CRYPTO, nil
+		return ProofStatusInvalidCrypto, nil
 	}
 
 	// Extract attributes and return result
@@ -346,18 +346,18 @@ func (sm *SignedMessage) VerifyWithoutRequest(configuration *Configuration) (Pro
 
 	if err != nil {
 		fmt.Println(err)
-		return INVALID_CRYPTO, nil
+		return ProofStatusInvalidCrypto, nil
 	}
 
 	if sm.Timestamp == nil {
 		if disclosed.IsExpired(time.Now()) {
-			return EXPIRED, disclosed
+			return ProofStatusExpired, disclosed
 		}
 	} else {
 		if disclosed.IsExpired(time.Unix(sm.Timestamp.Time, 0)) {
-			return INVALID_CRYPTO, nil
+			return ProofStatusInvalidCrypto, nil
 		}
 	}
 
-	return VALID, disclosed
+	return ProofStatusValid, disclosed
 }
