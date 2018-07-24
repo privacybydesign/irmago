@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"math/big"
@@ -81,22 +80,6 @@ var supportedVersions = map[int][]int{
 }
 
 func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
-	// Parse range supported by server
-	var minmajor, minminor, maxmajor, maxminor int
-	var err error
-	if minmajor, err = strconv.Atoi(string(qr.ProtocolVersion[0])); err != nil {
-		return nil, err
-	}
-	if minminor, err = strconv.Atoi(string(qr.ProtocolVersion[2])); err != nil {
-		return nil, err
-	}
-	if maxmajor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[0])); err != nil {
-		return nil, err
-	}
-	if maxminor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[2])); err != nil {
-		return nil, err
-	}
-
 	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
 	keys := make([]int, 0, len(supportedVersions))
 	for k := range supportedVersions {
@@ -105,14 +88,14 @@ func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
 	sort.Sort(sort.Reverse(sort.IntSlice(keys)))
 	for _, major := range keys {
 		for _, minor := range supportedVersions[major] {
-			aboveMinimum := major > minmajor || (major == minmajor && minor >= minminor)
-			underMaximum := major < maxmajor || (major == maxmajor && minor <= maxminor)
+			aboveMinimum := major > qr.ProtocolVersion.Major || (major == qr.ProtocolVersion.Major && minor >= qr.ProtocolVersion.Minor)
+			underMaximum := major < qr.ProtocolMaxVersion.Major || (major == qr.ProtocolMaxVersion.Major && minor <= qr.ProtocolMaxVersion.Minor)
 			if aboveMinimum && underMaximum {
 				return irma.NewVersion(major, minor), nil
 			}
 		}
 	}
-	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
+	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion.String(), qr.ProtocolMaxVersion.String())
 }
 
 // IsInteractive returns whether this session uses an API server or not.

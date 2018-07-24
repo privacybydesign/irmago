@@ -19,8 +19,8 @@ type Status string
 
 // ProtocolVersion encodes the IRMA protocol version of an IRMA session.
 type ProtocolVersion struct {
-	major int
-	minor int
+	Major int
+	Minor int
 }
 
 func NewVersion(major, minor int) *ProtocolVersion {
@@ -28,7 +28,7 @@ func NewVersion(major, minor int) *ProtocolVersion {
 }
 
 func (v *ProtocolVersion) String() string {
-	return fmt.Sprintf("%d.%d", v.major, v.minor)
+	return fmt.Sprintf("%d.%d", v.Major, v.Minor)
 }
 
 func (v *ProtocolVersion) UnmarshalJSON(b []byte) (err error) {
@@ -40,10 +40,10 @@ func (v *ProtocolVersion) UnmarshalJSON(b []byte) (err error) {
 	if len(parts) != 2 {
 		return errors.New("Invalid protocol version number: not of form x.y")
 	}
-	if v.major, err = strconv.Atoi(parts[0]); err != nil {
+	if v.Major, err = strconv.Atoi(parts[0]); err != nil {
 		return
 	}
-	v.minor, err = strconv.Atoi(parts[1])
+	v.Minor, err = strconv.Atoi(parts[1])
 	return
 }
 
@@ -53,10 +53,10 @@ func (v *ProtocolVersion) MarshalJSON() ([]byte, error) {
 
 // Returns true if v is below the given version.
 func (v *ProtocolVersion) Below(major, minor int) bool {
-	if v.major < major {
+	if v.Major < major {
 		return true
 	}
-	return v.major == major && v.minor < minor
+	return v.Major == major && v.Minor < minor
 }
 
 // GetMetadataVersion maps a chosen protocol version to a metadata version that
@@ -106,9 +106,9 @@ type Qr struct {
 	// Server with which to perform the session
 	URL string `json:"u"`
 	// Session type (disclosing, signing, issuing)
-	Type               Action `json:"irmaqr"`
-	ProtocolVersion    string `json:"v"`
-	ProtocolMaxVersion string `json:"vmax"`
+	Type               Action          `json:"irmaqr"`
+	ProtocolVersion    ProtocolVersion `json:"v"`
+	ProtocolMaxVersion ProtocolVersion `json:"vmax"`
 }
 
 // A SessionInfo is the first message in the IRMA protocol (i.e., GET on the server URL),
