@@ -115,6 +115,7 @@ func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
 	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
 }
 
+// IsInteractive returns whether this session uses an API server or not.
 func (session *session) IsInteractive() bool {
 	return session.ServerURL != ""
 }
@@ -386,6 +387,9 @@ func (session *session) getSessionInfo() {
 	}
 }
 
+// doSession performs the session: it computes all proofs of knowledge, constructs credentials in case of issuance,
+// asks for the pin and performs the keyshare session, and finishes the session by either POSTing the result to the
+// API server or returning it to the caller (in case of interactive and noninteractive sessions, respectively).
 func (session *session) doSession(proceed bool) {
 	defer session.recoverFromPanic()
 
@@ -420,6 +424,7 @@ func (session *session) doSession(proceed bool) {
 	}
 }
 
+// Distributed returns whether or not this session involves a keyshare server.
 func (session *session) Distributed() bool {
 	var smi irma.SchemeManagerIdentifier
 	if session.Action == irma.ActionIssuing {
@@ -486,6 +491,8 @@ func (session *session) KeysharePinOK() {
 
 type disclosureResponse string
 
+// sendResponse sends the proofs of knowledge of the hidden attributes and/or the secret key, or the constructed
+// attribute-based signature, to the API server.
 func (session *session) sendResponse(message interface{}) {
 	var log *LogEntry
 	var err error
@@ -555,14 +562,9 @@ func (session *session) sendResponse(message interface{}) {
 	session.Handler.Success(session.Action, string(messageJson))
 }
 
+// managerSession performs a "session" in which a new scheme manager is added (asking for permission first).
 func (session *session) managerSession() {
-	defer func() {
-		if e := recover(); e != nil {
-			if session.Handler != nil {
-				session.Handler.Failure(session.Action, panicToError(e))
-			}
-		}
-	}()
+	defer session.recoverFromPanic()
 
 	// We have to download the scheme manager description.xml here before installing it,
 	// because we need to show its contents (name, description, website) to the user

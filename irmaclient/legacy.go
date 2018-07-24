@@ -6,6 +6,7 @@ import (
 	"github.com/mhe/gabi"
 )
 
+// These have no (de)serializer in Java so we have to deal with how Java serializes them by default.
 func (pki *publicKeyIdentifier) MarshalJSON() ([]byte, error) {
 	temp := struct {
 		Issuer  map[string]string `json:"issuer"`
@@ -17,6 +18,7 @@ func (pki *publicKeyIdentifier) MarshalJSON() ([]byte, error) {
 	return json.Marshal(temp)
 }
 
+// Same as above since these use publicKeyIdentifier as map key type.
 func (comms *proofPCommitmentMap) UnmarshalJSON(bytes []byte) error {
 	comms.Commitments = map[publicKeyIdentifier]*gabi.ProofPCommitment{}
 	temp := struct {

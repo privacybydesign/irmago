@@ -60,7 +60,9 @@ type DisclosureRequest struct {
 // A SignatureRequest is a a request to sign a message with certain attributes.
 type SignatureRequest struct {
 	DisclosureRequest
-	Message   string          `json:"message"`
+	Message string `json:"message"`
+
+	// Session state
 	Timestamp *atum.Timestamp `json:"-"`
 }
 

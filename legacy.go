@@ -13,6 +13,9 @@ import (
 // Legacy from the old Android app, and from the protocol that will be updated
 // in the future
 
+// Because the Java version of the current version of the protocol misses a serializer for the Java-equivalent
+// of the Java-equivalent of the IssuerIdentifier struct, these get serialized to an ugly map structure that we
+// have to parse here.
 func (si *SessionInfo) UnmarshalJSON(b []byte) error {
 	temp := &struct {
 		Jwt     string          `json:"jwt"`
