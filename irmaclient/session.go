@@ -82,7 +82,7 @@ var supportedVersions = map[int][]int{
 // Session constructors
 
 // NewSession starts a new IRMA session, given (along with a handler to pass feedback to)
-// either an *irma.QR; a string that contains a JSON-serialized irma.QR;
+// either an irma.QR or *irma.QR; a string that contains a JSON-serialized irma.QR;
 // or a string that contains a serialized *irma.SignatureRequest.
 // In any other case it calls the Failure method of the specified Handler.
 func (client *Client) NewSession(info interface{}, handler Handler) SessionDismisser {
@@ -138,26 +138,7 @@ func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handle
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
-	if !session.checkAndUpateConfiguration() {
-		return nil
-	}
-
-	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
-	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, "E-mail request", missing)
-		return nil
-	}
-	session.request.SetCandidates(candidates)
-
-	// Ask for permission to execute the session
-	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
-		session.choice = choice
-		session.request.SetDisclosureChoice(choice)
-		go session.doSession(proceed)
-	})
-	session.Handler.RequestSignaturePermission(
-		*session.request.(*irma.SignatureRequest), "E-mail request", callback)
-
+	session.processSessionInfo("Email request")
 	return session
 }
 
@@ -183,6 +164,9 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	}
 	session.Version = version
 	session.transport.SetHeader("X-IRMA-ProtocolVersion", version.String())
+	if !strings.HasSuffix(session.ServerURL, "/") {
+		session.ServerURL += "/"
+	}
 
 	// Check if the action is one of the supported types
 	switch session.Action {
@@ -196,19 +180,13 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		return nil
 	}
 
-	if !strings.HasSuffix(session.ServerURL, "/") {
-		session.ServerURL += "/"
-	}
-
 	go session.getSessionInfo()
-
 	return session
 }
 
 // Core session methods
 
-// getSessionInfo retrieves the first message in the IRMA protocol, checks if we can perform
-// the request, and informs the user of the outcome.
+// getSessionInfo retrieves the first message in the IRMA protocol (only in interactive sessions)
 func (session *session) getSessionInfo() {
 	defer session.recoverFromPanic()
 
@@ -240,6 +218,14 @@ func (session *session) getSessionInfo() {
 		}
 	}
 
+	session.processSessionInfo(session.jwt.Requestor())
+}
+
+// processSessionInfo continues the session after all session state has been received:
+// it checks if the session can be performed and asks the user for consent.
+func (session *session) processSessionInfo(requestorname string) {
+	defer session.recoverFromPanic()
+
 	if !session.checkAndUpateConfiguration() {
 		return
 	}
@@ -263,7 +249,7 @@ func (session *session) getSessionInfo() {
 
 	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, session.jwt.Requestor(), missing)
+		session.Handler.UnsatisfiableRequest(session.Action, requestorname, missing)
 		return
 	}
 	session.request.SetCandidates(candidates)
@@ -278,13 +264,13 @@ func (session *session) getSessionInfo() {
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			*session.request.(*irma.DisclosureRequest), session.jwt.Requestor(), callback)
+			*session.request.(*irma.DisclosureRequest), requestorname, callback)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			*session.request.(*irma.SignatureRequest), session.jwt.Requestor(), callback)
+			*session.request.(*irma.SignatureRequest), requestorname, callback)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			*session.request.(*irma.IssuanceRequest), session.jwt.Requestor(), callback)
+			*session.request.(*irma.IssuanceRequest), requestorname, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
