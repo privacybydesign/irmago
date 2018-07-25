@@ -71,7 +71,7 @@ func TestManualSession(t *testing.T) {
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
 		test.ClearTestStorage(t)
@@ -99,7 +99,7 @@ func TestManualSessionUnsatisfiable(t *testing.T) {
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	// Fail test if we won't get UnsatisfiableRequest error
 	if err := <-ms.errorChannel; err.ErrorType != irma.ErrorType("UnsatisfiableRequest") {
@@ -119,7 +119,7 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
 	client = parseStorage(t)
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
 		test.ClearTestStorage(t)
@@ -144,7 +144,7 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
 	client = parseStorage(t)
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
 		test.ClearTestStorage(t)
@@ -181,7 +181,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
 	client = parseStorage(t)
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
 		test.ClearTestStorage(t)
@@ -209,7 +209,7 @@ func TestManualKeyShareSession(t *testing.T) {
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
 		test.ClearTestStorage(t)
@@ -241,7 +241,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 
 	ms := createManualSessionHandler(request, request, t)
 
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
 		test.ClearTestStorage(t)
@@ -272,7 +272,7 @@ func TestManualSessionInvalidProof(t *testing.T) {
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
-	client.NewManualSession(request, &ms)
+	client.NewSession(request, &ms)
 
 	if err := <-ms.errorChannel; err != nil {
 		test.ClearTestStorage(t)

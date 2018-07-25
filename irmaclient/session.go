@@ -81,15 +81,53 @@ var supportedVersions = map[int][]int{
 
 // Session constructors
 
-// NewManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
-func (client *Client) NewManualSession(sigrequestJSONString string, handler Handler) {
-	var err error
-	sigrequest := &irma.SignatureRequest{}
-	if err = json.Unmarshal([]byte(sigrequestJSONString), sigrequest); err != nil {
-		handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
-		return
+// NewSession starts a new IRMA session, given (along with a handler to pass feedback to)
+// either an *irma.QR; a string that contains a JSON-serialized irma.QR;
+// or a string that contains a serialized *irma.SignatureRequest.
+// In any other case it calls the Failure method of the specified Handler.
+func (client *Client) NewSession(info interface{}, handler Handler) SessionDismisser {
+	parsed := map[string]interface{}{}
+
+	switch x := info.(type) {
+	case *irma.Qr: // Just start the session directly
+		return client.newQrSession(x, handler)
+	case irma.Qr:
+		return client.newQrSession(&x, handler)
+
+	// We assume the string contains a JSON object
+	// Deserialize it into a temp to see which fields it contains, and infer from that what kind of object it is
+	case string:
+		bts := []byte(x)
+		if err := json.Unmarshal(bts, &parsed); err != nil {
+			handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
+			return nil
+		}
+
+		if _, isqr := parsed["irmaqr"]; isqr {
+			qr := &irma.Qr{}
+			if err := json.Unmarshal(bts, qr); err != nil {
+				handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
+				return nil
+			}
+			return client.newQrSession(qr, handler)
+		}
+
+		if _, isSigRequest := parsed["message"]; isSigRequest {
+			sigrequest := &irma.SignatureRequest{}
+			if err := json.Unmarshal([]byte(x), sigrequest); err != nil {
+				handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
+				return nil
+			}
+			return client.newManualSession(sigrequest, handler)
+		}
 	}
 
+	handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Info specified of unsupported type")})
+	return nil
+}
+
+// newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
+func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handler Handler) SessionDismisser {
 	session := &session{
 		Action:  irma.ActionSigning, // TODO hardcoded for now
 		Handler: handler,
@@ -101,13 +139,13 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
 	if !session.checkAndUpateConfiguration() {
-		return
+		return nil
 	}
 
 	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.Action, "E-mail request", missing)
-		return
+		return nil
 	}
 	session.request.SetCandidates(candidates)
 
@@ -119,10 +157,12 @@ func (client *Client) NewManualSession(sigrequestJSONString string, handler Hand
 	})
 	session.Handler.RequestSignaturePermission(
 		*session.request.(*irma.SignatureRequest), "E-mail request", callback)
+
+	return session
 }
 
-// NewSession creates and starts a new interactive IRMA session
-func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser {
+// newQrSession creates and starts a new interactive IRMA session
+func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
 	session := &session{
 		ServerURL: qr.URL,
 		transport: irma.NewHTTPTransport(qr.URL),
