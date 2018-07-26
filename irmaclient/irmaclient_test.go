@@ -423,13 +423,13 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
-	require.False(t, client.Configuration.CredentialTypes[credid].AttributeDescription(attrid).IsOptional())
+	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
 
 	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 	client.Configuration.Download(issuanceRequest)
-	require.True(t, client.Configuration.CredentialTypes[credid].AttributeDescription(attrid).IsOptional())
+	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
 
 	test.ClearTestStorage(t)
 }

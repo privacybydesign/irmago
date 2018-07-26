@@ -55,15 +55,15 @@ type CredentialType struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	IsSingleton     bool             `xml:"ShouldBeSingleton"`
 	Description     TranslatedString
-	Attributes      []AttributeDescription `xml:"Attributes>Attribute"`
-	XMLVersion      int                    `xml:"version,attr"`
-	XMLName         xml.Name               `xml:"IssueSpecification"`
+	Attributes      []AttributeType `xml:"Attributes>Attribute"`
+	XMLVersion      int             `xml:"version,attr"`
+	XMLName         xml.Name        `xml:"IssueSpecification"`
 
 	Valid bool `xml:"-"`
 }
 
-// AttributeDescription is a description of an attribute within a credential type.
-type AttributeDescription struct {
+// AttributeType is a description of an attribute within a credential type.
+type AttributeType struct {
 	ID          string `xml:"id,attr"`
 	Optional    string `xml:"optional,attr"  json:",omitempty"`
 	Index       *int   `xml:"index,attr" json:",omitempty"`
@@ -71,11 +71,11 @@ type AttributeDescription struct {
 	Description TranslatedString
 }
 
-func (ad AttributeDescription) GetAttributeTypeIdentifier(cred CredentialTypeIdentifier) AttributeTypeIdentifier {
+func (ad AttributeType) GetAttributeTypeIdentifier(cred CredentialTypeIdentifier) AttributeTypeIdentifier {
 	return NewAttributeTypeIdentifier(cred.String() + "." + ad.ID)
 }
 
-func (ad AttributeDescription) IsOptional() bool {
+func (ad AttributeType) IsOptional() bool {
 	return ad.Optional == "true"
 }
 
@@ -107,7 +107,7 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 	return -1, errors.New("Attribute identifier not found")
 }
 
-func (ct CredentialType) AttributeDescription(ai AttributeTypeIdentifier) *AttributeDescription {
+func (ct CredentialType) AttributeType(ai AttributeTypeIdentifier) *AttributeType {
 	i, _ := ct.IndexOf(ai)
 	if i == -1 {
 		return nil
