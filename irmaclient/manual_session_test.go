@@ -67,7 +67,7 @@ func createManualSessionHandler(request string, invalidRequest string, t *testin
 func TestManualSession(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 42, \"context\": 1337, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
@@ -95,7 +95,7 @@ func TestManualSession(t *testing.T) {
 func TestManualSessionUnsatisfiable(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)
@@ -113,8 +113,8 @@ func TestManualSessionUnsatisfiable(t *testing.T) {
 func TestManualSessionInvalidNonce(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	invalidRequest := "{\"nonce\": 1, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	invalidRequest := "{\"nonce\": 1, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
@@ -138,8 +138,8 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 func TestManualSessionInvalidRequest(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.university\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.university\"]}]}"
 
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
@@ -175,8 +175,8 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 func TestManualSessionInvalidAttributeValue(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"456\"}}]}"
-	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"456\"}}]}"
+	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":{\"irma-demo.RU.studentCard.studentID\": \"123\"}}]}"
 
 	ms := createManualSessionHandler(request, invalidRequest, t)
 
@@ -204,7 +204,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 func TestManualKeyShareSession(t *testing.T) {
 	invalidate = false
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
 
 	ms := createManualSessionHandler(request, request, t)
 
@@ -237,7 +237,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 	}
 
 	// Request to sign with both BSN and StudentID
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]},{\"label\":\"BSN\",\"attributes\":[\"irma-demo.MijnOverheid.root.BSN\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]},{\"label\":\"BSN\",\"attributes\":[\"irma-demo.MijnOverheid.root.BSN\"]}]}"
 
 	ms := createManualSessionHandler(request, request, t)
 
@@ -268,7 +268,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 func TestManualSessionInvalidProof(t *testing.T) {
 	invalidate = true
 
-	request := "{\"nonce\": 0, \"context\": 0, \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	ms := createManualSessionHandler(request, request, t)
 
 	client = parseStorage(t)

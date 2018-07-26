@@ -344,7 +344,7 @@ func sessionHandlerHelper(t *testing.T, jwtcontents interface{}, url string, cli
 	if h == nil {
 		h = TestHandler{t, c, client}
 	}
-	client.NewSession(qr, h)
+	client.newQrSession(qr, h)
 
 	if err := <-c; err != nil {
 		t.Fatal(*err)

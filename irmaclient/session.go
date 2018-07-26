@@ -83,44 +83,21 @@ var supportedVersions = map[int][]int{
 // either an irma.QR or *irma.QR; a string that contains a JSON-serialized irma.QR;
 // or a string that contains a serialized *irma.SignatureRequest.
 // In any other case it calls the Failure method of the specified Handler.
-func (client *Client) NewSession(info interface{}, handler Handler) SessionDismisser {
-	parsed := map[string]interface{}{}
+func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
+	bts := []byte(sessionrequest)
 
-	switch x := info.(type) {
-	case *irma.Qr: // Just start the session directly
-		return client.newQrSession(x, handler)
-	case irma.Qr:
-		return client.newQrSession(&x, handler)
-
-	// We assume the string contains a JSON object
-	// Deserialize it into a temp to see which fields it contains, and infer from that what kind of object it is
-	case string:
-		bts := []byte(x)
-		if err := json.Unmarshal(bts, &parsed); err != nil {
-			handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
-			return nil
-		}
-
-		if _, isqr := parsed["irmaqr"]; isqr {
-			qr := &irma.Qr{}
-			if err := json.Unmarshal(bts, qr); err != nil {
-				handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
-				return nil
-			}
-			return client.newQrSession(qr, handler)
-		}
-
-		if _, isSigRequest := parsed["message"]; isSigRequest {
-			sigrequest := &irma.SignatureRequest{}
-			if err := json.Unmarshal([]byte(x), sigrequest); err != nil {
-				handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
-				return nil
-			}
-			return client.newManualSession(sigrequest, handler)
-		}
+	// Try to deserialize it as a Qr or SignatureRequest
+	qr := &irma.Qr{}
+	if err := irma.UnmarshalValidate(bts, qr); err == nil {
+		return client.newQrSession(qr, handler)
 	}
 
-	handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Info specified of unsupported type")})
+	sigrequest := &irma.SignatureRequest{}
+	if err := irma.UnmarshalValidate(bts, sigrequest); err == nil {
+		return client.newManualSession(sigrequest, handler)
+	}
+
+	handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Session request could not be parsed")})
 	return nil
 }
 

@@ -3,6 +3,7 @@ package irma
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -89,6 +90,22 @@ type RemoteError struct {
 	Description string `json:"description"`
 	Message     string `json:"message"`
 	Stacktrace  string `json:"stacktrace"`
+}
+
+type Validator interface {
+	Validate() error
+}
+
+// UnmarshalValidate json.Unmarshal's data, and validates it using the
+// Validate() method if dest implements the Validator interface.
+func UnmarshalValidate(data []byte, dest interface{}) error {
+	if err := json.Unmarshal(data, dest); err != nil {
+		return err
+	}
+	if v, ok := dest.(Validator); ok {
+		return v.Validate()
+	}
+	return nil
 }
 
 func (err *RemoteError) Error() string {
@@ -230,4 +247,24 @@ func ParseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
 		return nil, err
 	}
 	return retval, nil
+}
+
+func (qr *Qr) Validate() error {
+	if _, err := url.ParseRequestURI(qr.URL); err != nil {
+		return errors.Errorf("Invalid URL: %s", err.Error())
+	}
+	if qr.URL == "" {
+		return errors.New("No URL specified")
+	}
+
+	switch qr.Type {
+	case ActionDisclosing: // nop
+	case ActionIssuing: // nop
+	case ActionSigning: // nop
+	case ActionSchemeManager: // nop
+	default:
+		return errors.New("Unsupported session type")
+	}
+
+	return nil
 }

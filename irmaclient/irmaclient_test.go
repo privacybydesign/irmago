@@ -452,7 +452,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 		URL:  "http://localhost:48681/irma_configuration/irma-demo",
 	}
 	c := make(chan *irma.SessionError)
-	client.NewSession(qr, TestHandler{t, c, client})
+	client.newQrSession(qr, TestHandler{t, c, client})
 	if err := <-c; err != nil {
 		t.Fatal(*err)
 	}

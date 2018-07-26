@@ -17,15 +17,16 @@ import (
 
 // BaseRequest contains the context and nonce for an IRMA session.
 type BaseRequest struct {
-	Context       *big.Int                 `json:"context"`
-	Nonce         *big.Int                 `json:"nonce"`
-	RequestorName string                   `json:"requestorName"`
-	Candidates    [][]*AttributeIdentifier `json:"-"`
+	Context       *big.Int `json:"context"`
+	Nonce         *big.Int `json:"nonce"`
+	RequestorName string   `json:"requestorName"`
+	Type          Action   `json:"type"`
 
-	Choice *DisclosureChoice  `json:"-"`
-	Ids    *IrmaIdentifierSet `json:"-"`
+	Candidates [][]*AttributeIdentifier `json:"-"`
+	Choice     *DisclosureChoice        `json:"-"`
+	Ids        *IrmaIdentifierSet       `json:"-"`
 
-	version *ProtocolVersion
+	Version *ProtocolVersion `json:"protocolVersion"`
 }
 
 func (sr *BaseRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
@@ -44,12 +45,12 @@ func (sr *BaseRequest) SetDisclosureChoice(choice *DisclosureChoice) {
 
 // ...
 func (sr *BaseRequest) SetVersion(v *ProtocolVersion) {
-	sr.version = v
+	sr.Version = v
 }
 
 // ...
 func (sr *BaseRequest) GetVersion() *ProtocolVersion {
-	return sr.version
+	return sr.Version
 }
 
 func (sr *BaseRequest) GetRequestorName() string {
@@ -287,6 +288,16 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 // SetNonce sets the nonce of this session.
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
 
+func (ir *IssuanceRequest) Validate() error {
+	if ir.Type != ActionIssuing {
+		return errors.New("Not an issuance request")
+	}
+	if len(ir.Credentials) == 0 {
+		return errors.New("Empty issuance request")
+	}
+	return nil
+}
+
 func (dr *DisclosureRequest) Identifiers() *IrmaIdentifierSet {
 	if dr.Ids == nil {
 		dr.Ids = &IrmaIdentifierSet{
@@ -321,6 +332,21 @@ func (dr *DisclosureRequest) GetNonce() *big.Int { return dr.Nonce }
 // SetNonce sets the nonce of this session.
 func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 
+func (dr *DisclosureRequest) Validate() error {
+	if dr.Type != ActionDisclosing {
+		return errors.New("Not a disclosure request")
+	}
+	if len(dr.Content) == 0 {
+		return errors.New("Disclosure request had no attributes")
+	}
+	for _, disjunction := range dr.Content {
+		if len(disjunction.Attributes) == 0 {
+			return errors.New("Disclosure request had an empty disjunction")
+		}
+	}
+	return nil
+}
+
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
@@ -350,14 +376,14 @@ func convertFieldsToBigInt(jsonString []byte, fieldNames []string) ([]byte, erro
 // Custom Unmarshalling to support both json with string and int fields for nonce and context
 // i.e. {"nonce": "42", "context": "1337", ... } and {"nonce": 42, "context": 1337, ... }
 func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
-	type SignatureRequestTemp SignatureRequest // To avoid 'recursive unmarshalling'
+	type signatureRequestTemp SignatureRequest // To avoid 'recursive unmarshalling'
 
 	fixedRequest, err := convertFieldsToBigInt(b, []string{"nonce", "context"})
 	if err != nil {
 		return err
 	}
 
-	var result SignatureRequestTemp
+	var result signatureRequestTemp
 	err = json.Unmarshal(fixedRequest, &result)
 	if err != nil {
 		return err
@@ -383,6 +409,24 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMe
 		Message:   sr.Message,
 		Timestamp: sr.Timestamp,
 	}, nil
+}
+
+func (sr *SignatureRequest) Validate() error {
+	if sr.Type != ActionSigning {
+		return errors.New("Not a signature request")
+	}
+	if sr.Message == "" {
+		return errors.New("Signature request had empty message")
+	}
+	if len(sr.Content) == 0 {
+		return errors.New("Disclosure request had no attributes")
+	}
+	for _, disjunction := range sr.Content {
+		if len(disjunction.Attributes) == 0 {
+			return errors.New("Disclosure request had an empty disjunction")
+		}
+	}
+	return nil
 }
 
 // Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
