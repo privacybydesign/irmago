@@ -8,9 +8,9 @@ import (
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
+	ID               string                   // e.g., "studentCard"
 	CredentialTypeID CredentialTypeIdentifier // e.g., "irma-demo.RU.studentCard"
-	Name             string                   // e.g., "studentCard"
-	IssuerID         IssuerIdentifier         // e.g., "RU"
+	IssuerID         IssuerIdentifier         // e.g., "irma-demo.RU"
 	SchemeManagerID  SchemeManagerIdentifier  // e.g., "irma-demo"
 	Index            int                      // This is the Index-th credential instance of this type
 	SignedOn         Timestamp                // Unix timestamp
@@ -35,9 +35,9 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 	issid := id.IssuerIdentifier()
 	return &CredentialInfo{
 		CredentialTypeID: NewCredentialTypeIdentifier(id.String()),
-		Name:             id.Name(),
-		IssuerID:         NewIssuerIdentifier(issid.Name()),
-		SchemeManagerID:  NewSchemeManagerIdentifier(issid.SchemeManagerIdentifier().String()),
+		ID:               id.Name(),
+		IssuerID:         issid,
+		SchemeManagerID:  issid.SchemeManagerIdentifier(),
 		SignedOn:         Timestamp(meta.SigningDate()),
 		Expires:          Timestamp(meta.Expiry()),
 		Attributes:       attrs.Strings(),
@@ -68,5 +68,5 @@ func (cl CredentialInfoList) Swap(i, j int) {
 // Less implements sort.Interface.
 func (cl CredentialInfoList) Less(i, j int) bool {
 	// TODO Decide on sorting, and if it depends on a irmago.TranslatedString, allow language choosing
-	return strings.Compare(cl[i].Name, cl[j].Name) > 0
+	return strings.Compare(cl[i].ID, cl[j].ID) > 0
 }
