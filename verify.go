@@ -162,7 +162,7 @@ func NewDisclosedCredentialFromADisclosed(aDisclosed map[int]*big.Int, configura
 			continue
 		}
 
-		id := cred.Attributes[k-2].GetAttributeTypeIdentifier(cred.Identifier())
+		id := cred.Attributes[k-2].GetAttributeTypeIdentifier()
 		attributeValue := decodeAttribute(v, metadata.Version())
 		rawAttributes[id] = attributeValue
 		attributes[id] = translateAttribute(attributeValue)

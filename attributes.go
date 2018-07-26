@@ -104,7 +104,7 @@ func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]Tr
 		strings := al.Strings()
 		ct := conf.CredentialTypes[ctid]
 		for i := range ct.Attributes {
-			attrid := ct.Attributes[i].GetAttributeTypeIdentifier(ctid)
+			attrid := ct.Attributes[i].GetAttributeTypeIdentifier()
 			al.attrMap[attrid] = strings[i]
 		}
 	}
@@ -166,7 +166,7 @@ func (al *AttributeList) UntranslatedAttribute(identifier AttributeTypeIdentifie
 	return nil
 }
 
-// Attribute returns the content of the specified attribute, or "" if not present in this attribute list.
+// Attribute returns the content of the specified attribute, or nil if not present in this attribute list.
 func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) TranslatedString {
 	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
 		return nil

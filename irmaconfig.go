@@ -40,6 +40,7 @@ type Configuration struct {
 	SchemeManagers  map[SchemeManagerIdentifier]*SchemeManager
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
+	Attributes      map[AttributeTypeIdentifier]*AttributeType
 
 	// Path to the irma_configuration folder that this instance represents
 	Path string
@@ -115,6 +116,7 @@ func (conf *Configuration) clear() {
 	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
 	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
 	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
+	conf.Attributes = make(map[AttributeTypeIdentifier]*AttributeType)
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
@@ -429,6 +431,13 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
+		for index, attr := range cred.Attributes {
+			attr.Index = index
+			attr.SchemeManagerID = cred.SchemeManagerID
+			attr.IssuerID = cred.IssuerID
+			attr.CredentialTypeID = cred.ID
+			conf.Attributes[attr.GetAttributeTypeIdentifier()] = attr
+		}
 		return nil
 	})
 	if !foundcred {
@@ -1047,16 +1056,16 @@ func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 	for i, attr := range cred.Attributes {
 		conf.checkTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
 		index := i
-		if attr.Index != nil {
-			index = *attr.Index
+		if attr.DisplayIndex != nil {
+			index = *attr.DisplayIndex
 		}
 		if index >= count {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute index at attribute %d", name, i))
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute displayIndex at attribute %d", name, i))
 		}
 		indices[index] = struct{}{}
 	}
 	if len(indices) != count {
-		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the index-tags", name))
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the displayIndex tags", name))
 	}
 	return nil
 }

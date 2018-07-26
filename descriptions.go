@@ -55,9 +55,9 @@ type CredentialType struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	IsSingleton     bool             `xml:"ShouldBeSingleton"`
 	Description     TranslatedString
-	Attributes      []AttributeType `xml:"Attributes>Attribute"`
-	XMLVersion      int             `xml:"version,attr"`
-	XMLName         xml.Name        `xml:"IssueSpecification"`
+	Attributes      []*AttributeType `xml:"Attributes>Attribute" json:"-"`
+	XMLVersion      int              `xml:"version,attr"`
+	XMLName         xml.Name         `xml:"IssueSpecification"`
 
 	Valid bool `xml:"-"`
 }
@@ -66,13 +66,20 @@ type CredentialType struct {
 type AttributeType struct {
 	ID          string `xml:"id,attr"`
 	Optional    string `xml:"optional,attr"  json:",omitempty"`
-	Index       *int   `xml:"index,attr" json:",omitempty"`
 	Name        TranslatedString
 	Description TranslatedString
+
+	Index        int  `xml:"-"`
+	DisplayIndex *int `xml:"displayIndex,attr" json:",omitempty"`
+
+	// Taken from containing CredentialType
+	CredentialTypeID string `xml:"-"`
+	IssuerID         string `xml:"-"`
+	SchemeManagerID  string `xml:"-"`
 }
 
-func (ad AttributeType) GetAttributeTypeIdentifier(cred CredentialTypeIdentifier) AttributeTypeIdentifier {
-	return NewAttributeTypeIdentifier(cred.String() + "." + ad.ID)
+func (ad AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {
+	return NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s.%s.%s", ad.SchemeManagerID, ad.IssuerID, ad.CredentialTypeID, ad.ID))
 }
 
 func (ad AttributeType) IsOptional() bool {
@@ -112,7 +119,7 @@ func (ct CredentialType) AttributeType(ai AttributeTypeIdentifier) *AttributeTyp
 	if i == -1 {
 		return nil
 	}
-	return &ct.Attributes[i]
+	return ct.Attributes[i]
 }
 
 // TranslatedString is a map of translated strings.
