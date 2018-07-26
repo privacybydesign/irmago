@@ -8,16 +8,16 @@ import (
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
-	ID               string                   // e.g., "studentCard"
-	CredentialTypeID CredentialTypeIdentifier // e.g., "irma-demo.RU.studentCard"
-	IssuerID         IssuerIdentifier         // e.g., "irma-demo.RU"
-	SchemeManagerID  SchemeManagerIdentifier  // e.g., "irma-demo"
-	Index            int                      // This is the Index-th credential instance of this type
-	SignedOn         Timestamp                // Unix timestamp
-	Expires          Timestamp                // Unix timestamp
-	Attributes       []TranslatedString       // Human-readable rendered attributes
-	Logo             string                   // Path to logo on storage
-	Hash             string                   // SHA256 hash over the attributes
+	ID               string                                       // e.g., "studentCard"
+	CredentialTypeID CredentialTypeIdentifier                     // e.g., "irma-demo.RU.studentCard"
+	IssuerID         IssuerIdentifier                             // e.g., "irma-demo.RU"
+	SchemeManagerID  SchemeManagerIdentifier                      // e.g., "irma-demo"
+	Index            int                                          // This is the Index-th credential instance of this type
+	SignedOn         Timestamp                                    // Unix timestamp
+	Expires          Timestamp                                    // Unix timestamp
+	Attributes       map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
+	Logo             string                                       // Path to logo on storage
+	Hash             string                                       // SHA256 hash over the attributes
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
@@ -40,7 +40,7 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 		SchemeManagerID:  issid.SchemeManagerIdentifier(),
 		SignedOn:         Timestamp(meta.SigningDate()),
 		Expires:          Timestamp(meta.Expiry()),
-		Attributes:       attrs.Strings(),
+		Attributes:       attrs.Map(conf),
 		Logo:             credtype.Logo(conf),
 		Hash:             attrs.Hash(),
 	}

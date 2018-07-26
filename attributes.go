@@ -65,6 +65,7 @@ type AttributeList struct {
 	*MetadataAttribute `json:"-"`
 	Ints               []*big.Int
 	strings            []TranslatedString
+	attrMap            map[AttributeTypeIdentifier]TranslatedString
 	info               *CredentialInfo
 	h                  string
 }
@@ -94,6 +95,20 @@ func (al *AttributeList) Hash() string {
 		al.h = hex.EncodeToString(shasum[:])
 	}
 	return al.h
+}
+
+func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]TranslatedString {
+	if al.attrMap == nil {
+		al.attrMap = make(map[AttributeTypeIdentifier]TranslatedString)
+		ctid := al.CredentialType().Identifier()
+		strings := al.Strings()
+		ct := conf.CredentialTypes[ctid]
+		for i := range ct.Attributes {
+			attrid := ct.Attributes[i].GetAttributeTypeIdentifier(ctid)
+			al.attrMap[attrid] = strings[i]
+		}
+	}
+	return al.attrMap
 }
 
 // Strings converts the current instance to human-readable strings.
