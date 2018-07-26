@@ -9,16 +9,13 @@ import (
 	"github.com/privacybydesign/irmago"
 )
 
-// LogSessionInfo is a SessionInfo alias to bypass the custom JSON marshaler
-type LogSessionInfo irma.SessionInfo
-
 // LogEntry is a log entry of a past event.
 type LogEntry struct {
 	// General info
-	Type        irma.Action
-	Time        irma.Timestamp        // Time at which the session was completed
-	SessionInfo *LogSessionInfo       `json:",omitempty"` // Message that started the session
-	Version     *irma.ProtocolVersion `json:",omitempty"` // Protocol version that was used in the session
+	Type    irma.Action
+	Time    irma.Timestamp        // Time at which the session was completed
+	Version *irma.ProtocolVersion `json:",omitempty"` // Protocol version that was used in the session
+	Request irma.SessionRequest   `json:",omitempty"` // Message that started the session
 
 	// Session type-specific info
 	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"` // In case of credential removal
@@ -50,12 +47,7 @@ func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma
 	if entry.Type != irma.ActionIssuing {
 		return irma.CredentialInfoList{}, nil
 	}
-	jwt, err := irma.ParseRequestorJwt(irma.ActionIssuing, entry.SessionInfo.Jwt)
-	if err != nil {
-		return
-	}
-	ir := jwt.SessionRequest().(*irma.IssuanceRequest)
-	return ir.GetCredentialInfoList(conf, entry.Version)
+	return entry.Request.(*irma.IssuanceRequest).GetCredentialInfoList(conf, entry.Version)
 }
 
 // GetSignedMessage gets the signed for a log entry
@@ -63,10 +55,11 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 	if entry.Type != irma.ActionSigning {
 		return nil, nil
 	}
+	request := entry.Request.(*irma.SignatureRequest)
 	return &irma.SignedMessage{
 		Signature: entry.ProofList,
-		Nonce:     entry.SessionInfo.Nonce,
-		Context:   entry.SessionInfo.Context,
+		Nonce:     request.Nonce,
+		Context:   request.Context,
 		Message:   string(entry.SignedMessage),
 		Timestamp: entry.Timestamp,
 	}, nil
@@ -74,10 +67,10 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 
 func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
-		Type:        session.Action,
-		Time:        irma.Timestamp(time.Now()),
-		Version:     session.Version,
-		SessionInfo: (*LogSessionInfo)(session.info),
+		Type:    session.Action,
+		Time:    irma.Timestamp(time.Now()),
+		Version: session.Version,
+		Request: session.request,
 	}
 
 	switch entry.Type {
@@ -99,10 +92,4 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	}
 
 	return entry, nil
-}
-
-// Jwt returns the JWT from the requestor that started the IRMA session which the
-// current log entry tracks.
-func (entry *LogEntry) Jwt() (irma.RequestorJwt, error) {
-	return irma.ParseRequestorJwt(entry.Type, entry.SessionInfo.Jwt)
 }

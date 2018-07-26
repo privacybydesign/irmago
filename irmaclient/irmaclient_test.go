@@ -186,9 +186,7 @@ func TestLogging(t *testing.T) {
 
 	entry := logs[len(logs)-1]
 	require.NotNil(t, entry)
-	sessionjwt, err := entry.Jwt()
-	require.NoError(t, err)
-	require.Equal(t, "testip", sessionjwt.(*irma.IdentityProviderJwt).ServerName)
+	require.Equal(t, "testip", entry.Request.GetRequestorName())
 	require.NoError(t, err)
 	issued, err := entry.GetIssuedCredentials(client.Configuration)
 	require.NoError(t, err)
@@ -206,9 +204,7 @@ func TestLogging(t *testing.T) {
 
 	entry = logs[len(logs)-1]
 	require.NotNil(t, entry)
-	sessionjwt, err = entry.Jwt()
-	require.NoError(t, err)
-	require.Equal(t, "testsp", sessionjwt.(*irma.ServiceProviderJwt).ServerName)
+	require.Equal(t, "testsp", entry.Request.GetRequestorName())
 	require.NoError(t, err)
 	disclosed, err = entry.GetDisclosedCredentials(client.Configuration)
 	require.NoError(t, err)
@@ -222,9 +218,7 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+3)
 	entry = logs[len(logs)-1]
 	require.NotNil(t, entry)
-	sessionjwt, err = entry.Jwt()
-	require.NoError(t, err)
-	require.Equal(t, "testsigclient", sessionjwt.(*irma.SignatureRequestorJwt).ServerName)
+	require.Equal(t, "testsigclient", entry.Request.GetRequestorName())
 	require.NoError(t, err)
 	sig, err := entry.GetSignedMessage()
 	require.NoError(t, err)

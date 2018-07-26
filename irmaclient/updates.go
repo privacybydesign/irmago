@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"math/big"
 	"regexp"
 	"time"
 
@@ -78,7 +79,12 @@ var clientUpdates = []func(client *Client) error{
 		// The logs read above do not contain the Response field as it has been removed from the LogEntry struct.
 		// So read the logs again into a slice of a temp struct that does contain this field.
 		type oldLogEntry struct {
-			Response json.RawMessage
+			Response    json.RawMessage
+			SessionInfo struct {
+				Nonce   *big.Int `json:"nonce"`
+				Context *big.Int `json:"context"`
+				Jwt     string   `json:"jwt"`
+			}
 		}
 		var oldLogs []*oldLogEntry
 		if err = client.storage.load(&oldLogs, logsFile); err != nil {
@@ -95,6 +101,16 @@ var clientUpdates = []func(client *Client) error{
 			if len(oldEntry.Response) == 0 {
 				return errors.New("Log entry had no Response field")
 			}
+
+			var jwt irma.RequestorJwt
+			jwt, err = irma.ParseRequestorJwt(entry.Type, oldEntry.SessionInfo.Jwt)
+			if err != nil {
+				return err
+			}
+			entry.Request = jwt.SessionRequest()
+			entry.Request.SetRequestorName(jwt.Requestor())
+			entry.Request.SetNonce(oldEntry.SessionInfo.Nonce)
+			entry.Request.SetContext(oldEntry.SessionInfo.Context)
 
 			switch entry.Type {
 			case actionRemoval: // nop
@@ -125,12 +141,7 @@ var clientUpdates = []func(client *Client) error{
 			// that was introduced in version 2.3 of the protocol. The only thing that I can think of to determine this
 			// is to check if the attributes are human-readable, i.e., alphanumeric: if the presence bit is present and
 			// we do not shift it away, then they almost certainly will not be.
-			var jwt irma.RequestorJwt
-			jwt, err = entry.Jwt()
-			if err != nil {
-				return
-			}
-			for _, attr := range jwt.SessionRequest().(*irma.IssuanceRequest).Credentials[0].Attributes {
+			for _, attr := range entry.Request.(*irma.IssuanceRequest).Credentials[0].Attributes {
 				if regexp.MustCompile("^\\w").Match([]byte(attr)) {
 					entry.Version = irma.NewVersion(2, 2)
 				} else {

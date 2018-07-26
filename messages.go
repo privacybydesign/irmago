@@ -3,7 +3,6 @@ package irma
 import (
 	"encoding/base64"
 	"encoding/json"
-	"math/big"
 	"strconv"
 	"strings"
 
@@ -109,15 +108,6 @@ type Qr struct {
 	Type               Action          `json:"irmaqr"`
 	ProtocolVersion    ProtocolVersion `json:"v"`
 	ProtocolMaxVersion ProtocolVersion `json:"vmax"`
-}
-
-// A SessionInfo is the first message in the IRMA protocol (i.e., GET on the server URL),
-// containing the session request info.
-type SessionInfo struct {
-	Jwt     string                   `json:"jwt"`
-	Nonce   *big.Int                 `json:"nonce"`
-	Context *big.Int                 `json:"context"`
-	Keys    map[IssuerIdentifier]int `json:"keys"`
 }
 
 // Statuses

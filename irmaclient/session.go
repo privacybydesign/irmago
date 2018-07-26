@@ -66,8 +66,6 @@ type session struct {
 
 	// These are empty on manual sessions
 	ServerURL string
-	info      *irma.SessionInfo
-	jwt       irma.RequestorJwt
 	transport *irma.HTTPTransport
 }
 
@@ -76,7 +74,7 @@ var _ keyshareSessionHandler = (*session)(nil)
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
-	2: {3, 2, 1},
+	2: {4, 3, 2, 1},
 }
 
 // Session constructors
@@ -136,9 +134,9 @@ func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handle
 		request: sigrequest,
 	}
 
+	sigrequest.RequestorName = "Email request"
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
-
-	session.processSessionInfo("Email request")
+	session.processSessionInfo()
 	return session
 }
 
@@ -157,6 +155,21 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		return session
 	}
 
+	// Check if the action is one of the supported types
+	switch session.Action {
+	case irma.ActionDisclosing:
+		session.request = &irma.DisclosureRequest{}
+	case irma.ActionSigning:
+		session.request = &irma.SignatureRequest{}
+	case irma.ActionIssuing:
+		session.request = &irma.IssuanceRequest{}
+	case irma.ActionUnknown:
+		fallthrough
+	default:
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownAction, Info: string(session.Action)})
+		return nil
+	}
+
 	version, err := calcVersion(qr)
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorProtocolVersionNotSupported, Err: err})
@@ -166,18 +179,6 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	session.transport.SetHeader("X-IRMA-ProtocolVersion", version.String())
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"
-	}
-
-	// Check if the action is one of the supported types
-	switch session.Action {
-	case irma.ActionDisclosing: // nop
-	case irma.ActionSigning: // nop
-	case irma.ActionIssuing: // nop
-	case irma.ActionUnknown:
-		fallthrough
-	default:
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownAction, Info: string(session.Action)})
-		return nil
 	}
 
 	go session.getSessionInfo()
@@ -193,41 +194,30 @@ func (session *session) getSessionInfo() {
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
-	session.info = &irma.SessionInfo{}
-	Err := session.transport.Get("jwt", session.info)
-	if Err != nil {
-		session.fail(Err.(*irma.SessionError))
-		return
-	}
-
-	var err error
-	session.jwt, err = irma.ParseRequestorJwt(session.Action, session.info.Jwt)
+	err := session.transport.Get("", session.request)
 	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorInvalidJWT, Err: err})
+		session.fail(err.(*irma.SessionError))
 		return
 	}
-	session.request = session.jwt.SessionRequest()
-	session.request.SetContext(session.info.Context)
-	session.request.SetNonce(session.info.Nonce)
-	session.request.SetVersion(session.Version)
-	if session.Action == irma.ActionIssuing {
-		ir := session.request.(*irma.IssuanceRequest)
-		// Store which public keys the server will use
-		for _, credreq := range ir.Credentials {
-			credreq.KeyCounter = session.info.Keys[credreq.CredentialTypeID.IssuerIdentifier()]
-		}
-	}
 
-	session.processSessionInfo(session.jwt.Requestor())
+	session.processSessionInfo()
 }
 
 // processSessionInfo continues the session after all session state has been received:
 // it checks if the session can be performed and asks the user for consent.
-func (session *session) processSessionInfo(requestorname string) {
+func (session *session) processSessionInfo() {
 	defer session.recoverFromPanic()
 
 	if !session.checkAndUpateConfiguration() {
 		return
+	}
+
+	confirmedProtocolVersion := session.request.GetVersion()
+	if confirmedProtocolVersion != nil {
+		session.Version = confirmedProtocolVersion
+	} else {
+		session.Version = irma.NewVersion(2, 0)
+		session.request.SetVersion(session.Version)
 	}
 
 	if session.Action == irma.ActionIssuing {
@@ -249,7 +239,7 @@ func (session *session) processSessionInfo(requestorname string) {
 
 	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, requestorname, missing)
+		session.Handler.UnsatisfiableRequest(session.Action, session.request.GetRequestorName(), missing)
 		return
 	}
 	session.request.SetCandidates(candidates)
@@ -264,13 +254,13 @@ func (session *session) processSessionInfo(requestorname string) {
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			*session.request.(*irma.DisclosureRequest), requestorname, callback)
+			*session.request.(*irma.DisclosureRequest), session.request.GetRequestorName(), callback)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			*session.request.(*irma.SignatureRequest), requestorname, callback)
+			*session.request.(*irma.SignatureRequest), session.request.GetRequestorName(), callback)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			*session.request.(*irma.IssuanceRequest), requestorname, callback)
+			*session.request.(*irma.IssuanceRequest), session.request.GetRequestorName(), callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
