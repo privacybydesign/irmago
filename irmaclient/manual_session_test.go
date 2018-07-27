@@ -6,20 +6,9 @@ import (
 
 	"testing"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 )
-
-type ManualSessionHandler struct {
-	permissionHandler PermissionHandler
-	pinHandler        PinHandler
-	t                 *testing.T
-	errorChannel      chan *irma.SessionError
-	resultChannel     chan *irma.SignatureProofResult
-	sigRequest        *irma.SignatureRequest // Request used to create signature
-	sigVerifyRequest  *irma.SignatureRequest // Request used to verify signature
-}
 
 var client *Client
 
@@ -285,83 +274,4 @@ func TestManualSessionInvalidProof(t *testing.T) {
 		t.Fail()
 	}
 	test.ClearTestStorage(t)
-}
-
-func (sh *ManualSessionHandler) Success(result string) {
-	if len(result) == 0 {
-		sh.errorChannel <- nil
-		return
-	}
-	// Make proof corrupt if we want to test invalid proofs
-	resultBytes := corruptAndConvertProofString(result)
-	irmaSignedMessage := &irma.SignedMessage{}
-
-	if err := json.Unmarshal(resultBytes, irmaSignedMessage); err != nil {
-		sh.errorChannel <- &irma.SessionError{
-			Err:       err,
-			ErrorType: irma.ErrorSerialization,
-		}
-		return
-	}
-
-	go func() {
-		sh.resultChannel <- irmaSignedMessage.Verify(client.Configuration, sh.sigVerifyRequest)
-	}()
-
-	sh.errorChannel <- nil
-}
-func (sh *ManualSessionHandler) UnsatisfiableRequest(serverName string, missingAttributes irma.AttributeDisjunctionList) {
-	// This function is called from main thread, which blocks go channel, so need go routine here
-	go func() {
-		sh.errorChannel <- &irma.SessionError{
-			ErrorType: irma.ErrorType("UnsatisfiableRequest"),
-		}
-	}()
-}
-
-func (sh *ManualSessionHandler) StatusUpdate(irmaAction irma.Action, status irma.Status) {}
-
-func (sh *ManualSessionHandler) RequestPin(remainingAttempts int, ph PinHandler) {
-	ph(true, "12345")
-}
-func (sh *ManualSessionHandler) RequestSignaturePermission(request irma.SignatureRequest, requesterName string, ph PermissionHandler) {
-	var attributes []*irma.AttributeIdentifier
-	for _, cand := range request.Candidates {
-		attributes = append(attributes, cand[0])
-	}
-	c := irma.DisclosureChoice{attributes}
-	ph(true, &c)
-}
-func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
-	ph(true, nil)
-}
-
-// These handlers should not be called, fail test if they are called
-func (sh *ManualSessionHandler) Cancelled() {
-	sh.errorChannel <- &irma.SessionError{Err: errors.New("Session was cancelled")}
-}
-func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
-	sh.errorChannel <- &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())}
-}
-func (sh *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
-	sh.errorChannel <- &irma.SessionError{Err: errors.New("Unexpected session type")}
-}
-func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
-	sh.errorChannel <- &irma.SessionError{Err: errors.New("Unexpected session type")}
-}
-func (sh *ManualSessionHandler) Failure(err *irma.SessionError) {
-	fmt.Println(err.Err)
-	sh.errorChannel <- err
-}
-func (sh *ManualSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
-	sh.errorChannel <- &irma.SessionError{Err: errors.New("KeyshareBlocked")}
-}
-func (sh *ManualSessionHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	sh.errorChannel <- &irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")}
-}
-func (sh *ManualSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
-	sh.errorChannel <- &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())}
-}
-func (sh *ManualSessionHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
-	sh.errorChannel <- &irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())}
 }

@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"errors"
 	"math/big"
 	"os"
 	"testing"
@@ -25,56 +24,6 @@ func TestMain(m *testing.M) {
 
 	test.StopSchemeManagerHttpServer()
 	os.Exit(retCode)
-}
-
-type TestClientHandler struct {
-	t *testing.T
-	c chan error
-}
-
-func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
-func (i *TestClientHandler) UpdateAttributes()                               {}
-func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
-	select {
-	case i.c <- nil: // nop
-	default: // nop
-	}
-}
-func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error) {
-	select {
-	case i.c <- err: // nop
-	default:
-		i.t.Fatal(err)
-	}
-}
-func (i *TestClientHandler) ChangePinSuccess(manager irma.SchemeManagerIdentifier) {
-	select {
-	case i.c <- nil: // nop
-	default: // nop
-	}
-}
-func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
-	select {
-	case i.c <- err: //nop
-	default:
-		i.t.Fatal(err)
-	}
-}
-func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
-	err := errors.New("incorrect pin")
-	select {
-	case i.c <- err: //nop
-	default:
-		i.t.Fatal(err)
-	}
-}
-func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
-	err := errors.New("blocked account")
-	select {
-	case i.c <- err: //nop
-	default:
-		i.t.Fatal(err)
-	}
 }
 
 func parseStorage(t *testing.T) *Client {
