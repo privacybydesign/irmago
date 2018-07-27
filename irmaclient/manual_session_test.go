@@ -287,28 +287,30 @@ func TestManualSessionInvalidProof(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
-func (sh *ManualSessionHandler) Success(irmaAction irma.Action, result string) {
-	switch irmaAction {
-	case irma.ActionSigning:
-		// Make proof corrupt if we want to test invalid proofs
-		resultBytes := corruptAndConvertProofString(result)
-		irmaSignedMessage := &irma.SignedMessage{}
-
-		if err := json.Unmarshal(resultBytes, irmaSignedMessage); err != nil {
-			sh.errorChannel <- &irma.SessionError{
-				Err:       err,
-				ErrorType: irma.ErrorSerialization,
-			}
-			return
-		}
-
-		go func() {
-			sh.resultChannel <- irmaSignedMessage.Verify(client.Configuration, sh.sigVerifyRequest)
-		}()
+func (sh *ManualSessionHandler) Success(result string) {
+	if len(result) == 0 {
+		sh.errorChannel <- nil
+		return
 	}
+	// Make proof corrupt if we want to test invalid proofs
+	resultBytes := corruptAndConvertProofString(result)
+	irmaSignedMessage := &irma.SignedMessage{}
+
+	if err := json.Unmarshal(resultBytes, irmaSignedMessage); err != nil {
+		sh.errorChannel <- &irma.SessionError{
+			Err:       err,
+			ErrorType: irma.ErrorSerialization,
+		}
+		return
+	}
+
+	go func() {
+		sh.resultChannel <- irmaSignedMessage.Verify(client.Configuration, sh.sigVerifyRequest)
+	}()
+
 	sh.errorChannel <- nil
 }
-func (sh *ManualSessionHandler) UnsatisfiableRequest(irmaAction irma.Action, serverName string, missingAttributes irma.AttributeDisjunctionList) {
+func (sh *ManualSessionHandler) UnsatisfiableRequest(serverName string, missingAttributes irma.AttributeDisjunctionList) {
 	// This function is called from main thread, which blocks go channel, so need go routine here
 	go func() {
 		sh.errorChannel <- &irma.SessionError{
@@ -335,7 +337,7 @@ func (sh *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceR
 }
 
 // These handlers should not be called, fail test if they are called
-func (sh *ManualSessionHandler) Cancelled(irmaAction irma.Action) {
+func (sh *ManualSessionHandler) Cancelled() {
 	sh.errorChannel <- &irma.SessionError{Err: errors.New("Session was cancelled")}
 }
 func (sh *ManualSessionHandler) MissingKeyshareEnrollment(manager irma.SchemeManagerIdentifier) {
@@ -347,7 +349,7 @@ func (sh *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.Sch
 func (sh *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
 	sh.errorChannel <- &irma.SessionError{Err: errors.New("Unexpected session type")}
 }
-func (sh *ManualSessionHandler) Failure(irmaAction irma.Action, err *irma.SessionError) {
+func (sh *ManualSessionHandler) Failure(err *irma.SessionError) {
 	fmt.Println(err.Err)
 	sh.errorChannel <- err
 }

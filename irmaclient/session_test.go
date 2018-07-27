@@ -23,36 +23,36 @@ type TestHandler struct {
 }
 
 func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")})
+	th.Failure(&irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")})
 }
 
 func (th TestHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
-	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("KeyshareBlocked")})
+	th.Failure(&irma.SessionError{Err: errors.New("KeyshareBlocked")})
 }
 
 func (th TestHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
-	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
+	th.Failure(&irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
 
 func (th TestHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
-	th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())})
+	th.Failure(&irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())})
 }
 
 func (th TestHandler) StatusUpdate(action irma.Action, status irma.Status) {}
-func (th TestHandler) Success(action irma.Action, result string) {
+func (th TestHandler) Success(result string) {
 	th.c <- nil
 }
-func (th TestHandler) Cancelled(action irma.Action) {
+func (th TestHandler) Cancelled() {
 	th.c <- &irma.SessionError{}
 }
-func (th TestHandler) Failure(action irma.Action, err *irma.SessionError) {
+func (th TestHandler) Failure(err *irma.SessionError) {
 	select {
 	case th.c <- err:
 	default:
 		th.t.Fatal(err)
 	}
 }
-func (th TestHandler) UnsatisfiableRequest(action irma.Action, serverName string, missing irma.AttributeDisjunctionList) {
+func (th TestHandler) UnsatisfiableRequest(serverName string, missing irma.AttributeDisjunctionList) {
 	th.c <- &irma.SessionError{
 		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 	}
@@ -65,7 +65,7 @@ func (th TestHandler) RequestVerificationPermission(request irma.DisclosureReque
 	for _, disjunction := range request.Content {
 		candidates = th.client.Candidates(disjunction)
 		if len(candidates) == 0 {
-			th.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("No disclosure candidates found")})
+			th.Failure(&irma.SessionError{Err: errors.New("No disclosure candidates found")})
 		}
 		choice.Attributes = append(choice.Attributes, candidates[0])
 	}

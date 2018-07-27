@@ -27,10 +27,10 @@ type PinHandler func(proceed bool, pin string)
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
 	StatusUpdate(action irma.Action, status irma.Status)
-	Success(action irma.Action, result string)
-	Cancelled(action irma.Action)
-	Failure(action irma.Action, err *irma.SessionError)
-	UnsatisfiableRequest(action irma.Action, ServerName string, missing irma.AttributeDisjunctionList)
+	Success(result string)
+	Cancelled()
+	Failure(err *irma.SessionError)
+	UnsatisfiableRequest(ServerName string, missing irma.AttributeDisjunctionList)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -97,7 +97,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return client.newManualSession(sigrequest, handler)
 	}
 
-	handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: errors.New("Session request could not be parsed")})
+	handler.Failure(&irma.SessionError{Err: errors.New("Session request could not be parsed")})
 	return nil
 }
 
@@ -110,9 +110,9 @@ func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handle
 		Version: irma.NewVersion(2, 0), // TODO hardcoded for now
 		request: sigrequest,
 	}
+	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
 	sigrequest.RequestorName = "Email request"
-	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 	session.processSessionInfo()
 	return session
 }
@@ -126,7 +126,9 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		Handler:   handler,
 		client:    client,
 	}
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
+	// TODO move this
 	if session.Action == irma.ActionSchemeManager {
 		go session.managerSession()
 		return session
@@ -216,7 +218,7 @@ func (session *session) processSessionInfo() {
 
 	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, session.request.GetRequestorName(), missing)
+		session.Handler.UnsatisfiableRequest(session.request.GetRequestorName(), missing)
 		return
 	}
 	session.request.SetCandidates(candidates)
@@ -350,7 +352,7 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.done = true
-	session.Handler.Success(session.Action, string(messageJson))
+	session.Handler.Success(string(messageJson))
 }
 
 // managerSession performs a "session" in which a new scheme manager is added (asking for permission first).
@@ -362,17 +364,17 @@ func (session *session) managerSession() {
 	// when asking installation permission.
 	manager, err := irma.DownloadSchemeManager(session.ServerURL)
 	if err != nil {
-		session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+		session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 		return
 	}
 
 	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
 		if !proceed {
-			session.Handler.Cancelled(session.Action) // No need to DELETE session here
+			session.Handler.Cancelled() // No need to DELETE session here
 			return
 		}
 		if err := session.client.Configuration.InstallSchemeManager(manager); err != nil {
-			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+			session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 			return
 		}
 
@@ -384,7 +386,7 @@ func (session *session) managerSession() {
 				CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
 			},
 		)
-		session.Handler.Success(session.Action, "")
+		session.Handler.Success("")
 	})
 	return
 }
@@ -455,7 +457,7 @@ func (session *session) checkKeyshareEnrollment() bool {
 	for id := range session.request.Identifiers().SchemeManagers {
 		manager, ok := session.client.Configuration.SchemeManagers[id]
 		if !ok {
-			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
+			session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
 			return false
 		}
 		distributed := manager.Distributed()
@@ -540,7 +542,7 @@ func (session *session) Distributed() bool {
 func (session *session) recoverFromPanic() {
 	if e := recover(); e != nil {
 		if session.Handler != nil {
-			session.Handler.Failure(session.Action, panicToError(e))
+			session.Handler.Failure(panicToError(e))
 		}
 	}
 }
@@ -575,13 +577,13 @@ func (session *session) delete() bool {
 func (session *session) fail(err *irma.SessionError) {
 	if session.delete() {
 		err.Err = errors.Wrap(err.Err, 0)
-		session.Handler.Failure(session.Action, err)
+		session.Handler.Failure(err)
 	}
 }
 
 func (session *session) cancel() {
 	if session.delete() {
-		session.Handler.Cancelled(session.Action)
+		session.Handler.Cancelled()
 	}
 }
 
