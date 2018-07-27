@@ -267,14 +267,14 @@ func sessionHandlerHelper(t *testing.T, jwtcontents interface{}, url string, cli
 	require.NoError(t, transportErr)
 	qr.URL = url + "/" + qr.URL
 
-	c := make(chan *irma.SessionError)
+	c := make(chan *SessionResult)
 	if h == nil {
 		h = TestHandler{t, c, client}
 	}
 	client.newQrSession(qr, h)
 
-	if err := <-c; err != nil {
-		t.Fatal(*err)
+	if result := <-c; result != nil {
+		require.NoError(t, result.Err)
 	}
 
 	if init {
