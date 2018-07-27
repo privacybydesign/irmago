@@ -447,12 +447,13 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
 
 	// Do an add-scheme-manager-session
-	qr := &irma.Qr{
+	c := make(chan *irma.SessionError)
+	qr, err := json.Marshal(&irma.SchemeManagerRequest{
 		Type: irma.ActionSchemeManager,
 		URL:  "http://localhost:48681/irma_configuration/irma-demo",
-	}
-	c := make(chan *irma.SessionError)
-	client.newQrSession(qr, TestHandler{t, c, client})
+	})
+	require.NoError(t, err)
+	client.NewSession(string(qr), TestHandler{t, c, client})
 	if err := <-c; err != nil {
 		t.Fatal(*err)
 	}

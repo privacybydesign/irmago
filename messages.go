@@ -127,6 +127,8 @@ type Qr struct {
 	ProtocolMaxVersion ProtocolVersion `json:"vmax"`
 }
 
+type SchemeManagerRequest Qr
+
 // Statuses
 const (
 	StatusConnected     = Status("connected")
@@ -250,21 +252,33 @@ func ParseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
 }
 
 func (qr *Qr) Validate() error {
-	if _, err := url.ParseRequestURI(qr.URL); err != nil {
-		return errors.Errorf("Invalid URL: %s", err.Error())
-	}
 	if qr.URL == "" {
 		return errors.New("No URL specified")
+	}
+	if _, err := url.ParseRequestURI(qr.URL); err != nil {
+		return errors.Errorf("Invalid URL: %s", err.Error())
 	}
 
 	switch qr.Type {
 	case ActionDisclosing: // nop
 	case ActionIssuing: // nop
 	case ActionSigning: // nop
-	case ActionSchemeManager: // nop
 	default:
 		return errors.New("Unsupported session type")
 	}
 
+	return nil
+}
+
+func (smr *SchemeManagerRequest) Validate() error {
+	if smr.Type != ActionSchemeManager {
+		return errors.New("Not a scheme manager request")
+	}
+	if smr.URL == "" {
+		return errors.New("No URL specified")
+	}
+	if _, err := url.ParseRequestURI(smr.URL); err != nil {
+		return errors.Errorf("Invalid URL: %s", err.Error())
+	}
 	return nil
 }

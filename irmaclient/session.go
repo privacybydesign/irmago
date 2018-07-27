@@ -79,22 +79,24 @@ var supportedVersions = map[int][]int{
 
 // Session constructors
 
-// NewSession starts a new IRMA session, given (along with a handler to pass feedback to)
-// either an irma.QR or *irma.QR; a string that contains a JSON-serialized irma.QR;
-// or a string that contains a serialized *irma.SignatureRequest.
-// In any other case it calls the Failure method of the specified Handler.
+// NewSession starts a new IRMA session, given (along with a handler to pass feedback to) a session request.
+// When the request is not suitable to start an IRMA session from, it calls the Failure method of the specified Handler.
 func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
 	bts := []byte(sessionrequest)
 
-	// Try to deserialize it as a Qr or SignatureRequest
 	qr := &irma.Qr{}
 	if err := irma.UnmarshalValidate(bts, qr); err == nil {
 		return client.newQrSession(qr, handler)
 	}
 
-	sigrequest := &irma.SignatureRequest{}
-	if err := irma.UnmarshalValidate(bts, sigrequest); err == nil {
-		return client.newManualSession(sigrequest, handler)
+	schemeRequest := &irma.SchemeManagerRequest{}
+	if err := irma.UnmarshalValidate(bts, schemeRequest); err == nil {
+		return client.newSchemeSession(schemeRequest, handler)
+	}
+
+	sigRequest := &irma.SignatureRequest{}
+	if err := irma.UnmarshalValidate(bts, sigRequest); err == nil {
+		return client.newManualSession(sigRequest, handler)
 	}
 
 	handler.Failure(&irma.SessionError{Err: errors.New("Session request could not be parsed")})
@@ -117,6 +119,20 @@ func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handle
 	return session
 }
 
+func (client *Client) newSchemeSession(qr *irma.SchemeManagerRequest, handler Handler) SessionDismisser {
+	session := &session{
+		ServerURL: qr.URL,
+		transport: irma.NewHTTPTransport(qr.URL),
+		Action:    irma.ActionSchemeManager,
+		Handler:   handler,
+		client:    client,
+	}
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+
+	go session.managerSession()
+	return session
+}
+
 // newQrSession creates and starts a new interactive IRMA session
 func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
 	session := &session{
@@ -127,12 +143,6 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		client:    client,
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-
-	// TODO move this
-	if session.Action == irma.ActionSchemeManager {
-		go session.managerSession()
-		return session
-	}
 
 	// Check if the action is one of the supported types
 	switch session.Action {
