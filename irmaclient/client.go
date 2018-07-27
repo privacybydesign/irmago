@@ -193,12 +193,11 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	list := irma.CredentialInfoList([]*irma.CredentialInfo{})
 
 	for _, attrlistlist := range client.attributes {
-		for index, attrlist := range attrlistlist {
+		for _, attrlist := range attrlistlist {
 			info := attrlist.Info()
 			if info == nil {
 				continue
 			}
-			info.Index = index
 			list = append(list, info)
 		}
 	}
