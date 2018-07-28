@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Create a ManualSessionHandler for unit tests
-func createManualSessionHandler(t *testing.T, client *Client) *ManualSessionHandler {
-	return &ManualSessionHandler{
+// Create a ManualTestHandler for unit tests
+func createManualSessionHandler(t *testing.T, client *Client) *ManualTestHandler {
+	return &ManualTestHandler{
 		TestHandler: TestHandler{
 			t:      t,
 			c:      make(chan *SessionResult),
@@ -22,7 +22,7 @@ func createManualSessionHandler(t *testing.T, client *Client) *ManualSessionHand
 	}
 }
 
-func manualSessionHelper(t *testing.T, client *Client, h *ManualSessionHandler, request string, verifyAs string, corrupt bool) *irma.SignatureProofResult {
+func manualSessionHelper(t *testing.T, client *Client, h *ManualTestHandler, request string, verifyAs string, corrupt bool) *irma.SignatureProofResult {
 	init := client == nil
 	if init {
 		client = parseStorage(t)

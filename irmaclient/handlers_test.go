@@ -132,11 +132,13 @@ type SessionResult struct {
 	Result *irma.SignedMessage
 }
 
-type ManualSessionHandler struct {
+// ManualTestHandler embeds a TestHandler to inherit its methods.
+// Below we overwrite the methods that require behaviour specific to manual settings.
+type ManualTestHandler struct {
 	TestHandler
 }
 
-func (th *ManualSessionHandler) Success(result string) {
+func (th *ManualTestHandler) Success(result string) {
 	if len(result) == 0 {
 		th.c <- nil
 		return
@@ -155,7 +157,7 @@ func (th *ManualSessionHandler) Success(result string) {
 		Result: irmaSignedMessage,
 	}
 }
-func (th *ManualSessionHandler) RequestSignaturePermission(request irma.SignatureRequest, requesterName string, ph PermissionHandler) {
+func (th *ManualTestHandler) RequestSignaturePermission(request irma.SignatureRequest, requesterName string, ph PermissionHandler) {
 	var attributes []*irma.AttributeIdentifier
 	for _, cand := range request.Candidates {
 		attributes = append(attributes, cand[0])
@@ -163,14 +165,14 @@ func (th *ManualSessionHandler) RequestSignaturePermission(request irma.Signatur
 	c := irma.DisclosureChoice{attributes}
 	ph(true, &c)
 }
-func (th *ManualSessionHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
+func (th *ManualTestHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
 	ph(true, nil)
 }
 
 // These handlers should not be called, fail test if they are called
-func (th *ManualSessionHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
+func (th *ManualTestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
-func (th *ManualSessionHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
+func (th *ManualTestHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
