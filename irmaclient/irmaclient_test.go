@@ -325,107 +325,12 @@ func TestWrongSchemeManager(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
-func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
+// Test pinchange interaction
+func TestKeyshareChangePin(t *testing.T) {
 	client := parseStorage(t)
 
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
-	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	disclosureRequest := irma.DisclosureRequest{
-		Content: irma.AttributeDisjunctionList{
-			&irma.AttributeDisjunction{
-				Label: "foo",
-				Attributes: []irma.AttributeTypeIdentifier{
-					attrid,
-				},
-			},
-		},
-	}
-
-	client.Configuration.Download(&disclosureRequest)
-	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	test.ClearTestStorage(t)
-}
-
-func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
-	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	issuanceRequest := getIssuanceRequest(true)
-	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
-	client.Configuration.Download(issuanceRequest)
-	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	test.ClearTestStorage(t)
-}
-
-func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
-	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	issuanceRequest := getIssuanceRequest(true)
-	delete(issuanceRequest.Credentials[0].Attributes, "level")
-	client.Configuration.Download(issuanceRequest)
-	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-
-	test.ClearTestStorage(t)
-}
-
-// Test installing a new scheme manager from a qr, and do a(n issuance) session
-// within this manager to test the autmatic downloading of credential definitions,
-// issuers, and public keys.
-func TestDownloadSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-
-	// Remove irma-demo scheme manager as we need to test adding it
-	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, client.Configuration.RemoveSchemeManager(irmademo, true))
-	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
-
-	// Do an add-scheme-manager-session
-	c := make(chan *SessionResult)
-	qr, err := json.Marshal(&irma.SchemeManagerRequest{
-		Type: irma.ActionSchemeManager,
-		URL:  "http://localhost:48681/irma_configuration/irma-demo",
-	})
-	require.NoError(t, err)
-	client.NewSession(string(qr), TestHandler{t, c, client})
-	if result := <-c; result != nil {
-		require.NoError(t, result.Err)
-	}
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-
-	// Do a session to test downloading of cred types, issuers and keys
-	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sessionHelper(t, jwt, "issue", client)
-
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
-	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
-
-	basepath := "../testdata/storage/test/irma_configuration/irma-demo"
-	exists, err := fs.PathExists(basepath + "/description.xml")
-	require.NoError(t, err)
-	require.True(t, exists)
-	exists, err = fs.PathExists(basepath + "/RU/description.xml")
-	require.NoError(t, err)
-	require.True(t, exists)
-	exists, err = fs.PathExists(basepath + "/RU/Issues/studentCard/description.xml")
-	require.NoError(t, err)
-	require.True(t, exists)
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
 
 	test.ClearTestStorage(t)
 }

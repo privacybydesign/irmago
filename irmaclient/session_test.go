@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
@@ -110,9 +111,9 @@ func getCombinedJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 	return irma.NewIdentityProviderJwt(name, isreq)
 }
 
-// StartSession starts an IRMA session by posting the request,
+// startSession starts an IRMA session by posting the request,
 // and retrieving the QR contents from the specified url.
-func StartSession(request interface{}, url string) (*irma.Qr, error) {
+func startSession(request interface{}, url string) (*irma.Qr, error) {
 	server := irma.NewHTTPTransport(url)
 	var response irma.Qr
 	err := server.Post("", &response, request)
@@ -120,6 +121,77 @@ func StartSession(request interface{}, url string) (*irma.Qr, error) {
 		return nil, err
 	}
 	return &response, nil
+}
+
+func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Client) {
+	init := client == nil
+	if init {
+		client = parseStorage(t)
+	}
+
+	url = "http://localhost:8088/irma_api_server/api/v2/" + url
+	//url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
+
+	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
+	require.NoError(t, err)
+	bodybytes, err := json.Marshal(jwtcontents)
+	require.NoError(t, err)
+
+	jwt := base64.RawStdEncoding.EncodeToString(headerbytes) + "." + base64.RawStdEncoding.EncodeToString(bodybytes) + "."
+	qr, transportErr := startSession(jwt, url)
+	if transportErr != nil {
+		fmt.Printf("+%v\n", transportErr)
+	}
+	require.NoError(t, transportErr)
+	qr.URL = url + "/" + qr.URL
+
+	c := make(chan *SessionResult)
+	h := TestHandler{t, c, client}
+	client.newQrSession(qr, h)
+
+	if result := <-c; result != nil {
+		require.NoError(t, result.Err)
+	}
+
+	if init {
+		test.ClearTestStorage(t)
+	}
+}
+
+func keyshareSessions(t *testing.T, client *Client) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
+	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
+	jwt := getCombinedJwt("testip", id)
+	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
+		jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials,
+		&irma.CredentialRequest{
+			Validity:         &expiry,
+			CredentialTypeID: &credid,
+			Attributes:       map[string]string{"email": "testusername"},
+		},
+	)
+	sessionHelper(t, jwt, "issue", client)
+
+	jwt = getDisclosureJwt("testsp", id)
+	jwt.(*irma.ServiceProviderJwt).Request.Request.Content = append(
+		jwt.(*irma.ServiceProviderJwt).Request.Request.Content,
+		&irma.AttributeDisjunction{
+			Label:      "foo",
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		},
+	)
+	sessionHelper(t, jwt, "verification", client)
+
+	jwt = getSigningJwt("testsigclient", id)
+	jwt.(*irma.SignatureRequestorJwt).Request.Request.Content = append(
+		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content,
+		&irma.AttributeDisjunction{
+			Label:      "foo",
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		},
+	)
+	sessionHelper(t, jwt, "signature", client)
 }
 
 func TestSigningSession(t *testing.T) {
@@ -241,93 +313,6 @@ func TestAttributeByteEncoding(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
-func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Client) {
-	sessionHandlerHelper(t, jwtcontents, url, client, nil)
-}
-
-func sessionHandlerHelper(t *testing.T, jwtcontents interface{}, url string, client *Client, h Handler) {
-	init := client == nil
-	if init {
-		client = parseStorage(t)
-	}
-
-	url = "http://localhost:8088/irma_api_server/api/v2/" + url
-	//url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
-
-	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
-	require.NoError(t, err)
-	bodybytes, err := json.Marshal(jwtcontents)
-	require.NoError(t, err)
-
-	jwt := base64.RawStdEncoding.EncodeToString(headerbytes) + "." + base64.RawStdEncoding.EncodeToString(bodybytes) + "."
-	qr, transportErr := StartSession(jwt, url)
-	if transportErr != nil {
-		fmt.Printf("+%v\n", transportErr)
-	}
-	require.NoError(t, transportErr)
-	qr.URL = url + "/" + qr.URL
-
-	c := make(chan *SessionResult)
-	if h == nil {
-		h = TestHandler{t, c, client}
-	}
-	client.newQrSession(qr, h)
-
-	if result := <-c; result != nil {
-		require.NoError(t, result.Err)
-	}
-
-	if init {
-		test.ClearTestStorage(t)
-	}
-}
-
-func keyshareSessions(t *testing.T, client *Client) {
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
-	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
-	jwt := getCombinedJwt("testip", id)
-	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
-		jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials,
-		&irma.CredentialRequest{
-			Validity:         &expiry,
-			CredentialTypeID: &credid,
-			Attributes:       map[string]string{"email": "testusername"},
-		},
-	)
-	sessionHelper(t, jwt, "issue", client)
-
-	jwt = getDisclosureJwt("testsp", id)
-	jwt.(*irma.ServiceProviderJwt).Request.Request.Content = append(
-		jwt.(*irma.ServiceProviderJwt).Request.Request.Content,
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
-	sessionHelper(t, jwt, "verification", client)
-
-	jwt = getSigningJwt("testsigclient", id)
-	jwt.(*irma.SignatureRequestorJwt).Request.Request.Content = append(
-		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content,
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
-	sessionHelper(t, jwt, "signature", client)
-}
-
-// Test pinchange interaction
-func TestKeyshareChangePin(t *testing.T) {
-	client := parseStorage(t)
-
-	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
-	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
-
-	test.ClearTestStorage(t)
-}
-
 // Enroll at a keyshare server and do an issuance, disclosure,
 // and issuance session, also using irma-demo credentials deserialized from Android storage
 func TestKeyshareEnrollmentAndSessions(t *testing.T) {
@@ -364,6 +349,111 @@ func TestKeyshareSessions(t *testing.T) {
 	client := parseStorage(t)
 
 	keyshareSessions(t, client)
+
+	test.ClearTestStorage(t)
+}
+
+func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
+	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	disclosureRequest := irma.DisclosureRequest{
+		Content: irma.AttributeDisjunctionList{
+			&irma.AttributeDisjunction{
+				Label: "foo",
+				Attributes: []irma.AttributeTypeIdentifier{
+					attrid,
+				},
+			},
+		},
+	}
+
+	client.Configuration.Download(&disclosureRequest)
+	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	test.ClearTestStorage(t)
+}
+
+func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
+	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	issuanceRequest := getIssuanceRequest(true)
+	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
+	client.Configuration.Download(issuanceRequest)
+	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	test.ClearTestStorage(t)
+}
+
+func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
+	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	issuanceRequest := getIssuanceRequest(true)
+	delete(issuanceRequest.Credentials[0].Attributes, "level")
+	client.Configuration.Download(issuanceRequest)
+	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
+
+	test.ClearTestStorage(t)
+}
+
+// Test installing a new scheme manager from a qr, and do a(n issuance) session
+// within this manager to test the autmatic downloading of credential definitions,
+// issuers, and public keys.
+func TestDownloadSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+
+	// Remove irma-demo scheme manager as we need to test adding it
+	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+	require.NoError(t, client.Configuration.RemoveSchemeManager(irmademo, true))
+	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
+
+	// Do an add-scheme-manager-session
+	c := make(chan *SessionResult)
+	qr, err := json.Marshal(&irma.SchemeManagerRequest{
+		Type: irma.ActionSchemeManager,
+		URL:  "http://localhost:48681/irma_configuration/irma-demo",
+	})
+	require.NoError(t, err)
+	client.NewSession(string(qr), TestHandler{t, c, client})
+	if result := <-c; result != nil {
+		require.NoError(t, result.Err)
+	}
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+
+	// Do a session to test downloading of cred types, issuers and keys
+	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	sessionHelper(t, jwt, "issue", client)
+
+	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
+	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
+	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
+
+	basepath := "../testdata/storage/test/irma_configuration/irma-demo"
+	exists, err := fs.PathExists(basepath + "/description.xml")
+	require.NoError(t, err)
+	require.True(t, exists)
+	exists, err = fs.PathExists(basepath + "/RU/description.xml")
+	require.NoError(t, err)
+	require.True(t, exists)
+	exists, err = fs.PathExists(basepath + "/RU/Issues/studentCard/description.xml")
+	require.NoError(t, err)
+	require.True(t, exists)
 
 	test.ClearTestStorage(t)
 }
