@@ -436,13 +436,13 @@ type RequestorJwt interface {
 func (jwt *ServerJwt) Requestor() string { return jwt.HumanName }
 
 // IrmaSession returns an IRMA session object.
-func (jwt *ServiceProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+func (claims *ServiceProviderJwt) IrmaSession() IrmaSession { return claims.Request.Request }
 
 // IrmaSession returns an IRMA session object.
-func (jwt *SignatureRequestorJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+func (claims *SignatureRequestorJwt) IrmaSession() IrmaSession { return claims.Request.Request }
 
 // IrmaSession returns an IRMA session object.
-func (jwt *IdentityProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+func (claims *IdentityProviderJwt) IrmaSession() IrmaSession { return claims.Request.Request }
 
 // Sign returns the signed and serialized JWT.
 func (claims *ServiceProviderJwt) Sign(serverName string, sk *rsa.PrivateKey) (string, error) {
