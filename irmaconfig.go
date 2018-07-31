@@ -825,7 +825,7 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 // and verifies its authenticity by checking that the file hash
 // is present in the (signed) scheme manager index file.
 func (conf *Configuration) ReadAuthenticatedFile(manager *SchemeManager, path string) ([]byte, bool, error) {
-	signedHash, ok := manager.index[path]
+	signedHash, ok := manager.index[filepath.ToSlash(path)]
 	if !ok {
 		return nil, false, nil
 	}
