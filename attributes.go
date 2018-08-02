@@ -8,8 +8,6 @@ import (
 	"math/big"
 	"time"
 
-	"fmt"
-
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -18,24 +16,6 @@ const (
 	// ExpiryFactor is the precision for the expiry attribute. Value is one week.
 	ExpiryFactor   = 60 * 60 * 24 * 7
 	metadataLength = 1 + 3 + 2 + 2 + 16
-)
-
-type AttributeResult struct {
-	AttributeValue       TranslatedString        `json:"value"` // Value of the disclosed attribute
-	AttributeId          AttributeTypeIdentifier `json:"id"`
-	AttributeProofStatus AttributeProofStatus    `json:"status"`
-}
-
-type AttributeResultList []*AttributeResult
-
-// AttributeProofStatus is the proof status of a single attribute
-type AttributeProofStatus string
-
-const (
-	AttributeProofStatusPresent      = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
-	AttributeProofStatusExtra        = AttributeProofStatus("EXTRA")         // Attribute is disclosed, but wasn't requested in request
-	AttributeProofStatusMissing      = AttributeProofStatus("MISSING")       // Attribute is NOT disclosed, but should be according to request
-	AttributeProofStatusInvalidValue = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
 )
 
 var (
@@ -357,29 +337,12 @@ type AttributeDisjunction struct {
 	Values     map[AttributeTypeIdentifier]*string
 
 	selected *AttributeTypeIdentifier
-}
-
-// AttributeDisjunction with the disclosed value that is used to satisfy the disjunction
-type DisclosedAttributeDisjunction struct {
-	AttributeDisjunction
-
-	DisclosedValue TranslatedString
-	DisclosedId    AttributeTypeIdentifier
-	ProofStatus    AttributeProofStatus
+	value    *string
+	index    *int
 }
 
 // An AttributeDisjunctionList is a list of AttributeDisjunctions.
 type AttributeDisjunctionList []*AttributeDisjunction
-
-// Convert disjunction to a DisclosedAttributeDisjunction that contains disclosed attribute+value
-func (disjunction *AttributeDisjunction) ToDisclosedAttributeDisjunction(ar *AttributeResult) *DisclosedAttributeDisjunction {
-	return &DisclosedAttributeDisjunction{
-		AttributeDisjunction: *disjunction,
-		DisclosedValue:       ar.AttributeValue,
-		DisclosedId:          ar.AttributeId,
-		ProofStatus:          ar.AttributeProofStatus,
-	}
-}
 
 // HasValues indicates if the attributes of this disjunction have values
 // that should be satisfied.
@@ -387,38 +350,37 @@ func (disjunction *AttributeDisjunction) HasValues() bool {
 	return disjunction.Values != nil && len(disjunction.Values) != 0
 }
 
-// Satisfied indicates if this disjunction has a valid chosen attribute
-// to be disclosed.
-func (disjunction *AttributeDisjunction) Satisfied() bool {
-	if disjunction.selected == nil {
-		return false
-	}
-	for _, attr := range disjunction.Attributes {
-		if *disjunction.selected == attr {
-			return true
+// attemptSatisfy tries to match the specified attribute type and value against the current disjunction,
+// returning true if the disjunction contains the specified attribute type. Note that if the disjunction
+// has required values, then it is only considered satisfied by the specified attribute type and value
+// if the required value matches the specified value.
+func (disjunction *AttributeDisjunction) attemptSatisfy(id AttributeTypeIdentifier, value *string) bool {
+	var found bool
+	for index, attr := range disjunction.Attributes {
+		if attr == id {
+			found = true
+			disjunction.selected = &id
+			disjunction.index = &index
+			disjunction.value = value
+			if !disjunction.HasValues() || disjunction.Values[id] == value {
+				return true
+			}
 		}
 	}
-	return false
+	return found
 }
 
-// Check whether specified attributedisjunction satisfy a list of disclosed attributes
-// We return true if one of the attributes in the disjunction is satisfied
-func (disjunction *AttributeDisjunction) SatisfyDisclosed(disclosed DisclosedCredentialList, conf *Configuration) (bool, *DisclosedAttributeDisjunction) {
-	var attributeResult *AttributeResult
-	for _, attr := range disjunction.Attributes {
-		requestedValue := disjunction.Values[attr]
-
-		var isSatisfied bool
-		isSatisfied, attributeResult = disclosed.isAttributeSatisfied(attr, requestedValue)
-
-		if isSatisfied {
-			return true, disjunction.ToDisclosedAttributeDisjunction(attributeResult)
-		}
+// satisfied indicates if this disjunction has a valid attribute type and value selected,
+// matching one of the attributes in the disjunction and possibly also the corresponding required value.
+func (disjunction *AttributeDisjunction) satisfied() bool {
+	if disjunction.index == nil {
+		return false
 	}
 
-	// Nothing satisfied, attributeResult will contain the last attribute of the original request
-	// TODO: do we want this?
-	return false, disjunction.ToDisclosedAttributeDisjunction(attributeResult)
+	attr := disjunction.Attributes[*disjunction.index]
+	return !disjunction.HasValues() || disjunction.value == disjunction.Values[attr]
+
+	return false
 }
 
 // MatchesConfig returns true if all attributes contained in the disjunction are
@@ -436,10 +398,10 @@ func (disjunction *AttributeDisjunction) MatchesConfig(conf *Configuration) bool
 	return true
 }
 
-// Satisfied indicates whether each contained attribute disjunction has a chosen attribute.
-func (dl AttributeDisjunctionList) Satisfied() bool {
+// satisfied indicates whether each contained attribute disjunction has a chosen attribute.
+func (dl AttributeDisjunctionList) satisfied() bool {
 	for _, disjunction := range dl {
-		if !disjunction.Satisfied() {
+		if !disjunction.satisfied() {
 			return false
 		}
 	}
@@ -478,27 +440,6 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 		Label:      disjunction.Label,
 		Attributes: disjunction.Values,
 	}
-	return json.Marshal(temp)
-}
-
-// Since we have a custom MarshalJSON for AttributeDisjunction, we also need one for every struct that extends AttributeDisjunction...
-func (disclosedAttributeDisjunction *DisclosedAttributeDisjunction) MarshalJSON() ([]byte, error) {
-	temp := struct {
-		Label      string                    `json:"label"`
-		Attributes []AttributeTypeIdentifier `json:"attributes"`
-
-		DisclosedValue TranslatedString        `json:"disclosedValue"`
-		DisclosedId    AttributeTypeIdentifier `json:"disclosedId"`
-		ProofStatus    AttributeProofStatus    `json:"proofStatus"`
-	}{
-		Label:      disclosedAttributeDisjunction.Label,
-		Attributes: disclosedAttributeDisjunction.Attributes,
-
-		DisclosedValue: disclosedAttributeDisjunction.DisclosedValue,
-		DisclosedId:    disclosedAttributeDisjunction.DisclosedId,
-		ProofStatus:    disclosedAttributeDisjunction.ProofStatus,
-	}
-
 	return json.Marshal(temp)
 }
 
@@ -553,20 +494,4 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	}
 
 	return nil
-}
-
-func (al *AttributeResultList) String() string {
-	// TODO: pretty print?
-	str := "Attribute --- Value --- ProofStatus:"
-	for _, v := range *al {
-		str = str + "\n" + v.String()
-	}
-	return str
-}
-
-func (ar *AttributeResult) String() string {
-	return fmt.Sprintf("%v --- %v --- %v",
-		ar.AttributeId,
-		ar.AttributeValue,
-		ar.AttributeProofStatus)
 }
