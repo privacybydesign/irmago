@@ -29,17 +29,19 @@ type LogEntry struct {
 const actionRemoval = irma.Action("removal")
 
 // GetDisclosedCredentials gets the list of disclosed credentials for a log entry
-func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) (irma.DisclosedCredentialList, error) {
+func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([]*irma.DisclosedAttribute, error) {
 	if entry.Type == actionRemoval {
-		return irma.DisclosedCredentialList{}, nil
+		return []*irma.DisclosedAttribute{}, nil
 	}
 	var proofs gabi.ProofList
+	disjunctions := entry.Request.ToDisclose()
 	if entry.Type == irma.ActionIssuing {
 		proofs = entry.IssueCommitment.Proofs
 	} else {
 		proofs = entry.ProofList
 	}
-	return irma.ExtractDisclosedCredentials(conf, proofs)
+	_, attrs, err := irma.ProofList(proofs).DisclosedAttributes(conf, disjunctions)
+	return attrs, err
 }
 
 // GetIssuedCredentials gets the list of issued credentials for a log entry
