@@ -15,7 +15,6 @@ type CredentialInfo struct {
 	SignedOn        Timestamp                                    // Unix timestamp
 	Expires         Timestamp                                    // Unix timestamp
 	Attributes      map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
-	Logo            string                                       // Path to logo on storage
 	Hash            string                                       // SHA256 hash over the attributes
 }
 
@@ -39,7 +38,6 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 		SignedOn:        Timestamp(meta.SigningDate()),
 		Expires:         Timestamp(meta.Expiry()),
 		Attributes:      attrs.Map(conf),
-		Logo:            credtype.Logo(conf),
 		Hash:            attrs.Hash(),
 	}
 }

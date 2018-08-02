@@ -40,8 +40,7 @@ type Issuer struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	ContactAddress  string
 	ContactEMail    string
-	URL             string `xml:"baseURL"`
-	XMLVersion      int    `xml:"version,attr"`
+	XMLVersion      int `xml:"version,attr"`
 
 	Valid bool `xml:"-"`
 }
