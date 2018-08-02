@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -51,9 +52,10 @@ type SessionDismisser interface {
 }
 
 type session struct {
-	Action  irma.Action
-	Handler Handler
-	Version *irma.ProtocolVersion
+	Action     irma.Action
+	Handler    Handler
+	Version    *irma.ProtocolVersion
+	ServerName string
 
 	choice  *irma.DisclosureChoice
 	client  *Client
@@ -106,15 +108,15 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handler Handler) SessionDismisser {
 	session := &session{
-		Action:  irma.ActionSigning, // TODO hardcoded for now
-		Handler: handler,
-		client:  client,
-		Version: irma.NewVersion(2, 0), // TODO hardcoded for now
-		request: sigrequest,
+		Action:     irma.ActionSigning, // TODO hardcoded for now
+		Handler:    handler,
+		client:     client,
+		Version:    irma.NewVersion(2, 0), // TODO hardcoded for now
+		ServerName: "Email request",
+		request:    sigrequest,
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
-	sigrequest.RequestorName = "Email request"
 	session.processSessionInfo()
 	return session
 }
@@ -135,12 +137,14 @@ func (client *Client) newSchemeSession(qr *irma.SchemeManagerRequest, handler Ha
 
 // newQrSession creates and starts a new interactive IRMA session
 func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
+	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
 	session := &session{
-		ServerURL: qr.URL,
-		transport: irma.NewHTTPTransport(qr.URL),
-		Action:    irma.Action(qr.Type),
-		Handler:   handler,
-		client:    client,
+		ServerURL:  qr.URL,
+		ServerName: u.Hostname(),
+		transport:  irma.NewHTTPTransport(qr.URL),
+		Action:     irma.Action(qr.Type),
+		Handler:    handler,
+		client:     client,
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
@@ -228,7 +232,7 @@ func (session *session) processSessionInfo() {
 
 	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.request.GetRequestorName(), missing)
+		session.Handler.UnsatisfiableRequest(session.ServerName, missing)
 		return
 	}
 	session.request.SetCandidates(candidates)
@@ -243,13 +247,13 @@ func (session *session) processSessionInfo() {
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			*session.request.(*irma.DisclosureRequest), session.request.GetRequestorName(), callback)
+			*session.request.(*irma.DisclosureRequest), session.ServerName, callback)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			*session.request.(*irma.SignatureRequest), session.request.GetRequestorName(), callback)
+			*session.request.(*irma.SignatureRequest), session.ServerName, callback)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			*session.request.(*irma.IssuanceRequest), session.request.GetRequestorName(), callback)
+			*session.request.(*irma.IssuanceRequest), session.ServerName, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}

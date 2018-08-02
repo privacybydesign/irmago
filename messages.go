@@ -17,6 +17,8 @@ import (
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
 
+var ForceHttps bool = true
+
 // ProtocolVersion encodes the IRMA protocol version of an IRMA session.
 type ProtocolVersion struct {
 	Major int
@@ -251,12 +253,16 @@ func ParseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
 	return retval, nil
 }
 
-func (qr *Qr) Validate() error {
+func (qr *Qr) Validate() (err error) {
 	if qr.URL == "" {
 		return errors.New("No URL specified")
 	}
-	if _, err := url.ParseRequestURI(qr.URL); err != nil {
+	var u *url.URL
+	if u, err = url.ParseRequestURI(qr.URL); err != nil {
 		return errors.Errorf("Invalid URL: %s", err.Error())
+	}
+	if ForceHttps && u.Scheme != "https" {
+		return errors.Errorf("URL did not begin with https")
 	}
 
 	switch qr.Type {

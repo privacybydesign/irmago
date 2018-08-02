@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	irma.ForceHttps = false
+}
+
 func getDisclosureJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 	return irma.NewServiceProviderJwt(name, &irma.DisclosureRequest{
 		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{

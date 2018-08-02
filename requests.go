@@ -17,10 +17,9 @@ import (
 
 // BaseRequest contains the context and nonce for an IRMA session.
 type BaseRequest struct {
-	Context       *big.Int `json:"context"`
-	Nonce         *big.Int `json:"nonce"`
-	RequestorName string   `json:"requestorName"`
-	Type          Action   `json:"type"`
+	Context *big.Int `json:"context"`
+	Nonce   *big.Int `json:"nonce"`
+	Type    Action   `json:"type"`
 
 	Candidates [][]*AttributeIdentifier `json:"-"`
 	Choice     *DisclosureChoice        `json:"-"`
@@ -51,14 +50,6 @@ func (sr *BaseRequest) SetVersion(v *ProtocolVersion) {
 // ...
 func (sr *BaseRequest) GetVersion() *ProtocolVersion {
 	return sr.Version
-}
-
-func (sr *BaseRequest) GetRequestorName() string {
-	return sr.RequestorName
-}
-
-func (sr *BaseRequest) SetRequestorName(name string) {
-	sr.RequestorName = name
 }
 
 // A DisclosureRequest is a request to disclose certain attributes.
@@ -145,8 +136,6 @@ type SessionRequest interface {
 	SetContext(*big.Int)
 	GetVersion() *ProtocolVersion
 	SetVersion(*ProtocolVersion)
-	GetRequestorName() string
-	SetRequestorName(string)
 	ToDisclose() AttributeDisjunctionList
 	DisclosureChoice() *DisclosureChoice
 	SetDisclosureChoice(choice *DisclosureChoice)
