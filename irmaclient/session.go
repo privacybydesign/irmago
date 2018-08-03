@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sort"
 	"strings"
 
 	"math/big"
@@ -76,8 +75,15 @@ var _ keyshareSessionHandler = (*session)(nil)
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
-	2: {4, 3, 2, 1},
+	2: {4},
 }
+var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
+var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
+
+const (
+	minVersionHeader = "X-IRMA-MinProtocolVersion"
+	maxVersionHeader = "X-IRMA-MaxProtocolVersion"
+)
 
 // Session constructors
 
@@ -111,7 +117,7 @@ func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handle
 		Action:     irma.ActionSigning, // TODO hardcoded for now
 		Handler:    handler,
 		client:     client,
-		Version:    irma.NewVersion(2, 0), // TODO hardcoded for now
+		Version:    minVersion,
 		ServerName: "Email request",
 		request:    sigrequest,
 	}
@@ -163,13 +169,8 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		return nil
 	}
 
-	version, err := calcVersion(qr)
-	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorProtocolVersionNotSupported, Err: err})
-		return nil
-	}
-	session.Version = version
-	session.transport.SetHeader("X-IRMA-ProtocolVersion", version.String())
+	session.transport.SetHeader(minVersionHeader, minVersion.String())
+	session.transport.SetHeader(maxVersionHeader, maxVersion.String())
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"
 	}
@@ -445,25 +446,6 @@ func (session *session) getProof() (interface{}, error) {
 }
 
 // Helper functions
-
-func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
-	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
-	keys := make([]int, 0, len(supportedVersions))
-	for k := range supportedVersions {
-		keys = append(keys, k)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(keys)))
-	for _, major := range keys {
-		for _, minor := range supportedVersions[major] {
-			aboveMinimum := major > qr.ProtocolVersion.Major || (major == qr.ProtocolVersion.Major && minor >= qr.ProtocolVersion.Minor)
-			underMaximum := major < qr.ProtocolMaxVersion.Major || (major == qr.ProtocolMaxVersion.Major && minor <= qr.ProtocolMaxVersion.Minor)
-			if aboveMinimum && underMaximum {
-				return irma.NewVersion(major, minor), nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion.String(), qr.ProtocolMaxVersion.String())
-}
 
 // checkKeyshareEnrollment checks if we are enrolled into all involved keyshare servers,
 // and aborts the session if not

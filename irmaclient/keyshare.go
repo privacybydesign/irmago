@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
@@ -88,32 +90,32 @@ type publicKeyIdentifier struct {
 	Counter uint   `json:"counter"`
 }
 
-// TODO enable this when updating protocol
-//func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
-//	str := string(text)
-//	index := strings.LastIndex(str, "-")
-//	if index == -1 {
-//		return errors.New("Invalid publicKeyIdentifier")
-//	}
-//	counter, err := strconv.Atoi(str[index+1:])
-//	if err != nil {
-//		return err
-//	}
-//	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
-//	return nil
-//}
-//
-//func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
-//	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
-//}
+func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
+	str := string(text)
+	index := strings.LastIndex(str, "-")
+	if index == -1 {
+		return errors.New("Invalid publicKeyIdentifier")
+	}
+	counter, err := strconv.Atoi(str[index+1:])
+	if err != nil {
+		return err
+	}
+	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
+	return nil
+}
+
+func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
+	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
+}
 
 type proofPCommitmentMap struct {
 	Commitments map[publicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
 }
 
 const (
-	kssUsernameHeader = "IRMA_Username"
-	kssAuthHeader     = "IRMA_Authorization"
+	kssUsernameHeader = "X-IRMA-Keyshare-Username"
+	kssVersionHeader  = "X-IRMA-Keyshare-ProtocolVersion"
+	kssAuthHeader     = "Authorization"
 	kssAuthorized     = "authorized"
 	kssTokenExpired   = "expired"
 	kssPinSuccess     = "success"
@@ -196,7 +198,8 @@ func startKeyshareSession(
 		ks.keyshareServer = ks.keyshareServers[managerID]
 		transport := irma.NewHTTPTransport(ks.keyshareServer.URL)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
-		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
+		transport.SetHeader(kssAuthHeader, "Bearer "+ks.keyshareServer.token)
+		transport.SetHeader(kssVersionHeader, "2")
 		ks.transports[managerID] = transport
 
 		authstatus := &keyshareAuthorization{}
@@ -301,7 +304,7 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 		switch pinresult.Status {
 		case kssPinSuccess:
 			kss.token = pinresult.Message
-			transport.SetHeader(kssAuthHeader, kss.token)
+			transport.SetHeader(kssAuthHeader, "Bearer "+kss.token)
 		case kssPinFailure:
 			tries, err = strconv.Atoi(pinresult.Message)
 			return
@@ -428,15 +431,10 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 			return
 		}
 		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.issuerProofNonce}
-		for _, response := range responses {
-			message.ProofPjwt = response
-			break
+		message.ProofPjwts = map[string]string{}
+		for manager, response := range responses {
+			message.ProofPjwts[manager.String()] = response
 		}
-		// TODO for new protocol version
-		//message.ProofPjwts = map[string]string{}
-		//for manager, response := range responses {
-		//	message.ProofPjwts[manager.String()] = response
-		//}
 		ks.sessionHandler.KeyshareDone(message)
 	}
 }

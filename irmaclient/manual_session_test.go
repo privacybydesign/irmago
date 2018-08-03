@@ -153,5 +153,3 @@ func TestManualSessionInvalidProof(t *testing.T) {
 
 	test.ClearTestStorage(t)
 }
-
-// TODO test verification without request (also with multiproof)

@@ -124,9 +124,7 @@ type Qr struct {
 	// Server with which to perform the session
 	URL string `json:"u"`
 	// Session type (disclosing, signing, issuing)
-	Type               Action          `json:"irmaqr"`
-	ProtocolVersion    ProtocolVersion `json:"v"`
-	ProtocolMaxVersion ProtocolVersion `json:"vmax"`
+	Type Action `json:"irmaqr"`
 }
 
 type SchemeManagerRequest Qr
