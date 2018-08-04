@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 
 	"fmt"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -530,6 +532,48 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	}
 
 	return nil
+}
+
+func (disjunction *AttributeDisjunction) ParseJwt(inputJwt string, signingKey *rsa.PublicKey, maxAge time.Duration, subject string) error {
+	if disjunction.Values == nil {
+		disjunction.Values = make(map[AttributeTypeIdentifier]*string)
+	}
+	if disjunction.Attributes == nil {
+		disjunction.Attributes = make([]AttributeTypeIdentifier, 0, 3)
+	}
+
+	keyFunc := func(token *jwt.Token) (interface{}, error) {
+		return signingKey, nil
+	}
+	token, err := jwt.Parse(inputJwt, keyFunc)
+	if err != nil {
+		return err
+	}
+	if !token.Valid {
+		return errors.New("JWT could not be verified")
+	}
+
+	if _, ok := token.Claims.(jwt.MapClaims); !ok {
+		// This should not happen as we have validated data here.
+		return errors.New("JWT is not a map?")
+	}
+	attributes := token.Claims.(jwt.MapClaims)["attributes"]
+	switch attributes := attributes.(type) {
+	case map[string]interface{}:
+		for str, value := range attributes {
+			if _, ok := value.(string); !ok {
+				// should not happen either
+				return errors.New("attribute is not a string?")
+			}
+			id := NewAttributeTypeIdentifier(str)
+			disjunction.Attributes = append(disjunction.Attributes, id)
+			value := value.(string)
+			disjunction.Values[id] = &value
+		}
+		return nil
+	default:
+		return errors.New("could not parse attribute disjunction: element 'attributes' was incorrect")
+	}
 }
 
 func (al *AttributeResultList) String() string {
