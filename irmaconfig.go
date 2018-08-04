@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/xml"
 	"io/ioutil"
@@ -51,6 +52,7 @@ type Configuration struct {
 
 	Warnings []string
 
+	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
@@ -118,6 +120,7 @@ func (conf *Configuration) clear() {
 	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
 	conf.Attributes = make(map[AttributeTypeIdentifier]*AttributeType)
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
+	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 }
@@ -281,6 +284,29 @@ func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.Pu
 		}
 	}
 	return conf.publicKeys[id][counter], nil
+}
+
+func (conf *Configuration) KeyshareServerPublicKey(scheme SchemeManagerIdentifier, i int) (*rsa.PublicKey, error) {
+	if _, contains := conf.kssPublicKeys[scheme]; !contains {
+		conf.kssPublicKeys[scheme] = make(map[int]*rsa.PublicKey)
+	}
+	if _, contains := conf.kssPublicKeys[scheme][i]; !contains {
+		pkbts, err := ioutil.ReadFile(filepath.Join(conf.Path, scheme.Name(), fmt.Sprintf("kss-%d.pem", i)))
+		if err != nil {
+			return nil, err
+		}
+		pkblk, _ := pem.Decode(pkbts)
+		genericPk, err := x509.ParsePKIXPublicKey(pkblk.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		pk, ok := genericPk.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("Invalid keyshare server public key")
+		}
+		conf.kssPublicKeys[scheme][i] = pk
+	}
+	return conf.kssPublicKeys[scheme][i], nil
 }
 
 func (conf *Configuration) addReverseHash(credid CredentialTypeIdentifier) {
@@ -1078,6 +1104,12 @@ func (conf *Configuration) checkScheme(scheme *SchemeManager, dir string) error 
 	if filepath.Base(dir) != scheme.ID {
 		scheme.Status = SchemeManagerStatusParsingError
 		return errors.Errorf("Scheme %s has wrong directory name %s", scheme.ID, filepath.Base(dir))
+	}
+	if scheme.KeyshareServer != "" {
+		if err := fs.AssertPathExists(filepath.Join(dir, "kss-0.pem")); err != nil {
+			scheme.Status = SchemeManagerStatusParsingError
+			return errors.Errorf("Scheme %s has keyshare URL but no keyshare public key kss-0.pem", scheme.ID)
+		}
 	}
 	conf.checkTranslations(fmt.Sprintf("Scheme %s", scheme.ID), scheme)
 	return nil

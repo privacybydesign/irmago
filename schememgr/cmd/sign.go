@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -61,7 +62,6 @@ func signManager(args []string) {
 	var index irma.SchemeManagerIndex = make(map[string]irma.ConfigurationFileHash)
 	err = filepath.Walk(confpath, func(path string, info os.FileInfo, err error) error {
 		return calculateFileHash(path, info, err, confpath, index)
-
 	})
 	if err != nil {
 		die("Failed to calculate file index:", err)
@@ -109,11 +109,18 @@ func calculateFileHash(path string, info os.FileInfo, err error, confpath string
 	if err != nil {
 		return err
 	}
+	// Skip stuff we don't want
 	if info.IsDir() || // Can only sign files
 		strings.HasSuffix(path, "index") || // Skip the index file itself
-		strings.Contains(path, "/.git/") || // No need to traverse .git dirs
-		strings.Contains(path, "/PrivateKeys/") || // Don't sign private keys
-		(!strings.HasSuffix(path, ".xml") && !strings.HasSuffix(path, ".png") && !strings.HasSuffix(path, "timestamp")) {
+		strings.Contains(path, "/.git/") || // No need to traverse .git dirs, can take quite long
+		strings.Contains(path, "/PrivateKeys/") { // Don't sign private keys
+		return nil
+	}
+	// Skip everything except the stuff we do want
+	if !strings.HasSuffix(path, ".xml") &&
+		!strings.HasSuffix(path, ".png") &&
+		!regexp.MustCompile("kss-\\d+\\.pem$").Match([]byte(filepath.Base(path))) &&
+		filepath.Base(path) != "timestamp" {
 		return nil
 	}
 
