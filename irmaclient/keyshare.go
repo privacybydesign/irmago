@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
@@ -45,6 +47,7 @@ type keyshareSession struct {
 	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
 	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
 	issuerProofNonce *big.Int
+	pinCheck         bool
 }
 
 type keyshareServer struct {
@@ -186,9 +189,8 @@ func startKeyshareSession(
 		conf:             conf,
 		keyshareServers:  keyshareServers,
 		issuerProofNonce: issuerProofNonce,
+		pinCheck:         false,
 	}
-
-	requestPin := false
 
 	for managerID := range session.Identifiers().SchemeManagers {
 		if !ks.conf.SchemeManagers[managerID].Distributed() {
@@ -202,23 +204,21 @@ func startKeyshareSession(
 		transport.SetHeader(kssVersionHeader, "2")
 		ks.transports[managerID] = transport
 
-		authstatus := &keyshareAuthorization{}
-		err := transport.Post("users/isAuthorized", authstatus, "")
-		if err != nil {
-			ks.fail(managerID, err)
-			return
+		// Try to parse token as a jwt to see if it is still valid; if so we don't need to ask for the PIN
+		parsed := &struct {
+			Expiry irma.Timestamp `json:"exp"`
+		}{}
+		if err := irma.JwtDecode(ks.keyshareServer.token, parsed); err != nil {
+			ks.pinCheck = true
 		}
-		switch authstatus.Status {
-		case kssAuthorized: // nop
-		case kssTokenExpired:
-			requestPin = true
-		default:
-			ks.sessionHandler.KeyshareError(&managerID, errors.New("Keyshare server returned unrecognized authorization status"))
-			return
+		// Add a minute of leeway for possible clockdrift with the server,
+		// and for the rest of the protocol to take place with this token
+		if time.Time(parsed.Expiry).Before(time.Now().Add(1 * time.Minute)) {
+			ks.pinCheck = true
 		}
 	}
 
-	if requestPin {
+	if ks.pinCheck {
 		ks.sessionHandler.KeysharePin()
 		ks.VerifyPin(-1)
 	} else {
@@ -353,6 +353,14 @@ func (ks *keyshareSession) GetCommitments() {
 		comms := &proofPCommitmentMap{}
 		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
 		if err != nil {
+			if err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
+				// JWT may be out of date due to clock drift; request pin and try again
+				// (but only if we did not ask for a PIN earlier)
+				ks.pinCheck = false
+				ks.sessionHandler.KeysharePin()
+				ks.VerifyPin(-1)
+				return
+			}
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
