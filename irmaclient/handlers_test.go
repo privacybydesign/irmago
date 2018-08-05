@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mhe/gabi"
 	"github.com/pkg/errors"
 	"github.com/privacybydesign/irmago"
 )
@@ -128,14 +129,20 @@ func (th TestHandler) RequestPin(remainingAttempts int, callback PinHandler) {
 }
 
 type SessionResult struct {
-	Err    error
-	Result *irma.SignedMessage
+	Err                error
+	SignatureResult    *irma.SignedMessage
+	VerificationResult gabi.ProofList
 }
 
 // ManualTestHandler embeds a TestHandler to inherit its methods.
 // Below we overwrite the methods that require behaviour specific to manual settings.
 type ManualTestHandler struct {
 	TestHandler
+	action irma.Action
+}
+
+func (th *ManualTestHandler) StatusUpdate(action irma.Action, status irma.Status) {
+	th.action = action
 }
 
 func (th *ManualTestHandler) Success(result string) {
@@ -143,9 +150,22 @@ func (th *ManualTestHandler) Success(result string) {
 		th.c <- nil
 		return
 	}
-	irmaSignedMessage := &irma.SignedMessage{}
 
-	if err := json.Unmarshal([]byte(result), irmaSignedMessage); err != nil {
+	var err error
+	retval := &SessionResult{}
+	switch th.action {
+	case irma.ActionSigning:
+		retval.SignatureResult = &irma.SignedMessage{}
+		err = json.Unmarshal([]byte(result), retval.SignatureResult)
+	case irma.ActionDisclosing:
+		proofs := []*gabi.ProofD{}
+		err = json.Unmarshal([]byte(result), &proofs)
+		retval.VerificationResult = make(gabi.ProofList, len(proofs))
+		for i, proof := range proofs {
+			retval.VerificationResult[i] = proof
+		}
+	}
+	if err != nil {
 		th.Failure(&irma.SessionError{
 			Err:       err,
 			ErrorType: irma.ErrorSerialization,
@@ -153,17 +173,10 @@ func (th *ManualTestHandler) Success(result string) {
 		return
 	}
 
-	th.c <- &SessionResult{
-		Result: irmaSignedMessage,
-	}
+	th.c <- retval
 }
 func (th *ManualTestHandler) RequestSignaturePermission(request irma.SignatureRequest, requesterName string, ph PermissionHandler) {
-	var attributes []*irma.AttributeIdentifier
-	for _, cand := range request.Candidates {
-		attributes = append(attributes, cand[0])
-	}
-	c := irma.DisclosureChoice{attributes}
-	ph(true, &c)
+	th.RequestVerificationPermission(request.DisclosureRequest, requesterName, ph)
 }
 func (th *ManualTestHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
 	ph(true, nil)
@@ -174,5 +187,10 @@ func (th *ManualTestHandler) RequestSchemeManagerPermission(manager *irma.Scheme
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
 func (th *ManualTestHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
-	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
+	var attributes []*irma.AttributeIdentifier
+	for _, cand := range request.Candidates {
+		attributes = append(attributes, cand[0])
+	}
+	c := irma.DisclosureChoice{attributes}
+	ph(true, &c)
 }

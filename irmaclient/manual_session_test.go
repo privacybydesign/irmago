@@ -35,19 +35,29 @@ func manualSessionHelper(t *testing.T, client *Client, h *ManualTestHandler, req
 		require.NoError(t, result.Err)
 	}
 
-	var verifyasRequest *irma.SignatureRequest
-	if verifyAs != "" {
-		verifyasRequest = &irma.SignatureRequest{}
+	switch h.action {
+	case irma.ActionDisclosing:
+		verifyasRequest := &irma.DisclosureRequest{}
 		err := json.Unmarshal([]byte(verifyAs), verifyasRequest)
 		require.NoError(t, err)
-	}
+		return irma.ProofList(result.VerificationResult).Verify(client.Configuration, verifyasRequest)
+	case irma.ActionSigning:
+		var verifyasRequest *irma.SignatureRequest
+		if verifyAs != "" {
+			verifyasRequest = &irma.SignatureRequest{}
+			err := json.Unmarshal([]byte(verifyAs), verifyasRequest)
+			require.NoError(t, err)
+		}
 
-	if corrupt {
-		// Interesting: modifying C results in INVALID_CRYPTO; modifying A or an attribute results in INVALID_TIMESTAMP
-		i := result.Result.Signature[0].(*gabi.ProofD).C
-		i.Add(i, big.NewInt(16))
+		if corrupt {
+			// Interesting: modifying C results in INVALID_CRYPTO; modifying A or an attribute results in INVALID_TIMESTAMP
+			i := result.SignatureResult.Signature[0].(*gabi.ProofD).C
+			i.Add(i, big.NewInt(16))
+		}
+		return result.SignatureResult.Verify(client.Configuration, verifyasRequest)
+	default:
+		return nil
 	}
-	return result.Result.Verify(client.Configuration, verifyasRequest)
 }
 
 func TestManualSession(t *testing.T) {
@@ -150,6 +160,34 @@ func TestManualSessionInvalidProof(t *testing.T) {
 	result := manualSessionHelper(t, nil, ms, request, request, true)
 
 	require.Equal(t, irma.ProofStatusInvalidCrypto, result.Status)
+
+	test.ClearTestStorage(t)
+}
+
+func TestManualDisclosureSession(t *testing.T) {
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"disclosing\", \"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	ms := createManualSessionHandler(t, nil)
+	result := manualSessionHelper(t, nil, ms, request, request, false)
+
+	require.Equal(t, irma.AttributeProofStatusPresent, result.Attributes[0].Status)
+	require.Equal(t, "456", result.Attributes[0].Value["en"])
+	require.Equal(t, irma.ProofStatusValid, result.Status)
+
+	test.ClearTestStorage(t)
+}
+
+// Test if proof verification fails with status 'MISSING_ATTRIBUTES' if we provide it with a non-matching disclosure request
+func TestManualDisclosureSessionInvalidRequest(t *testing.T) {
+	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"disclosing\", \"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	invalidRequest := "{\"nonce\": 0, \"context\": 0, \"type\": \"disclosing\", \"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.university\"]}]}"
+	ms := createManualSessionHandler(t, nil)
+	result := manualSessionHelper(t, nil, ms, request, invalidRequest, false)
+
+	require.Equal(t, irma.ProofStatusMissingAttributes, result.Status)
+	// First attribute result is MISSING, because it is in the request but not disclosed
+	require.Equal(t, irma.AttributeProofStatusMissing, result.Attributes[0].Status)
+	// Second attribute result is EXTRA, since it is disclosed, but not matching the sigrequest
+	require.Equal(t, irma.AttributeProofStatusExtra, result.Attributes[1].Status)
 
 	test.ClearTestStorage(t)
 }

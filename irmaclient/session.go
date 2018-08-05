@@ -104,7 +104,12 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 
 	sigRequest := &irma.SignatureRequest{}
 	if err := irma.UnmarshalValidate(bts, sigRequest); err == nil {
-		return client.newManualSession(sigRequest, handler)
+		return client.newManualSession(sigRequest, handler, irma.ActionSigning)
+	}
+
+	disclosureRequest := &irma.DisclosureRequest{}
+	if err := irma.UnmarshalValidate(bts, disclosureRequest); err == nil {
+		return client.newManualSession(disclosureRequest, handler, irma.ActionDisclosing)
 	}
 
 	handler.Failure(&irma.SessionError{Err: errors.New("Session request could not be parsed")})
@@ -112,14 +117,14 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 }
 
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
-func (client *Client) newManualSession(sigrequest *irma.SignatureRequest, handler Handler) SessionDismisser {
+func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	session := &session{
-		Action:     irma.ActionSigning, // TODO hardcoded for now
+		Action:     action,
 		Handler:    handler,
 		client:     client,
 		Version:    minVersion,
-		ServerName: "Email request",
-		request:    sigrequest,
+		ServerName: "",
+		request:    request,
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
@@ -308,13 +313,7 @@ func (session *session) sendResponse(message interface{}) {
 
 	switch session.Action {
 	case irma.ActionSigning:
-		request, ok := session.request.(*irma.SignatureRequest)
-		if !ok {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
-			return
-		}
-
-		irmaSignature, err := request.SignatureFromMessage(message)
+		irmaSignature, err := session.request.(*irma.SignatureRequest).SignatureFromMessage(message)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
 			return
@@ -339,14 +338,21 @@ func (session *session) sendResponse(message interface{}) {
 		}
 		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
 	case irma.ActionDisclosing:
-		var response disclosureResponse
-		if err = session.transport.Post("proofs", &response, message); err != nil {
-			session.fail(err.(*irma.SessionError))
+		messageJson, err = json.Marshal(message)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
 			return
 		}
-		if response != "VALID" {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
-			return
+		if session.IsInteractive() {
+			var response disclosureResponse
+			if err = session.transport.Post("proofs", &response, message); err != nil {
+				session.fail(err.(*irma.SessionError))
+				return
+			}
+			if response != "VALID" {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
+				return
+			}
 		}
 		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
 	case irma.ActionIssuing:

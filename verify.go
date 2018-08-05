@@ -70,8 +70,8 @@ func (pl ProofList) extractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 	return publicKeys, nil
 }
 
-// Verify the proofs cryptographically.
-func (pl ProofList) Verify(configuration *Configuration, context *big.Int, nonce *big.Int, isSig bool) bool {
+// VerifyProofs verifies the proofs cryptographically.
+func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int, nonce *big.Int, isSig bool) bool {
 	// Extract public keys
 	pks, err := pl.extractPublicKeys(configuration)
 	if err != nil {
@@ -172,6 +172,35 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 	return len(disjunctions) == 0 || disjunctions.satisfied(), list, nil
 }
 
+func (pl ProofList) verifyAgainstDisjunctions(configuration *Configuration, required AttributeDisjunctionList, nonce, context *big.Int, issig bool) ([]*DisclosedAttribute, ProofStatus) {
+	// Cryptographically verify the IRMA disclosure proofs in the signature
+	if !pl.VerifyProofs(configuration, nonce, context, issig) {
+		return nil, ProofStatusInvalidCrypto
+	}
+
+	// Next extract the contained attributes from the proofs, and match them to the signature request if present
+	allmatched, list, err := pl.DisclosedAttributes(configuration, required)
+	if err != nil {
+		return nil, ProofStatusInvalidCrypto
+	}
+
+	// Return MISSING_ATTRIBUTES as proofstatus if one of the disjunctions in the request (if present) is not satisfied
+	// This status takes priority over 'EXPIRED'
+	if !allmatched {
+		return list, ProofStatusMissingAttributes
+
+	}
+	return list, ProofStatusValid
+}
+
+func (pl ProofList) Verify(configuration *Configuration, request *DisclosureRequest) *VerificationResult {
+	list, status := pl.verifyAgainstDisjunctions(configuration, request.Content, request.Nonce, request.Context, false)
+	return &VerificationResult{
+		Attributes: list,
+		Status:     status,
+	}
+}
+
 // Verify the attribute-based signature, optionally against a corresponding signature request. If the request is present
 // (i.e. not nil), then the first attributes in the returned result match with the disjunction list in the request
 // (that is, the i'th attribute in the result should satisfy the i'th disjunction in the request). If the request is not
@@ -208,29 +237,13 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	}
 
 	// Now, cryptographically verify the IRMA disclosure proofs in the signature
-	proofList := ProofList(sm.Signature)
-	if !proofList.Verify(configuration, sm.Context, sm.GetNonce(), true) {
-		result.Status = ProofStatusInvalidCrypto
-		return
-	}
-
-	// Next extract the contained attributes from the signature, and match them to the signature request if present
-	var allmatched bool
-	var err error
-	var disjunctions AttributeDisjunctionList
+	pl := ProofList(sm.Signature)
+	var required AttributeDisjunctionList
 	if request != nil {
-		disjunctions = request.Content
+		required = request.Content
 	}
-	allmatched, result.Attributes, err = proofList.DisclosedAttributes(configuration, disjunctions)
-	if err != nil {
-		result.Status = ProofStatusInvalidCrypto
-		return
-	}
-
-	// Return MISSING_ATTRIBUTES as proofstatus if one of the disjunctions in the request (if present) is not satisfied
-	// This status takes priority over 'EXPIRED'
-	if !allmatched {
-		result.Status = ProofStatusMissingAttributes
+	result.Attributes, result.Status = pl.verifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), true)
+	if result.Status != ProofStatusValid {
 		return
 	}
 
@@ -239,7 +252,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	if sm.Timestamp != nil {
 		t = time.Unix(sm.Timestamp.Time, 0)
 	}
-	expired, err := proofList.Expired(configuration, &t)
+	expired, err := pl.Expired(configuration, &t)
 	if err != nil {
 		result.Status = ProofStatusInvalidCrypto
 		return
