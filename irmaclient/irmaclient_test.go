@@ -172,11 +172,11 @@ func disabledTestLogging(t *testing.T) {
 	sig, err := entry.GetSignedMessage()
 	require.NoError(t, err)
 	require.NotNil(t, sig)
-	result := sig.Verify(client.Configuration, nil)
-	require.Equal(t, irma.ProofStatusValid, result.Status)
-	require.NotEmpty(t, result.Attributes)
-	require.Equal(t, result.Attributes[0].Identifier, attrid)
-	require.Equal(t, "s1234567", result.Attributes[0].Value["en"])
+	attrs, status := sig.Verify(client.Configuration, nil)
+	require.Equal(t, irma.ProofStatusValid, status)
+	require.NotEmpty(t, attrs)
+	require.Equal(t, attrs[0].Identifier, attrid)
+	require.Equal(t, "s1234567", attrs[0].Value["en"])
 
 	test.ClearTestStorage(t)
 }

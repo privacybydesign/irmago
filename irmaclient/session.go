@@ -80,11 +80,6 @@ var supportedVersions = map[int][]int{
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
 var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
 
-const (
-	minVersionHeader = "X-IRMA-MinProtocolVersion"
-	maxVersionHeader = "X-IRMA-MaxProtocolVersion"
-)
-
 // Session constructors
 
 // NewSession starts a new IRMA session, given (along with a handler to pass feedback to) a session request.
@@ -174,8 +169,8 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		return nil
 	}
 
-	session.transport.SetHeader(minVersionHeader, minVersion.String())
-	session.transport.SetHeader(maxVersionHeader, maxVersion.String())
+	session.transport.SetHeader(irma.MinVersionHeader, minVersion.String())
+	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"
 	}

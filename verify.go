@@ -16,7 +16,7 @@ type AttributeProofStatus string
 
 const (
 	ProofStatusValid             = ProofStatus("VALID")              // Proof is valid
-	ProofStatusInvalidCrypto     = ProofStatus("INVALID_CRYPTO")     // Proof is invalid
+	ProofStatusInvalid           = ProofStatus("INVALID")            // Proof is invalid
 	ProofStatusInvalidTimestamp  = ProofStatus("INVALID_TIMESTAMP")  // Attribute-based signature had invalid timestamp
 	ProofStatusUnmatchedRequest  = ProofStatus("UNMATCHED_REQUEST")  // Proof does not correspond to a specified request
 	ProofStatusMissingAttributes = ProofStatus("MISSING_ATTRIBUTES") // Proof does not contain all requested attributes
@@ -47,10 +47,10 @@ type DisclosedAttribute struct {
 // ProofList is a gabi.ProofList with some extra methods.
 type ProofList gabi.ProofList
 
-// extractPublicKeys returns the public keys of each proof in the proofList, in the same order,
+// ExtractPublicKeys returns the public keys of each proof in the proofList, in the same order,
 // for later use in verification of the proofList. If one of the proofs is not a ProofD
 // an error is returned.
-func (pl ProofList) extractPublicKeys(configuration *Configuration) ([]*gabi.PublicKey, error) {
+func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.PublicKey, error) {
 	var publicKeys = make([]*gabi.PublicKey, 0, len(pl))
 
 	for _, v := range pl {
@@ -71,18 +71,47 @@ func (pl ProofList) extractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 }
 
 // VerifyProofs verifies the proofs cryptographically.
-func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int, nonce *big.Int, isSig bool) bool {
-	// Extract public keys
-	pks, err := pl.extractPublicKeys(configuration)
-	if err != nil {
+func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int, nonce *big.Int, publickeys []*gabi.PublicKey, isSig bool) bool {
+	if publickeys == nil {
+		var err error
+		publickeys, err = pl.ExtractPublicKeys(configuration)
+		if err != nil {
+			return false
+		}
+	}
+
+	if len(pl) != len(publickeys) {
 		return false
 	}
-	return gabi.ProofList(pl).Verify(pks, context, nonce, true, isSig)
+
+	// If the secret key comes from a credential whose scheme manager has a keyshare server,
+	// then the secretkey = userpart + keysharepart.
+	// So, we can only expect two secret key responses to be equal if their credentials
+	// are both associated to either no keyshare server, or the same keyshare server.
+	// (We have to check this here instead of in gabi, because gabi is unaware of schemes
+	// and whether or not they are distributed.)
+	secretkeyResponses := make(map[SchemeManagerIdentifier]*big.Int)
+	nonKssSchemeID := NewSchemeManagerIdentifier(".") // We use this id for all schemes that don't use a kss
+	for i, proof := range pl {
+		schemeID := NewIssuerIdentifier(publickeys[i].Issuer).SchemeManagerIdentifier()
+		if !configuration.SchemeManagers[schemeID].Distributed() {
+			schemeID = nonKssSchemeID
+		}
+		if response, contains := secretkeyResponses[schemeID]; !contains {
+			secretkeyResponses[schemeID] = proof.SecretKeyResponse()
+		} else {
+			if response.Cmp(proof.SecretKeyResponse()) != 0 {
+				return false
+			}
+		}
+	}
+
+	return gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig)
 }
 
 // Expired returns true if any of the contained disclosure proofs is specified at the specified time,
 // or now, when the specified time is nil.
-func (pl ProofList) Expired(configuration *Configuration, t *time.Time) (bool, error) {
+func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
 	if t == nil {
 		temp := time.Now()
 		t = &temp
@@ -90,14 +119,14 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) (bool, e
 	for _, proof := range pl {
 		proofd, ok := proof.(*gabi.ProofD)
 		if !ok {
-			return false, errors.New("ProofList contained a proof that was not a disclosure proof")
+			continue
 		}
 		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
 		if metadata.Expiry().Before(*t) {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // DisclosedAttributes returns a slice containing the disclosed attributes that are present in the proof list.
@@ -172,33 +201,40 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 	return len(disjunctions) == 0 || disjunctions.satisfied(), list, nil
 }
 
-func (pl ProofList) verifyAgainstDisjunctions(configuration *Configuration, required AttributeDisjunctionList, nonce, context *big.Int, issig bool) ([]*DisclosedAttribute, ProofStatus) {
+func (pl ProofList) VerifyAgainstDisjunctions(
+	configuration *Configuration,
+	required AttributeDisjunctionList,
+	context, nonce *big.Int,
+	publickeys []*gabi.PublicKey,
+	issig bool,
+) ([]*DisclosedAttribute, ProofStatus) {
 	// Cryptographically verify the IRMA disclosure proofs in the signature
-	if !pl.VerifyProofs(configuration, nonce, context, issig) {
-		return nil, ProofStatusInvalidCrypto
+	if !pl.VerifyProofs(configuration, context, nonce, publickeys, issig) {
+		return nil, ProofStatusInvalid
 	}
 
 	// Next extract the contained attributes from the proofs, and match them to the signature request if present
 	allmatched, list, err := pl.DisclosedAttributes(configuration, required)
 	if err != nil {
-		return nil, ProofStatusInvalidCrypto
+		return nil, ProofStatusInvalid
 	}
 
 	// Return MISSING_ATTRIBUTES as proofstatus if one of the disjunctions in the request (if present) is not satisfied
 	// This status takes priority over 'EXPIRED'
 	if !allmatched {
 		return list, ProofStatusMissingAttributes
-
 	}
+
+	now := time.Now()
+	if expired := pl.Expired(configuration, &now); expired {
+		return list, ProofStatusExpired
+	}
+
 	return list, ProofStatusValid
 }
 
-func (pl ProofList) Verify(configuration *Configuration, request *DisclosureRequest) *VerificationResult {
-	list, status := pl.verifyAgainstDisjunctions(configuration, request.Content, request.Nonce, request.Context, false)
-	return &VerificationResult{
-		Attributes: list,
-		Status:     status,
-	}
+func (pl ProofList) Verify(configuration *Configuration, request *DisclosureRequest) ([]*DisclosedAttribute, ProofStatus) {
+	return pl.VerifyAgainstDisjunctions(configuration, request.Content, request.Context, request.Nonce, nil, false)
 }
 
 // Verify the attribute-based signature, optionally against a corresponding signature request. If the request is present
@@ -210,16 +246,14 @@ func (pl ProofList) Verify(configuration *Configuration, request *DisclosureRequ
 //
 // The signature request is optional; if it is nil then the attribute-based signature is still verified, and all
 // containing attributes returned in the result.
-func (sm *SignedMessage) Verify(configuration *Configuration, request *SignatureRequest) (result *VerificationResult) {
+func (sm *SignedMessage) Verify(configuration *Configuration, request *SignatureRequest) ([]*DisclosedAttribute, ProofStatus) {
 	var message string
-	result = &VerificationResult{}
 
 	// First check if this signature matches the request
 	if request != nil {
 		request.Timestamp = sm.Timestamp
 		if !sm.MatchesNonceAndContext(request) {
-			result.Status = ProofStatusUnmatchedRequest
-			return
+			return nil, ProofStatusUnmatchedRequest
 		}
 		// If there is a request, then the signed message must be that of the request
 		message = request.Message
@@ -231,8 +265,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	// Verify the timestamp
 	if sm.Timestamp != nil {
 		if err := sm.VerifyTimestamp(message, configuration); err != nil {
-			result.Status = ProofStatusInvalidTimestamp
-			return
+			return nil, ProofStatusInvalidTimestamp
 		}
 	}
 
@@ -242,9 +275,9 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	if request != nil {
 		required = request.Content
 	}
-	result.Attributes, result.Status = pl.verifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), true)
-	if result.Status != ProofStatusValid {
-		return
+	result, status := pl.VerifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), nil, true)
+	if status != ProofStatusValid {
+		return result, status
 	}
 
 	// Check if a credential is expired
@@ -252,26 +285,20 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	if sm.Timestamp != nil {
 		t = time.Unix(sm.Timestamp.Time, 0)
 	}
-	expired, err := pl.Expired(configuration, &t)
-	if err != nil {
-		result.Status = ProofStatusInvalidCrypto
-		return
-	}
-	if expired {
+	if expired := pl.Expired(configuration, &t); expired {
 		if sm.Timestamp == nil {
 			// At least one of the contained attributes has currently expired. We don't know the
 			// creation time of the ABS so we can't ascertain that the attributes were still valid then.
 			// Otherwise the signature is valid.
-			result.Status = ProofStatusExpired
+			status = ProofStatusExpired
 		} else {
 			// The ABS contains attributes that were expired at the time of creation of the ABS.
 			// This must not happen and in this case the signature is invalid
-			result.Status = ProofStatusInvalidCrypto
+			status = ProofStatusInvalid
 		}
-		return
+		return result, status
 	}
 
 	// All disjunctions satisfied and nothing expired, proof is valid!
-	result.Status = ProofStatusValid
-	return
+	return result, ProofStatusValid
 }

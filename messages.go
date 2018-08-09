@@ -19,6 +19,11 @@ type Status string
 
 var ForceHttps bool = true
 
+const (
+	MinVersionHeader = "X-IRMA-MinProtocolVersion"
+	MaxVersionHeader = "X-IRMA-MaxProtocolVersion"
+)
+
 // ProtocolVersion encodes the IRMA protocol version of an IRMA session.
 type ProtocolVersion struct {
 	Major int
@@ -36,7 +41,7 @@ func (v *ProtocolVersion) String() string {
 func (v *ProtocolVersion) UnmarshalJSON(b []byte) (err error) {
 	var str string
 	if err := json.Unmarshal(b, &str); err != nil {
-		return err
+		str = string(b) // If b is not enclosed by quotes, try it directly
 	}
 	parts := strings.Split(str, ".")
 	if len(parts) != 2 {
@@ -59,6 +64,21 @@ func (v *ProtocolVersion) Below(major, minor int) bool {
 		return true
 	}
 	return v.Major == major && v.Minor < minor
+}
+
+func (v *ProtocolVersion) BelowVersion(other *ProtocolVersion) bool {
+	return v.Below(other.Major, other.Minor)
+}
+
+func (v *ProtocolVersion) Above(major, minor int) bool {
+	if v.Major > major {
+		return true
+	}
+	return v.Major == major && v.Minor > minor
+}
+
+func (v *ProtocolVersion) AboveVersion(other *ProtocolVersion) bool {
+	return v.Above(other.Major, other.Minor)
 }
 
 // GetMetadataVersion maps a chosen protocol version to a metadata version that

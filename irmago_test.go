@@ -290,11 +290,11 @@ func TestVerifyValidSig(t *testing.T) {
 	require.Equal(t, sigRequest.Context, big.NewInt(1337))
 
 	// Test if we can verify it with the original request
-	verificationResult := irmaSignedMessage.Verify(conf, sigRequest)
-	require.Equal(t, verificationResult.Status, ProofStatusValid)
-	require.Len(t, verificationResult.Attributes, 1)
-	require.Equal(t, verificationResult.Attributes[0].Status, AttributeProofStatusPresent)
-	require.Equal(t, verificationResult.Attributes[0].Value["en"], "456")
+	attrs, status := irmaSignedMessage.Verify(conf, sigRequest)
+	require.Equal(t, status, ProofStatusValid)
+	require.Len(t, attrs, 1)
+	require.Equal(t, attrs[0].Status, AttributeProofStatusPresent)
+	require.Equal(t, attrs[0].Value["en"], "456")
 
 	// Test if we can verify it with a request that contains strings instead of ints for nonce and context
 	stringRequest := "{\"nonce\": \"42\", \"context\": \"1337\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
@@ -306,25 +306,25 @@ func TestVerifyValidSig(t *testing.T) {
 	require.Equal(t, stringSigRequest.Context, big.NewInt(1337))
 
 	// Test if we can verify it with the original request
-	verificationResult = irmaSignedMessage.Verify(conf, sigRequest)
-	require.Equal(t, verificationResult.Status, ProofStatusValid)
-	require.Len(t, verificationResult.Attributes, 1)
-	require.Equal(t, verificationResult.Attributes[0].Status, AttributeProofStatusPresent)
-	require.Equal(t, verificationResult.Attributes[0].Value["en"], "456")
+	attrs, status = irmaSignedMessage.Verify(conf, sigRequest)
+	require.Equal(t, status, ProofStatusValid)
+	require.Len(t, attrs, 1)
+	require.Equal(t, attrs[0].Status, AttributeProofStatusPresent)
+	require.Equal(t, attrs[0].Value["en"], "456")
 
 	// Test verify against unmatched request (i.e. different nonce, context or message)
 	unmatched := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you NOTHING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
 	unmatchedSigRequestJSON := []byte(unmatched)
 	unmatchedSigRequest := &SignatureRequest{}
 	json.Unmarshal(unmatchedSigRequestJSON, unmatchedSigRequest)
-	unmatchedResult := irmaSignedMessage.Verify(conf, unmatchedSigRequest)
-	require.Equal(t, unmatchedResult.Status, ProofStatusUnmatchedRequest)
+	_, status = irmaSignedMessage.Verify(conf, unmatchedSigRequest)
+	require.Equal(t, status, ProofStatusUnmatchedRequest)
 
 	// Test if we can also verify it without using the original request
-	verificationResult = irmaSignedMessage.Verify(conf, nil)
-	require.Equal(t, verificationResult.Status, ProofStatusValid)
-	require.Len(t, verificationResult.Attributes, 1)
-	require.Equal(t, verificationResult.Attributes[0].Value["en"], "456")
+	attrs, status = irmaSignedMessage.Verify(conf, nil)
+	require.Equal(t, status, ProofStatusValid)
+	require.Len(t, attrs, 1)
+	require.Equal(t, attrs[0].Value["en"], "456")
 }
 
 func TestVerifyInValidSig(t *testing.T) {
@@ -340,11 +340,11 @@ func TestVerifyInValidSig(t *testing.T) {
 	sigRequest := &SignatureRequest{}
 	json.Unmarshal(sigRequestJSON, sigRequest)
 
-	sigProofResult := irmaSignedMessage.Verify(conf, sigRequest)
-	require.Equal(t, sigProofResult.Status, ProofStatusInvalidCrypto)
+	_, status := irmaSignedMessage.Verify(conf, sigRequest)
+	require.Equal(t, status, ProofStatusInvalid)
 
-	verificationResult := irmaSignedMessage.Verify(conf, nil)
-	require.Equal(t, verificationResult.Status, ProofStatusInvalidCrypto)
+	_, status = irmaSignedMessage.Verify(conf, nil)
+	require.Equal(t, status, ProofStatusInvalid)
 }
 
 func TestVerifyInValidNonce(t *testing.T) {
@@ -361,11 +361,11 @@ func TestVerifyInValidNonce(t *testing.T) {
 	sigRequest := &SignatureRequest{}
 	json.Unmarshal(sigRequestJSON, sigRequest)
 
-	sigProofResult := irmaSignedMessage.Verify(conf, sigRequest)
-	require.Equal(t, sigProofResult.Status, ProofStatusInvalidCrypto)
+	_, status := irmaSignedMessage.Verify(conf, sigRequest)
+	require.Equal(t, status, ProofStatusInvalid)
 
-	verificationResult := irmaSignedMessage.Verify(conf, nil)
-	require.Equal(t, verificationResult.Status, ProofStatusInvalidCrypto)
+	_, status = irmaSignedMessage.Verify(conf, nil)
+	require.Equal(t, status, ProofStatusInvalid)
 }
 
 // Test attribute decoding with both old and new metadata versions

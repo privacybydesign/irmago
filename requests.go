@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"strconv"
+	"strings"
 	"time"
 
 	"encoding/json"
@@ -130,6 +131,7 @@ type IdentityProviderJwt struct {
 
 // SessionRequest is an IRMA session.
 type SessionRequest interface {
+	Validator
 	GetNonce() *big.Int
 	SetNonce(*big.Int)
 	GetContext() *big.Int
@@ -154,20 +156,13 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*C
 	return NewCredentialInfo(list.Ints, conf), nil
 }
 
-// AttributeList returns the list of attributes from this credential request.
-func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion byte) (*AttributeList, error) {
-	meta := NewMetadataAttribute(metadataVersion)
-	meta.setKeyCounter(cr.KeyCounter)
-	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
-	meta.setSigningDate()
-	err := meta.setExpiryDate(cr.Validity)
-	if err != nil {
-		return nil, err
-	}
-
+// Validate checks that this credential request is consistent with the specified Configuration:
+// the credential type is known, all required attributes are present and no unknown attributes
+// are given.
+func (cr *CredentialRequest) Validate(conf *Configuration) error {
 	credtype := conf.CredentialTypes[*cr.CredentialTypeID]
 	if credtype == nil {
-		return nil, errors.New("Unknown credential type")
+		return errors.New("Credential request of unknown credential type")
 	}
 
 	// Check that there are no attributes in the credential request that aren't
@@ -181,10 +176,36 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 			}
 		}
 		if !found {
-			return nil, errors.New("Unknown CR attribute")
+			return errors.New("Credential request contaiins unknown attribute")
 		}
 	}
 
+	for _, attrtype := range credtype.Attributes {
+		if _, present := cr.Attributes[attrtype.ID]; !present && attrtype.Optional != "true" {
+			return errors.New("Required attribute not present in credential request")
+		}
+	}
+
+	return nil
+}
+
+// AttributeList returns the list of attributes from this credential request.
+func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion byte) (*AttributeList, error) {
+	if err := cr.Validate(conf); err != nil {
+		return nil, err
+	}
+
+	// Compute metadata attribute
+	meta := NewMetadataAttribute(metadataVersion)
+	meta.setKeyCounter(cr.KeyCounter)
+	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
+	meta.setSigningDate()
+	if err := meta.setExpiryDate(cr.Validity); err != nil {
+		return nil, err
+	}
+
+	// Compute other attributes
+	credtype := conf.CredentialTypes[*cr.CredentialTypeID]
 	attrs := make([]*big.Int, len(credtype.Attributes)+1)
 	attrs[0] = meta.Int
 	for i, attrtype := range credtype.Attributes {
@@ -195,10 +216,6 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 			if meta.Version() >= 0x03 {
 				attrs[i+1].Lsh(attrs[i+1], 1)             // attr <<= 1
 				attrs[i+1].Add(attrs[i+1], big.NewInt(1)) // attr += 1
-			}
-		} else {
-			if attrtype.Optional != "true" {
-				return nil, errors.New("Required attribute not provided")
 			}
 		}
 	}
@@ -345,7 +362,7 @@ func (sr *SignatureRequest) GetNonce() *big.Int {
 // Convert fields in JSON string to BigInterger if they are string
 // Supply fieldnames as a slice as second argument
 func convertFieldsToBigInt(jsonString []byte, fieldNames []string) ([]byte, error) {
-	var rawRequest map[string]interface{}
+	var rawRequest map[string]json.RawMessage
 
 	err := json.Unmarshal(jsonString, &rawRequest)
 	if err != nil {
@@ -353,10 +370,8 @@ func convertFieldsToBigInt(jsonString []byte, fieldNames []string) ([]byte, erro
 	}
 
 	for _, fieldName := range fieldNames {
-		field := new(big.Int)
-		fieldString := fmt.Sprintf("%v", rawRequest[fieldName])
-		field.SetString(fieldString, 10)
-		rawRequest[fieldName] = field
+		fieldString := string(rawRequest[fieldName])
+		rawRequest[fieldName] = []byte(strings.Trim(fieldString, "\""))
 	}
 
 	return json.Marshal(rawRequest)
