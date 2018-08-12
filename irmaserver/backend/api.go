@@ -85,6 +85,7 @@ func HandleProtocolMessage(
 		return failSession(nil, irmaserver.ErrorInvalidRequest, "")
 	}
 
+	// Fetch the session
 	token := matches[1]
 	verb := matches[2]
 	session := sessions.get(token)
