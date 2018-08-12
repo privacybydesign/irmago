@@ -37,42 +37,21 @@ func handleGetStatus(session *session) (int, []byte, *irmaserver.SessionResult) 
 	return http.StatusOK, b, nil
 }
 
-func handlePostResponse(session *session, message []byte) (int, []byte, *irmaserver.SessionResult) {
-	if !session.alive() {
-		return failSession(session, irmaserver.ErrorUnexpectedRequest, "")
-	}
+func handlePostCommitments(session *session, commitments *gabi.IssueCommitmentMessage) (int, []byte, *irmaserver.SessionResult) {
+	return session.issue(commitments)
+}
 
-	switch session.action {
+func handlePostSignature(session *session, signature *irma.SignedMessage) (int, []byte, *irmaserver.SessionResult) {
+	session.signature = signature
+	session.disclosed, session.proofStatus = signature.Verify(conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
+	s, b := responseJson(session.proofStatus)
+	return s, b, finishSession(session)
+}
 
-	case irma.ActionSigning:
-		sig := &irma.SignedMessage{}
-		if err := irma.UnmarshalValidate(message, sig); err != nil {
-			return failSession(session, irmaserver.ErrorMalformedInput, "")
-		}
-		session.signature = sig
-		session.disclosed, session.proofStatus = sig.Verify(conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
-		s, b := responseJson(session.proofStatus)
-		return s, b, finishSession(session)
-
-	case irma.ActionDisclosing:
-		pl := gabi.ProofList{}
-		if err := irma.UnmarshalValidate(message, &pl); err != nil {
-			return failSession(session, irmaserver.ErrorMalformedInput, "")
-		}
-		session.disclosed, session.proofStatus = irma.ProofList(pl).Verify(conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
-		s, b := responseJson(session.proofStatus)
-		return s, b, finishSession(session)
-
-	case irma.ActionIssuing:
-		commitments := &gabi.IssueCommitmentMessage{}
-		if err := irma.UnmarshalValidate(message, commitments); err != nil {
-			return failSession(session, irmaserver.ErrorMalformedInput, "")
-		}
-		return session.issue(commitments)
-
-	}
-
-	return failSession(session, irmaserver.ErrorUnknown, "")
+func handlePostProofs(session *session, proofs gabi.ProofList) (int, []byte, *irmaserver.SessionResult) {
+	session.disclosed, session.proofStatus = irma.ProofList(proofs).Verify(conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
+	s, b := responseJson(session.proofStatus)
+	return s, b, finishSession(session)
 }
 
 func responseJson(v interface{}) (int, []byte) {

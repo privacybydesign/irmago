@@ -7,6 +7,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
+	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaserver"
 )
@@ -114,8 +115,28 @@ func HandleProtocolMessage(
 		}
 		return failSession(session, irmaserver.ErrorInvalidRequest, "")
 	default:
-		if method == "POST" && (verb == "proofs" || (verb == "commitments" && session.action == irma.ActionIssuing)) {
-			return handlePostResponse(session, message)
+		if method == "POST" {
+			if verb == "commitments" && session.action == irma.ActionIssuing {
+				commitments := &gabi.IssueCommitmentMessage{}
+				if err := irma.UnmarshalValidate(message, commitments); err != nil {
+					return failSession(session, irmaserver.ErrorMalformedInput, "")
+				}
+				return handlePostCommitments(session, commitments)
+			}
+			if verb == "proofs" && session.action == irma.ActionDisclosing {
+				proofs := gabi.ProofList{}
+				if err := irma.UnmarshalValidate(message, &proofs); err != nil {
+					return failSession(session, irmaserver.ErrorMalformedInput, "")
+				}
+				return handlePostProofs(session, proofs)
+			}
+			if verb == "proofs" && session.action == irma.ActionSigning {
+				signature := &irma.SignedMessage{}
+				if err := irma.UnmarshalValidate(message, signature); err != nil {
+					return failSession(session, irmaserver.ErrorMalformedInput, "")
+				}
+				return handlePostSignature(session, signature)
+			}
 		}
 		if method == "GET" && verb == "status" {
 			return handleGetStatus(session)
