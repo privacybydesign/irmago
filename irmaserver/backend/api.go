@@ -104,6 +104,8 @@ func HandleProtocolMessage(
 		status, output = responseJson(nil, getError(irmaserver.ErrorSessionUnknown, ""))
 		return
 	}
+	session.Lock()
+	defer session.Unlock()
 
 	// However we return, if the session has been finished or cancelled by any of the handlers
 	// then we should inform the user by returning a SessionResult - but only if we have not

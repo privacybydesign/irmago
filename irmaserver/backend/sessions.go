@@ -76,6 +76,7 @@ func (s memorySessionStore) deleteExpired() {
 	s.RLock()
 	expired := make([]string, 0, len(s.m))
 	for token, session := range s.m {
+		session.Lock()
 		if session.lastActive.Add(5 * time.Minute).Before(time.Now()) {
 			if !session.finished() {
 				conf.Logger.Infof("Session %s expired", token)
@@ -86,6 +87,7 @@ func (s memorySessionStore) deleteExpired() {
 				expired = append(expired, token)
 			}
 		}
+		session.Unlock()
 	}
 	s.RUnlock()
 
