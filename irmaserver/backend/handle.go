@@ -40,10 +40,6 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	return session.request, nil
 }
 
-func (session *session) handleGetStatus() irmaserver.Status {
-	return session.status
-}
-
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ProofStatus, *irma.RemoteError) {
 	if session.status != irmaserver.StatusConnected {
 		return nil, getError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")

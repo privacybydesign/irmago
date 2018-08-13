@@ -133,39 +133,39 @@ func HandleProtocolMessage(
 		status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 		return
 	default:
-		if method == "POST" {
-			if verb == "commitments" && session.action == irma.ActionIssuing {
-				commitments := &gabi.IssueCommitmentMessage{}
-				if err := irma.UnmarshalValidate(message, commitments); err != nil {
-					status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
-					return
-				}
-				status, output = responseJson(session.handlePostCommitments(commitments))
-				return
-			}
-			if verb == "proofs" && session.action == irma.ActionDisclosing {
-				proofs := gabi.ProofList{}
-				if err := irma.UnmarshalValidate(message, &proofs); err != nil {
-					status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
-					return
-				}
-				status, output = responseJson(session.handlePostProofs(proofs))
-				return
-			}
-			if verb == "proofs" && session.action == irma.ActionSigning {
-				signature := &irma.SignedMessage{}
-				if err := irma.UnmarshalValidate(message, signature); err != nil {
-					status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
-					return
-				}
-				status, output = responseJson(session.handlePostSignature(signature))
-				return
-			}
-		}
-		if method == "GET" && verb == "status" {
-			status, output = responseJson(session.handleGetStatus(), nil)
+		if method != "POST" {
+			status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 			return
 		}
+
+		if verb == "commitments" && session.action == irma.ActionIssuing {
+			commitments := &gabi.IssueCommitmentMessage{}
+			if err := irma.UnmarshalValidate(message, commitments); err != nil {
+				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				return
+			}
+			status, output = responseJson(session.handlePostCommitments(commitments))
+			return
+		}
+		if verb == "proofs" && session.action == irma.ActionDisclosing {
+			proofs := gabi.ProofList{}
+			if err := irma.UnmarshalValidate(message, &proofs); err != nil {
+				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				return
+			}
+			status, output = responseJson(session.handlePostProofs(proofs))
+			return
+		}
+		if verb == "proofs" && session.action == irma.ActionSigning {
+			signature := &irma.SignedMessage{}
+			if err := irma.UnmarshalValidate(message, signature); err != nil {
+				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				return
+			}
+			status, output = responseJson(session.handlePostSignature(signature))
+			return
+		}
+
 		status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 		return
 	}
