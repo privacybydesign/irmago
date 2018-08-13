@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaserver"
@@ -124,15 +123,4 @@ func newSessionToken() string {
 		b[i] = sessionChars[rand.Int63()%int64(len(sessionChars))]
 	}
 	return string(b)
-}
-
-func chooseProtocolVersion(min, max *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
-	if min.AboveVersion(minProtocolVersion) || max.BelowVersion(min) {
-		return nil, errors.Errorf("Protocol version negotiation failed, min=%s max=%s", min.String(), max.String())
-	}
-	if max.AboveVersion(maxProtocolVersion) {
-		return maxProtocolVersion, nil
-	} else {
-		return max, nil
-	}
 }

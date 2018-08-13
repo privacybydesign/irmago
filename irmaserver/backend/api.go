@@ -163,7 +163,7 @@ func HandleProtocolMessage(
 			}
 		}
 		if method == "GET" && verb == "status" {
-			status, output = responseJson(handleGetStatus(session), nil)
+			status, output = responseJson(session.handleGetStatus(), nil)
 			return
 		}
 		status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))

@@ -1,15 +1,15 @@
 package backend
 
 import (
-	"encoding/json"
-	"net/http"
-	"runtime/debug"
-	"time"
-
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaserver"
 )
+
+// This file contains the handler functions for the protocol messages, receiving and returning normally
+// Go-typed messages here (JSON (un)marshalling is handled by the router).
+// Maintaining the session state is done here, as well as checking whether the session is in the
+// appropriate status before handling the request.
 
 var conf *irmaserver.Configuration
 
@@ -18,6 +18,7 @@ func (session *session) handleDelete() {
 		return
 	}
 	session.markAlive()
+
 	// TODO const ProofStatusCancelled = irma.ProofStatus("CANCELLED") ?
 	session.result = &irmaserver.SessionResult{Token: session.token}
 	session.setStatus(irmaserver.StatusCancelled)
@@ -39,7 +40,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	return session.request, nil
 }
 
-func handleGetStatus(session *session) irmaserver.Status {
+func (session *session) handleGetStatus() irmaserver.Status {
 	return session.status
 }
 
@@ -68,52 +69,68 @@ func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStat
 	return &session.result.Status, nil
 }
 
-// Session helpers
-
-func (session *session) finished() bool {
-	return session.status == irmaserver.StatusDone || session.status == irmaserver.StatusCancelled
-}
-
-func (session *session) markAlive() {
-	session.lastActive = time.Now()
-}
-
-func (session *session) setStatus(status irmaserver.Status) {
-	session.status = status
-}
-
-func (session *session) fail(err irmaserver.Error, message string) *irma.RemoteError {
-	rerr := getError(err, message)
-	session.setStatus(irmaserver.StatusCancelled)
-	session.result = &irmaserver.SessionResult{Err: rerr, Token: session.token}
-	return rerr
-}
-
-// Output helpers
-
-func getError(err irmaserver.Error, message string) *irma.RemoteError {
-	stack := string(debug.Stack())
-	conf.Logger.Errorf("Error: %d %s %s\n%s", err.Status, err.Type, message, stack)
-	return &irma.RemoteError{
-		Status:      err.Status,
-		Description: err.Description,
-		ErrorName:   string(err.Type),
-		Message:     message,
-		Stacktrace:  stack,
+func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
+	if session.status != irmaserver.StatusConnected {
+		return nil, getError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
-}
+	session.markAlive()
 
-func responseJson(v interface{}, err *irma.RemoteError) (int, []byte) {
-	msg := v
-	status := http.StatusOK
+	request := session.request.(*irma.IssuanceRequest)
+	discloseCount := len(request.Disclose)
+	if len(commitments.Proofs) != len(request.Credentials)+discloseCount {
+		return nil, session.fail(irmaserver.ErrorAttributesMissing, "")
+	}
+
+	// Compute list of public keys against which to verify the received proofs
+	disclosureproofs := irma.ProofList(commitments.Proofs[:discloseCount])
+	pubkeys, err := disclosureproofs.ExtractPublicKeys(conf.IrmaConfiguration)
 	if err != nil {
-		msg = err
-		status = err.Status
+		return nil, session.fail(irmaserver.ErrorInvalidProofs, err.Error())
 	}
-	b, e := json.Marshal(msg)
-	if e != nil {
-		conf.Logger.Error("Failed to serialize response:", e.Error())
-		return http.StatusInternalServerError, nil
+	for _, cred := range request.Credentials {
+		iss := cred.CredentialTypeID.IssuerIdentifier()
+		pubkey, _ := conf.IrmaConfiguration.PublicKey(iss, cred.KeyCounter) // No error, already checked earlier
+		pubkeys = append(pubkeys, pubkey)
 	}
-	return status, b
+
+	// Verify and merge keyshare server proofs, if any
+	for i, proof := range commitments.Proofs {
+		pubkey := pubkeys[i]
+		schemeid := irma.NewIssuerIdentifier(pubkey.Issuer).SchemeManagerIdentifier()
+		if conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
+			proofP, err := session.getProofP(commitments, schemeid)
+			if err != nil {
+				return nil, session.fail(irmaserver.ErrorKeyshareProofMissing, err.Error())
+			}
+			proof.MergeProofP(proofP, pubkey)
+		}
+	}
+
+	// Verify all proofs and check disclosed attributes, if any, against request
+	session.result.Disclosed, session.result.Status = irma.ProofList(commitments.Proofs).VerifyAgainstDisjunctions(
+		conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
+	if session.result.Status != irma.ProofStatusValid {
+		return nil, session.fail(irmaserver.ErrorInvalidProofs, "")
+	}
+
+	// Compute CL signatures
+	var sigs []*gabi.IssueSignatureMessage
+	for i, cred := range request.Credentials {
+		id := cred.CredentialTypeID.IssuerIdentifier()
+		pk, _ := conf.IrmaConfiguration.PublicKey(id, cred.KeyCounter)
+		issuer := gabi.NewIssuer(conf.PrivateKeys[id], pk, one)
+		proof := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
+		attributes, err := cred.AttributeList(conf.IrmaConfiguration, 0x03)
+		if err != nil {
+			return nil, session.fail(irmaserver.ErrorUnknown, err.Error())
+		}
+		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, commitments.Nonce2)
+		if err != nil {
+			return nil, session.fail(irmaserver.ErrorUnknown, err.Error())
+		}
+		sigs = append(sigs, sig)
+	}
+
+	session.setStatus(irmaserver.StatusDone)
+	return sigs, nil
 }
