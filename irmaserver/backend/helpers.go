@@ -27,12 +27,13 @@ func (session *session) markAlive() {
 
 func (session *session) setStatus(status irmaserver.Status) {
 	session.status = status
+	session.result.Status = status
 }
 
 func (session *session) fail(err irmaserver.Error, message string) *irma.RemoteError {
 	rerr := getError(err, message)
 	session.setStatus(irmaserver.StatusCancelled)
-	session.result = &irmaserver.SessionResult{Err: rerr, Token: session.token}
+	session.result = &irmaserver.SessionResult{Err: rerr, Token: session.token, Status: irmaserver.StatusCancelled}
 	return rerr
 }
 

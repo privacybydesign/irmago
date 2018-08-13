@@ -63,6 +63,14 @@ func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
 	}, session.token, nil
 }
 
+func GetSessionResult(token string) *irmaserver.SessionResult {
+	session := sessions.get(token)
+	if session != nil {
+		return nil
+	}
+	return session.result
+}
+
 func HandleProtocolMessage(
 	path string,
 	method string,

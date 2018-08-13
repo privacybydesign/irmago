@@ -15,11 +15,12 @@ type Configuration struct {
 }
 
 type SessionResult struct {
-	Token     string
-	Status    irma.ProofStatus
-	Disclosed []*irma.DisclosedAttribute
-	Signature *irma.SignedMessage
-	Err       *irma.RemoteError
+	Token       string
+	Status      Status
+	ProofStatus irma.ProofStatus
+	Disclosed   []*irma.DisclosedAttribute
+	Signature   *irma.SignedMessage
+	Err         *irma.RemoteError
 }
 
 type Status string
