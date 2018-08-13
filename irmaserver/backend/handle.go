@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"runtime/debug"
+	"time"
 
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
@@ -13,19 +14,22 @@ import (
 var conf *irmaserver.Configuration
 
 func (session *session) handleDelete() {
-	if !session.alive() {
+	if session.finished() {
 		return
 	}
-	session.result = &irmaserver.SessionResult{Token: session.token} // TODO what to return here?
+	session.markAlive()
+	// TODO const ProofStatusCancelled = irma.ProofStatus("CANCELLED") ?
+	session.result = &irmaserver.SessionResult{Token: session.token}
 	session.status = irmaserver.StatusCancelled
 }
 
-func (session *session) handleGetSession(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
+func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
 	var err error
-	session.status = irmaserver.StatusConnected
 	if session.version, err = chooseProtocolVersion(min, max); err != nil {
 		return nil, session.fail(irmaserver.ErrorProtocolVersion, "")
 	}
+	session.markAlive()
+	session.status = irmaserver.StatusConnected
 	session.request.SetVersion(session.version)
 	return session.request, nil
 }
@@ -35,32 +39,34 @@ func handleGetStatus(session *session) irmaserver.Status {
 }
 
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (irma.ProofStatus, *irma.RemoteError) {
-	session.signature = signature
-	session.disclosed, session.proofStatus = signature.Verify(conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
+	session.markAlive()
+	session.result.Signature = signature
+	session.result.Disclosed, session.result.Status = signature.Verify(
+		conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
 	session.finish()
-	return session.proofStatus, nil
+	return session.result.Status, nil
 }
 
 func (session *session) handlePostProofs(proofs gabi.ProofList) (irma.ProofStatus, *irma.RemoteError) {
-	session.disclosed, session.proofStatus = irma.ProofList(proofs).Verify(conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
+	session.markAlive()
+	session.result.Disclosed, session.result.Status = irma.ProofList(proofs).Verify(
+		conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
 	session.finish()
-	return session.proofStatus, nil
+	return session.result.Status, nil
 }
 
 // Session helpers
 
-func (session *session) alive() bool {
-	return session.status != irmaserver.StatusDone && session.status != irmaserver.StatusCancelled
+func (session *session) finished() bool {
+	return session.status == irmaserver.StatusDone || session.status == irmaserver.StatusCancelled
 }
 
 func (session *session) finish() {
 	session.status = irmaserver.StatusDone
-	session.result = &irmaserver.SessionResult{
-		Token:     session.token,
-		Status:    session.proofStatus,
-		Disclosed: session.disclosed,
-		Signature: session.signature,
-	}
+}
+
+func (session *session) markAlive() {
+	session.lastActive = time.Now()
 }
 
 func (session *session) fail(err irmaserver.Error, message string) *irma.RemoteError {

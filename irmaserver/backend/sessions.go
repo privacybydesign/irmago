@@ -21,12 +21,9 @@ type session struct {
 	request irma.SessionRequest
 	status  irmaserver.Status
 
-	active time.Time
-
-	proofStatus irma.ProofStatus
-	disclosed   []*irma.DisclosedAttribute
-	signature   *irma.SignedMessage
-	result      *irmaserver.SessionResult
+	lastActive time.Time
+	returned   bool
+	result     *irmaserver.SessionResult
 
 	kssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
 }
@@ -80,7 +77,7 @@ func (s memorySessionStore) deleteExpired() {
 	s.RLock()
 	expired := make([]string, 0, len(s.m))
 	for token, session := range s.m {
-		if session.active.Add(5 * time.Minute).Before(time.Now()) {
+		if session.lastActive.Add(5 * time.Minute).Before(time.Now()) {
 			conf.Logger.Infof("Session %s expired, deleting", token)
 			expired = append(expired, token)
 		}
@@ -103,17 +100,21 @@ func (s memorySessionStore) deleteExpired() {
 var one *big.Int = big.NewInt(1)
 
 func newSession(action irma.Action, request irma.SessionRequest) *session {
+	token := newSessionToken()
 	s := &session{
-		action:  action,
-		request: request,
-		status:  irmaserver.StatusInitialized,
-		active:  time.Now(),
-		token:   newSessionToken(),
+		action:     action,
+		request:    request,
+		status:     irmaserver.StatusInitialized,
+		lastActive: time.Now(),
+		token:      token,
+		result: &irmaserver.SessionResult{
+			Token: token,
+		},
 	}
 	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
 	request.SetNonce(nonce)
 	request.SetContext(one)
-	sessions.add(s.token, s)
+	sessions.add(token, s)
 	return s
 }
 

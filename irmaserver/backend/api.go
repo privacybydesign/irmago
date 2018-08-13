@@ -97,8 +97,12 @@ func HandleProtocolMessage(
 		return
 	}
 
+	// However we return, if the session has been cancelled by any of the handlers
+	// then we should inform the user by returning a SessionResult - but only if we have not
+	// already done this in the past, e.g. by a previous HTTP call handled by this function
 	defer func() {
-		if session.result != nil {
+		if session.finished() && !session.returned {
+			session.returned = true
 			result = session.result
 		}
 	}()
@@ -123,7 +127,7 @@ func HandleProtocolMessage(
 				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, err.Error()))
 				return
 			}
-			status, output = responseJson(session.handleGetSession(min, max))
+			status, output = responseJson(session.handleGetRequest(min, max))
 			return
 		}
 		status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))

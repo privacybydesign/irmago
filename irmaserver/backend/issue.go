@@ -109,16 +109,16 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 		if conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
 			proofP, err := session.getProofP(commitments, schemeid)
 			if err != nil {
-				session.fail(irmaserver.ErrorKeyshareProofMissing, err.Error())
+				return nil, session.fail(irmaserver.ErrorKeyshareProofMissing, err.Error())
 			}
 			proof.MergeProofP(proofP, pubkey)
 		}
 	}
 
 	// Verify all proofs and check disclosed attributes, if any, against request
-	session.disclosed, session.proofStatus = irma.ProofList(commitments.Proofs).VerifyAgainstDisjunctions(
+	session.result.Disclosed, session.result.Status = irma.ProofList(commitments.Proofs).VerifyAgainstDisjunctions(
 		conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
-	if session.proofStatus != irma.ProofStatusValid {
+	if session.result.Status != irma.ProofStatusValid {
 		return nil, session.fail(irmaserver.ErrorInvalidProofs, "")
 	}
 
