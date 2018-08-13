@@ -26,6 +26,7 @@ type session struct {
 	proofStatus irma.ProofStatus
 	disclosed   []*irma.DisclosedAttribute
 	signature   *irma.SignedMessage
+	result      *irmaserver.SessionResult
 
 	kssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
 }

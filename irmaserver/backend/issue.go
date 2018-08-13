@@ -83,18 +83,18 @@ func (session *session) getProofP(commitments *gabi.IssueCommitmentMessage, sche
 	return session.kssProofs[scheme], nil
 }
 
-func (session *session) issue(commitments *gabi.IssueCommitmentMessage) (int, []byte, *irmaserver.SessionResult) {
+func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
 	request := session.request.(*irma.IssuanceRequest)
 	discloseCount := len(request.Disclose)
 	if len(commitments.Proofs) != len(request.Credentials)+discloseCount {
-		return failSession(session, irmaserver.ErrorAttributesMissing, "")
+		return nil, session.fail(irmaserver.ErrorAttributesMissing, "")
 	}
 
 	// Compute list of public keys against which to verify the received proofs
 	disclosureproofs := irma.ProofList(commitments.Proofs[:discloseCount])
 	pubkeys, err := disclosureproofs.ExtractPublicKeys(conf.IrmaConfiguration)
 	if err != nil {
-		return failSession(session, irmaserver.ErrorInvalidProofs, err.Error())
+		return nil, session.fail(irmaserver.ErrorInvalidProofs, err.Error())
 	}
 	for _, cred := range request.Credentials {
 		iss := cred.CredentialTypeID.IssuerIdentifier()
@@ -109,7 +109,7 @@ func (session *session) issue(commitments *gabi.IssueCommitmentMessage) (int, []
 		if conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
 			proofP, err := session.getProofP(commitments, schemeid)
 			if err != nil {
-				failSession(session, irmaserver.ErrorKeyshareProofMissing, err.Error())
+				session.fail(irmaserver.ErrorKeyshareProofMissing, err.Error())
 			}
 			proof.MergeProofP(proofP, pubkey)
 		}
@@ -119,7 +119,7 @@ func (session *session) issue(commitments *gabi.IssueCommitmentMessage) (int, []
 	session.disclosed, session.proofStatus = irma.ProofList(commitments.Proofs).VerifyAgainstDisjunctions(
 		conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
 	if session.proofStatus != irma.ProofStatusValid {
-		return failSession(session, irmaserver.ErrorInvalidProofs, "")
+		return nil, session.fail(irmaserver.ErrorInvalidProofs, "")
 	}
 
 	// Compute CL signatures
@@ -131,15 +131,15 @@ func (session *session) issue(commitments *gabi.IssueCommitmentMessage) (int, []
 		proof := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
 		attributes, err := cred.AttributeList(conf.IrmaConfiguration, 0x03)
 		if err != nil {
-			return failSession(session, irmaserver.ErrorUnknown, err.Error())
+			return nil, session.fail(irmaserver.ErrorUnknown, err.Error())
 		}
 		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, commitments.Nonce2)
 		if err != nil {
-			return failSession(session, irmaserver.ErrorUnknown, err.Error())
+			return nil, session.fail(irmaserver.ErrorUnknown, err.Error())
 		}
 		sigs = append(sigs, sig)
 	}
 
-	s, b := responseJson(sigs)
-	return s, b, finishSession(session)
+	session.finish()
+	return sigs, nil
 }

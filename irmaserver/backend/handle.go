@@ -12,63 +12,50 @@ import (
 
 var conf *irmaserver.Configuration
 
-func handleDelete(session *session) (int, []byte, *irmaserver.SessionResult) {
-	var res *irmaserver.SessionResult
-	if session.alive() {
-		res = &irmaserver.SessionResult{Token: session.token} // TODO what to return here?
+func (session *session) handleDelete() {
+	if !session.alive() {
+		return
 	}
+	session.result = &irmaserver.SessionResult{Token: session.token} // TODO what to return here?
 	session.status = irmaserver.StatusCancelled
-	return http.StatusOK, nil, res
 }
 
-func handleGetSession(session *session, min, max *irma.ProtocolVersion) (int, []byte, *irmaserver.SessionResult) {
+func (session *session) handleGetSession(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
 	var err error
 	session.status = irmaserver.StatusConnected
 	if session.version, err = chooseProtocolVersion(min, max); err != nil {
-		return failSession(session, irmaserver.ErrorProtocolVersion, "")
+		return nil, session.fail(irmaserver.ErrorProtocolVersion, "")
 	}
 	session.request.SetVersion(session.version)
-	s, b := responseJson(session.request)
-	return s, b, nil
+	return session.request, nil
 }
 
-func handleGetStatus(session *session) (int, []byte, *irmaserver.SessionResult) {
-	b, _ := json.Marshal(session.status)
-	return http.StatusOK, b, nil
+func handleGetStatus(session *session) irmaserver.Status {
+	return session.status
 }
 
-func handlePostCommitments(session *session, commitments *gabi.IssueCommitmentMessage) (int, []byte, *irmaserver.SessionResult) {
-	return session.issue(commitments)
-}
-
-func handlePostSignature(session *session, signature *irma.SignedMessage) (int, []byte, *irmaserver.SessionResult) {
+func (session *session) handlePostSignature(signature *irma.SignedMessage) (irma.ProofStatus, *irma.RemoteError) {
 	session.signature = signature
 	session.disclosed, session.proofStatus = signature.Verify(conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
-	s, b := responseJson(session.proofStatus)
-	return s, b, finishSession(session)
+	session.finish()
+	return session.proofStatus, nil
 }
 
-func handlePostProofs(session *session, proofs gabi.ProofList) (int, []byte, *irmaserver.SessionResult) {
+func (session *session) handlePostProofs(proofs gabi.ProofList) (irma.ProofStatus, *irma.RemoteError) {
 	session.disclosed, session.proofStatus = irma.ProofList(proofs).Verify(conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
-	s, b := responseJson(session.proofStatus)
-	return s, b, finishSession(session)
+	session.finish()
+	return session.proofStatus, nil
 }
 
-func responseJson(v interface{}) (int, []byte) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return http.StatusInternalServerError, nil // TODO
-	}
-	return http.StatusOK, b
-}
+// Session helpers
 
 func (session *session) alive() bool {
 	return session.status != irmaserver.StatusDone && session.status != irmaserver.StatusCancelled
 }
 
-func finishSession(session *session) *irmaserver.SessionResult {
+func (session *session) finish() {
 	session.status = irmaserver.StatusDone
-	return &irmaserver.SessionResult{
+	session.result = &irmaserver.SessionResult{
 		Token:     session.token,
 		Status:    session.proofStatus,
 		Disclosed: session.disclosed,
@@ -76,23 +63,38 @@ func finishSession(session *session) *irmaserver.SessionResult {
 	}
 }
 
-func failSession(session *session, err irmaserver.Error, message string) (int, []byte, *irmaserver.SessionResult) {
-	rerr := &irma.RemoteError{
+func (session *session) fail(err irmaserver.Error, message string) *irma.RemoteError {
+	rerr := getError(err, message)
+	session.status = irmaserver.StatusCancelled
+	session.result = &irmaserver.SessionResult{Err: rerr, Token: session.token}
+	return rerr
+}
+
+// Output helpers
+
+func getError(err irmaserver.Error, message string) *irma.RemoteError {
+	stack := string(debug.Stack())
+	conf.Logger.Errorf("Error: %d %s %s\n%s", err.Status, err.Type, message, stack)
+	return &irma.RemoteError{
 		Status:      err.Status,
 		Description: err.Description,
 		ErrorName:   string(err.Type),
 		Message:     message,
-		Stacktrace:  string(debug.Stack()),
+		Stacktrace:  stack,
 	}
-	conf.Logger.Errorf("Error: %d %s %s\n%s", rerr.Status, rerr.ErrorName, rerr.Message, rerr.Stacktrace)
+}
 
-	var res *irmaserver.SessionResult
-	if session != nil {
-		if session.alive() {
-			res = &irmaserver.SessionResult{Err: rerr, Token: session.token}
-		}
-		session.status = irmaserver.StatusCancelled
+func responseJson(v interface{}, err *irma.RemoteError) (int, []byte) {
+	msg := v
+	status := http.StatusOK
+	if err != nil {
+		msg = err
+		status = err.Status
 	}
-	b, _ := json.Marshal(rerr)
-	return err.Status, b, res
+	b, e := json.Marshal(msg)
+	if e != nil {
+		conf.Logger.Error("Failed to serialize response:", e.Error())
+		return http.StatusInternalServerError, nil
+	}
+	return status, b
 }
