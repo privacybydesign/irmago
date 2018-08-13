@@ -77,8 +77,14 @@ func (s memorySessionStore) deleteExpired() {
 	expired := make([]string, 0, len(s.m))
 	for token, session := range s.m {
 		if session.lastActive.Add(5 * time.Minute).Before(time.Now()) {
-			conf.Logger.Infof("Session %s expired, deleting", token)
-			expired = append(expired, token)
+			if !session.finished() {
+				conf.Logger.Infof("Session %s expired", token)
+				session.markAlive()
+				session.setStatus(irmaserver.StatusTimeout)
+			} else {
+				conf.Logger.Infof("Deleting %s", token)
+				expired = append(expired, token)
+			}
 		}
 	}
 	s.RUnlock()

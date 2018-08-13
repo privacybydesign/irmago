@@ -18,7 +18,9 @@ import (
 // Session helpers
 
 func (session *session) finished() bool {
-	return session.status == irmaserver.StatusDone || session.status == irmaserver.StatusCancelled
+	return session.status == irmaserver.StatusDone ||
+		session.status == irmaserver.StatusCancelled ||
+		session.status == irmaserver.StatusTimeout
 }
 
 func (session *session) markAlive() {

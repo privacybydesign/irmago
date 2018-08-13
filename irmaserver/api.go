@@ -23,11 +23,13 @@ type SessionResult struct {
 	Err         *irma.RemoteError
 }
 
+// Status is the status of an IRMA session.
 type Status string
 
 const (
-	StatusInitialized Status = "INITIALIZED"
-	StatusConnected   Status = "CONNECTED"
-	StatusCancelled   Status = "CANCELLED"
-	StatusDone        Status = "DONE"
+	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
+	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
+	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
+	StatusDone        Status = "DONE"        // The session has completed successfully
+	StatusTimeout     Status = "TIMEOUT"     // Session timed out
 )
