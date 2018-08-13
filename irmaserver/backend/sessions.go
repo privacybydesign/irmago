@@ -30,6 +30,7 @@ type session struct {
 type sessionStore interface {
 	get(token string) *session
 	add(token string, session *session)
+	update(token string, session *session)
 	deleteExpired()
 }
 
@@ -68,6 +69,10 @@ func (s *memorySessionStore) add(token string, session *session) {
 	s.Lock()
 	defer s.Unlock()
 	s.m[token] = session
+}
+
+func (s *memorySessionStore) update(token string, session *session) {
+	// nop
 }
 
 func (s memorySessionStore) deleteExpired() {

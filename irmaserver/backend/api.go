@@ -115,6 +115,7 @@ func HandleProtocolMessage(
 			session.returned = true
 			result = session.result
 		}
+		sessions.update(token, session)
 	}()
 
 	// Route to handler
