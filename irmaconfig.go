@@ -750,7 +750,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers
 			if typ, contains = conf.CredentialTypes[credid]; !contains {
 				managers[credid.Root()] = struct{}{}
 			}
-			if !typ.ContainsAttribute(attrid) {
+			if !attrid.IsCredential() && !typ.ContainsAttribute(attrid) {
 				managers[credid.Root()] = struct{}{}
 			}
 		}
