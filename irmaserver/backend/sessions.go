@@ -19,8 +19,8 @@ type session struct {
 	token   string
 	version *irma.ProtocolVersion
 	request irma.SessionRequest
-	status  irmaserver.Status
 
+	status     irmaserver.Status
 	lastActive time.Time
 	returned   bool
 	result     *irmaserver.SessionResult
@@ -104,13 +104,13 @@ func newSession(action irma.Action, request irma.SessionRequest) *session {
 	s := &session{
 		action:     action,
 		request:    request,
-		status:     irmaserver.StatusInitialized,
 		lastActive: time.Now(),
 		token:      token,
 		result: &irmaserver.SessionResult{
 			Token: token,
 		},
 	}
+	s.setStatus(irmaserver.StatusInitialized)
 	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
 	request.SetNonce(nonce)
 	request.SetContext(one)

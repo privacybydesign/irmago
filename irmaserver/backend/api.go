@@ -97,7 +97,7 @@ func HandleProtocolMessage(
 		return
 	}
 
-	// However we return, if the session has been cancelled by any of the handlers
+	// However we return, if the session has been finished or cancelled by any of the handlers
 	// then we should inform the user by returning a SessionResult - but only if we have not
 	// already done this in the past, e.g. by a previous HTTP call handled by this function
 	defer func() {

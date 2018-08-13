@@ -84,6 +84,11 @@ func (session *session) getProofP(commitments *gabi.IssueCommitmentMessage, sche
 }
 
 func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
+	if session.status != irmaserver.StatusConnected {
+		return nil, getError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
+	}
+	session.markAlive()
+
 	request := session.request.(*irma.IssuanceRequest)
 	discloseCount := len(request.Disclose)
 	if len(commitments.Proofs) != len(request.Credentials)+discloseCount {
@@ -140,6 +145,6 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 		sigs = append(sigs, sig)
 	}
 
-	session.finish()
+	session.setStatus(irmaserver.StatusDone)
 	return sigs, nil
 }
