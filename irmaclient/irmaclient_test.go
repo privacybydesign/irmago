@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 	"os"
 	"testing"
@@ -28,14 +29,14 @@ func TestMain(m *testing.M) {
 
 func parseStorage(t *testing.T) *Client {
 	require.NoError(t, fs.CopyDirectory("../testdata/teststorage", "../testdata/storage/test"))
-	manager, err := New(
+	client, err := New(
 		"../testdata/storage/test",
 		"../testdata/irma_configuration",
 		"",
 		&TestClientHandler{t: t},
 	)
 	require.NoError(t, err)
-	return manager
+	return client
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
@@ -117,69 +118,69 @@ func TestStorageDeserialization(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
-func disabledTestLogging(t *testing.T) {
-	client := parseStorage(t)
-
-	logs, err := client.Logs()
-	oldLogLength := len(logs)
-	require.NoError(t, err)
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-
-	// Do issuance session
-	jwt := getCombinedJwt("testip", attrid)
-	sessionHelper(t, jwt, "issue", client)
-
-	logs, err = client.Logs()
-	require.NoError(t, err)
-	require.True(t, len(logs) == oldLogLength+1)
-
-	entry := logs[len(logs)-1]
-	require.NotNil(t, entry)
-	//require.Equal(t, "testip", entry.Request.GetRequestorName())
-	require.NoError(t, err)
-	issued, err := entry.GetIssuedCredentials(client.Configuration)
-	require.NoError(t, err)
-	require.NotNil(t, issued)
-	disclosed, err := entry.GetDisclosedCredentials(client.Configuration)
-	require.NoError(t, err)
-	require.NotEmpty(t, disclosed)
-
-	// Do disclosure session
-	jwt = getDisclosureJwt("testsp", attrid)
-	sessionHelper(t, jwt, "verification", client)
-	logs, err = client.Logs()
-	require.NoError(t, err)
-	require.True(t, len(logs) == oldLogLength+2)
-
-	entry = logs[len(logs)-1]
-	require.NotNil(t, entry)
-	//require.Equal(t, "testsp", entry.Request.GetRequestorName())
-	require.NoError(t, err)
-	disclosed, err = entry.GetDisclosedCredentials(client.Configuration)
-	require.NoError(t, err)
-	require.NotEmpty(t, disclosed)
-
-	// Do signature session
-	jwt = getSigningJwt("testsigclient", attrid)
-	sessionHelper(t, jwt, "signature", client)
-	logs, err = client.Logs()
-	require.NoError(t, err)
-	require.True(t, len(logs) == oldLogLength+3)
-	entry = logs[len(logs)-1]
-	require.NotNil(t, entry)
-	//require.Equal(t, "testsigclient", entry.Request.GetRequestorName())
-	require.NoError(t, err)
-	sig, err := entry.GetSignedMessage()
-	require.NoError(t, err)
-	require.NotNil(t, sig)
-	attrs, status := sig.Verify(client.Configuration, nil)
-	require.Equal(t, irma.ProofStatusValid, status)
-	require.NotEmpty(t, attrs)
-	require.Equal(t, attrs[0].Identifier, attrid)
-	require.Equal(t, "s1234567", attrs[0].Value["en"])
-
-	test.ClearTestStorage(t)
-}
+//func disabledTestLogging(t *testing.T) {
+//	client := parseStorage(t)
+//
+//	logs, err := client.Logs()
+//	oldLogLength := len(logs)
+//	require.NoError(t, err)
+//	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+//
+//	// Do issuance session
+//	jwt := getCombinedJwt("testip", attrid)
+//	sessionHelper(t, jwt, "issue", client)
+//
+//	logs, err = client.Logs()
+//	require.NoError(t, err)
+//	require.True(t, len(logs) == oldLogLength+1)
+//
+//	entry := logs[len(logs)-1]
+//	require.NotNil(t, entry)
+//	//require.Equal(t, "testip", entry.Request.GetRequestorName())
+//	require.NoError(t, err)
+//	issued, err := entry.GetIssuedCredentials(client.Configuration)
+//	require.NoError(t, err)
+//	require.NotNil(t, issued)
+//	disclosed, err := entry.GetDisclosedCredentials(client.Configuration)
+//	require.NoError(t, err)
+//	require.NotEmpty(t, disclosed)
+//
+//	// Do disclosure session
+//	jwt = getDisclosureJwt("testsp", attrid)
+//	sessionHelper(t, jwt, "verification", client)
+//	logs, err = client.Logs()
+//	require.NoError(t, err)
+//	require.True(t, len(logs) == oldLogLength+2)
+//
+//	entry = logs[len(logs)-1]
+//	require.NotNil(t, entry)
+//	//require.Equal(t, "testsp", entry.Request.GetRequestorName())
+//	require.NoError(t, err)
+//	disclosed, err = entry.GetDisclosedCredentials(client.Configuration)
+//	require.NoError(t, err)
+//	require.NotEmpty(t, disclosed)
+//
+//	// Do signature session
+//	jwt = getSigningJwt("testsigclient", attrid)
+//	sessionHelper(t, jwt, "signature", client)
+//	logs, err = client.Logs()
+//	require.NoError(t, err)
+//	require.True(t, len(logs) == oldLogLength+3)
+//	entry = logs[len(logs)-1]
+//	require.NotNil(t, entry)
+//	//require.Equal(t, "testsigclient", entry.Request.GetRequestorName())
+//	require.NoError(t, err)
+//	sig, err := entry.GetSignedMessage()
+//	require.NoError(t, err)
+//	require.NotNil(t, sig)
+//	attrs, status := sig.Verify(client.Configuration, nil)
+//	require.Equal(t, irma.ProofStatusValid, status)
+//	require.NotEmpty(t, attrs)
+//	require.Equal(t, attrs[0].Identifier, attrid)
+//	require.Equal(t, "s1234567", attrs[0].Value["en"])
+//
+//	test.ClearTestStorage(t)
+//}
 
 // TestCandidates tests the correctness of the function of the client that, given a disjunction of attributes
 // requested by the verifier, calculates a list of candidate attributes contained by the client that would
@@ -333,4 +334,56 @@ func TestKeyshareChangePin(t *testing.T) {
 	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
 
 	test.ClearTestStorage(t)
+}
+
+// ------
+
+type TestClientHandler struct {
+	t *testing.T
+	c chan error
+}
+
+func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
+func (i *TestClientHandler) UpdateAttributes()                               {}
+func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
+	select {
+	case i.c <- nil: // nop
+	default: // nop
+	}
+}
+func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: // nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinSuccess(manager irma.SchemeManagerIdentifier) {
+	select {
+	case i.c <- nil: // nop
+	default: // nop
+	}
+}
+func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
+	err := errors.New("incorrect pin")
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
+	err := errors.New("blocked account")
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
 }

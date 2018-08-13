@@ -1,7 +1,6 @@
-package irmaclient
+package sessiontest
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,7 +127,7 @@ func startSession(request interface{}, url string) (*irma.Qr, error) {
 	return &response, nil
 }
 
-func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Client) {
+func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *irmaclient.Client) {
 	init := client == nil
 	if init {
 		client = parseStorage(t)
@@ -151,7 +151,9 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Cl
 
 	c := make(chan *SessionResult)
 	h := TestHandler{t, c, client}
-	client.newQrSession(qr, h)
+	j, err := json.Marshal(qr)
+	require.NoError(t, err)
+	client.NewSession(string(j), h)
 
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
@@ -162,7 +164,7 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *Cl
 	}
 }
 
-func keyshareSessions(t *testing.T, client *Client) {
+func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -263,10 +265,6 @@ func TestLargeAttribute(t *testing.T) {
 	jwtcontents := getIssuanceJwt("testip", false, "1234567890123456789012345678901234567890") // 40 chars
 	sessionHelper(t, jwtcontents, "issue", client)
 
-	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
-	require.NoError(t, err)
-	require.True(t, cred.Signature.Verify(cred.Pk, cred.Attributes))
-
 	jwtcontents = getDisclosureJwt("testsp", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
 	sessionHelper(t, jwtcontents, "verification", client)
 
@@ -278,13 +276,15 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 	jwtcontents := getIssuanceJwt("testip", true, "")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 
-	require.Len(t, client.attrs(credid), 0)
+	require.Nil(t, client.Attributes(credid, 0))
 
 	sessionHelper(t, jwtcontents, "issue", client)
-	require.Len(t, client.attrs(credid), 1)
+	require.NotNil(t, client.Attributes(credid, 0))
+	require.Nil(t, client.Attributes(credid, 1))
 
 	sessionHelper(t, jwtcontents, "issue", client)
-	require.Len(t, client.attrs(credid), 1)
+	require.NotNil(t, client.Attributes(credid, 0))
+	require.Nil(t, client.Attributes(credid, 1))
 }
 
 /* There is an annoying difference between how Java and Go convert big integers to and from
@@ -317,36 +317,7 @@ func TestAttributeByteEncoding(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
-// Enroll at a keyshare server and do an issuance, disclosure,
-// and issuance session, also using irma-demo credentials deserialized from Android storage
-func TestKeyshareEnrollmentAndSessions(t *testing.T) {
-	client := parseStorage(t)
-	credtype := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
-
-	// Remove existing registration at test keyshare server
-	require.NoError(t, client.RemoveCredentialByHash(
-		client.Attributes(credtype, 0).Hash(),
-	))
-	require.NoError(t, client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test")))
-
-	// Do a new registration session
-	c := make(chan error) // channel for TestClientHandler to inform us of result
-	client.handler.(*TestClientHandler).c = c
-	bytes := make([]byte, 8, 8)
-	rand.Read(bytes)
-	require.NoError(t, client.keyshareEnrollWorker(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en"))
-	if err := <-c; err != nil {
-		t.Fatal(err)
-	}
-
-	require.NotNil(t, client.Attributes(credtype, 0))
-
-	keyshareSessions(t, client)
-
-	test.ClearTestStorage(t)
-}
-
-// Use the existing keyshare enrollment and credentials deserialized from Android storage
+// Use the existing keyshare enrollment and credentials
 // in a keyshare session of each session type.
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
@@ -448,7 +419,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
 	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
-	basepath := "../testdata/storage/test/irma_configuration/irma-demo"
+	basepath := test.FindTestdataFolder(t) + "/storage/test/irma_configuration/irma-demo"
 	exists, err := fs.PathExists(basepath + "/description.xml")
 	require.NoError(t, err)
 	require.True(t, exists)

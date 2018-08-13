@@ -1,4 +1,4 @@
-package irmaclient
+package sessiontest
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"github.com/mhe/gabi"
 	"github.com/pkg/errors"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/irmaclient"
 )
 
 type TestClientHandler struct {
@@ -62,7 +63,7 @@ func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifie
 type TestHandler struct {
 	t      *testing.T
 	c      chan *SessionResult
-	client *Client
+	client *irmaclient.Client
 }
 
 func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
@@ -97,7 +98,7 @@ func (th TestHandler) UnsatisfiableRequest(serverName string, missing irma.Attri
 		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 	})
 }
-func (th TestHandler) RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler) {
+func (th TestHandler) RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback irmaclient.PermissionHandler) {
 	choice := &irma.DisclosureChoice{
 		Attributes: []*irma.AttributeIdentifier{},
 	}
@@ -111,20 +112,20 @@ func (th TestHandler) RequestVerificationPermission(request irma.DisclosureReque
 	}
 	callback(true, choice)
 }
-func (th TestHandler) RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler) {
+func (th TestHandler) RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback irmaclient.PermissionHandler) {
 	dreq := irma.DisclosureRequest{
 		BaseRequest: request.BaseRequest,
 		Content:     request.Disclose,
 	}
 	th.RequestVerificationPermission(dreq, ServerName, callback)
 }
-func (th TestHandler) RequestSignaturePermission(request irma.SignatureRequest, ServerName string, callback PermissionHandler) {
+func (th TestHandler) RequestSignaturePermission(request irma.SignatureRequest, ServerName string, callback irmaclient.PermissionHandler) {
 	th.RequestVerificationPermission(request.DisclosureRequest, ServerName, callback)
 }
 func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(true)
 }
-func (th TestHandler) RequestPin(remainingAttempts int, callback PinHandler) {
+func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	callback(true, "12345")
 }
 
@@ -175,10 +176,10 @@ func (th *ManualTestHandler) Success(result string) {
 
 	th.c <- retval
 }
-func (th *ManualTestHandler) RequestSignaturePermission(request irma.SignatureRequest, requesterName string, ph PermissionHandler) {
+func (th *ManualTestHandler) RequestSignaturePermission(request irma.SignatureRequest, requesterName string, ph irmaclient.PermissionHandler) {
 	th.RequestVerificationPermission(request.DisclosureRequest, requesterName, ph)
 }
-func (th *ManualTestHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph PermissionHandler) {
+func (th *ManualTestHandler) RequestIssuancePermission(request irma.IssuanceRequest, issuerName string, ph irmaclient.PermissionHandler) {
 	ph(true, nil)
 }
 
@@ -186,7 +187,7 @@ func (th *ManualTestHandler) RequestIssuancePermission(request irma.IssuanceRequ
 func (th *ManualTestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
-func (th *ManualTestHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph PermissionHandler) {
+func (th *ManualTestHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph irmaclient.PermissionHandler) {
 	var attributes []*irma.AttributeIdentifier
 	for _, cand := range request.Candidates {
 		attributes = append(attributes, cand[0])

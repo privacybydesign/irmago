@@ -1,4 +1,4 @@
-package irmaclient
+package sessiontest
 
 import (
 	"encoding/json"
@@ -8,11 +8,12 @@ import (
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
 // Create a ManualTestHandler for unit tests
-func createManualSessionHandler(t *testing.T, client *Client) *ManualTestHandler {
+func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *ManualTestHandler {
 	return &ManualTestHandler{
 		TestHandler: TestHandler{
 			t:      t,
@@ -22,7 +23,7 @@ func createManualSessionHandler(t *testing.T, client *Client) *ManualTestHandler
 	}
 }
 
-func manualSessionHelper(t *testing.T, client *Client, h *ManualTestHandler, request string, verifyAs string, corrupt bool) ([]*irma.DisclosedAttribute, irma.ProofStatus) {
+func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestHandler, request string, verifyAs string, corrupt bool) ([]*irma.DisclosedAttribute, irma.ProofStatus) {
 	init := client == nil
 	if init {
 		client = parseStorage(t)

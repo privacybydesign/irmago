@@ -31,7 +31,7 @@ var badServer *http.Server
 var badServerCount int
 
 func StartSchemeManagerHttpServer() {
-	path := findTestdataFolder(nil)
+	path := FindTestdataFolder(nil)
 	schemeServer = &http.Server{Addr: ":48681", Handler: http.FileServer(http.Dir(path))}
 	go func() {
 		schemeServer.ListenAndServe()
@@ -67,33 +67,34 @@ func StopBadHttpServer() {
 	badServer.Close()
 }
 
-// findTestdataFolder finds the "testdata" folder which is in . or ..
+// FindTestdataFolder finds the "testdata" folder which is in . or ..
 // depending on which package is calling us.
-func findTestdataFolder(t *testing.T) string {
+func FindTestdataFolder(t *testing.T) string {
 	path := "testdata"
-	exists, err := fs.PathExists(path)
-	checkError(t, err)
-	if !exists {
+
+	for i := 0; i < 3; i++ {
+		exists, err := fs.PathExists(path)
+		checkError(t, err)
+		if exists {
+			return path
+		}
 		path = filepath.Join("..", path)
 	}
-	exists, err = fs.PathExists(path)
-	checkError(t, err)
-	if !exists {
-		checkError(t, errors.New("testdata folder not found"))
-	}
-	return path
+
+	checkError(t, errors.New("testdata folder not found"))
+	return ""
 }
 
 // ClearTestStorage removes any output from previously run tests to ensure a clean state;
 // some of the tests don't like it when there is existing state in storage.
 func ClearTestStorage(t *testing.T) {
-	path := filepath.Join(findTestdataFolder(t), "storage", "test")
+	path := filepath.Join(FindTestdataFolder(t), "storage", "test")
 	err := os.RemoveAll(path)
 	checkError(t, err)
 }
 
 func CreateTestStorage(t *testing.T) {
-	path := filepath.Join(findTestdataFolder(t), "storage")
+	path := filepath.Join(FindTestdataFolder(t), "storage")
 
 	// EnsureDirectoryExists eventually uses mkdir from the OS which is not recursive
 	// so we have to create the temporary test storage by two function calls.
@@ -105,7 +106,7 @@ func CreateTestStorage(t *testing.T) {
 }
 
 func SetupTestStorage(t *testing.T) {
-	path := findTestdataFolder(t)
+	path := FindTestdataFolder(t)
 	err := fs.CopyDirectory(filepath.Join(path, "teststorage"), filepath.Join(path, "storage", "test"))
 	checkError(t, err)
 }
