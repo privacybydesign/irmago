@@ -2,7 +2,6 @@ package backend
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"runtime/debug"
 	"strconv"
@@ -76,14 +75,14 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		iss := cred.CredentialTypeID.IssuerIdentifier()
 		privatekey, havekey := conf.PrivateKeys[iss]
 		if !havekey {
-			return fmt.Errorf("missing private key of issuer %s", iss.String())
+			return errors.Errorf("missing private key of issuer %s", iss.String())
 		}
 		pubkey, err := conf.IrmaConfiguration.PublicKey(iss, int(privatekey.Counter))
 		if err != nil {
 			return err
 		}
 		if pubkey == nil {
-			return fmt.Errorf("missing public key of issuer %s", iss.String())
+			return errors.Errorf("missing public key of issuer %s", iss.String())
 		}
 		cred.KeyCounter = int(privatekey.Counter)
 

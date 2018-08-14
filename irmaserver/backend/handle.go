@@ -45,11 +45,22 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	}
 	session.markAlive()
 
+	var err error
+	var rerr *irma.RemoteError
 	session.result.Signature = signature
-	session.result.Disclosed, session.result.ProofStatus = signature.Verify(
+	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(
 		conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
-	session.setStatus(irmaserver.StatusDone)
-	return &session.result.ProofStatus, nil
+	if err == nil {
+		session.setStatus(irmaserver.StatusDone)
+	} else {
+		session.setStatus(irmaserver.StatusCancelled)
+		if err == irma.ErrorMissingPublicKey {
+			rerr = session.fail(irmaserver.ErrorUnknownPublicKey, err.Error())
+		} else {
+			rerr = session.fail(irmaserver.ErrorUnknown, err.Error())
+		}
+	}
+	return &session.result.ProofStatus, rerr
 }
 
 func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStatus, *irma.RemoteError) {
@@ -58,10 +69,21 @@ func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStat
 	}
 	session.markAlive()
 
-	session.result.Disclosed, session.result.ProofStatus = irma.ProofList(proofs).Verify(
+	var err error
+	var rerr *irma.RemoteError
+	session.result.Disclosed, session.result.ProofStatus, err = irma.ProofList(proofs).Verify(
 		conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
-	session.setStatus(irmaserver.StatusDone)
-	return &session.result.ProofStatus, nil
+	if err == nil {
+		session.setStatus(irmaserver.StatusDone)
+	} else {
+		session.setStatus(irmaserver.StatusCancelled)
+		if err == irma.ErrorMissingPublicKey {
+			rerr = session.fail(irmaserver.ErrorUnknownPublicKey, err.Error())
+		} else {
+			rerr = session.fail(irmaserver.ErrorUnknown, err.Error())
+		}
+	}
+	return &session.result.ProofStatus, rerr
 }
 
 func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
@@ -102,8 +124,18 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 	}
 
 	// Verify all proofs and check disclosed attributes, if any, against request
-	session.result.Disclosed, session.result.ProofStatus = irma.ProofList(commitments.Proofs).VerifyAgainstDisjunctions(
+	session.result.Disclosed, session.result.ProofStatus, err = irma.ProofList(commitments.Proofs).VerifyAgainstDisjunctions(
 		conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
+	if err != nil {
+		if err == irma.ErrorMissingPublicKey {
+			return nil, session.fail(irmaserver.ErrorUnknownPublicKey, "")
+		} else {
+			return nil, session.fail(irmaserver.ErrorUnknown, "")
+		}
+	}
+	if session.result.ProofStatus == irma.ProofStatusExpired {
+		return nil, session.fail(irmaserver.ErrorAttributesExpired, "")
+	}
 	if session.result.ProofStatus != irma.ProofStatusValid {
 		return nil, session.fail(irmaserver.ErrorInvalidProofs, "")
 	}
