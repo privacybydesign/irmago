@@ -149,11 +149,11 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 		proof := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
 		attributes, err := cred.AttributeList(conf.IrmaConfiguration, 0x03)
 		if err != nil {
-			return nil, session.fail(irmaserver.ErrorUnknown, err.Error())
+			return nil, session.fail(irmaserver.ErrorIssuanceFailed, err.Error())
 		}
 		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, commitments.Nonce2)
 		if err != nil {
-			return nil, session.fail(irmaserver.ErrorUnknown, err.Error())
+			return nil, session.fail(irmaserver.ErrorIssuanceFailed, err.Error())
 		}
 		sigs = append(sigs, sig)
 	}
