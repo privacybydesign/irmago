@@ -121,12 +121,12 @@ func HandleProtocolMessage(
 	// Route to handler
 	switch len(verb) {
 	case 0:
-		if method == "DELETE" {
+		if method == http.MethodDelete {
 			session.handleDelete()
 			status = http.StatusOK
 			return
 		}
-		if method == "GET" {
+		if method == http.MethodGet {
 			h := http.Header(headers)
 			min := &irma.ProtocolVersion{}
 			max := &irma.ProtocolVersion{}
@@ -144,7 +144,7 @@ func HandleProtocolMessage(
 		status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 		return
 	default:
-		if method != "POST" {
+		if method != http.MethodPost {
 			status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 			return
 		}
