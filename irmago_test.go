@@ -290,7 +290,9 @@ func TestVerifyValidSig(t *testing.T) {
 	require.Equal(t, sigRequest.Context, big.NewInt(1337))
 
 	// Test if we can verify it with the original request
-	attrs, status := irmaSignedMessage.Verify(conf, sigRequest)
+	var err error
+	attrs, status, err := irmaSignedMessage.Verify(conf, sigRequest)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusValid)
 	require.Len(t, attrs, 1)
 	require.Equal(t, attrs[0].Status, AttributeProofStatusPresent)
@@ -306,7 +308,9 @@ func TestVerifyValidSig(t *testing.T) {
 	require.Equal(t, stringSigRequest.Context, big.NewInt(1337))
 
 	// Test if we can verify it with the original request
-	attrs, status = irmaSignedMessage.Verify(conf, sigRequest)
+
+	attrs, status, err = irmaSignedMessage.Verify(conf, sigRequest)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusValid)
 	require.Len(t, attrs, 1)
 	require.Equal(t, attrs[0].Status, AttributeProofStatusPresent)
@@ -317,11 +321,13 @@ func TestVerifyValidSig(t *testing.T) {
 	unmatchedSigRequestJSON := []byte(unmatched)
 	unmatchedSigRequest := &SignatureRequest{}
 	json.Unmarshal(unmatchedSigRequestJSON, unmatchedSigRequest)
-	_, status = irmaSignedMessage.Verify(conf, unmatchedSigRequest)
+	_, status, err = irmaSignedMessage.Verify(conf, unmatchedSigRequest)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusUnmatchedRequest)
 
 	// Test if we can also verify it without using the original request
-	attrs, status = irmaSignedMessage.Verify(conf, nil)
+	attrs, status, err = irmaSignedMessage.Verify(conf, nil)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusValid)
 	require.Len(t, attrs, 1)
 	require.Equal(t, attrs[0].Value["en"], "456")
@@ -340,10 +346,13 @@ func TestVerifyInValidSig(t *testing.T) {
 	sigRequest := &SignatureRequest{}
 	json.Unmarshal(sigRequestJSON, sigRequest)
 
-	_, status := irmaSignedMessage.Verify(conf, sigRequest)
+	var err error
+	_, status, err := irmaSignedMessage.Verify(conf, sigRequest)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 
-	_, status = irmaSignedMessage.Verify(conf, nil)
+	_, status, err = irmaSignedMessage.Verify(conf, nil)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 }
 
@@ -361,10 +370,13 @@ func TestVerifyInValidNonce(t *testing.T) {
 	sigRequest := &SignatureRequest{}
 	json.Unmarshal(sigRequestJSON, sigRequest)
 
-	_, status := irmaSignedMessage.Verify(conf, sigRequest)
+	var err error
+	_, status, err := irmaSignedMessage.Verify(conf, sigRequest)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 
-	_, status = irmaSignedMessage.Verify(conf, nil)
+	_, status, err = irmaSignedMessage.Verify(conf, nil)
+	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 }
 
