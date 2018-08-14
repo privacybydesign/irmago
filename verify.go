@@ -1,10 +1,12 @@
 package irma
 
 import (
+	"crypto/rsa"
 	"fmt"
 	"math/big"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 )
@@ -355,4 +357,46 @@ func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSi
 	}
 
 	return VALID, disclosed
+}
+
+// Verify and parse a JWT as returned after a disclosure request into a key-value pair.
+func ParseDisclosureJwt(inputJwt string, signingKey *rsa.PublicKey) (map[AttributeTypeIdentifier]TranslatedString, error) {
+	keyFunc := func(token *jwt.Token) (interface{}, error) {
+		return signingKey, nil
+	}
+	token, err := jwt.Parse(inputJwt, keyFunc)
+	if err != nil {
+		return nil, err
+	}
+	if !token.Valid {
+		return nil, errors.New("JWT could not be verified")
+	}
+
+	if _, ok := token.Claims.(jwt.MapClaims); !ok {
+		// This should not happen as we have validated data here.
+		return nil, errors.New("JWT is not a map?")
+	}
+	claims := token.Claims.(jwt.MapClaims)
+
+	if subject, ok := claims["sub"].(string); !ok || subject != "disclosure_result" {
+		return nil, errors.New("JWT is not a disclosure result")
+	}
+
+	attributes := claims["attributes"]
+	switch attributes := attributes.(type) {
+	case map[string]interface{}:
+		disclosedAttributes := make(map[AttributeTypeIdentifier]TranslatedString, len(attributes))
+		for id, value := range attributes {
+			if _, ok := value.(string); !ok {
+				// should not happen either
+				return nil, errors.New("attribute is not a string?")
+			}
+			value := value.(string)
+			ts := TranslatedString{"en": value, "nl": value} // TODO
+			disclosedAttributes[NewAttributeTypeIdentifier(id)] = ts
+		}
+		return disclosedAttributes, nil
+	default:
+		return nil, errors.New("could not parse attribute disjunction: element 'attributes' was incorrect")
+	}
 }
