@@ -37,6 +37,15 @@ type SignatureProofResult struct {
 	Message string `json:"message"`
 }
 
+// A JWT or something else has expired.
+type ExpiredError struct {
+	Err error // underlying error
+}
+
+func (e ExpiredError) Error() string {
+	return "irmago: expired (" + e.Err.Error() + ")"
+}
+
 // DisclosedCredential contains raw disclosed credentials, without any extra parsing information
 type DisclosedCredential struct {
 	metadataAttribute *MetadataAttribute
@@ -366,6 +375,9 @@ func ParseDisclosureJwt(inputJwt string, signingKey *rsa.PublicKey) (map[Attribu
 	}
 	token, err := jwt.Parse(inputJwt, keyFunc)
 	if err != nil {
+		if err, ok := err.(*jwt.ValidationError); ok && (err.Errors&jwt.ValidationErrorExpired) != 0 {
+			return nil, ExpiredError{err}
+		}
 		return nil, err
 	}
 	if !token.Valid {
