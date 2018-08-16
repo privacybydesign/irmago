@@ -713,7 +713,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers
 	case *IssuanceRequest:
 		for _, credreq := range s.Credentials {
 			// First check if we have this credential type
-			typ, contains = conf.CredentialTypes[*credreq.CredentialTypeID]
+			typ, contains = conf.CredentialTypes[credreq.CredentialTypeID]
 			if !contains {
 				managers[credreq.CredentialTypeID.Root()] = struct{}{}
 				continue

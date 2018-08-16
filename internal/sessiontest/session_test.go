@@ -48,8 +48,6 @@ func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 	temp := irma.Timestamp(irma.FloorToEpochBoundary(time.Now().AddDate(1, 0, 0)))
 	var expiry *irma.Timestamp
-	credid1 := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	credid2 := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 
 	if !defaultValidity {
 		expiry = &temp
@@ -59,7 +57,7 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 		Credentials: []*irma.CredentialRequest{
 			{
 				Validity:         expiry,
-				CredentialTypeID: &credid1,
+				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
 				Attributes: map[string]string{
 					"university":        "Radboud",
 					"studentCardNumber": "31415927",
@@ -68,7 +66,7 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 				},
 			}, {
 				Validity:         expiry,
-				CredentialTypeID: &credid2,
+				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
 				Attributes: map[string]string{
 					"BSN": "299792458",
 				},
@@ -79,13 +77,12 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 
 func getNameIssuanceRequest() *irma.IssuanceRequest {
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName")
 
 	req := &irma.IssuanceRequest{
 		Credentials: []*irma.CredentialRequest{
 			{
 				Validity:         &expiry,
-				CredentialTypeID: &credid,
+				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 				Attributes: map[string]string{
 					"firstnames": "Johan Pieter",
 					"firstname":  "Johan",
@@ -167,13 +164,12 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *ir
 func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
-	credid := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
 	jwt := getCombinedJwt("testip", id)
 	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
 		jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials,
 		&irma.CredentialRequest{
 			Validity:         &expiry,
-			CredentialTypeID: &credid,
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)

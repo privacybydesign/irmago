@@ -83,10 +83,10 @@ type IssuanceRequest struct {
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
-	Validity         *Timestamp                `json:"validity"`
-	KeyCounter       int                       `json:"keyCounter"`
-	CredentialTypeID *CredentialTypeIdentifier `json:"credential"`
-	Attributes       map[string]string         `json:"attributes"`
+	Validity         *Timestamp               `json:"validity"`
+	KeyCounter       int                      `json:"keyCounter"`
+	CredentialTypeID CredentialTypeIdentifier `json:"credential"`
+	Attributes       map[string]string        `json:"attributes"`
 }
 
 // ServerJwt contains standard JWT fields.
@@ -160,7 +160,7 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*C
 // the credential type is known, all required attributes are present and no unknown attributes
 // are given.
 func (cr *CredentialRequest) Validate(conf *Configuration) error {
-	credtype := conf.CredentialTypes[*cr.CredentialTypeID]
+	credtype := conf.CredentialTypes[cr.CredentialTypeID]
 	if credtype == nil {
 		return errors.New("Credential request of unknown credential type")
 	}
@@ -205,7 +205,7 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 	}
 
 	// Compute other attributes
-	credtype := conf.CredentialTypes[*cr.CredentialTypeID]
+	credtype := conf.CredentialTypes[cr.CredentialTypeID]
 	attrs := make([]*big.Int, len(credtype.Attributes)+1)
 	attrs[0] = meta.Int
 	for i, attrtype := range credtype.Attributes {
@@ -236,7 +236,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			issuer := credreq.CredentialTypeID.IssuerIdentifier()
 			ir.Ids.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
 			ir.Ids.Issuers[issuer] = struct{}{}
-			ir.Ids.CredentialTypes[*credreq.CredentialTypeID] = struct{}{}
+			ir.Ids.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
 			if ir.Ids.PublicKeys[issuer] == nil {
 				ir.Ids.PublicKeys[issuer] = []int{}
 			}
