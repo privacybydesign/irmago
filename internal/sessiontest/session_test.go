@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"math/big"
-
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -33,10 +31,6 @@ func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
 	return irma.NewSignatureRequestorJwt(name, &irma.SignatureRequest{
 		Message: "test",
 		DisclosureRequest: irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{
-				Nonce:   big.NewInt(1),
-				Context: big.NewInt(1),
-			},
 			Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 				Label:      "foo",
 				Attributes: []irma.AttributeTypeIdentifier{id},
