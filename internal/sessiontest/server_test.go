@@ -61,7 +61,11 @@ func StopIrmaServer() {
 
 func newSessionHelper(t *testing.T, request irma.SessionRequest) *irmaserver.SessionResult {
 	StartIrmaServer(t)
+	defer StopIrmaServer()
+
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
 	clientChan := make(chan *SessionResult)
 	serverChan := make(chan *irmaserver.SessionResult)
 
@@ -81,8 +85,7 @@ func newSessionHelper(t *testing.T, request irma.SessionRequest) *irmaserver.Ses
 	}
 
 	serverResult := <-serverChan
-	StopIrmaServer()
-	test.ClearTestStorage(t)
+
 	require.Equal(t, token, serverResult.Token)
 	return serverResult
 }
