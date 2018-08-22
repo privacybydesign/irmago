@@ -119,9 +119,9 @@ func startSession(request interface{}, url string) (*irma.Qr, error) {
 }
 
 func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *irmaclient.Client) {
-	init := client == nil
-	if init {
+	if client == nil {
 		client = parseStorage(t)
+		defer test.ClearTestStorage(t)
 	}
 
 	url = "http://localhost:8088/irma_api_server/api/v2/" + url
@@ -148,10 +148,6 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *ir
 
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
-	}
-
-	if init {
-		test.ClearTestStorage(t)
 	}
 }
 
@@ -250,6 +246,8 @@ func TestIssuanceOptionalSetAttributes(t *testing.T) {
 
 func TestLargeAttribute(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
 	require.NoError(t, client.RemoveAllCredentials())
 
 	jwtcontents := getIssuanceJwt("testip", false, "1234567890123456789012345678901234567890") // 40 chars
@@ -257,12 +255,12 @@ func TestLargeAttribute(t *testing.T) {
 
 	jwtcontents = getDisclosureJwt("testsp", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
 	sessionHelper(t, jwtcontents, "verification", client)
-
-	test.ClearTestStorage(t)
 }
 
 func TestIssuanceSingletonCredential(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
 	jwtcontents := getIssuanceJwt("testip", true, "")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 
@@ -285,6 +283,7 @@ signatures being issued in the issuance protocol in two distinct ways, of which 
 that they have been fixed. */
 func TestAttributeByteEncoding(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 	require.NoError(t, client.RemoveAllCredentials())
 
 	/* After bitshifting the presence bit into the large attribute below, the most significant
@@ -303,8 +302,6 @@ func TestAttributeByteEncoding(t *testing.T) {
 	the same positive bigint. */
 	jwtcontents = getIssuanceJwt("testip", false, "é")
 	sessionHelper(t, jwtcontents, "issue", client)
-
-	test.ClearTestStorage(t)
 }
 
 // Use the existing keyshare enrollment and credentials
@@ -312,14 +309,14 @@ func TestAttributeByteEncoding(t *testing.T) {
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	keyshareSessions(t, client)
-
-	test.ClearTestStorage(t)
 }
 
 func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -340,12 +337,12 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 
 	client.Configuration.Download(&disclosureRequest)
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	test.ClearTestStorage(t)
 }
 
 func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
@@ -356,12 +353,12 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
 	client.Configuration.Download(issuanceRequest)
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	test.ClearTestStorage(t)
 }
 
 func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
@@ -372,8 +369,6 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 	client.Configuration.Download(issuanceRequest)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-
-	test.ClearTestStorage(t)
 }
 
 // Test installing a new scheme manager from a qr, and do a(n issuance) session
@@ -381,6 +376,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 // issuers, and public keys.
 func TestDownloadSchemeManager(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	// Remove irma-demo scheme manager as we need to test adding it
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
@@ -419,6 +415,4 @@ func TestDownloadSchemeManager(t *testing.T) {
 	exists, err = fs.PathExists(basepath + "/RU/Issues/studentCard/description.xml")
 	require.NoError(t, err)
 	require.True(t, exists)
-
-	test.ClearTestStorage(t)
 }

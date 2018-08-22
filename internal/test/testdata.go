@@ -94,6 +94,7 @@ func ClearTestStorage(t *testing.T) {
 }
 
 func CreateTestStorage(t *testing.T) {
+	ClearTestStorage(t)
 	path := filepath.Join(FindTestdataFolder(t), "storage")
 
 	// EnsureDirectoryExists eventually uses mkdir from the OS which is not recursive
@@ -106,6 +107,7 @@ func CreateTestStorage(t *testing.T) {
 }
 
 func SetupTestStorage(t *testing.T) {
+	CreateTestStorage(t)
 	path := FindTestdataFolder(t)
 	err := fs.CopyDirectory(filepath.Join(path, "teststorage"), filepath.Join(path, "storage", "test"))
 	checkError(t, err)

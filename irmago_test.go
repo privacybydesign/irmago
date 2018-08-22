@@ -2,7 +2,6 @@ package irma
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,14 +12,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
-
-func TestMain(m *testing.M) {
-	test.ClearTestStorage(nil)
-	test.CreateTestStorage(nil)
-	retCode := m.Run()
-	test.ClearTestStorage(nil)
-	os.Exit(retCode)
-}
 
 func parseConfiguration(t *testing.T) *Configuration {
 	conf, err := NewConfiguration("testdata/irma_configuration", "")
@@ -37,6 +28,9 @@ func s2big(s string) (r *big.Int) {
 }
 
 func TestConfigurationAutocopy(t *testing.T) {
+	test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t)
+
 	path := filepath.Join("testdata", "storage", "test", "irma_configuration")
 	require.NoError(t, fs.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
 	conf, err := NewConfiguration(path, filepath.Join("testdata", "irma_configuration_updated"))
@@ -46,8 +40,6 @@ func TestConfigurationAutocopy(t *testing.T) {
 	credid := NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
 	require.True(t, conf.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	test.ClearTestStorage(t)
 }
 
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
@@ -72,20 +64,22 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 
 func TestRetryHTTPRequest(t *testing.T) {
 	test.StartBadHttpServer(3, 1*time.Second, "42")
+	defer test.StopBadHttpServer()
 
 	transport := NewHTTPTransport("http://localhost:48682")
 	transport.client.HTTPClient.Timeout = 500 * time.Millisecond
 	bts, err := transport.GetBytes("")
 	require.NoError(t, err)
 	require.Equal(t, "42\n", string(bts))
-
-	test.StopBadHttpServer()
 }
 
 func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
 
-	require.NoError(t, fs.EnsureDirectoryExists("testdata/storage/test"))
+	test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t)
+
 	conf, err := NewConfiguration("testdata/storage/test/irma_configuration", "testdata/irma_configuration_invalid")
 	require.NoError(t, err)
 
@@ -94,13 +88,12 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	require.Empty(t, conf.DisabledSchemeManagers)
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
-
-	test.StopSchemeManagerHttpServer()
-	test.ClearTestStorage(t)
 }
 
 func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
-	require.NoError(t, fs.EnsureDirectoryExists("testdata/storage/test"))
+	test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t)
+
 	conf, err := NewConfiguration("testdata/storage/test/irma_configuration", "testdata/irma_configuration_invalid")
 	require.NoError(t, err)
 
@@ -116,8 +109,6 @@ func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	require.Empty(t, conf.DisabledSchemeManagers)
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
-
-	test.ClearTestStorage(t)
 }
 
 func TestParseIrmaConfiguration(t *testing.T) {

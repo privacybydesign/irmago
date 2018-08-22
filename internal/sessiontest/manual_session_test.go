@@ -24,9 +24,9 @@ func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *Manual
 }
 
 func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestHandler, request string, verifyAs string, corrupt bool) ([]*irma.DisclosedAttribute, irma.ProofStatus) {
-	init := client == nil
-	if init {
+	if client == nil {
 		client = parseStorage(t)
+		defer test.ClearTestStorage(t)
 	}
 
 	client.NewSession(request, h)
@@ -75,8 +75,6 @@ func TestManualSession(t *testing.T) {
 	attrs, status = manualSessionHelper(t, nil, ms, request, "", false)
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[0].Status)
-
-	test.ClearTestStorage(t)
 }
 
 // Test if proof verification fails with status 'ERROR_CRYPTO' if we verify it with an invalid nonce
@@ -87,8 +85,6 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 	_, status := manualSessionHelper(t, nil, ms, request, invalidRequest, false)
 
 	require.Equal(t, irma.ProofStatusUnmatchedRequest, status)
-
-	test.ClearTestStorage(t)
 }
 
 // Test if proof verification fails with status 'MISSING_ATTRIBUTES' if we provide it with a non-matching signature request
@@ -103,8 +99,6 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 	require.Equal(t, irma.AttributeProofStatusMissing, attrs[0].Status)
 	// Second attribute result is EXTRA, since it is disclosed, but not matching the sigrequest
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[1].Status)
-
-	test.ClearTestStorage(t)
 }
 
 // Test if proof verification fails with status 'MISSING_ATTRIBUTES' if we provide it with invalid attribute values
@@ -116,8 +110,6 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 
 	require.Equal(t, irma.ProofStatusMissingAttributes, status)
 	require.Equal(t, irma.AttributeProofStatusInvalidValue, attrs[0].Status)
-
-	test.ClearTestStorage(t)
 }
 
 func TestManualKeyShareSession(t *testing.T) {
@@ -128,12 +120,11 @@ func TestManualKeyShareSession(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 	_, status = manualSessionHelper(t, nil, ms, request, "", false)
 	require.Equal(t, irma.ProofStatusValid, status)
-
-	test.ClearTestStorage(t)
 }
 
 func TestManualSessionMultiProof(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	// First, we need to issue an extra credential (BSN)
 	jwtcontents := getIssuanceJwt("testip", true, "")
@@ -152,8 +143,6 @@ func TestManualSessionMultiProof(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[0].Status)
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[1].Status)
-
-	test.ClearTestStorage(t)
 }
 
 func TestManualSessionInvalidProof(t *testing.T) {
@@ -162,8 +151,6 @@ func TestManualSessionInvalidProof(t *testing.T) {
 	_, status := manualSessionHelper(t, nil, ms, request, request, true)
 
 	require.Equal(t, irma.ProofStatusInvalid, status)
-
-	test.ClearTestStorage(t)
 }
 
 func TestManualDisclosureSession(t *testing.T) {
@@ -174,8 +161,6 @@ func TestManualDisclosureSession(t *testing.T) {
 	require.Equal(t, irma.AttributeProofStatusPresent, attrs[0].Status)
 	require.Equal(t, "456", attrs[0].Value["en"])
 	require.Equal(t, irma.ProofStatusValid, status)
-
-	test.ClearTestStorage(t)
 }
 
 // Test if proof verification fails with status 'MISSING_ATTRIBUTES' if we provide it with a non-matching disclosure request
@@ -190,6 +175,4 @@ func TestManualDisclosureSessionInvalidRequest(t *testing.T) {
 	require.Equal(t, irma.AttributeProofStatusMissing, attrs[0].Status)
 	// Second attribute result is EXTRA, since it is disclosed, but not matching the sigrequest
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[1].Status)
-
-	test.ClearTestStorage(t)
 }
