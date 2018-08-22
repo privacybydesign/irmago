@@ -28,10 +28,11 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/pem"
-	"math/big"
+	gobig "math/big"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -923,7 +924,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	if err != nil {
 		return err
 	}
-	ints := make([]*big.Int, 0, 2)
+	ints := make([]*gobig.Int, 0, 2)
 	_, err = asn1.Unmarshal(sig, &ints)
 
 	// Verify signature

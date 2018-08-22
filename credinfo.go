@@ -2,9 +2,10 @@ package irma
 
 import (
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
+
+	"github.com/mhe/gabi/big"
 )
 
 // CredentialInfo contains all information of an IRMA credential.

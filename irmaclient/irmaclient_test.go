@@ -3,11 +3,12 @@ package irmaclient
 import (
 	"encoding/json"
 	"errors"
-	"math/big"
+	gobig "math/big"
 	"os"
 	"testing"
 
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -86,8 +87,8 @@ func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
 	require.NotNil(t, PrivateKey.U)
 	require.NotNil(t, PrivateKey.PublicKey.N)
 
-	require.Equal(t, big.NewInt(1), new(big.Int).Exp(big.NewInt(2), PrivateKey.L, PrivateKey.N))
-	require.Equal(t, PrivateKey.NSquared, new(big.Int).Exp(PrivateKey.N, big.NewInt(2), nil))
+	require.Equal(t, gobig.NewInt(1), new(gobig.Int).Exp(gobig.NewInt(2), PrivateKey.L, PrivateKey.N))
+	require.Equal(t, PrivateKey.NSquared, new(gobig.Int).Exp(PrivateKey.N, gobig.NewInt(2), nil))
 
 	plaintext := "Hello Paillier!"
 	ciphertext, err := PrivateKey.Encrypt([]byte(plaintext))
@@ -266,7 +267,8 @@ func TestPaillier(t *testing.T) {
 	commcipher := new(big.Int).SetBytes(bytes)
 
 	// [[ c ]]^resp * [[ comm ]]
-	cipher.Exp(cipher, resp, sk.NSquared).Mul(cipher, commcipher).Mod(cipher, sk.NSquared)
+	nsquared := big.Convert(sk.NSquared)
+	cipher.Exp(cipher, resp, nsquared).Mul(cipher, commcipher).Mod(cipher, nsquared)
 
 	bytes, err = sk.Decrypt(cipher.Bytes())
 	require.NoError(t, err)

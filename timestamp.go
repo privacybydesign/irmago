@@ -4,10 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/asn1"
 	"errors"
-	"math/big"
+	gobig "math/big"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 )
 
 // GetTimestamp GETs a signed timestamp (a signature over the current time and the parameters)
@@ -31,12 +32,24 @@ func GetTimestamp(message string, sigs []*big.Int, disclosed [][]*big.Int) (*atu
 func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int) ([]byte, error) {
 	msgHash := sha256.Sum256([]byte(message))
 
+	// Convert the sigs and disclosed (double) slices to (double) slices of gobig.Int's for asn1
+	sigsint := make([]*gobig.Int, len(sigs))
+	disclosedint := make([][]*gobig.Int, len(disclosed))
+	for i, k := range sigs {
+		sigsint[i] = k.Value()
+	}
+	for i, _ := range disclosed {
+		disclosedint[i] = make([]*gobig.Int, len(disclosed[i]))
+		for j, k := range disclosed[i] {
+			disclosedint[i][j] = k.Value()
+		}
+	}
 	bts, err := asn1.Marshal(struct {
-		Sigs      []*big.Int
+		Sigs      []*gobig.Int
 		MsgHash   []byte
-		Disclosed [][]*big.Int
+		Disclosed [][]*gobig.Int
 	}{
-		sigs, msgHash[:], disclosed,
+		sigsint, msgHash[:], disclosedint,
 	})
 	if err != nil {
 		return nil, err

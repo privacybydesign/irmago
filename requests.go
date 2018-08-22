@@ -3,16 +3,13 @@ package irma
 import (
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"strconv"
-	"strings"
 	"time"
-
-	"encoding/json"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -357,46 +354,6 @@ func (dr *DisclosureRequest) Validate() error {
 // (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
 	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce, sr.Timestamp)
-}
-
-// Convert fields in JSON string to BigInterger if they are string
-// Supply fieldnames as a slice as second argument
-func convertFieldsToBigInt(jsonString []byte, fieldNames []string) ([]byte, error) {
-	var rawRequest map[string]json.RawMessage
-
-	err := json.Unmarshal(jsonString, &rawRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, fieldName := range fieldNames {
-		fieldString := string(rawRequest[fieldName])
-		rawRequest[fieldName] = []byte(strings.Trim(fieldString, "\""))
-	}
-
-	return json.Marshal(rawRequest)
-}
-
-// Custom Unmarshalling to support both json with string and int fields for nonce and context
-// i.e. {"nonce": "42", "context": "1337", ... } and {"nonce": 42, "context": 1337, ... }
-func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
-	type signatureRequestTemp SignatureRequest // To avoid 'recursive unmarshalling'
-
-	fixedRequest, err := convertFieldsToBigInt(b, []string{"nonce", "context"})
-	if err != nil {
-		return err
-	}
-
-	var result signatureRequestTemp
-	err = json.Unmarshal(fixedRequest, &result)
-	if err != nil {
-		return err
-	}
-
-	sr.DisclosureRequest = result.DisclosureRequest
-	sr.Message = result.Message
-
-	return err
 }
 
 func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMessage, error) {

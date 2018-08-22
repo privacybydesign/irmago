@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"crypto/rand"
-	"math/big"
 	"sort"
 	"strconv"
 	"time"
@@ -11,6 +10,7 @@ import (
 	raven "github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 )

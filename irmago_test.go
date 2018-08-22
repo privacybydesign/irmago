@@ -2,11 +2,12 @@ package irma
 
 import (
 	"encoding/json"
-	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mhe/gabi/big"
 
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -292,24 +293,6 @@ func TestVerifyValidSig(t *testing.T) {
 	// Test if we can verify it with the original request
 	var err error
 	attrs, status, err := irmaSignedMessage.Verify(conf, sigRequest)
-	require.NoError(t, err)
-	require.Equal(t, status, ProofStatusValid)
-	require.Len(t, attrs, 1)
-	require.Equal(t, attrs[0].Status, AttributeProofStatusPresent)
-	require.Equal(t, attrs[0].Value["en"], "456")
-
-	// Test if we can verify it with a request that contains strings instead of ints for nonce and context
-	stringRequest := "{\"nonce\": \"42\", \"context\": \"1337\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	stringSigRequestJSON := []byte(stringRequest)
-	stringSigRequest := &SignatureRequest{}
-	json.Unmarshal(stringSigRequestJSON, stringSigRequest)
-	// Test marshalling of 'string' fields:
-	require.Equal(t, stringSigRequest.Nonce, big.NewInt(42))
-	require.Equal(t, stringSigRequest.Context, big.NewInt(1337))
-
-	// Test if we can verify it with the original request
-
-	attrs, status, err = irmaSignedMessage.Verify(conf, sigRequest)
 	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusValid)
 	require.Len(t, attrs, 1)

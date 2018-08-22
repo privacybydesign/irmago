@@ -4,13 +4,14 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
-	"math/big"
+
 	"os"
 	"time"
 
 	"encoding/json"
 
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 )
 

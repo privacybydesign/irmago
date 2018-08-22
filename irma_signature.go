@@ -4,10 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/asn1"
 	"log"
-	"math/big"
+	gobig "math/big"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 )
 
 // SignedMessage is a message signed with an attribute-based signature
@@ -35,7 +36,7 @@ func (sm *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool 
 // where serverNonce is the nonce sent by the signature requestor.
 func ASN1ConvertSignatureNonce(message string, nonce *big.Int, timestamp *atum.Timestamp) *big.Int {
 	msgHash := sha256.Sum256([]byte(message))
-	tohash := []interface{}{nonce, new(big.Int).SetBytes(msgHash[:])}
+	tohash := []interface{}{nonce.Value(), new(gobig.Int).SetBytes(msgHash[:])}
 	if timestamp != nil {
 		tohash = append(tohash, timestamp.Sig.Data)
 	}

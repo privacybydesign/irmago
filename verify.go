@@ -1,11 +1,11 @@
 package irma
 
 import (
-	"math/big"
 	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 )
 
 // ProofStatus is the status of the complete proof

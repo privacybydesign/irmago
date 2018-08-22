@@ -2,10 +2,10 @@ package sessiontest
 
 import (
 	"encoding/json"
-	"math/big"
 	"testing"
 
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
