@@ -1,12 +1,12 @@
 package backend
 
 import (
-	"math/big"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaserver"
 )
