@@ -31,12 +31,6 @@ const (
 	AttributeProofStatusInvalidValue = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
 )
 
-// VerificationResult is a result of verification of a SignedMessage or disclosure proof, containing all the disclosed attributes
-type VerificationResult struct {
-	Attributes []*DisclosedAttribute
-	Status     ProofStatus
-}
-
 // DisclosedAttribute represents a disclosed attribute.
 type DisclosedAttribute struct {
 	Value      TranslatedString        `json:"value"` // Value of the disclosed attribute
