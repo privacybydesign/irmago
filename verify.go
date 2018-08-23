@@ -83,29 +83,18 @@ func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int,
 		return false, errors.New("Insufficient public keys to verify the proofs")
 	}
 
-	// If the secret key comes from a credential whose scheme manager has a keyshare server,
-	// then the secretkey = userpart + keysharepart.
-	// So, we can only expect two secret key responses to be equal if their credentials
-	// are both associated to either no keyshare server, or the same keyshare server.
-	// (We have to check this here instead of in gabi, because gabi is unaware of schemes
-	// and whether or not they are distributed.)
-	secretkeyResponses := make(map[SchemeManagerIdentifier]*big.Int)
-	nonKssSchemeID := NewSchemeManagerIdentifier(".") // We use this id for all schemes that don't use a kss
-	for i, proof := range pl {
+	// Compute slice to inform gabi of which proofs should be verified to share the same secret key
+	keyshareServers := make([]string, len(pl))
+	for i := range pl {
 		schemeID := NewIssuerIdentifier(publickeys[i].Issuer).SchemeManagerIdentifier()
 		if !configuration.SchemeManagers[schemeID].Distributed() {
-			schemeID = nonKssSchemeID
-		}
-		if response, contains := secretkeyResponses[schemeID]; !contains {
-			secretkeyResponses[schemeID] = proof.SecretKeyResponse()
+			keyshareServers[i] = "." // dummy value: no IRMA scheme will ever have this name
 		} else {
-			if response.Cmp(proof.SecretKeyResponse()) != 0 {
-				return false, nil
-			}
+			keyshareServers[i] = schemeID.Name()
 		}
 	}
 
-	return gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig), nil
+	return gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers), nil
 }
 
 // Expired returns true if any of the contained disclosure proofs is specified at the specified time,
