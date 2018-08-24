@@ -20,10 +20,7 @@ const (
 	ProofStatusInvalidTimestamp  = ProofStatus("INVALID_TIMESTAMP")  // Attribute-based signature had invalid timestamp
 	ProofStatusUnmatchedRequest  = ProofStatus("UNMATCHED_REQUEST")  // Proof does not correspond to a specified request
 	ProofStatusMissingAttributes = ProofStatus("MISSING_ATTRIBUTES") // Proof does not contain all requested attributes
-
-	// The contained attributes are currently expired, but it is not certain if they already were expired
-	// during creation of the attribute-based signature.
-	ProofStatusExpired = ProofStatus("EXPIRED")
+	ProofStatusExpired           = ProofStatus("EXPIRED")            // Attributes were expired at proof creation time (now, or according to timestamp in case of abs)
 
 	AttributeProofStatusPresent      = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
 	AttributeProofStatusExtra        = AttributeProofStatus("EXTRA")         // Attribute is disclosed, but wasn't requested in request
@@ -279,17 +276,8 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 		t = time.Unix(sm.Timestamp.Time, 0)
 	}
 	if expired := pl.Expired(configuration, &t); expired {
-		if sm.Timestamp == nil {
-			// At least one of the contained attributes has currently expired. We don't know the
-			// creation time of the ABS so we can't ascertain that the attributes were still valid then.
-			// Otherwise the signature is valid.
-			status = ProofStatusExpired
-		} else {
-			// The ABS contains attributes that were expired at the time of creation of the ABS.
-			// This must not happen and in this case the signature is invalid
-			status = ProofStatusInvalid
-		}
-		return result, status, nil
+		// The ABS contains attributes that were expired at the time of creation of the ABS.
+		return result, ProofStatusExpired, nil
 	}
 
 	// All disjunctions satisfied and nothing expired, proof is valid!
