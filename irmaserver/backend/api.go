@@ -103,7 +103,7 @@ func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
 
 func GetSessionResult(token string) *irmaserver.SessionResult {
 	session := sessions.get(token)
-	if session != nil {
+	if session == nil {
 		return nil
 	}
 	return session.result
