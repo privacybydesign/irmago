@@ -8,10 +8,12 @@ import (
 
 type Configuration struct {
 	IrmaConfigurationPath string
+	PrivateKeysPath       string
+
+	Logger *logrus.Logger
 
 	PrivateKeys       map[irma.IssuerIdentifier]*gabi.PrivateKey
 	IrmaConfiguration *irma.Configuration
-	Logger            *logrus.Logger
 }
 
 type SessionResult struct {

@@ -2,12 +2,16 @@ package backend
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"net/http"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaserver"
 )
@@ -29,6 +33,40 @@ func Initialize(configuration *irmaserver.Configuration) error {
 		}
 		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
 			return err
+		}
+	}
+
+	if conf.PrivateKeys == nil {
+		conf.PrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
+	}
+	if conf.PrivateKeysPath != "" {
+		files, err := ioutil.ReadDir(conf.PrivateKeysPath)
+		if err != nil {
+			return err
+		}
+		for _, file := range files {
+			filename := file.Name()
+			issid := irma.NewIssuerIdentifier(strings.TrimSuffix(filename, filepath.Ext(filename))) // strip .xml
+			if _, ok := conf.IrmaConfiguration.Issuers[issid]; !ok {
+				return errors.Errorf("Private key %s belongs to an unknown issuer", filename)
+			}
+			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(conf.PrivateKeysPath, filename))
+			if err != nil {
+				return err
+			}
+			conf.PrivateKeys[issid] = sk
+		}
+	}
+	for issid, sk := range conf.PrivateKeys {
+		pk, err := conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
+		if err != nil {
+			return err
+		}
+		if pk == nil {
+			return errors.Errorf("Missing public key belonging to private key %s-%d", issid.String(), sk.Counter)
+		}
+		if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
+			return errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter)
 		}
 	}
 

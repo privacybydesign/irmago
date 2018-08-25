@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaserver"
@@ -19,20 +18,6 @@ var irmaServer *http.Server
 
 func StartIrmaServer(t *testing.T) {
 	testdata := test.FindTestdataFolder(t)
-	skpath := filepath.Join(testdata, "irma_configuration", "irma-demo", "RU", "PrivateKeys", "2.xml")
-	iss := irma.NewIssuerIdentifier("irma-demo.RU")
-	sk, err := gabi.NewPrivateKeyFromFile(skpath)
-	require.NoError(t, err)
-
-	skpath = filepath.Join(testdata, "irma_configuration", "irma-demo", "MijnOverheid", "PrivateKeys", "1.xml")
-	iss2 := irma.NewIssuerIdentifier("irma-demo.MijnOverheid")
-	sk2, err := gabi.NewPrivateKeyFromFile(skpath)
-	require.NoError(t, err)
-
-	skpath = filepath.Join(testdata, "irma_configuration", "test", "test", "PrivateKeys", "3.xml")
-	iss3 := irma.NewIssuerIdentifier("test.test")
-	sk3, err := gabi.NewPrivateKeyFromFile(skpath)
-	require.NoError(t, err)
 
 	logger := logrus.New()
 	logger.Level = logrus.WarnLevel
@@ -40,11 +25,7 @@ func StartIrmaServer(t *testing.T) {
 	require.NoError(t, irmarequestor.Initialize(&irmaserver.Configuration{
 		Logger:                logger,
 		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
-		PrivateKeys: map[irma.IssuerIdentifier]*gabi.PrivateKey{
-			iss:  sk,
-			iss2: sk2,
-			iss3: sk3,
-		},
+		PrivateKeysPath:       filepath.Join(testdata, "privatekeys"),
 	}))
 
 	mux := http.NewServeMux()
