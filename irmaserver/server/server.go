@@ -12,10 +12,16 @@ import (
 	"github.com/privacybydesign/irmago/irmaserver/irmarequestor"
 )
 
+type Configuration struct {
+	*irmaserver.Configuration
+	Port int
+}
+
 var server *http.Server
 
-func Start(port int, conf *irmaserver.Configuration) error {
-	if err := irmarequestor.Initialize(conf); err != nil {
+// Start the server. If successful then it will not return until Stop() is called.
+func Start(conf *Configuration) error {
+	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
 		return err
 	}
 
@@ -30,9 +36,12 @@ func Start(port int, conf *irmaserver.Configuration) error {
 	router.Get("/result/{token}", handleResult)
 
 	// Start server
-	server = &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: router}
-	server.ListenAndServe()
-	return nil
+	server = &http.Server{Addr: fmt.Sprintf(":%d", conf.Port), Handler: router}
+	err := server.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return nil // Server was closed normally
+	}
+	return err
 }
 
 func Stop() {

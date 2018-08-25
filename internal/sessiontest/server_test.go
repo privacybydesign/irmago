@@ -22,13 +22,17 @@ func StartRequestorServer(t *testing.T) {
 	logger.Formatter = &logrus.TextFormatter{}
 
 	go func() {
-		server.Start(48682, &irmaserver.Configuration{
-			Logger:                logger,
-			IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
-			PrivateKeysPath:       filepath.Join(testdata, "privatekeys"),
+		err := server.Start(&server.Configuration{
+			Configuration: &irmaserver.Configuration{
+				Logger:                logger,
+				IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
+				PrivateKeysPath:       filepath.Join(testdata, "privatekeys"),
+			},
+			Port: 48682,
 		})
+		require.NoError(t, err)
 	}()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
 func StopRequestorServer(t *testing.T) {

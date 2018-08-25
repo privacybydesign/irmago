@@ -31,7 +31,10 @@ func main() {
 		return
 	}
 
-	err = server.Start(port, &irmaserver.Configuration{
-		IrmaConfigurationPath: os.Args[2],
+	err = server.Start(&server.Configuration{
+		Configuration: &irmaserver.Configuration{
+			IrmaConfigurationPath: os.Args[2],
+		},
+		Port: port,
 	})
 }
