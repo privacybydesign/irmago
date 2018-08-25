@@ -1,11 +1,11 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 
+	"github.com/go-chi/chi"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaserver"
@@ -15,73 +15,22 @@ import (
 var server *http.Server
 
 func Start(port int, conf *irmaserver.Configuration) error {
-	mux := http.NewServeMux()
 	if err := irmarequestor.Initialize(conf); err != nil {
 		return err
 	}
 
-	mux.HandleFunc("/irma/", irmarequestor.HttpHandlerFunc("/irma/"))
+	router := chi.NewRouter()
 
-	mux.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, irmaserver.ErrorInvalidRequest, "")
-			return
-		}
+	// Mount server for irmaclient
+	router.Mount("/irma/", irmarequestor.HttpHandlerFunc("/irma/"))
 
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			writeError(w, irmaserver.ErrorInvalidRequest, err.Error())
-			return
-		}
-		request, err := parseRequest(body)
-		if err != nil {
-			writeError(w, irmaserver.ErrorInvalidRequest, err.Error())
-			return
-		}
+	// Server routes
+	router.Post("/create", handleCreate)
+	router.Get("/status/{token}", handleStatus)
+	router.Get("/result/{token}", handleResult)
 
-		qr, _, err := irmarequestor.StartSession(request, nil)
-		if err != nil {
-			writeError(w, irmaserver.ErrorInvalidRequest, err.Error())
-			return
-		}
-
-		b, _ := json.Marshal(qr)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(b)
-	})
-
-	mux.HandleFunc("/status/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, irmaserver.ErrorInvalidRequest, "")
-			return
-		}
-		token := r.URL.Path[len("/status/"):]
-		res := irmarequestor.GetSessionResult(token)
-		if res == nil {
-			writeError(w, irmaserver.ErrorSessionUnknown, "")
-			return
-		}
-		b, _ := json.Marshal(res.Status)
-		w.Write(b)
-	})
-
-	mux.HandleFunc("/result/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, irmaserver.ErrorInvalidRequest, "")
-			return
-		}
-		token := r.URL.Path[len("/result/"):]
-		res := irmarequestor.GetSessionResult(token)
-		if res == nil {
-			writeError(w, irmaserver.ErrorInvalidRequest, "")
-			return
-		}
-		b, _ := json.Marshal(res)
-		w.Write(b)
-	})
-
-	server = &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux}
+	// Start server
+	server = &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: router}
 	server.ListenAndServe()
 	return nil
 }
@@ -90,10 +39,43 @@ func Stop() {
 	server.Close()
 }
 
-func writeError(w http.ResponseWriter, err irmaserver.Error, msg string) {
-	status, bts := irmaserver.JsonResponse(nil, irmaserver.RemoteError(err, msg))
-	w.WriteHeader(status)
-	w.Write(bts)
+func handleCreate(w http.ResponseWriter, r *http.Request) {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		irmaserver.WriteError(w, irmaserver.ErrorInvalidRequest, err.Error())
+		return
+	}
+	request, err := parseRequest(body)
+	if err != nil {
+		irmaserver.WriteError(w, irmaserver.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	qr, _, err := irmarequestor.StartSession(request, nil)
+	if err != nil {
+		irmaserver.WriteError(w, irmaserver.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	irmaserver.WriteJson(w, qr)
+}
+
+func handleStatus(w http.ResponseWriter, r *http.Request) {
+	res := irmarequestor.GetSessionResult(chi.URLParam(r, "token"))
+	if res == nil {
+		irmaserver.WriteError(w, irmaserver.ErrorSessionUnknown, "")
+		return
+	}
+	irmaserver.WriteJson(w, res.Status)
+}
+
+func handleResult(w http.ResponseWriter, r *http.Request) {
+	res := irmarequestor.GetSessionResult(chi.URLParam(r, "token"))
+	if res == nil {
+		irmaserver.WriteError(w, irmaserver.ErrorSessionUnknown, "")
+		return
+	}
+	irmaserver.WriteJson(w, res)
 }
 
 func parseRequest(bts []byte) (request irma.SessionRequest, err error) {

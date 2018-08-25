@@ -68,3 +68,17 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 	}
 	return status, b
 }
+
+func WriteError(w http.ResponseWriter, err Error, msg string) {
+	status, bts := JsonResponse(nil, RemoteError(err, msg))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(bts)
+}
+
+func WriteJson(w http.ResponseWriter, object interface{}) {
+	status, bts := JsonResponse(object, nil)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(bts)
+}
