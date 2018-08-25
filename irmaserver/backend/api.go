@@ -24,6 +24,7 @@ func Initialize(configuration *irmaserver.Configuration) error {
 		conf.Logger.Level = logrus.DebugLevel
 		conf.Logger.Formatter = &logrus.TextFormatter{}
 	}
+	irmaserver.Logger = conf.Logger
 
 	if conf.IrmaConfiguration == nil {
 		var err error
@@ -129,7 +130,7 @@ func HandleProtocolMessage(
 	matches := pattern.FindStringSubmatch(path)
 	if len(matches) != 3 {
 		conf.Logger.Warnf("Invalid URL: %s", path)
-		status, output = responseJson(nil, getError(irmaserver.ErrorInvalidRequest, ""))
+		status, output = irmaserver.JsonResponse(nil, irmaserver.RemoteError(irmaserver.ErrorInvalidRequest, ""))
 		return
 	}
 
@@ -139,7 +140,7 @@ func HandleProtocolMessage(
 	session := sessions.get(token)
 	if session == nil {
 		conf.Logger.Warnf("Session not found: %s", token)
-		status, output = responseJson(nil, getError(irmaserver.ErrorSessionUnknown, ""))
+		status, output = irmaserver.JsonResponse(nil, irmaserver.RemoteError(irmaserver.ErrorSessionUnknown, ""))
 		return
 	}
 	session.Lock()
@@ -169,53 +170,53 @@ func HandleProtocolMessage(
 			min := &irma.ProtocolVersion{}
 			max := &irma.ProtocolVersion{}
 			if err := json.Unmarshal([]byte(h.Get(irma.MinVersionHeader)), min); err != nil {
-				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, err.Error()))
+				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, err.Error()))
 				return
 			}
 			if err := json.Unmarshal([]byte(h.Get(irma.MaxVersionHeader)), max); err != nil {
-				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, err.Error()))
+				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, err.Error()))
 				return
 			}
-			status, output = responseJson(session.handleGetRequest(min, max))
+			status, output = irmaserver.JsonResponse(session.handleGetRequest(min, max))
 			return
 		}
-		status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
+		status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 		return
 	default:
 		if method != http.MethodPost {
-			status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
+			status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 			return
 		}
 
 		if verb == "commitments" && session.action == irma.ActionIssuing {
 			commitments := &gabi.IssueCommitmentMessage{}
 			if err := irma.UnmarshalValidate(message, commitments); err != nil {
-				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
 				return
 			}
-			status, output = responseJson(session.handlePostCommitments(commitments))
+			status, output = irmaserver.JsonResponse(session.handlePostCommitments(commitments))
 			return
 		}
 		if verb == "proofs" && session.action == irma.ActionDisclosing {
 			proofs := gabi.ProofList{}
 			if err := irma.UnmarshalValidate(message, &proofs); err != nil {
-				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
 				return
 			}
-			status, output = responseJson(session.handlePostProofs(proofs))
+			status, output = irmaserver.JsonResponse(session.handlePostProofs(proofs))
 			return
 		}
 		if verb == "proofs" && session.action == irma.ActionSigning {
 			signature := &irma.SignedMessage{}
 			if err := irma.UnmarshalValidate(message, signature); err != nil {
-				status, output = responseJson(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
 				return
 			}
-			status, output = responseJson(session.handlePostSignature(signature))
+			status, output = irmaserver.JsonResponse(session.handlePostSignature(signature))
 			return
 		}
 
-		status, output = responseJson(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
+		status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
 		return
 	}
 }

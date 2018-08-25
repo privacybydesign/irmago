@@ -1,9 +1,6 @@
 package backend
 
 import (
-	"encoding/json"
-	"net/http"
-	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -32,39 +29,10 @@ func (session *session) setStatus(status irmaserver.Status) {
 }
 
 func (session *session) fail(err irmaserver.Error, message string) *irma.RemoteError {
-	rerr := getError(err, message)
+	rerr := irmaserver.RemoteError(err, message)
 	session.setStatus(irmaserver.StatusCancelled)
 	session.result = &irmaserver.SessionResult{Err: rerr, Token: session.token, Status: irmaserver.StatusCancelled}
 	return rerr
-}
-
-// Output helpers
-
-func getError(err irmaserver.Error, message string) *irma.RemoteError {
-	stack := string(debug.Stack())
-	conf.Logger.Errorf("Error: %d %s %s\n%s", err.Status, err.Type, message, stack)
-	return &irma.RemoteError{
-		Status:      err.Status,
-		Description: err.Description,
-		ErrorName:   string(err.Type),
-		Message:     message,
-		Stacktrace:  stack,
-	}
-}
-
-func responseJson(v interface{}, err *irma.RemoteError) (int, []byte) {
-	msg := v
-	status := http.StatusOK
-	if err != nil {
-		msg = err
-		status = err.Status
-	}
-	b, e := json.Marshal(msg)
-	if e != nil {
-		conf.Logger.Error("Failed to serialize response:", e.Error())
-		return http.StatusInternalServerError, nil
-	}
-	return status, b
 }
 
 // Issuance helpers

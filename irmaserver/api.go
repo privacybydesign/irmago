@@ -1,10 +1,16 @@
 package irmaserver
 
 import (
+	"encoding/json"
+	"net/http"
+	"runtime/debug"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 )
+
+var Logger *logrus.Logger = logrus.StandardLogger()
 
 type Configuration struct {
 	IrmaConfigurationPath string
@@ -35,3 +41,30 @@ const (
 	StatusDone        Status = "DONE"        // The session has completed successfully
 	StatusTimeout     Status = "TIMEOUT"     // Session timed out
 )
+
+func RemoteError(err Error, message string) *irma.RemoteError {
+	stack := string(debug.Stack())
+	Logger.Errorf("Error: %d %s %s\n%s", err.Status, err.Type, message, stack)
+	return &irma.RemoteError{
+		Status:      err.Status,
+		Description: err.Description,
+		ErrorName:   string(err.Type),
+		Message:     message,
+		Stacktrace:  stack,
+	}
+}
+
+func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+	msg := v
+	status := http.StatusOK
+	if err != nil {
+		msg = err
+		status = err.Status
+	}
+	b, e := json.Marshal(msg)
+	if e != nil {
+		Logger.Error("Failed to serialize response:", e.Error())
+		return http.StatusInternalServerError, nil
+	}
+	return status, b
+}

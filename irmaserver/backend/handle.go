@@ -25,7 +25,7 @@ func (session *session) handleDelete() {
 
 func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
 	if session.status != irmaserver.StatusInitialized {
-		return nil, getError(irmaserver.ErrorUnexpectedRequest, "Session already started")
+		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session already started")
 	}
 	session.markAlive()
 
@@ -41,7 +41,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ProofStatus, *irma.RemoteError) {
 	if session.status != irmaserver.StatusConnected {
-		return nil, getError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
+		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
 
@@ -65,7 +65,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 
 func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStatus, *irma.RemoteError) {
 	if session.status != irmaserver.StatusConnected {
-		return nil, getError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
+		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
 
@@ -88,7 +88,7 @@ func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStat
 
 func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
 	if session.status != irmaserver.StatusConnected {
-		return nil, getError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
+		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
 
