@@ -3,7 +3,6 @@ package sessiontest
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -144,14 +143,20 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, url string, client
 		defer test.ClearTestStorage(t)
 	}
 
-	jwt := getJwt(t, request, url)
-	url = "http://localhost:8088/irma_api_server/api/v2/" + url
-	qr, transportErr := startSession(jwt, url)
-	if transportErr != nil {
-		fmt.Printf("+%v\n", transportErr)
-	}
-	require.NoError(t, transportErr)
-	qr.URL = url + "/" + qr.URL
+	transport := irma.NewHTTPTransport("http://localhost:48682")
+	var qr irma.Qr
+	err := transport.Post("create", &qr, request)
+	require.NoError(t, err)
+	qr.URL = "http://localhost:48682/irma/" + qr.URL
+
+	//jwt := getJwt(t, request, url)
+	//url = "http://localhost:8088/irma_api_server/api/v2/" + url
+	//qr, transportErr := startSession(jwt, url)
+	//if transportErr != nil {
+	//	fmt.Printf("+%v\n", transportErr)
+	//}
+	//require.NoError(t, transportErr)
+	//qr.URL = url + "/" + qr.URL
 
 	c := make(chan *SessionResult)
 	h := TestHandler{t, c, client}

@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func StartRequestorServer(t *testing.T) {
-	testdata := test.FindTestdataFolder(t)
+func StartRequestorServer() {
+	testdata := test.FindTestdataFolder(nil)
 
 	logger := logrus.New()
 	logger.Level = logrus.WarnLevel
@@ -30,19 +30,18 @@ func StartRequestorServer(t *testing.T) {
 			},
 			Port: 48682,
 		})
-		require.NoError(t, err)
+		if err != nil {
+			panic("Starting server failed: " + err.Error())
+		}
 	}()
 	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
-func StopRequestorServer(t *testing.T) {
+func StopRequestorServer() {
 	server.Stop()
 }
 
 func serverSessionHelper(t *testing.T, request irma.SessionRequest) *irmaserver.SessionResult {
-	StartRequestorServer(t)
-	defer StopRequestorServer(t)
-
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
