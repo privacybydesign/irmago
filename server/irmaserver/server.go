@@ -21,8 +21,28 @@ var s *http.Server
 
 // Start the server. If successful then it will not return until Stop() is called.
 func Start(conf *Configuration) error {
-	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
+	handler, err := Handler(conf.Configuration)
+	if err != nil {
 		return err
+	}
+
+	// Start server
+	s = &http.Server{Addr: fmt.Sprintf(":%d", conf.Port), Handler: handler}
+	err = s.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return nil // Server was closed normally
+	}
+
+	return err
+}
+
+func Stop() {
+	s.Close()
+}
+
+func Handler(conf *server.Configuration) (http.Handler, error) {
+	if err := irmarequestor.Initialize(conf); err != nil {
+		return nil, err
 	}
 
 	router := chi.NewRouter()
@@ -35,17 +55,7 @@ func Start(conf *Configuration) error {
 	router.Get("/status/{token}", handleStatus)
 	router.Get("/result/{token}", handleResult)
 
-	// Start server
-	s = &http.Server{Addr: fmt.Sprintf(":%d", conf.Port), Handler: router}
-	err := s.ListenAndServe()
-	if err == http.ErrServerClosed {
-		return nil // Server was closed normally
-	}
-	return err
-}
-
-func Stop() {
-	s.Close()
+	return router, nil
 }
 
 func handleCreate(w http.ResponseWriter, r *http.Request) {
