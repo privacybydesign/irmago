@@ -3,7 +3,7 @@ package backend
 import (
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaserver"
+	"github.com/privacybydesign/irmago/server"
 )
 
 // This file contains the handler functions for the protocol messages, receiving and returning normally
@@ -11,7 +11,7 @@ import (
 // Maintaining the session state is done here, as well as checking whether the session is in the
 // appropriate status before handling the request.
 
-var conf *irmaserver.Configuration
+var conf *server.Configuration
 
 func (session *session) handleDelete() {
 	if session.finished() {
@@ -19,29 +19,29 @@ func (session *session) handleDelete() {
 	}
 	session.markAlive()
 
-	session.result = &irmaserver.SessionResult{Token: session.token, Status: irmaserver.StatusCancelled}
-	session.setStatus(irmaserver.StatusCancelled)
+	session.result = &server.SessionResult{Token: session.token, Status: server.StatusCancelled}
+	session.setStatus(server.StatusCancelled)
 }
 
 func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
-	if session.status != irmaserver.StatusInitialized {
-		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session already started")
+	if session.status != server.StatusInitialized {
+		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
 	session.markAlive()
 
 	var err error
 	if session.version, err = chooseProtocolVersion(min, max); err != nil {
-		return nil, session.fail(irmaserver.ErrorProtocolVersion, "")
+		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
 	session.request.SetVersion(session.version)
 
-	session.setStatus(irmaserver.StatusConnected)
+	session.setStatus(server.StatusConnected)
 	return session.request, nil
 }
 
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ProofStatus, *irma.RemoteError) {
-	if session.status != irmaserver.StatusConnected {
-		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
+	if session.status != server.StatusConnected {
+		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
 
@@ -51,21 +51,21 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(
 		conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
 	if err == nil {
-		session.setStatus(irmaserver.StatusDone)
+		session.setStatus(server.StatusDone)
 	} else {
-		session.setStatus(irmaserver.StatusCancelled)
+		session.setStatus(server.StatusCancelled)
 		if err == irma.ErrorMissingPublicKey {
-			rerr = session.fail(irmaserver.ErrorUnknownPublicKey, err.Error())
+			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 		} else {
-			rerr = session.fail(irmaserver.ErrorUnknown, err.Error())
+			rerr = session.fail(server.ErrorUnknown, err.Error())
 		}
 	}
 	return &session.result.ProofStatus, rerr
 }
 
 func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStatus, *irma.RemoteError) {
-	if session.status != irmaserver.StatusConnected {
-		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
+	if session.status != server.StatusConnected {
+		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
 
@@ -74,35 +74,35 @@ func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStat
 	session.result.Disclosed, session.result.ProofStatus, err = irma.ProofList(proofs).Verify(
 		conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
 	if err == nil {
-		session.setStatus(irmaserver.StatusDone)
+		session.setStatus(server.StatusDone)
 	} else {
-		session.setStatus(irmaserver.StatusCancelled)
+		session.setStatus(server.StatusCancelled)
 		if err == irma.ErrorMissingPublicKey {
-			rerr = session.fail(irmaserver.ErrorUnknownPublicKey, err.Error())
+			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 		} else {
-			rerr = session.fail(irmaserver.ErrorUnknown, err.Error())
+			rerr = session.fail(server.ErrorUnknown, err.Error())
 		}
 	}
 	return &session.result.ProofStatus, rerr
 }
 
 func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
-	if session.status != irmaserver.StatusConnected {
-		return nil, irmaserver.RemoteError(irmaserver.ErrorUnexpectedRequest, "Session not yet started or already finished")
+	if session.status != server.StatusConnected {
+		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
 
 	request := session.request.(*irma.IssuanceRequest)
 	discloseCount := len(request.Disclose)
 	if len(commitments.Proofs) != len(request.Credentials)+discloseCount {
-		return nil, session.fail(irmaserver.ErrorAttributesMissing, "")
+		return nil, session.fail(server.ErrorAttributesMissing, "")
 	}
 
 	// Compute list of public keys against which to verify the received proofs
 	disclosureproofs := irma.ProofList(commitments.Proofs[:discloseCount])
 	pubkeys, err := disclosureproofs.ExtractPublicKeys(conf.IrmaConfiguration)
 	if err != nil {
-		return nil, session.fail(irmaserver.ErrorInvalidProofs, err.Error())
+		return nil, session.fail(server.ErrorInvalidProofs, err.Error())
 	}
 	for _, cred := range request.Credentials {
 		iss := cred.CredentialTypeID.IssuerIdentifier()
@@ -117,7 +117,7 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 		if conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
 			proofP, err := session.getProofP(commitments, schemeid)
 			if err != nil {
-				return nil, session.fail(irmaserver.ErrorKeyshareProofMissing, err.Error())
+				return nil, session.fail(server.ErrorKeyshareProofMissing, err.Error())
 			}
 			proof.MergeProofP(proofP, pubkey)
 		}
@@ -128,16 +128,16 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 		conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
 	if err != nil {
 		if err == irma.ErrorMissingPublicKey {
-			return nil, session.fail(irmaserver.ErrorUnknownPublicKey, "")
+			return nil, session.fail(server.ErrorUnknownPublicKey, "")
 		} else {
-			return nil, session.fail(irmaserver.ErrorUnknown, "")
+			return nil, session.fail(server.ErrorUnknown, "")
 		}
 	}
 	if session.result.ProofStatus == irma.ProofStatusExpired {
-		return nil, session.fail(irmaserver.ErrorAttributesExpired, "")
+		return nil, session.fail(server.ErrorAttributesExpired, "")
 	}
 	if session.result.ProofStatus != irma.ProofStatusValid {
-		return nil, session.fail(irmaserver.ErrorInvalidProofs, "")
+		return nil, session.fail(server.ErrorInvalidProofs, "")
 	}
 
 	// Compute CL signatures
@@ -149,15 +149,15 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 		proof := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
 		attributes, err := cred.AttributeList(conf.IrmaConfiguration, 0x03)
 		if err != nil {
-			return nil, session.fail(irmaserver.ErrorIssuanceFailed, err.Error())
+			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
 		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, commitments.Nonce2)
 		if err != nil {
-			return nil, session.fail(irmaserver.ErrorIssuanceFailed, err.Error())
+			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
 		sigs = append(sigs, sig)
 	}
 
-	session.setStatus(irmaserver.StatusDone)
+	session.setStatus(server.StatusDone)
 	return sigs, nil
 }

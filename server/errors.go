@@ -1,4 +1,4 @@
-package irmaserver
+package server
 
 type Error struct {
 	Type        ErrorType `json:"error"`

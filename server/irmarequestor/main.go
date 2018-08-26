@@ -5,15 +5,15 @@ import (
 	"net/http"
 
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaserver"
-	"github.com/privacybydesign/irmago/irmaserver/backend"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/backend"
 )
 
-type SessionHandler func(*irmaserver.SessionResult)
+type SessionHandler func(*server.SessionResult)
 
 var handlers = make(map[string]SessionHandler)
 
-func Initialize(configuration *irmaserver.Configuration) error {
+func Initialize(configuration *server.Configuration) error {
 	return backend.Initialize(configuration)
 }
 
@@ -28,7 +28,7 @@ func StartSession(request irma.SessionRequest, handler SessionHandler) (*irma.Qr
 	return qr, token, nil
 }
 
-func GetSessionResult(token string) *irmaserver.SessionResult {
+func GetSessionResult(token string) *server.SessionResult {
 	return backend.GetSessionResult(token)
 }
 

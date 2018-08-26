@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/irmaserver"
-	"github.com/privacybydesign/irmago/irmaserver/server"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 )
 
 func main() {
@@ -31,8 +31,8 @@ func main() {
 		return
 	}
 
-	err = server.Start(&server.Configuration{
-		Configuration: &irmaserver.Configuration{
+	err = irmaserver.Start(&irmaserver.Configuration{
+		Configuration: &server.Configuration{
 			IrmaConfigurationPath: os.Args[2],
 		},
 		Port: port,

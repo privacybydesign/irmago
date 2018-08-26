@@ -9,8 +9,8 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/irmaserver"
-	"github.com/privacybydesign/irmago/irmaserver/irmarequestor"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmarequestor"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func StartIrmaServer(t *testing.T) {
 	logger := logrus.New()
 	logger.Level = logrus.WarnLevel
 	logger.Formatter = &logrus.TextFormatter{}
-	require.NoError(t, irmarequestor.Initialize(&irmaserver.Configuration{
+	require.NoError(t, irmarequestor.Initialize(&server.Configuration{
 		Logger:                logger,
 		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
 		PrivateKeysPath:       filepath.Join(testdata, "privatekeys"),
@@ -40,7 +40,7 @@ func StopIrmaServer() {
 	irmaServer.Close()
 }
 
-func newSessionHelper(t *testing.T, request irma.SessionRequest) *irmaserver.SessionResult {
+func newSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
 	StartIrmaServer(t)
 	defer StopIrmaServer()
 
@@ -48,9 +48,9 @@ func newSessionHelper(t *testing.T, request irma.SessionRequest) *irmaserver.Ses
 	defer test.ClearTestStorage(t)
 
 	clientChan := make(chan *SessionResult)
-	serverChan := make(chan *irmaserver.SessionResult)
+	serverChan := make(chan *server.SessionResult)
 
-	qr, token, err := irmarequestor.StartSession(request, func(result *irmaserver.SessionResult) {
+	qr, token, err := irmarequestor.StartSession(request, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)

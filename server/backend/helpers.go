@@ -8,30 +8,30 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaserver"
+	"github.com/privacybydesign/irmago/server"
 )
 
 // Session helpers
 
 func (session *session) finished() bool {
-	return session.status == irmaserver.StatusDone ||
-		session.status == irmaserver.StatusCancelled ||
-		session.status == irmaserver.StatusTimeout
+	return session.status == server.StatusDone ||
+		session.status == server.StatusCancelled ||
+		session.status == server.StatusTimeout
 }
 
 func (session *session) markAlive() {
 	session.lastActive = time.Now()
 }
 
-func (session *session) setStatus(status irmaserver.Status) {
+func (session *session) setStatus(status server.Status) {
 	session.status = status
 	session.result.Status = status
 }
 
-func (session *session) fail(err irmaserver.Error, message string) *irma.RemoteError {
-	rerr := irmaserver.RemoteError(err, message)
-	session.setStatus(irmaserver.StatusCancelled)
-	session.result = &irmaserver.SessionResult{Err: rerr, Token: session.token, Status: irmaserver.StatusCancelled}
+func (session *session) fail(err server.Error, message string) *irma.RemoteError {
+	rerr := server.RemoteError(err, message)
+	session.setStatus(server.StatusCancelled)
+	session.result = &server.SessionResult{Err: rerr, Token: session.token, Status: server.StatusCancelled}
 	return rerr
 }
 

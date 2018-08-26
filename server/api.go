@@ -1,4 +1,4 @@
-package irmaserver
+package server
 
 import (
 	"encoding/json"

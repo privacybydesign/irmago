@@ -13,10 +13,10 @@ import (
 	"github.com/mhe/gabi"
 	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaserver"
+	"github.com/privacybydesign/irmago/server"
 )
 
-func Initialize(configuration *irmaserver.Configuration) error {
+func Initialize(configuration *server.Configuration) error {
 	conf = configuration
 
 	if conf.Logger == nil {
@@ -24,7 +24,7 @@ func Initialize(configuration *irmaserver.Configuration) error {
 		conf.Logger.Level = logrus.DebugLevel
 		conf.Logger.Formatter = &logrus.TextFormatter{}
 	}
-	irmaserver.Logger = conf.Logger
+	server.Logger = conf.Logger
 
 	if conf.IrmaConfiguration == nil {
 		var err error
@@ -102,7 +102,7 @@ func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
 	}, session.token, nil
 }
 
-func GetSessionResult(token string) *irmaserver.SessionResult {
+func GetSessionResult(token string) *server.SessionResult {
 	session := sessions.get(token)
 	if session == nil {
 		return nil
@@ -115,7 +115,7 @@ func HandleProtocolMessage(
 	method string,
 	headers map[string][]string,
 	message []byte,
-) (status int, output []byte, result *irmaserver.SessionResult) {
+) (status int, output []byte, result *server.SessionResult) {
 	// Parse path into session and action
 	if len(path) > 0 { // Remove any starting and trailing slash
 		if path[0] == '/' {
@@ -130,7 +130,7 @@ func HandleProtocolMessage(
 	matches := pattern.FindStringSubmatch(path)
 	if len(matches) != 3 {
 		conf.Logger.Warnf("Invalid URL: %s", path)
-		status, output = irmaserver.JsonResponse(nil, irmaserver.RemoteError(irmaserver.ErrorInvalidRequest, ""))
+		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
 		return
 	}
 
@@ -140,7 +140,7 @@ func HandleProtocolMessage(
 	session := sessions.get(token)
 	if session == nil {
 		conf.Logger.Warnf("Session not found: %s", token)
-		status, output = irmaserver.JsonResponse(nil, irmaserver.RemoteError(irmaserver.ErrorSessionUnknown, ""))
+		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorSessionUnknown, ""))
 		return
 	}
 	session.Lock()
@@ -170,53 +170,53 @@ func HandleProtocolMessage(
 			min := &irma.ProtocolVersion{}
 			max := &irma.ProtocolVersion{}
 			if err := json.Unmarshal([]byte(h.Get(irma.MinVersionHeader)), min); err != nil {
-				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, err.Error()))
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
 				return
 			}
 			if err := json.Unmarshal([]byte(h.Get(irma.MaxVersionHeader)), max); err != nil {
-				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, err.Error()))
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
 				return
 			}
-			status, output = irmaserver.JsonResponse(session.handleGetRequest(min, max))
+			status, output = server.JsonResponse(session.handleGetRequest(min, max))
 			return
 		}
-		status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
+		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 		return
 	default:
 		if method != http.MethodPost {
-			status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
+			status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 			return
 		}
 
 		if verb == "commitments" && session.action == irma.ActionIssuing {
 			commitments := &gabi.IssueCommitmentMessage{}
 			if err := irma.UnmarshalValidate(message, commitments); err != nil {
-				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
 				return
 			}
-			status, output = irmaserver.JsonResponse(session.handlePostCommitments(commitments))
+			status, output = server.JsonResponse(session.handlePostCommitments(commitments))
 			return
 		}
 		if verb == "proofs" && session.action == irma.ActionDisclosing {
 			proofs := gabi.ProofList{}
 			if err := irma.UnmarshalValidate(message, &proofs); err != nil {
-				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
 				return
 			}
-			status, output = irmaserver.JsonResponse(session.handlePostProofs(proofs))
+			status, output = server.JsonResponse(session.handlePostProofs(proofs))
 			return
 		}
 		if verb == "proofs" && session.action == irma.ActionSigning {
 			signature := &irma.SignedMessage{}
 			if err := irma.UnmarshalValidate(message, signature); err != nil {
-				status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorMalformedInput, ""))
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
 				return
 			}
-			status, output = irmaserver.JsonResponse(session.handlePostSignature(signature))
+			status, output = server.JsonResponse(session.handlePostSignature(signature))
 			return
 		}
 
-		status, output = irmaserver.JsonResponse(nil, session.fail(irmaserver.ErrorInvalidRequest, ""))
+		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 		return
 	}
 }

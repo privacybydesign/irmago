@@ -9,8 +9,8 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/irmaserver"
-	"github.com/privacybydesign/irmago/irmaserver/server"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,8 +22,8 @@ func StartRequestorServer() {
 	logger.Formatter = &logrus.TextFormatter{}
 
 	go func() {
-		err := server.Start(&server.Configuration{
-			Configuration: &irmaserver.Configuration{
+		err := irmaserver.Start(&irmaserver.Configuration{
+			Configuration: &server.Configuration{
 				Logger:                logger,
 				IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
 				PrivateKeysPath:       filepath.Join(testdata, "privatekeys"),
@@ -38,10 +38,10 @@ func StartRequestorServer() {
 }
 
 func StopRequestorServer() {
-	server.Stop()
+	irmaserver.Stop()
 }
 
-func serverSessionHelper(t *testing.T, request irma.SessionRequest) *irmaserver.SessionResult {
+func serverSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
@@ -64,7 +64,7 @@ func serverSessionHelper(t *testing.T, request irma.SessionRequest) *irmaserver.
 		require.NoError(t, clientResult.Err)
 	}
 
-	var result irmaserver.SessionResult
+	var result server.SessionResult
 	transport.Get("result/"+token, &result)
 	return &result
 }

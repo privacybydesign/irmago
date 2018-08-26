@@ -8,7 +8,7 @@ import (
 	"github.com/mhe/gabi"
 	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaserver"
+	"github.com/privacybydesign/irmago/server"
 )
 
 type session struct {
@@ -19,10 +19,10 @@ type session struct {
 	version *irma.ProtocolVersion
 	request irma.SessionRequest
 
-	status     irmaserver.Status
+	status     server.Status
 	lastActive time.Time
 	returned   bool
-	result     *irmaserver.SessionResult
+	result     *server.SessionResult
 
 	kssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
 }
@@ -86,7 +86,7 @@ func (s memorySessionStore) deleteExpired() {
 			if !session.finished() {
 				conf.Logger.Infof("Session %s expired", token)
 				session.markAlive()
-				session.setStatus(irmaserver.StatusTimeout)
+				session.setStatus(server.StatusTimeout)
 			} else {
 				conf.Logger.Infof("Deleting %s", token)
 				expired = append(expired, token)
@@ -118,11 +118,11 @@ func newSession(action irma.Action, request irma.SessionRequest) *session {
 		request:    request,
 		lastActive: time.Now(),
 		token:      token,
-		result: &irmaserver.SessionResult{
+		result: &server.SessionResult{
 			Token: token,
 		},
 	}
-	s.setStatus(irmaserver.StatusInitialized)
+	s.setStatus(server.StatusInitialized)
 	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
 	request.SetNonce(nonce)
 	request.SetContext(one)
