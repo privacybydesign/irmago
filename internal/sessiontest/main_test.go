@@ -15,8 +15,8 @@ func TestMain(m *testing.M) {
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
 
-	StartRequestorServer()
-	defer StopRequestorServer()
+	StartIrmaServer()
+	defer StopIrmaServer()
 
 	test.CreateTestStorage(nil)
 	defer test.ClearTestStorage(nil)

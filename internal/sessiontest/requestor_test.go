@@ -16,7 +16,7 @@ import (
 
 var irmaServer *http.Server
 
-func StartIrmaServer(t *testing.T) {
+func StartIrmaClientServer(t *testing.T) {
 	testdata := test.FindTestdataFolder(t)
 
 	logger := logrus.New()
@@ -36,13 +36,13 @@ func StartIrmaServer(t *testing.T) {
 	}()
 }
 
-func StopIrmaServer() {
+func StopIrmaClientServer() {
 	irmaServer.Close()
 }
 
-func newSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
-	StartIrmaServer(t)
-	defer StopIrmaServer()
+func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
+	StartIrmaClientServer(t)
+	defer StopIrmaClientServer()
 
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)
@@ -71,9 +71,9 @@ func newSessionHelper(t *testing.T, request irma.SessionRequest) *server.Session
 	return serverResult
 }
 
-func TestNewSignatureSession(t *testing.T) {
+func TestRequestorSignatureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	serverResult := newSessionHelper(t, &irma.SignatureRequest{
+	serverResult := requestorSessionHelper(t, &irma.SignatureRequest{
 		Message: "message",
 		DisclosureRequest: irma.DisclosureRequest{
 			BaseRequest: irma.BaseRequest{Type: irma.ActionSigning},
@@ -91,9 +91,9 @@ func TestNewSignatureSession(t *testing.T) {
 	require.Equal(t, "456", serverResult.Disclosed[0].Value["en"])
 }
 
-func TestNewDisclosureSession(t *testing.T) {
+func TestRequestorDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	serverResult := newSessionHelper(t, &irma.DisclosureRequest{
+	serverResult := requestorSessionHelper(t, &irma.DisclosureRequest{
 		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
 		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 			Label:      "foo",
@@ -109,7 +109,7 @@ func TestNewDisclosureSession(t *testing.T) {
 
 }
 
-func TestNewIssuanceSession(t *testing.T) {
+func TestRequestorIssuanceSession(t *testing.T) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := &irma.IssuanceRequest{
 		BaseRequest: irma.BaseRequest{Type: irma.ActionIssuing},
@@ -136,7 +136,7 @@ func TestNewIssuanceSession(t *testing.T) {
 		Attributes: []irma.AttributeTypeIdentifier{attrid},
 	}}
 
-	result := newSessionHelper(t, request)
+	result := requestorSessionHelper(t, request)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)

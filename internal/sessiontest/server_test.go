@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func StartRequestorServer() {
+func StartIrmaServer() {
 	testdata := test.FindTestdataFolder(nil)
 
 	logger := logrus.New()
@@ -37,7 +37,7 @@ func StartRequestorServer() {
 	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
-func StopRequestorServer() {
+func StopIrmaServer() {
 	irmaserver.Stop()
 }
 
@@ -69,7 +69,7 @@ func serverSessionHelper(t *testing.T, request irma.SessionRequest) *server.Sess
 	return &result
 }
 
-func TestRequestorServer(t *testing.T) {
+func TestIrmaServer(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	serverResult := serverSessionHelper(t, &irma.DisclosureRequest{
 		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
