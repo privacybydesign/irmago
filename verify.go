@@ -147,18 +147,30 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 		}
 
 		for k, v := range proofd.ADisclosed {
-			if k < 2 {
-				continue // skip metadata attribute
+			if k == 0 {
+				continue // Should never be disclosed, but skip it to be sure
 			}
 
-			attrid := credtype.Attributes[k-2].GetAttributeTypeIdentifier()
-			attrval := decodeAttribute(v, metadata.Version())
-			attr := &DisclosedAttribute{
+			var attrid AttributeTypeIdentifier
+			var attrval *string
+			var attr *DisclosedAttribute
+			if k == 1 {
+				attrid = NewAttributeTypeIdentifier(credtype.Identifier().String())
+				p := "present"
+				attrval = &p
+			} else {
+				attrid = credtype.Attributes[k-2].GetAttributeTypeIdentifier()
+				attrval = decodeAttribute(v, metadata.Version())
+			}
+			attr = &DisclosedAttribute{
 				Value:      translateAttribute(attrval),
 				Identifier: attrid,
 				Status:     AttributeProofStatusExtra,
 			}
-			extraAttrs[attrid] = attr
+
+			if k < 2 { // Never add metadata (i.e. no-attribute disclosure) as extra
+				extraAttrs[attrid] = attr
+			}
 			if len(disjunctions) == 0 {
 				continue
 			}
