@@ -60,7 +60,7 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 
 		// Ensure the credential has an expiry date
-		defaultValidity := irma.Timestamp(time.Now().Add(6 * time.Hour))
+		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
