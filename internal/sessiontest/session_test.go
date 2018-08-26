@@ -18,25 +18,27 @@ func init() {
 	irma.ForceHttps = false
 }
 
-func getDisclosureJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
-	return irma.NewServiceProviderJwt(name, &irma.DisclosureRequest{
+func getDisclosureRequest(id irma.AttributeTypeIdentifier) *irma.DisclosureRequest {
+	return &irma.DisclosureRequest{
+		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
 		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 			Label:      "foo",
 			Attributes: []irma.AttributeTypeIdentifier{id},
 		}}),
-	})
+	}
 }
 
-func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
-	return irma.NewSignatureRequestorJwt(name, &irma.SignatureRequest{
+func getSigningRequest(id irma.AttributeTypeIdentifier) *irma.SignatureRequest {
+	return &irma.SignatureRequest{
 		Message: "test",
 		DisclosureRequest: irma.DisclosureRequest{
+			BaseRequest: irma.BaseRequest{Type: irma.ActionSigning},
 			Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 				Label:      "foo",
 				Attributes: []irma.AttributeTypeIdentifier{id},
 			}}),
 		},
-	})
+	}
 }
 
 func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
@@ -48,6 +50,7 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 	}
 
 	return &irma.IssuanceRequest{
+		BaseRequest: irma.BaseRequest{Type: irma.ActionIssuing},
 		Credentials: []*irma.CredentialRequest{
 			{
 				Validity:         expiry,
@@ -73,6 +76,7 @@ func getNameIssuanceRequest() *irma.IssuanceRequest {
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 
 	req := &irma.IssuanceRequest{
+		BaseRequest: irma.BaseRequest{Type: irma.ActionIssuing},
 		Credentials: []*irma.CredentialRequest{
 			{
 				Validity:         &expiry,
@@ -89,21 +93,18 @@ func getNameIssuanceRequest() *irma.IssuanceRequest {
 	return req
 }
 
-func getIssuanceJwt(name string, defaultValidity bool, attribute string) interface{} {
-	jwt := irma.NewIdentityProviderJwt(name, getIssuanceRequest(defaultValidity))
-	if attribute != "" {
-		jwt.Request.Request.Credentials[0].Attributes["studentCardNumber"] = attribute
-	}
-	return jwt
-
+func getSpecialIssuanceRequest(defaultValidity bool, attribute string) *irma.IssuanceRequest {
+	request := getIssuanceRequest(defaultValidity)
+	request.Credentials[0].Attributes["studentCardNumber"] = attribute
+	return request
 }
 
-func getCombinedJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
-	isreq := getIssuanceRequest(false)
-	isreq.Disclose = irma.AttributeDisjunctionList{
+func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceRequest {
+	request := getIssuanceRequest(false)
+	request.Disclose = irma.AttributeDisjunctionList{
 		&irma.AttributeDisjunction{Label: "foo", Attributes: []irma.AttributeTypeIdentifier{id}},
 	}
-	return irma.NewIdentityProviderJwt(name, isreq)
+	return request
 }
 
 // startSession starts an IRMA session by posting the request,
@@ -118,21 +119,33 @@ func startSession(request interface{}, url string) (*irma.Qr, error) {
 	return &response, nil
 }
 
-func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *irmaclient.Client) {
-	if client == nil {
-		client = parseStorage(t)
-		defer test.ClearTestStorage(t)
+func getJwt(t *testing.T, request irma.SessionRequest, url string) string {
+	var jwtcontents interface{}
+	switch url {
+	case "issue":
+		jwtcontents = irma.NewIdentityProviderJwt("testip", request.(*irma.IssuanceRequest))
+	case "verification":
+		jwtcontents = irma.NewServiceProviderJwt("testsp", request.(*irma.DisclosureRequest))
+	case "signature":
+		jwtcontents = irma.NewSignatureRequestorJwt("testsigclient", request.(*irma.SignatureRequest))
 	}
-
-	url = "http://localhost:8088/irma_api_server/api/v2/" + url
-	//url = "https://demo.irmacard.org/tomcat/irma_api_server/api/v2/" + url
 
 	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
 	require.NoError(t, err)
 	bodybytes, err := json.Marshal(jwtcontents)
 	require.NoError(t, err)
 
-	jwt := base64.RawStdEncoding.EncodeToString(headerbytes) + "." + base64.RawStdEncoding.EncodeToString(bodybytes) + "."
+	return base64.RawStdEncoding.EncodeToString(headerbytes) + "." + base64.RawStdEncoding.EncodeToString(bodybytes) + "."
+}
+
+func sessionHelper(t *testing.T, request irma.SessionRequest, url string, client *irmaclient.Client) {
+	if client == nil {
+		client = parseStorage(t)
+		defer test.ClearTestStorage(t)
+	}
+
+	jwt := getJwt(t, request, url)
+	url = "http://localhost:8088/irma_api_server/api/v2/" + url
 	qr, transportErr := startSession(jwt, url)
 	if transportErr != nil {
 		fmt.Printf("+%v\n", transportErr)
@@ -154,94 +167,80 @@ func sessionHelper(t *testing.T, jwtcontents interface{}, url string, client *ir
 func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
-	jwt := getCombinedJwt("testip", id)
-	jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials = append(
-		jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials,
+	issuanceRequest := getCombinedIssuanceRequest(id)
+	issuanceRequest.Credentials = append(issuanceRequest.Credentials,
 		&irma.CredentialRequest{
 			Validity:         &expiry,
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
-	sessionHelper(t, jwt, "issue", client)
+	sessionHelper(t, issuanceRequest, "issue", client)
 
-	jwt = getDisclosureJwt("testsp", id)
-	jwt.(*irma.ServiceProviderJwt).Request.Request.Content = append(
-		jwt.(*irma.ServiceProviderJwt).Request.Request.Content,
+	disclosureRequest := getDisclosureRequest(id)
+	disclosureRequest.Content = append(disclosureRequest.Content,
 		&irma.AttributeDisjunction{
 			Label:      "foo",
 			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "verification", client)
+	sessionHelper(t, disclosureRequest, "verification", client)
 
-	jwt = getSigningJwt("testsigclient", id)
-	jwt.(*irma.SignatureRequestorJwt).Request.Request.Content = append(
-		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content,
+	sigRequest := getSigningRequest(id)
+	sigRequest.Content = append(sigRequest.Content,
 		&irma.AttributeDisjunction{
 			Label:      "foo",
 			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		},
 	)
-	sessionHelper(t, jwt, "signature", client)
+	sessionHelper(t, sigRequest, "signature", client)
 }
 
 func TestSigningSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	name := "testsigclient"
-
-	jwtcontents := getSigningJwt(name, id)
-	sessionHelper(t, jwtcontents, "signature", nil)
+	request := getSigningRequest(id)
+	sessionHelper(t, request, "signature", nil)
 }
 
 func TestDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	name := "testsp"
-
-	jwtcontents := getDisclosureJwt(name, id)
-	sessionHelper(t, jwtcontents, "verification", nil)
+	request := getDisclosureRequest(id)
+	sessionHelper(t, request, "verification", nil)
 }
 
 func TestNoAttributeDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard")
-	name := "testsp"
-
-	jwtcontents := getDisclosureJwt(name, id)
-	sessionHelper(t, jwtcontents, "verification", nil)
+	request := getDisclosureRequest(id)
+	sessionHelper(t, request, "verification", nil)
 }
 
 func TestIssuanceSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	name := "testip"
-
-	jwtcontents := getCombinedJwt(name, id)
-	sessionHelper(t, jwtcontents, "issue", nil)
+	request := getCombinedIssuanceRequest(id)
+	sessionHelper(t, request, "issue", nil)
 }
 
 func TestDefaultCredentialValidity(t *testing.T) {
 	client := parseStorage(t)
-	jwtcontents := getIssuanceJwt("testip", true, "")
-	sessionHelper(t, jwtcontents, "issue", client)
+	request := getIssuanceRequest(true)
+	sessionHelper(t, request, "issue", client)
 }
 
 func TestIssuanceOptionalEmptyAttributes(t *testing.T) {
 	req := getNameIssuanceRequest()
-	jwt := irma.NewIdentityProviderJwt("testip", req)
-	sessionHelper(t, jwt, "issue", nil)
+	sessionHelper(t, req, "issue", nil)
 }
 
 func TestIssuanceOptionalZeroLengthAttributes(t *testing.T) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = ""
-	jwt := irma.NewIdentityProviderJwt("testip", req)
-	sessionHelper(t, jwt, "issue", nil)
+	sessionHelper(t, req, "issue", nil)
 }
 
 func TestIssuanceOptionalSetAttributes(t *testing.T) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = "van"
-	jwt := irma.NewIdentityProviderJwt("testip", req)
-	sessionHelper(t, jwt, "issue", nil)
+	sessionHelper(t, req, "issue", nil)
 }
 
 func TestLargeAttribute(t *testing.T) {
@@ -250,27 +249,27 @@ func TestLargeAttribute(t *testing.T) {
 
 	require.NoError(t, client.RemoveAllCredentials())
 
-	jwtcontents := getIssuanceJwt("testip", false, "1234567890123456789012345678901234567890") // 40 chars
-	sessionHelper(t, jwtcontents, "issue", client)
+	issuanceRequest := getSpecialIssuanceRequest(false, "1234567890123456789012345678901234567890") // 40 chars
+	sessionHelper(t, issuanceRequest, "issue", client)
 
-	jwtcontents = getDisclosureJwt("testsp", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
-	sessionHelper(t, jwtcontents, "verification", client)
+	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
+	sessionHelper(t, disclosureRequest, "verification", client)
 }
 
 func TestIssuanceSingletonCredential(t *testing.T) {
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
-	jwtcontents := getIssuanceJwt("testip", true, "")
+	request := getIssuanceRequest(true)
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 
 	require.Nil(t, client.Attributes(credid, 0))
 
-	sessionHelper(t, jwtcontents, "issue", client)
+	sessionHelper(t, request, "issue", client)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 
-	sessionHelper(t, jwtcontents, "issue", client)
+	sessionHelper(t, request, "issue", client)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 }
@@ -291,8 +290,8 @@ func TestAttributeByteEncoding(t *testing.T) {
 	Java this results in an extra 0 byte being prepended in order to have a 0 instead as most
 	significant (sign) bit. We test that the Java implementation correctly removes the extraneous
 	0 byte. */
-	jwtcontents := getIssuanceJwt("testip", false, "a23456789012345678901234567890")
-	sessionHelper(t, jwtcontents, "issue", client)
+	request := getSpecialIssuanceRequest(false, "a23456789012345678901234567890")
+	sessionHelper(t, request, "issue", client)
 
 	/* After converting the attribute below to bytes (using UTF8, on which Java and Go do agree),
 	the most significant bit of the byte version of this attribute is 1. In the []byte->bigint
@@ -300,8 +299,8 @@ func TestAttributeByteEncoding(t *testing.T) {
 	afterwards), this results in a negative number in Java and a positive number in Go. We test
 	here that the Java correctly prepends a 0 byte just before this conversion in order to get
 	the same positive bigint. */
-	jwtcontents = getIssuanceJwt("testip", false, "é")
-	sessionHelper(t, jwtcontents, "issue", client)
+	request = getSpecialIssuanceRequest(false, "é")
+	sessionHelper(t, request, "issue", client)
 }
 
 // Use the existing keyshare enrollment and credentials
@@ -398,8 +397,8 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
 
 	// Do a session to test downloading of cred types, issuers and keys
-	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sessionHelper(t, jwt, "issue", client)
+	request := getCombinedIssuanceRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	sessionHelper(t, request, "issue", client)
 
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
 	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
