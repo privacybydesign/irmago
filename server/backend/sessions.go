@@ -120,6 +120,7 @@ func newSession(action irma.Action, request irma.SessionRequest) *session {
 		token:      token,
 		result: &server.SessionResult{
 			Token: token,
+			Type:  action,
 		},
 	}
 	s.setStatus(server.StatusInitialized)

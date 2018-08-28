@@ -25,6 +25,7 @@ type Configuration struct {
 type SessionResult struct {
 	Token       string
 	Status      Status
+	Type        irma.Action
 	ProofStatus irma.ProofStatus
 	Disclosed   []*irma.DisclosedAttribute
 	Signature   *irma.SignedMessage
@@ -81,4 +82,10 @@ func WriteJson(w http.ResponseWriter, object interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(bts)
+}
+
+func WriteString(w http.ResponseWriter, str string) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(str))
 }
