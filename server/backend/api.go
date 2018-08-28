@@ -37,11 +37,11 @@ func Initialize(configuration *server.Configuration) error {
 		}
 	}
 
-	if conf.PrivateKeys == nil {
-		conf.PrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
+	if conf.IssuerPrivateKeys == nil {
+		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
 	}
-	if conf.PrivateKeysPath != "" {
-		files, err := ioutil.ReadDir(conf.PrivateKeysPath)
+	if conf.IssuerPrivateKeysPath != "" {
+		files, err := ioutil.ReadDir(conf.IssuerPrivateKeysPath)
 		if err != nil {
 			return err
 		}
@@ -51,14 +51,14 @@ func Initialize(configuration *server.Configuration) error {
 			if _, ok := conf.IrmaConfiguration.Issuers[issid]; !ok {
 				return errors.Errorf("Private key %s belongs to an unknown issuer", filename)
 			}
-			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(conf.PrivateKeysPath, filename))
+			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(conf.IssuerPrivateKeysPath, filename))
 			if err != nil {
 				return err
 			}
-			conf.PrivateKeys[issid] = sk
+			conf.IssuerPrivateKeys[issid] = sk
 		}
 	}
-	for issid, sk := range conf.PrivateKeys {
+	for issid, sk := range conf.IssuerPrivateKeys {
 		pk, err := conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
 		if err != nil {
 			return err

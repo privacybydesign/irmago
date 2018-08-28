@@ -145,7 +145,7 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 	for i, cred := range request.Credentials {
 		id := cred.CredentialTypeID.IssuerIdentifier()
 		pk, _ := conf.IrmaConfiguration.PublicKey(id, cred.KeyCounter)
-		issuer := gabi.NewIssuer(conf.PrivateKeys[id], pk, one)
+		issuer := gabi.NewIssuer(conf.IssuerPrivateKeys[id], pk, one)
 		proof := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
 		attributes, err := cred.AttributeList(conf.IrmaConfiguration, 0x03)
 		if err != nil {

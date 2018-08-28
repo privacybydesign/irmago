@@ -41,7 +41,7 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	for _, cred := range request.Credentials {
 		// Check that we have the appropriate private key
 		iss := cred.CredentialTypeID.IssuerIdentifier()
-		privatekey, havekey := conf.PrivateKeys[iss]
+		privatekey, havekey := conf.IssuerPrivateKeys[iss]
 		if !havekey {
 			return errors.Errorf("missing private key of issuer %s", iss.String())
 		}

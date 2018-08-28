@@ -25,7 +25,7 @@ func StartIrmaClientServer(t *testing.T) {
 	require.NoError(t, irmarequestor.Initialize(&server.Configuration{
 		Logger:                logger,
 		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
-		PrivateKeysPath:       filepath.Join(testdata, "privatekeys"),
+		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	}))
 
 	mux := http.NewServeMux()

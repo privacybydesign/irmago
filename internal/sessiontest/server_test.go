@@ -26,7 +26,7 @@ func StartIrmaServer() {
 			Configuration: &server.Configuration{
 				Logger:                logger,
 				IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
-				PrivateKeysPath:       filepath.Join(testdata, "privatekeys"),
+				IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 			},
 			Port: 48682,
 		})
