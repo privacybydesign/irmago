@@ -487,8 +487,10 @@ func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityPro
 
 // A RequestorJwt contains an IRMA session object.
 type RequestorJwt interface {
+	Action() Action
 	SessionRequest() SessionRequest
 	Requestor() string
+	Valid() error
 }
 
 func (jwt *ServerJwt) Requestor() string { return jwt.ServerName }
@@ -501,3 +503,39 @@ func (jwt *SignatureRequestorJwt) SessionRequest() SessionRequest { return jwt.R
 
 // SessionRequest returns an IRMA session object.
 func (jwt *IdentityProviderJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
+
+func (jwt *ServiceProviderJwt) Valid() error {
+	if jwt.Type != "verification_request" {
+		return errors.New("Verification jwt has invalid subject")
+	}
+	if time.Time(jwt.IssuedAt).After(time.Now()) {
+		return errors.New("Verification jwt not yet valid")
+	}
+	return nil
+}
+
+func (jwt *SignatureRequestorJwt) Valid() error {
+	if jwt.Type != "signature_request" {
+		return errors.New("Signature jwt has invalid subject")
+	}
+	if time.Time(jwt.IssuedAt).After(time.Now()) {
+		return errors.New("Signature jwt not yet valid")
+	}
+	return nil
+}
+
+func (jwt *IdentityProviderJwt) Valid() error {
+	if jwt.Type != "issue_request" {
+		return errors.New("Issuance jwt has invalid subject")
+	}
+	if time.Time(jwt.IssuedAt).After(time.Now()) {
+		return errors.New("Issuance jwt not yet valid")
+	}
+	return nil
+}
+
+func (jwt *ServiceProviderJwt) Action() Action { return ActionDisclosing }
+
+func (jwt *SignatureRequestorJwt) Action() Action { return ActionSigning }
+
+func (jwt *IdentityProviderJwt) Action() Action { return ActionIssuing }
