@@ -111,7 +111,11 @@ func translateAttribute(attr *string) TranslatedString {
 	if attr == nil {
 		return nil
 	}
-	return map[string]string{"en": *attr, "nl": *attr}
+	return map[string]string{
+		"":   *attr, // raw value
+		"en": *attr,
+		"nl": *attr,
+	}
 }
 
 func (al *AttributeList) decode(i int) *string {
