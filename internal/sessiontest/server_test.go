@@ -41,6 +41,42 @@ func StopIrmaServer() {
 	irmaserver.Stop()
 }
 
+func StartIrmaJwtServer() {
+	testdata := test.FindTestdataFolder(nil)
+
+	logger := logrus.New()
+	logger.Level = logrus.WarnLevel
+	logger.Formatter = &logrus.TextFormatter{}
+
+	go func() {
+		err := irmaserver.Start(&irmaserver.Configuration{
+			Configuration: &server.Configuration{
+				Logger:                logger,
+				IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
+				IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+			},
+			Port: 48682,
+			AuthenticateRequestors: true,
+			GlobalPermissions: irmaserver.Permissions{
+				Disclosing: []string{"*"},
+				Signing:    []string{"*"},
+				Issuing:    []string{"*"},
+			},
+			Requestors: map[string]irmaserver.Requestor{
+				"testrequestor": irmaserver.Requestor{
+					AuthenticationMethod: irmaserver.AuthenticationMethodPublicKey,
+					AuthenticationKey:    filepath.Join(testdata, "jwtkeys", "testrequestor.pem"),
+				},
+			},
+			PrivateKey: filepath.Join(testdata, "jwtkeys", "sk.pem"),
+		})
+		if err != nil {
+			panic("Starting server failed: " + err.Error())
+		}
+	}()
+	time.Sleep(100 * time.Millisecond) // Give server time to start
+}
+
 func serverSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)

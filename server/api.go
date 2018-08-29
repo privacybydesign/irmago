@@ -71,14 +71,15 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 }
 
 func WriteError(w http.ResponseWriter, err Error, msg string) {
-	status, bts := JsonResponse(nil, RemoteError(err, msg))
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	w.Write(bts)
+	WriteResponse(w, nil, RemoteError(err, msg))
 }
 
 func WriteJson(w http.ResponseWriter, object interface{}) {
-	status, bts := JsonResponse(object, nil)
+	WriteResponse(w, object, nil)
+}
+
+func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError) {
+	status, bts := JsonResponse(object, rerr)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(bts)

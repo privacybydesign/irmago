@@ -1,11 +1,14 @@
 package sessiontest
 
 import (
-	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -106,20 +109,8 @@ func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceR
 	return request
 }
 
-// startSession starts an IRMA session by posting the request,
-// and retrieving the QR contents from the specified url.
-func startSession(request interface{}, url string) (*irma.Qr, error) {
-	server := irma.NewHTTPTransport(url)
-	var response irma.Qr
-	err := server.Post("", &response, request)
-	if err != nil {
-		return nil, err
-	}
-	return &response, nil
-}
-
 func getJwt(t *testing.T, request irma.SessionRequest, url string) string {
-	var jwtcontents interface{}
+	var jwtcontents irma.RequestorJwt
 	switch url {
 	case "issue":
 		jwtcontents = irma.NewIdentityProviderJwt("testip", request.(*irma.IssuanceRequest))
@@ -129,44 +120,54 @@ func getJwt(t *testing.T, request irma.SessionRequest, url string) string {
 		jwtcontents = irma.NewSignatureRequestorJwt("testsigclient", request.(*irma.SignatureRequest))
 	}
 
-	headerbytes, err := json.Marshal(&map[string]string{"alg": "none", "typ": "JWT"})
+	skbts, err := ioutil.ReadFile(filepath.Join(test.FindTestdataFolder(t), "jwtkeys", "testrequestor-sk.pem"))
 	require.NoError(t, err)
-	bodybytes, err := json.Marshal(jwtcontents)
+	sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
+	require.NoError(t, err)
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwtcontents)
+	tok.Header["kid"] = "testrequestor"
+	j, err := tok.SignedString(sk)
 	require.NoError(t, err)
 
-	return base64.RawStdEncoding.EncodeToString(headerbytes) + "." + base64.RawStdEncoding.EncodeToString(bodybytes) + "."
+	return j
 }
 
-func sessionHelper(t *testing.T, request irma.SessionRequest, url string, client *irmaclient.Client) {
+func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) {
 	if client == nil {
 		client = parseStorage(t)
 		defer test.ClearTestStorage(t)
 	}
 
-	transport := irma.NewHTTPTransport("http://localhost:48682")
-	var qr irma.Qr
-	err := transport.Post("create", &qr, request)
-	require.NoError(t, err)
-	qr.URL = "http://localhost:48682/irma/" + qr.URL
+	//transport := irma.NewHTTPTransport("http://localhost:48682")
+	//var qr irma.Qr
+	//err := transport.Post("create", &qr, request)
+	//require.NoError(t, err)
+	//qr.URL = "http://localhost:48682/irma/" + qr.URL
 
-	//jwt := getJwt(t, request, url)
-	//url = "http://localhost:8088/irma_api_server/api/v2/" + url
-	//qr, transportErr := startSession(jwt, url)
-	//if transportErr != nil {
-	//	fmt.Printf("+%v\n", transportErr)
-	//}
-	//require.NoError(t, transportErr)
-	//qr.URL = url + "/" + qr.URL
+	url := "http://localhost:48682"
+	server := irma.NewHTTPTransport(url)
+	var qr irma.Qr
+	err := server.Post("create", &qr, getJwt(t, request, sessiontype))
+	require.NoError(t, err)
+	token := qr.URL
+	qr.URL = url + "/irma/" + qr.URL
 
 	c := make(chan *SessionResult)
 	h := TestHandler{t, c, client}
-	j, err := json.Marshal(qr)
+	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
-	client.NewSession(string(j), h)
+	client.NewSession(string(qrjson), h)
 
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
+
+	bts, err := server.GetBytes("getproof/" + token)
+	require.NoError(t, err)
+	fmt.Println(string(bts))
+	bts, err = server.GetBytes("result/" + token)
+	require.NoError(t, err)
+	fmt.Println(string(bts))
 }
 
 func keyshareSessions(t *testing.T, client *irmaclient.Client) {
