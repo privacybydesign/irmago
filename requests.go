@@ -140,6 +140,7 @@ type SessionRequest interface {
 	SetDisclosureChoice(choice *DisclosureChoice)
 	SetCandidates(candidates [][]*AttributeIdentifier)
 	Identifiers() *IrmaIdentifierSet
+	Action() Action
 }
 
 // Timestamp is a time.Time that marshals to Unix timestamps.
@@ -291,6 +292,8 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 // SetNonce sets the nonce of this session.
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
 
+func (ir *IssuanceRequest) Action() Action { return ActionIssuing }
+
 func (ir *IssuanceRequest) Validate() error {
 	if ir.Type != ActionIssuing {
 		return errors.New("Not an issuance request")
@@ -335,6 +338,8 @@ func (dr *DisclosureRequest) GetNonce() *big.Int { return dr.Nonce }
 // SetNonce sets the nonce of this session.
 func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 
+func (dr *DisclosureRequest) Action() Action { return ActionDisclosing }
+
 func (dr *DisclosureRequest) Validate() error {
 	if dr.Type != ActionDisclosing {
 		return errors.New("Not a disclosure request")
@@ -371,6 +376,8 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMe
 		Timestamp: sr.Timestamp,
 	}, nil
 }
+
+func (sr *SignatureRequest) Action() Action { return ActionSigning }
 
 func (sr *SignatureRequest) Validate() error {
 	if sr.Type != ActionSigning {
