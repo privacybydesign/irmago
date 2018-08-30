@@ -88,7 +88,7 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !applies {
-		server.WriteError(w, server.ErrorInvalidRequest, "")
+		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authorized")
 		return
 	}
 
