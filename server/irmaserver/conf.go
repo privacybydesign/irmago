@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
@@ -104,7 +105,7 @@ func (conf *Configuration) initialize() error {
 
 	if !conf.AuthenticateRequestors {
 		conf.Logger.Warn("Requestor authentication disabled")
-		authenticators = map[string]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
+		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
 
 		// Leaving the global permission whitelists empty in this mode means enabling it for everyone
 		if len(conf.GlobalPermissions.Disclosing) == 0 {
@@ -123,13 +124,17 @@ func (conf *Configuration) initialize() error {
 		return nil
 	}
 
-	authenticators = map[string]Authenticator{
-		AuthenticationMethodPublicKey: &PublicKeyAuthenticator{},
-		AuthenticationMethodPSK:       &PresharedKeyAuthenticator{},
+	authenticators = map[AuthenticationMethod]Authenticator{
+		AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]*rsa.PublicKey{}},
+		AuthenticationMethodPSK:       &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
 	}
 
-	for _, authenticator := range authenticators {
-		if err := authenticator.Initialize(conf.Requestors); err != nil {
+	for name, requestor := range conf.Requestors {
+		authenticator, ok := authenticators[requestor.AuthenticationMethod]
+		if !ok {
+			return errors.Errorf("Requestor %s has unsupported authentication type")
+		}
+		if err := authenticator.Initialize(name, requestor); err != nil {
 			return err
 		}
 	}

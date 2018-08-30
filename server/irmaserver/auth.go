@@ -18,7 +18,7 @@ type Authenticator interface {
 	Authenticate(
 		headers http.Header, body []byte,
 	) (applies bool, request irma.SessionRequest, requestor string, err *irma.RemoteError)
-	Initialize(requestors map[string]Requestor) error
+	Initialize(name string, requestor Requestor) error
 }
 
 type AuthenticationMethod string
@@ -37,7 +37,7 @@ type PresharedKeyAuthenticator struct {
 }
 type NilAuthenticator struct{}
 
-var authenticators map[string]Authenticator
+var authenticators map[AuthenticationMethod]Authenticator
 
 func (NilAuthenticator) Authenticate(
 	headers http.Header, body []byte,
@@ -52,7 +52,7 @@ func (NilAuthenticator) Authenticate(
 	return true, request, "", nil
 }
 
-func (NilAuthenticator) Initialize(requestors map[string]Requestor) error {
+func (NilAuthenticator) Initialize(name string, requestor Requestor) error {
 	return nil
 }
 
@@ -86,32 +86,27 @@ func (pkauth *PublicKeyAuthenticator) Authenticate(
 	return true, parsedJwt.SessionRequest(), requestor, nil
 }
 
-func (pkauth *PublicKeyAuthenticator) Initialize(requestors map[string]Requestor) error {
-	pkauth.publickeys = map[string]*rsa.PublicKey{}
-	for name, requestor := range requestors {
-		if requestor.AuthenticationMethod != AuthenticationMethodPublicKey {
-			continue
-		}
-		var bts []byte
-		var err error
-		if strings.HasPrefix(requestor.AuthenticationKey, "-----BEGIN") {
-			bts = []byte(requestor.AuthenticationKey)
-		}
-		if _, err := os.Stat(requestor.AuthenticationKey); err == nil {
-			bts, err = ioutil.ReadFile(requestor.AuthenticationKey)
-			if err != nil {
-				return err
-			}
-		}
-		if len(bts) == 0 {
-			return errors.Errorf("Requestor %s has invalid public key", name)
-		}
-		pk, err := jwt.ParseRSAPublicKeyFromPEM(bts)
+func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
+	var bts []byte
+	var err error
+	if strings.HasPrefix(requestor.AuthenticationKey, "-----BEGIN") {
+		bts = []byte(requestor.AuthenticationKey)
+	}
+	if _, err := os.Stat(requestor.AuthenticationKey); err == nil {
+		bts, err = ioutil.ReadFile(requestor.AuthenticationKey)
 		if err != nil {
 			return err
 		}
-		pkauth.publickeys[name] = pk
 	}
+	if len(bts) == 0 {
+		return errors.Errorf("Requestor %s has invalid public key", name)
+	}
+	pk, err := jwt.ParseRSAPublicKeyFromPEM(bts)
+	if err != nil {
+		return err
+	}
+	pkauth.publickeys[name] = pk
+
 	return nil
 }
 
@@ -133,17 +128,11 @@ func (pskauth *PresharedKeyAuthenticator) Authenticate(
 	return true, request, requestor, nil
 }
 
-func (pskauth *PresharedKeyAuthenticator) Initialize(requestors map[string]Requestor) error {
-	pskauth.presharedkeys = map[string]string{}
-	for name, requestor := range requestors {
-		if requestor.AuthenticationMethod != AuthenticationMethodPSK {
-			continue
-		}
-		if requestor.AuthenticationKey == "" {
-			return errors.Errorf("Requestor %s had no authentication key")
-		}
-		pskauth.presharedkeys[requestor.AuthenticationKey] = name
+func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requestor) error {
+	if requestor.AuthenticationKey == "" {
+		return errors.Errorf("Requestor %s had no authentication key")
 	}
+	pskauth.presharedkeys[requestor.AuthenticationKey] = name
 	return nil
 }
 
