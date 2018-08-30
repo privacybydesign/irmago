@@ -2,7 +2,6 @@ package sessiontest
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"testing"
@@ -109,24 +108,67 @@ func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceR
 	return request
 }
 
-func getJwt(t *testing.T, request irma.SessionRequest, url string) string {
+var TestType = "irmaserver"
+
+func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) (*irma.Qr, string) {
+	var qr irma.Qr
+	var err error
+	var token string
+
+	switch TestType {
+	case "apiserver":
+		url := "http://localhost:8088/irma_api_server/api/v2/" + sessiontype
+		err = irma.NewHTTPTransport(url).Post("", &qr, getJwt(t, request, sessiontype, false))
+		token = qr.URL
+		qr.URL = url + "/" + qr.URL
+	case "irmaserver-jwt":
+		url := "http://localhost:48682"
+		err = irma.NewHTTPTransport(url).Post("create", &qr, getJwt(t, request, sessiontype, true))
+		token = qr.URL
+		qr.URL = url + "/irma/" + qr.URL
+	case "irmaserver":
+		url := "http://localhost:48682"
+		err = irma.NewHTTPTransport(url).Post("create", &qr, request)
+		token = qr.URL
+		qr.URL = url + "/irma/" + qr.URL
+	default:
+		t.Fatal("Invalid TestType")
+	}
+
+	require.NoError(t, err)
+	return &qr, token
+}
+
+func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, signed bool) string {
 	var jwtcontents irma.RequestorJwt
-	switch url {
+	var kid string
+	switch sessiontype {
 	case "issue":
+		kid = "testip"
 		jwtcontents = irma.NewIdentityProviderJwt("testip", request.(*irma.IssuanceRequest))
 	case "verification":
+		kid = "testsp"
 		jwtcontents = irma.NewServiceProviderJwt("testsp", request.(*irma.DisclosureRequest))
 	case "signature":
+		kid = "testsigclient"
 		jwtcontents = irma.NewSignatureRequestorJwt("testsigclient", request.(*irma.SignatureRequest))
 	}
 
-	skbts, err := ioutil.ReadFile(filepath.Join(test.FindTestdataFolder(t), "jwtkeys", "testrequestor-sk.pem"))
-	require.NoError(t, err)
-	sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
-	require.NoError(t, err)
-	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwtcontents)
-	tok.Header["kid"] = "testrequestor"
-	j, err := tok.SignedString(sk)
+	var j string
+	var err error
+	if signed {
+		skbts, err := ioutil.ReadFile(filepath.Join(test.FindTestdataFolder(t), "jwtkeys", "requestor1-sk.pem"))
+		require.NoError(t, err)
+		sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
+		require.NoError(t, err)
+		tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwtcontents)
+		tok.Header["kid"] = "requestor1"
+		j, err = tok.SignedString(sk)
+	} else {
+		tok := jwt.NewWithClaims(jwt.SigningMethodNone, jwtcontents)
+		tok.Header["kid"] = kid
+		j, err = tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	}
 	require.NoError(t, err)
 
 	return j
@@ -138,19 +180,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		defer test.ClearTestStorage(t)
 	}
 
-	//transport := irma.NewHTTPTransport("http://localhost:48682")
-	//var qr irma.Qr
-	//err := transport.Post("create", &qr, request)
-	//require.NoError(t, err)
-	//qr.URL = "http://localhost:48682/irma/" + qr.URL
-
-	url := "http://localhost:48682"
-	server := irma.NewHTTPTransport(url)
-	var qr irma.Qr
-	err := server.Post("create", &qr, getJwt(t, request, sessiontype))
-	require.NoError(t, err)
-	token := qr.URL
-	qr.URL = url + "/irma/" + qr.URL
+	qr, _ := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
 	h := TestHandler{t, c, client}
@@ -161,13 +191,6 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
-
-	bts, err := server.GetBytes("getproof/" + token)
-	require.NoError(t, err)
-	fmt.Println(string(bts))
-	bts, err = server.GetBytes("result/" + token)
-	require.NoError(t, err)
-	fmt.Println(string(bts))
 }
 
 func keyshareSessions(t *testing.T, client *irmaclient.Client) {
