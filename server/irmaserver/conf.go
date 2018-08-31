@@ -17,22 +17,28 @@ type Configuration struct {
 
 	Port int
 
+	// Whether or not incoming session requests should be authenticated. If false, anyone
+	// can submit session requests. If true, the request is first authenticated against the
+	// server configuration before the server accepts it.
 	AuthenticateRequestors bool
-	Requestors             map[string]Requestor
-	GlobalPermissions      Permissions
+	Requestors             map[string]Requestor // Requestor-specific permission and authentication configuration
+	GlobalPermissions      Permissions          // Disclosing, signing or issuance permissions that apply to all requestors
 
-	JwtIssuer  string
-	PrivateKey string
+	JwtIssuer  string // Used in the "iss" field of result JWTs from /result-jwt and /getproof
+	PrivateKey string // Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
 
 	privateKey *rsa.PrivateKey
 }
 
+// Permissions specify which attributes or credential a requestor may verify or issue.
 type Permissions struct {
 	Disclosing []string
 	Signing    []string
 	Issuing    []string
 }
 
+// Requestor contains all configuration (disclosure or verification permissions and authentication)
+// for a requestor.
 type Requestor struct {
 	Permissions
 
@@ -40,17 +46,15 @@ type Requestor struct {
 	AuthenticationKey    string
 }
 
-func contains(strings []string, query string) bool {
-	for _, s := range strings {
-		if s == query {
-			return true
-		}
-	}
-	return false
-}
-
+// CanIssue returns whether or not the specified requestor may issue the specified credentials.
+// (In case of combined issuance/disclosure sessions, this method does not check whether or not
+// the identity provider is allowed to verify the attributes being verified; use CanVerifyOrSign
+// for that).
 func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRequest) (bool, string) {
 	permissions := append(conf.Requestors[requestor].Issuing, conf.GlobalPermissions.Issuing...)
+	if len(permissions) == 0 { // requestor is not present in the permissions
+		return false, ""
+	}
 
 	for _, cred := range creds {
 		id := cred.CredentialTypeID
@@ -67,6 +71,8 @@ func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRe
 	return true, ""
 }
 
+// CanVerifyOrSign returns whether or not the specified requestor may use the selected attributes
+// in any of the supported session types.
 func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action, disjunctions irma.AttributeDisjunctionList) (bool, string) {
 	var permissions []string
 	switch action {
@@ -104,7 +110,7 @@ func (conf *Configuration) initialize() error {
 	}
 
 	if !conf.AuthenticateRequestors {
-		conf.Logger.Warn("Requestor authentication disabled")
+		conf.Logger.Warn("Authentication of incoming session requests disabled")
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
 
 		// Leaving the global permission whitelists empty in this mode means enabling it for everyone
@@ -120,7 +126,6 @@ func (conf *Configuration) initialize() error {
 			conf.Logger.Info("No issuance whitelist found: allowing issuance of any credential (for which private keys are installed)")
 			conf.GlobalPermissions.Issuing = []string{"*"}
 		}
-
 		return nil
 	}
 
@@ -129,6 +134,7 @@ func (conf *Configuration) initialize() error {
 		AuthenticationMethodPSK:       &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
 	}
 
+	// Initialize authenticators
 	for name, requestor := range conf.Requestors {
 		authenticator, ok := authenticators[requestor.AuthenticationMethod]
 		if !ok {
@@ -162,4 +168,14 @@ func (conf *Configuration) readPrivateKey() error {
 
 	conf.privateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
 	return err
+}
+
+// Return true iff query equals an element of strings.
+func contains(strings []string, query string) bool {
+	for _, s := range strings {
+		if s == query {
+			return true
+		}
+	}
+	return false
 }

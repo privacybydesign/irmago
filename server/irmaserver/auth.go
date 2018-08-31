@@ -14,15 +14,27 @@ import (
 	"github.com/privacybydesign/irmago/server"
 )
 
+// Authenticator instances authenticate incoming session requests. Given details of the HTTP
+// post done by the requestor, it is checked whether or not the requestor is known and
+// allowed to submit session requests.
 type Authenticator interface {
+	// Initialize is called once on server startup for each requestor that uses this authentication method.
+	// Used to parse keys or populate caches for later use.
+	Initialize(name string, requestor Requestor) error
+
+	// Authenticate checks, given the HTTP header and POST body, if the authenticator is known
+	// and allowed to submit session requests. It returns whether or not the current authenticator
+	// is applicable to this sesion requests; the request itself; the name of the requestor;
+	// or an error (which is only non-nil if applies is true; i.e. this authenticator applies but
+	// it was not able to successfully authenticate the request).
 	Authenticate(
 		headers http.Header, body []byte,
 	) (applies bool, request irma.SessionRequest, requestor string, err *irma.RemoteError)
-	Initialize(name string, requestor Requestor) error
 }
 
 type AuthenticationMethod string
 
+// Currently supported requestor authentication methods
 const (
 	AuthenticationMethodPublicKey = "publickey"
 	AuthenticationMethodPSK       = "psk"

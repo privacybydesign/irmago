@@ -39,6 +39,8 @@ func Stop() {
 	s.Close()
 }
 
+// Handler returns a http.Handler that handles all IRMA requestor messages
+// and IRMA client messages.
 func Handler(config *Configuration) (http.Handler, error) {
 	conf = config
 	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
@@ -57,8 +59,10 @@ func Handler(config *Configuration) (http.Handler, error) {
 	router.Post("/create", handleCreate)
 	router.Get("/status/{token}", handleStatus)
 	router.Get("/result/{token}", handleResult)
+
+	// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
 	router.Get("/result-jwt/{token}", handleJwtResult)
-	router.Get("/getproof/{token}", handleJwtProofs)
+	router.Get("/getproof/{token}", handleJwtProofs) // irma_api_server-compatible JWT
 
 	return router, nil
 }
@@ -70,7 +74,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authenticate request: check if the requestor is known and allowed to submit requests
+	// Authenticate request: check if the requestor is known and allowed to submit requests.
+	// We do this by feeding the HTTP POST details to all known authenticators, and see if
+	// one of them is applicable and able to authenticate the request.
 	var (
 		request   irma.SessionRequest
 		requestor string
@@ -94,7 +100,6 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Authorize request: check if the requestor is allowed to verify or issue
 	// the requested attributes or credentials
-	disjunctions := request.ToDisclose()
 	if request.Action() == irma.ActionIssuing {
 		allowed, reason := conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
 		if !allowed {
@@ -102,6 +107,7 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	disjunctions := request.ToDisclose()
 	if len(disjunctions) > 0 {
 		allowed, reason := conf.CanVerifyOrSign(requestor, request.Action(), disjunctions)
 		if !allowed {
