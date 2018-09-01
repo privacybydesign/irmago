@@ -123,12 +123,12 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 		qr.URL = url + "/" + qr.URL
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("create", &qr, getJwt(t, request, sessiontype, true))
+		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, true))
 		token = qr.URL
 		qr.URL = url + "/irma/" + qr.URL
 	case "irmaserver":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("create", &qr, request)
+		err = irma.NewHTTPTransport(url).Post("session", &qr, request)
 		token = qr.URL
 		qr.URL = url + "/irma/" + qr.URL
 	default:

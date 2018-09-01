@@ -136,7 +136,7 @@ func HandleProtocolMessage(
 
 	// Fetch the session
 	token := matches[1]
-	verb := matches[2]
+	noun := matches[2]
 	session := sessions.get(token)
 	if session == nil {
 		conf.Logger.Warnf("Session not found: %s", token)
@@ -158,7 +158,7 @@ func HandleProtocolMessage(
 	}()
 
 	// Route to handler
-	switch len(verb) {
+	switch len(noun) {
 	case 0:
 		if method == http.MethodDelete {
 			session.handleDelete()
@@ -188,7 +188,7 @@ func HandleProtocolMessage(
 			return
 		}
 
-		if verb == "commitments" && session.action == irma.ActionIssuing {
+		if noun == "commitments" && session.action == irma.ActionIssuing {
 			commitments := &gabi.IssueCommitmentMessage{}
 			if err := irma.UnmarshalValidate(message, commitments); err != nil {
 				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
@@ -197,7 +197,7 @@ func HandleProtocolMessage(
 			status, output = server.JsonResponse(session.handlePostCommitments(commitments))
 			return
 		}
-		if verb == "proofs" && session.action == irma.ActionDisclosing {
+		if noun == "proofs" && session.action == irma.ActionDisclosing {
 			proofs := gabi.ProofList{}
 			if err := irma.UnmarshalValidate(message, &proofs); err != nil {
 				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
@@ -206,7 +206,7 @@ func HandleProtocolMessage(
 			status, output = server.JsonResponse(session.handlePostProofs(proofs))
 			return
 		}
-		if verb == "proofs" && session.action == irma.ActionSigning {
+		if noun == "proofs" && session.action == irma.ActionSigning {
 			signature := &irma.SignedMessage{}
 			if err := irma.UnmarshalValidate(message, signature); err != nil {
 				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))

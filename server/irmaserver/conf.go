@@ -24,10 +24,10 @@ type Configuration struct {
 	Requestors             map[string]Requestor // Requestor-specific permission and authentication configuration
 	GlobalPermissions      Permissions          // Disclosing, signing or issuance permissions that apply to all requestors
 
-	JwtIssuer  string // Used in the "iss" field of result JWTs from /result-jwt and /getproof
-	PrivateKey string // Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
+	JwtIssuer     string // Used in the "iss" field of result JWTs from /result-jwt and /getproof
+	JwtPrivateKey string // Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
 
-	privateKey *rsa.PrivateKey
+	jwtPrivateKey *rsa.PrivateKey
 }
 
 // Permissions specify which attributes or credential a requestor may verify or issue.
@@ -131,7 +131,7 @@ func (conf *Configuration) initialize() error {
 
 	authenticators = map[AuthenticationMethod]Authenticator{
 		AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]*rsa.PublicKey{}},
-		AuthenticationMethodPSK:       &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
+		AuthenticationMethodToken:     &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
 	}
 
 	// Initialize authenticators
@@ -149,24 +149,24 @@ func (conf *Configuration) initialize() error {
 }
 
 func (conf *Configuration) readPrivateKey() error {
-	if conf.PrivateKey == "" {
+	if conf.JwtPrivateKey == "" {
 		return nil
 	}
 
 	var keybytes []byte
 	var err error
-	if strings.HasPrefix(conf.PrivateKey, "-----BEGIN") {
-		keybytes = []byte(conf.PrivateKey)
+	if strings.HasPrefix(conf.JwtPrivateKey, "-----BEGIN") {
+		keybytes = []byte(conf.JwtPrivateKey)
 	} else {
-		if err = fs.AssertPathExists(conf.PrivateKey); err != nil {
+		if err = fs.AssertPathExists(conf.JwtPrivateKey); err != nil {
 			return err
 		}
-		if keybytes, err = ioutil.ReadFile(conf.PrivateKey); err != nil {
+		if keybytes, err = ioutil.ReadFile(conf.JwtPrivateKey); err != nil {
 			return err
 		}
 	}
 
-	conf.privateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
+	conf.jwtPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
 	return err
 }
 

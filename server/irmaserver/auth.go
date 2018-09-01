@@ -37,7 +37,7 @@ type AuthenticationMethod string
 // Currently supported requestor authentication methods
 const (
 	AuthenticationMethodPublicKey = "publickey"
-	AuthenticationMethodPSK       = "psk"
+	AuthenticationMethodToken     = "token"
 	AuthenticationMethodNone      = "none"
 )
 

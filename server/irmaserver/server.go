@@ -56,13 +56,13 @@ func Handler(config *Configuration) (http.Handler, error) {
 	router.Mount("/irma/", irmarequestor.HttpHandlerFunc("/irma/"))
 
 	// Server routes
-	router.Post("/create", handleCreate)
-	router.Get("/status/{token}", handleStatus)
-	router.Get("/result/{token}", handleResult)
+	router.Post("/session", handleCreate)
+	router.Get("/session/{token}/status", handleStatus)
+	router.Get("/session/{token}/result", handleResult)
 
 	// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
-	router.Get("/result-jwt/{token}", handleJwtResult)
-	router.Get("/getproof/{token}", handleJwtProofs) // irma_api_server-compatible JWT
+	router.Get("/session/{token}/result-jwt", handleJwtResult)
+	router.Get("/session/{token}/getproof", handleJwtProofs) // irma_api_server-compatible JWT
 
 	return router, nil
 }
@@ -145,7 +145,7 @@ func handleResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleJwtResult(w http.ResponseWriter, r *http.Request) {
-	if conf.privateKey == nil {
+	if conf.jwtPrivateKey == nil {
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
 	}
@@ -168,7 +168,7 @@ func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 
 	// Sign the jwt and return it
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	resultJwt, err := token.SignedString(conf.privateKey)
+	resultJwt, err := token.SignedString(conf.jwtPrivateKey)
 	if err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
@@ -177,7 +177,7 @@ func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
-	if conf.privateKey == nil {
+	if conf.jwtPrivateKey == nil {
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
 	}
@@ -220,7 +220,7 @@ func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 
 	// Sign the jwt and return it
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	resultJwt, err := token.SignedString(conf.privateKey)
+	resultJwt, err := token.SignedString(conf.jwtPrivateKey)
 	if err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return

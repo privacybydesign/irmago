@@ -62,9 +62,9 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 			AuthenticationKey:    filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
 		},
 		"requestor2": {
-			AuthenticationMethod: irmaserver.AuthenticationMethodPSK,
+			AuthenticationMethod: irmaserver.AuthenticationMethodToken,
 			AuthenticationKey:    "xa6=*&9?8jeUu5>.f-%rVg`f63pHim",
 		},
 	},
-	PrivateKey: filepath.Join(testdata, "jwtkeys", "sk.pem"),
+	JwtPrivateKey: filepath.Join(testdata, "jwtkeys", "sk.pem"),
 }
