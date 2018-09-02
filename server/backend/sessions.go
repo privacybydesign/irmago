@@ -56,6 +56,7 @@ var (
 )
 
 func init() {
+	rand.Seed(time.Now().UnixNano())
 	go sessions.deleteExpired()
 }
 
