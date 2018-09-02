@@ -57,7 +57,7 @@ func (NilAuthenticator) Authenticate(
 	if headers.Get("Authentication") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
 		return false, nil, "", nil
 	}
-	request, err := parseRequest(body)
+	request, err := server.ParseSessionRequest(body)
 	if err != nil {
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
@@ -133,7 +133,7 @@ func (pskauth *PresharedKeyAuthenticator) Authenticate(
 	if !ok {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "")
 	}
-	request, err := parseRequest(body)
+	request, err := server.ParseSessionRequest(body)
 	if err != nil {
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
@@ -167,20 +167,4 @@ func jwtPublicKeyExtractor(publickeys map[string]*rsa.PublicKey) func(token *jwt
 		}
 		return nil, errors.Errorf("Unknown requestor: %s", requestor)
 	}
-}
-
-func parseRequest(bts []byte) (request irma.SessionRequest, err error) {
-	request = &irma.DisclosureRequest{}
-	if err = irma.UnmarshalValidate(bts, request); err == nil {
-		return request, nil
-	}
-	request = &irma.SignatureRequest{}
-	if err = irma.UnmarshalValidate(bts, request); err == nil {
-		return request, nil
-	}
-	request = &irma.IssuanceRequest{}
-	if err = irma.UnmarshalValidate(bts, request); err == nil {
-		return request, nil
-	}
-	return nil, errors.New("Invalid or disabled session type")
 }

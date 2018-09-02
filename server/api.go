@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"runtime/debug"
 
@@ -89,4 +90,20 @@ func WriteString(w http.ResponseWriter, str string) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(str))
+}
+
+func ParseSessionRequest(bts []byte) (request irma.SessionRequest, err error) {
+	request = &irma.DisclosureRequest{}
+	if err = irma.UnmarshalValidate(bts, request); err == nil {
+		return request, nil
+	}
+	request = &irma.SignatureRequest{}
+	if err = irma.UnmarshalValidate(bts, request); err == nil {
+		return request, nil
+	}
+	request = &irma.IssuanceRequest{}
+	if err = irma.UnmarshalValidate(bts, request); err == nil {
+		return request, nil
+	}
+	return nil, errors.New("Invalid or disabled session type")
 }
