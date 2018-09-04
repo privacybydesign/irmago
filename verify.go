@@ -168,7 +168,7 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 				Status:     AttributeProofStatusExtra,
 			}
 
-			if k < 2 { // Never add metadata (i.e. no-attribute disclosure) as extra
+			if k > 1 { // Never add metadata (i.e. no-attribute disclosure) as extra
 				extraAttrs[attrid] = attr
 			}
 			if len(disjunctions) == 0 {
