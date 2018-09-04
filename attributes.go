@@ -83,8 +83,8 @@ func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]Tr
 		ctid := al.CredentialType().Identifier()
 		strings := al.Strings()
 		ct := conf.CredentialTypes[ctid]
-		for i := range ct.Attributes {
-			attrid := ct.Attributes[i].GetAttributeTypeIdentifier()
+		for i := range ct.AttributeTypes {
+			attrid := ct.AttributeTypes[i].GetAttributeTypeIdentifier()
 			al.attrMap[attrid] = strings[i]
 		}
 	}
@@ -142,7 +142,7 @@ func (al *AttributeList) UntranslatedAttribute(identifier AttributeTypeIdentifie
 	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
 		return nil
 	}
-	for i, desc := range al.CredentialType().Attributes {
+	for i, desc := range al.CredentialType().AttributeTypes {
 		if desc.ID == string(identifier.Name()) {
 			return al.decode(i)
 		}
@@ -155,7 +155,7 @@ func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) Translate
 	if al.CredentialType().Identifier() != identifier.CredentialTypeIdentifier() {
 		return nil
 	}
-	for i, desc := range al.CredentialType().Attributes {
+	for i, desc := range al.CredentialType().AttributeTypes {
 		if desc.ID == string(identifier.Name()) {
 			return al.Strings()[i]
 		}

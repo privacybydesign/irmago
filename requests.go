@@ -167,7 +167,7 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 	// in the credential descriptor.
 	for crName := range cr.Attributes {
 		found := false
-		for _, ad := range credtype.Attributes {
+		for _, ad := range credtype.AttributeTypes {
 			if ad.ID == crName {
 				found = true
 				break
@@ -178,7 +178,7 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 		}
 	}
 
-	for _, attrtype := range credtype.Attributes {
+	for _, attrtype := range credtype.AttributeTypes {
 		if _, present := cr.Attributes[attrtype.ID]; !present && attrtype.Optional != "true" {
 			return errors.New("Required attribute not present in credential request")
 		}
@@ -204,9 +204,9 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 
 	// Compute other attributes
 	credtype := conf.CredentialTypes[cr.CredentialTypeID]
-	attrs := make([]*big.Int, len(credtype.Attributes)+1)
+	attrs := make([]*big.Int, len(credtype.AttributeTypes)+1)
 	attrs[0] = meta.Int
-	for i, attrtype := range credtype.Attributes {
+	for i, attrtype := range credtype.AttributeTypes {
 		attrs[i+1] = new(big.Int)
 		if str, present := cr.Attributes[attrtype.ID]; present {
 			// Set attribute to str << 1 + 1

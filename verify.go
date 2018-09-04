@@ -159,7 +159,7 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 				p := "present"
 				attrval = &p
 			} else {
-				attrid = credtype.Attributes[k-2].GetAttributeTypeIdentifier()
+				attrid = credtype.AttributeTypes[k-2].GetAttributeTypeIdentifier()
 				attrval = decodeAttribute(v, metadata.Version())
 			}
 			attr = &DisclosedAttribute{

@@ -54,7 +54,7 @@ type CredentialType struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	IsSingleton     bool             `xml:"ShouldBeSingleton"`
 	Description     TranslatedString
-	Attributes      []*AttributeType `xml:"Attributes>Attribute" json:"-"`
+	AttributeTypes  []*AttributeType `xml:"Attributes>Attribute" json:"-"`
 	XMLVersion      int              `xml:"version,attr"`
 	XMLName         xml.Name         `xml:"IssueSpecification"`
 
@@ -91,7 +91,7 @@ func (ct *CredentialType) ContainsAttribute(ai AttributeTypeIdentifier) bool {
 	if ai.CredentialTypeIdentifier().String() != ct.Identifier().String() {
 		return false
 	}
-	for _, desc := range ct.Attributes {
+	for _, desc := range ct.AttributeTypes {
 		if desc.ID == ai.Name() {
 			return true
 		}
@@ -105,7 +105,7 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 	if ai.CredentialTypeIdentifier() != ct.Identifier() {
 		return -1, errors.New("Wrong credential type")
 	}
-	for i, description := range ct.Attributes {
+	for i, description := range ct.AttributeTypes {
 		if description.ID == ai.Name() {
 			return i, nil
 		}
@@ -118,7 +118,7 @@ func (ct CredentialType) AttributeType(ai AttributeTypeIdentifier) *AttributeTyp
 	if i == -1 {
 		return nil
 	}
-	return ct.Attributes[i]
+	return ct.AttributeTypes[i]
 }
 
 // TranslatedString is a map of translated strings.

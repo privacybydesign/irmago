@@ -42,7 +42,7 @@ type Configuration struct {
 	SchemeManagers  map[SchemeManagerIdentifier]*SchemeManager
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
-	Attributes      map[AttributeTypeIdentifier]*AttributeType
+	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 
 	// Path to the irma_configuration folder that this instance represents
 	Path string
@@ -119,7 +119,7 @@ func (conf *Configuration) clear() {
 	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
 	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
 	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
-	conf.Attributes = make(map[AttributeTypeIdentifier]*AttributeType)
+	conf.AttributeTypes = make(map[AttributeTypeIdentifier]*AttributeType)
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
@@ -458,12 +458,12 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
-		for index, attr := range cred.Attributes {
+		for index, attr := range cred.AttributeTypes {
 			attr.Index = index
 			attr.SchemeManagerID = cred.SchemeManagerID
 			attr.IssuerID = cred.IssuerID
 			attr.CredentialTypeID = cred.ID
-			conf.Attributes[attr.GetAttributeTypeIdentifier()] = attr
+			conf.AttributeTypes[attr.GetAttributeTypeIdentifier()] = attr
 		}
 		return nil
 	})
@@ -725,7 +725,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers
 			}
 			// For each of the attributes in the credentialtype, see if it is present; if so remove it from newAttrs
 			// If not, check that it is optional; if not the credentialtype must be updated
-			for _, attrtyp := range typ.Attributes {
+			for _, attrtyp := range typ.AttributeTypes {
 				_, contains = newAttrs[attrtyp.ID]
 				if !contains && !attrtyp.IsOptional() {
 					managers[credreq.CredentialTypeID.Root()] = struct{}{}
@@ -1076,11 +1076,11 @@ func (conf *Configuration) checkCredentialType(manager *SchemeManager, issuer *I
 func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 	name := cred.Identifier().String()
 	indices := make(map[int]struct{})
-	count := len(cred.Attributes)
+	count := len(cred.AttributeTypes)
 	if count == 0 {
 		return errors.Errorf("Credenial type %s has no attributes", name)
 	}
-	for i, attr := range cred.Attributes {
+	for i, attr := range cred.AttributeTypes {
 		conf.checkTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
 		index := i
 		if attr.DisplayIndex != nil {

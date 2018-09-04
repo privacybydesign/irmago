@@ -81,7 +81,7 @@ func (sm *SignedMessage) VerifyTimestamp(message string, conf *Configuration) er
 		if ct == nil {
 			return errors.New("Cannot verify timestamp: signature contains attributes from unknown credential type")
 		}
-		attrcount := len(ct.Attributes) + 2 // plus secret key and metadata
+		attrcount := len(ct.AttributeTypes) + 2 // plus secret key and metadata
 		disclosed[i] = make([]*big.Int, attrcount)
 		for j := 0; j < attrcount; j++ {
 			val, ok := proofd.ADisclosed[j]

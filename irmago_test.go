@@ -136,7 +136,7 @@ func TestParseIrmaConfiguration(t *testing.T) {
 
 	require.Equal(t,
 		"studentID",
-		conf.CredentialTypes[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Attributes[2].ID,
+		conf.CredentialTypes[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].AttributeTypes[2].ID,
 		"irma-demo.RU.studentCard.studentID has unexpected name")
 
 	// Hash algorithm pseudocode:
