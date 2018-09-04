@@ -1,9 +1,13 @@
 package irmaclient
 
 import (
-	"os"
+	"encoding/json"
+	"regexp"
 	"time"
 
+	"github.com/go-errors/errors"
+	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
@@ -68,9 +72,95 @@ var clientUpdates = []func(client *Client) error{
 	// 6: Guess and include version protocol in issuance logs, and convert log entry structure
 	// from Response to either IssueCommitment or ProofList
 	func(client *Client) (err error) {
-		// TODO: this has been temporarily removed and should be restored
-		os.Remove(client.storage.path(logsFile))
-		return nil
+		logs, err := client.Logs()
+		if err != nil {
+			return
+		}
+		// The logs read above do not contain the Response field as it has been removed from the LogEntry struct.
+		// So read the logs again into a slice of a temp struct that does contain this field.
+		type oldLogEntry struct {
+			Response    json.RawMessage
+			SessionInfo struct {
+				Nonce   *big.Int                      `json:"nonce"`
+				Context *big.Int                      `json:"context"`
+				Jwt     string                        `json:"jwt"`
+				Keys    map[irma.IssuerIdentifier]int `json:"keys"`
+			}
+		}
+		var oldLogs []*oldLogEntry
+		if err = client.storage.load(&oldLogs, logsFile); err != nil {
+			return
+		}
+		// Sanity check, this should be true as both log slices were read from the same source
+		if len(oldLogs) != len(logs) {
+			return errors.New("Log count does not match")
+		}
+
+		for i, entry := range logs {
+			oldEntry := oldLogs[i]
+
+			if len(oldEntry.Response) == 0 {
+				return errors.New("Log entry had no Response field")
+			}
+
+			var jwt irma.RequestorJwt
+			jwt, err = irma.ParseRequestorJwt(string(entry.Type), oldEntry.SessionInfo.Jwt)
+			if err != nil {
+				return err
+			}
+
+			entry.request = jwt.SessionRequest()
+			// Ugly hack alert: unfortunately the protocol version that was used in the session is nowhere recorded.
+			// This means that we cannot be sure whether or not we should byteshift the presence bit out of the attributes
+			// that was introduced in version 2.3 of the protocol. The only thing that I can think of to determine this
+			// is to check if the attributes are human-readable, i.e., alphanumeric: if the presence bit is present and
+			// we do not shift it away, then they almost certainly will not be.
+			if entry.Type == irma.ActionIssuing && entry.Version == nil {
+				for _, attr := range entry.request.(*irma.IssuanceRequest).Credentials[0].Attributes {
+					if regexp.MustCompile("^\\w").Match([]byte(attr)) {
+						entry.Version = irma.NewVersion(2, 2)
+					} else {
+						entry.Version = irma.NewVersion(2, 3)
+					}
+					break
+				}
+			}
+			if entry.Version == nil {
+				entry.Version = irma.NewVersion(2, 3)
+			}
+			entry.request.SetNonce(oldEntry.SessionInfo.Nonce)
+			entry.request.SetContext(oldEntry.SessionInfo.Context)
+			entry.request.SetVersion(entry.Version)
+			if err := entry.setSessionRequest(); err != nil {
+				return err
+			}
+
+			switch entry.Type {
+			case actionRemoval: // nop
+			case irma.ActionSigning:
+				fallthrough
+			case irma.ActionDisclosing:
+				proofs := []*gabi.ProofD{}
+				if err = json.Unmarshal(oldEntry.Response, &proofs); err != nil {
+					return
+				}
+				for _, proof := range proofs {
+					entry.ProofList = append(entry.ProofList, proof)
+				}
+			case irma.ActionIssuing:
+				entry.IssueCommitment = &gabi.IssueCommitmentMessage{}
+				if err = json.Unmarshal(oldEntry.Response, entry.IssueCommitment); err != nil {
+					return err
+				}
+				isreq := entry.request.(*irma.IssuanceRequest)
+				for _, cred := range isreq.Credentials {
+					cred.KeyCounter = oldEntry.SessionInfo.Keys[cred.CredentialTypeID.IssuerIdentifier()]
+				}
+			default:
+				return errors.New("Invalid log type")
+			}
+		}
+		return client.storage.StoreLogs(logs)
 	},
 }
 
