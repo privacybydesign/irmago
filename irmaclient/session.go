@@ -222,6 +222,7 @@ func (session *session) processSessionInfo() {
 		}
 
 		// Calculate singleton credentials to be removed
+		ir.RemovalCredentialInfoList = irma.CredentialInfoList{}
 		for _, credreq := range ir.Credentials {
 			preexistingCredentials := session.client.attrs(credreq.CredentialTypeID)
 			if len(preexistingCredentials) != 0 && preexistingCredentials[0].IsValid() && preexistingCredentials[0].CredentialType().IsSingleton {
