@@ -714,6 +714,7 @@ func (conf *Configuration) checkCredentialTypes(session IrmaSession, managers ma
 			credid := attrid.CredentialTypeIdentifier()
 			if typ, contains = conf.CredentialTypes[credid]; !contains {
 				managers[credid.Root()] = struct{}{}
+				continue
 			}
 			if !typ.ContainsAttribute(attrid) {
 				managers[credid.Root()] = struct{}{}

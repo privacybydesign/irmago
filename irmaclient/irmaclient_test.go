@@ -401,6 +401,46 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
+func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+
+	delete(client.Configuration.CredentialTypes, credid)
+	require.NotContains(t, client.Configuration.CredentialTypes, credid)
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	request := getIssuanceRequest(true)
+	client.Configuration.Download(request)
+
+	require.Contains(t, client.Configuration.CredentialTypes, credid)
+
+	test.ClearTestStorage(t)
+}
+
+func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
+
+	delete(client.Configuration.CredentialTypes, credid)
+	require.NotContains(t, client.Configuration.CredentialTypes, credid)
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	request := &irma.DisclosureRequest{
+		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
+			Label:      "foo",
+			Attributes: []irma.AttributeTypeIdentifier{attrid},
+		}}),
+	}
+	client.Configuration.Download(request)
+
+	require.Contains(t, client.Configuration.CredentialTypes, credid)
+
+	test.ClearTestStorage(t)
+}
+
 // Test installing a new scheme manager from a qr, and do a(n issuance) session
 // within this manager to test the autmatic downloading of credential definitions,
 // issuers, and public keys.
