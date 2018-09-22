@@ -342,6 +342,7 @@ func (session *session) start() {
 
 	if session.Action == irma.ActionIssuing {
 		ir := session.irmaSession.(*irma.IssuanceRequest)
+		ir.RemovalCredentialInfoList = irma.CredentialInfoList{}
 		for _, credreq := range ir.Credentials {
 			info, err := credreq.Info(session.client.Configuration, getMetadataVersion(session.Version))
 			if err != nil {
