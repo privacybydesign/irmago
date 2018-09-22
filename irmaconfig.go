@@ -1048,8 +1048,8 @@ func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 	for i, attr := range cred.Attributes {
 		conf.checkTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
 		index := i
-		if attr.Index != nil {
-			index = *attr.Index
+		if attr.DisplayIndex != nil {
+			index = *attr.DisplayIndex
 		}
 		if index >= count {
 			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute index at attribute %d", name, i))
