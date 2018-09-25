@@ -310,7 +310,8 @@ func VerifySig(configuration *Configuration, irmaSignature *IrmaSignedMessage, s
 	}
 
 	// Now, cryptographically verify the signature
-	if !verify(configuration, irmaSignature.Signature, sigRequest.GetContext(), sigRequest.GetNonce(), true) {
+	nonce, err := sigRequest.GetNonce()
+	if err != nil || !verify(configuration, irmaSignature.Signature, sigRequest.GetContext(), nonce, true) {
 		return &SignatureProofResult{
 			ProofResult: &ProofResult{
 				ProofStatus: INVALID_CRYPTO,
@@ -332,7 +333,8 @@ func VerifySigWithoutRequest(configuration *Configuration, irmaSignature *IrmaSi
 	}
 
 	// Cryptographically verify the signature
-	if !verify(configuration, irmaSignature.Signature, irmaSignature.Context, irmaSignature.GetNonce(), true) {
+	nonce, err := irmaSignature.GetNonce()
+	if err != nil || !verify(configuration, irmaSignature.Signature, irmaSignature.Context, nonce, true) {
 		return INVALID_CRYPTO, nil
 	}
 

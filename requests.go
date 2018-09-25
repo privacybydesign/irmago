@@ -60,8 +60,9 @@ type DisclosureRequest struct {
 // A SignatureRequest is a a request to sign a message with certain attributes.
 type SignatureRequest struct {
 	DisclosureRequest
-	Message   string          `json:"message"`
-	Timestamp *atum.Timestamp `json:"-"`
+	Message     string               `json:"message"`
+	MessageType SignatureMessageType `json:"messageType"`
+	Timestamp   *atum.Timestamp      `json:"-"`
 }
 
 // An IssuanceRequest is a request to issue certain credentials,
@@ -125,7 +126,7 @@ type IdentityProviderJwt struct {
 
 // IrmaSession is an IRMA session.
 type IrmaSession interface {
-	GetNonce() *big.Int
+	GetNonce() (*big.Int, error)
 	SetNonce(*big.Int)
 	GetContext() *big.Int
 	SetContext(*big.Int)
@@ -253,7 +254,7 @@ func (ir *IssuanceRequest) GetContext() *big.Int { return ir.Context }
 func (ir *IssuanceRequest) SetContext(context *big.Int) { ir.Context = context }
 
 // GetNonce returns the nonce of this session.
-func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
+func (ir *IssuanceRequest) GetNonce() (*big.Int, error) { return ir.Nonce, nil }
 
 // SetNonce sets the nonce of this session.
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
@@ -287,15 +288,15 @@ func (dr *DisclosureRequest) GetContext() *big.Int { return dr.Context }
 func (dr *DisclosureRequest) SetContext(context *big.Int) { dr.Context = context }
 
 // GetNonce returns the nonce of this session.
-func (dr *DisclosureRequest) GetNonce() *big.Int { return dr.Nonce }
+func (dr *DisclosureRequest) GetNonce() (*big.Int, error) { return dr.Nonce, nil }
 
 // SetNonce sets the nonce of this session.
 func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).
-func (sr *SignatureRequest) GetNonce() *big.Int {
-	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce, sr.Timestamp)
+func (sr *SignatureRequest) GetNonce() (*big.Int, error) {
+	return ASN1ConvertSignatureNonce([]byte(sr.Message), sr.MessageType, sr.Nonce, sr.Timestamp)
 }
 
 // Convert fields in JSON string to BigInterger if they are string

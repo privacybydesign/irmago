@@ -4,8 +4,8 @@ import (
 	"crypto/rand"
 	"math/big"
 	"sort"
-	"time"
 	"strconv"
+	"time"
 
 	"github.com/credentials/go-go-gadget-paillier"
 	raven "github.com/getsentry/raven-go"
@@ -575,7 +575,11 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.IrmaSes
 		return nil, err
 	}
 
-	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
+	nonce, err := request.GetNonce()
+	if err != nil {
+		return nil, err
+	}
+	return builders.BuildProofList(request.GetContext(), nonce, issig), nil
 }
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
@@ -615,7 +619,8 @@ func (client *Client) IssueCommitments(request *irma.IssuanceRequest) (*gabi.Iss
 	if err != nil {
 		return nil, err
 	}
-	list := proofBuilders.BuildProofList(request.GetContext(), request.GetNonce(), false)
+	nonce, err := request.GetNonce()
+	list := proofBuilders.BuildProofList(request.GetContext(), nonce, false)
 	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: client.state.nonce2}, nil
 }
 

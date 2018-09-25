@@ -64,8 +64,8 @@ type keyshareEnrollment struct {
 
 type keyshareChangepin struct {
 	Username string `json:"id"`
-	OldPin string   `json:"oldpin"`
-	NewPin string   `json:"newpin"`
+	OldPin   string `json:"oldpin"`
+	NewPin   string `json:"newpin"`
 }
 
 type keyshareAuthorization struct {
@@ -378,7 +378,11 @@ func (ks *keyshareSession) GetCommitments() {
 func (ks *keyshareSession) GetProofPs() {
 	_, issig := ks.session.(*irma.SignatureRequest)
 	_, issuing := ks.session.(*irma.IssuanceRequest)
-	challenge := ks.builders.Challenge(ks.session.GetContext(), ks.session.GetNonce(), issig)
+	nonce, err := ks.session.GetNonce()
+	if err != nil {
+		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
+	}
+	challenge := ks.builders.Challenge(ks.session.GetContext(), nonce, issig)
 	kssChallenge := challenge
 
 	// In disclosure or signature sessions the challenge is Paillier encrypted.
