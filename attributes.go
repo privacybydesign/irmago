@@ -332,6 +332,7 @@ type AttributeDisjunction struct {
 	Label      string
 	Attributes []AttributeTypeIdentifier
 	Values     map[AttributeTypeIdentifier]*string
+	Optional   bool
 
 	selected *AttributeTypeIdentifier
 }
@@ -440,9 +441,11 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 	if !disjunction.HasValues() {
 		temp := struct {
 			Label      string                    `json:"label"`
+			Optional   bool                      `json:"optional"`
 			Attributes []AttributeTypeIdentifier `json:"attributes"`
 		}{
 			Label:      disjunction.Label,
+			Optional:   disjunction.Optional,
 			Attributes: disjunction.Attributes,
 		}
 		return json.Marshal(temp)
@@ -450,9 +453,11 @@ func (disjunction *AttributeDisjunction) MarshalJSON() ([]byte, error) {
 
 	temp := struct {
 		Label      string                              `json:"label"`
+		Optional   bool                                `json:"optional"`
 		Attributes map[AttributeTypeIdentifier]*string `json:"attributes"`
 	}{
 		Label:      disjunction.Label,
+		Optional:   disjunction.Optional,
 		Attributes: disjunction.Values,
 	}
 	return json.Marshal(temp)
@@ -494,17 +499,20 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 	temp := struct {
 		Label      string      `json:"label"`
 		Attributes interface{} `json:"attributes"`
+		Optional   bool        `json:"optional"`
 	}{}
 	if err := json.Unmarshal(bytes, &temp); err != nil {
 		return err
 	}
 	disjunction.Label = temp.Label
+	disjunction.Optional = temp.Optional
 
 	switch temp.Attributes.(type) {
 	case map[string]interface{}:
 		temp := struct {
 			Label      string             `json:"label"`
 			Attributes map[string]*string `json:"attributes"`
+			Optional   bool               `json:"optional"`
 		}{}
 		if err := json.Unmarshal(bytes, &temp); err != nil {
 			return err
@@ -518,6 +526,7 @@ func (disjunction *AttributeDisjunction) UnmarshalJSON(bytes []byte) error {
 		temp := struct {
 			Label      string   `json:"label"`
 			Attributes []string `json:"attributes"`
+			Optional   bool     `json:"optional"`
 		}{}
 		if err := json.Unmarshal(bytes, &temp); err != nil {
 			return err

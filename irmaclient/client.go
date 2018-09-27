@@ -491,7 +491,7 @@ func (client *Client) CheckSatisfiability(
 	for i, disjunction := range disjunctions {
 		candidates = append(candidates, []*irma.AttributeIdentifier{})
 		candidates[i] = client.Candidates(disjunction)
-		if len(candidates[i]) == 0 {
+		if len(candidates[i]) == 0 && !disjunction.Optional {
 			missing = append(missing, disjunction)
 		}
 	}
