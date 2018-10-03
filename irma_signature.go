@@ -60,7 +60,7 @@ func ASN1ConvertSignatureNonce(message []byte, messageType SignatureMessageType,
 		tohash = append(tohash, timestamp.Sig.Data)
 	}
 	if messageType != "" {
-		tohash = append(tohash, messageType)
+		tohash = append(tohash, []byte(messageType))
 	}
 	asn1bytes, err := asn1.Marshal(tohash)
 	if err != nil {

@@ -91,6 +91,33 @@ func TestManualSession(t *testing.T) {
 	test.ClearTestStorage(t)
 }
 
+func TestManualSessionWithType(t *testing.T) {
+	invalidate = false
+
+	request := "{\"nonce\": 42, \"context\": 1337, \"message\":\"I owe you everything\", \"messageType\":\"string\", \"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
+	ms := createManualSessionHandler(request, request, t)
+
+	client = parseStorage(t)
+	client.NewManualSession(request, &ms)
+
+	if err := <-ms.errorChannel; err != nil {
+		test.ClearTestStorage(t)
+		t.Fatal(*err)
+	}
+
+	// No errors, obtain proof result from channel
+	result := <-ms.resultChannel
+	if ps := result.ProofStatus; ps != irma.VALID {
+		t.Logf("Invalid proof result: %v Expected: %v", ps, irma.VALID)
+		t.Fatal()
+	}
+	if attrStatus := result.ToAttributeResultList()[0].AttributeProofStatus; attrStatus != irma.PRESENT {
+		t.Logf("Invalid attribute result value: %v Expected: %v", attrStatus, irma.PRESENT)
+		t.Fail()
+	}
+	test.ClearTestStorage(t)
+}
+
 // Test if the session fails with unsatisfiable error if we cannot satify the signature request
 func TestManualSessionUnsatisfiable(t *testing.T) {
 	invalidate = false

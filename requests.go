@@ -337,6 +337,7 @@ func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
 
 	sr.DisclosureRequest = result.DisclosureRequest
 	sr.Message = result.Message
+	sr.MessageType = result.MessageType
 
 	return err
 }

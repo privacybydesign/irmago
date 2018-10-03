@@ -97,9 +97,10 @@ func getDisclosureJwt(name string, id irma.AttributeTypeIdentifier) interface{} 
 	})
 }
 
-func getSigningJwt(name string, id irma.AttributeTypeIdentifier) interface{} {
+func getSigningJwt(name string, id irma.AttributeTypeIdentifier, messageType irma.SignatureMessageType) interface{} {
 	return irma.NewSignatureRequestorJwt(name, &irma.SignatureRequest{
 		Message: "test",
+		MessageType: messageType,
 		DisclosureRequest: irma.DisclosureRequest{
 			SessionRequest: irma.SessionRequest{
 				Nonce:   big.NewInt(1),
@@ -199,7 +200,15 @@ func TestSigningSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	name := "testsigclient"
 
-	jwtcontents := getSigningJwt(name, id)
+	jwtcontents := getSigningJwt(name, id, "")
+	sessionHelper(t, jwtcontents, "signature", nil)
+}
+
+func TestSigningSessionMessageType(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	name := "testsigclient"
+
+	jwtcontents := getSigningJwt(name, id, irma.SignatureMessageTypeString)
 	sessionHelper(t, jwtcontents, "signature", nil)
 }
 
@@ -380,7 +389,7 @@ func keyshareSessions(t *testing.T, client *Client) {
 	)
 	sessionHelper(t, jwt, "verification", client)
 
-	jwt = getSigningJwt("testsigclient", id)
+	jwt = getSigningJwt("testsigclient", id, "")
 	jwt.(*irma.SignatureRequestorJwt).Request.Request.Content = append(
 		jwt.(*irma.SignatureRequestorJwt).Request.Request.Content,
 		&irma.AttributeDisjunction{
