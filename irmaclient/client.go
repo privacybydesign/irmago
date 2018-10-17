@@ -496,13 +496,16 @@ func (client *Client) CheckSatisfiability(
 	return candidates, missing
 }
 
-func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.CredentialIdentifier][]int, error) {
+func (client *Client) groupCredentials(choice *irma.DisclosureChoice, disjunctions irma.AttributeDisjunctionList) (
+	map[irma.CredentialIdentifier][]int, irma.DisclosedAttributeIndices, error,
+) {
 	grouped := make(map[irma.CredentialIdentifier][]int)
 	if choice == nil || choice.Attributes == nil {
-		return grouped, nil
+		return grouped, irma.DisclosedAttributeIndices{}, nil
 	}
 
-	for _, attribute := range choice.Attributes {
+	attributeIndices := make(irma.DisclosedAttributeIndices, len(choice.Attributes))
+	for i, attribute := range choice.Attributes {
 		identifier := attribute.Type
 		ici := attribute.CredentialIdentifier()
 
@@ -519,7 +522,11 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.
 		}
 		index, err := client.Configuration.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+
+		attributeIndices[i] = []*irma.DisclosedAttributeIndex{
+			{AttributeIndex: index + 2, Identifier: ici},
 		}
 
 		// These indices will be used in the []*big.Int at gabi.credential.Attributes,
@@ -527,23 +534,26 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.
 		grouped[ici] = append(grouped[ici], index+2)
 	}
 
-	return grouped, nil
+	return grouped, attributeIndices, nil
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
-func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.SessionRequest, issig bool) (gabi.ProofBuilderList, error) {
-	todisclose, err := client.groupCredentials(choice)
+func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.SessionRequest, issig bool,
+) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, error) {
+	todisclose, disjunctionChoices, err := client.groupCredentials(choice, request.ToDisclose())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
-	for id, list := range todisclose {
-		cred, err := client.credentialByID(id)
+
+	for i, choice := range disjunctionChoices {
+		cred, err := client.credentialByID(choice[0].Identifier)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(list))
+		choice[0].CredentialIndex = i
+		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(todisclose[choice[0].Identifier]))
 	}
 
 	if issig {
@@ -559,21 +569,24 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 		r := request.(*irma.SignatureRequest)
 		r.Timestamp, err = irma.GetTimestamp(r.Message, sigs, disclosed)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	return builders, nil
+	return builders, disjunctionChoices, nil
 }
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.
-func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.SessionRequest, issig bool) (gabi.ProofList, error) {
-	builders, err := client.ProofBuilders(choice, request, issig)
+func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.SessionRequest, issig bool) (*irma.Disclosure, error) {
+	builders, choices, err := client.ProofBuilders(choice, request, issig)
 	if err != nil {
 		return nil, err
 	}
 
-	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
+	return &irma.Disclosure{
+		Proofs:  builders.BuildProofList(request.GetContext(), request.GetNonce(), issig),
+		Indices: choices,
+	}, nil
 }
 
 // generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
@@ -584,40 +597,47 @@ func generateIssuerProofNonce() (*big.Int, error) {
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
 // for the future credentials as well as possibly any disclosed attributes, and generates
 // a nonce against which the issuer's proof of knowledge must verify.
-func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest) (gabi.ProofBuilderList, *big.Int, error) {
+func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest,
+) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
 	issuerProofNonce, err := generateIssuerProofNonce()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
 		var pk *gabi.PublicKey
 		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		credBuilder := gabi.NewCredentialBuilder(
 			pk, request.GetContext(), client.secretkey.Key, issuerProofNonce)
 		builders = append(builders, credBuilder)
 	}
 
-	disclosures, err := client.ProofBuilders(request.Choice, request, false)
+	disclosures, choices, err := client.ProofBuilders(request.Choice, request, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	builders = append(disclosures, builders...)
-	return builders, issuerProofNonce, nil
+	return builders, choices, issuerProofNonce, nil
 }
 
 // IssueCommitments computes issuance commitments, along with disclosure proofs specified by choice,
 // and also returns the credential builders which will become the new credentials upon combination with the issuer's signature.
-func (client *Client) IssueCommitments(request *irma.IssuanceRequest) (*gabi.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
-	builders, issuerProofNonce, err := client.IssuanceProofBuilders(request)
+func (client *Client) IssueCommitments(request *irma.IssuanceRequest,
+) (*irma.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
+	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request)
 	if err != nil {
 		return nil, nil, err
 	}
-	list := builders.BuildProofList(request.GetContext(), request.GetNonce(), false)
-	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: issuerProofNonce}, builders, nil
+	return &irma.IssueCommitmentMessage{
+		IssueCommitmentMessage: &gabi.IssueCommitmentMessage{
+			Proofs: builders.BuildProofList(request.GetContext(), request.GetNonce(), false),
+			Nonce2: issuerProofNonce,
+		},
+		Indices: choices,
+	}, builders, nil
 }
 
 // ConstructCredentials constructs and saves new credentials using the specified issuance signature messages

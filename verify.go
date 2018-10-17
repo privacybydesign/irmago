@@ -119,7 +119,7 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
 // with the disjunction list in the disjunction list. If any of the given disjunctions is not matched by one
 // of the disclosed attributes, then the corresponding item in the returned slice has status AttributeProofStatusMissing.
 // The first return parameter of this function indicates whether or not all disjunctions (if present) are satisfied.
-func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
+func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
 	var list []*DisclosedAttribute
 	list = make([]*DisclosedAttribute, len(disjunctions))
 	for i := range list {
@@ -135,7 +135,7 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 	// we append these to list just before returning
 	extraAttrs := map[AttributeTypeIdentifier]*DisclosedAttribute{}
 
-	for _, proof := range pl {
+	for _, proof := range d.Proofs {
 		proofd, ok := proof.(*gabi.ProofD)
 		if !ok {
 			continue
@@ -198,7 +198,7 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 	return len(disjunctions) == 0 || disjunctions.satisfied(), list, nil
 }
 
-func (pl ProofList) VerifyAgainstDisjunctions(
+func (d *Disclosure) VerifyAgainstDisjunctions(
 	configuration *Configuration,
 	required AttributeDisjunctionList,
 	context, nonce *big.Int,
@@ -206,13 +206,13 @@ func (pl ProofList) VerifyAgainstDisjunctions(
 	issig bool,
 ) ([]*DisclosedAttribute, ProofStatus, error) {
 	// Cryptographically verify the IRMA disclosure proofs in the signature
-	valid, err := pl.VerifyProofs(configuration, context, nonce, publickeys, issig)
+	valid, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, issig)
 	if !valid || err != nil {
 		return nil, ProofStatusInvalid, err
 	}
 
 	// Next extract the contained attributes from the proofs, and match them to the signature request if present
-	allmatched, list, err := pl.DisclosedAttributes(configuration, required)
+	allmatched, list, err := d.DisclosedAttributes(configuration, required)
 	if err != nil {
 		return nil, ProofStatusInvalid, err
 	}
@@ -225,14 +225,14 @@ func (pl ProofList) VerifyAgainstDisjunctions(
 	return list, ProofStatusValid, nil
 }
 
-func (pl ProofList) Verify(configuration *Configuration, request *DisclosureRequest) ([]*DisclosedAttribute, ProofStatus, error) {
-	list, status, err := pl.VerifyAgainstDisjunctions(configuration, request.Content, request.Context, request.Nonce, nil, false)
+func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest) ([]*DisclosedAttribute, ProofStatus, error) {
+	list, status, err := d.VerifyAgainstDisjunctions(configuration, request.Content, request.Context, request.Nonce, nil, false)
 	if err != nil {
 		return list, status, err
 	}
 
 	now := time.Now()
-	if expired := pl.Expired(configuration, &now); expired {
+	if expired := ProofList(d.Proofs).Expired(configuration, &now); expired {
 		return list, ProofStatusExpired, nil
 	}
 
@@ -272,12 +272,11 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	}
 
 	// Now, cryptographically verify the IRMA disclosure proofs in the signature
-	pl := ProofList(sm.Signature)
 	var required AttributeDisjunctionList
 	if request != nil {
 		required = request.Content
 	}
-	result, status, err := pl.VerifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), nil, true)
+	result, status, err := sm.Disclosure().VerifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), nil, true)
 	if status != ProofStatusValid || err != nil {
 		return result, status, err
 	}
@@ -287,7 +286,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	if sm.Timestamp != nil {
 		t = time.Unix(sm.Timestamp.Time, 0)
 	}
-	if expired := pl.Expired(configuration, &t); expired {
+	if expired := ProofList(sm.Signature).Expired(configuration, &t); expired {
 		// The ABS contains attributes that were expired at the time of creation of the ABS.
 		return result, ProofStatusExpired, nil
 	}

@@ -14,11 +14,12 @@ import (
 // SignedMessage is a message signed with an attribute-based signature
 // The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(nonce, SHA256(message), timestampSignature)
 type SignedMessage struct {
-	Signature gabi.ProofList  `json:"signature"`
-	Nonce     *big.Int        `json:"nonce"`
-	Context   *big.Int        `json:"context"`
-	Message   string          `json:"message"`
-	Timestamp *atum.Timestamp `json:"timestamp"`
+	Signature gabi.ProofList            `json:"signature"`
+	Indices   DisclosedAttributeIndices `json:"indices"`
+	Nonce     *big.Int                  `json:"nonce"`
+	Context   *big.Int                  `json:"context"`
+	Message   string                    `json:"message"`
+	Timestamp *atum.Timestamp           `json:"timestamp"`
 }
 
 func (sm *SignedMessage) GetNonce() *big.Int {
@@ -29,6 +30,13 @@ func (sm *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool 
 	return sm.Nonce.Cmp(request.Nonce) == 0 &&
 		sm.Context.Cmp(request.Context) == 0 &&
 		sm.GetNonce().Cmp(request.GetNonce()) == 0
+}
+
+func (sm *SignedMessage) Disclosure() *Disclosure {
+	return &Disclosure{
+		Proofs:  sm.Signature,
+		Indices: sm.Indices,
+	}
 }
 
 // ASN1ConvertSignatureNonce computes the nonce that is used in the creation of the attribute-based signature:

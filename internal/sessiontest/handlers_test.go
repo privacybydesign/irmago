@@ -188,10 +188,9 @@ func (th *ManualTestHandler) RequestSchemeManagerPermission(manager *irma.Scheme
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
 func (th *ManualTestHandler) RequestVerificationPermission(request irma.DisclosureRequest, verifierName string, ph irmaclient.PermissionHandler) {
-	var attributes []*irma.AttributeIdentifier
+	var choice irma.DisclosureChoice
 	for _, cand := range request.Candidates {
-		attributes = append(attributes, cand[0])
+		choice.Attributes = append(choice.Attributes, cand[0])
 	}
-	c := irma.DisclosureChoice{attributes}
-	ph(true, &c)
+	ph(true, &choice)
 }

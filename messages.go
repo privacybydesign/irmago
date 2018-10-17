@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/go-errors/errors"
+	"github.com/mhe/gabi"
 )
 
 // Status encodes the status of an IRMA session (e.g., connected).
@@ -238,6 +239,35 @@ func (e *SessionError) Stack() string {
 	}
 
 	return ""
+}
+
+type Disclosure struct {
+	Proofs  gabi.ProofList            `json:"proofs"`
+	Indices DisclosedAttributeIndices `json:"indices"`
+}
+
+// DisclosedAttributeIndices contains, for each conjunction of an attribute disclosure request,
+// a list of attribute indices, pointing to where the disclosed attributes for that conjunction
+// can be found within a gabi.ProofList.
+type DisclosedAttributeIndices [][]*DisclosedAttributeIndex
+
+// DisclosedAttributeIndex points to a specific attribute in a gabi.ProofList.
+type DisclosedAttributeIndex struct {
+	CredentialIndex int                  `json:"cred"`
+	AttributeIndex  int                  `json:"attr"`
+	Identifier      CredentialIdentifier `json:"-"` // credential from which this attribute was disclosed
+}
+
+type IssueCommitmentMessage struct {
+	*gabi.IssueCommitmentMessage
+	Indices DisclosedAttributeIndices `json:"indices"`
+}
+
+func (i *IssueCommitmentMessage) Disclosure() *Disclosure {
+	return &Disclosure{
+		Proofs:  i.Proofs,
+		Indices: i.Indices,
+	}
 }
 
 func JwtDecode(jwt string, body interface{}) error {

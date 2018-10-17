@@ -8,7 +8,6 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
 	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
@@ -362,14 +361,14 @@ func (sr *SignatureRequest) GetNonce() *big.Int {
 }
 
 func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMessage, error) {
-	signature, ok := message.(gabi.ProofList)
+	signature, ok := message.(*Disclosure)
 
 	if !ok {
 		return nil, errors.Errorf("Type assertion failed")
 	}
 
 	return &SignedMessage{
-		Signature: signature,
+		Signature: signature.Proofs,
 		Nonce:     sr.Nonce,
 		Context:   sr.Context,
 		Message:   sr.Message,
