@@ -279,8 +279,17 @@ func relativePath(absolute string, relative string) string {
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
 func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.PublicKey, error) {
-	if _, contains := conf.publicKeys[id]; !contains {
-		if err := conf.parseKeysFolder(conf.SchemeManagers[id.SchemeManagerIdentifier()], id); err != nil {
+	var haveIssuer, haveKey bool
+	var err error
+	_, haveIssuer = conf.publicKeys[id]
+	if haveIssuer {
+		_, haveKey = conf.publicKeys[id][counter]
+	}
+
+	// If we have not seen this issuer or key before in conf.publicKeys,
+	// try to parse the public key folder; new keys might have been put there since we last parsed it
+	if !haveIssuer || !haveKey {
+		if err = conf.parseKeysFolder(id); err != nil {
 			return nil, err
 		}
 	}
@@ -383,7 +392,8 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 }
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
-func (conf *Configuration) parseKeysFolder(manager *SchemeManager, issuerid IssuerIdentifier) error {
+func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
+	manager := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
 	conf.publicKeys[issuerid] = map[int]*gabi.PublicKey{}
 	path := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(path)
@@ -1143,7 +1153,7 @@ func (conf *Configuration) CheckKeys() error {
 	const expiryBoundary = int64(time.Hour/time.Second) * 24 * 31 // 1 month, TODO make configurable
 
 	for issuerid := range conf.Issuers {
-		if err := conf.parseKeysFolder(conf.SchemeManagers[issuerid.SchemeManagerIdentifier()], issuerid); err != nil {
+		if err := conf.parseKeysFolder(issuerid); err != nil {
 			return err
 		}
 		indices, err := conf.PublicKeyIndices(issuerid)
