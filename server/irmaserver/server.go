@@ -8,6 +8,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
+	"github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/rs/cors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmarequestor"
@@ -51,6 +52,11 @@ func Handler(config *Configuration) (http.Handler, error) {
 	}
 
 	router := chi.NewRouter()
+
+	router.Use(cors.New(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
+	}).Handler)
 
 	// Mount server for irmaclient
 	router.Mount("/irma/", irmarequestor.HttpHandlerFunc("/irma/"))
