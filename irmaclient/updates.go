@@ -80,6 +80,7 @@ var clientUpdates = []func(client *Client) error{
 		// So read the logs again into a slice of a temp struct that does contain this field.
 		type oldLogEntry struct {
 			Response    json.RawMessage
+			ProofList   gabi.ProofList
 			SessionInfo struct {
 				Nonce   *big.Int                      `json:"nonce"`
 				Context *big.Int                      `json:"context"`
@@ -144,11 +145,12 @@ var clientUpdates = []func(client *Client) error{
 				if err = json.Unmarshal(oldEntry.Response, &proofs); err != nil {
 					return
 				}
+				entry.Disclosure = &irma.Disclosure{}
 				for _, proof := range proofs {
-					entry.ProofList = append(entry.ProofList, proof)
+					entry.Disclosure.Proofs = append(entry.Disclosure.Proofs, proof)
 				}
 			case irma.ActionIssuing:
-				entry.IssueCommitment = &gabi.IssueCommitmentMessage{}
+				entry.IssueCommitment = &irma.IssueCommitmentMessage{}
 				if err = json.Unmarshal(oldEntry.Response, entry.IssueCommitment); err != nil {
 					return err
 				}

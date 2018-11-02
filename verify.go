@@ -120,6 +120,12 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
 // of the disclosed attributes, then the corresponding item in the returned slice has status AttributeProofStatusMissing.
 // The first return parameter of this function indicates whether or not all disjunctions (if present) are satisfied.
 func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
+	return ProofList(d.Proofs).DisclosedAttributes(configuration, disjunctions)
+
+	// TODO new verification logic that uses d.Indices
+}
+
+func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
 	var list []*DisclosedAttribute
 	list = make([]*DisclosedAttribute, len(disjunctions))
 	for i := range list {
@@ -135,7 +141,7 @@ func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjuncti
 	// we append these to list just before returning
 	extraAttrs := map[AttributeTypeIdentifier]*DisclosedAttribute{}
 
-	for _, proof := range d.Proofs {
+	for _, proof := range pl {
 		proofd, ok := proof.(*gabi.ProofD)
 		if !ok {
 			continue

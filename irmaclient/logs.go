@@ -6,7 +6,6 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 )
 
@@ -25,8 +24,8 @@ type LogEntry struct {
 	SignedMessage []byte                                                    `json:",omitempty"` // In case of signature sessions
 	Timestamp     *atum.Timestamp                                           `json:",omitempty"` // In case of signature sessions
 
-	IssueCommitment *gabi.IssueCommitmentMessage `json:",omitempty"`
-	ProofList       gabi.ProofList               `json:",omitempty"`
+	IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
+	Disclosure      *irma.Disclosure             `json:",omitempty"`
 }
 
 const actionRemoval = irma.Action("removal")
@@ -72,14 +71,14 @@ func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([]*irm
 	if err != nil {
 		return nil, err
 	}
-	var proofs gabi.ProofList
+	var disclosure *irma.Disclosure
 	disjunctions := request.ToDisclose()
 	if entry.Type == irma.ActionIssuing {
-		proofs = entry.IssueCommitment.Proofs
+		disclosure = entry.IssueCommitment.Disclosure()
 	} else {
-		proofs = entry.ProofList
+		disclosure = entry.Disclosure
 	}
-	_, attrs, err := irma.ProofList(proofs).DisclosedAttributes(conf, disjunctions)
+	_, attrs, err := disclosure.DisclosedAttributes(conf, disjunctions)
 	return attrs, err
 }
 
@@ -106,7 +105,7 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 	}
 	sigrequest := request.(*irma.SignatureRequest)
 	return &irma.SignedMessage{
-		Signature: entry.ProofList,
+		Signature: entry.Disclosure.Proofs,
 		Nonce:     sigrequest.Nonce,
 		Context:   sigrequest.Context,
 		Message:   string(entry.SignedMessage),
@@ -137,9 +136,9 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 
 		fallthrough
 	case irma.ActionDisclosing:
-		entry.ProofList = response.(gabi.ProofList)
+		entry.Disclosure = response.(*irma.Disclosure)
 	case irma.ActionIssuing:
-		entry.IssueCommitment = response.(*gabi.IssueCommitmentMessage)
+		entry.IssueCommitment = response.(*irma.IssueCommitmentMessage)
 	default:
 		return nil, errors.New("Invalid log type")
 	}

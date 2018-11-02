@@ -41,7 +41,7 @@ func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestH
 		verifyasRequest := &irma.DisclosureRequest{}
 		err := json.Unmarshal([]byte(verifyAs), verifyasRequest)
 		require.NoError(t, err)
-		list, status, err := irma.ProofList(result.VerificationResult).Verify(client.Configuration, verifyasRequest)
+		list, status, err := result.DisclosureResult.Verify(client.Configuration, verifyasRequest)
 		require.NoError(t, err)
 		return list, status
 	case irma.ActionSigning:

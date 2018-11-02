@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/mhe/gabi"
 	"github.com/pkg/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -130,9 +129,9 @@ func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinH
 }
 
 type SessionResult struct {
-	Err                error
-	SignatureResult    *irma.SignedMessage
-	VerificationResult gabi.ProofList
+	Err              error
+	SignatureResult  *irma.SignedMessage
+	DisclosureResult *irma.Disclosure
 }
 
 // ManualTestHandler embeds a TestHandler to inherit its methods.
@@ -159,12 +158,8 @@ func (th *ManualTestHandler) Success(result string) {
 		retval.SignatureResult = &irma.SignedMessage{}
 		err = json.Unmarshal([]byte(result), retval.SignatureResult)
 	case irma.ActionDisclosing:
-		proofs := []*gabi.ProofD{}
-		err = json.Unmarshal([]byte(result), &proofs)
-		retval.VerificationResult = make(gabi.ProofList, len(proofs))
-		for i, proof := range proofs {
-			retval.VerificationResult[i] = proof
-		}
+		retval.DisclosureResult = &irma.Disclosure{}
+		err = json.Unmarshal([]byte(result), retval.DisclosureResult)
 	}
 	if err != nil {
 		th.Failure(&irma.SessionError{

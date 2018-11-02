@@ -332,7 +332,7 @@ func (session *session) sendResponse(message interface{}) {
 				return
 			}
 		}
-		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
+		log, _ = session.createLogEntry(message) // TODO err
 	case irma.ActionDisclosing:
 		messageJson, err = json.Marshal(message)
 		if err != nil {
@@ -350,7 +350,7 @@ func (session *session) sendResponse(message interface{}) {
 				return
 			}
 		}
-		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
+		log, _ = session.createLogEntry(message) // TODO err
 	case irma.ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
