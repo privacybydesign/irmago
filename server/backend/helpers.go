@@ -72,7 +72,7 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	return nil
 }
 
-func (session *session) getProofP(commitments *gabi.IssueCommitmentMessage, scheme irma.SchemeManagerIdentifier) (*gabi.ProofP, error) {
+func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, scheme irma.SchemeManagerIdentifier) (*gabi.ProofP, error) {
 	if session.kssProofs == nil {
 		session.kssProofs = make(map[irma.SchemeManagerIdentifier]*gabi.ProofP)
 	}

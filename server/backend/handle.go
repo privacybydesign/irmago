@@ -63,7 +63,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	return &session.result.ProofStatus, rerr
 }
 
-func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStatus, *irma.RemoteError) {
+func (session *session) handlePostDisclosure(disclosure irma.Disclosure) (*irma.ProofStatus, *irma.RemoteError) {
 	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
@@ -71,7 +71,7 @@ func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStat
 
 	var err error
 	var rerr *irma.RemoteError
-	session.result.Disclosed, session.result.ProofStatus, err = irma.ProofList(proofs).Verify(
+	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(
 		conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
 	if err == nil {
 		session.setStatus(server.StatusDone)
@@ -86,7 +86,7 @@ func (session *session) handlePostProofs(proofs gabi.ProofList) (*irma.ProofStat
 	return &session.result.ProofStatus, rerr
 }
 
-func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
+func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
 	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
@@ -124,7 +124,7 @@ func (session *session) handlePostCommitments(commitments *gabi.IssueCommitmentM
 	}
 
 	// Verify all proofs and check disclosed attributes, if any, against request
-	session.result.Disclosed, session.result.ProofStatus, err = irma.ProofList(commitments.Proofs).VerifyAgainstDisjunctions(
+	session.result.Disclosed, session.result.ProofStatus, err = commitments.Disclosure().VerifyAgainstDisjunctions(
 		conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
 	if err != nil {
 		if err == irma.ErrorMissingPublicKey {

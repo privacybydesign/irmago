@@ -189,7 +189,7 @@ func HandleProtocolMessage(
 		}
 
 		if noun == "commitments" && session.action == irma.ActionIssuing {
-			commitments := &gabi.IssueCommitmentMessage{}
+			commitments := &irma.IssueCommitmentMessage{}
 			if err := irma.UnmarshalValidate(message, commitments); err != nil {
 				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
 				return
@@ -198,12 +198,12 @@ func HandleProtocolMessage(
 			return
 		}
 		if noun == "proofs" && session.action == irma.ActionDisclosing {
-			proofs := gabi.ProofList{}
-			if err := irma.UnmarshalValidate(message, &proofs); err != nil {
+			disclosure := irma.Disclosure{}
+			if err := irma.UnmarshalValidate(message, &disclosure); err != nil {
 				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
 				return
 			}
-			status, output = server.JsonResponse(session.handlePostProofs(proofs))
+			status, output = server.JsonResponse(session.handlePostDisclosure(disclosure))
 			return
 		}
 		if noun == "proofs" && session.action == irma.ActionSigning {
