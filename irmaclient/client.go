@@ -518,6 +518,9 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice, disjunctio
 		}
 
 		if identifier.IsCredential() {
+			attributeIndices[i] = []*irma.DisclosedAttributeIndex{
+				{AttributeIndex: 1, Identifier: ici},
+			}
 			continue // In this case we only disclose the metadata attribute, which is already handled
 		}
 		index, err := client.Configuration.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
