@@ -120,9 +120,93 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
 // of the disclosed attributes, then the corresponding item in the returned slice has status AttributeProofStatusMissing.
 // The first return parameter of this function indicates whether or not all disjunctions (if present) are satisfied.
 func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
-	return ProofList(d.Proofs).DisclosedAttributes(configuration, disjunctions)
+	if d.Indices == nil || len(disjunctions) == 0 {
+		return ProofList(d.Proofs).DisclosedAttributes(configuration, disjunctions)
+	}
 
-	// TODO new verification logic that uses d.Indices
+	list := make([]*DisclosedAttribute, len(disjunctions))
+	usedAttrs := map[int]map[int]struct{}{} // keep track of attributes that satisfy the disjunctions
+
+	// For each of the disjunctions, lookup the attribute that the user sent to satisfy this disjunction,
+	// using the indices specified by the user in d.Indices. Then see if the attribute satisfies the disjunction.
+	for i, disjunction := range disjunctions {
+		index := d.Indices[i][0]
+		proofd, ok := d.Proofs[index.CredentialIndex].(*gabi.ProofD)
+		if !ok {
+			// If with the index the user told us to look for the required attribute at this specific location,
+			// and the proof here is not a disclosure proof, then reject
+			return false, nil, errors.New("ProofList contained proof of invalid type")
+		}
+
+		if usedAttrs[index.CredentialIndex] == nil {
+			usedAttrs[index.CredentialIndex] = map[int]struct{}{}
+		}
+		usedAttrs[index.CredentialIndex][index.AttributeIndex] = struct{}{}
+
+		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
+		attr, attrval, err := parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex+2])
+		if err != nil {
+			return false, nil, err
+		}
+
+		if disjunction.attemptSatisfy(attr.Identifier, attrval) {
+			list[i] = attr
+			if disjunction.satisfied() {
+				list[i].Status = AttributeProofStatusPresent
+			} else {
+				list[i].Status = AttributeProofStatusInvalidValue
+			}
+		} else {
+			list[i] = &DisclosedAttribute{Status: AttributeProofStatusMissing}
+		}
+	}
+
+	// Loop over any extra attributes in d.Proofs not requested in any of the disjunctions
+	for i, proof := range d.Proofs {
+		proofd, ok := proof.(*gabi.ProofD)
+		if !ok {
+			continue
+		}
+		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
+		for attrIndex, attrInt := range proofd.ADisclosed {
+			if attrIndex == 0 || attrIndex == 1 { // Never add secret key or metadata (i.e. no-attribute disclosure) as extra
+				continue // Note that the secret should never be disclosed by the client, but we skip it to be sure
+			}
+			if _, used := usedAttrs[i][attrIndex]; used {
+				continue
+			}
+
+			attr, _, err := parseAttribute(attrIndex, metadata, attrInt)
+			if err != nil {
+				return false, nil, err
+			}
+			attr.Status = AttributeProofStatusExtra
+			list = append(list, attr)
+		}
+	}
+
+	return len(disjunctions) == 0 || disjunctions.satisfied(), list, nil
+}
+
+func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*DisclosedAttribute, *string, error) {
+	var attrid AttributeTypeIdentifier
+	var attrval *string
+	credtype := metadata.CredentialType()
+	if credtype == nil {
+		return nil, nil, errors.New("ProofList contained a disclosure proof of an unkown credential type")
+	}
+	if index == 1 {
+		attrid = NewAttributeTypeIdentifier(credtype.Identifier().String())
+		p := "present"
+		attrval = &p
+	} else {
+		attrid = credtype.AttributeTypes[index-2].GetAttributeTypeIdentifier()
+		attrval = decodeAttribute(attr, metadata.Version())
+	}
+	return &DisclosedAttribute{
+		Identifier: attrid,
+		Value:      translateAttribute(attrval),
+	}, attrval, nil
 }
 
 func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
@@ -147,35 +231,19 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 			continue
 		}
 		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
-		credtype := metadata.CredentialType()
-		if credtype == nil {
-			return false, nil, errors.New("ProofList contained a disclosure proof of an unkown credential type")
-		}
 
-		for k, v := range proofd.ADisclosed {
-			if k == 0 {
+		for attrIndex, attrInt := range proofd.ADisclosed {
+			if attrIndex == 0 {
 				continue // Should never be disclosed, but skip it to be sure
 			}
 
-			var attrid AttributeTypeIdentifier
-			var attrval *string
-			var attr *DisclosedAttribute
-			if k == 1 {
-				attrid = NewAttributeTypeIdentifier(credtype.Identifier().String())
-				p := "present"
-				attrval = &p
-			} else {
-				attrid = credtype.AttributeTypes[k-2].GetAttributeTypeIdentifier()
-				attrval = decodeAttribute(v, metadata.Version())
-			}
-			attr = &DisclosedAttribute{
-				Value:      translateAttribute(attrval),
-				Identifier: attrid,
-				Status:     AttributeProofStatusExtra,
+			attr, attrval, err := parseAttribute(attrIndex, metadata, attrInt)
+			if err != nil {
+				return false, nil, err
 			}
 
-			if k > 1 { // Never add metadata (i.e. no-attribute disclosure) as extra
-				extraAttrs[attrid] = attr
+			if attrIndex > 1 { // Never add metadata (i.e. no-attribute disclosure) as extra
+				extraAttrs[attr.Identifier] = attr
 			}
 			if len(disjunctions) == 0 {
 				continue
@@ -183,14 +251,14 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 
 			// See if the current attribute satisfies one of the disjunctions, if so, delete it from extraAttrs
 			for i, disjunction := range disjunctions {
-				if disjunction.attemptSatisfy(attrid, attrval) {
+				if disjunction.attemptSatisfy(attr.Identifier, attrval) {
 					if disjunction.satisfied() {
 						attr.Status = AttributeProofStatusPresent
 					} else {
 						attr.Status = AttributeProofStatusInvalidValue
 					}
 					list[i] = attr
-					delete(extraAttrs, attrid)
+					delete(extraAttrs, attr.Identifier)
 				}
 			}
 		}
