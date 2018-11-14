@@ -24,11 +24,6 @@
 #   go-tests = true
 #   unused-packages = true
 
-
-[[constraint]]
-  branch = "master"
-  name = "github.com/credentials/go-go-gadget-paillier"
-
 [[constraint]]
   branch = "master"
   name = "github.com/getsentry/raven-go"

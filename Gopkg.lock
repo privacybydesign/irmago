@@ -3,200 +3,263 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:e730c8372514c662e9ed97228c2e2023f1ec99eb68f7bb56a44c1084733d85f5"
   name = "github.com/bwesterb/byteswriter"
   packages = ["."]
+  pruneopts = "UT"
   revision = "c31a76b641f8b94ffccad99eeeabf795e53b1e4a"
 
 [[projects]]
   branch = "master"
+  digest = "1:670b0da164df747fbf79fb31921355d9e5c81a54bfe4c3ea7b2d4ec734f088c3"
   name = "github.com/bwesterb/go-atum"
   packages = ["."]
+  pruneopts = "UT"
   revision = "b79a6b33c09b7b8d49d2454bbde06162fdc0cd70"
 
 [[projects]]
   branch = "master"
+  digest = "1:e2c5caf65b79d6a5b246690148a6ae89c4bd2cf1af0d8dd2370c5bb4315ef155"
   name = "github.com/bwesterb/go-pow"
   packages = ["."]
+  pruneopts = "UT"
   revision = "b53ca488a9ca0a21ee44c6a6b0ad792693214e1a"
 
 [[projects]]
   branch = "master"
+  digest = "1:bde789a11b20e103918cf1d67fe45d53fc32d2f10b31f0f571e9a2358489e29b"
   name = "github.com/bwesterb/go-xmssmt"
   packages = ["."]
+  pruneopts = "UT"
   revision = "58241c99638a738580f8258ac438f0b7f91d346d"
 
 [[projects]]
+  digest = "1:fed1f537c2f1269fe475a8556c393fe466641682d73ef8fd0491cd3aa1e47bad"
   name = "github.com/certifi/gocertifi"
   packages = ["."]
+  pruneopts = "UT"
   revision = "deb3ae2ef2610fde3330947281941c562861188b"
   version = "2018.01.18"
 
 [[projects]]
+  digest = "1:3535f00c607f3993a1a2f1cbb1b3faa3bf8903f9edc77c1386491882d3b2754c"
   name = "github.com/cespare/xxhash"
   packages = ["."]
+  pruneopts = "UT"
   revision = "5c37fe3735342a2e0d01c87a907579987c8936cc"
   version = "v1.0.0"
 
 [[projects]]
+  digest = "1:c28625428387b63dd7154eb857f51e700465cfbf7c06f619e71f2da33cefe47e"
   name = "github.com/coreos/bbolt"
   packages = ["."]
+  pruneopts = "UT"
   revision = "583e8937c61f1af6513608ccc75c97b6abdf4ff9"
   version = "v1.3.0"
 
 [[projects]]
   branch = "master"
-  name = "github.com/credentials/go-go-gadget-paillier"
-  packages = ["."]
-  revision = "720887075201f3105c335f837431426d54891b7f"
-
-[[projects]]
-  branch = "master"
+  digest = "1:037949d323e9e831fd1be12164b6f17ab42dd963ab7594c1643352bc1186754b"
   name = "github.com/credentials/safeprime"
   packages = ["."]
+  pruneopts = "UT"
   revision = "424faf641b4987fde58280730486e1035e057abc"
 
 [[projects]]
+  digest = "1:a2c1d0e43bd3baaa071d1b9ed72c27d78169b2b269f71c105ac4ba34b1be4a39"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
+  pruneopts = "UT"
   revision = "346938d642f2ec3594ed81d874461961cd0faa76"
   version = "v1.1.0"
 
 [[projects]]
   branch = "master"
+  digest = "1:67d0b50be0549e610017cb91e0b0b745ec0cad7c613bc8e18ff2d1c1fc8825a7"
   name = "github.com/edsrzf/mmap-go"
   packages = ["."]
+  pruneopts = "UT"
   revision = "0bce6a6887123b67a60366d2c9fe2dfb74289d2e"
 
 [[projects]]
   branch = "master"
+  digest = "1:9c6a4ebc26a2b26c5c8d6989296e05713b600e43de296b4dec42d0b464f5d823"
   name = "github.com/getsentry/raven-go"
   packages = ["."]
+  pruneopts = "UT"
   revision = "563b81fc02b75d664e54da31f787c2cc2186780b"
 
 [[projects]]
+  digest = "1:d673f2fdcd54db695a2e562d82ebd6d361926cd5624ce28a7d7c4fdb202803cb"
   name = "github.com/go-errors/errors"
   packages = ["."]
+  pruneopts = "UT"
   revision = "3afebba5a48dbc89b574d890b6b34d9ee10b4785"
   version = "v1.0.0"
 
 [[projects]]
   branch = "master"
+  digest = "1:07671f8997086ed115824d1974507d2b147d1e0463675ea5dbf3be89b1c2c563"
   name = "github.com/hashicorp/errwrap"
   packages = ["."]
+  pruneopts = "UT"
   revision = "7554cd9344cec97297fa6649b055a8c98c2a1e55"
 
 [[projects]]
   branch = "master"
+  digest = "1:77cb3be9b21ba7f1a4701e870c84ea8b66e7d74c7c8951c58155fdadae9414ec"
   name = "github.com/hashicorp/go-cleanhttp"
   packages = ["."]
+  pruneopts = "UT"
   revision = "d5fe4b57a186c716b0e00b8c301cbd9b4182694d"
 
 [[projects]]
   branch = "master"
+  digest = "1:e5048c5da80697be2fcdecc944e29d2999e01fd7f48b643168443209779f3463"
   name = "github.com/hashicorp/go-multierror"
   packages = ["."]
+  pruneopts = "UT"
   revision = "b7773ae218740a7be65057fc60b366a49b538a44"
 
 [[projects]]
   branch = "master"
+  digest = "1:27d0d41550b480f5a217f6ad9f82491248d092e9cea775845d8784e0fc7c7d1b"
   name = "github.com/hashicorp/go-retryablehttp"
   packages = ["."]
+  pruneopts = "UT"
   revision = "3b087ef2d313afe6c55b2f511d20db04ca767075"
 
 [[projects]]
+  digest = "1:870d441fe217b8e689d7949fef6e43efbc787e50f200cb1e70dbca9204a1d6be"
   name = "github.com/inconshreveable/mousetrap"
   packages = ["."]
+  pruneopts = "UT"
   revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
   version = "v1.0"
 
 [[projects]]
   branch = "master"
+  digest = "1:df1893e9003421fe56fe6b1d9b2650542712a33b978bc825bf4ce940960d4edc"
   name = "github.com/mhe/gabi"
   packages = ["."]
+  pruneopts = "UT"
   revision = "4f733a839b2b9234ef7c2610fbc8270bafe250c7"
 
 [[projects]]
   branch = "master"
+  digest = "1:16886567e49201f2bb97fc738dfe8097494764135a83b533fc020fcefe37d8fe"
   name = "github.com/nightlyone/lockfile"
   packages = ["."]
+  pruneopts = "UT"
   revision = "6a197d5ea61168f2ac821de2b7f011b250904900"
 
 [[projects]]
+  digest = "1:40e195917a951a8bf867cd05de2a46aaf1806c50cf92eebf4c16f78cd196f747"
   name = "github.com/pkg/errors"
   packages = ["."]
+  pruneopts = "UT"
   revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
   version = "v0.8.0"
 
 [[projects]]
+  digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
   name = "github.com/pmezard/go-difflib"
   packages = ["difflib"]
+  pruneopts = "UT"
   revision = "792786c7400a136282c1664665ae0a8db921c6c2"
   version = "v1.0.0"
 
 [[projects]]
   branch = "master"
+  digest = "1:abab2c85a12689a4218964335aa990ff33b4f3c7ba48e3283861c4714d2e93b1"
   name = "github.com/rainycape/dl"
   packages = ["."]
+  pruneopts = "UT"
   revision = "1b01514224a1a60a6bcbb0b6b9d3a00ec14ae17f"
 
 [[projects]]
+  digest = "1:7ffc0983035bc7e297da3688d9fe19d60a420e9c38bef23f845c53788ed6a05e"
   name = "github.com/spf13/cobra"
   packages = ["."]
+  pruneopts = "UT"
   revision = "7b2c5ac9fc04fc5efafb60700713d4fa609b777b"
   version = "v0.0.1"
 
 [[projects]]
+  digest = "1:1b21a2b4058a779f290c7341cd93267492e0ecea6c8b54f64a4a5fd7ff131034"
   name = "github.com/spf13/pflag"
   packages = ["."]
+  pruneopts = "UT"
   revision = "e57e3eeb33f795204c1ca35f56c44f83227c6e66"
   version = "v1.0.0"
 
 [[projects]]
+  digest = "1:7e8d267900c7fa7f35129a2a37596e38ed0f11ca746d6d9ba727980ee138f9f6"
   name = "github.com/stretchr/testify"
   packages = [
     "assert",
-    "require"
+    "require",
   ]
+  pruneopts = "UT"
   revision = "12b6f73e6084dad08a7c6e575284b177ecafbc71"
   version = "v1.2.1"
 
 [[projects]]
   branch = "master"
+  digest = "1:710ccf83337a9ca27abe968c3e58fdf16bd69d76b9870dadafc511e94fc33d7f"
   name = "github.com/templexxx/cpufeat"
   packages = ["."]
+  pruneopts = "UT"
   revision = "3794dfbfb04749f896b521032f69383f24c3687e"
 
 [[projects]]
+  digest = "1:a0a269bea865974fc4d583373c984a5aa60cf98b5aa4f3e1b5de527891d37845"
   name = "github.com/templexxx/xor"
   packages = ["."]
+  pruneopts = "UT"
   revision = "0af8e873c554da75f37f2049cdffda804533d44c"
   version = "0.1.2"
 
 [[projects]]
   branch = "master"
+  digest = "1:f1bcadef588162241008b4806b1f2a9c92153cf442fd3d9ad3bc879518a5a824"
   name = "github.com/timshannon/bolthold"
   packages = ["."]
+  pruneopts = "UT"
   revision = "525de816b1a2c1cfbb67b5e9936a6b76e0c7f3e6"
 
 [[projects]]
   branch = "master"
+  digest = "1:b734bbd83047ffac93d12295ef569c9da40411e2228ca94761e6df5b2242db4e"
   name = "golang.org/x/crypto"
   packages = [
     "ed25519",
     "ed25519/internal/edwards25519",
-    "sha3"
+    "sha3",
   ]
+  pruneopts = "UT"
   revision = "159ae71589f303f9fbfd7528413e0fe944b9c1cb"
 
 [[projects]]
   branch = "master"
+  digest = "1:d773e525476aefa22ea944a5425a9bfb99819b2e67eeb9b1966454fd57522bbf"
   name = "golang.org/x/sys"
   packages = ["unix"]
+  pruneopts = "UT"
   revision = "1b2967e3c290b7c545b3db0deeda16e9be4f98a2"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "edc6335a88ff851653a42b9198c2f0f2e7f27502e18a9b48d2641de3b0bd69be"
+  input-imports = [
+    "github.com/bwesterb/go-atum",
+    "github.com/getsentry/raven-go",
+    "github.com/go-errors/errors",
+    "github.com/hashicorp/go-retryablehttp",
+    "github.com/mhe/gabi",
+    "github.com/pkg/errors",
+    "github.com/spf13/cobra",
+    "github.com/stretchr/testify/require",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1

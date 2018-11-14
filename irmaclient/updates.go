@@ -163,14 +163,6 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 				return
 			}
 		}
-		if xmltag.Name == "KeyshareKeypairs" {
-			jsontag := html.UnescapeString(xmltag.Content)
-			keys := make([]*paillierPrivateKey, 0, 3)
-			if err = json.Unmarshal([]byte(jsontag), &keys); err != nil {
-				return
-			}
-			client.paillierKeyCache = keys[0]
-		}
 	}
 
 	for _, list := range parsedjson {
@@ -213,11 +205,5 @@ func (client *Client) ParseAndroidStorage() (present bool, err error) {
 		}
 	}
 
-	if err = client.storage.StorePaillierKeys(client.paillierKeyCache); err != nil {
-		return
-	}
-	if client.paillierKeyCache == nil {
-		client.paillierKey(false) // trigger calculating a new one
-	}
 	return
 }

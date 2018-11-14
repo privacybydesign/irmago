@@ -46,26 +46,24 @@ type keyshareSession struct {
 }
 
 type keyshareServer struct {
-	URL                     string              `json:"url"`
-	Username                string              `json:"username"`
-	Nonce                   []byte              `json:"nonce"`
-	PrivateKey              *paillierPrivateKey `json:"keyPair"`
+	URL                     string `json:"url"`
+	Username                string `json:"username"`
+	Nonce                   []byte `json:"nonce"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
 	token                   string
 }
 
 type keyshareEnrollment struct {
-	Username  string             `json:"username"`
-	Pin       string             `json:"pin"`
-	PublicKey *paillierPublicKey `json:"publicKey"`
-	Email     *string            `json:"email"`
-	Language  string             `json:"language"`
+	Username string  `json:"username"`
+	Pin      string  `json:"pin"`
+	Email    *string `json:"email"`
+	Language string  `json:"language"`
 }
 
 type keyshareChangepin struct {
 	Username string `json:"id"`
-	OldPin string   `json:"oldpin"`
-	NewPin string   `json:"newpin"`
+	OldPin   string `json:"oldpin"`
+	NewPin   string `json:"newpin"`
 }
 
 type keyshareAuthorization struct {
@@ -123,13 +121,11 @@ const (
 
 func newKeyshareServer(
 	schemeManagerIdentifier irma.SchemeManagerIdentifier,
-	privatekey *paillierPrivateKey,
 	url string,
 ) (ks *keyshareServer, err error) {
 	ks = &keyshareServer{
-		Nonce:                   make([]byte, 32),
-		URL:                     url,
-		PrivateKey:              privatekey,
+		Nonce: make([]byte, 32),
+		URL:   url,
 		SchemeManagerIdentifier: schemeManagerIdentifier,
 	}
 	_, err = rand.Read(ks.Nonce)
@@ -377,18 +373,7 @@ func (ks *keyshareSession) GetCommitments() {
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
 func (ks *keyshareSession) GetProofPs() {
 	_, issig := ks.session.(*irma.SignatureRequest)
-	_, issuing := ks.session.(*irma.IssuanceRequest)
 	challenge := ks.builders.Challenge(ks.session.GetContext(), ks.session.GetNonce(), issig)
-	kssChallenge := challenge
-
-	// In disclosure or signature sessions the challenge is Paillier encrypted.
-	if !issuing {
-		bytes, err := ks.keyshareServer.PrivateKey.Encrypt(challenge.Bytes())
-		if err != nil {
-			ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
-		}
-		kssChallenge = new(big.Int).SetBytes(bytes)
-	}
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[irma.SchemeManagerIdentifier]string{}
@@ -398,7 +383,7 @@ func (ks *keyshareSession) GetProofPs() {
 			continue
 		}
 		var jwt string
-		err := transport.Post("prove/getResponse", &jwt, kssChallenge)
+		err := transport.Post("prove/getResponse", &jwt, challenge)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
@@ -457,14 +442,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			return
 		}
 
-		// Decrypt the responses and populate a slice of ProofP's
 		proofPs[i] = msg.ProofP
-		bytes, err := ks.keyshareServer.PrivateKey.Decrypt(proofPs[i].SResponse.Bytes())
-		if err != nil {
-			ks.sessionHandler.KeyshareError(&managerID, err)
-			return
-		}
-		proofPs[i].SResponse = new(big.Int).SetBytes(bytes)
 	}
 
 	// Create merged proofs and finish protocol

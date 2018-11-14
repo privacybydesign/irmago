@@ -24,7 +24,6 @@ const (
 	skFile          = "sk"
 	attributesFile  = "attrs"
 	kssFile         = "kss"
-	paillierFile    = "paillier"
 	updatesFile     = "updates"
 	logsFile        = "logs"
 	preferencesFile = "preferences"
@@ -103,10 +102,6 @@ func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIde
 	return s.store(keyshareServers, kssFile)
 }
 
-func (s *storage) StorePaillierKeys(key *paillierPrivateKey) error {
-	return s.store(key, paillierFile)
-}
-
 func (s *storage) StoreLogs(logs []*LogEntry) error {
 	return s.store(logs, logsFile)
 }
@@ -182,17 +177,6 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 		return nil, err
 	}
 	return ksses, nil
-}
-
-func (s *storage) LoadPaillierKeys() (key *paillierPrivateKey, err error) {
-	key = new(paillierPrivateKey)
-	if err := s.load(key, paillierFile); err != nil {
-		return nil, err
-	}
-	if key.N == nil { // TODO this is ugly
-		return nil, nil
-	}
-	return key, nil
 }
 
 func (s *storage) LoadLogs() (logs []*LogEntry, err error) {
