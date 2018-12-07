@@ -25,7 +25,7 @@ import (
 
 // signCmd represents the sign command
 var signCmd = &cobra.Command{
-	Use:   "sign path_to_private_key path_to_irma_configuration",
+	Use:   "sign path_to_private_key path_to_scheme",
 	Short: "Sign a scheme manager directory",
 	Long:  "Sign a scheme manager directory, using the specified ECDSA key. Outputs an index file, signature over the index file, and the public key in the specified directory.",
 	Args:  cobra.ExactArgs(2),
