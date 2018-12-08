@@ -63,6 +63,7 @@ func Handler(config *Configuration) (http.Handler, error) {
 
 	// Server routes
 	router.Post("/session", handleCreate)
+	router.Delete("/session/{token}", handleDelete)
 	router.Get("/session/{token}/status", handleStatus)
 	router.Get("/session/{token}/result", handleResult)
 
@@ -139,6 +140,13 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.WriteJson(w, res.Status)
+}
+
+func handleDelete(w http.ResponseWriter, r *http.Request) {
+	err := irmarequestor.CancelSession(chi.URLParam(r, "token"))
+	if err != nil {
+		server.WriteError(w, server.ErrorSessionUnknown, "")
+	}
 }
 
 func handleResult(w http.ResponseWriter, r *http.Request) {

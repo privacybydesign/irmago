@@ -32,6 +32,10 @@ func GetSessionResult(token string) *server.SessionResult {
 	return backend.GetSessionResult(token)
 }
 
+func CancelSession(token string) error {
+	return backend.CancelSession(token)
+}
+
 func HttpHandlerFunc(prefix string) http.HandlerFunc {
 	if len(prefix) != 0 && prefix[0] != '/' {
 		prefix = "/" + prefix

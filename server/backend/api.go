@@ -110,6 +110,15 @@ func GetSessionResult(token string) *server.SessionResult {
 	return session.result
 }
 
+func CancelSession(token string) error {
+	session := sessions.get(token)
+	if session == nil {
+		return errors.New("Unknown session, can't cancel")
+	}
+	session.handleDelete()
+	return nil
+}
+
 func HandleProtocolMessage(
 	path string,
 	method string,
