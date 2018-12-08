@@ -192,6 +192,11 @@ func HandleProtocolMessage(
 		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 		return
 	default:
+		if method == http.MethodGet && noun == "status" {
+			status, output = server.JsonResponse(session.handleGetStatus())
+		}
+
+		// Below are only POST enpoints
 		if method != http.MethodPost {
 			status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 			return
