@@ -194,6 +194,7 @@ func HandleProtocolMessage(
 	default:
 		if method == http.MethodGet && noun == "status" {
 			status, output = server.JsonResponse(session.handleGetStatus())
+			return
 		}
 
 		// Below are only POST enpoints
