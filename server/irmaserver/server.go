@@ -56,6 +56,7 @@ func Handler(config *Configuration) (http.Handler, error) {
 	router.Use(cors.New(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
+		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
 	}).Handler)
 
 	// Mount server for irmaclient
