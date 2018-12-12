@@ -13,37 +13,42 @@ import (
 )
 
 type Configuration struct {
-	*server.Configuration
-
-	Port int
+	*server.Configuration `mapstructure:",squash"`
 
 	// Whether or not incoming session requests should be authenticated. If false, anyone
 	// can submit session requests. If true, the request is first authenticated against the
 	// server configuration before the server accepts it.
-	AuthenticateRequestors bool
-	Requestors             map[string]Requestor // Requestor-specific permission and authentication configuration
-	GlobalPermissions      Permissions          // Disclosing, signing or issuance permissions that apply to all requestors
-
-	JwtIssuer     string // Used in the "iss" field of result JWTs from /result-jwt and /getproof
-	JwtPrivateKey string // Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
+	DisableRequestorAuthentication bool `json:"noauth" mapstructure:"noauth"`
+	// Port to listen at
+	Port int `json:"port" mapstructure:"port"`
+	// Requestor-specific permission and authentication configuration
+	RequestorsString string               `json:"-" mapstructure:"requestors"`
+	Requestors       map[string]Requestor `json:"requestors"`
+	// Disclosing, signing or issuance permissions that apply to all requestors
+	GlobalPermissionsString string      `json:"-" mapstructure:"permissions"`
+	GlobalPermissions       Permissions `json:"permissions"`
+	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
+	JwtIssuer string `json:"jwtissuer" mapstructure:"jwtissuer"`
+	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
+	JwtPrivateKey string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
 
 	jwtPrivateKey *rsa.PrivateKey
 }
 
 // Permissions specify which attributes or credential a requestor may verify or issue.
 type Permissions struct {
-	Disclosing []string
-	Signing    []string
-	Issuing    []string
+	Disclosing []string `json:"disclosing" mapstructure:"disclosing"`
+	Signing    []string `json:"signing" mapstructure:"signing"`
+	Issuing    []string `json:"issuing" mapstructure:"issuing"`
 }
 
 // Requestor contains all configuration (disclosure or verification permissions and authentication)
 // for a requestor.
 type Requestor struct {
-	Permissions
+	Permissions `mapstructure:",squash"`
 
-	AuthenticationMethod AuthenticationMethod
-	AuthenticationKey    string
+	AuthenticationMethod AuthenticationMethod `json:"authmethod" mapstructure:"authmethod"`
+	AuthenticationKey    string               `json:"key" mapstructure:"key"`
 }
 
 // CanIssue returns whether or not the specified requestor may issue the specified credentials.
@@ -109,7 +114,7 @@ func (conf *Configuration) initialize() error {
 		return err
 	}
 
-	if !conf.AuthenticateRequestors {
+	if conf.DisableRequestorAuthentication {
 		conf.Logger.Warn("Authentication of incoming session requests disabled")
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
 

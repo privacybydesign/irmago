@@ -14,13 +14,11 @@ import (
 var Logger *logrus.Logger = logrus.StandardLogger()
 
 type Configuration struct {
-	IrmaConfigurationPath string
-	IssuerPrivateKeysPath string
-
-	Logger *logrus.Logger `json:"-"`
-
-	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
-	IrmaConfiguration *irma.Configuration                        `json:"-"`
+	IrmaConfigurationPath string                                     `json:"irmaconf" mapstructure:"irmaconf"`
+	IssuerPrivateKeysPath string                                     `json:"privatekeys" mapstructure:"privatekeys"`
+	Logger                *logrus.Logger                             `json:"-"`
+	IssuerPrivateKeys     map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
+	IrmaConfiguration     *irma.Configuration                        `json:"-"`
 }
 
 type SessionResult struct {

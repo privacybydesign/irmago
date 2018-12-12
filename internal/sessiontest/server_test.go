@@ -40,6 +40,7 @@ var IrmaServerConfiguration = &irmaserver.Configuration{
 		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
+	DisableRequestorAuthentication: true,
 	Port: 48682,
 }
 
@@ -50,7 +51,7 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
 	Port: 48682,
-	AuthenticateRequestors: true,
+	DisableRequestorAuthentication: false,
 	GlobalPermissions: irmaserver.Permissions{
 		Disclosing: []string{"*"},
 		Signing:    []string{"*"},
