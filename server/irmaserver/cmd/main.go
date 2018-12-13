@@ -78,7 +78,7 @@ func setFlags(cmd *cobra.Command) error {
 	viper.AutomaticEnv()
 
 	// Configuration file
-	viper.SetConfigName("config")
+	viper.SetConfigName("irmaserver")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/irmaserver/")
 	viper.AddConfigPath("$HOME/.irmaserver")
