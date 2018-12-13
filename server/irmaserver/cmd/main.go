@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/Sirupsen/logrus"
@@ -13,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+var logger = logrus.StandardLogger()
 var conf *irmaserver.Configuration
 
 func main() {
@@ -39,9 +39,8 @@ func main() {
 }
 
 func die(err *errors.Error) {
-	fmt.Println(err.Error())
-	fmt.Println()
-	fmt.Println(string(err.Stack()))
+	logger.Error(err.Error())
+	logger.Debug(string(err.Stack()))
 	os.Exit(1)
 }
 
@@ -68,7 +67,8 @@ func setFlags(cmd *cobra.Command) error {
 }
 
 func configure() error {
-	fmt.Println("Configuring")
+	logger.Level = logrus.TraceLevel
+	logger.Debugf("Configuring")
 
 	// Environment variables
 	viper.SetEnvPrefix("IRMASERVER")
@@ -80,9 +80,9 @@ func configure() error {
 	viper.AddConfigPath("/etc/irmaserver/")
 	viper.AddConfigPath("$HOME/.irmaserver")
 	if err := viper.ReadInConfig(); err != nil {
-		fmt.Printf("No configuration file found")
+		logger.Info("No configuration file found")
 	} else {
-		fmt.Println("Config file: ", viper.ConfigFileUsed())
+		logger.Info("Config file: ", viper.ConfigFileUsed())
 	}
 
 	// Read configuration from flags and/or environmental variables
@@ -90,7 +90,7 @@ func configure() error {
 		Configuration: &server.Configuration{
 			IrmaConfigurationPath: viper.GetString("irmaconf"),
 			IssuerPrivateKeysPath: viper.GetString("privatekeys"),
-			Logger:                logrus.StandardLogger(),
+			Logger:                logger,
 		},
 		Port: viper.GetInt("port"),
 		DisableRequestorAuthentication: viper.GetBool("noauth"),
@@ -103,7 +103,7 @@ func configure() error {
 	// Handle global permissions
 	if len(viper.GetStringMap("permissions")) > 0 { // First read config file
 		if err := viper.UnmarshalKey("permissions", &conf.GlobalPermissions); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal permissions", 0)
+			return errors.WrapPrefix(err, "Failed to unmarshal permissions from config file", 0)
 		}
 	}
 	handlePermission(&conf.GlobalPermissions.Disclosing, "disclosing") // Read flag or env var
@@ -113,19 +113,19 @@ func configure() error {
 	// Handle requestors
 	if len(viper.GetStringMap("requestors")) > 0 { // First read config file
 		if err := viper.UnmarshalKey("requestors", &conf.Requestors); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal requestors", 0)
+			return errors.WrapPrefix(err, "Failed to unmarshal requestors from config file", 0)
 		}
 	}
 	requestors := viper.GetString("requestors") // Read flag or env var
 	if len(requestors) > 0 {
 		if err := json.Unmarshal([]byte(requestors), &conf.Requestors); err != nil {
-			return errors.WrapPrefix(err, "Failed to parse requestors", 0)
+			return errors.WrapPrefix(err, "Failed to unmarshal requestors from json", 0)
 		}
 	}
 
 	bts, _ := json.MarshalIndent(conf, "", "   ")
-	fmt.Println(string(bts))
-	fmt.Println("Done configuring")
+	logger.Debug(string(bts), "\n")
+	logger.Debug("Done configuring")
 
 	return nil
 }
