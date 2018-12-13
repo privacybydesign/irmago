@@ -55,8 +55,14 @@ func setFlags(cmd *cobra.Command) error {
 	flags.StringP("jwtprivatekey", "w", "", "JWT private key or path to it")
 	flags.IntP("port", "p", 8088, "Port at which to listen")
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
-	flags.String("permissions", "", "Default permissions")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
+
+	flags.StringSlice("disclosing", nil, "Comma-separated list of attributes that all requestors may verify")
+	flags.StringSlice("signing", nil, "Comma-separated list of attributes that all requestors may request in signatures")
+	flags.StringSlice("issuing", nil, "Comma-separated list of attributes that all requestors may issue")
+	flags.Lookup("disclosing").NoOptDefVal = "*"
+	flags.Lookup("signing").NoOptDefVal = "*"
+	flags.Lookup("issuing").NoOptDefVal = "*"
 
 	return viper.BindPFlags(flags)
 }
@@ -94,25 +100,26 @@ func configure() error {
 		JwtPrivateKey:                  viper.GetString("jwtprivatekey"),
 	}
 
-	// Handle special permissions
-	permissions := viper.GetString("permissions")
-	if len(permissions) > 0 {
-		if err := json.Unmarshal([]byte(permissions), &conf.GlobalPermissions); err != nil {
-			return errors.WrapPrefix(err, "Failed to parse permissions", 0)
-		}
-	} else if len(viper.GetStringMap("permissions")) > 0 {
+	// Handle global permissions
+	if len(viper.GetStringMap("permissions")) > 0 { // First read config file
 		if err := viper.UnmarshalKey("permissions", &conf.GlobalPermissions); err != nil {
 			return errors.WrapPrefix(err, "Failed to unmarshal permissions", 0)
 		}
 	}
-	requestors := viper.GetString("requestors")
+	handlePermission(&conf.GlobalPermissions.Disclosing, "disclosing") // Read flag or env var
+	handlePermission(&conf.GlobalPermissions.Signing, "signing")
+	handlePermission(&conf.GlobalPermissions.Issuing, "issuing")
+
+	// Handle requestors
+	if len(viper.GetStringMap("requestors")) > 0 { // First read config file
+		if err := viper.UnmarshalKey("requestors", &conf.Requestors); err != nil {
+			return errors.WrapPrefix(err, "Failed to unmarshal requestors", 0)
+		}
+	}
+	requestors := viper.GetString("requestors") // Read flag or env var
 	if len(requestors) > 0 {
 		if err := json.Unmarshal([]byte(requestors), &conf.Requestors); err != nil {
 			return errors.WrapPrefix(err, "Failed to parse requestors", 0)
-		}
-	} else if len(viper.GetStringMap("requestors")) > 0 {
-		if err := viper.UnmarshalKey("requestors", &conf.Requestors); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal requestors", 0)
 		}
 	}
 
@@ -121,4 +128,14 @@ func configure() error {
 	fmt.Println("Done configuring")
 
 	return nil
+}
+
+func handlePermission(conf *[]string, typ string) {
+	if viper.GetString(typ) == "*" {
+		*conf = []string{"*"}
+	}
+	perms := viper.GetStringSlice(typ)
+	if len(perms) > 0 {
+		*conf = perms
+	}
 }
