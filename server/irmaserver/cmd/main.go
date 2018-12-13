@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"os"
 
 	"github.com/Sirupsen/logrus"
@@ -29,6 +30,11 @@ func main() {
 		},
 	}
 
+	logger.Level = logrus.InfoLevel
+	logger.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
+
 	if err := setFlags(cmd); err != nil {
 		die(errors.WrapPrefix(err, "Failed to attach flags", 0))
 	}
@@ -40,7 +46,7 @@ func main() {
 
 func die(err *errors.Error) {
 	logger.Error(err.Error())
-	logger.Debug(string(err.Stack()))
+	logger.Trace(string(err.Stack()))
 	os.Exit(1)
 }
 
@@ -63,12 +69,9 @@ func setFlags(cmd *cobra.Command) error {
 	flags.Lookup("signing").NoOptDefVal = "*"
 	flags.Lookup("issuing").NoOptDefVal = "*"
 
-	return viper.BindPFlags(flags)
-}
-
-func configure() error {
-	logger.Level = logrus.TraceLevel
-	logger.Debugf("Configuring")
+	flags.BoolP("verbose", "v", false, "verbose")
+	flags.Bool("vverbose", false, "more verbose")
+	flags.BoolP("quiet", "q", false, "quiet")
 
 	// Environment variables
 	viper.SetEnvPrefix("IRMASERVER")
@@ -79,7 +82,24 @@ func configure() error {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/irmaserver/")
 	viper.AddConfigPath("$HOME/.irmaserver")
-	if err := viper.ReadInConfig(); err != nil {
+
+	return viper.BindPFlags(flags)
+}
+
+func configure() error {
+	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
+	if viper.GetBool("verbose") {
+		logger.Level = logrus.DebugLevel
+	}
+	if viper.GetBool("vverbose") {
+		logger.Level = logrus.TraceLevel
+	}
+	if viper.GetBool("quiet") {
+		logger.Out = ioutil.Discard
+	}
+
+	logger.Debugf("Configuring")
+	if err != nil {
 		logger.Info("No configuration file found")
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
@@ -98,6 +118,8 @@ func configure() error {
 		GlobalPermissions:              irmaserver.Permissions{},
 		JwtIssuer:                      viper.GetString("jwtissuer"),
 		JwtPrivateKey:                  viper.GetString("jwtprivatekey"),
+		Verbose:                        viper.GetBool("verbose"),
+		VVerbose:                       viper.GetBool("vverbose"),
 	}
 
 	// Handle global permissions
