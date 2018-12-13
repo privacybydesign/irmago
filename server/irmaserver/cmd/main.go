@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
@@ -54,6 +56,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags := cmd.Flags()
 	flags.SortFlags = false
 
+	flags.StringP("config", "c", "", "Path to configuration file")
 	flags.StringP("irmaconf", "i", "./irma_configuration", "path to irma_configuration")
 	flags.StringP("privatekeys", "k", "", "path to IRMA private keys")
 	flags.StringP("jwtissuer", "j", "irmaserver", "JWT issuer")
@@ -77,17 +80,25 @@ func setFlags(cmd *cobra.Command) error {
 	viper.SetEnvPrefix("IRMASERVER")
 	viper.AutomaticEnv()
 
-	// Configuration file
-	viper.SetConfigName("irmaserver")
-	viper.AddConfigPath(".")
-	viper.AddConfigPath("/etc/irmaserver/")
-	viper.AddConfigPath("$HOME/.irmaserver")
-
 	return viper.BindPFlags(flags)
 }
 
 func configure() error {
+	// Locate and read configuration file
+	confpath := viper.GetString("config")
+	if confpath != "" {
+		dir, file := filepath.Dir(confpath), filepath.Base(confpath)
+		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
+		viper.AddConfigPath(dir)
+	} else {
+		viper.SetConfigName("irmaserver")
+		viper.AddConfigPath(".")
+		viper.AddConfigPath("/etc/irmaserver/")
+		viper.AddConfigPath("$HOME/.irmaserver")
+	}
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
+
+	// Set log level
 	if viper.GetBool("verbose") {
 		logger.Level = logrus.DebugLevel
 	}
