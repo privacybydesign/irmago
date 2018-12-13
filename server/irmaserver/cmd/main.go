@@ -100,7 +100,11 @@ func configure() error {
 
 	logger.Debugf("Configuring")
 	if err != nil {
-		logger.Info("No configuration file found")
+		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
+			logger.Info("No configuration file found")
+		} else {
+			die(errors.WrapPrefix(err, "Failed to unmarshal configuration file at "+viper.ConfigFileUsed(), 0))
+		}
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
 	}
