@@ -32,9 +32,8 @@ type Configuration struct {
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
 	JwtPrivateKey string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
 
-	Verbose  bool
-	VVerbose bool
-	Quiet    bool
+	Verbose int
+	Quiet   bool
 
 	jwtPrivateKey *rsa.PrivateKey
 }

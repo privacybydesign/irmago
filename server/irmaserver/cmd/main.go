@@ -72,8 +72,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags.Lookup("signing").NoOptDefVal = "*"
 	flags.Lookup("issuing").NoOptDefVal = "*"
 
-	flags.BoolP("verbose", "v", false, "verbose")
-	flags.Bool("vverbose", false, "more verbose")
+	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 
 	// Environment variables
@@ -99,17 +98,19 @@ func configure() error {
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 
 	// Set log level
-	if viper.GetBool("verbose") {
+	verbosity := viper.GetInt("verbose")
+	if verbosity == 1 {
 		logger.Level = logrus.DebugLevel
 	}
-	if viper.GetBool("vverbose") {
+	if verbosity >= 2 {
 		logger.Level = logrus.TraceLevel
 	}
 	if viper.GetBool("quiet") {
 		logger.Out = ioutil.Discard
 	}
 
-	logger.Debugf("Configuring")
+	logger.Debug("Configuring")
+	logger.Debug("Log level ", logger.Level.String())
 	if err != nil {
 		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
 			logger.Info("No configuration file found")
@@ -133,8 +134,8 @@ func configure() error {
 		GlobalPermissions:              irmaserver.Permissions{},
 		JwtIssuer:                      viper.GetString("jwtissuer"),
 		JwtPrivateKey:                  viper.GetString("jwtprivatekey"),
-		Verbose:                        viper.GetBool("verbose"),
-		VVerbose:                       viper.GetBool("vverbose"),
+		Verbose:                        viper.GetInt("verbose"),
+		Quiet:                          viper.GetBool("quiet"),
 	}
 
 	// Handle global permissions
