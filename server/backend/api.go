@@ -71,6 +71,14 @@ func Initialize(configuration *server.Configuration) error {
 		}
 	}
 
+	if conf.Url != "" {
+		if !strings.HasSuffix(conf.Url, "/") {
+			conf.Url = conf.Url + "/"
+		}
+	} else {
+		conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
+	}
+
 	return nil
 }
 
@@ -98,7 +106,7 @@ func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
 	conf.Logger.Infof("%s session started, token %s", action, session.token)
 	return &irma.Qr{
 		Type: action,
-		URL:  session.token,
+		URL:  conf.Url + session.token,
 	}, session.token, nil
 }
 

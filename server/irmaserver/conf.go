@@ -32,8 +32,8 @@ type Configuration struct {
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
 	JwtPrivateKey string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
 
-	Verbose int
-	Quiet   bool
+	Verbose int  `json:"verbose" mapstructure:"verbose"`
+	Quiet   bool `json:"quiet" mapstructure:"quiet"`
 
 	jwtPrivateKey *rsa.PrivateKey
 }
@@ -134,23 +134,29 @@ func (conf *Configuration) initialize() error {
 			conf.Logger.Info("No issuance whitelist found: allowing issuance of any credential (for which private keys are installed)")
 			conf.GlobalPermissions.Issuing = []string{"*"}
 		}
-		return nil
+	} else {
+		authenticators = map[AuthenticationMethod]Authenticator{
+			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]*rsa.PublicKey{}},
+			AuthenticationMethodToken:     &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
+		}
+
+		// Initialize authenticators
+		for name, requestor := range conf.Requestors {
+			authenticator, ok := authenticators[requestor.AuthenticationMethod]
+			if !ok {
+				return errors.Errorf("Requestor %s has unsupported authentication type")
+			}
+			if err := authenticator.Initialize(name, requestor); err != nil {
+				return err
+			}
+		}
 	}
 
-	authenticators = map[AuthenticationMethod]Authenticator{
-		AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]*rsa.PublicKey{}},
-		AuthenticationMethodToken:     &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
-	}
-
-	// Initialize authenticators
-	for name, requestor := range conf.Requestors {
-		authenticator, ok := authenticators[requestor.AuthenticationMethod]
-		if !ok {
-			return errors.Errorf("Requestor %s has unsupported authentication type")
+	if conf.Url != "" {
+		if !strings.HasSuffix(conf.Url, "/") {
+			conf.Url = conf.Url + "/"
 		}
-		if err := authenticator.Initialize(name, requestor); err != nil {
-			return err
-		}
+		conf.Url = conf.Url + "irma/"
 	}
 
 	return nil

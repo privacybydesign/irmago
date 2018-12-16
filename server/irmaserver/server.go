@@ -44,10 +44,10 @@ func Stop() {
 // and IRMA client messages.
 func Handler(config *Configuration) (http.Handler, error) {
 	conf = config
-	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
+	if err := conf.initialize(); err != nil {
 		return nil, err
 	}
-	if err := conf.initialize(); err != nil {
+	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
 		return nil, err
 	}
 

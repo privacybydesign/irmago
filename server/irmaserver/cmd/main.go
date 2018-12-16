@@ -61,6 +61,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags.StringP("privatekeys", "k", "", "path to IRMA private keys")
 	flags.StringP("jwtissuer", "j", "irmaserver", "JWT issuer")
 	flags.StringP("jwtprivatekey", "w", "", "JWT private key or path to it")
+	flags.StringP("url", "u", "", "External URL to server to which the IRMA client connects")
 	flags.IntP("port", "p", 8088, "Port at which to listen")
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
@@ -110,7 +111,7 @@ func configure() error {
 	}
 
 	logger.Debug("Configuring")
-	logger.Debug("Log level ", logger.Level.String())
+	logger.Debug("Log level: ", logger.Level.String())
 	if err != nil {
 		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
 			logger.Info("No configuration file found")
@@ -126,7 +127,8 @@ func configure() error {
 		Configuration: &server.Configuration{
 			IrmaConfigurationPath: viper.GetString("irmaconf"),
 			IssuerPrivateKeysPath: viper.GetString("privatekeys"),
-			Logger:                logger,
+			Url:    viper.GetString("url"),
+			Logger: logger,
 		},
 		Port: viper.GetInt("port"),
 		DisableRequestorAuthentication: viper.GetBool("noauth"),
