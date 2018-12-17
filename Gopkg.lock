@@ -50,12 +50,6 @@
   revision = "720887075201f3105c335f837431426d54891b7f"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/credentials/safeprime"
-  packages = ["."]
-  revision = "424faf641b4987fde58280730486e1035e057abc"
-
-[[projects]]
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
   revision = "346938d642f2ec3594ed81d874461961cd0faa76"
@@ -110,10 +104,14 @@
   version = "v1.0"
 
 [[projects]]
-  branch = "master"
+  branch = "refactor"
   name = "github.com/mhe/gabi"
-  packages = ["."]
-  revision = "4f733a839b2b9234ef7c2610fbc8270bafe250c7"
+  packages = [
+    ".",
+    "safeprime"
+  ]
+  revision = "30dbdc3d708aee39573ef793505e78b6fb949b48"
+  source = "github.com/privacybydesign/gabi"
 
 [[projects]]
   branch = "master"
@@ -197,6 +195,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "edc6335a88ff851653a42b9198c2f0f2e7f27502e18a9b48d2641de3b0bd69be"
+  inputs-digest = "463d26f53ec5d07c619bf97f2707460ffa512d6eddc1f8c109972e101981afab"
   solver-name = "gps-cdcl"
   solver-version = 1

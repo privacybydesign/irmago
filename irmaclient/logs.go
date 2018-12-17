@@ -4,209 +4,144 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
 	"github.com/privacybydesign/irmago"
 )
 
 // LogEntry is a log entry of a past event.
 type LogEntry struct {
 	// General info
-	Type        irma.Action
-	Time        irma.Timestamp    // Time at which the session was completed
-	SessionInfo *irma.SessionInfo // Message that started the session
+	Type    irma.Action
+	Time    irma.Timestamp        // Time at which the session was completed
+	Version *irma.ProtocolVersion `json:",omitempty"` // Protocol version that was used in the session
+
+	Request json.RawMessage     `json:",omitempty"` // Message that started the session
+	request irma.SessionRequest // cached parsed version of Request; get with LogEntry.SessionRequest()
 
 	// Session type-specific info
-	Disclosed     map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString // Any session type
-	Received      map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of issuance session
-	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString       // In case of credential removal
-	SignedMessage []byte                                                          // In case of signature sessions
+	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"` // In case of credential removal
+	SignedMessage []byte                                                    `json:",omitempty"` // In case of signature sessions
+	Timestamp     *atum.Timestamp                                           `json:",omitempty"` // In case of signature sessions
 
-	response    interface{}     // Our response (ProofList or IssueCommitmentMessage)
-	rawResponse json.RawMessage // Unparsed []byte version of response
+	IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
+	Disclosure      *irma.Disclosure             `json:",omitempty"`
 }
 
 const actionRemoval = irma.Action("removal")
 
-func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
-	entry := &LogEntry{
-		Type:        session.Action,
-		Time:        irma.Timestamp(time.Now()),
-		SessionInfo: session.info,
-		response:    response,
+func (entry *LogEntry) SessionRequest() (irma.SessionRequest, error) {
+	if entry.request == nil {
+		switch entry.Type {
+		case irma.ActionDisclosing:
+			entry.request = &irma.DisclosureRequest{}
+		case irma.ActionSigning:
+			entry.request = &irma.SignatureRequest{}
+		case irma.ActionIssuing:
+			entry.request = &irma.IssuanceRequest{}
+		default:
+			return nil, nil
+		}
 	}
 
-	// Populate session type-specific fields of the log entry (except for .Disclosed which is handled below)
-	var prooflist gabi.ProofList
-	var ok bool
+	err := json.Unmarshal([]byte(entry.Request), entry.request)
+	if err != nil {
+		return nil, err
+	}
+
+	return entry.request, nil
+}
+
+func (entry *LogEntry) setSessionRequest() error {
+	bts, err := json.Marshal(entry.request)
+	if err != nil {
+		return err
+	}
+	entry.Request = json.RawMessage(bts)
+	return nil
+}
+
+// GetDisclosedCredentials gets the list of disclosed credentials for a log entry
+func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([]*irma.DisclosedAttribute, error) {
+	if entry.Type == actionRemoval {
+		return []*irma.DisclosedAttribute{}, nil
+	}
+
+	request, err := entry.SessionRequest()
+	if err != nil {
+		return nil, err
+	}
+	var disclosure *irma.Disclosure
+	disjunctions := request.ToDisclose()
+	if entry.Type == irma.ActionIssuing {
+		disclosure = entry.IssueCommitment.Disclosure()
+	} else {
+		disclosure = entry.Disclosure
+	}
+	_, attrs, err := disclosure.DisclosedAttributes(conf, disjunctions)
+	return attrs, err
+}
+
+// GetIssuedCredentials gets the list of issued credentials for a log entry
+func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma.CredentialInfoList, err error) {
+	if entry.Type != irma.ActionIssuing {
+		return irma.CredentialInfoList{}, nil
+	}
+	request, err := entry.SessionRequest()
+	if err != nil {
+		return nil, err
+	}
+	return request.(*irma.IssuanceRequest).GetCredentialInfoList(conf, entry.Version)
+}
+
+// GetSignedMessage gets the signed for a log entry
+func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
+	if entry.Type != irma.ActionSigning {
+		return nil, nil
+	}
+	request, err := entry.SessionRequest()
+	if err != nil {
+		return nil, err
+	}
+	sigrequest := request.(*irma.SignatureRequest)
+	return &irma.SignedMessage{
+		Signature: entry.Disclosure.Proofs,
+		Nonce:     sigrequest.Nonce,
+		Context:   sigrequest.Context,
+		Message:   string(entry.SignedMessage),
+		Timestamp: entry.Timestamp,
+	}, nil
+}
+
+func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
+	entry := &LogEntry{
+		Type:    session.Action,
+		Time:    irma.Timestamp(time.Now()),
+		Version: session.Version,
+		request: session.request,
+	}
+
+	if err := entry.setSessionRequest(); err != nil {
+		return nil, err
+	}
+
 	switch entry.Type {
+	case actionRemoval:
+
 	case irma.ActionSigning:
-		if session.IsInteractive() {
-			entry.SignedMessage = []byte(session.jwt.(*irma.SignatureRequestorJwt).Request.Request.Message)
-		} else {
-			request, ok := session.irmaSession.(*irma.SignatureRequest)
-			if !ok {
-				return nil, errors.New("Session does not contain a valid Signature Request")
-			}
-			entry.SignedMessage = []byte(request.Message)
-		}
+		// Get the signed message and timestamp
+		request := session.request.(*irma.SignatureRequest)
+		entry.SignedMessage = []byte(request.Message)
+		entry.Timestamp = request.Timestamp
+
 		fallthrough
 	case irma.ActionDisclosing:
-		if prooflist, ok = response.(gabi.ProofList); !ok {
-			return nil, errors.New("Response was not a ProofList")
-		}
+		entry.Disclosure = response.(*irma.Disclosure)
 	case irma.ActionIssuing:
-		if entry.Received == nil {
-			entry.Received = map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
-		}
-		for _, req := range session.jwt.(*irma.IdentityProviderJwt).Request.Request.Credentials {
-			list, err := req.AttributeList(session.client.Configuration, getMetadataVersion(session.Version))
-			if err != nil {
-				continue // TODO?
-			}
-			entry.Received[list.CredentialType().Identifier()] = list.Strings()
-		}
-		var msg *gabi.IssueCommitmentMessage
-		if msg, ok = response.(*gabi.IssueCommitmentMessage); ok {
-			prooflist = msg.Proofs
-		} else {
-			return nil, errors.New("Response was not a *IssueCommitmentMessage")
-		}
+		entry.IssueCommitment = response.(*irma.IssueCommitmentMessage)
 	default:
 		return nil, errors.New("Invalid log type")
 	}
 
-	// Populate the list of disclosed attributes .Disclosed
-	for _, proof := range prooflist {
-		if proofd, isproofd := proof.(*gabi.ProofD); isproofd {
-			if entry.Disclosed == nil {
-				entry.Disclosed = map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString{}
-			}
-			meta := irma.MetadataFromInt(proofd.ADisclosed[1], session.client.Configuration)
-			id := meta.CredentialType().Identifier()
-			entry.Disclosed[id] = map[int]irma.TranslatedString{}
-			for i, attr := range proofd.ADisclosed {
-				if i == 1 {
-					continue
-				}
-				val := string(attr.Bytes())
-				entry.Disclosed[id][i] = irma.TranslatedString{"en": val, "nl": val}
-			}
-		}
-	}
-
 	return entry, nil
-}
-
-// Jwt returns the JWT from the requestor that started the IRMA session which the
-// current log entry tracks.
-func (entry *LogEntry) Jwt() (irma.RequestorJwt, error) {
-	return irma.ParseRequestorJwt(entry.Type, entry.SessionInfo.Jwt)
-}
-
-// GetResponse returns our response to the requestor from the log entry.
-func (entry *LogEntry) GetResponse() (interface{}, error) {
-	if entry.response == nil {
-		switch entry.Type {
-		case actionRemoval:
-			return nil, nil
-		case irma.ActionSigning:
-			fallthrough
-		case irma.ActionDisclosing:
-			entry.response = []*gabi.ProofD{}
-		case irma.ActionIssuing:
-			entry.response = &gabi.IssueCommitmentMessage{}
-		default:
-			return nil, errors.New("Invalid log type")
-		}
-		err := json.Unmarshal(entry.rawResponse, entry.response)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return entry.response, nil
-}
-
-type jsonLogEntry struct {
-	Type        irma.Action
-	Time        irma.Timestamp
-	SessionInfo *logSessionInfo
-
-	Disclosed     map[irma.CredentialTypeIdentifier]map[int]irma.TranslatedString `json:",omitempty"`
-	Received      map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
-	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString       `json:",omitempty"`
-	SignedMessage []byte                                                          `json:",omitempty"`
-
-	Response json.RawMessage
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (entry *LogEntry) UnmarshalJSON(bytes []byte) error {
-	var err error
-	temp := &jsonLogEntry{}
-	if err = json.Unmarshal(bytes, temp); err != nil {
-		return err
-	}
-
-	*entry = LogEntry{
-		Type: temp.Type,
-		Time: temp.Time,
-		SessionInfo: &irma.SessionInfo{
-			Jwt:     temp.SessionInfo.Jwt,
-			Nonce:   temp.SessionInfo.Nonce,
-			Context: temp.SessionInfo.Context,
-			Keys:    make(map[irma.IssuerIdentifier]int),
-		},
-		Removed:       temp.Removed,
-		Disclosed:     temp.Disclosed,
-		Received:      temp.Received,
-		SignedMessage: temp.SignedMessage,
-		rawResponse:   temp.Response,
-	}
-
-	// TODO remove on protocol upgrade
-	for iss, count := range temp.SessionInfo.Keys {
-		entry.SessionInfo.Keys[irma.NewIssuerIdentifier(iss)] = count
-	}
-
-	return nil
-}
-
-// MarshalJSON implements json.Marshaler.
-func (entry *LogEntry) MarshalJSON() ([]byte, error) {
-	// If the entry was created using createLogEntry(), then entry.rawResponse == nil
-	if len(entry.rawResponse) == 0 && entry.response != nil {
-		if bytes, err := json.Marshal(entry.response); err == nil {
-			entry.rawResponse = json.RawMessage(bytes)
-		} else {
-			return nil, err
-		}
-	}
-
-	var si *logSessionInfo
-	if entry.SessionInfo != nil {
-		si = &logSessionInfo{
-			Jwt:     entry.SessionInfo.Jwt,
-			Nonce:   entry.SessionInfo.Nonce,
-			Context: entry.SessionInfo.Context,
-			Keys:    make(map[string]int),
-		}
-		// TODO remove on protocol upgrade
-		for iss, count := range entry.SessionInfo.Keys {
-			si.Keys[iss.String()] = count
-		}
-	}
-	temp := &jsonLogEntry{
-		Type:          entry.Type,
-		Time:          entry.Time,
-		Response:      entry.rawResponse,
-		SessionInfo:   si,
-		Removed:       entry.Removed,
-		Disclosed:     entry.Disclosed,
-		Received:      entry.Received,
-		SignedMessage: entry.SignedMessage,
-	}
-
-	return json.Marshal(temp)
 }

@@ -36,12 +36,12 @@ func (h *keyshareEnrollmentHandler) RequestPin(remainingAttempts int, callback P
 	}
 }
 
-func (h *keyshareEnrollmentHandler) Success(action irma.Action, result string) {
+func (h *keyshareEnrollmentHandler) Success(result string) {
 	_ = h.client.storage.StoreKeyshareServers(h.client.keyshareServers) // TODO handle err?
 	h.client.handler.EnrollmentSuccess(h.kss.SchemeManagerIdentifier)
 }
 
-func (h *keyshareEnrollmentHandler) Failure(action irma.Action, err *irma.SessionError) {
+func (h *keyshareEnrollmentHandler) Failure(err *irma.SessionError) {
 	h.fail(err)
 }
 
@@ -64,7 +64,7 @@ func (h *keyshareEnrollmentHandler) RequestSignaturePermission(request irma.Sign
 func (h *keyshareEnrollmentHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(false)
 }
-func (h *keyshareEnrollmentHandler) Cancelled(action irma.Action) {
+func (h *keyshareEnrollmentHandler) Cancelled() {
 	h.fail(errors.New("Keyshare enrollment session unexpectedly cancelled"))
 }
 func (h *keyshareEnrollmentHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
@@ -79,6 +79,6 @@ func (h *keyshareEnrollmentHandler) KeyshareEnrollmentDeleted(manager irma.Schem
 func (h *keyshareEnrollmentHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	h.fail(errors.New("Keyshare enrollment failed: unenrolled"))
 }
-func (h *keyshareEnrollmentHandler) UnsatisfiableRequest(action irma.Action, ServerName string, missing irma.AttributeDisjunctionList) {
+func (h *keyshareEnrollmentHandler) UnsatisfiableRequest(ServerName string, missing irma.AttributeDisjunctionList) {
 	h.fail(errors.New("Keyshare enrollment failed: unsatisfiable"))
 }

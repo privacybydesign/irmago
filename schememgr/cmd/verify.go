@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,7 @@ var verifyCmd = &cobra.Command{
 		err := RunVerify(args[0])
 		if err == nil {
 			fmt.Println()
-			fmt.Println("irma_configuration parsed and authenticated successfully.")
+			fmt.Println("Verification was successful.")
 		}
 		return err
 	},
@@ -30,6 +31,30 @@ func RunVerify(path string) error {
 	if err != nil {
 		return err
 	}
+
+	isScheme, err := fs.PathExists(filepath.Join(path, "index"))
+	if err != nil {
+		return err
+	}
+	if !isScheme {
+		fmt.Println("No index file found; verifying subdirectories")
+		return VerifyIrmaConfiguration(path)
+	} else {
+		fmt.Println("Verifying scheme " + filepath.Base(path))
+		return VerifyScheme(path)
+	}
+}
+
+func VerifyScheme(path string) error {
+	conf, err := irma.NewConfiguration(filepath.Dir(path), "")
+	if err != nil {
+		return err
+	}
+
+	return conf.ParseSchemeManagerFolder(path, irma.NewSchemeManager(filepath.Base(path)))
+}
+
+func VerifyIrmaConfiguration(path string) error {
 	if filepath.Base(path) != "irma_configuration" {
 		fmt.Printf("Notice: specified folder name is '%s'; when using in IRMA applications it should be called 'irma_configuration'\n", filepath.Base(path))
 	}

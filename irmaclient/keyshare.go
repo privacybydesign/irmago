@@ -4,11 +4,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"math/big"
+	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 )
 
@@ -34,15 +38,16 @@ type keyshareSessionHandler interface {
 }
 
 type keyshareSession struct {
-	sessionHandler  keyshareSessionHandler
-	pinRequestor    KeysharePinRequestor
-	builders        gabi.ProofBuilderList
-	session         irma.IrmaSession
-	conf            *irma.Configuration
-	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer
-	keyshareServer  *keyshareServer // The one keyshare server in use in case of issuance
-	transports      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
-	state           *issuanceState
+	sessionHandler   keyshareSessionHandler
+	pinRequestor     KeysharePinRequestor
+	builders         gabi.ProofBuilderList
+	session          irma.SessionRequest
+	conf             *irma.Configuration
+	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
+	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
+	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
+	issuerProofNonce *big.Int
+	pinCheck         bool
 }
 
 type keyshareServer struct {
@@ -64,8 +69,8 @@ type keyshareEnrollment struct {
 
 type keyshareChangepin struct {
 	Username string `json:"id"`
-	OldPin string   `json:"oldpin"`
-	NewPin string   `json:"newpin"`
+	OldPin   string `json:"oldpin"`
+	NewPin   string `json:"newpin"`
 }
 
 type keyshareAuthorization struct {
@@ -88,32 +93,32 @@ type publicKeyIdentifier struct {
 	Counter uint   `json:"counter"`
 }
 
-// TODO enable this when updating protocol
-//func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
-//	str := string(text)
-//	index := strings.LastIndex(str, "-")
-//	if index == -1 {
-//		return errors.New("Invalid publicKeyIdentifier")
-//	}
-//	counter, err := strconv.Atoi(str[index+1:])
-//	if err != nil {
-//		return err
-//	}
-//	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
-//	return nil
-//}
-//
-//func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
-//	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
-//}
+func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
+	str := string(text)
+	index := strings.LastIndex(str, "-")
+	if index == -1 {
+		return errors.New("Invalid publicKeyIdentifier")
+	}
+	counter, err := strconv.Atoi(str[index+1:])
+	if err != nil {
+		return err
+	}
+	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
+	return nil
+}
+
+func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
+	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
+}
 
 type proofPCommitmentMap struct {
 	Commitments map[publicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
 }
 
 const (
-	kssUsernameHeader = "IRMA_Username"
-	kssAuthHeader     = "IRMA_Authorization"
+	kssUsernameHeader = "X-IRMA-Keyshare-Username"
+	kssVersionHeader  = "X-IRMA-Keyshare-ProtocolVersion"
+	kssAuthHeader     = "Authorization"
 	kssAuthorized     = "authorized"
 	kssTokenExpired   = "expired"
 	kssPinSuccess     = "success"
@@ -153,10 +158,10 @@ func startKeyshareSession(
 	sessionHandler keyshareSessionHandler,
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
-	session irma.IrmaSession,
+	session irma.SessionRequest,
 	conf *irma.Configuration,
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
-	state *issuanceState,
+	issuerProofNonce *big.Int,
 ) {
 	ksscount := 0
 	for managerID := range session.Identifiers().SchemeManagers {
@@ -176,17 +181,16 @@ func startKeyshareSession(
 	}
 
 	ks := &keyshareSession{
-		session:         session,
-		builders:        builders,
-		sessionHandler:  sessionHandler,
-		transports:      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
-		pinRequestor:    pin,
-		conf:            conf,
-		keyshareServers: keyshareServers,
-		state:           state,
+		session:          session,
+		builders:         builders,
+		sessionHandler:   sessionHandler,
+		transports:       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
+		pinRequestor:     pin,
+		conf:             conf,
+		keyshareServers:  keyshareServers,
+		issuerProofNonce: issuerProofNonce,
+		pinCheck:         false,
 	}
-
-	requestPin := false
 
 	for managerID := range session.Identifiers().SchemeManagers {
 		if !ks.conf.SchemeManagers[managerID].Distributed() {
@@ -196,26 +200,25 @@ func startKeyshareSession(
 		ks.keyshareServer = ks.keyshareServers[managerID]
 		transport := irma.NewHTTPTransport(ks.keyshareServer.URL)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
-		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
+		transport.SetHeader(kssAuthHeader, "Bearer "+ks.keyshareServer.token)
+		transport.SetHeader(kssVersionHeader, "2")
 		ks.transports[managerID] = transport
 
-		authstatus := &keyshareAuthorization{}
-		err := transport.Post("users/isAuthorized", authstatus, "")
-		if err != nil {
-			ks.fail(managerID, err)
-			return
+		// Try to parse token as a jwt to see if it is still valid; if so we don't need to ask for the PIN
+		parsed := &struct {
+			Expiry irma.Timestamp `json:"exp"`
+		}{}
+		if err := irma.JwtDecode(ks.keyshareServer.token, parsed); err != nil {
+			ks.pinCheck = true
 		}
-		switch authstatus.Status {
-		case kssAuthorized: // nop
-		case kssTokenExpired:
-			requestPin = true
-		default:
-			ks.sessionHandler.KeyshareError(&managerID, errors.New("Keyshare server returned unrecognized authorization status"))
-			return
+		// Add a minute of leeway for possible clockdrift with the server,
+		// and for the rest of the protocol to take place with this token
+		if time.Time(parsed.Expiry).Before(time.Now().Add(1 * time.Minute)) {
+			ks.pinCheck = true
 		}
 	}
 
-	if requestPin {
+	if ks.pinCheck {
 		ks.sessionHandler.KeysharePin()
 		ks.VerifyPin(-1)
 	} else {
@@ -301,7 +304,7 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 		switch pinresult.Status {
 		case kssPinSuccess:
 			kss.token = pinresult.Message
-			transport.SetHeader(kssAuthHeader, kss.token)
+			transport.SetHeader(kssAuthHeader, "Bearer "+kss.token)
 		case kssPinFailure:
 			tries, err = strconv.Atoi(pinresult.Message)
 			return
@@ -350,6 +353,14 @@ func (ks *keyshareSession) GetCommitments() {
 		comms := &proofPCommitmentMap{}
 		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
 		if err != nil {
+			if err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
+				// JWT may be out of date due to clock drift; request pin and try again
+				// (but only if we did not ask for a PIN earlier)
+				ks.pinCheck = false
+				ks.sessionHandler.KeysharePin()
+				ks.VerifyPin(-1)
+				return
+			}
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
@@ -427,16 +438,11 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 			ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
 			return
 		}
-		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.state.nonce2}
-		for _, response := range responses {
-			message.ProofPjwt = response
-			break
+		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.issuerProofNonce}
+		message.ProofPjwts = map[string]string{}
+		for manager, response := range responses {
+			message.ProofPjwts[manager.String()] = response
 		}
-		// TODO for new protocol version
-		//message.ProofPjwts = map[string]string{}
-		//for manager, response := range responses {
-		//	message.ProofPjwts[manager.String()] = response
-		//}
 		ks.sessionHandler.KeyshareDone(message)
 	}
 }

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,6 +30,14 @@ type HTTPTransport struct {
 }
 
 const verbose = false
+
+var transportlogger *log.Logger
+
+func init() {
+	if verbose {
+		transportlogger = log.New(os.Stdout, "transport: ", 0)
+	}
+}
 
 // NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string) *HTTPTransport {
@@ -54,7 +64,7 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 	client.RetryMax = 3
 	client.RetryWaitMin = 100 * time.Millisecond
 	client.RetryWaitMax = 500 * time.Millisecond
-	client.Logger = nil
+	client.Logger = transportlogger
 	client.HTTPClient = &http.Client{
 		Timeout:   time.Second * 5,
 		Transport: &innerTransport,

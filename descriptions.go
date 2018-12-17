@@ -40,8 +40,7 @@ type Issuer struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	ContactAddress  string
 	ContactEMail    string
-	URL             string `xml:"baseURL"`
-	XMLVersion      int    `xml:"version,attr"`
+	XMLVersion      int `xml:"version,attr"`
 
 	Valid bool `xml:"-"`
 }
@@ -55,27 +54,34 @@ type CredentialType struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	IsSingleton     bool             `xml:"ShouldBeSingleton"`
 	Description     TranslatedString
-	Attributes      []AttributeDescription `xml:"Attributes>Attribute"`
-	XMLVersion      int                    `xml:"version,attr"`
-	XMLName         xml.Name               `xml:"IssueSpecification"`
+	AttributeTypes  []*AttributeType `xml:"Attributes>Attribute" json:"-"`
+	XMLVersion      int              `xml:"version,attr"`
+	XMLName         xml.Name         `xml:"IssueSpecification"`
 
 	Valid bool `xml:"-"`
 }
 
-// AttributeDescription is a description of an attribute within a credential type.
-type AttributeDescription struct {
-	ID           string `xml:"id,attr"`
-	Optional     string `xml:"optional,attr"  json:",omitempty"`
-	DisplayIndex *int   `xml:"displayIndex,attr" json:",omitempty"`
-	Name         TranslatedString
-	Description  TranslatedString
+// AttributeType is a description of an attribute within a credential type.
+type AttributeType struct {
+	ID          string `xml:"id,attr"`
+	Optional    string `xml:"optional,attr"  json:",omitempty"`
+	Name        TranslatedString
+	Description TranslatedString
+
+	Index        int  `xml:"-"`
+	DisplayIndex *int `xml:"displayIndex,attr" json:",omitempty"`
+
+	// Taken from containing CredentialType
+	CredentialTypeID string `xml:"-"`
+	IssuerID         string `xml:"-"`
+	SchemeManagerID  string `xml:"-"`
 }
 
-func (ad AttributeDescription) GetAttributeTypeIdentifier(cred CredentialTypeIdentifier) AttributeTypeIdentifier {
-	return NewAttributeTypeIdentifier(cred.String() + "." + ad.ID)
+func (ad AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {
+	return NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s.%s.%s", ad.SchemeManagerID, ad.IssuerID, ad.CredentialTypeID, ad.ID))
 }
 
-func (ad AttributeDescription) IsOptional() bool {
+func (ad AttributeType) IsOptional() bool {
 	return ad.Optional == "true"
 }
 
@@ -85,7 +91,7 @@ func (ct *CredentialType) ContainsAttribute(ai AttributeTypeIdentifier) bool {
 	if ai.CredentialTypeIdentifier().String() != ct.Identifier().String() {
 		return false
 	}
-	for _, desc := range ct.Attributes {
+	for _, desc := range ct.AttributeTypes {
 		if desc.ID == ai.Name() {
 			return true
 		}
@@ -99,7 +105,7 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 	if ai.CredentialTypeIdentifier() != ct.Identifier() {
 		return -1, errors.New("Wrong credential type")
 	}
-	for i, description := range ct.Attributes {
+	for i, description := range ct.AttributeTypes {
 		if description.ID == ai.Name() {
 			return i, nil
 		}
@@ -107,12 +113,12 @@ func (ct CredentialType) IndexOf(ai AttributeTypeIdentifier) (int, error) {
 	return -1, errors.New("Attribute identifier not found")
 }
 
-func (ct CredentialType) AttributeDescription(ai AttributeTypeIdentifier) *AttributeDescription {
+func (ct CredentialType) AttributeType(ai AttributeTypeIdentifier) *AttributeType {
 	i, _ := ct.IndexOf(ai)
 	if i == -1 {
 		return nil
 	}
-	return &ct.Attributes[i]
+	return ct.AttributeTypes[i]
 }
 
 // TranslatedString is a map of translated strings.

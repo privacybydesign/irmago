@@ -3,11 +3,12 @@ package irmaclient
 import (
 	"encoding/json"
 	"errors"
-	"math/big"
+	gobig "math/big"
 	"os"
 	"testing"
 
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -17,76 +18,25 @@ import (
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
 	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
 
-	test.ClearTestStorage(nil)
 	test.CreateTestStorage(nil)
-	retCode := m.Run()
-	test.ClearTestStorage(nil)
+	defer test.ClearTestStorage(nil)
 
-	test.StopSchemeManagerHttpServer()
-	os.Exit(retCode)
-}
-
-type TestClientHandler struct {
-	t *testing.T
-	c chan error
-}
-
-func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
-func (i *TestClientHandler) UpdateAttributes()                               {}
-func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
-	select {
-	case i.c <- nil: // nop
-	default: // nop
-	}
-}
-func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error) {
-	select {
-	case i.c <- err: // nop
-	default:
-		i.t.Fatal(err)
-	}
-}
-func (i *TestClientHandler) ChangePinSuccess(manager irma.SchemeManagerIdentifier) {
-	select {
-	case i.c <- nil: // nop
-	default: // nop
-	}
-}
-func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
-	select {
-	case i.c <- err: //nop
-	default:
-		i.t.Fatal(err)
-	}
-}
-func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
-	err := errors.New("incorrect pin")
-	select {
-	case i.c <- err: //nop
-	default:
-		i.t.Fatal(err)
-	}
-}
-func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
-	err := errors.New("blocked account")
-	select {
-	case i.c <- err: //nop
-	default:
-		i.t.Fatal(err)
-	}
+	os.Exit(m.Run())
 }
 
 func parseStorage(t *testing.T) *Client {
+	test.SetupTestStorage(t)
 	require.NoError(t, fs.CopyDirectory("../testdata/teststorage", "../testdata/storage/test"))
-	manager, err := New(
+	client, err := New(
 		"../testdata/storage/test",
 		"../testdata/irma_configuration",
 		"",
 		&TestClientHandler{t: t},
 	)
 	require.NoError(t, err)
-	return manager
+	return client
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
@@ -136,8 +86,8 @@ func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
 	require.NotNil(t, PrivateKey.U)
 	require.NotNil(t, PrivateKey.PublicKey.N)
 
-	require.Equal(t, big.NewInt(1), new(big.Int).Exp(big.NewInt(2), PrivateKey.L, PrivateKey.N))
-	require.Equal(t, PrivateKey.NSquared, new(big.Int).Exp(PrivateKey.N, big.NewInt(2), nil))
+	require.Equal(t, gobig.NewInt(1), new(gobig.Int).Exp(gobig.NewInt(2), PrivateKey.L, PrivateKey.N))
+	require.Equal(t, PrivateKey.NSquared, new(gobig.Int).Exp(PrivateKey.N, gobig.NewInt(2), nil))
 
 	plaintext := "Hello Paillier!"
 	ciphertext, err := PrivateKey.Encrypt([]byte(plaintext))
@@ -161,42 +111,11 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 
 func TestStorageDeserialization(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
 	verifyKeyshareIsUnmarshaled(t, client)
-
-	test.ClearTestStorage(t)
-}
-
-func TestLogging(t *testing.T) {
-	client := parseStorage(t)
-
-	logs, err := client.Logs()
-	oldLogLength := len(logs)
-	require.NoError(t, err)
-
-	// Do session so we can examine its log item later
-	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sessionHelper(t, jwt, "issue", client)
-
-	logs, err = client.Logs()
-	require.NoError(t, err)
-	require.True(t, len(logs) == oldLogLength+1)
-
-	entry := logs[len(logs)-1]
-	require.NotNil(t, entry)
-	sessionjwt, err := entry.Jwt()
-	require.NoError(t, err)
-	require.Equal(t, "testip", sessionjwt.(*irma.IdentityProviderJwt).ServerName)
-	require.NoError(t, err)
-	require.NotEmpty(t, entry.Disclosed)
-	require.NotEmpty(t, entry.Received)
-	response, err := entry.GetResponse()
-	require.NoError(t, err)
-	require.NotNil(t, response)
-	require.IsType(t, &gabi.IssueCommitmentMessage{}, response)
-
-	test.ClearTestStorage(t)
 }
 
 // TestCandidates tests the correctness of the function of the client that, given a disjunction of attributes
@@ -204,6 +123,7 @@ func TestLogging(t *testing.T) {
 // satisfy the attribute disjunction.
 func TestCandidates(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	// client contains one instance of the studentCard credential, whose studentID attribute is 456.
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -262,12 +182,11 @@ func TestCandidates(t *testing.T) {
 	json.Unmarshal([]byte(`{"attributes":{"irma-demo.MijnOverheid.ageLower.over12":null}}`), &disjunction)
 	attrs = client.Candidates(disjunction)
 	require.Empty(t, attrs)
-
-	test.ClearTestStorage(t)
 }
 
 func TestPaillier(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	challenge, _ := gabi.RandomBigInt(256)
 	comm, _ := gabi.RandomBigInt(1000)
@@ -283,7 +202,8 @@ func TestPaillier(t *testing.T) {
 	commcipher := new(big.Int).SetBytes(bytes)
 
 	// [[ c ]]^resp * [[ comm ]]
-	cipher.Exp(cipher, resp, sk.NSquared).Mul(cipher, commcipher).Mod(cipher, sk.NSquared)
+	nsquared := big.Convert(sk.NSquared)
+	cipher.Exp(cipher, resp, nsquared).Mul(cipher, commcipher).Mod(cipher, nsquared)
 
 	bytes, err = sk.Decrypt(cipher.Bytes())
 	require.NoError(t, err)
@@ -292,12 +212,11 @@ func TestPaillier(t *testing.T) {
 	expected.Mul(expected, resp).Add(expected, comm)
 
 	require.Equal(t, plaintext, expected)
-
-	test.ClearTestStorage(t)
 }
 
 func TestCredentialRemoval(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -319,12 +238,11 @@ func TestCredentialRemoval(t *testing.T) {
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
-
-	test.ClearTestStorage(t)
 }
 
 func TestWrongSchemeManager(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
@@ -339,150 +257,65 @@ func TestWrongSchemeManager(t *testing.T) {
 		client.Configuration.SchemeManagers[irmademo].Status,
 		irma.SchemeManagerStatusValid,
 	)
-
-	test.ClearTestStorage(t)
 }
 
-func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
+// Test pinchange interaction
+func TestKeyshareChangePin(t *testing.T) {
 	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
 
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
-	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
+	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
+}
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	disclosureRequest := irma.DisclosureRequest{
-		Content: irma.AttributeDisjunctionList{
-			&irma.AttributeDisjunction{
-				Label: "foo",
-				Attributes: []irma.AttributeTypeIdentifier{
-					attrid,
-				},
-			},
-		},
+// ------
+
+type TestClientHandler struct {
+	t *testing.T
+	c chan error
+}
+
+func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
+func (i *TestClientHandler) UpdateAttributes()                               {}
+func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
+	select {
+	case i.c <- nil: // nop
+	default: // nop
 	}
-
-	client.Configuration.Download(&disclosureRequest)
-	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	test.ClearTestStorage(t)
 }
-
-func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
-	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	issuanceRequest := getIssuanceRequest(true)
-	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
-	client.Configuration.Download(issuanceRequest)
-	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	test.ClearTestStorage(t)
-}
-
-func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
-	require.False(t, client.Configuration.CredentialTypes[credid].AttributeDescription(attrid).IsOptional())
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	issuanceRequest := getIssuanceRequest(true)
-	delete(issuanceRequest.Credentials[0].Attributes, "level")
-	client.Configuration.Download(issuanceRequest)
-	require.True(t, client.Configuration.CredentialTypes[credid].AttributeDescription(attrid).IsOptional())
-
-	test.ClearTestStorage(t)
-}
-
-func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-
-	delete(client.Configuration.CredentialTypes, credid)
-	require.NotContains(t, client.Configuration.CredentialTypes, credid)
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	request := getIssuanceRequest(true)
-	client.Configuration.Download(request)
-
-	require.Contains(t, client.Configuration.CredentialTypes, credid)
-
-	test.ClearTestStorage(t)
-}
-
-func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
-
-	delete(client.Configuration.CredentialTypes, credid)
-	require.NotContains(t, client.Configuration.CredentialTypes, credid)
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	request := &irma.DisclosureRequest{
-		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{attrid},
-		}}),
+func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: // nop
+	default:
+		i.t.Fatal(err)
 	}
-	client.Configuration.Download(request)
-
-	require.Contains(t, client.Configuration.CredentialTypes, credid)
-
-	test.ClearTestStorage(t)
 }
-
-// Test installing a new scheme manager from a qr, and do a(n issuance) session
-// within this manager to test the autmatic downloading of credential definitions,
-// issuers, and public keys.
-func TestDownloadSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-
-	// Remove irma-demo scheme manager as we need to test adding it
-	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, client.Configuration.RemoveSchemeManager(irmademo, true))
-	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
-
-	// Do an add-scheme-manager-session
-	qr := &irma.Qr{
-		Type: irma.ActionSchemeManager,
-		URL:  "http://localhost:48681/irma_configuration/irma-demo",
+func (i *TestClientHandler) ChangePinSuccess(manager irma.SchemeManagerIdentifier) {
+	select {
+	case i.c <- nil: // nop
+	default: // nop
 	}
-	c := make(chan *irma.SessionError)
-	client.NewSession(qr, TestHandler{t, c, client})
-	if err := <-c; err != nil {
-		t.Fatal(*err)
+}
+func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
 	}
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-
-	// Do a session to test downloading of cred types, issuers and keys
-	jwt := getCombinedJwt("testip", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sessionHelper(t, jwt, "issue", client)
-
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
-	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
-
-	basepath := "../testdata/storage/test/irma_configuration/irma-demo"
-	exists, err := fs.PathExists(basepath + "/description.xml")
-	require.NoError(t, err)
-	require.True(t, exists)
-	exists, err = fs.PathExists(basepath + "/RU/description.xml")
-	require.NoError(t, err)
-	require.True(t, exists)
-	exists, err = fs.PathExists(basepath + "/RU/Issues/studentCard/description.xml")
-	require.NoError(t, err)
-	require.True(t, exists)
-
-	test.ClearTestStorage(t)
+}
+func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
+	err := errors.New("incorrect pin")
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
+	err := errors.New("blocked account")
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
 }

@@ -1,23 +1,22 @@
 package irma
 
 import (
-	"math/big"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/mhe/gabi/big"
 )
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
-	CredentialTypeID CredentialTypeIdentifier // e.g., "irma-demo.RU.studentCard"
-	Name             string                   // e.g., "studentCard"
-	IssuerID         IssuerIdentifier         // e.g., "RU"
-	SchemeManagerID  SchemeManagerIdentifier  // e.g., "irma-demo"
-	Index            int                      // This is the Index-th credential instance of this type
-	SignedOn         Timestamp                // Unix timestamp
-	Expires          Timestamp                // Unix timestamp
-	Attributes       []TranslatedString       // Human-readable rendered attributes
-	Logo             string                   // Path to logo on storage
-	Hash             string                   // SHA256 hash over the attributes
+	ID              string                                       // e.g., "studentCard"
+	IssuerID        string                                       // e.g., "RU"
+	SchemeManagerID string                                       // e.g., "irma-demo"
+	SignedOn        Timestamp                                    // Unix timestamp
+	Expires         Timestamp                                    // Unix timestamp
+	Attributes      map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
+	Hash            string                                       // SHA256 hash over the attributes
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
@@ -34,20 +33,18 @@ func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
 	id := credtype.Identifier()
 	issid := id.IssuerIdentifier()
 	return &CredentialInfo{
-		CredentialTypeID: NewCredentialTypeIdentifier(id.String()),
-		Name:             id.Name(),
-		IssuerID:         NewIssuerIdentifier(issid.Name()),
-		SchemeManagerID:  NewSchemeManagerIdentifier(issid.SchemeManagerIdentifier().String()),
-		SignedOn:         Timestamp(meta.SigningDate()),
-		Expires:          Timestamp(meta.Expiry()),
-		Attributes:       attrs.Strings(),
-		Logo:             credtype.Logo(conf),
-		Hash:             attrs.Hash(),
+		ID:              id.Name(),
+		IssuerID:        issid.Name(),
+		SchemeManagerID: issid.SchemeManagerIdentifier().Name(),
+		SignedOn:        Timestamp(meta.SigningDate()),
+		Expires:         Timestamp(meta.Expiry()),
+		Attributes:      attrs.Map(conf),
+		Hash:            attrs.Hash(),
 	}
 }
 
 func (ci CredentialInfo) GetCredentialType(conf *Configuration) *CredentialType {
-	return conf.CredentialTypes[ci.CredentialTypeID]
+	return conf.CredentialTypes[NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", ci.SchemeManagerID, ci.IssuerID, ci.ID))]
 }
 
 // Returns true if credential is expired at moment of calling this function
@@ -68,5 +65,5 @@ func (cl CredentialInfoList) Swap(i, j int) {
 // Less implements sort.Interface.
 func (cl CredentialInfoList) Less(i, j int) bool {
 	// TODO Decide on sorting, and if it depends on a irmago.TranslatedString, allow language choosing
-	return strings.Compare(cl[i].Name, cl[j].Name) > 0
+	return strings.Compare(cl[i].ID, cl[j].ID) > 0
 }

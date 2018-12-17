@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/xml"
 	"io/ioutil"
@@ -27,10 +28,11 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/pem"
-	"math/big"
+	gobig "math/big"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -40,6 +42,7 @@ type Configuration struct {
 	SchemeManagers  map[SchemeManagerIdentifier]*SchemeManager
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
+	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 
 	// Path to the irma_configuration folder that this instance represents
 	Path string
@@ -50,6 +53,7 @@ type Configuration struct {
 
 	Warnings []string
 
+	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
@@ -115,7 +119,9 @@ func (conf *Configuration) clear() {
 	conf.SchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManager)
 	conf.Issuers = make(map[IssuerIdentifier]*Issuer)
 	conf.CredentialTypes = make(map[CredentialTypeIdentifier]*CredentialType)
+	conf.AttributeTypes = make(map[AttributeTypeIdentifier]*AttributeType)
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
+	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 }
@@ -290,6 +296,29 @@ func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.Pu
 	return conf.publicKeys[id][counter], nil
 }
 
+func (conf *Configuration) KeyshareServerPublicKey(scheme SchemeManagerIdentifier, i int) (*rsa.PublicKey, error) {
+	if _, contains := conf.kssPublicKeys[scheme]; !contains {
+		conf.kssPublicKeys[scheme] = make(map[int]*rsa.PublicKey)
+	}
+	if _, contains := conf.kssPublicKeys[scheme][i]; !contains {
+		pkbts, err := ioutil.ReadFile(filepath.Join(conf.Path, scheme.Name(), fmt.Sprintf("kss-%d.pem", i)))
+		if err != nil {
+			return nil, err
+		}
+		pkblk, _ := pem.Decode(pkbts)
+		genericPk, err := x509.ParsePKIXPublicKey(pkblk.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		pk, ok := genericPk.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("Invalid keyshare server public key")
+		}
+		conf.kssPublicKeys[scheme][i] = pk
+	}
+	return conf.kssPublicKeys[scheme][i], nil
+}
+
 func (conf *Configuration) addReverseHash(credid CredentialTypeIdentifier) {
 	hash := sha256.Sum256([]byte(credid.String()))
 	conf.reverseHashes[base64.StdEncoding.EncodeToString(hash[:16])] = credid
@@ -439,6 +468,13 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
+		for index, attr := range cred.AttributeTypes {
+			attr.Index = index
+			attr.SchemeManagerID = cred.SchemeManagerID
+			attr.IssuerID = cred.IssuerID
+			attr.CredentialTypeID = cred.ID
+			conf.AttributeTypes[attr.GetAttributeTypeIdentifier()] = attr
+		}
 		return nil
 	})
 	if !foundcred {
@@ -651,7 +687,7 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 // Download downloads the issuers, credential types and public keys specified in set
 // if the current Configuration does not already have them,  and checks their authenticity
 // using the scheme manager index.
-func (conf *Configuration) Download(session IrmaSession) (downloaded *IrmaIdentifierSet, err error) {
+func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIdentifierSet, err error) {
 	managers := make(map[string]struct{}) // Managers that we must update
 	downloaded = &IrmaIdentifierSet{
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
@@ -679,7 +715,7 @@ func (conf *Configuration) Download(session IrmaSession) (downloaded *IrmaIdenti
 	return
 }
 
-func (conf *Configuration) checkCredentialTypes(session IrmaSession, managers map[string]struct{}) error {
+func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers map[string]struct{}) error {
 	var disjunctions AttributeDisjunctionList
 	var typ *CredentialType
 	var contains bool
@@ -688,7 +724,7 @@ func (conf *Configuration) checkCredentialTypes(session IrmaSession, managers ma
 	case *IssuanceRequest:
 		for _, credreq := range s.Credentials {
 			// First check if we have this credential type
-			typ, contains = conf.CredentialTypes[*credreq.CredentialTypeID]
+			typ, contains = conf.CredentialTypes[credreq.CredentialTypeID]
 			if !contains {
 				managers[credreq.CredentialTypeID.Root()] = struct{}{}
 				continue
@@ -699,7 +735,7 @@ func (conf *Configuration) checkCredentialTypes(session IrmaSession, managers ma
 			}
 			// For each of the attributes in the credentialtype, see if it is present; if so remove it from newAttrs
 			// If not, check that it is optional; if not the credentialtype must be updated
-			for _, attrtyp := range typ.Attributes {
+			for _, attrtyp := range typ.AttributeTypes {
 				_, contains = newAttrs[attrtyp.ID]
 				if !contains && !attrtyp.IsOptional() {
 					managers[credreq.CredentialTypeID.Root()] = struct{}{}
@@ -726,7 +762,7 @@ func (conf *Configuration) checkCredentialTypes(session IrmaSession, managers ma
 				managers[credid.Root()] = struct{}{}
 				continue
 			}
-			if !typ.ContainsAttribute(attrid) {
+			if !attrid.IsCredential() && !typ.ContainsAttribute(attrid) {
 				managers[credid.Root()] = struct{}{}
 			}
 		}
@@ -899,7 +935,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	if err != nil {
 		return err
 	}
-	ints := make([]*big.Int, 0, 2)
+	ints := make([]*gobig.Int, 0, 2)
 	_, err = asn1.Unmarshal(sig, &ints)
 
 	// Verify signature
@@ -1051,23 +1087,23 @@ func (conf *Configuration) checkCredentialType(manager *SchemeManager, issuer *I
 func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 	name := cred.Identifier().String()
 	indices := make(map[int]struct{})
-	count := len(cred.Attributes)
+	count := len(cred.AttributeTypes)
 	if count == 0 {
 		return errors.Errorf("Credenial type %s has no attributes", name)
 	}
-	for i, attr := range cred.Attributes {
+	for i, attr := range cred.AttributeTypes {
 		conf.checkTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
 		index := i
 		if attr.DisplayIndex != nil {
 			index = *attr.DisplayIndex
 		}
 		if index >= count {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute index at attribute %d", name, i))
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute displayIndex at attribute %d", name, i))
 		}
 		indices[index] = struct{}{}
 	}
 	if len(indices) != count {
-		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the index-tags", name))
+		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the displayIndex tags", name))
 	}
 	return nil
 }
@@ -1080,6 +1116,12 @@ func (conf *Configuration) checkScheme(scheme *SchemeManager, dir string) error 
 	if filepath.Base(dir) != scheme.ID {
 		scheme.Status = SchemeManagerStatusParsingError
 		return errors.Errorf("Scheme %s has wrong directory name %s", scheme.ID, filepath.Base(dir))
+	}
+	if scheme.KeyshareServer != "" {
+		if err := fs.AssertPathExists(filepath.Join(dir, "kss-0.pem")); err != nil {
+			scheme.Status = SchemeManagerStatusParsingError
+			return errors.Errorf("Scheme %s has keyshare URL but no keyshare public key kss-0.pem", scheme.ID)
+		}
 	}
 	conf.checkTranslations(fmt.Sprintf("Scheme %s", scheme.ID), scheme)
 	return nil

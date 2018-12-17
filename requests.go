@@ -3,84 +3,86 @@ package irma
 import (
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"strconv"
 	"time"
 
-	"encoding/json"
-
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
-// SessionRequest contains the context and nonce for an IRMA session.
-type SessionRequest struct {
-	Context    *big.Int                 `json:"context"`
-	Nonce      *big.Int                 `json:"nonce"`
+// BaseRequest contains the context and nonce for an IRMA session.
+type BaseRequest struct {
+	Context *big.Int `json:"context"`
+	Nonce   *big.Int `json:"nonce"`
+	Type    Action   `json:"type"`
+
 	Candidates [][]*AttributeIdentifier `json:"-"`
+	Choice     *DisclosureChoice        `json:"-"`
+	Ids        *IrmaIdentifierSet       `json:"-"`
 
-	Choice *DisclosureChoice  `json:"-"`
-	Ids    *IrmaIdentifierSet `json:"-"`
-
-	version *ProtocolVersion
+	Version *ProtocolVersion `json:"protocolVersion"`
 }
 
-func (sr *SessionRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
+func (sr *BaseRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
 	sr.Candidates = candidates
 }
 
 // DisclosureChoice returns the attributes to be disclosed in this session.
-func (sr *SessionRequest) DisclosureChoice() *DisclosureChoice {
+func (sr *BaseRequest) DisclosureChoice() *DisclosureChoice {
 	return sr.Choice
 }
 
 // SetDisclosureChoice sets the attributes to be disclosed in this session.
-func (sr *SessionRequest) SetDisclosureChoice(choice *DisclosureChoice) {
+func (sr *BaseRequest) SetDisclosureChoice(choice *DisclosureChoice) {
 	sr.Choice = choice
 }
 
 // ...
-func (sr *SessionRequest) SetVersion(v *ProtocolVersion) {
-	sr.version = v
+func (sr *BaseRequest) SetVersion(v *ProtocolVersion) {
+	sr.Version = v
 }
 
 // ...
-func (sr *SessionRequest) GetVersion() *ProtocolVersion {
-	return sr.version
+func (sr *BaseRequest) GetVersion() *ProtocolVersion {
+	return sr.Version
 }
 
 // A DisclosureRequest is a request to disclose certain attributes.
 type DisclosureRequest struct {
-	SessionRequest
+	BaseRequest
 	Content AttributeDisjunctionList `json:"content"`
 }
 
 // A SignatureRequest is a a request to sign a message with certain attributes.
 type SignatureRequest struct {
 	DisclosureRequest
-	Message   string          `json:"message"`
+	Message string `json:"message"`
+
+	// Session state
 	Timestamp *atum.Timestamp `json:"-"`
 }
 
 // An IssuanceRequest is a request to issue certain credentials,
 // optionally also asking for certain attributes to be simultaneously disclosed.
 type IssuanceRequest struct {
-	SessionRequest
-	Credentials               []*CredentialRequest     `json:"credentials"`
-	Disclose                  AttributeDisjunctionList `json:"disclose"`
-	CredentialInfoList        CredentialInfoList       `json:",omitempty"`
+	BaseRequest
+	Credentials []*CredentialRequest     `json:"credentials"`
+	Disclose    AttributeDisjunctionList `json:"disclose"`
+
+	// Derived data
+	CredentialInfoList        CredentialInfoList `json:",omitempty"`
 	RemovalCredentialInfoList CredentialInfoList
 }
 
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
-	Validity         *Timestamp                `json:"validity"`
-	KeyCounter       int                       `json:"keyCounter"`
-	CredentialTypeID *CredentialTypeIdentifier `json:"credential"`
-	Attributes       map[string]string         `json:"attributes"`
+	Validity         *Timestamp               `json:"validity"`
+	KeyCounter       int                      `json:"keyCounter"`
+	CredentialTypeID CredentialTypeIdentifier `json:"credential"`
+	Attributes       map[string]string        `json:"attributes"`
 }
 
 // ServerJwt contains standard JWT fields.
@@ -123,18 +125,21 @@ type IdentityProviderJwt struct {
 	Request IdentityProviderRequest `json:"iprequest"`
 }
 
-// IrmaSession is an IRMA session.
-type IrmaSession interface {
+// SessionRequest is an IRMA session.
+type SessionRequest interface {
+	Validator
 	GetNonce() *big.Int
 	SetNonce(*big.Int)
 	GetContext() *big.Int
 	SetContext(*big.Int)
+	GetVersion() *ProtocolVersion
 	SetVersion(*ProtocolVersion)
 	ToDisclose() AttributeDisjunctionList
 	DisclosureChoice() *DisclosureChoice
 	SetDisclosureChoice(choice *DisclosureChoice)
 	SetCandidates(candidates [][]*AttributeIdentifier)
 	Identifiers() *IrmaIdentifierSet
+	Action() Action
 }
 
 // Timestamp is a time.Time that marshals to Unix timestamps.
@@ -148,40 +153,59 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*C
 	return NewCredentialInfo(list.Ints, conf), nil
 }
 
-// AttributeList returns the list of attributes from this credential request.
-func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion byte) (*AttributeList, error) {
-	meta := NewMetadataAttribute(metadataVersion)
-	meta.setKeyCounter(cr.KeyCounter)
-	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
-	meta.setSigningDate()
-	err := meta.setExpiryDate(cr.Validity)
-	if err != nil {
-		return nil, err
-	}
-
-	credtype := conf.CredentialTypes[*cr.CredentialTypeID]
+// Validate checks that this credential request is consistent with the specified Configuration:
+// the credential type is known, all required attributes are present and no unknown attributes
+// are given.
+func (cr *CredentialRequest) Validate(conf *Configuration) error {
+	credtype := conf.CredentialTypes[cr.CredentialTypeID]
 	if credtype == nil {
-		return nil, errors.New("Unknown credential type")
+		return errors.New("Credential request of unknown credential type")
 	}
 
 	// Check that there are no attributes in the credential request that aren't
 	// in the credential descriptor.
 	for crName := range cr.Attributes {
 		found := false
-		for _, ad := range credtype.Attributes {
+		for _, ad := range credtype.AttributeTypes {
 			if ad.ID == crName {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return nil, errors.New("Unknown CR attribute")
+			return errors.New("Credential request contaiins unknown attribute")
 		}
 	}
 
-	attrs := make([]*big.Int, len(credtype.Attributes)+1)
+	for _, attrtype := range credtype.AttributeTypes {
+		if _, present := cr.Attributes[attrtype.ID]; !present && attrtype.Optional != "true" {
+			return errors.New("Required attribute not present in credential request")
+		}
+	}
+
+	return nil
+}
+
+// AttributeList returns the list of attributes from this credential request.
+func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion byte) (*AttributeList, error) {
+	if err := cr.Validate(conf); err != nil {
+		return nil, err
+	}
+
+	// Compute metadata attribute
+	meta := NewMetadataAttribute(metadataVersion)
+	meta.setKeyCounter(cr.KeyCounter)
+	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
+	meta.setSigningDate()
+	if err := meta.setExpiryDate(cr.Validity); err != nil {
+		return nil, err
+	}
+
+	// Compute other attributes
+	credtype := conf.CredentialTypes[cr.CredentialTypeID]
+	attrs := make([]*big.Int, len(credtype.AttributeTypes)+1)
 	attrs[0] = meta.Int
-	for i, attrtype := range credtype.Attributes {
+	for i, attrtype := range credtype.AttributeTypes {
 		attrs[i+1] = new(big.Int)
 		if str, present := cr.Attributes[attrtype.ID]; present {
 			// Set attribute to str << 1 + 1
@@ -189,10 +213,6 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 			if meta.Version() >= 0x03 {
 				attrs[i+1].Lsh(attrs[i+1], 1)             // attr <<= 1
 				attrs[i+1].Add(attrs[i+1], big.NewInt(1)) // attr += 1
-			}
-		} else {
-			if attrtype.Optional != "true" {
-				return nil, errors.New("Required attribute not provided")
 			}
 		}
 	}
@@ -213,7 +233,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			issuer := credreq.CredentialTypeID.IssuerIdentifier()
 			ir.Ids.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
 			ir.Ids.Issuers[issuer] = struct{}{}
-			ir.Ids.CredentialTypes[*credreq.CredentialTypeID] = struct{}{}
+			ir.Ids.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
 			if ir.Ids.PublicKeys[issuer] == nil {
 				ir.Ids.PublicKeys[issuer] = []int{}
 			}
@@ -246,6 +266,19 @@ func (ir *IssuanceRequest) ToDisclose() AttributeDisjunctionList {
 	return ir.Disclose
 }
 
+func (ir *IssuanceRequest) GetCredentialInfoList(conf *Configuration, version *ProtocolVersion) (CredentialInfoList, error) {
+	if ir.CredentialInfoList == nil {
+		for _, credreq := range ir.Credentials {
+			info, err := credreq.Info(conf, GetMetadataVersion(version))
+			if err != nil {
+				return nil, err
+			}
+			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
+		}
+	}
+	return ir.CredentialInfoList, nil
+}
+
 // GetContext returns the context of this session.
 func (ir *IssuanceRequest) GetContext() *big.Int { return ir.Context }
 
@@ -257,6 +290,18 @@ func (ir *IssuanceRequest) GetNonce() *big.Int { return ir.Nonce }
 
 // SetNonce sets the nonce of this session.
 func (ir *IssuanceRequest) SetNonce(nonce *big.Int) { ir.Nonce = nonce }
+
+func (ir *IssuanceRequest) Action() Action { return ActionIssuing }
+
+func (ir *IssuanceRequest) Validate() error {
+	if ir.Type != ActionIssuing {
+		return errors.New("Not an issuance request")
+	}
+	if len(ir.Credentials) == 0 {
+		return errors.New("Empty issuance request")
+	}
+	return nil
+}
 
 func (dr *DisclosureRequest) Identifiers() *IrmaIdentifierSet {
 	if dr.Ids == nil {
@@ -292,68 +337,63 @@ func (dr *DisclosureRequest) GetNonce() *big.Int { return dr.Nonce }
 // SetNonce sets the nonce of this session.
 func (dr *DisclosureRequest) SetNonce(nonce *big.Int) { dr.Nonce = nonce }
 
+func (dr *DisclosureRequest) Action() Action { return ActionDisclosing }
+
+func (dr *DisclosureRequest) Validate() error {
+	if dr.Type != ActionDisclosing {
+		return errors.New("Not a disclosure request")
+	}
+	if len(dr.Content) == 0 {
+		return errors.New("Disclosure request had no attributes")
+	}
+	for _, disjunction := range dr.Content {
+		if len(disjunction.Attributes) == 0 {
+			return errors.New("Disclosure request had an empty disjunction")
+		}
+	}
+	return nil
+}
+
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).
 func (sr *SignatureRequest) GetNonce() *big.Int {
 	return ASN1ConvertSignatureNonce(sr.Message, sr.Nonce, sr.Timestamp)
 }
 
-// Convert fields in JSON string to BigInterger if they are string
-// Supply fieldnames as a slice as second argument
-func convertFieldsToBigInt(jsonString []byte, fieldNames []string) ([]byte, error) {
-	var rawRequest map[string]interface{}
-
-	err := json.Unmarshal(jsonString, &rawRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, fieldName := range fieldNames {
-		field := new(big.Int)
-		fieldString := fmt.Sprintf("%v", rawRequest[fieldName])
-		field.SetString(fieldString, 10)
-		rawRequest[fieldName] = field
-	}
-
-	return json.Marshal(rawRequest)
-}
-
-// Custom Unmarshalling to support both json with string and int fields for nonce and context
-// i.e. {"nonce": "42", "context": "1337", ... } and {"nonce": 42, "context": 1337, ... }
-func (sr *SignatureRequest) UnmarshalJSON(b []byte) error {
-	type SignatureRequestTemp SignatureRequest // To avoid 'recursive unmarshalling'
-
-	fixedRequest, err := convertFieldsToBigInt(b, []string{"nonce", "context"})
-	if err != nil {
-		return err
-	}
-
-	var result SignatureRequestTemp
-	err = json.Unmarshal(fixedRequest, &result)
-	if err != nil {
-		return err
-	}
-
-	sr.DisclosureRequest = result.DisclosureRequest
-	sr.Message = result.Message
-
-	return err
-}
-
-func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*IrmaSignedMessage, error) {
-	signature, ok := message.(gabi.ProofList)
+func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMessage, error) {
+	signature, ok := message.(*Disclosure)
 
 	if !ok {
 		return nil, errors.Errorf("Type assertion failed")
 	}
 
-	return &IrmaSignedMessage{
-		Signature: signature,
+	return &SignedMessage{
+		Signature: signature.Proofs,
 		Nonce:     sr.Nonce,
 		Context:   sr.Context,
 		Message:   sr.Message,
 		Timestamp: sr.Timestamp,
 	}, nil
+}
+
+func (sr *SignatureRequest) Action() Action { return ActionSigning }
+
+func (sr *SignatureRequest) Validate() error {
+	if sr.Type != ActionSigning {
+		return errors.New("Not a signature request")
+	}
+	if sr.Message == "" {
+		return errors.New("Signature request had empty message")
+	}
+	if len(sr.Content) == 0 {
+		return errors.New("Disclosure request had no attributes")
+	}
+	for _, disjunction := range sr.Content {
+		if len(disjunction.Attributes) == 0 {
+			return errors.New("Disclosure request had an empty disjunction")
+		}
+	}
+	return nil
 }
 
 // Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
@@ -453,17 +493,55 @@ func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityPro
 
 // A RequestorJwt contains an IRMA session object.
 type RequestorJwt interface {
-	IrmaSession() IrmaSession
+	Action() Action
+	SessionRequest() SessionRequest
 	Requestor() string
+	Valid() error
 }
 
 func (jwt *ServerJwt) Requestor() string { return jwt.ServerName }
 
-// IrmaSession returns an IRMA session object.
-func (jwt *ServiceProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+// SessionRequest returns an IRMA session object.
+func (jwt *ServiceProviderJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
 
-// IrmaSession returns an IRMA session object.
-func (jwt *SignatureRequestorJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+// SessionRequest returns an IRMA session object.
+func (jwt *SignatureRequestorJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
 
-// IrmaSession returns an IRMA session object.
-func (jwt *IdentityProviderJwt) IrmaSession() IrmaSession { return jwt.Request.Request }
+// SessionRequest returns an IRMA session object.
+func (jwt *IdentityProviderJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
+
+func (jwt *ServiceProviderJwt) Valid() error {
+	if jwt.Type != "verification_request" {
+		return errors.New("Verification jwt has invalid subject")
+	}
+	if time.Time(jwt.IssuedAt).After(time.Now()) {
+		return errors.New("Verification jwt not yet valid")
+	}
+	return nil
+}
+
+func (jwt *SignatureRequestorJwt) Valid() error {
+	if jwt.Type != "signature_request" {
+		return errors.New("Signature jwt has invalid subject")
+	}
+	if time.Time(jwt.IssuedAt).After(time.Now()) {
+		return errors.New("Signature jwt not yet valid")
+	}
+	return nil
+}
+
+func (jwt *IdentityProviderJwt) Valid() error {
+	if jwt.Type != "issue_request" {
+		return errors.New("Issuance jwt has invalid subject")
+	}
+	if time.Time(jwt.IssuedAt).After(time.Now()) {
+		return errors.New("Issuance jwt not yet valid")
+	}
+	return nil
+}
+
+func (jwt *ServiceProviderJwt) Action() Action { return ActionDisclosing }
+
+func (jwt *SignatureRequestorJwt) Action() Action { return ActionSigning }
+
+func (jwt *IdentityProviderJwt) Action() Action { return ActionIssuing }

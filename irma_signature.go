@@ -4,30 +4,39 @@ import (
 	"crypto/sha256"
 	"encoding/asn1"
 	"log"
-	"math/big"
+	gobig "math/big"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 )
 
-// IrmaSignedMessage is a message signed with an attribute-based signature
-// The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(sha256(message), sha256(nonce))
-type IrmaSignedMessage struct {
-	Signature gabi.ProofList  `json:"signature"`
-	Nonce     *big.Int        `json:"nonce"`
-	Context   *big.Int        `json:"context"`
-	Message   string          `json:"message"`
-	Timestamp *atum.Timestamp `json:"timestamp"`
+// SignedMessage is a message signed with an attribute-based signature
+// The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(nonce, SHA256(message), timestampSignature)
+type SignedMessage struct {
+	Signature gabi.ProofList            `json:"signature"`
+	Indices   DisclosedAttributeIndices `json:"indices"`
+	Nonce     *big.Int                  `json:"nonce"`
+	Context   *big.Int                  `json:"context"`
+	Message   string                    `json:"message"`
+	Timestamp *atum.Timestamp           `json:"timestamp"`
 }
 
-func (im *IrmaSignedMessage) GetNonce() *big.Int {
-	return ASN1ConvertSignatureNonce(im.Message, im.Nonce, im.Timestamp)
+func (sm *SignedMessage) GetNonce() *big.Int {
+	return ASN1ConvertSignatureNonce(sm.Message, sm.Nonce, sm.Timestamp)
 }
 
-func (im *IrmaSignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
-	return im.Nonce.Cmp(request.Nonce) == 0 &&
-		im.Context.Cmp(request.Context) == 0 &&
-		im.GetNonce().Cmp(request.GetNonce()) == 0
+func (sm *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
+	return sm.Nonce.Cmp(request.Nonce) == 0 &&
+		sm.Context.Cmp(request.Context) == 0 &&
+		sm.GetNonce().Cmp(request.GetNonce()) == 0
+}
+
+func (sm *SignedMessage) Disclosure() *Disclosure {
+	return &Disclosure{
+		Proofs:  sm.Signature,
+		Indices: sm.Indices,
+	}
 }
 
 // ASN1ConvertSignatureNonce computes the nonce that is used in the creation of the attribute-based signature:
@@ -35,7 +44,7 @@ func (im *IrmaSignedMessage) MatchesNonceAndContext(request *SignatureRequest) b
 // where serverNonce is the nonce sent by the signature requestor.
 func ASN1ConvertSignatureNonce(message string, nonce *big.Int, timestamp *atum.Timestamp) *big.Int {
 	msgHash := sha256.Sum256([]byte(message))
-	tohash := []interface{}{nonce, new(big.Int).SetBytes(msgHash[:])}
+	tohash := []interface{}{nonce.Value(), new(gobig.Int).SetBytes(msgHash[:])}
 	if timestamp != nil {
 		tohash = append(tohash, timestamp.Sig.Data)
 	}

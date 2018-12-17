@@ -3,7 +3,7 @@ package irma
 import (
 	"encoding/base64"
 	"encoding/json"
-	"math/big"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -12,15 +12,23 @@ import (
 	"fmt"
 
 	"github.com/go-errors/errors"
+	"github.com/mhe/gabi"
 )
 
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
 
+var ForceHttps bool = true
+
+const (
+	MinVersionHeader = "X-IRMA-MinProtocolVersion"
+	MaxVersionHeader = "X-IRMA-MaxProtocolVersion"
+)
+
 // ProtocolVersion encodes the IRMA protocol version of an IRMA session.
 type ProtocolVersion struct {
-	major int
-	minor int
+	Major int
+	Minor int
 }
 
 func NewVersion(major, minor int) *ProtocolVersion {
@@ -28,15 +36,59 @@ func NewVersion(major, minor int) *ProtocolVersion {
 }
 
 func (v *ProtocolVersion) String() string {
-	return fmt.Sprintf("%d.%d", v.major, v.minor)
+	return fmt.Sprintf("%d.%d", v.Major, v.Minor)
+}
+
+func (v *ProtocolVersion) UnmarshalJSON(b []byte) (err error) {
+	var str string
+	if err := json.Unmarshal(b, &str); err != nil {
+		str = string(b) // If b is not enclosed by quotes, try it directly
+	}
+	parts := strings.Split(str, ".")
+	if len(parts) != 2 {
+		return errors.New("Invalid protocol version number: not of form x.y")
+	}
+	if v.Major, err = strconv.Atoi(parts[0]); err != nil {
+		return
+	}
+	v.Minor, err = strconv.Atoi(parts[1])
+	return
+}
+
+func (v *ProtocolVersion) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.String())
 }
 
 // Returns true if v is below the given version.
 func (v *ProtocolVersion) Below(major, minor int) bool {
-	if v.major < major {
+	if v.Major < major {
 		return true
 	}
-	return v.major == major && v.minor < minor
+	return v.Major == major && v.Minor < minor
+}
+
+func (v *ProtocolVersion) BelowVersion(other *ProtocolVersion) bool {
+	return v.Below(other.Major, other.Minor)
+}
+
+func (v *ProtocolVersion) Above(major, minor int) bool {
+	if v.Major > major {
+		return true
+	}
+	return v.Major == major && v.Minor > minor
+}
+
+func (v *ProtocolVersion) AboveVersion(other *ProtocolVersion) bool {
+	return v.Above(other.Major, other.Minor)
+}
+
+// GetMetadataVersion maps a chosen protocol version to a metadata version that
+// the server will use.
+func GetMetadataVersion(v *ProtocolVersion) byte {
+	if v.Below(2, 3) {
+		return 0x02 // no support for optional attributes
+	}
+	return 0x03 // current version
 }
 
 // Action encodes the session type of an IRMA session (e.g., disclosing).
@@ -63,6 +115,22 @@ type RemoteError struct {
 	Stacktrace  string `json:"stacktrace"`
 }
 
+type Validator interface {
+	Validate() error
+}
+
+// UnmarshalValidate json.Unmarshal's data, and validates it using the
+// Validate() method if dest implements the Validator interface.
+func UnmarshalValidate(data []byte, dest interface{}) error {
+	if err := json.Unmarshal(data, dest); err != nil {
+		return err
+	}
+	if v, ok := dest.(Validator); ok {
+		return v.Validate()
+	}
+	return nil
+}
+
 func (err *RemoteError) Error() string {
 	var msg string
 	if err.Message != "" {
@@ -77,19 +145,10 @@ type Qr struct {
 	// Server with which to perform the session
 	URL string `json:"u"`
 	// Session type (disclosing, signing, issuing)
-	Type               Action `json:"irmaqr"`
-	ProtocolVersion    string `json:"v"`
-	ProtocolMaxVersion string `json:"vmax"`
+	Type Action `json:"irmaqr"`
 }
 
-// A SessionInfo is the first message in the IRMA protocol (i.e., GET on the server URL),
-// containing the session request info.
-type SessionInfo struct {
-	Jwt     string                   `json:"jwt"`
-	Nonce   *big.Int                 `json:"nonce"`
-	Context *big.Int                 `json:"context"`
-	Keys    map[IssuerIdentifier]int `json:"keys"`
-}
+type SchemeManagerRequest Qr
 
 // Statuses
 const (
@@ -182,6 +241,35 @@ func (e *SessionError) Stack() string {
 	return ""
 }
 
+type Disclosure struct {
+	Proofs  gabi.ProofList            `json:"proofs"`
+	Indices DisclosedAttributeIndices `json:"indices"`
+}
+
+// DisclosedAttributeIndices contains, for each conjunction of an attribute disclosure request,
+// a list of attribute indices, pointing to where the disclosed attributes for that conjunction
+// can be found within a gabi.ProofList.
+type DisclosedAttributeIndices [][]*DisclosedAttributeIndex
+
+// DisclosedAttributeIndex points to a specific attribute in a gabi.ProofList.
+type DisclosedAttributeIndex struct {
+	CredentialIndex int                  `json:"cred"`
+	AttributeIndex  int                  `json:"attr"`
+	Identifier      CredentialIdentifier `json:"-"` // credential from which this attribute was disclosed
+}
+
+type IssueCommitmentMessage struct {
+	*gabi.IssueCommitmentMessage
+	Indices DisclosedAttributeIndices `json:"indices"`
+}
+
+func (i *IssueCommitmentMessage) Disclosure() *Disclosure {
+	return &Disclosure{
+		Proofs:  i.Proofs,
+		Indices: i.Indices,
+	}
+}
+
 func JwtDecode(jwt string, body interface{}) error {
 	jwtparts := strings.Split(jwt, ".")
 	if jwtparts == nil || len(jwtparts) < 2 {
@@ -194,14 +282,14 @@ func JwtDecode(jwt string, body interface{}) error {
 	return json.Unmarshal(bodybytes, body)
 }
 
-func ParseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
+func ParseRequestorJwt(action string, jwt string) (RequestorJwt, error) {
 	var retval RequestorJwt
 	switch action {
-	case ActionDisclosing:
+	case "verification_request", string(ActionDisclosing):
 		retval = &ServiceProviderJwt{}
-	case ActionSigning:
+	case "signature_request", string(ActionSigning):
 		retval = &SignatureRequestorJwt{}
-	case ActionIssuing:
+	case "issue_request", string(ActionIssuing):
 		retval = &IdentityProviderJwt{}
 	default:
 		return nil, errors.New("Invalid session type")
@@ -211,4 +299,40 @@ func ParseRequestorJwt(action Action, jwt string) (RequestorJwt, error) {
 		return nil, err
 	}
 	return retval, nil
+}
+
+func (qr *Qr) Validate() (err error) {
+	if qr.URL == "" {
+		return errors.New("No URL specified")
+	}
+	var u *url.URL
+	if u, err = url.ParseRequestURI(qr.URL); err != nil {
+		return errors.Errorf("Invalid URL: %s", err.Error())
+	}
+	if ForceHttps && u.Scheme != "https" {
+		return errors.Errorf("URL did not begin with https")
+	}
+
+	switch qr.Type {
+	case ActionDisclosing: // nop
+	case ActionIssuing: // nop
+	case ActionSigning: // nop
+	default:
+		return errors.New("Unsupported session type")
+	}
+
+	return nil
+}
+
+func (smr *SchemeManagerRequest) Validate() error {
+	if smr.Type != ActionSchemeManager {
+		return errors.New("Not a scheme manager request")
+	}
+	if smr.URL == "" {
+		return errors.New("No URL specified")
+	}
+	if _, err := url.ParseRequestURI(smr.URL); err != nil {
+		return errors.Errorf("Invalid URL: %s", err.Error())
+	}
+	return nil
 }

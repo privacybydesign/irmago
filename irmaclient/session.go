@@ -3,14 +3,12 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strconv"
+	"net/url"
 	"strings"
-
-	"math/big"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 )
 
@@ -28,10 +26,10 @@ type PinHandler func(proceed bool, pin string)
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
 	StatusUpdate(action irma.Action, status irma.Status)
-	Success(action irma.Action, result string)
-	Cancelled(action irma.Action)
-	Failure(action irma.Action, err *irma.SessionError)
-	UnsatisfiableRequest(action irma.Action, ServerName string, missing irma.AttributeDisjunctionList)
+	Success(result string)
+	Cancelled()
+	Failure(err *irma.SessionError)
+	UnsatisfiableRequest(ServerName string, missing irma.AttributeDisjunctionList)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -51,29 +49,24 @@ type SessionDismisser interface {
 	Dismiss()
 }
 
-// getMetadataVersion maps a chosen protocol version to a metadata version that
-// the server will use.
-func getMetadataVersion(v *irma.ProtocolVersion) byte {
-	if v.Below(2, 3) {
-		return 0x02 // no support for optional attributes
-	}
-	return 0x03 // current version
-}
-
 type session struct {
-	Action  irma.Action
-	Handler Handler
-	Version *irma.ProtocolVersion
+	Action     irma.Action
+	Handler    Handler
+	Version    *irma.ProtocolVersion
+	ServerName string
 
 	choice      *irma.DisclosureChoice
+	attrIndices irma.DisclosedAttributeIndices
 	client      *Client
-	irmaSession irma.IrmaSession
+	request     irma.SessionRequest
 	done        bool
+
+	// State for issuance protocol
+	issuerProofNonce *big.Int
+	builders         gabi.ProofBuilderList
 
 	// These are empty on manual sessions
 	ServerURL string
-	info      *irma.SessionInfo
-	jwt       irma.RequestorJwt
 	transport *irma.HTTPTransport
 }
 
@@ -82,87 +75,388 @@ var _ keyshareSessionHandler = (*session)(nil)
 
 // Supported protocol versions. Minor version numbers should be reverse sorted.
 var supportedVersions = map[int][]int{
-	2: {3, 2, 1},
+	2: {4},
+}
+var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
+var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
+
+// Session constructors
+
+// NewSession starts a new IRMA session, given (along with a handler to pass feedback to) a session request.
+// When the request is not suitable to start an IRMA session from, it calls the Failure method of the specified Handler.
+func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
+	bts := []byte(sessionrequest)
+
+	qr := &irma.Qr{}
+	if err := irma.UnmarshalValidate(bts, qr); err == nil {
+		return client.newQrSession(qr, handler)
+	}
+
+	schemeRequest := &irma.SchemeManagerRequest{}
+	if err := irma.UnmarshalValidate(bts, schemeRequest); err == nil {
+		return client.newSchemeSession(schemeRequest, handler)
+	}
+
+	sigRequest := &irma.SignatureRequest{}
+	if err := irma.UnmarshalValidate(bts, sigRequest); err == nil {
+		return client.newManualSession(sigRequest, handler, irma.ActionSigning)
+	}
+
+	disclosureRequest := &irma.DisclosureRequest{}
+	if err := irma.UnmarshalValidate(bts, disclosureRequest); err == nil {
+		return client.newManualSession(disclosureRequest, handler, irma.ActionDisclosing)
+	}
+
+	handler.Failure(&irma.SessionError{Err: errors.New("Session request could not be parsed")})
+	return nil
 }
 
-func calcVersion(qr *irma.Qr) (*irma.ProtocolVersion, error) {
-	// Parse range supported by server
-	var minmajor, minminor, maxmajor, maxminor int
-	var err error
-	if minmajor, err = strconv.Atoi(string(qr.ProtocolVersion[0])); err != nil {
-		return nil, err
+// newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
+func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
+	session := &session{
+		Action:     action,
+		Handler:    handler,
+		client:     client,
+		Version:    minVersion,
+		ServerName: "",
+		request:    request,
 	}
-	if minminor, err = strconv.Atoi(string(qr.ProtocolVersion[2])); err != nil {
-		return nil, err
+	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
+
+	session.processSessionInfo()
+	return session
+}
+
+func (client *Client) newSchemeSession(qr *irma.SchemeManagerRequest, handler Handler) SessionDismisser {
+	session := &session{
+		ServerURL: qr.URL,
+		transport: irma.NewHTTPTransport(qr.URL),
+		Action:    irma.ActionSchemeManager,
+		Handler:   handler,
+		client:    client,
 	}
-	if maxmajor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[0])); err != nil {
-		return nil, err
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+
+	go session.managerSession()
+	return session
+}
+
+// newQrSession creates and starts a new interactive IRMA session
+func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
+	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
+	session := &session{
+		ServerURL:  qr.URL,
+		ServerName: u.Hostname(),
+		transport:  irma.NewHTTPTransport(qr.URL),
+		Action:     irma.Action(qr.Type),
+		Handler:    handler,
+		client:     client,
 	}
-	if maxminor, err = strconv.Atoi(string(qr.ProtocolMaxVersion[2])); err != nil {
-		return nil, err
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+
+	// Check if the action is one of the supported types
+	switch session.Action {
+	case irma.ActionDisclosing:
+		session.request = &irma.DisclosureRequest{}
+	case irma.ActionSigning:
+		session.request = &irma.SignatureRequest{}
+	case irma.ActionIssuing:
+		session.request = &irma.IssuanceRequest{}
+	case irma.ActionUnknown:
+		fallthrough
+	default:
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownAction, Info: string(session.Action)})
+		return nil
 	}
 
-	// Iterate supportedVersions in reverse sorted order (i.e. biggest major number first)
-	keys := make([]int, 0, len(supportedVersions))
-	for k := range supportedVersions {
-		keys = append(keys, k)
+	session.transport.SetHeader(irma.MinVersionHeader, minVersion.String())
+	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
+	if !strings.HasSuffix(session.ServerURL, "/") {
+		session.ServerURL += "/"
 	}
-	sort.Sort(sort.Reverse(sort.IntSlice(keys)))
-	for _, major := range keys {
-		for _, minor := range supportedVersions[major] {
-			aboveMinimum := major > minmajor || (major == minmajor && minor >= minminor)
-			underMaximum := major < maxmajor || (major == maxmajor && minor <= maxminor)
-			if aboveMinimum && underMaximum {
-				return irma.NewVersion(major, minor), nil
+
+	go session.getSessionInfo()
+	return session
+}
+
+// Core session methods
+
+// getSessionInfo retrieves the first message in the IRMA protocol (only in interactive sessions)
+func (session *session) getSessionInfo() {
+	defer session.recoverFromPanic()
+
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+
+	// Get the first IRMA protocol message and parse it
+	err := session.transport.Get("", session.request)
+	if err != nil {
+		session.fail(err.(*irma.SessionError))
+		return
+	}
+
+	session.processSessionInfo()
+}
+
+// processSessionInfo continues the session after all session state has been received:
+// it checks if the session can be performed and asks the user for consent.
+func (session *session) processSessionInfo() {
+	defer session.recoverFromPanic()
+
+	if !session.checkAndUpateConfiguration() {
+		return
+	}
+
+	confirmedProtocolVersion := session.request.GetVersion()
+	if confirmedProtocolVersion != nil {
+		session.Version = confirmedProtocolVersion
+	} else {
+		session.Version = irma.NewVersion(2, 0)
+		session.request.SetVersion(session.Version)
+	}
+
+	if session.Action == irma.ActionIssuing {
+		ir := session.request.(*irma.IssuanceRequest)
+		_, err := ir.GetCredentialInfoList(session.client.Configuration, session.Version)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownCredentialType, Err: err})
+			return
+		}
+
+		// Calculate singleton credentials to be removed
+		ir.RemovalCredentialInfoList = irma.CredentialInfoList{}
+		for _, credreq := range ir.Credentials {
+			preexistingCredentials := session.client.attrs(credreq.CredentialTypeID)
+			if len(preexistingCredentials) != 0 && preexistingCredentials[0].IsValid() && preexistingCredentials[0].CredentialType().IsSingleton {
+				ir.RemovalCredentialInfoList = append(ir.RemovalCredentialInfoList, preexistingCredentials[0].Info())
 			}
 		}
 	}
-	return nil, fmt.Errorf("No supported protocol version between %s and %s", qr.ProtocolVersion, qr.ProtocolMaxVersion)
+
+	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
+	if len(missing) > 0 {
+		session.Handler.UnsatisfiableRequest(session.ServerName, missing)
+		return
+	}
+	session.request.SetCandidates(candidates)
+
+	// Ask for permission to execute the session
+	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+		session.choice = choice
+		session.request.SetDisclosureChoice(choice)
+		go session.doSession(proceed)
+	})
+	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+	switch session.Action {
+	case irma.ActionDisclosing:
+		session.Handler.RequestVerificationPermission(
+			*session.request.(*irma.DisclosureRequest), session.ServerName, callback)
+	case irma.ActionSigning:
+		session.Handler.RequestSignaturePermission(
+			*session.request.(*irma.SignatureRequest), session.ServerName, callback)
+	case irma.ActionIssuing:
+		session.Handler.RequestIssuancePermission(
+			*session.request.(*irma.IssuanceRequest), session.ServerName, callback)
+	default:
+		panic("Invalid session type") // does not happen, session.Action has been checked earlier
+	}
 }
 
-func (session *session) IsInteractive() bool {
-	return session.ServerURL != ""
+// doSession performs the session: it computes all proofs of knowledge, constructs credentials in case of issuance,
+// asks for the pin and performs the keyshare session, and finishes the session by either POSTing the result to the
+// API server or returning it to the caller (in case of interactive and noninteractive sessions, respectively).
+func (session *session) doSession(proceed bool) {
+	defer session.recoverFromPanic()
+
+	if !proceed {
+		session.cancel()
+		return
+	}
+	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+
+	if !session.Distributed() {
+		message, err := session.getProof()
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
+		}
+		session.sendResponse(message)
+	} else {
+		var err error
+		session.builders, session.attrIndices, session.issuerProofNonce, err = session.getBuilders()
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+		}
+		startKeyshareSession(
+			session,
+			session.Handler,
+			session.builders,
+			session.request,
+			session.client.Configuration,
+			session.client.keyshareServers,
+			session.issuerProofNonce,
+		)
+	}
 }
 
-func (session *session) getBuilders() (gabi.ProofBuilderList, error) {
-	var builders gabi.ProofBuilderList
+type disclosureResponse string
+
+// sendResponse sends the proofs of knowledge of the hidden attributes and/or the secret key, or the constructed
+// attribute-based signature, to the API server.
+func (session *session) sendResponse(message interface{}) {
+	var log *LogEntry
 	var err error
+	var messageJson []byte
 
 	switch session.Action {
 	case irma.ActionSigning:
-		builders, err = session.client.ProofBuilders(session.choice, session.irmaSession, true)
+		irmaSignature, err := session.request.(*irma.SignatureRequest).SignatureFromMessage(message)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
+			return
+		}
+
+		messageJson, err = json.Marshal(irmaSignature)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
+			return
+		}
+
+		if session.IsInteractive() {
+			var response disclosureResponse
+			if err = session.transport.Post("proofs", &response, irmaSignature); err != nil {
+				session.fail(err.(*irma.SessionError))
+				return
+			}
+			if response != "VALID" {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
+				return
+			}
+		}
+		log, _ = session.createLogEntry(message) // TODO err
 	case irma.ActionDisclosing:
-		builders, err = session.client.ProofBuilders(session.choice, session.irmaSession, false)
+		messageJson, err = json.Marshal(message)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
+			return
+		}
+		if session.IsInteractive() {
+			var response disclosureResponse
+			if err = session.transport.Post("proofs", &response, message); err != nil {
+				session.fail(err.(*irma.SessionError))
+				return
+			}
+			if response != "VALID" {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
+				return
+			}
+		}
+		log, _ = session.createLogEntry(message) // TODO err
 	case irma.ActionIssuing:
-		builders, err = session.client.IssuanceProofBuilders(session.irmaSession.(*irma.IssuanceRequest))
+		response := []*gabi.IssueSignatureMessage{}
+		if err = session.transport.Post("commitments", &response, message); err != nil {
+			session.fail(err.(*irma.SessionError))
+			return
+		}
+		if err = session.client.ConstructCredentials(response, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
+		}
+		log, _ = session.createLogEntry(message) // TODO err
 	}
 
-	return builders, err
+	_ = session.client.addLogEntry(log) // TODO err
+	if session.Action == irma.ActionIssuing {
+		session.client.handler.UpdateAttributes()
+	}
+	session.done = true
+	session.Handler.Success(string(messageJson))
 }
 
+// managerSession performs a "session" in which a new scheme manager is added (asking for permission first).
+func (session *session) managerSession() {
+	defer session.recoverFromPanic()
+
+	// We have to download the scheme manager description.xml here before installing it,
+	// because we need to show its contents (name, description, website) to the user
+	// when asking installation permission.
+	manager, err := irma.DownloadSchemeManager(session.ServerURL)
+	if err != nil {
+		session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+		return
+	}
+
+	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
+		if !proceed {
+			session.Handler.Cancelled() // No need to DELETE session here
+			return
+		}
+		if err := session.client.Configuration.InstallSchemeManager(manager); err != nil {
+			session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+			return
+		}
+
+		// Update state and inform user of success
+		session.client.handler.UpdateConfiguration(
+			&irma.IrmaIdentifierSet{
+				SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
+				Issuers:         map[irma.IssuerIdentifier]struct{}{},
+				CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
+			},
+		)
+		session.Handler.Success("")
+	})
+	return
+}
+
+// Response calculation methods
+
+// getBuilders computes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
+// and issuing respectively).
+func (session *session) getBuilders() (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
+	var builders gabi.ProofBuilderList
+	var err error
+	var issuerProofNonce *big.Int
+	var choices irma.DisclosedAttributeIndices
+
+	switch session.Action {
+	case irma.ActionSigning:
+		builders, choices, err = session.client.ProofBuilders(session.choice, session.request, true)
+	case irma.ActionDisclosing:
+		builders, choices, err = session.client.ProofBuilders(session.choice, session.request, false)
+	case irma.ActionIssuing:
+		builders, choices, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest))
+	}
+
+	return builders, choices, issuerProofNonce, err
+}
+
+// getProofs computes the disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
+// and issuing respectively) to be sent to the server.
 func (session *session) getProof() (interface{}, error) {
 	var message interface{}
 	var err error
 
 	switch session.Action {
 	case irma.ActionSigning:
-		message, err = session.client.Proofs(session.choice, session.irmaSession, true)
+		message, err = session.client.Proofs(session.choice, session.request, true)
 	case irma.ActionDisclosing:
-		message, err = session.client.Proofs(session.choice, session.irmaSession, false)
+		message, err = session.client.Proofs(session.choice, session.request, false)
 	case irma.ActionIssuing:
-		message, err = session.client.IssueCommitments(session.irmaSession.(*irma.IssuanceRequest))
+		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest))
 	}
 
 	return message, err
 }
 
+// Helper functions
+
 // checkKeyshareEnrollment checks if we are enrolled into all involved keyshare servers,
 // and aborts the session if not
 func (session *session) checkKeyshareEnrollment() bool {
-	for id := range session.irmaSession.Identifiers().SchemeManagers {
+	for id := range session.request.Identifiers().SchemeManagers {
 		manager, ok := session.client.Configuration.SchemeManagers[id]
 		if !ok {
-			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
+			session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
 			return false
 		}
 		distributed := manager.Distributed()
@@ -175,16 +469,8 @@ func (session *session) checkKeyshareEnrollment() bool {
 	return true
 }
 
-func (session *session) panicFailure() {
-	if e := recover(); e != nil {
-		if session.Handler != nil {
-			session.Handler.Failure(session.Action, panicToError(e))
-		}
-	}
-}
-
 func (session *session) checkAndUpateConfiguration() bool {
-	for id := range session.irmaSession.Identifiers().SchemeManagers {
+	for id := range session.request.Identifiers().SchemeManagers {
 		manager, contains := session.client.Configuration.SchemeManagers[id]
 		if !contains {
 			session.fail(&irma.SessionError{
@@ -208,7 +494,7 @@ func (session *session) checkAndUpateConfiguration() bool {
 	}
 
 	// Download missing credential types/issuers/public keys from the scheme manager
-	downloaded, err := session.client.Configuration.Download(session.irmaSession)
+	downloaded, err := session.client.Configuration.Download(session.request)
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 		return false
@@ -219,210 +505,16 @@ func (session *session) checkAndUpateConfiguration() bool {
 	return true
 }
 
-// NewManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
-func (client *Client) NewManualSession(sigrequestJSONString string, handler Handler) {
-	var err error
-	sigrequest := &irma.SignatureRequest{}
-	if err = json.Unmarshal([]byte(sigrequestJSONString), sigrequest); err != nil {
-		handler.Failure(irma.ActionUnknown, &irma.SessionError{Err: err})
-		return
-	}
-
-	session := &session{
-		Action:      irma.ActionSigning, // TODO hardcoded for now
-		Handler:     handler,
-		client:      client,
-		Version:     irma.NewVersion(2, 0), // TODO hardcoded for now
-		irmaSession: sigrequest,
-	}
-
-	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
-
-	if !session.checkAndUpateConfiguration() {
-		return
-	}
-
-	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
-	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, "E-mail request", missing)
-		return
-	}
-	session.irmaSession.SetCandidates(candidates)
-
-	// Ask for permission to execute the session
-	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
-		session.choice = choice
-		session.irmaSession.SetDisclosureChoice(choice)
-		go session.do(proceed)
-	})
-	session.Handler.RequestSignaturePermission(
-		*session.irmaSession.(*irma.SignatureRequest), "E-mail request", callback)
+// IsInteractive returns whether this session uses an API server or not.
+func (session *session) IsInteractive() bool {
+	return session.ServerURL != ""
 }
 
-// NewSession creates and starts a new interactive IRMA session
-func (client *Client) NewSession(qr *irma.Qr, handler Handler) SessionDismisser {
-	session := &session{
-		ServerURL: qr.URL,
-		transport: irma.NewHTTPTransport(qr.URL),
-		Action:    irma.Action(qr.Type),
-		Handler:   handler,
-		client:    client,
-	}
-
-	if session.Action == irma.ActionSchemeManager {
-		go session.managerSession()
-		return session
-	}
-
-	version, err := calcVersion(qr)
-	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorProtocolVersionNotSupported, Err: err})
-		return nil
-	}
-	session.Version = version
-	session.transport.SetHeader("X-IRMA-ProtocolVersion", version.String())
-
-	// Check if the action is one of the supported types
-	switch session.Action {
-	case irma.ActionDisclosing: // nop
-	case irma.ActionSigning: // nop
-	case irma.ActionIssuing: // nop
-	case irma.ActionUnknown:
-		fallthrough
-	default:
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownAction, Info: string(session.Action)})
-		return nil
-	}
-
-	if !strings.HasSuffix(session.ServerURL, "/") {
-		session.ServerURL += "/"
-	}
-
-	go session.start()
-
-	return session
-}
-
-// start retrieves the first message in the IRMA protocol, checks if we can perform
-// the request, and informs the user of the outcome.
-func (session *session) start() {
-	defer session.panicFailure()
-
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-
-	// Get the first IRMA protocol message and parse it
-	session.info = &irma.SessionInfo{}
-	Err := session.transport.Get("jwt", session.info)
-	if Err != nil {
-		session.fail(Err.(*irma.SessionError))
-		return
-	}
-
-	var err error
-	session.jwt, err = irma.ParseRequestorJwt(session.Action, session.info.Jwt)
-	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorInvalidJWT, Err: err})
-		return
-	}
-	session.irmaSession = session.jwt.IrmaSession()
-	session.irmaSession.SetContext(session.info.Context)
-	session.irmaSession.SetNonce(session.info.Nonce)
-	session.irmaSession.SetVersion(session.Version)
-	if session.Action == irma.ActionIssuing {
-		ir := session.irmaSession.(*irma.IssuanceRequest)
-		// Store which public keys the server will use
-		for _, credreq := range ir.Credentials {
-			credreq.KeyCounter = session.info.Keys[credreq.CredentialTypeID.IssuerIdentifier()]
-		}
-	}
-
-	if !session.checkAndUpateConfiguration() {
-		return
-	}
-
-	if session.Action == irma.ActionIssuing {
-		ir := session.irmaSession.(*irma.IssuanceRequest)
-		ir.RemovalCredentialInfoList = irma.CredentialInfoList{}
-		for _, credreq := range ir.Credentials {
-			info, err := credreq.Info(session.client.Configuration, getMetadataVersion(session.Version))
-			if err != nil {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownCredentialType, Err: err})
-				return
-			}
-			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
-			preexistingCredentials := session.client.attrs(*credreq.CredentialTypeID)
-			if len(preexistingCredentials) != 0 && preexistingCredentials[0].IsValid() && preexistingCredentials[0].CredentialType().IsSingleton {
-				ir.RemovalCredentialInfoList = append(ir.RemovalCredentialInfoList, preexistingCredentials[0].Info())
-			}
-		}
-	}
-
-	candidates, missing := session.client.CheckSatisfiability(session.irmaSession.ToDisclose())
-	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.Action, session.jwt.Requestor(), missing)
-		return
-	}
-	session.irmaSession.SetCandidates(candidates)
-
-	// Ask for permission to execute the session
-	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
-		session.choice = choice
-		session.irmaSession.SetDisclosureChoice(choice)
-		go session.do(proceed)
-	})
-	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
-	switch session.Action {
-	case irma.ActionDisclosing:
-		session.Handler.RequestVerificationPermission(
-			*session.irmaSession.(*irma.DisclosureRequest), session.jwt.Requestor(), callback)
-	case irma.ActionSigning:
-		session.Handler.RequestSignaturePermission(
-			*session.irmaSession.(*irma.SignatureRequest), session.jwt.Requestor(), callback)
-	case irma.ActionIssuing:
-		session.Handler.RequestIssuancePermission(
-			*session.irmaSession.(*irma.IssuanceRequest), session.jwt.Requestor(), callback)
-	default:
-		panic("Invalid session type") // does not happen, session.Action has been checked earlier
-	}
-}
-
-func (session *session) do(proceed bool) {
-	defer session.panicFailure()
-
-	if !proceed {
-		session.cancel()
-		return
-	}
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-
-	if !session.Distributed() {
-		message, err := session.getProof()
-		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-			return
-		}
-		session.sendResponse(message)
-	} else {
-		builders, err := session.getBuilders()
-		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-		}
-		startKeyshareSession(
-			session,
-			session.Handler,
-			builders,
-			session.irmaSession,
-			session.client.Configuration,
-			session.client.keyshareServers,
-			session.client.state,
-		)
-	}
-}
-
+// Distributed returns whether or not this session involves a keyshare server.
 func (session *session) Distributed() bool {
 	var smi irma.SchemeManagerIdentifier
 	if session.Action == irma.ActionIssuing {
-		for _, credreq := range session.irmaSession.(*irma.IssuanceRequest).Credentials {
+		for _, credreq := range session.request.(*irma.IssuanceRequest).Credentials {
 			smi = credreq.CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
 			if session.client.Configuration.SchemeManagers[smi].Distributed() {
 				return true
@@ -444,8 +536,77 @@ func (session *session) Distributed() bool {
 	return false
 }
 
+// Session lifetime functions
+
+func (session *session) recoverFromPanic() {
+	if e := recover(); e != nil {
+		if session.Handler != nil {
+			session.Handler.Failure(panicToError(e))
+		}
+	}
+}
+
+func panicToError(e interface{}) *irma.SessionError {
+	var info string
+	switch x := e.(type) {
+	case string:
+		info = x
+	case error:
+		info = x.Error()
+	case fmt.Stringer:
+		info = x.String()
+	default: // nop
+	}
+	fmt.Println("Panic: " + info)
+	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info}
+}
+
+// Idempotently send DELETE to remote server, returning whether or not we did something
+func (session *session) delete() bool {
+	if !session.done {
+		if session.IsInteractive() {
+			session.transport.Delete()
+		}
+		session.done = true
+		return true
+	}
+	return false
+}
+
+func (session *session) fail(err *irma.SessionError) {
+	if session.delete() {
+		err.Err = errors.Wrap(err.Err, 0)
+		session.Handler.Failure(err)
+	}
+}
+
+func (session *session) cancel() {
+	if session.delete() {
+		session.Handler.Cancelled()
+	}
+}
+
+func (session *session) Dismiss() {
+	session.cancel()
+}
+
+// Keyshare session handler methods
+
 func (session *session) KeyshareDone(message interface{}) {
-	session.sendResponse(message)
+	switch session.Action {
+	case irma.ActionSigning:
+		fallthrough
+	case irma.ActionDisclosing:
+		session.sendResponse(&irma.Disclosure{
+			Proofs:  message.(gabi.ProofList),
+			Indices: session.attrIndices,
+		})
+	case irma.ActionIssuing:
+		session.sendResponse(&irma.IssueCommitmentMessage{
+			IssueCommitmentMessage: message.(*gabi.IssueCommitmentMessage),
+			Indices:                session.attrIndices,
+		})
+	}
 }
 
 func (session *session) KeyshareCancelled() {
@@ -481,177 +642,4 @@ func (session *session) KeysharePin() {
 
 func (session *session) KeysharePinOK() {
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-}
-
-type disclosureResponse string
-
-func (session *session) sendResponse(message interface{}) {
-	var log *LogEntry
-	var err error
-	var messageJson []byte
-
-	switch session.Action {
-	case irma.ActionSigning:
-		request, ok := session.irmaSession.(*irma.SignatureRequest)
-		if !ok {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
-			return
-		}
-
-		irmaSignature, err := request.SignatureFromMessage(message)
-		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
-			return
-		}
-
-		messageJson, err = json.Marshal(irmaSignature)
-		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
-			return
-		}
-
-		if session.IsInteractive() {
-			var response disclosureResponse
-			if err = session.transport.Post("proofs", &response, irmaSignature); err != nil {
-				session.fail(err.(*irma.SessionError))
-				return
-			}
-			if response != "VALID" {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
-				return
-			}
-		}
-		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
-	case irma.ActionDisclosing:
-		var response disclosureResponse
-		if err = session.transport.Post("proofs", &response, message); err != nil {
-			session.fail(err.(*irma.SessionError))
-			return
-		}
-		if response != "VALID" {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
-			return
-		}
-		log, _ = session.createLogEntry(message.(gabi.ProofList)) // TODO err
-	case irma.ActionIssuing:
-		response := []*gabi.IssueSignatureMessage{}
-		if err = session.transport.Post("commitments", &response, message); err != nil {
-			session.fail(err.(*irma.SessionError))
-			return
-		}
-		if err = session.client.ConstructCredentials(response, session.irmaSession.(*irma.IssuanceRequest)); err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-			return
-		}
-		log, _ = session.createLogEntry(message) // TODO err
-	}
-
-	_ = session.client.addLogEntry(log) // TODO err
-	if session.Action == irma.ActionIssuing {
-		session.client.handler.UpdateAttributes()
-	}
-	session.done = true
-	session.Handler.Success(session.Action, string(messageJson))
-}
-
-func (session *session) managerSession() {
-	defer func() {
-		if e := recover(); e != nil {
-			if session.Handler != nil {
-				session.Handler.Failure(session.Action, panicToError(e))
-			}
-		}
-	}()
-
-	// We have to download the scheme manager description.xml here before installing it,
-	// because we need to show its contents (name, description, website) to the user
-	// when asking installation permission.
-	manager, err := irma.DownloadSchemeManager(session.ServerURL)
-	if err != nil {
-		session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
-		return
-	}
-
-	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
-		if !proceed {
-			session.Handler.Cancelled(session.Action) // No need to DELETE session here
-			return
-		}
-		if err := session.client.Configuration.InstallSchemeManager(manager); err != nil {
-			session.Handler.Failure(session.Action, &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
-			return
-		}
-
-		// Update state and inform user of success
-		session.client.handler.UpdateConfiguration(
-			&irma.IrmaIdentifierSet{
-				SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
-				Issuers:         map[irma.IssuerIdentifier]struct{}{},
-				CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
-			},
-		)
-		session.Handler.Success(session.Action, "")
-	})
-	return
-}
-
-// Session lifetime functions
-
-func panicToError(e interface{}) *irma.SessionError {
-	var info string
-	switch x := e.(type) {
-	case string:
-		info = x
-	case error:
-		info = x.Error()
-	case fmt.Stringer:
-		info = x.String()
-	default: // nop
-	}
-	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info}
-}
-
-// Idempotently send DELETE to remote server, returning whether or not we did something
-func (session *session) delete() bool {
-	if !session.done {
-		if session.IsInteractive() {
-			session.transport.Delete()
-		}
-		session.done = true
-		return true
-	}
-	return false
-}
-
-func (session *session) fail(err *irma.SessionError) {
-	if session.delete() {
-		err.Err = errors.Wrap(err.Err, 0)
-		session.Handler.Failure(session.Action, err)
-	}
-}
-
-func (session *session) cancel() {
-	if session.delete() {
-		session.Handler.Cancelled(session.Action)
-	}
-}
-
-func (session *session) Dismiss() {
-	session.cancel()
-}
-
-type issuanceState struct {
-	nonce2   *big.Int
-	builders []*gabi.CredentialBuilder
-}
-
-func newIssuanceState() (*issuanceState, error) {
-	nonce2, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
-	if err != nil {
-		return nil, err
-	}
-	return &issuanceState{
-		nonce2:   nonce2,
-		builders: []*gabi.CredentialBuilder{},
-	}, nil
 }

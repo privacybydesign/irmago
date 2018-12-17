@@ -2,15 +2,15 @@ package irmaclient
 
 import (
 	"crypto/rand"
-	"math/big"
 	"sort"
-	"time"
 	"strconv"
+	"time"
 
 	"github.com/credentials/go-go-gadget-paillier"
 	raven "github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
@@ -58,7 +58,6 @@ type Client struct {
 	irmaConfigurationPath string
 	androidStoragePath    string
 	handler               ClientHandler
-	state                 *issuanceState
 }
 
 // SentryDSN should be set in the init() function
@@ -194,12 +193,11 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	list := irma.CredentialInfoList([]*irma.CredentialInfo{})
 
 	for _, attrlistlist := range client.attributes {
-		for index, attrlist := range attrlistlist {
+		for _, attrlist := range attrlistlist {
 			info := attrlist.Info()
 			if info == nil {
 				continue
 			}
-			info.Index = index
 			list = append(list, info)
 		}
 	}
@@ -498,13 +496,16 @@ func (client *Client) CheckSatisfiability(
 	return candidates, missing
 }
 
-func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.CredentialIdentifier][]int, error) {
+func (client *Client) groupCredentials(choice *irma.DisclosureChoice, disjunctions irma.AttributeDisjunctionList) (
+	map[irma.CredentialIdentifier][]int, irma.DisclosedAttributeIndices, error,
+) {
 	grouped := make(map[irma.CredentialIdentifier][]int)
 	if choice == nil || choice.Attributes == nil {
-		return grouped, nil
+		return grouped, irma.DisclosedAttributeIndices{}, nil
 	}
 
-	for _, attribute := range choice.Attributes {
+	attributeIndices := make(irma.DisclosedAttributeIndices, len(choice.Attributes))
+	for i, attribute := range choice.Attributes {
 		identifier := attribute.Type
 		ici := attribute.CredentialIdentifier()
 
@@ -517,11 +518,18 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.
 		}
 
 		if identifier.IsCredential() {
+			attributeIndices[i] = []*irma.DisclosedAttributeIndex{
+				{AttributeIndex: 1, Identifier: ici},
+			}
 			continue // In this case we only disclose the metadata attribute, which is already handled
 		}
 		index, err := client.Configuration.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+
+		attributeIndices[i] = []*irma.DisclosedAttributeIndex{
+			{AttributeIndex: index + 2, Identifier: ici},
 		}
 
 		// These indices will be used in the []*big.Int at gabi.credential.Attributes,
@@ -529,23 +537,26 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (map[irma.
 		grouped[ici] = append(grouped[ici], index+2)
 	}
 
-	return grouped, nil
+	return grouped, attributeIndices, nil
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
-func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.IrmaSession, issig bool) (gabi.ProofBuilderList, error) {
-	todisclose, err := client.groupCredentials(choice)
+func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.SessionRequest, issig bool,
+) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, error) {
+	todisclose, disjunctionChoices, err := client.groupCredentials(choice, request.ToDisclose())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
-	for id, list := range todisclose {
-		cred, err := client.credentialByID(id)
+
+	for i, choice := range disjunctionChoices {
+		cred, err := client.credentialByID(choice[0].Identifier)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(list))
+		choice[0].CredentialIndex = i
+		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(todisclose[choice[0].Identifier]))
 	}
 
 	if issig {
@@ -561,80 +572,100 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 		r := request.(*irma.SignatureRequest)
 		r.Timestamp, err = irma.GetTimestamp(r.Message, sigs, disclosed)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	return builders, nil
+	return builders, disjunctionChoices, nil
 }
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.
-func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.IrmaSession, issig bool) (gabi.ProofList, error) {
-	builders, err := client.ProofBuilders(choice, request, issig)
+func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.SessionRequest, issig bool) (*irma.Disclosure, error) {
+	builders, choices, err := client.ProofBuilders(choice, request, issig)
 	if err != nil {
 		return nil, err
 	}
 
-	return builders.BuildProofList(request.GetContext(), request.GetNonce(), issig), nil
+	return &irma.Disclosure{
+		Proofs:  builders.BuildProofList(request.GetContext(), request.GetNonce(), issig),
+		Indices: choices,
+	}, nil
+}
+
+// generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
+func generateIssuerProofNonce() (*big.Int, error) {
+	return gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
 }
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
-// for the future credentials as well as possibly any disclosed attributes.
-func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest) (gabi.ProofBuilderList, error) {
-	state, err := newIssuanceState()
+// for the future credentials as well as possibly any disclosed attributes, and generates
+// a nonce against which the issuer's proof of knowledge must verify.
+func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest,
+) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
+	issuerProofNonce, err := generateIssuerProofNonce()
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	client.state = state
-
-	proofBuilders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
+	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
 		var pk *gabi.PublicKey
 		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		credBuilder := gabi.NewCredentialBuilder(
-			pk, request.GetContext(), client.secretkey.Key, state.nonce2)
-		state.builders = append(state.builders, credBuilder)
-		proofBuilders = append(proofBuilders, credBuilder)
+			pk, request.GetContext(), client.secretkey.Key, issuerProofNonce)
+		builders = append(builders, credBuilder)
 	}
 
-	disclosures, err := client.ProofBuilders(request.Choice, request, false)
+	disclosures, choices, err := client.ProofBuilders(request.Choice, request, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	proofBuilders = append(disclosures, proofBuilders...)
-	return proofBuilders, nil
+	builders = append(disclosures, builders...)
+	return builders, choices, issuerProofNonce, nil
 }
 
-// IssueCommitments computes issuance commitments, along with disclosure proofs
-// specified by choice.
-func (client *Client) IssueCommitments(request *irma.IssuanceRequest) (*gabi.IssueCommitmentMessage, error) {
-	proofBuilders, err := client.IssuanceProofBuilders(request)
+// IssueCommitments computes issuance commitments, along with disclosure proofs specified by choice,
+// and also returns the credential builders which will become the new credentials upon combination with the issuer's signature.
+func (client *Client) IssueCommitments(request *irma.IssuanceRequest,
+) (*irma.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
+	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	list := proofBuilders.BuildProofList(request.GetContext(), request.GetNonce(), false)
-	return &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: client.state.nonce2}, nil
+	return &irma.IssueCommitmentMessage{
+		IssueCommitmentMessage: &gabi.IssueCommitmentMessage{
+			Proofs: builders.BuildProofList(request.GetContext(), request.GetNonce(), false),
+			Nonce2: issuerProofNonce,
+		},
+		Indices: choices,
+	}, builders, nil
 }
 
-// ConstructCredentials constructs and saves new credentials
-// using the specified issuance signature messages.
-func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *irma.IssuanceRequest) error {
-	if len(msg) != len(client.state.builders) {
+// ConstructCredentials constructs and saves new credentials using the specified issuance signature messages
+// and credential builders.
+func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *irma.IssuanceRequest, builders gabi.ProofBuilderList) error {
+	if len(msg) > len(builders) {
 		return errors.New("Received unexpected amount of signatures")
 	}
 
 	// First collect all credentials in a slice, so that if one of them induces an error,
 	// we save none of them to fail the session cleanly
 	gabicreds := []*gabi.Credential{}
-	for i, sig := range msg {
-		attrs, err := request.Credentials[i].AttributeList(client.Configuration, getMetadataVersion(request.GetVersion()))
+	offset := 0
+	for i, builder := range builders {
+		credbuilder, ok := builder.(*gabi.CredentialBuilder)
+		if !ok { // Skip builders of disclosure proofs
+			offset++
+			continue
+		}
+		sig := msg[i-offset]
+		attrs, err := request.Credentials[i-offset].AttributeList(client.Configuration, irma.GetMetadataVersion(request.GetVersion()))
 		if err != nil {
 			return err
 		}
-		cred, err := client.state.builders[i].ConstructCredential(sig, attrs.Ints)
+		cred, err := credbuilder.ConstructCredential(sig, attrs.Ints)
 		if err != nil {
 			return err
 		}
@@ -746,7 +777,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	// If the session succeeds or fails, the keyshare server is stored to disk or
 	// removed from the client by the keyshareEnrollmentHandler.
 	client.keyshareServers[managerID] = kss
-	client.NewSession(qr, &keyshareEnrollmentHandler{
+	client.newQrSession(qr, &keyshareEnrollmentHandler{
 		client: client,
 		pin:    pin,
 		kss:    kss,

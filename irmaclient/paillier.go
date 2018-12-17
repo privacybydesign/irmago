@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+
 	"math/big"
 
 	"github.com/credentials/go-go-gadget-paillier"
@@ -12,35 +13,11 @@ type paillierPrivateKey paillier.PrivateKey
 type paillierPublicKey paillier.PublicKey
 
 func (psk *paillierPrivateKey) UnmarshalJSON(bytes []byte) (err error) {
-	// First try to unmarshal it as a keypair serialized in the old Android format
-	oldFormat := &struct {
-		PrivateKey struct {
-			L *big.Int `json:"lambda"`
-			U *big.Int `json:"preCalculatedDenominator"`
-		} `json:"privateKey"`
-		PublicKey struct {
-			N        *big.Int `json:"n"`
-			G        *big.Int `json:"g"`
-			NSquared *big.Int `json:"nSquared"`
-		} `json:"publicKey"`
-	}{}
-	if err = json.Unmarshal(bytes, oldFormat); err != nil {
+	sk := new(paillier.PrivateKey)
+	if err = json.Unmarshal(bytes, sk); err != nil {
 		return
 	}
-	if oldFormat.PrivateKey.L != nil {
-		psk.L = oldFormat.PrivateKey.L
-		psk.U = oldFormat.PrivateKey.U
-		psk.PublicKey.G = oldFormat.PublicKey.G
-		psk.PublicKey.N = oldFormat.PublicKey.N
-		psk.PublicKey.NSquared = oldFormat.PublicKey.NSquared
-		return nil
-	}
-
-	newFormat := new(paillier.PrivateKey)
-	if err = json.Unmarshal(bytes, newFormat); err != nil {
-		return
-	}
-	*psk = paillierPrivateKey(*newFormat)
+	*psk = paillierPrivateKey(*sk)
 	return
 }
 

@@ -2,14 +2,12 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"encoding/xml"
-	"html"
-	"io/ioutil"
-	"math/big"
+	"regexp"
 	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/mhe/gabi"
+	"github.com/mhe/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
@@ -25,18 +23,15 @@ type update struct {
 }
 
 var clientUpdates = []func(client *Client) error{
-	// Convert old cardemu.xml Android storage to our own storage format
-	func(client *Client) error {
-		_, err := client.ParseAndroidStorage()
-		return err
-	},
+	// 0: Convert old cardemu.xml Android storage to our own storage format
+	nil, // No longer necessary as the Android app was deprecated long ago
 
-	// Adding scheme manager index, signature and public key
+	// 1: Adding scheme manager index, signature and public key
 	// Check the signatures of all scheme managers, if any is not ok,
 	// copy the entire irma_configuration folder from assets
 	nil, // made irrelevant by irma_configuration-autocopying
 
-	// Rename config -> preferences
+	// 2: Rename config -> preferences
 	func(client *Client) (err error) {
 		exists, err := fs.PathExists(client.storage.path("config"))
 		if !exists || err != nil {
@@ -56,10 +51,10 @@ var clientUpdates = []func(client *Client) error{
 		return client.storage.StorePreferences(client.Preferences)
 	},
 
-	// Copy new irma_configuration out of assets
+	// 3: Copy new irma_configuration out of assets
 	nil, // made irrelevant by irma_configuration-autocopying
 
-	// For each keyshare server, include in its struct the identifier of its scheme manager
+	// 4: For each keyshare server, include in its struct the identifier of its scheme manager
 	func(client *Client) (err error) {
 		keyshareServers, err := client.storage.LoadKeyshareServers()
 		if err != nil {
@@ -71,8 +66,104 @@ var clientUpdates = []func(client *Client) error{
 		return client.storage.StoreKeyshareServers(keyshareServers)
 	},
 
-	// Remove the test scheme manager which was erroneously included in a production build
+	// 5: Remove the test scheme manager which was erroneously included in a production build
 	nil, // No longer necessary, also broke many unit tests
+
+	// 6: Guess and include version protocol in issuance logs, and convert log entry structure
+	// from Response to either IssueCommitment or ProofList
+	func(client *Client) (err error) {
+		logs, err := client.Logs()
+		if err != nil {
+			return
+		}
+		// The logs read above do not contain the Response field as it has been removed from the LogEntry struct.
+		// So read the logs again into a slice of a temp struct that does contain this field.
+		type oldLogEntry struct {
+			Response    json.RawMessage
+			ProofList   gabi.ProofList
+			SessionInfo struct {
+				Nonce   *big.Int                      `json:"nonce"`
+				Context *big.Int                      `json:"context"`
+				Jwt     string                        `json:"jwt"`
+				Keys    map[irma.IssuerIdentifier]int `json:"keys"`
+			}
+		}
+		var oldLogs []*oldLogEntry
+		if err = client.storage.load(&oldLogs, logsFile); err != nil {
+			return
+		}
+		// Sanity check, this should be true as both log slices were read from the same source
+		if len(oldLogs) != len(logs) {
+			return errors.New("Log count does not match")
+		}
+
+		for i, entry := range logs {
+			oldEntry := oldLogs[i]
+
+			if len(oldEntry.Response) == 0 {
+				return errors.New("Log entry had no Response field")
+			}
+
+			var jwt irma.RequestorJwt
+			jwt, err = irma.ParseRequestorJwt(string(entry.Type), oldEntry.SessionInfo.Jwt)
+			if err != nil {
+				return err
+			}
+
+			entry.request = jwt.SessionRequest()
+			// Ugly hack alert: unfortunately the protocol version that was used in the session is nowhere recorded.
+			// This means that we cannot be sure whether or not we should byteshift the presence bit out of the attributes
+			// that was introduced in version 2.3 of the protocol. The only thing that I can think of to determine this
+			// is to check if the attributes are human-readable, i.e., alphanumeric: if the presence bit is present and
+			// we do not shift it away, then they almost certainly will not be.
+			if entry.Type == irma.ActionIssuing && entry.Version == nil {
+				for _, attr := range entry.request.(*irma.IssuanceRequest).Credentials[0].Attributes {
+					if regexp.MustCompile("^\\w").Match([]byte(attr)) {
+						entry.Version = irma.NewVersion(2, 2)
+					} else {
+						entry.Version = irma.NewVersion(2, 3)
+					}
+					break
+				}
+			}
+			if entry.Version == nil {
+				entry.Version = irma.NewVersion(2, 3)
+			}
+			entry.request.SetNonce(oldEntry.SessionInfo.Nonce)
+			entry.request.SetContext(oldEntry.SessionInfo.Context)
+			entry.request.SetVersion(entry.Version)
+			if err := entry.setSessionRequest(); err != nil {
+				return err
+			}
+
+			switch entry.Type {
+			case actionRemoval: // nop
+			case irma.ActionSigning:
+				fallthrough
+			case irma.ActionDisclosing:
+				proofs := []*gabi.ProofD{}
+				if err = json.Unmarshal(oldEntry.Response, &proofs); err != nil {
+					return
+				}
+				entry.Disclosure = &irma.Disclosure{}
+				for _, proof := range proofs {
+					entry.Disclosure.Proofs = append(entry.Disclosure.Proofs, proof)
+				}
+			case irma.ActionIssuing:
+				entry.IssueCommitment = &irma.IssueCommitmentMessage{}
+				if err = json.Unmarshal(oldEntry.Response, entry.IssueCommitment); err != nil {
+					return err
+				}
+				isreq := entry.request.(*irma.IssuanceRequest)
+				for _, cred := range isreq.Credentials {
+					cred.KeyCounter = oldEntry.SessionInfo.Keys[cred.CredentialTypeID.IssuerIdentifier()]
+				}
+			default:
+				return errors.New("Invalid log type")
+			}
+		}
+		return client.storage.StoreLogs(logs)
+	},
 }
 
 // update performs any function from clientUpdates that has not
@@ -111,113 +202,4 @@ func (client *Client) update() error {
 		return storeErr
 	}
 	return err
-}
-
-// ParseAndroidStorage parses an Android cardemu.xml shared preferences file
-// from the old Android IRMA app, parsing its credentials into the current instance,
-// and saving them to storage.
-// CAREFUL: this method overwrites any existing secret keys and attributes on storage.
-func (client *Client) ParseAndroidStorage() (present bool, err error) {
-	if client.androidStoragePath == "" {
-		return false, nil
-	}
-
-	cardemuXML := client.androidStoragePath + "/shared_prefs/cardemu.xml"
-	present, err = fs.PathExists(cardemuXML)
-	if err != nil || !present {
-		return
-	}
-	present = true
-
-	bytes, err := ioutil.ReadFile(cardemuXML)
-	if err != nil {
-		return
-	}
-	parsedxml := struct {
-		Strings []struct {
-			Name    string `xml:"name,attr"`
-			Content string `xml:",chardata"`
-		} `xml:"string"`
-	}{}
-	if err = xml.Unmarshal(bytes, &parsedxml); err != nil {
-		return
-	}
-
-	parsedjson := make(map[string][]*struct {
-		Signature    *gabi.CLSignature `json:"signature"`
-		Pk           *gabi.PublicKey   `json:"-"`
-		Attributes   []*big.Int        `json:"attributes"`
-		SharedPoints []*big.Int        `json:"public_sks"`
-	})
-	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
-	for _, xmltag := range parsedxml.Strings {
-		if xmltag.Name == "credentials" {
-			jsontag := html.UnescapeString(xmltag.Content)
-			if err = json.Unmarshal([]byte(jsontag), &parsedjson); err != nil {
-				return
-			}
-		}
-		if xmltag.Name == "keyshare" {
-			jsontag := html.UnescapeString(xmltag.Content)
-			if err = json.Unmarshal([]byte(jsontag), &client.keyshareServers); err != nil {
-				return
-			}
-		}
-		if xmltag.Name == "KeyshareKeypairs" {
-			jsontag := html.UnescapeString(xmltag.Content)
-			keys := make([]*paillierPrivateKey, 0, 3)
-			if err = json.Unmarshal([]byte(jsontag), &keys); err != nil {
-				return
-			}
-			client.paillierKeyCache = keys[0]
-		}
-	}
-
-	for _, list := range parsedjson {
-		client.secretkey = &secretKey{Key: list[0].Attributes[0]}
-		for _, oldcred := range list {
-			gabicred := &gabi.Credential{
-				Attributes: oldcred.Attributes,
-				Signature:  oldcred.Signature,
-			}
-			if oldcred.SharedPoints != nil && len(oldcred.SharedPoints) > 0 {
-				gabicred.Signature.KeyshareP = oldcred.SharedPoints[0]
-			}
-			var cred *credential
-			if cred, err = newCredential(gabicred, client.Configuration); err != nil {
-				return
-			}
-			if cred.CredentialType() == nil {
-				err = errors.New("cannot add unknown credential type")
-				return
-			}
-
-			if err = client.addCredential(cred, false); err != nil {
-				return
-			}
-		}
-	}
-
-	if len(client.credentialsCache) > 0 {
-		if err = client.storage.StoreAttributes(client.attributes); err != nil {
-			return
-		}
-		if err = client.storage.StoreSecretKey(client.secretkey); err != nil {
-			return
-		}
-	}
-
-	if len(client.keyshareServers) > 0 {
-		if err = client.storage.StoreKeyshareServers(client.keyshareServers); err != nil {
-			return
-		}
-	}
-
-	if err = client.storage.StorePaillierKeys(client.paillierKeyCache); err != nil {
-		return
-	}
-	if client.paillierKeyCache == nil {
-		client.paillierKey(false) // trigger calculating a new one
-	}
-	return
 }
