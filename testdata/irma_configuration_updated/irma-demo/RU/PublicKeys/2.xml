@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <IssuerPublicKey xmlns="http://www.zurich.ibm.com/security/idemix" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.zurich.ibm.com/security/idemix IssuerPublicKey.xsd">
-  <Counter>0</Counter>
+  <Counter>2</Counter>
   <ExpiryDate>1893456000</ExpiryDate>
   <References>
     <GroupParameters>http://www.irmacard.org/credentials/phase1/RU/gp.xml</GroupParameters>
