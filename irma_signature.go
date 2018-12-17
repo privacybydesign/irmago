@@ -7,8 +7,8 @@ import (
 	gobig "math/big"
 
 	"github.com/bwesterb/go-atum"
-	"github.com/mhe/gabi"
-	"github.com/mhe/gabi/big"
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 )
 
 // SignedMessage is a message signed with an attribute-based signature

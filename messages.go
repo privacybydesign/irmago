@@ -12,7 +12,7 @@ import (
 	"fmt"
 
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
+	"github.com/privacybydesign/gabi"
 )
 
 // Status encodes the status of an IRMA session (e.g., connected).

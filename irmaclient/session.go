@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
-	"github.com/mhe/gabi/big"
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 )
 

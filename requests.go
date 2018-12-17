@@ -8,7 +8,7 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi/big"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 

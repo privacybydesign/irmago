@@ -138,19 +138,6 @@
   version = "v1.0"
 
 [[projects]]
-  branch = "refactor"
-  digest = "1:f330608439967f238794d78efc696e1cb0f8b205e12e5aafafeed3182b13892e"
-  name = "github.com/mhe/gabi"
-  packages = [
-    ".",
-    "big",
-    "safeprime",
-  ]
-  pruneopts = "UT"
-  revision = "42c4d48e3f35aec81c2ca2692246ad0f30557684"
-  source = "github.com/privacybydesign/gabi"
-
-[[projects]]
   branch = "master"
   digest = "1:16886567e49201f2bb97fc738dfe8097494764135a83b533fc020fcefe37d8fe"
   name = "github.com/nightlyone/lockfile"
@@ -173,6 +160,18 @@
   pruneopts = "UT"
   revision = "792786c7400a136282c1664665ae0a8db921c6c2"
   version = "v1.0.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:62ffeeea646880da7f3e06788621164efce11f7aadeb6d1b2792e4062055aee5"
+  name = "github.com/privacybydesign/gabi"
+  packages = [
+    ".",
+    "big",
+    "safeprime",
+  ]
+  pruneopts = "UT"
+  revision = "279fe7149011e59b7c91ce574ea390ad1562565f"
 
 [[projects]]
   branch = "master"
@@ -262,9 +261,9 @@
     "github.com/getsentry/raven-go",
     "github.com/go-errors/errors",
     "github.com/hashicorp/go-retryablehttp",
-    "github.com/mhe/gabi",
-    "github.com/mhe/gabi/big",
     "github.com/pkg/errors",
+    "github.com/privacybydesign/gabi",
+    "github.com/privacybydesign/gabi/big",
     "github.com/spf13/cobra",
     "github.com/stretchr/testify/require",
   ]

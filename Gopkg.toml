@@ -38,9 +38,8 @@
   version = "1.0.0"
 
 [[constraint]]
-  branch = "refactor"
-  name = "github.com/mhe/gabi"
-  source = "github.com/privacybydesign/gabi"
+  branch = "master"
+  name = "github.com/privacybydesign/gabi"
 
 [[constraint]]
   name = "github.com/pkg/errors"

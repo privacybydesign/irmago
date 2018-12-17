@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
-	"github.com/mhe/gabi/big"
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 )
 
 // ProofStatus is the status of the complete proof

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mhe/gabi/big"
+	"github.com/privacybydesign/gabi/big"
 )
 
 // CredentialInfo contains all information of an IRMA credential.
