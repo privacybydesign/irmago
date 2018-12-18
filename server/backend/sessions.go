@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mhe/gabi"
-	"github.com/mhe/gabi/big"
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 )

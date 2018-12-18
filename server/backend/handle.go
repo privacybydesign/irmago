@@ -1,7 +1,7 @@
 package backend
 
 import (
-	"github.com/mhe/gabi"
+	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 )

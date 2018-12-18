@@ -6,7 +6,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
-	"github.com/mhe/gabi"
+	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 )

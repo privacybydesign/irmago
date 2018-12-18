@@ -7,7 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/mhe/gabi"
+	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 )
 
