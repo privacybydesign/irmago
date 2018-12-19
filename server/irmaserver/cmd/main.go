@@ -144,7 +144,7 @@ func configure() error {
 			IrmaConfigurationPath: viper.GetString("irmaconf"),
 			IssuerPrivateKeysPath: viper.GetString("privatekeys"),
 			CachePath:             viper.GetString("cachepath"),
-			Url:                   viper.GetString("url"),
+			URL:                   viper.GetString("url"),
 			Logger:                logger,
 		},
 		Port: viper.GetInt("port"),
@@ -158,7 +158,7 @@ func configure() error {
 	}
 	// replace "port" in url with actual port
 	replace := "$1:" + strconv.Itoa(conf.Port)
-	conf.Url = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.Url), []byte(replace)))
+	conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
 
 	// Handle global permissions
 	if len(viper.GetStringMap("permissions")) > 0 { // First read config file

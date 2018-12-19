@@ -152,11 +152,11 @@ func (conf *Configuration) initialize() error {
 		}
 	}
 
-	if conf.Url != "" {
-		if !strings.HasSuffix(conf.Url, "/") {
-			conf.Url = conf.Url + "/"
+	if conf.URL != "" {
+		if !strings.HasSuffix(conf.URL, "/") {
+			conf.URL = conf.URL + "/"
 		}
-		conf.Url = conf.Url + "irma/"
+		conf.URL = conf.URL + "irma/"
 	}
 
 	return nil

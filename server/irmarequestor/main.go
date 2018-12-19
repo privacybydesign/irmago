@@ -9,14 +9,20 @@ import (
 	"github.com/privacybydesign/irmago/server/backend"
 )
 
+// SessionHandler is a function that can handle a session result
+// once an IRMA session has completed.
 type SessionHandler func(*server.SessionResult)
 
 var handlers = make(map[string]SessionHandler)
 
+// Initialize sets configuration.
 func Initialize(configuration *server.Configuration) error {
 	return backend.Initialize(configuration)
 }
 
+// StartSession starts an IRMA session, running the handler on completion, if specified.
+// The session token (the second return parameter) can be used in GetSessionResult()
+// and CancelSession().
 func StartSession(request irma.SessionRequest, handler SessionHandler) (*irma.Qr, string, error) {
 	qr, token, err := backend.StartSession(request)
 	if err != nil {
@@ -28,17 +34,28 @@ func StartSession(request irma.SessionRequest, handler SessionHandler) (*irma.Qr
 	return qr, token, nil
 }
 
+// GetSessionResult retrieves the result of the specified IRMA session.
 func GetSessionResult(token string) *server.SessionResult {
 	return backend.GetSessionResult(token)
 }
 
+// CancelSession cancels the specified IRMA session.
 func CancelSession(token string) error {
 	return backend.CancelSession(token)
 }
 
-func HttpHandlerFunc(prefix string) http.HandlerFunc {
-	if len(prefix) != 0 && prefix[0] != '/' {
-		prefix = "/" + prefix
+// HttpHandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
+// with IRMA apps. Initialize() must be called before this.
+//
+// Example usage:
+//   http.HandleFunc("/irma/", irmarequestor.HttpHandlerFunc("/irma/"))
+//
+// The IRMA app can then perform IRMA sessions at https://example.com/irma.
+// Note that the two strings must be equal, i.e. you must pass the pattern at which
+// you register the handler.
+func HttpHandlerFunc(pattern string) http.HandlerFunc {
+	if len(pattern) != 0 && pattern[0] != '/' {
+		pattern = "/" + pattern
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		var message []byte
@@ -47,7 +64,7 @@ func HttpHandlerFunc(prefix string) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		path := r.URL.Path[len(prefix):]
+		path := r.URL.Path[len(pattern):]
 		status, response, result := backend.HandleProtocolMessage(path, r.Method, r.Header, message)
 		w.WriteHeader(status)
 		w.Write(response)
