@@ -273,8 +273,25 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-func relativePath(absolute string, relative string) string {
-	return relative[len(absolute)+1:]
+// relativePath returns, given a outer path that contains the inner path,
+// the relative path between outer an inner, which is such that
+// outer/returnvalue refers to inner.
+func relativePath(outer string, inner string) (string, error) {
+	// Take Abs() of both paths to ensure that we don't fail on e.g.
+	// outer = "./foo" and inner = "foo/bar"
+	outerAbs, err := filepath.Abs(outer)
+	if err != nil {
+		return "", err
+	}
+	innerAbs, err := filepath.Abs(inner)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(innerAbs, outerAbs) {
+		return "", errors.New("inner path is not contained in outer path")
+	}
+
+	return innerAbs[len(outerAbs)+1:], nil
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
@@ -408,7 +425,11 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil {
 			return err
 		}
-		bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.Path, file))
+		relativepath, err := relativePath(conf.Path, file)
+		if err != nil {
+			return err
+		}
+		bts, found, err := conf.ReadAuthenticatedFile(manager, relativepath)
 		if err != nil || !found {
 			return err
 		}
@@ -517,7 +538,11 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 		return false, nil
 	}
 
-	bts, found, err := conf.ReadAuthenticatedFile(manager, relativePath(conf.Path, path))
+	relativepath, err := relativePath(conf.Path, path)
+	if err != nil {
+		return false, err
+	}
+	bts, found, err := conf.ReadAuthenticatedFile(manager, relativepath)
 	if !found {
 		return false, nil
 	}
