@@ -3,8 +3,11 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
@@ -61,6 +64,12 @@ func setFlags(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	defaulturl, err := localIP()
+	if err != nil {
+		logger.Warn("Could not determine local IP address: ", err.Error())
+	} else {
+		defaulturl = "http://" + defaulturl + ":port"
+	}
 
 	flags.StringP("config", "c", "", "Path to configuration file")
 	flags.StringP("irmaconf", "i", "", "path to irma_configuration")
@@ -68,7 +77,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags.String("cachepath", cachepath, "Directory for writing cache files to")
 	flags.StringP("jwtissuer", "j", "irmaserver", "JWT issuer")
 	flags.StringP("jwtprivatekey", "w", "", "JWT private key or path to it")
-	flags.StringP("url", "u", "", "External URL to server to which the IRMA client connects")
+	flags.StringP("url", "u", defaulturl, "External URL to server to which the IRMA client connects")
 	flags.IntP("port", "p", 8088, "Port at which to listen")
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
@@ -147,6 +156,9 @@ func configure() error {
 		Verbose:                        viper.GetInt("verbose"),
 		Quiet:                          viper.GetBool("quiet"),
 	}
+	// replace "port" in url with actual port
+	replace := "$1:" + strconv.Itoa(conf.Port)
+	conf.Url = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.Url), []byte(replace)))
 
 	// Handle global permissions
 	if len(viper.GetStringMap("permissions")) > 0 { // First read config file
@@ -186,4 +198,41 @@ func handlePermission(conf *[]string, typ string) {
 	if len(perms) > 0 {
 		*conf = perms
 	}
+}
+
+func localIP() (string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // loopback interface
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return "", err
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue // not an ipv4 address
+			}
+			return ip.String(), nil
+		}
+	}
+	return "", errors.New("No IP found")
 }
