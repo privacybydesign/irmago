@@ -111,7 +111,7 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 // Other
 
 func chooseProtocolVersion(min, max *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
-	if min.AboveVersion(minProtocolVersion) || max.BelowVersion(min) {
+	if min.AboveVersion(maxProtocolVersion) || max.BelowVersion(minProtocolVersion) || max.BelowVersion(min) {
 		return nil, errors.Errorf("Protocol version negotiation failed, min=%s max=%s", min.String(), max.String())
 	}
 	if max.AboveVersion(maxProtocolVersion) {
