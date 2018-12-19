@@ -390,7 +390,7 @@ func (session *session) managerSession() {
 			session.Handler.Cancelled() // No need to DELETE session here
 			return
 		}
-		if err := session.client.Configuration.InstallSchemeManager(manager); err != nil {
+		if err := session.client.Configuration.InstallSchemeManager(manager, nil); err != nil {
 			session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
 			return
 		}

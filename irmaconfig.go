@@ -635,13 +635,13 @@ func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err e
 	if err = conf.DeleteSchemeManager(manager.Identifier()); err != nil {
 		return
 	}
-	err = conf.InstallSchemeManager(manager)
+	err = conf.InstallSchemeManager(manager, nil)
 	return
 }
 
 // InstallSchemeManager downloads and adds the specified scheme manager to this Configuration,
 // provided its signature is valid.
-func (conf *Configuration) InstallSchemeManager(manager *SchemeManager) error {
+func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publickey []byte) error {
 	name := manager.ID
 	if err := fs.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
@@ -652,8 +652,14 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager) error {
 	if err := t.GetFile("description.xml", path+"/description.xml"); err != nil {
 		return err
 	}
-	if err := t.GetFile("pk.pem", path+"/pk.pem"); err != nil {
-		return err
+	if publickey != nil {
+		if err := fs.SaveFile(path+"/pk.pem", publickey); err != nil {
+			return err
+		}
+	} else {
+		if err := t.GetFile("pk.pem", path+"/pk.pem"); err != nil {
+			return err
+		}
 	}
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
 		return err
@@ -920,14 +926,9 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	if err != nil {
 		return err
 	}
-	pkblk, _ := pem.Decode(pkbts)
-	genericPk, err := x509.ParsePKIXPublicKey(pkblk.Bytes)
+	pk, err := ParsePemEcdsaPublicKey(pkbts)
 	if err != nil {
 		return err
-	}
-	pk, ok := genericPk.(*ecdsa.PublicKey)
-	if !ok {
-		return errors.New("Invalid scheme manager public key")
 	}
 
 	// Read and parse signature
@@ -943,6 +944,19 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 		return errors.New("Scheme manager signature was invalid")
 	}
 	return nil
+}
+
+func ParsePemEcdsaPublicKey(pkbts []byte) (*ecdsa.PublicKey, error) {
+	pkblk, _ := pem.Decode(pkbts)
+	genericPk, err := x509.ParsePKIXPublicKey(pkblk.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	pk, ok := genericPk.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("Invalid scheme manager public key")
+	}
+	return pk, nil
 }
 
 func (hash ConfigurationFileHash) String() string {
