@@ -4,17 +4,16 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
 
@@ -29,18 +28,23 @@ type HTTPTransport struct {
 	headers map[string]string
 }
 
-const verbose = false
+// Logger is used for logging. If not set, init() will initialize it to logrus.StandardLogger().
+var Logger *logrus.Logger
 
 var transportlogger *log.Logger
 
 func init() {
-	if verbose {
-		transportlogger = log.New(os.Stdout, "transport: ", 0)
+	if Logger == nil {
+		Logger = logrus.StandardLogger()
 	}
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string) *HTTPTransport {
+	if Logger.IsLevelEnabled(logrus.TraceLevel) {
+		transportlogger = log.New(Logger.WriterLevel(logrus.TraceLevel), "transport: ", 0)
+	}
+
 	url := serverURL
 	if serverURL != "" && !strings.HasSuffix(url, "/") { // TODO fix this
 		url += "/"
@@ -129,15 +133,11 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 			if err != nil {
 				return &SessionError{ErrorType: ErrorSerialization, Err: err}
 			}
-			if verbose {
-				fmt.Printf("%s %s: %s\n", method, url, string(marshaled))
-			}
+			Logger.Debugf("%s %s: %s\n", method, url, string(marshaled))
 			reader = bytes.NewBuffer(marshaled)
 		}
 	} else {
-		if verbose {
-			fmt.Printf("%s %s\n", method, url)
-		}
+		Logger.Debugf("%s %s\n", method, url)
 	}
 
 	res, err := transport.request(url, method, reader, isstr)
@@ -158,15 +158,11 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
 			return &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
 		}
-		if verbose {
-			fmt.Printf("ERROR: %+v\n", apierr)
-		}
+		Logger.Debugf("ERROR: %+v\n", apierr)
 		return &SessionError{ErrorType: ErrorApi, RemoteStatus: res.StatusCode, RemoteError: apierr}
 	}
 
-	if verbose {
-		fmt.Printf("RESPONSE: %s\n", string(body))
-	}
+	Logger.Debugf("RESPONSE: %s\n", string(body))
 	if _, resultstr := result.(*string); resultstr {
 		*result.(*string) = string(body)
 	} else {
