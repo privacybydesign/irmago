@@ -48,15 +48,10 @@ func CancelSession(token string) error {
 // with IRMA apps. Initialize() must be called before this.
 //
 // Example usage:
-//   http.HandleFunc("/irma/", irmarequestor.HttpHandlerFunc("/irma/"))
+//   http.HandleFunc("/irma/", irmarequestor.HttpHandlerFunc())
 //
 // The IRMA app can then perform IRMA sessions at https://example.com/irma.
-// Note that the two strings must be equal, i.e. you must pass the pattern at which
-// you register the handler.
-func HttpHandlerFunc(pattern string) http.HandlerFunc {
-	if len(pattern) != 0 && pattern[0] != '/' {
-		pattern = "/" + pattern
-	}
+func HttpHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var message []byte
 		message, err := ioutil.ReadAll(r.Body)
@@ -64,8 +59,7 @@ func HttpHandlerFunc(pattern string) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		path := r.URL.Path[len(pattern):]
-		status, response, result := backend.HandleProtocolMessage(path, r.Method, r.Header, message)
+		status, response, result := backend.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
 		w.WriteHeader(status)
 		w.Write(response)
 		if result != nil {

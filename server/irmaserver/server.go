@@ -60,7 +60,7 @@ func Handler(config *Configuration) (http.Handler, error) {
 	}).Handler)
 
 	// Mount server for irmaclient
-	router.Mount("/irma/", irmarequestor.HttpHandlerFunc("/irma/"))
+	router.Mount("/irma/", irmarequestor.HttpHandlerFunc())
 
 	// Server routes
 	router.Post("/session", handleCreate)

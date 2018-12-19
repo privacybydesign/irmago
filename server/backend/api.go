@@ -29,17 +29,15 @@ func Initialize(configuration *server.Configuration) error {
 
 	if conf.IrmaConfiguration == nil {
 		var err error
+		var path, assets string
 		if conf.CachePath == "" {
-			conf.CachePath, err = CachePath()
-			if err != nil {
-				return err
-			}
-			conf.CachePath = filepath.Join(conf.CachePath, "irmalibrary")
+			path = conf.IrmaConfigurationPath
+			assets = ""
+		} else {
+			path = filepath.Join(conf.CachePath, "irma_configuration")
+			assets = conf.IrmaConfigurationPath
 		}
-		conf.IrmaConfiguration, err = irma.NewConfiguration(
-			filepath.Join(conf.CachePath, "irma_configuration"),
-			conf.IrmaConfigurationPath,
-		)
+		conf.IrmaConfiguration, err = irma.NewConfiguration(path, assets)
 		if err != nil {
 			return err
 		}
@@ -164,8 +162,9 @@ func HandleProtocolMessage(
 			path = path[:len(path)-1]
 		}
 	}
+
 	conf.Logger.Debugf("Routing protocol message: %s %s", method, path)
-	pattern := regexp.MustCompile("(\\w+)/?(\\w*)")
+	pattern := regexp.MustCompile("(\\w+)/?(|commitments|proofs|status)$")
 	matches := pattern.FindStringSubmatch(path)
 	if len(matches) != 3 {
 		conf.Logger.Warnf("Invalid URL: %s", path)
