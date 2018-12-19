@@ -144,7 +144,7 @@ func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjuncti
 		usedAttrs[index.CredentialIndex][index.AttributeIndex] = struct{}{}
 
 		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
-		attr, attrval, err := parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex+2])
+		attr, attrval, err := parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
 		if err != nil {
 			return false, nil, err
 		}
