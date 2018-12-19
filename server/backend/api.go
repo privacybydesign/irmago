@@ -35,6 +35,12 @@ func Initialize(configuration *server.Configuration) error {
 		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
 			return err
 		}
+		if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
+			conf.Logger.Info("No schemes found in irma_configuration, downloading default schemes")
+			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
+				return err
+			}
+		}
 	}
 
 	if conf.IssuerPrivateKeys == nil {
