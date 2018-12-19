@@ -16,6 +16,7 @@ var Logger *logrus.Logger = logrus.StandardLogger()
 type Configuration struct {
 	IrmaConfigurationPath string                                     `json:"irmaconf" mapstructure:"irmaconf"`
 	IssuerPrivateKeysPath string                                     `json:"privatekeys" mapstructure:"privatekeys"`
+	CachePath             string                                     `json:"cachepath" mapstructure:"cachepath"`
 	Url                   string                                     `json:"url" mapstructure:"url"`
 	Logger                *logrus.Logger                             `json:"-"`
 	IssuerPrivateKeys     map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`

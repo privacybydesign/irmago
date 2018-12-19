@@ -7,14 +7,14 @@ type SchemeManagerPointer struct {
 
 var DefaultSchemeManagers = [2]SchemeManagerPointer{
 	{
-		Url: "https://privacybydesign.foundation/schememanager/irma-demo",
+		Url: "https://raw.githubusercontent.com/privacybydesign/irma-demo-schememanager/master",
 		Publickey: []byte(`-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHVnmAY+kGkFZn7XXozdI4HY8GOjm
 54ngh4chTfn6WsTCf2w5rprfIqML61z2VTE4k8yJ0Z1QbyW6cdaao8obTQ==
 -----END PUBLIC KEY-----`),
 	},
 	{
-		Url: "https://privacybydesign.foundation/schememanager/pbdf",
+		Url: "https://raw.githubusercontent.com/privacybydesign/pbdf-schememanager/master",
 		Publickey: []byte(`-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAELzHV5ipBimWpuZIDaQQd+KmNpNop
 dpBeCqpDwf+Grrw9ReODb6nwlsPJ/c/gqLnc+Y3sKOAJ2bFGI+jHBSsglg==

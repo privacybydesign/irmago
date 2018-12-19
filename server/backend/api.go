@@ -29,18 +29,34 @@ func Initialize(configuration *server.Configuration) error {
 
 	if conf.IrmaConfiguration == nil {
 		var err error
-		conf.IrmaConfiguration, err = irma.NewConfiguration(conf.IrmaConfigurationPath, "")
+		if conf.CachePath == "" {
+			conf.CachePath, err = CachePath()
+			if err != nil {
+				return err
+			}
+			conf.CachePath = filepath.Join(conf.CachePath, "irmalibrary")
+		}
+		conf.IrmaConfiguration, err = irma.NewConfiguration(
+			filepath.Join(conf.CachePath, "irma_configuration"),
+			conf.IrmaConfigurationPath,
+		)
 		if err != nil {
 			return err
 		}
-		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
-			return err
-		}
-		if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
+
+		if conf.IrmaConfigurationPath == "" {
 			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
 				return err
 			}
+		} else {
+			if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
+				return err
+			}
 		}
+	}
+
+	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
+		return errors.New("no schemes found in irma_configuration folder " + conf.IrmaConfiguration.Path)
 	}
 
 	if conf.IssuerPrivateKeys == nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/backend"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -56,9 +57,15 @@ func setFlags(cmd *cobra.Command) error {
 	flags := cmd.Flags()
 	flags.SortFlags = false
 
+	cachepath, err := backend.CachePath()
+	if err != nil {
+		return err
+	}
+
 	flags.StringP("config", "c", "", "Path to configuration file")
-	flags.StringP("irmaconf", "i", "./irma_configuration", "path to irma_configuration")
+	flags.StringP("irmaconf", "i", "", "path to irma_configuration")
 	flags.StringP("privatekeys", "k", "", "path to IRMA private keys")
+	flags.String("cachepath", cachepath, "Directory for writing cache files to")
 	flags.StringP("jwtissuer", "j", "irmaserver", "JWT issuer")
 	flags.StringP("jwtprivatekey", "w", "", "JWT private key or path to it")
 	flags.StringP("url", "u", "", "External URL to server to which the IRMA client connects")
@@ -127,8 +134,9 @@ func configure() error {
 		Configuration: &server.Configuration{
 			IrmaConfigurationPath: viper.GetString("irmaconf"),
 			IssuerPrivateKeysPath: viper.GetString("privatekeys"),
-			Url:    viper.GetString("url"),
-			Logger: logger,
+			CachePath:             viper.GetString("cachepath"),
+			Url:                   viper.GetString("url"),
+			Logger:                logger,
 		},
 		Port: viper.GetInt("port"),
 		DisableRequestorAuthentication: viper.GetBool("noauth"),
