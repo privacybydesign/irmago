@@ -25,6 +25,7 @@ func Initialize(configuration *server.Configuration) error {
 		conf.Logger.Formatter = &logrus.TextFormatter{}
 	}
 	server.Logger = conf.Logger
+	irma.Logger = conf.Logger
 
 	if conf.IrmaConfiguration == nil {
 		var err error
@@ -36,7 +37,6 @@ func Initialize(configuration *server.Configuration) error {
 			return err
 		}
 		if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
-			conf.Logger.Info("No schemes found in irma_configuration, downloading default schemes")
 			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
 				return err
 			}
