@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"path/filepath"
 
 	"fmt"
@@ -12,18 +13,28 @@ import (
 
 // verifyCmd represents the verify command
 var verifyCmd = &cobra.Command{
-	Use:   "verify irma_configuration_path",
+	Use:   "verify [irma_configuration_path]",
 	Short: "Verify irma_configuration folder correctness and authenticity",
-	Long:  `The verify command parses the specified irma_configuration folder and checks the signatures of the contained scheme managers.`,
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		err := RunVerify(args[0])
-		if err == nil {
+	Long:  `The verify command parses the specified irma_configuration directory, or the current directory if not specified, and checks the signatures of the contained scheme managers.`,
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		var path string
+		if len(args) > 0 {
+			path = args[0]
+		} else {
+			path, err = os.Getwd()
+			if err != nil {
+				return err
+			}
+		}
+		if err = RunVerify(path); err == nil {
 			fmt.Println()
 			fmt.Println("Verification was successful.")
 		} else {
 			die("Verification failed", err)
 		}
+		return nil
 	},
 }
 

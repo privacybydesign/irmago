@@ -1,11 +1,6 @@
 package cmd
 
 import (
-	"os"
-	"regexp"
-	"strconv"
-	"time"
-
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
@@ -14,9 +9,14 @@ import (
 	"encoding/pem"
 	"io/ioutil"
 	"math/big"
+	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/spf13/cobra"
@@ -24,12 +24,42 @@ import (
 
 // signCmd represents the sign command
 var signCmd = &cobra.Command{
-	Use:   "sign path_to_private_key path_to_scheme",
+	Use:   "sign [privatekey] [path]",
 	Short: "Sign a scheme manager directory",
-	Long:  "Sign a scheme manager directory, using the specified ECDSA key. Outputs an index file, signature over the index file, and the public key in the specified directory.",
-	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		signManager(args)
+	Long:  `Sign a scheme manager directory, using the specified ECDSA key. Both arguments are optional; "sk.pem" and the working directory are the defaults. Outputs an index file, signature over the index file, and the public key in the specified directory.`,
+	Args:  cobra.MaximumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validate arguments
+		var err error
+		var sk, confpath string
+		switch len(args) {
+		case 0:
+			sk = "sk.pem"
+			confpath, err = os.Getwd()
+		case 1:
+			sk = args[0]
+			confpath, err = os.Getwd()
+		case 2:
+			sk = args[0]
+			confpath, err = filepath.Abs(args[1])
+			if err != nil {
+				return errors.WrapPrefix(err, "Invalid path", 0)
+			}
+		}
+
+		privatekey, err := readPrivateKey(sk)
+		if err != nil {
+			return errors.WrapPrefix(err, "Failed to read private key:", 0)
+		}
+
+		if err = fs.AssertPathExists(confpath); err != nil {
+			return err
+		}
+
+		if err := signManager(privatekey, confpath); err != nil {
+			die("Failed to sign scheme", err)
+		}
+		return nil
 	},
 }
 
@@ -37,29 +67,16 @@ func init() {
 	schemeCmd.AddCommand(signCmd)
 }
 
-func signManager(args []string) {
-	// Validate arguments
-	privatekey, err := readPrivateKey(args[0])
-	if err != nil {
-		die("Failed to read private key:", err)
-	}
-	confpath, err := filepath.Abs(args[1])
-	if err != nil {
-		die("Invalid path", err)
-	}
-	if err = fs.AssertPathExists(confpath); err != nil {
-		die("Specified path does not exist", nil)
-	}
-
+func signManager(privatekey *ecdsa.PrivateKey, confpath string) error {
 	// Write timestamp
 	bts := []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
-	if err = ioutil.WriteFile(confpath+"/timestamp", bts, 0644); err != nil {
-		die("Failed to write timestamp", err)
+	if err := ioutil.WriteFile(confpath+"/timestamp", bts, 0644); err != nil {
+		return errors.WrapPrefix(err, "Failed to write timestamp", 0)
 	}
 
 	// Traverse dir and add file hashes to index
 	var index irma.SchemeManagerIndex = make(map[string]irma.ConfigurationFileHash)
-	err = filepath.Walk(confpath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(confpath, func(path string, info os.FileInfo, err error) error {
 		return calculateFileHash(path, info, err, confpath, index)
 	})
 	if err != nil {
@@ -68,7 +85,7 @@ func signManager(args []string) {
 
 	// Write index
 	bts = []byte(index.String())
-	if err = ioutil.WriteFile(confpath+"/index", bts, 0644); err != nil {
+	if err := ioutil.WriteFile(confpath+"/index", bts, 0644); err != nil {
 		die("Failed to write index", err)
 	}
 
@@ -92,7 +109,7 @@ func signManager(args []string) {
 		die("Failed to serialize public key", err)
 	}
 	pemEncodedPub := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: bts})
-	ioutil.WriteFile(confpath+"/pk.pem", pemEncodedPub, 0644)
+	return ioutil.WriteFile(confpath+"/pk.pem", pemEncodedPub, 0644)
 }
 
 func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {
