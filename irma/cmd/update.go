@@ -15,13 +15,15 @@ var updateCmd = &cobra.Command{
 	Long: `The update command updates a scheme manager within an irma_configuration folder by comparing its index with the online version, and downloading any new and changed files.
 
 Careful: this command could fail and invalidate or destroy your scheme manager folder! Use this only if you can restore it from git or backups.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return updateSchemeManager(args)
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := updateSchemeManager(args); err != nil {
+			die("", err)
+		}
 	},
 }
 
 func init() {
-	RootCmd.AddCommand(updateCmd)
+	schemeCmd.AddCommand(updateCmd)
 }
 
 func updateSchemeManager(paths []string) error {

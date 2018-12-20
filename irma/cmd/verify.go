@@ -16,13 +16,14 @@ var verifyCmd = &cobra.Command{
 	Short: "Verify irma_configuration folder correctness and authenticity",
 	Long:  `The verify command parses the specified irma_configuration folder and checks the signatures of the contained scheme managers.`,
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Run: func(cmd *cobra.Command, args []string) {
 		err := RunVerify(args[0])
 		if err == nil {
 			fmt.Println()
 			fmt.Println("Verification was successful.")
+		} else {
+			die("Verification failed", err)
 		}
-		return err
 	},
 }
 
@@ -84,5 +85,5 @@ func VerifyIrmaConfiguration(path string) error {
 }
 
 func init() {
-	RootCmd.AddCommand(verifyCmd)
+	schemeCmd.AddCommand(verifyCmd)
 }

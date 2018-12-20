@@ -12,8 +12,8 @@ import (
 
 	"fmt"
 
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +73,7 @@ var keygenCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(keygenCmd)
+	schemeCmd.AddCommand(keygenCmd)
 	keygenCmd.Flags().StringP("privatekey", "s", "sk.pem", "filename for private key")
 	keygenCmd.Flags().StringP("publickey", "p", "pk.pem", "filename for public key")
 }

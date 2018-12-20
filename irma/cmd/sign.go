@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -35,7 +34,7 @@ var signCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(signCmd)
+	schemeCmd.AddCommand(signCmd)
 }
 
 func signManager(args []string) {
@@ -137,13 +136,4 @@ func calculateFileHash(path string, info os.FileInfo, err error, confpath string
 	hash := sha256.Sum256(bts)
 	index[relativePath] = hash[:]
 	return nil
-}
-
-func die(message string, err error) {
-	if err != nil {
-		fmt.Println(message, err)
-	} else {
-		fmt.Println(message)
-	}
-	os.Exit(1)
 }

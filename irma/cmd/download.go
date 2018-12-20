@@ -11,19 +11,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// TODO: add flag to update timestamp of irma_configuration folder
 var downloadCmd = &cobra.Command{
 	Use:   "download path url...",
 	Short: "[Experimental] Download a scheme manager",
 	Long:  `The download command downloads and saves a scheme manager given its URL, saving it in path (i.e., an irma_configuration folder).`,
 	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return downloadSchemeManager(args[0], args[1:])
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := downloadSchemeManager(args[0], args[1:]); err != nil {
+			die("Downloading scheme failed", err)
+		}
 	},
-}
-
-func init() {
-	RootCmd.AddCommand(downloadCmd)
 }
 
 func downloadSchemeManager(dest string, urls []string) error {
@@ -62,8 +59,14 @@ func downloadSchemeManager(dest string, urls []string) error {
 		managerName := urlparts[len(urlparts)-1]
 		manager := irma.NewSchemeManager(managerName)
 		manager.URL = u
-		conf.InstallSchemeManager(manager)
+		if err := conf.InstallSchemeManager(manager, nil); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func init() {
+	schemeCmd.AddCommand(downloadCmd)
 }
