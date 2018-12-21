@@ -26,8 +26,10 @@ import (
 var signCmd = &cobra.Command{
 	Use:   "sign [privatekey] [path]",
 	Short: "Sign a scheme manager directory",
-	Long:  `Sign a scheme manager directory, using the specified ECDSA key. Both arguments are optional; "sk.pem" and the working directory are the defaults. Outputs an index file, signature over the index file, and the public key in the specified directory.`,
-	Args:  cobra.MaximumNArgs(2),
+	Long: `Sign a scheme manager directory, using the specified ECDSA key. Both arguments are optional; "sk.pem" and the working directory are the defaults. Outputs an index file, signature over the index file, and the public key in the specified directory.
+
+Careful: this command could fail and invalidate or destroy your scheme manager directory! Use this only if you can restore it from git or backups.`,
+	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Validate arguments
 		var err error
@@ -56,7 +58,11 @@ var signCmd = &cobra.Command{
 			return err
 		}
 
-		if err := signManager(privatekey, confpath); err != nil {
+		skipverification, err := cmd.Flags().GetBool("noverification")
+		if err != nil {
+			return err
+		}
+		if err := signManager(privatekey, confpath, skipverification); err != nil {
 			die("Failed to sign scheme", err)
 		}
 		return nil
@@ -65,9 +71,11 @@ var signCmd = &cobra.Command{
 
 func init() {
 	schemeCmd.AddCommand(signCmd)
+
+	signCmd.Flags().BoolP("noverification", "n", false, "Skip verification of the scheme after signing it")
 }
 
-func signManager(privatekey *ecdsa.PrivateKey, confpath string) error {
+func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification bool) error {
 	// Write timestamp
 	bts := []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
 	if err := ioutil.WriteFile(confpath+"/timestamp", bts, 0644); err != nil {
@@ -80,36 +88,48 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string) error {
 		return calculateFileHash(path, info, err, confpath, index)
 	})
 	if err != nil {
-		die("Failed to calculate file index:", err)
+		return errors.WrapPrefix(err, "Failed to calculate file index:", 0)
 	}
 
 	// Write index
 	bts = []byte(index.String())
 	if err := ioutil.WriteFile(confpath+"/index", bts, 0644); err != nil {
-		die("Failed to write index", err)
+		return errors.WrapPrefix(err, "Failed to write index", 0)
 	}
 
 	// Create and write signature
 	indexHash := sha256.Sum256(bts)
 	r, s, err := ecdsa.Sign(rand.Reader, privatekey, indexHash[:])
 	if err != nil {
-		die("Failed to sign index:", err)
+		return errors.WrapPrefix(err, "Failed to sign index:", 0)
 	}
 	sigbytes, err := asn1.Marshal([]*big.Int{r, s})
 	if err != nil {
-		die("Failed to serialize signature:", err)
+		return errors.WrapPrefix(err, "Failed to serialize signature:", 0)
 	}
 	if err = ioutil.WriteFile(confpath+"/index.sig", sigbytes, 0644); err != nil {
-		die("Failed to write index.sig", err)
+		return errors.WrapPrefix(err, "Failed to write index.sig", 0)
 	}
 
 	// Write public key
 	bts, err = x509.MarshalPKIXPublicKey(&privatekey.PublicKey)
 	if err != nil {
-		die("Failed to serialize public key", err)
+		return errors.WrapPrefix(err, "Failed to serialize public key", 0)
 	}
 	pemEncodedPub := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: bts})
-	return ioutil.WriteFile(confpath+"/pk.pem", pemEncodedPub, 0644)
+	if err := ioutil.WriteFile(confpath+"/pk.pem", pemEncodedPub, 0644); err != nil {
+		return errors.WrapPrefix(err, "Failed to write public key", 0)
+	}
+
+	if skipverification {
+		return nil
+	}
+
+	// Verify that our folder is a valid scheme
+	if err := RunVerify(confpath, false); err != nil {
+		die("Scheme was signed but verification failed", err)
+	}
+	return nil
 }
 
 func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {

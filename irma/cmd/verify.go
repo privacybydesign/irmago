@@ -28,7 +28,7 @@ var verifyCmd = &cobra.Command{
 				return err
 			}
 		}
-		if err = RunVerify(path); err == nil {
+		if err = RunVerify(path, true); err == nil {
 			fmt.Println()
 			fmt.Println("Verification was successful.")
 		} else {
@@ -38,7 +38,7 @@ var verifyCmd = &cobra.Command{
 	},
 }
 
-func RunVerify(path string) error {
+func RunVerify(path string, verbose bool) error {
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -49,10 +49,14 @@ func RunVerify(path string) error {
 		return err
 	}
 	if !isScheme {
-		fmt.Println("No index file found; verifying subdirectories")
+		if verbose {
+			fmt.Println("No index file found; verifying subdirectories")
+		}
 		return VerifyIrmaConfiguration(path)
 	} else {
-		fmt.Println("Verifying scheme " + filepath.Base(path))
+		if verbose {
+			fmt.Println("Verifying scheme " + filepath.Base(path))
+		}
 		return VerifyScheme(path)
 	}
 }
