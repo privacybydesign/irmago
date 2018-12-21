@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
+  name = "github.com/Sirupsen/logrus"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "bcd833dfe83d3cebad139e4a29ed79cb2318bf95"
+  version = "v1.2.0"
+
+[[projects]]
   branch = "master"
   digest = "1:e730c8372514c662e9ed97228c2e2023f1ec99eb68f7bb56a44c1084733d85f5"
   name = "github.com/bwesterb/byteswriter"
@@ -138,6 +146,14 @@
   version = "v1.0"
 
 [[projects]]
+  digest = "1:0a69a1c0db3591fcefb47f115b224592c8dfa4368b7ba9fae509d5e16cdc95c8"
+  name = "github.com/konsorten/go-windows-terminal-sequences"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "5c8c8bd35d3832f5d134ae1e1e375b69a4d25242"
+  version = "v1.0.1"
+
+[[projects]]
   branch = "master"
   digest = "1:16886567e49201f2bb97fc738dfe8097494764135a83b533fc020fcefe37d8fe"
   name = "github.com/nightlyone/lockfile"
@@ -163,7 +179,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:62ffeeea646880da7f3e06788621164efce11f7aadeb6d1b2792e4062055aee5"
+  digest = "1:61a44e70558a6fa59604ce3590db333d2fcd0b68a0da94d1fdc4a4d1b5b00450"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
@@ -171,7 +187,7 @@
     "safeprime",
   ]
   pruneopts = "UT"
-  revision = "279fe7149011e59b7c91ce574ea390ad1562565f"
+  revision = "a51e7b01af8aa69a74d3aea5221d6c38c9160489"
 
 [[projects]]
   branch = "master"
@@ -234,21 +250,25 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:b734bbd83047ffac93d12295ef569c9da40411e2228ca94761e6df5b2242db4e"
+  digest = "1:f1bc26f108b7694625d4388dc0bf5c10f5d06ad11e92abff90bfe8b2175b4ee8"
   name = "golang.org/x/crypto"
   packages = [
     "ed25519",
     "ed25519/internal/edwards25519",
     "sha3",
+    "ssh/terminal",
   ]
   pruneopts = "UT"
   revision = "159ae71589f303f9fbfd7528413e0fe944b9c1cb"
 
 [[projects]]
   branch = "master"
-  digest = "1:d773e525476aefa22ea944a5425a9bfb99819b2e67eeb9b1966454fd57522bbf"
+  digest = "1:3364d01296ce7eeca363e3d530ae63a2092d6f8efb85fb3d101e8f6d7de83452"
   name = "golang.org/x/sys"
-  packages = ["unix"]
+  packages = [
+    "unix",
+    "windows",
+  ]
   pruneopts = "UT"
   revision = "1b2967e3c290b7c545b3db0deeda16e9be4f98a2"
 
@@ -256,6 +276,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/Sirupsen/logrus",
     "github.com/bwesterb/go-atum",
     "github.com/credentials/go-go-gadget-paillier",
     "github.com/getsentry/raven-go",
