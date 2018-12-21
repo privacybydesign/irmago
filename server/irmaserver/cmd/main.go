@@ -13,7 +13,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/backend"
+	"github.com/privacybydesign/irmago/server/core"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -60,7 +60,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags := cmd.Flags()
 	flags.SortFlags = false
 
-	cachepath, err := backend.CachePath()
+	cachepath, err := core.CachePath()
 	if err != nil {
 		return err
 	}

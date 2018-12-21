@@ -6,7 +6,7 @@ import (
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/backend"
+	"github.com/privacybydesign/irmago/server/core"
 )
 
 // SessionHandler is a function that can handle a session result
@@ -17,14 +17,14 @@ var handlers = make(map[string]SessionHandler)
 
 // Initialize sets configuration.
 func Initialize(configuration *server.Configuration) error {
-	return backend.Initialize(configuration)
+	return core.Initialize(configuration)
 }
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session token (the second return parameter) can be used in GetSessionResult()
 // and CancelSession().
 func StartSession(request irma.SessionRequest, handler SessionHandler) (*irma.Qr, string, error) {
-	qr, token, err := backend.StartSession(request)
+	qr, token, err := core.StartSession(request)
 	if err != nil {
 		return nil, "", err
 	}
@@ -36,12 +36,12 @@ func StartSession(request irma.SessionRequest, handler SessionHandler) (*irma.Qr
 
 // GetSessionResult retrieves the result of the specified IRMA session.
 func GetSessionResult(token string) *server.SessionResult {
-	return backend.GetSessionResult(token)
+	return core.GetSessionResult(token)
 }
 
 // CancelSession cancels the specified IRMA session.
 func CancelSession(token string) error {
-	return backend.CancelSession(token)
+	return core.CancelSession(token)
 }
 
 // HttpHandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
@@ -59,7 +59,7 @@ func HttpHandlerFunc() http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		status, response, result := backend.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
+		status, response, result := core.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
 		w.WriteHeader(status)
 		w.Write(response)
 		if result != nil {
