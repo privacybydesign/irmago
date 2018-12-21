@@ -26,7 +26,7 @@ type Configuration struct {
 	Requestors       map[string]Requestor `json:"requestors"`
 	// Disclosing, signing or issuance permissions that apply to all requestors
 	GlobalPermissionsString string      `json:"-" mapstructure:"permissions"`
-	GlobalPermissions       Permissions `json:"permissions"`
+	GlobalPermissions       Permissions `json:"permissions" mapstructure:"permissions"`
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwtissuer" mapstructure:"jwtissuer"`
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
@@ -40,9 +40,9 @@ type Configuration struct {
 
 // Permissions specify which attributes or credential a requestor may verify or issue.
 type Permissions struct {
-	Disclosing []string `json:"disclosing" mapstructure:"disclosing"`
-	Signing    []string `json:"signing" mapstructure:"signing"`
-	Issuing    []string `json:"issuing" mapstructure:"issuing"`
+	Disclosing []string `json:"disclose" mapstructure:"disclose"`
+	Signing    []string `json:"sign" mapstructure:"sign"`
+	Issuing    []string `json:"issue" mapstructure:"issue"`
 }
 
 // Requestor contains all configuration (disclosure or verification permissions and authentication)
@@ -120,20 +120,6 @@ func (conf *Configuration) initialize() error {
 	if conf.DisableRequestorAuthentication {
 		conf.Logger.Warn("Authentication of incoming session requests disabled")
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
-
-		// Leaving the global permission whitelists empty in this mode means enabling it for everyone
-		if len(conf.GlobalPermissions.Disclosing) == 0 {
-			conf.Logger.Info("No disclosing whitelist found: allowing verification of any attribute")
-			conf.GlobalPermissions.Disclosing = []string{"*"}
-		}
-		if len(conf.GlobalPermissions.Signing) == 0 {
-			conf.Logger.Info("No signing whitelist found: allowing attribute-based signature sessions with any attribute")
-			conf.GlobalPermissions.Signing = []string{"*"}
-		}
-		if len(conf.GlobalPermissions.Issuing) == 0 {
-			conf.Logger.Info("No issuance whitelist found: allowing issuance of any credential (for which private keys are installed)")
-			conf.GlobalPermissions.Issuing = []string{"*"}
-		}
 	} else {
 		authenticators = map[AuthenticationMethod]Authenticator{
 			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]*rsa.PublicKey{}},

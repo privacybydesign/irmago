@@ -82,12 +82,9 @@ func setFlags(cmd *cobra.Command) error {
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
 
-	flags.StringSlice("disclosing", nil, "Comma-separated list of attributes that all requestors may verify")
-	flags.StringSlice("signing", nil, "Comma-separated list of attributes that all requestors may request in signatures")
-	flags.StringSlice("issuing", nil, "Comma-separated list of attributes that all requestors may issue")
-	flags.Lookup("disclosing").NoOptDefVal = "*"
-	flags.Lookup("signing").NoOptDefVal = "*"
-	flags.Lookup("issuing").NoOptDefVal = "*"
+	flags.StringSlice("disclose", []string{"*"}, "Comma-separated list of attributes that all requestors may verify")
+	flags.StringSlice("sign", []string{"*"}, "Comma-separated list of attributes that all requestors may request in signatures")
+	flags.StringSlice("issue", nil, "Comma-separated list of attributes that all requestors may issue")
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
@@ -166,9 +163,9 @@ func configure() error {
 			return errors.WrapPrefix(err, "Failed to unmarshal permissions from config file", 0)
 		}
 	}
-	handlePermission(&conf.GlobalPermissions.Disclosing, "disclosing") // Read flag or env var
-	handlePermission(&conf.GlobalPermissions.Signing, "signing")
-	handlePermission(&conf.GlobalPermissions.Issuing, "issuing")
+	conf.GlobalPermissions.Disclosing = handlePermission(conf.GlobalPermissions.Disclosing, "disclose")
+	conf.GlobalPermissions.Signing = handlePermission(conf.GlobalPermissions.Signing, "sign")
+	conf.GlobalPermissions.Issuing = handlePermission(conf.GlobalPermissions.Issuing, "issue")
 
 	// Handle requestors
 	if len(viper.GetStringMap("requestors")) > 0 { // First read config file
@@ -190,14 +187,18 @@ func configure() error {
 	return nil
 }
 
-func handlePermission(conf *[]string, typ string) {
-	if viper.GetString(typ) == "*" {
-		*conf = []string{"*"}
-	}
+func handlePermission(conf []string, typ string) []string {
 	perms := viper.GetStringSlice(typ)
-	if len(perms) > 0 {
-		*conf = perms
+	if len(perms) == 0 {
+		return conf
 	}
+	if perms[0] == "" {
+		perms = perms[1:]
+	}
+	if perms[len(perms)-1] == "" {
+		perms = perms[:len(perms)-1]
+	}
+	return perms
 }
 
 func localIP() (string, error) {
