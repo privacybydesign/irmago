@@ -30,14 +30,14 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/mhe/gabi"
+	"github.com/privacybydesign/gabi"
 	"github.com/spf13/cobra"
 )
 
 // genkeypairCmd represents the genkeypair command
 var genkeypairCmd = &cobra.Command{
 	Use:   "genkeypair",
-	Short: "Generate an IRMA issuer keypair.",
+	Short: "Generate an IRMA issuer keypair",
 	Long:  `The genkeypair command generates an IRMA issuer keypair.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		keylength, err := cmd.Flags().GetInt("keylength")
