@@ -4,7 +4,7 @@
 
 * The Go package `irma` contains generic IRMA functionality such as parsing [credential and issuer definitions and public keys](https://github.com/privacybydesign/irma-demo-schememanager), parsing [IRMA metadata attributes](https://credentials.github.io/docs/irma.html#the-metadata-attribute), and structs representing messages of the [IRMA protocol](https://credentials.github.io/protocols/irma-protocol/).
 * The Go package `irmaclient` is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers.
-* The tool `schememgr` manages signatures on IRMA [scheme managers](https://credentials.github.io/docs/irma.html#scheme-managers): it can generate public-private keypairs for signing their directory structures, as well as creating and verifying these signatures.
+* The tool `irma` for generating IRMA issuer public/private keypairs, and for verifying and signing [IRMA schemes](https://credentials.github.io/docs/irma.html#scheme-managers).
 
 For example, the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmago`.
 
