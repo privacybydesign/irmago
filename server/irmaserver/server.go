@@ -2,7 +2,6 @@
 package irmaserver
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -28,7 +27,9 @@ func Start(config *Configuration) error {
 	}
 
 	// Start server
-	s = &http.Server{Addr: fmt.Sprintf(":%d", config.Port), Handler: handler}
+	addr := config.listenAddress()
+	config.Logger.Info("Listening at ", addr)
+	s = &http.Server{Addr: addr, Handler: handler}
 	err = s.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil // Server was closed normally

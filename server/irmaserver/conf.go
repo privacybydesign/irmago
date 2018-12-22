@@ -2,6 +2,7 @@ package irmaserver
 
 import (
 	"crypto/rsa"
+	"fmt"
 	"io/ioutil"
 	"strings"
 
@@ -19,16 +20,23 @@ type Configuration struct {
 	// can submit session requests. If true, the request is first authenticated against the
 	// server configuration before the server accepts it.
 	DisableRequestorAuthentication bool `json:"noauth" mapstructure:"noauth"`
+
+	// Address to listen at. May include port (e.g. 0.0.0.0:1234) but then Port must be 0.
+	ListenAddress string `json:"listenaddr" mapstructure:"listenaddr"`
 	// Port to listen at
 	Port int `json:"port" mapstructure:"port"`
+
 	// Requestor-specific permission and authentication configuration
 	RequestorsString string               `json:"-" mapstructure:"requestors"`
 	Requestors       map[string]Requestor `json:"requestors"`
+
 	// Disclosing, signing or issuance permissions that apply to all requestors
 	GlobalPermissionsString string      `json:"-" mapstructure:"permissions"`
 	GlobalPermissions       Permissions `json:"permissions" mapstructure:"permissions"`
+
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwtissuer" mapstructure:"jwtissuer"`
+
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
 	JwtPrivateKey string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
 
@@ -77,6 +85,13 @@ func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRe
 	}
 
 	return true, ""
+}
+
+func (conf *Configuration) listenAddress() string {
+	if conf.Port == 0 {
+		return conf.ListenAddress
+	}
+	return fmt.Sprintf("%s:%d", conf.ListenAddress, conf.Port)
 }
 
 // CanVerifyOrSign returns whether or not the specified requestor may use the selected attributes
