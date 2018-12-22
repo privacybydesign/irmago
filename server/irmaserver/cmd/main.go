@@ -1,3 +1,4 @@
+// Executable for the irmaserver.
 package main
 
 import (
