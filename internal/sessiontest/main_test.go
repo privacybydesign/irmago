@@ -15,10 +15,6 @@ func TestMain(m *testing.M) {
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
 
-	TestType = "irmaserver-jwt"
-	StartIrmaServer(JwtServerConfiguration)
-	defer StopIrmaServer()
-
 	test.CreateTestStorage(nil)
 	defer test.ClearTestStorage(nil)
 

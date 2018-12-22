@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,7 +109,7 @@ func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceR
 	return request
 }
 
-var TestType = "irmaserver"
+var TestType = "irmaserver-jwt"
 
 func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) (*irma.Qr, string) {
 	var qr irma.Qr
@@ -124,19 +125,25 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, true))
-		token = qr.URL
-		qr.URL = url + "/irma/" + qr.URL
+		token = tokenFromURL(qr.URL)
 	case "irmaserver":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url).Post("session", &qr, request)
-		token = qr.URL
-		qr.URL = url + "/irma/" + qr.URL
+		token = tokenFromURL(qr.URL)
 	default:
 		t.Fatal("Invalid TestType")
 	}
 
 	require.NoError(t, err)
 	return &qr, token
+}
+
+func tokenFromURL(url string) string {
+	parts := strings.Split(url, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
 }
 
 func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, signed bool) string {
@@ -178,6 +185,11 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	if client == nil {
 		client = parseStorage(t)
 		defer test.ClearTestStorage(t)
+	}
+
+	if TestType == "irmaserver" || TestType == "irmaserver-jwt" {
+		StartIrmaServer(JwtServerConfiguration)
+		defer StopIrmaServer()
 	}
 
 	qr, _ := startSession(t, request, sessiontype)

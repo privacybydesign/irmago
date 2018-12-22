@@ -36,6 +36,7 @@ func StopIrmaServer() {
 
 var IrmaServerConfiguration = &irmaserver.Configuration{
 	Configuration: &server.Configuration{
+		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
 		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
@@ -46,6 +47,7 @@ var IrmaServerConfiguration = &irmaserver.Configuration{
 
 var JwtServerConfiguration = &irmaserver.Configuration{
 	Configuration: &server.Configuration{
+		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
 		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
@@ -58,7 +60,7 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 		Issuing:    []string{"*"},
 	},
 	Requestors: map[string]irmaserver.Requestor{
-		"requestor1": irmaserver.Requestor{
+		"requestor1": {
 			AuthenticationMethod: irmaserver.AuthenticationMethodPublicKey,
 			AuthenticationKey:    filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
 		},

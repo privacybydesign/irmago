@@ -8,7 +8,6 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmarequestor"
@@ -23,25 +22,23 @@ func StartIrmaClientServer(t *testing.T) {
 	logger := logrus.New()
 	logger.Level = logrus.WarnLevel
 	logger.Formatter = &logrus.TextFormatter{}
-	cachepath := filepath.Join(testdata, "storage", "test", "cache")
-	fs.EnsureDirectoryExists(cachepath)
 	require.NoError(t, irmarequestor.Initialize(&server.Configuration{
+		URL:                   "http://localhost:48680",
 		Logger:                logger,
 		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-		CachePath:             cachepath,
 	}))
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", irmarequestor.HttpHandlerFunc("/"))
+	mux.HandleFunc("/", irmarequestor.HttpHandlerFunc())
 	irmaServer = &http.Server{Addr: ":48680", Handler: mux}
 	go func() {
-		irmaServer.ListenAndServe()
+		_ = irmaServer.ListenAndServe()
 	}()
 }
 
 func StopIrmaClientServer() {
-	irmaServer.Close()
+	_ = irmaServer.Close()
 }
 
 func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
@@ -58,7 +55,6 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.S
 		serverChan <- result
 	})
 	require.NoError(t, err)
-	qr.URL = "http://localhost:48680/" + qr.URL
 
 	h := TestHandler{t, clientChan, client}
 	j, err := json.Marshal(qr)
