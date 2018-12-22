@@ -369,6 +369,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMe
 
 	return &SignedMessage{
 		Signature: signature.Proofs,
+		Indices:   signature.Indices,
 		Nonce:     sr.Nonce,
 		Context:   sr.Context,
 		Message:   sr.Message,

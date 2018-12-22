@@ -138,11 +138,6 @@ func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjuncti
 			return false, nil, errors.New("ProofList contained proof of invalid type")
 		}
 
-		if usedAttrs[index.CredentialIndex] == nil {
-			usedAttrs[index.CredentialIndex] = map[int]struct{}{}
-		}
-		usedAttrs[index.CredentialIndex][index.AttributeIndex] = struct{}{}
-
 		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
 		attr, attrval, err := parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
 		if err != nil {
@@ -156,6 +151,10 @@ func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjuncti
 			} else {
 				list[i].Status = AttributeProofStatusInvalidValue
 			}
+			if usedAttrs[index.CredentialIndex] == nil {
+				usedAttrs[index.CredentialIndex] = map[int]struct{}{}
+			}
+			usedAttrs[index.CredentialIndex][index.AttributeIndex] = struct{}{}
 		} else {
 			list[i] = &DisclosedAttribute{Status: AttributeProofStatusMissing}
 		}
@@ -266,6 +265,7 @@ func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctio
 
 	// Any attributes still in here do not satisfy any of the specified disjunctions; append them now
 	for _, attr := range extraAttrs {
+		attr.Status = AttributeProofStatusExtra
 		list = append(list, attr)
 	}
 
