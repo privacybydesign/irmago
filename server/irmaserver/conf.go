@@ -137,7 +137,8 @@ func (conf *Configuration) initialize() error {
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
 	} else {
 		authenticators = map[AuthenticationMethod]Authenticator{
-			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]*rsa.PublicKey{}},
+			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}},
+			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]interface{}{}},
 			AuthenticationMethodToken:     &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
 		}
 
