@@ -4,6 +4,8 @@ import (
 	"crypto/rsa"
 	"fmt"
 	"io/ioutil"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
@@ -159,6 +161,9 @@ func (conf *Configuration) initialize() error {
 			conf.URL = conf.URL + "/"
 		}
 		conf.URL = conf.URL + "irma/"
+		// replace "port" in url with actual port
+		replace := "$1:" + strconv.Itoa(conf.Port)
+		conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
 	}
 
 	return nil

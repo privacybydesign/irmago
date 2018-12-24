@@ -1,9 +1,6 @@
 package core
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -11,7 +8,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -123,27 +119,4 @@ func chooseProtocolVersion(min, max *irma.ProtocolVersion) (*irma.ProtocolVersio
 	} else {
 		return max, nil
 	}
-}
-
-func CachePath() (string, error) {
-	candidates := make([]string, 0, 2)
-	if runtime.GOOS != "windows" {
-		candidates = append(candidates, filepath.Join("/var/tmp", "irmaserver"))
-	}
-	candidates = append(candidates, filepath.Join(os.TempDir(), "irmaserver"))
-	path := firstWritablePath(candidates)
-	if path == "" {
-		return "", errors.New("No writable temporary directory found")
-	}
-	return path, nil
-}
-
-func firstWritablePath(paths []string) string {
-	for _, path := range paths {
-		if err := fs.EnsureDirectoryExists(path); err != nil {
-			continue
-		}
-		return path
-	}
-	return ""
 }

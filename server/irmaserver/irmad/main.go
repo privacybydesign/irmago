@@ -4,17 +4,13 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
-	"net"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/core"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -61,11 +57,11 @@ func setFlags(cmd *cobra.Command) error {
 	flags := cmd.Flags()
 	flags.SortFlags = false
 
-	cachepath, err := core.CachePath()
+	cachepath, err := server.CachePath()
 	if err != nil {
 		return err
 	}
-	defaulturl, err := localIP()
+	defaulturl, err := server.LocalIP()
 	if err != nil {
 		logger.Warn("Could not determine local IP address: ", err.Error())
 	} else {
@@ -114,13 +110,7 @@ func configure() error {
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 
 	// Set log level
-	verbosity := viper.GetInt("verbose")
-	if verbosity == 1 {
-		logger.Level = logrus.DebugLevel
-	}
-	if verbosity >= 2 {
-		logger.Level = logrus.TraceLevel
-	}
+	logger.Level = server.Verbosity(viper.GetInt("verbose"))
 	if viper.GetBool("quiet") {
 		logger.Out = ioutil.Discard
 	}
@@ -156,9 +146,6 @@ func configure() error {
 		Verbose:                        viper.GetInt("verbose"),
 		Quiet:                          viper.GetBool("quiet"),
 	}
-	// replace "port" in url with actual port
-	replace := "$1:" + strconv.Itoa(conf.Port)
-	conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
 
 	// Handle global permissions
 	if len(viper.GetStringMap("permissions")) > 0 { // First read config file
@@ -202,41 +189,4 @@ func handlePermission(conf []string, typ string) []string {
 		perms = perms[:len(perms)-1]
 	}
 	return perms
-}
-
-func localIP() (string, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return "", err
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 {
-			continue // interface down
-		}
-		if iface.Flags&net.FlagLoopback != 0 {
-			continue // loopback interface
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			return "", err
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip == nil || ip.IsLoopback() {
-				continue
-			}
-			ip = ip.To4()
-			if ip == nil {
-				continue // not an ipv4 address
-			}
-			return ip.String(), nil
-		}
-	}
-	return "", errors.New("No IP found")
 }

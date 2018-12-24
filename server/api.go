@@ -2,13 +2,18 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"runtime/debug"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 var Logger *logrus.Logger = logrus.StandardLogger()
@@ -126,4 +131,75 @@ func ParseSessionRequest(bts []byte) (request irma.SessionRequest, err error) {
 		return request, nil
 	}
 	return nil, errors.New("Invalid or disabled session type")
+}
+
+func LocalIP() (string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // loopback interface
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return "", err
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue // not an ipv4 address
+			}
+			return ip.String(), nil
+		}
+	}
+	return "", errors.New("No IP found")
+}
+
+func CachePath() (string, error) {
+	candidates := make([]string, 0, 2)
+	if runtime.GOOS != "windows" {
+		candidates = append(candidates, filepath.Join("/var/tmp", "irmaserver"))
+	}
+	candidates = append(candidates, filepath.Join(os.TempDir(), "irmaserver"))
+	path := firstWritablePath(candidates)
+	if path == "" {
+		return "", errors.New("No writable temporary directory found")
+	}
+	return path, nil
+}
+
+func firstWritablePath(paths []string) string {
+	for _, path := range paths {
+		if err := fs.EnsureDirectoryExists(path); err != nil {
+			continue
+		}
+		return path
+	}
+	return ""
+}
+
+func Verbosity(level int) logrus.Level {
+	switch {
+	case level == 1:
+		return logrus.DebugLevel
+	case level > 1:
+		return logrus.TraceLevel
+	default:
+		return logrus.InfoLevel
+	}
 }
