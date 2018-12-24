@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 	"path/filepath"
@@ -119,12 +120,16 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 	switch TestType {
 	case "apiserver":
 		url := "http://localhost:8088/irma_api_server/api/v2/" + sessiontype
-		err = irma.NewHTTPTransport(url).Post("", &qr, getJwt(t, request, sessiontype, false))
+		err = irma.NewHTTPTransport(url).Post("", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodNone))
 		token = qr.URL
 		qr.URL = url + "/" + qr.URL
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, true))
+		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
+		token = tokenFromURL(qr.URL)
+	case "irmaserver-hmac-jwt":
+		url := "http://localhost:48682"
+		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
 		token = tokenFromURL(qr.URL)
 	case "irmaserver":
 		url := "http://localhost:48682"
@@ -146,7 +151,7 @@ func tokenFromURL(url string) string {
 	return parts[len(parts)-1]
 }
 
-func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, signed bool) string {
+func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg jwt.SigningMethod) string {
 	var jwtcontents irma.RequestorJwt
 	var kid string
 	switch sessiontype {
@@ -163,7 +168,9 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, signe
 
 	var j string
 	var err error
-	if signed {
+
+	switch alg {
+	case jwt.SigningMethodRS256:
 		skbts, err := ioutil.ReadFile(filepath.Join(test.FindTestdataFolder(t), "jwtkeys", "requestor1-sk.pem"))
 		require.NoError(t, err)
 		sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
@@ -171,7 +178,13 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, signe
 		tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwtcontents)
 		tok.Header["kid"] = "requestor1"
 		j, err = tok.SignedString(sk)
-	} else {
+	case jwt.SigningMethodHS256:
+		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwtcontents)
+		tok.Header["kid"] = "requestor3"
+		bts, err := base64.StdEncoding.DecodeString(JwtServerConfiguration.Requestors["requestor3"].AuthenticationKey)
+		require.NoError(t, err)
+		j, err = tok.SignedString(bts)
+	case jwt.SigningMethodNone:
 		tok := jwt.NewWithClaims(jwt.SigningMethodNone, jwtcontents)
 		tok.Header["kid"] = kid
 		j, err = tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
@@ -187,7 +200,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		defer test.ClearTestStorage(t)
 	}
 
-	if TestType == "irmaserver" || TestType == "irmaserver-jwt" {
+	if TestType == "irmaserver" || TestType == "irmaserver-jwt" || TestType == "irmaserver-hmac-jwt" {
 		StartIrmaServer(JwtServerConfiguration)
 		defer StopIrmaServer()
 	}

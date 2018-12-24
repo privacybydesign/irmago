@@ -68,6 +68,10 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 			AuthenticationMethod: irmaserver.AuthenticationMethodToken,
 			AuthenticationKey:    "xa6=*&9?8jeUu5>.f-%rVg`f63pHim",
 		},
+		"requestor3": {
+			AuthenticationMethod: irmaserver.AuthenticationMethodHmac,
+			AuthenticationKey:    "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg==",
+		},
 	},
 	JwtPrivateKey: filepath.Join(testdata, "jwtkeys", "sk.pem"),
 }

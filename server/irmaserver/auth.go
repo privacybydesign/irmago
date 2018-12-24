@@ -83,12 +83,12 @@ func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) err
 	if requestor.AuthenticationKey == "" {
 		return errors.Errorf("Requestor %s had no authentication key")
 	}
-	var bts []byte
-	if _, err := base64.StdEncoding.Decode(bts, []byte(requestor.AuthenticationKey)); err != nil {
+	if bts, err := base64.StdEncoding.DecodeString(requestor.AuthenticationKey); err != nil {
 		return err
+	} else {
+		hauth.hmackeys[name] = bts
+		return nil
 	}
-	hauth.hmackeys[name] = bts
-	return nil
 }
 
 func (pkauth *PublicKeyAuthenticator) Authenticate(
