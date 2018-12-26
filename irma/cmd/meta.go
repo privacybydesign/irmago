@@ -16,14 +16,21 @@ import (
 
 // metaCmd represents the meta command
 var metaCmd = &cobra.Command{
-	Use:   "meta irma_configuration attribute",
+	Use:   "meta attribute",
 	Short: "Parse an IRMA metadata attribute and print its contents",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		confpath := args[0]
+		confpath, err := cmd.Flags().GetString("irmaconf")
+		if err != nil {
+			die("Failed to get irma_configuration flag", err)
+		}
 		metaint := new(big.Int)
-		_, ok := metaint.SetString(args[1], 10)
+		_, ok := metaint.SetString(args[0], 10)
 		if !ok {
+			// Not a base-10 integer, try to parse as base64. This is safe:
+			// Since the first byte of a metadata attribute is its version, currently 0x03,
+			// the first letter of any baase64'd metadata attribute will be 'A'. So it can never happen
+			// that a base64'd metadata attribute consists of only digits.
 			bts, err := base64.StdEncoding.DecodeString(args[0])
 			if err != nil {
 				return errors.WrapPrefix(err, "Could not parse argument as decimal or base64 integer", 0)
@@ -90,4 +97,6 @@ func prettyprint(ob interface{}) string {
 
 func init() {
 	RootCmd.AddCommand(metaCmd)
+
+	metaCmd.Flags().StringP("irmaconf", "i", defaultIrmaconfPath(), "path to irma_configuration")
 }

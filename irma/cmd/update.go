@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io/ioutil"
 	"path/filepath"
 
 	"github.com/go-errors/errors"
@@ -10,20 +11,34 @@ import (
 )
 
 var updateCmd = &cobra.Command{
-	Use:   "update path...",
-	Short: "[Experimental] Update a scheme manager",
-	Long: `The update command updates a scheme manager within an irma_configuration folder by comparing its index with the online version, and downloading any new and changed files.
-
-Careful: this command could fail and invalidate or destroy your scheme manager folder! Use this only if you can restore it from git or backups.`,
+	Use:   "update [path...]",
+	Short: "Update a scheme",
+	Long:  updateHelp(),
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := updateSchemeManager(args); err != nil {
-			die("", err)
+		var paths []string
+		irmaconf := defaultIrmaconfPath()
+		if len(args) != 0 {
+			paths = args
+		} else {
+			if irmaconf == "" {
+				die("Failed to read default irma_configuration path", nil)
+			}
+			files, err := ioutil.ReadDir(irmaconf)
+			if err != nil {
+				die("Failed to read default irma_configuration path", err)
+			}
+			paths = make([]string, 0, len(files))
+			for _, file := range files {
+				if file.IsDir() {
+					paths = append(paths, filepath.Join(irmaconf, file.Name()))
+				}
+			}
+		}
+
+		if err := updateSchemeManager(paths); err != nil {
+			die("Updating schemes failed", err)
 		}
 	},
-}
-
-func init() {
-	schemeCmd.AddCommand(updateCmd)
 }
 
 func updateSchemeManager(paths []string) error {
@@ -38,13 +53,11 @@ func updateSchemeManager(paths []string) error {
 		path, err := filepath.Abs(path)
 		irmaconf, manager := filepath.Dir(path), filepath.Base(path)
 
-		// TODO: this parses all managers within the irma_configuration folder, not just the one specified
-		// Should make a Configuration constructor that parses just one manager
 		conf, err := irma.NewConfiguration(irmaconf)
 		if err != nil {
 			return err
 		}
-		if err := conf.ParseFolder(); err != nil {
+		if err := conf.ParseSchemeManagerFolder(path, irma.NewSchemeManager(manager)); err != nil {
 			return err
 		}
 
@@ -54,4 +67,18 @@ func updateSchemeManager(paths []string) error {
 	}
 
 	return nil
+}
+
+func updateHelp() string {
+	defaultIrmaconf := defaultIrmaconfPath()
+	str := "The update command updates an IRMA scheme within an irma_configuration folder by comparing its index with the online version, and downloading any new and changed files.\n\n"
+	if defaultIrmaconf != "" {
+		str += "If no paths are given, the default schemes at " + defaultIrmaconf + " are updated.\n\n"
+	}
+	str += "Careful: this command could fail and invalidate or destroy your scheme manager folder! Use this only if you can restore it from git or backups."
+	return str
+}
+
+func init() {
+	schemeCmd.AddCommand(updateCmd)
 }

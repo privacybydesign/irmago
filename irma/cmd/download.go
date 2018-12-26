@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -12,12 +13,35 @@ import (
 )
 
 var downloadCmd = &cobra.Command{
-	Use:   "download path url...",
-	Short: "[Experimental] Download a scheme manager",
-	Long:  `The download command downloads and saves a scheme manager given its URL, saving it in path (i.e., an irma_configuration folder).`,
-	Args:  cobra.ExactArgs(2),
+	Use:   "download [path] [url...]",
+	Short: "Download scheme(s)",
+	Long:  downloadHelp(),
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := downloadSchemeManager(args[0], args[1:]); err != nil {
+		var path string
+		var urls []string
+		defaultIrmaconf := defaultIrmaconfPath()
+
+		if len(args) == 0 {
+			path = defaultIrmaconf
+		} else {
+			if err := fs.AssertPathExists(args[0]); err == nil {
+				path = args[0]
+				urls = args[1:]
+			} else {
+				path = defaultIrmaconf
+				urls = args
+			}
+		}
+		if path == defaultIrmaconf {
+			if defaultIrmaconf == "" {
+				die("Failed to determine default irma_configuration path", nil)
+			}
+			if err := fs.EnsureDirectoryExists(defaultIrmaconf); err != nil {
+				die("Failed to create irma_configuration directory", err)
+			}
+			fmt.Println("No irma_configuration path specified, using " + defaultIrmaconf)
+		}
+		if err := downloadSchemeManager(path, urls); err != nil {
 			die("Downloading scheme failed", err)
 		}
 	},
@@ -54,17 +78,34 @@ func downloadSchemeManager(dest string, urls []string) error {
 	}
 
 	conf, err := irma.NewConfiguration(dest)
-	for _, u := range normalizedUrls {
-		urlparts := strings.Split(u, "/")
-		managerName := urlparts[len(urlparts)-1]
-		manager := irma.NewSchemeManager(managerName)
-		manager.URL = u
-		if err := conf.InstallSchemeManager(manager, nil); err != nil {
-			return err
+
+	if len(urls) == 0 {
+		if err := conf.DownloadDefaultSchemes(); err != nil {
+			return errors.WrapPrefix(err, "failed to download default schemes", 0)
+		}
+	} else {
+		for _, u := range normalizedUrls {
+			urlparts := strings.Split(u, "/")
+			managerName := urlparts[len(urlparts)-1]
+			manager := irma.NewSchemeManager(managerName)
+			manager.URL = u
+			if err := conf.InstallSchemeManager(manager, nil); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+func downloadHelp() string {
+	defaultIrmaconf := defaultIrmaconfPath()
+	str := "The download command downloads and saves scheme managers given their URLs, saving it in path (i.e., an irma_configuration folder).\n\n"
+	if defaultIrmaconf != "" {
+		str += "If path is not given, the default path " + defaultIrmaconf + " is used.\n"
+	}
+	str += "If no urls are given, the default IRMA schemes are downloaded."
+	return str
 }
 
 func init() {

@@ -25,7 +25,7 @@ import (
 // signCmd represents the sign command
 var signCmd = &cobra.Command{
 	Use:   "sign [privatekey] [path]",
-	Short: "Sign a scheme manager directory",
+	Short: "Sign a scheme directory",
 	Long: `Sign a scheme manager directory, using the specified ECDSA key. Both arguments are optional; "sk.pem" and the working directory are the defaults. Outputs an index file, signature over the index file, and the public key in the specified directory.
 
 Careful: this command could fail and invalidate or destroy your scheme manager directory! Use this only if you can restore it from git or backups.`,
