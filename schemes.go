@@ -23,7 +23,7 @@ dpBeCqpDwf+Grrw9ReODb6nwlsPJ/c/gqLnc+Y3sKOAJ2bFGI+jHBSsglg==
 }
 
 func (conf *Configuration) DownloadDefaultSchemes() error {
-	Logger.Info("No schemes found in irma_configuration, downloading default schemes")
+	Logger.Info("downloading default schemes")
 	for _, s := range DefaultSchemeManagers {
 		Logger.Debugf("Downloading scheme at %s", s.Url)
 		scheme, err := DownloadSchemeManager(s.Url)

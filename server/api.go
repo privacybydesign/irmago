@@ -24,8 +24,10 @@ type Configuration struct {
 	IrmaConfiguration *irma.Configuration `json:"-"`
 	// Path to schemes to parse (only used if IrmaConfiguration is not given)
 	IrmaConfigurationPath string `json:"irmaconf" mapstructure:"irmaconf"`
-	// Path to writable dir to write cache to (only used if IrmaConfiguration is not give)
+	// Path to writable dir to write cache to (only used if IrmaConfiguration is not given)
 	CachePath string `json:"cachepath" mapstructure:"cachepath"`
+	// Whether or not to download default IRMA schemes if the specified irma_configuration is empty
+	DownloadDefaultSchemes bool
 	// Path to issuer private keys to parse
 	IssuerPrivateKeysPath string `json:"privatekeys" mapstructure:"privatekeys"`
 	// Issuer private keys
@@ -173,9 +175,9 @@ func LocalIP() (string, error) {
 func CachePath() (string, error) {
 	candidates := make([]string, 0, 2)
 	if runtime.GOOS != "windows" {
-		candidates = append(candidates, filepath.Join("/var/tmp", "irmaserver"))
+		candidates = append(candidates, filepath.Join("/var/tmp", "irma"))
 	}
-	candidates = append(candidates, filepath.Join(os.TempDir(), "irmaserver"))
+	candidates = append(candidates, filepath.Join(os.TempDir(), "irma"))
 	path := firstWritablePath(candidates)
 	if path == "" {
 		return "", errors.New("No writable temporary directory found")

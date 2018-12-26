@@ -44,19 +44,19 @@ func Initialize(configuration *server.Configuration) error {
 		if err != nil {
 			return err
 		}
-		if conf.IrmaConfigurationPath == "" {
-			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
-				return err
-			}
-		} else {
-			if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
-				return err
-			}
+		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
+			return err
 		}
 	}
 
 	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
-		return errors.New("no schemes found in irma_configuration folder " + conf.IrmaConfiguration.Path)
+		if conf.DownloadDefaultSchemes {
+			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
+				return err
+			}
+		} else {
+			return errors.New("no schemes found in irma_configuration folder " + conf.IrmaConfiguration.Path)
+		}
 	}
 
 	if conf.IssuerPrivateKeys == nil {
