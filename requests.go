@@ -14,15 +14,15 @@ import (
 
 // BaseRequest contains the context and nonce for an IRMA session.
 type BaseRequest struct {
-	Context *big.Int `json:"context"`
-	Nonce   *big.Int `json:"nonce"`
+	Context *big.Int `json:"context,omitempty"`
+	Nonce   *big.Int `json:"nonce,omitempty"`
 	Type    Action   `json:"type"`
 
 	Candidates [][]*AttributeIdentifier `json:"-"`
 	Choice     *DisclosureChoice        `json:"-"`
 	Ids        *IrmaIdentifierSet       `json:"-"`
 
-	Version *ProtocolVersion `json:"protocolVersion"`
+	Version *ProtocolVersion `json:"protocolVersion,omitempty"`
 }
 
 func (sr *BaseRequest) SetCandidates(candidates [][]*AttributeIdentifier) {
@@ -73,14 +73,14 @@ type IssuanceRequest struct {
 
 	// Derived data
 	CredentialInfoList        CredentialInfoList `json:",omitempty"`
-	RemovalCredentialInfoList CredentialInfoList
+	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
-	Validity         *Timestamp               `json:"validity"`
-	KeyCounter       int                      `json:"keyCounter"`
+	Validity         *Timestamp               `json:"validity,omitempty"`
+	KeyCounter       int                      `json:"keyCounter,omitempty"`
 	CredentialTypeID CredentialTypeIdentifier `json:"credential"`
 	Attributes       map[string]string        `json:"attributes"`
 }
