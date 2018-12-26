@@ -131,7 +131,7 @@ func New(
 		handler:               handler,
 	}
 
-	cm.Configuration, err = irma.NewConfiguration(storagePath+"/irma_configuration", irmaConfigurationPath)
+	cm.Configuration, err = irma.NewConfigurationFromAssets(storagePath+"/irma_configuration", irmaConfigurationPath)
 	if err != nil {
 		return nil, err
 	}

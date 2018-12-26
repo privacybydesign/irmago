@@ -63,7 +63,7 @@ func RunVerify(path string, verbose bool) error {
 }
 
 func VerifyScheme(path string) error {
-	conf, err := irma.NewConfiguration(filepath.Dir(path), "")
+	conf, err := irma.NewConfigurationReadOnly(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func VerifyIrmaConfiguration(path string) error {
 		fmt.Printf("Notice: specified folder name is '%s'; when using in IRMA applications it should be called 'irma_configuration'\n", filepath.Base(path))
 	}
 
-	conf, err := irma.NewConfiguration(path, "")
+	conf, err := irma.NewConfigurationReadOnly(path)
 	if err != nil {
 		return err
 	}

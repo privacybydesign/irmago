@@ -59,6 +59,7 @@ type Configuration struct {
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
 	assets        string
+	readOnly      bool
 }
 
 // ConfigurationFileHash encodes the SHA256 hash of an authenticated
@@ -93,9 +94,26 @@ func (sme SchemeManagerError) Error() string {
 	return fmt.Sprintf("Error parsing scheme manager %s: %s", sme.Manager.Name(), sme.Err.Error())
 }
 
-// NewConfiguration returns a new configuration. After this
+// newConfiguration returns a new configuration. After this
 // ParseFolder() should be called to parse the specified path.
-func NewConfiguration(path string, assets string) (conf *Configuration, err error) {
+func NewConfiguration(path string) (*Configuration, error) {
+	return newConfiguration(path, "")
+}
+
+func NewConfigurationReadOnly(path string) (*Configuration, error) {
+	conf, err := newConfiguration(path, "")
+	if err != nil {
+		return nil, err
+	}
+	conf.readOnly = true
+	return conf, nil
+}
+
+func NewConfigurationFromAssets(path, assets string) (*Configuration, error) {
+	return newConfiguration(path, assets)
+}
+
+func newConfiguration(path string, assets string) (conf *Configuration, err error) {
 	conf = &Configuration{
 		Path:   path,
 		assets: assets,
@@ -189,6 +207,9 @@ func (conf *Configuration) ParseOrRestoreFolder() error {
 	err := conf.ParseFolder()
 	// Only in case of a *SchemeManagerError might we be able to recover
 	if _, isSchemeMgrErr := err.(*SchemeManagerError); !isSchemeMgrErr {
+		return err
+	}
+	if err != nil && (conf.assets == "" || conf.readOnly) {
 		return err
 	}
 
@@ -422,7 +443,10 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 			delete(conf.CredentialTypes, cred)
 		}
 	}
-	return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
+	if !conf.readOnly {
+		return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
+	}
+	return nil
 }
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
@@ -583,7 +607,7 @@ func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
 }
 
 func (conf *Configuration) isUpToDate(scheme SchemeManagerIdentifier) (bool, error) {
-	if conf.assets == "" {
+	if conf.assets == "" || conf.readOnly {
 		return true, nil
 	}
 	name := scheme.String()
@@ -600,7 +624,7 @@ func (conf *Configuration) isUpToDate(scheme SchemeManagerIdentifier) (bool, err
 }
 
 func (conf *Configuration) CopyManagerFromAssets(scheme SchemeManagerIdentifier) (bool, error) {
-	if conf.assets == "" {
+	if conf.assets == "" || conf.readOnly {
 		return false, nil
 	}
 	// Remove old version; we want an exact copy of the assets version
@@ -661,13 +685,17 @@ func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromS
 	}
 	delete(conf.SchemeManagers, id)
 
-	if fromStorage {
+	if fromStorage || !conf.readOnly {
 		return os.RemoveAll(fmt.Sprintf("%s/%s", conf.Path, id.String()))
 	}
 	return nil
 }
 
 func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err error) {
+	if conf.readOnly {
+		return errors.New("cannot install scheme into a read-only configuration")
+	}
+
 	// Check if downloading stuff from the remote works before we uninstall the specified manager:
 	// If we can't download anything we should keep the broken version
 	manager, err = DownloadSchemeManager(manager.URL)
@@ -684,6 +712,10 @@ func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err e
 // InstallSchemeManager downloads and adds the specified scheme manager to this Configuration,
 // provided its signature is valid.
 func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publickey []byte) error {
+	if conf.readOnly {
+		return errors.New("cannot install scheme into a read-only configuration")
+	}
+
 	name := manager.ID
 	if err := fs.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
@@ -717,6 +749,10 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publicke
 // DownloadSchemeManagerSignature downloads, stores and verifies the latest version
 // of the index file and signature of the specified manager.
 func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager) (err error) {
+	if conf.readOnly {
+		return errors.New("cannot download into a read-only configuration")
+	}
+
 	t := NewHTTPTransport(manager.URL)
 	path := fmt.Sprintf("%s/%s", conf.Path, manager.ID)
 	index := filepath.Join(path, "index")
@@ -736,6 +772,9 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 // if the current Configuration does not already have them,  and checks their authenticity
 // using the scheme manager index.
 func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIdentifierSet, err error) {
+	if conf.readOnly {
+		return nil, errors.New("cannot download into a read-only configuration")
+	}
 	managers := make(map[string]struct{}) // Managers that we must update
 	downloaded = &IrmaIdentifierSet{
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
@@ -1015,6 +1054,9 @@ func (hash ConfigurationFileHash) Equal(other ConfigurationFileHash) bool {
 // It stores the identifiers of new or updated credential types or issuers in the second parameter.
 // Note: any newly downloaded files are not yet parsed and inserted into conf.
 func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downloaded *IrmaIdentifierSet) (err error) {
+	if conf.readOnly {
+		return errors.New("cannot update a read-only configuration")
+	}
 	manager, contains := conf.SchemeManagers[id]
 	if !contains {
 		return errors.Errorf("Cannot update unknown scheme manager %s", id)

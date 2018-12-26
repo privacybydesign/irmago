@@ -40,7 +40,7 @@ func updateSchemeManager(paths []string) error {
 
 		// TODO: this parses all managers within the irma_configuration folder, not just the one specified
 		// Should make a Configuration constructor that parses just one manager
-		conf, err := irma.NewConfiguration(irmaconf, "")
+		conf, err := irma.NewConfiguration(irmaconf)
 		if err != nil {
 			return err
 		}

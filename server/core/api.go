@@ -33,19 +33,17 @@ func Initialize(configuration *server.Configuration) error {
 
 	if conf.IrmaConfiguration == nil {
 		var err error
-		var path, assets string
 		if conf.CachePath == "" {
-			path = conf.IrmaConfigurationPath
-			assets = ""
+			conf.IrmaConfiguration, err = irma.NewConfiguration(conf.IrmaConfigurationPath)
 		} else {
-			path = filepath.Join(conf.CachePath, "irma_configuration")
-			assets = conf.IrmaConfigurationPath
+			conf.IrmaConfiguration, err = irma.NewConfigurationFromAssets(
+				filepath.Join(conf.CachePath, "irma_configuration"),
+				conf.IrmaConfigurationPath,
+			)
 		}
-		conf.IrmaConfiguration, err = irma.NewConfiguration(path, assets)
 		if err != nil {
 			return err
 		}
-
 		if conf.IrmaConfigurationPath == "" {
 			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
 				return err

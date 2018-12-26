@@ -53,7 +53,7 @@ func downloadSchemeManager(dest string, urls []string) error {
 		}
 	}
 
-	conf, err := irma.NewConfiguration(dest, "")
+	conf, err := irma.NewConfiguration(dest)
 	for _, u := range normalizedUrls {
 		urlparts := strings.Split(u, "/")
 		managerName := urlparts[len(urlparts)-1]

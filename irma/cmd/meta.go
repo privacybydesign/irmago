@@ -42,7 +42,7 @@ func printMetadataAttr(metaint *big.Int, confpath string) error {
 	if err := fs.AssertPathExists(confpath); err != nil {
 		return errors.WrapPrefix(err, "Cannot read irma_configuration", 0)
 	}
-	conf, err := irma.NewConfiguration(confpath, "")
+	conf, err := irma.NewConfigurationReadOnly(confpath)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to parse irma_configuration", 0)
 	}
