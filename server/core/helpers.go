@@ -41,8 +41,11 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	for _, cred := range request.Credentials {
 		// Check that we have the appropriate private key
 		iss := cred.CredentialTypeID.IssuerIdentifier()
-		privatekey, havekey := conf.IssuerPrivateKeys[iss]
-		if !havekey {
+		privatekey, err := privatekey(iss)
+		if err != nil {
+			return err
+		}
+		if privatekey == nil {
 			return errors.Errorf("missing private key of issuer %s", iss.String())
 		}
 		pubkey, err := conf.IrmaConfiguration.PublicKey(iss, int(privatekey.Counter))
@@ -70,6 +73,16 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	}
 
 	return nil
+}
+
+func privatekey(id irma.IssuerIdentifier) (sk *gabi.PrivateKey, err error) {
+	sk = conf.IssuerPrivateKeys[id]
+	if sk == nil {
+		if sk, err = conf.IrmaConfiguration.PrivateKey(id); err != nil {
+			return nil, err
+		}
+	}
+	return sk, nil
 }
 
 func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, scheme irma.SchemeManagerIdentifier) (*gabi.ProofP, error) {

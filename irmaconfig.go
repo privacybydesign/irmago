@@ -56,6 +56,7 @@ type Configuration struct {
 
 	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
+	privateKeys   map[IssuerIdentifier]*gabi.PrivateKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
 	assets        string
@@ -142,6 +143,7 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
+	conf.privateKeys = make(map[IssuerIdentifier]*gabi.PrivateKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 }
 
@@ -314,6 +316,49 @@ func relativePath(outer string, inner string) (string, error) {
 	}
 
 	return innerAbs[len(outerAbs)+1:], nil
+}
+
+// PrivateKey returns the specified private key, or nil if not present in the Configuration.
+func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, error) {
+	if sk := conf.privateKeys[id]; sk != nil {
+		return sk, nil
+	}
+
+	path := fmt.Sprintf(privkeyPattern, conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
+	files, err := filepath.Glob(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+
+	// List private keys and get highest counter
+	counters := make([]int, 0, len(files))
+	for _, file := range files {
+		filename := filepath.Base(file)
+		count := filename[:len(filename)-4]
+		i, err := strconv.Atoi(count)
+		if err != nil {
+			return nil, err
+		}
+		counters = append(counters, i)
+	}
+	sort.Ints(counters)
+	counter := counters[len(counters)-1]
+
+	// Read private key
+	file := strings.Replace(path, "*", strconv.Itoa(counter), 1)
+	sk, err := gabi.NewPrivateKeyFromFile(file)
+	if err != nil {
+		return nil, err
+	}
+	if int(sk.Counter) != counter {
+		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
+	}
+	conf.privateKeys[id] = sk
+
+	return sk, nil
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
