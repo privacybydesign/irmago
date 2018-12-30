@@ -275,7 +275,7 @@ func JwtDecode(jwt string, body interface{}) error {
 	if jwtparts == nil || len(jwtparts) < 2 {
 		return errors.New("Not a JWT")
 	}
-	bodybytes, err := base64.RawStdEncoding.DecodeString(jwtparts[1])
+	bodybytes, err := base64.RawURLEncoding.DecodeString(jwtparts[1])
 	if err != nil {
 		return err
 	}
