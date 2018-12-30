@@ -2,7 +2,6 @@ package irmaserver
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -177,6 +176,13 @@ func jwtAuthenticate(
 		return false, nil, "", nil
 	}
 	requestorJwt := string(body)
+
+	// We need to establish the signature method with which the JWT was signed. We do this by just
+	// inspecting the JWT header here, before the signature is verified (which is done below). I suppose
+	// it would be more idiomatic to have the KeyFunc which is fed to jwt.ParseWithClaims() perform this
+	// task, but then the KeyFunc would need access to all public keys here instead of the ones belonging
+	// to the signature algorithm we are expecting (specified by signatureAlg). Security-wise it makes no
+	// difference: either way the alg header is examined before the signature is verified.
 	alg, err := jwtSignatureAlg(requestorJwt)
 	if err != nil || alg != signatureAlg {
 		// If err != nil, ie. we failed to determine the JWT signature algorithm, we assume that the
@@ -184,7 +190,8 @@ func jwtAuthenticate(
 		return false, nil, "", nil
 	}
 
-	// Verify JWT signature
+	// Verify JWT signature. We do not yet store the JWT contents here, because we need to know the session type first
+	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.
 	claims := &jwt.StandardClaims{}
 	token, err := jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
 	if err != nil {
@@ -208,30 +215,9 @@ func jwtAuthenticate(
 }
 
 func jwtSignatureAlg(j string) (string, error) {
-	var (
-		alg    string
-		header map[string]interface{}
-		i      interface{}
-		ok     bool
-		bts    []byte
-		err    error
-	)
-
-	segments := strings.Split(j, ".")
-	if len(segments) == 0 {
-		return "", errors.New("invalid jwt, not enough segments")
+	token, _, err := new(jwt.Parser).ParseUnverified(j, &jwt.StandardClaims{})
+	if err != nil {
+		return "", err
 	}
-	if bts, err = jwt.DecodeSegment(segments[0]); err != nil {
-		return "", errors.WrapPrefix(err, "failed to base64-decode jwt header", 0)
-	}
-	if err := json.Unmarshal(bts, &header); err != nil {
-		return "", errors.WrapPrefix(err, "failed to json-deserialize jwt header", 0)
-	}
-	if i, ok = header["alg"]; !ok {
-		return "", errors.New("alg field not found in jwt header")
-	}
-	if alg, ok = i.(string); !ok {
-		return "", errors.New("alg field in jwt was not a string")
-	}
-	return alg, nil
+	return token.Method.Alg(), nil
 }
