@@ -1,7 +1,6 @@
 package irma
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/url"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 
 	"fmt"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 )
@@ -270,19 +270,9 @@ func (i *IssueCommitmentMessage) Disclosure() *Disclosure {
 	}
 }
 
-func JwtDecode(jwt string, body interface{}) error {
-	jwtparts := strings.Split(jwt, ".")
-	if jwtparts == nil || len(jwtparts) < 2 {
-		return errors.New("Not a JWT")
-	}
-	bodybytes, err := base64.RawURLEncoding.DecodeString(jwtparts[1])
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(bodybytes, body)
-}
-
-func ParseRequestorJwt(action string, jwt string) (RequestorJwt, error) {
+// ParseRequestorJwt parses the specified JWT and returns the contents.
+// Note: this function does not verify the signature! Do that elsewhere.
+func ParseRequestorJwt(action string, requestorJwt string) (RequestorJwt, error) {
 	var retval RequestorJwt
 	switch action {
 	case "verification_request", string(ActionDisclosing):
@@ -294,8 +284,7 @@ func ParseRequestorJwt(action string, jwt string) (RequestorJwt, error) {
 	default:
 		return nil, errors.New("Invalid session type")
 	}
-	err := JwtDecode(jwt, retval)
-	if err != nil {
+	if _, _, err := new(jwt.Parser).ParseUnverified(requestorJwt, retval); err != nil {
 		return nil, err
 	}
 	return retval, nil
