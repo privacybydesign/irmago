@@ -30,6 +30,7 @@ import (
 	"encoding/pem"
 	gobig "math/big"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -313,6 +314,22 @@ func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.Pu
 	return conf.publicKeys[id][counter], nil
 }
 
+// KeyshareServerKeyFunc returns a function that returns the public key with which to verify a keyshare server JWT,
+// suitable for passing to jwt.Parse() and jwt.ParseWithClaims().
+func (conf *Configuration) KeyshareServerKeyFunc(scheme SchemeManagerIdentifier) func(t *jwt.Token) (interface{}, error) {
+	return func(t *jwt.Token) (i interface{}, e error) {
+		var kid int
+		if kidstr, ok := t.Header["kid"].(string); ok {
+			var err error
+			if kid, err = strconv.Atoi(kidstr); err != nil {
+				return nil, err
+			}
+		}
+		return conf.KeyshareServerPublicKey(scheme, kid)
+	}
+}
+
+// KeyshareServerPublicKey returns the i'th public key of the specified scheme.
 func (conf *Configuration) KeyshareServerPublicKey(scheme SchemeManagerIdentifier, i int) (*rsa.PublicKey, error) {
 	if _, contains := conf.kssPublicKeys[scheme]; !contains {
 		conf.kssPublicKeys[scheme] = make(map[int]*rsa.PublicKey)

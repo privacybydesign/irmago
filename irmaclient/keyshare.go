@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -205,15 +206,16 @@ func startKeyshareSession(
 		ks.transports[managerID] = transport
 
 		// Try to parse token as a jwt to see if it is still valid; if so we don't need to ask for the PIN
-		parsed := &struct {
-			Expiry irma.Timestamp `json:"exp"`
-		}{}
-		if err := irma.JwtDecode(ks.keyshareServer.token, parsed); err != nil {
+		parser := new(jwt.Parser)
+		parser.SkipClaimsValidation = true // We want to verify expiry on our own below so we can add leeway
+		claims := jwt.StandardClaims{}
+		_, err := parser.ParseWithClaims(ks.keyshareServer.token, &claims, ks.conf.KeyshareServerKeyFunc(managerID))
+		if err != nil {
 			ks.pinCheck = true
 		}
 		// Add a minute of leeway for possible clockdrift with the server,
 		// and for the rest of the protocol to take place with this token
-		if time.Time(parsed.Expiry).Before(time.Now().Add(1 * time.Minute)) {
+		if claims.VerifyExpiresAt(time.Now().Add(1*time.Minute).Unix(), true) {
 			ks.pinCheck = true
 		}
 	}
@@ -455,16 +457,17 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		if !ks.conf.SchemeManagers[managerID].Distributed() {
 			continue
 		}
-		msg := struct {
+		claims := struct {
+			jwt.StandardClaims
 			ProofP *gabi.ProofP
 		}{}
-		if err := irma.JwtDecode(responses[managerID], &msg); err != nil {
+		if _, err := jwt.ParseWithClaims(responses[managerID], &claims, ks.conf.KeyshareServerKeyFunc(managerID)); err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
 
 		// Decrypt the responses and populate a slice of ProofP's
-		proofPs[i] = msg.ProofP
+		proofPs[i] = claims.ProofP
 		bytes, err := ks.keyshareServer.PrivateKey.Decrypt(proofPs[i].SResponse.Bytes())
 		if err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
