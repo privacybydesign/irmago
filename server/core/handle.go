@@ -33,6 +33,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	if session.version, err = chooseProtocolVersion(min, max); err != nil {
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
+	conf.Logger.Debugf("Using protocol version %s for session %s", session.version.String(), session.token)
 	session.request.SetVersion(session.version)
 
 	session.setStatus(server.StatusConnected)

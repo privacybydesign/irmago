@@ -135,7 +135,7 @@ func (conf *Configuration) initialize() error {
 	}
 
 	if conf.DisableRequestorAuthentication {
-		conf.Logger.Warn("Authentication of incoming session requests disabled")
+		conf.Logger.Warn("Authentication of incoming session requests disabled: anyone who can reach this server can use it")
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
 	} else {
 		authenticators = map[AuthenticationMethod]Authenticator{

@@ -42,20 +42,20 @@ func Initialize(configuration *server.Configuration) error {
 			)
 		}
 		if err != nil {
-			return err
+			return server.LogError(err)
 		}
 		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
-			return err
+			return server.LogError(err)
 		}
 	}
 
 	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
 		if conf.DownloadDefaultSchemes {
 			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
-				return err
+				return server.LogError(err)
 			}
 		} else {
-			return errors.New("no schemes found in irma_configuration folder " + conf.IrmaConfiguration.Path)
+			return server.LogError(errors.New("no schemes found in irma_configuration folder " + conf.IrmaConfiguration.Path))
 		}
 	}
 
@@ -65,17 +65,17 @@ func Initialize(configuration *server.Configuration) error {
 	if conf.IssuerPrivateKeysPath != "" {
 		files, err := ioutil.ReadDir(conf.IssuerPrivateKeysPath)
 		if err != nil {
-			return err
+			return server.LogError(err)
 		}
 		for _, file := range files {
 			filename := file.Name()
 			issid := irma.NewIssuerIdentifier(strings.TrimSuffix(filename, filepath.Ext(filename))) // strip .xml
 			if _, ok := conf.IrmaConfiguration.Issuers[issid]; !ok {
-				return errors.Errorf("Private key %s belongs to an unknown issuer", filename)
+				return server.LogError(errors.Errorf("Private key %s belongs to an unknown issuer", filename))
 			}
 			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(conf.IssuerPrivateKeysPath, filename))
 			if err != nil {
-				return err
+				return server.LogError(err)
 			}
 			conf.IssuerPrivateKeys[issid] = sk
 		}
@@ -83,13 +83,13 @@ func Initialize(configuration *server.Configuration) error {
 	for issid, sk := range conf.IssuerPrivateKeys {
 		pk, err := conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
 		if err != nil {
-			return err
+			return server.LogError(err)
 		}
 		if pk == nil {
-			return errors.Errorf("Missing public key belonging to private key %s-%d", issid.String(), sk.Counter)
+			return server.LogError(errors.Errorf("Missing public key belonging to private key %s-%d", issid.String(), sk.Counter))
 		}
 		if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-			return errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter)
+			return server.LogError(errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter))
 		}
 	}
 
@@ -106,7 +106,7 @@ func Initialize(configuration *server.Configuration) error {
 
 func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
 	if err := request.Validate(); err != nil {
-		return nil, "", err
+		return nil, "", server.LogError(err)
 	}
 	action := irma.ActionUnknown
 	switch request.(type) {
@@ -117,15 +117,19 @@ func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
 	case *irma.IssuanceRequest:
 		action = irma.ActionIssuing
 		if err := validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
-			return nil, "", err
+			return nil, "", server.LogError(err)
 		}
 	default:
-		conf.Logger.Warnf("Attempt to start session of invalid type")
-		return nil, "", errors.New("Invalid session type")
+		return nil, "", server.LogError(errors.New("Invalid session type"))
 	}
 
 	session := newSession(action, request)
 	conf.Logger.Infof("%s session started, token %s", action, session.token)
+	if conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
+		conf.Logger.Debug("Session request: ", server.ToJson(request))
+	} else {
+		logPurgedRequest(request)
+	}
 	return &irma.Qr{
 		Type: action,
 		URL:  conf.URL + session.token,
@@ -135,6 +139,7 @@ func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
 func GetSessionResult(token string) *server.SessionResult {
 	session := sessions.get(token)
 	if session == nil {
+		conf.Logger.Warn("Session result requested of unknown session ", token)
 		return nil
 	}
 	return session.result
@@ -143,7 +148,7 @@ func GetSessionResult(token string) *server.SessionResult {
 func CancelSession(token string) error {
 	session := sessions.get(token)
 	if session == nil {
-		return errors.New("Unknown session, can't cancel")
+		return server.LogError(errors.Errorf("can't cancel unknown session %s", token))
 	}
 	session.handleDelete()
 	return nil
@@ -166,6 +171,10 @@ func HandleProtocolMessage(
 	}
 
 	conf.Logger.Debugf("Routing protocol message: %s %s", method, path)
+	if len(message) > 0 {
+		conf.Logger.Trace("POST body: ", string(message))
+	}
+	conf.Logger.Trace("HTTP headers: ", server.ToJson(headers))
 	pattern := regexp.MustCompile("(\\w+)/?(|commitments|proofs|status)$")
 	matches := pattern.FindStringSubmatch(path)
 	if len(matches) != 3 {
@@ -193,6 +202,7 @@ func HandleProtocolMessage(
 		if session.finished() && !session.returned {
 			session.returned = true
 			result = session.result
+			conf.Logger.Infof("Session %s done, status %s", session.token, session.result.Status)
 		}
 		sessions.update(token, session)
 	}()

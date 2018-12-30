@@ -35,7 +35,7 @@ func Start(config *Configuration) error {
 		return nil // Server was closed normally
 	}
 
-	return err
+	return server.LogError(err)
 }
 
 func Stop() {
@@ -47,7 +47,7 @@ func Stop() {
 func Handler(config *Configuration) (http.Handler, error) {
 	conf = config
 	if err := conf.initialize(); err != nil {
-		return nil, err
+		return nil, server.LogError(err)
 	}
 	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
 		return nil, err
@@ -80,6 +80,8 @@ func Handler(config *Configuration) (http.Handler, error) {
 func handleCreate(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		conf.Logger.Error("Could not read session request HTTP POST body")
+		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -100,10 +102,13 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if rerr != nil {
+		_ = server.LogError(rerr)
 		server.WriteResponse(w, nil, rerr)
 		return
 	}
 	if !applies {
+		conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s",
+			server.ToJson(r.Header), string(body))
 		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authorized")
 		return
 	}
@@ -113,6 +118,8 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	if request.Action() == irma.ActionIssuing {
 		allowed, reason := conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
 		if !allowed {
+			conf.Logger.Warn("Requestor %s tried to issue credential %s but it is not authorized to; full request: %s",
+				requestor, reason, server.ToJson(request))
 			server.WriteError(w, server.ErrorUnauthorized, reason)
 			return
 		}
@@ -121,6 +128,8 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	if len(disjunctions) > 0 {
 		allowed, reason := conf.CanVerifyOrSign(requestor, request.Action(), disjunctions)
 		if !allowed {
+			conf.Logger.Warn("Requestor %s tried to verify attribute %s but it is not authorized to; full request: %s",
+				requestor, reason, server.ToJson(request))
 			server.WriteError(w, server.ErrorUnauthorized, reason)
 			return
 		}
@@ -163,6 +172,7 @@ func handleResult(w http.ResponseWriter, r *http.Request) {
 
 func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 	if conf.jwtPrivateKey == nil {
+		conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
 	}
@@ -187,6 +197,8 @@ func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	resultJwt, err := token.SignedString(conf.jwtPrivateKey)
 	if err != nil {
+		conf.Logger.Error("Failed to sign session result JWT")
+		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}
@@ -195,6 +207,7 @@ func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 
 func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	if conf.jwtPrivateKey == nil {
+		conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
 	}
@@ -239,6 +252,8 @@ func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	resultJwt, err := token.SignedString(conf.jwtPrivateKey)
 	if err != nil {
+		conf.Logger.Error("Failed to sign session result JWT")
+		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"runtime/debug"
 
@@ -64,7 +65,7 @@ const (
 // RemoteError converts an error and an explaining message to an *irma.RemoteError.
 func RemoteError(err Error, message string) *irma.RemoteError {
 	stack := string(debug.Stack())
-	Logger.Errorf("Error: %d %s %s\n%s", err.Status, err.Type, message, stack)
+	Logger.Warn("Session error: %d %s %s\n%s", err.Status, err.Type, message, stack)
 	return &irma.RemoteError{
 		Status:      err.Status,
 		Description: err.Description,
@@ -88,6 +89,7 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 		Logger.Error("Failed to serialize response:", e.Error())
 		return http.StatusInternalServerError, nil
 	}
+	Logger.Tracef("HTTP JSON response: %d %s", status, string(b))
 	return status, b
 }
 
@@ -111,6 +113,7 @@ func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteE
 
 // WriteString writes the specified string to the http.ResponseWriter.
 func WriteString(w http.ResponseWriter, str string) {
+	Logger.Trace("HTTP text/plain response: ", str)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(str))
@@ -132,6 +135,7 @@ func ParseSessionRequest(bts []byte) (request irma.SessionRequest, err error) {
 	if err = irma.UnmarshalValidate(bts, request); err == nil {
 		return request, nil
 	}
+	Logger.Warn("Failed to parse as session request: ", string(bts))
 	return nil, errors.New("Invalid or disabled session type")
 }
 
@@ -204,4 +208,29 @@ func Verbosity(level int) logrus.Level {
 	default:
 		return logrus.InfoLevel
 	}
+}
+
+func LogError(err error) error {
+	Logger.Error(err.Error())
+	if e, ok := err.(*errors.Error); ok {
+		Logger.Error(e.ErrorStack())
+	} else {
+		Logger.Errorf("%s %s", reflect.TypeOf(err).String(), err.Error())
+	}
+	return err
+}
+
+func LogWarning(err error) error {
+	Logger.Warn(err.Error())
+	if e, ok := err.(*errors.Error); ok {
+		Logger.Warn(e.ErrorStack())
+	} else {
+		Logger.Warn("%s %s", reflect.TypeOf(err).String(), err.Error())
+	}
+	return err
+}
+
+func ToJson(o interface{}) string {
+	bts, _ := json.Marshal(o)
+	return string(bts)
 }
