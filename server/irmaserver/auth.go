@@ -80,14 +80,26 @@ func (hauth *HmacAuthenticator) Authenticate(
 
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
 	if requestor.AuthenticationKey == "" {
-		return errors.Errorf("Requestor %s had no authentication key")
+		return errors.Errorf("Requestor %s has no authentication key", name)
 	}
-	if bts, err := base64.StdEncoding.DecodeString(requestor.AuthenticationKey); err != nil {
-		return err
-	} else {
-		hauth.hmackeys[name] = bts
-		return nil
+
+	var err error
+	var bts []byte
+	// We accept any of the base64 encodings
+	encodings := []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding}
+	for _, encoding := range encodings {
+		err = nil
+		if bts, err = encoding.DecodeString(requestor.AuthenticationKey); err == nil {
+			break
+		}
 	}
+	if err != nil {
+		return errors.WrapPrefix(err, "Failed to base64 decode hmac key of requestor "+name, 0)
+	}
+
+	hauth.hmackeys[name] = bts
+	return nil
+
 }
 
 func (pkauth *PublicKeyAuthenticator) Authenticate(
@@ -140,7 +152,7 @@ func (pskauth *PresharedKeyAuthenticator) Authenticate(
 
 func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requestor) error {
 	if requestor.AuthenticationKey == "" {
-		return errors.Errorf("Requestor %s had no authentication key")
+		return errors.Errorf("Requestor %s has no authentication key", name)
 	}
 	pskauth.presharedkeys[requestor.AuthenticationKey] = name
 	return nil

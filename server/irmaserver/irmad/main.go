@@ -4,7 +4,6 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -48,9 +47,11 @@ func main() {
 }
 
 func die(err *errors.Error) {
-	logger.Error(err.Error())
-	logger.Trace(string(err.Stack()))
-	os.Exit(1)
+	msg := err.Error()
+	if logger.IsLevelEnabled(logrus.TraceLevel) {
+		msg += "\nStack trace:\n" + string(err.Stack())
+	}
+	logger.Fatal(msg)
 }
 
 func setFlags(cmd *cobra.Command) error {
@@ -80,8 +81,8 @@ func setFlags(cmd *cobra.Command) error {
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
 
-	flags.StringSlice("disclose", []string{"*"}, "Comma-separated list of attributes that all requestors may verify")
-	flags.StringSlice("sign", []string{"*"}, "Comma-separated list of attributes that all requestors may request in signatures")
+	flags.StringSlice("disclose", nil, "Comma-separated list of attributes that all requestors may verify")
+	flags.StringSlice("sign", nil, "Comma-separated list of attributes that all requestors may request in signatures")
 	flags.StringSlice("issue", nil, "Comma-separated list of attributes that all requestors may issue")
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")

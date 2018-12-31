@@ -2,6 +2,7 @@
 package irmaserver
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -27,7 +28,7 @@ func Start(config *Configuration) error {
 	}
 
 	// Start server
-	addr := config.listenAddress()
+	addr := fmt.Sprintf("%s:%d", conf.ListenAddress, conf.Port)
 	config.Logger.Info("Listening at ", addr)
 	s = &http.Server{Addr: addr, Handler: handler}
 	err = s.ListenAndServe()
@@ -46,10 +47,10 @@ func Stop() {
 // and IRMA client messages.
 func Handler(config *Configuration) (http.Handler, error) {
 	conf = config
-	if err := conf.initialize(); err != nil {
-		return nil, server.LogError(err)
-	}
 	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
+		return nil, err
+	}
+	if err := conf.initialize(); err != nil {
 		return nil, err
 	}
 
