@@ -16,54 +16,101 @@ import (
 )
 
 var (
-	s    *http.Server
-	conf *Configuration
+	serv, clientserv *http.Server
+	conf             *Configuration
 )
 
 // Start the server. If successful then it will not return until Stop() is called.
 func Start(config *Configuration) error {
-	handler, err := Handler(config)
-	if err != nil {
+	if err := Initialize(config); err != nil {
 		return err
 	}
 
-	// Start server
-	addr := fmt.Sprintf("%s:%d", conf.ListenAddress, conf.Port)
-	config.Logger.Info("Listening at ", addr)
-	s = &http.Server{Addr: addr, Handler: handler}
-	err = s.ListenAndServe()
-	if err == http.ErrServerClosed {
-		return nil // Server was closed normally
+	// Start server(s)
+	if conf.separateClientServer() {
+		go startClientServer()
+	}
+	startRequestorServer()
+
+	return nil
+}
+
+func startRequestorServer() {
+	serv = &http.Server{}
+	startServer(serv, Handler(), "Server", conf.ListenAddress, conf.Port)
+}
+
+func startClientServer() {
+	clientserv = &http.Server{}
+	startServer(clientserv, ClientHandler(), "Client server", conf.ClientListenAddress, conf.ClientPort)
+}
+
+func startServer(s *http.Server, handler http.Handler, name, addr string, port int) {
+	fulladdr := fmt.Sprintf("%s:%d", addr, port)
+	conf.Logger.Info(name, " listening at ", fulladdr)
+	s.Addr = fulladdr
+	s.Handler = handler
+	if err := s.ListenAndServe(); err != http.ErrServerClosed {
+		_ = server.LogFatal(err)
+	}
+}
+
+func Stop() error {
+	var err1, err2 error
+
+	// Even if closing serv fails, we want to try closing clientserv
+	err1 = serv.Close()
+	if clientserv != nil {
+		err2 = clientserv.Close()
 	}
 
-	return server.LogError(err)
+	// Now check errors
+	if err1 != nil {
+		return err1
+	}
+	if err2 != nil {
+		return err2
+	}
+	return nil
 }
 
-func Stop() {
-	s.Close()
-}
-
-// Handler returns a http.Handler that handles all IRMA requestor messages
-// and IRMA client messages.
-func Handler(config *Configuration) (http.Handler, error) {
+func Initialize(config *Configuration) error {
 	conf = config
 	if err := irmarequestor.Initialize(conf.Configuration); err != nil {
-		return nil, err
+		return err
 	}
 	if err := conf.initialize(); err != nil {
-		return nil, err
+		return err
 	}
+	return nil
+}
 
+func ClientHandler() http.Handler {
 	router := chi.NewRouter()
-
 	router.Use(cors.New(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
 		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
 	}).Handler)
 
-	// Mount server for irmaclient
 	router.Mount("/irma/", irmarequestor.HttpHandlerFunc())
+	return router
+}
+
+// Handler returns a http.Handler that handles all IRMA requestor messages
+// and IRMA client messages.
+func Handler() http.Handler {
+	router := chi.NewRouter()
+	router.Use(cors.New(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
+		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
+	}).Handler)
+
+	if !conf.separateClientServer() {
+		// Mount server for irmaclient
+		router.Mount("/irma/", irmarequestor.HttpHandlerFunc())
+	}
 
 	// Server routes
 	router.Post("/session", handleCreate)
@@ -75,7 +122,7 @@ func Handler(config *Configuration) (http.Handler, error) {
 	router.Get("/session/{token}/result-jwt", handleJwtResult)
 	router.Get("/session/{token}/getproof", handleJwtProofs) // irma_api_server-compatible JWT
 
-	return router, nil
+	return router
 }
 
 func handleCreate(w http.ResponseWriter, r *http.Request) {

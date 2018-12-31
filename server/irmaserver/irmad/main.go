@@ -78,6 +78,8 @@ func setFlags(cmd *cobra.Command) error {
 	flags.StringP("url", "u", defaulturl, "External URL to server to which the IRMA client connects")
 	flags.StringP("listenaddr", "l", "0.0.0.0", "Address at which to listen")
 	flags.IntP("port", "p", 8088, "Port at which to listen")
+	flags.Int("clientport", 0, "If specified, start a separate server for the IRMA app at his port")
+	flags.String("clientlistenaddr", "0.0.0.0", "Address at which server for IRMA app listens")
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
 
@@ -137,8 +139,10 @@ func configure() error {
 			URL:                   viper.GetString("url"),
 			Logger:                logger,
 		},
-		ListenAddress: viper.GetString("listenaddr"),
-		Port:          viper.GetInt("port"),
+		ListenAddress:                  viper.GetString("listenaddr"),
+		Port:                           viper.GetInt("port"),
+		ClientListenAddress:            viper.GetString("clientlistenaddr"),
+		ClientPort:                     viper.GetInt("clientport"),
 		DisableRequestorAuthentication: viper.GetBool("noauth"),
 		Requestors:                     make(map[string]irmaserver.Requestor),
 		GlobalPermissions:              irmaserver.Permissions{},

@@ -31,7 +31,7 @@ func StartIrmaServer(configuration *irmaserver.Configuration) {
 }
 
 func StopIrmaServer() {
-	irmaserver.Stop()
+	_ = irmaserver.Stop()
 }
 
 var IrmaServerConfiguration = &irmaserver.Configuration{

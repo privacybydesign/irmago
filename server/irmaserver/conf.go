@@ -28,6 +28,11 @@ type Configuration struct {
 	// Port to listen at
 	Port int `json:"port" mapstructure:"port"`
 
+	// If specified, start a separate server for the IRMA app at his port
+	ClientPort int `json:"clientport" mapstructure:"clientport"`
+	// If clientport is specified, the server for the IRMA app listens at this address
+	ClientListenAddress string `json:"clientlistenaddr" mapstructure:"clientlistenaddr"`
+
 	// Requestor-specific permission and authentication configuration
 	RequestorsString string               `json:"-" mapstructure:"requestors"`
 	Requestors       map[string]Requestor `json:"requestors"`
@@ -153,6 +158,16 @@ func (conf *Configuration) initialize() error {
 		return errors.Errorf("Port must be between 1 and 65535 (was %d)", conf.Port)
 	}
 
+	if conf.ClientPort != 0 && conf.ClientPort == conf.Port {
+		return errors.New("If clientport is given it must be different from port")
+	}
+	if conf.ClientPort < 0 || conf.ClientPort > 65535 {
+		return errors.Errorf("clientport must be between 0 and 65535 (was %d)", conf.ClientPort)
+	}
+	if conf.ClientListenAddress != "" && conf.ClientPort == 0 {
+		return errors.New("clientlistenaddr must be combined with a nonzero clientport")
+	}
+
 	if err := conf.validatePermissions(); err != nil {
 		return err
 	}
@@ -163,7 +178,11 @@ func (conf *Configuration) initialize() error {
 		}
 		conf.URL = conf.URL + "irma/"
 		// replace "port" in url with actual port
-		replace := "$1:" + strconv.Itoa(conf.Port)
+		port := conf.ClientPort
+		if port == 0 {
+			port = conf.Port
+		}
+		replace := "$1:" + strconv.Itoa(port)
 		conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
 	}
 
@@ -259,6 +278,10 @@ func (conf *Configuration) readPrivateKey() error {
 
 	conf.jwtPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
 	return err
+}
+
+func (conf *Configuration) separateClientServer() bool {
+	return conf.ClientPort != 0
 }
 
 // Return true iff query equals an element of strings.

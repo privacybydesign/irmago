@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -65,7 +66,7 @@ const (
 // RemoteError converts an error and an explaining message to an *irma.RemoteError.
 func RemoteError(err Error, message string) *irma.RemoteError {
 	stack := string(debug.Stack())
-	Logger.Warn("Session error: %d %s %s\n%s", err.Status, err.Type, message, stack)
+	Logger.Warnf("Session error: %d %s %s\n%s", err.Status, err.Type, message, stack)
 	return &irma.RemoteError{
 		Status:      err.Status,
 		Description: err.Description,
@@ -210,24 +211,26 @@ func Verbosity(level int) logrus.Level {
 	}
 }
 
-func LogError(err error) error {
-	Logger.Error(err.Error())
-	if e, ok := err.(*errors.Error); ok {
-		Logger.Error(e.ErrorStack())
+func log(level logrus.Level, err error) error {
+	writer := Logger.WriterLevel(level)
+	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.TraceLevel) {
+		_, _ = writer.Write([]byte(e.ErrorStack()))
 	} else {
-		Logger.Errorf("%s %s", reflect.TypeOf(err).String(), err.Error())
+		_, _ = writer.Write([]byte(fmt.Sprintf("%s %s", reflect.TypeOf(err).String(), err.Error())))
 	}
 	return err
 }
 
+func LogFatal(err error) error {
+	return log(logrus.FatalLevel, err)
+}
+
+func LogError(err error) error {
+	return log(logrus.ErrorLevel, err)
+}
+
 func LogWarning(err error) error {
-	Logger.Warn(err.Error())
-	if e, ok := err.(*errors.Error); ok {
-		Logger.Warn(e.ErrorStack())
-	} else {
-		Logger.Warn("%s %s", reflect.TypeOf(err).String(), err.Error())
-	}
-	return err
+	return log(logrus.WarnLevel, err)
 }
 
 func ToJson(o interface{}) string {
