@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -112,43 +111,30 @@ func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceR
 
 var TestType = "irmaserver-jwt"
 
-func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) (*irma.Qr, string) {
+func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *irma.Qr {
 	var qr irma.Qr
 	var err error
-	var token string
 
 	switch TestType {
 	case "apiserver":
 		url := "http://localhost:8088/irma_api_server/api/v2/" + sessiontype
 		err = irma.NewHTTPTransport(url).Post("", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodNone))
-		token = qr.URL
 		qr.URL = url + "/" + qr.URL
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
-		token = tokenFromURL(qr.URL)
 	case "irmaserver-hmac-jwt":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
-		token = tokenFromURL(qr.URL)
 	case "irmaserver":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url).Post("session", &qr, request)
-		token = tokenFromURL(qr.URL)
 	default:
 		t.Fatal("Invalid TestType")
 	}
 
 	require.NoError(t, err)
-	return &qr, token
-}
-
-func tokenFromURL(url string) string {
-	parts := strings.Split(url, "/")
-	if len(parts) == 0 {
-		return ""
-	}
-	return parts[len(parts)-1]
+	return &qr
 }
 
 func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg jwt.SigningMethod) string {
@@ -205,7 +191,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		defer StopIrmaServer()
 	}
 
-	qr, _ := startSession(t, request, sessiontype)
+	qr := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
 	h := TestHandler{t, c, client}
