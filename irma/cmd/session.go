@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
@@ -25,35 +26,126 @@ var sessionCmd = &cobra.Command{
 irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN`,
 	Run: func(cmd *cobra.Command, args []string) {
-		request, err := configure(cmd)
+		request, irmaconfig, err := configure(cmd)
 		if err != nil {
 			die("", err)
 		}
-		port, _ := cmd.Flags().GetInt("port")
-		startServer(port)
 
-		// Start the session
-		resultchan := make(chan *server.SessionResult)
-		qr, _, err := irmarequestor.StartSession(request, func(r *server.SessionResult) {
-			resultchan <- r
-		})
-		if err != nil {
-			die("IRMA session failed", err)
-		}
-
-		// Print QR code
+		var result *server.SessionResult
+		serverurl, _ := cmd.Flags().GetString("server")
 		noqr, _ := cmd.Flags().GetBool("noqr")
-		if err := printQr(qr, noqr); err != nil {
-			die("Failed to print QR", err)
+		if serverurl == "" {
+			port, _ := cmd.Flags().GetInt("port")
+			privatekeysPath, _ := cmd.Flags().GetString("privatekeys")
+			result, err = libraryRequest(request, irmaconfig, port, privatekeysPath, noqr)
+		} else {
+			result, err = serverRequest(request, irmaconfig, serverurl, noqr)
+		}
+		if err != nil {
+			die("Session failed", err)
 		}
 
-		// Wait for session to finish and then print session result
-		result := <-resultchan
 		printSessionResult(result)
 
 		// Done!
-		_ = irmaServer.Close()
+		if irmaServer != nil {
+			_ = irmaServer.Close()
+		}
 	},
+}
+
+func libraryRequest(request irma.SessionRequest, irmaconfig *irma.Configuration, port int, privatekeysPath string, noqr bool) (*server.SessionResult, error) {
+	if err := configureServer(port, privatekeysPath, irmaconfig); err != nil {
+		return nil, err
+	}
+	startServer(port)
+
+	// Start the session
+	resultchan := make(chan *server.SessionResult)
+	qr, _, err := irmarequestor.StartSession(request, func(r *server.SessionResult) {
+		resultchan <- r
+	})
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "IRMA session failed", 0)
+	}
+
+	// Print QR code
+	if err := printQr(qr, noqr); err != nil {
+		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
+	}
+
+	// Wait for session to finish and then return session result
+	return <-resultchan, nil
+}
+
+func serverRequest(
+	request irma.SessionRequest,
+	irmaconfig *irma.Configuration,
+	serverurl string,
+	noqr bool,
+) (*server.SessionResult, error) {
+	logger.Debug("Server URL: ", serverurl)
+	qr := &irma.Qr{}
+
+	// Start session at server
+	transport := irma.NewHTTPTransport(serverurl)
+	if err := transport.Post("session", qr, request); err != nil {
+		return nil, err
+	}
+
+	// Print session QR
+	logger.Debug("QR: ", prettyprint(qr))
+	if err := printQr(qr, noqr); err != nil {
+		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
+	}
+
+	token := qr.URL[strings.LastIndex(qr.URL, "/")+1:]
+	statuschan := make(chan server.Status)
+
+	// Wait untill client connects
+	go poll(token, server.StatusInitialized, transport, statuschan)
+	status := <-statuschan
+	if status != server.StatusConnected {
+		return nil, errors.Errorf("Unexpected status: %s", status)
+	}
+
+	// Wait untill client finishes
+	go poll(token, server.StatusConnected, transport, statuschan)
+	status = <-statuschan
+	if status != server.StatusDone {
+		return nil, errors.Errorf("Unexpected status: %s", status)
+	}
+
+	// Retrieve session result
+	result := &server.SessionResult{}
+	if err := transport.Get(fmt.Sprintf("session/%s/result", token), result); err != nil {
+		return nil, errors.WrapPrefix(err, "Failed to get session result", 0)
+	}
+	return result, nil
+}
+
+const pollInterval = 1000 * time.Millisecond
+
+func poll(t string, initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
+	// First we wait
+	<-time.NewTimer(pollInterval).C
+
+	// Get session status
+	var status string
+	logger.Tracef("Polling %s %s", t, initialStatus)
+	if err := transport.Get(fmt.Sprintf("session/%s/status", t), &status); err != nil {
+		_ = server.LogFatal(err)
+	}
+	status = strings.Trim(status, `"`)
+	logger.Trace("Status: ", status)
+
+	// If the status has not yet changed, schedule another poll
+	if server.Status(status) == initialStatus {
+		go poll(t, initialStatus, transport, statuschan)
+	} else {
+		logger.Trace("Stopped polling, new status ", status)
+		statuschan <- server.Status(status)
+	}
 }
 
 func init() {
@@ -66,6 +158,8 @@ func init() {
 	flags.IntP("port", "p", 48680, "port to listen at")
 	flags.BoolP("noqr", "q", false, "Don't print as QR")
 	flags.CountP("verbose", "v", "verbose (repeatable)")
+
+	flags.StringP("server", "s", "", "Server to post request to (leave blank to use builtin library)")
 
 	flags.StringArray("disclose", nil, "Add an attribute disjunction (comma-separated)")
 	flags.StringArray("issue", nil, "Add a credential to issue")
@@ -193,40 +287,13 @@ func parseDisjunctions(disjunctionsStr []string, conf *irma.Configuration) (irma
 	return list, nil
 }
 
-func configure(cmd *cobra.Command) (irma.SessionRequest, error) {
-	irmaconfigPath, err := cmd.Flags().GetString("irmaconf")
-	if err != nil {
-		return nil, err
-	}
-	privatekeysPath, err := cmd.Flags().GetString("privatekeys")
-	if err != nil {
-		return nil, err
-	}
+func configureServer(port int, privatekeysPath string, irmaconfig *irma.Configuration) error {
 	ip, err := server.LocalIP()
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	conf, err := irma.NewConfiguration(irmaconfigPath)
-	if err != nil {
-		return nil, err
-	}
-	if err = conf.ParseFolder(); err != nil {
-		return nil, err
-	}
-	if len(conf.SchemeManagers) == 0 {
-		if err = conf.DownloadDefaultSchemes(); err != nil {
-			return nil, err
-		}
-	}
-
-	verbosity, _ := cmd.Flags().GetCount("verbose")
-	port, _ := cmd.Flags().GetInt("port")
-	logger = logrus.New()
-	logger.Level = server.Verbosity(verbosity)
-	logger.Formatter = &logrus.TextFormatter{FullTimestamp: true}
 	config := &server.Configuration{
-		IrmaConfiguration: conf,
+		IrmaConfiguration: irmaconfig,
 		Logger:            logger,
 		URL:               "http://" + ip + ":" + strconv.Itoa(port),
 	}
@@ -234,13 +301,39 @@ func configure(cmd *cobra.Command) (irma.SessionRequest, error) {
 		config.IssuerPrivateKeysPath = privatekeysPath
 	}
 
-	request, err := constructSessionRequest(cmd, conf)
+	return irmarequestor.Initialize(config)
+}
+
+func configure(cmd *cobra.Command) (irma.SessionRequest, *irma.Configuration, error) {
+	irmaconfigPath, err := cmd.Flags().GetString("irmaconf")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	irmaconfig, err := irma.NewConfiguration(irmaconfigPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err = irmaconfig.ParseFolder(); err != nil {
+		return nil, nil, err
+	}
+	if len(irmaconfig.SchemeManagers) == 0 {
+		if err = irmaconfig.DownloadDefaultSchemes(); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	verbosity, _ := cmd.Flags().GetCount("verbose")
+	logger = logrus.New()
+	logger.Level = server.Verbosity(verbosity)
+	logger.Formatter = &logrus.TextFormatter{FullTimestamp: true}
+	request, err := constructSessionRequest(cmd, irmaconfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	logger.Debugf("Session request: %s", prettyprint(request))
 
-	return request, irmarequestor.Initialize(config)
+	return request, irmaconfig, nil
 }
 
 func startServer(port int) {
@@ -274,10 +367,6 @@ func printQr(qr *irma.Qr, noqr bool) error {
 }
 
 func printSessionResult(result *server.SessionResult) {
-	res, err := json.MarshalIndent(result, "", "    ")
-	if err != nil {
-		fmt.Println(err.Error())
-	}
 	fmt.Println("Session result:")
-	fmt.Println(string(res))
+	fmt.Println(prettyprint(result))
 }
