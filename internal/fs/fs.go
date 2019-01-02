@@ -2,6 +2,7 @@ package fs
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"io/ioutil"
 	"os"
@@ -135,4 +136,35 @@ func CopyDirectory(src, dest string) error {
 			return nil
 		}),
 	)
+}
+
+func ReadKey(key string) ([]byte, error) {
+	var bts []byte
+	if stat, err := os.Stat(key); err == nil {
+		if stat.IsDir() {
+			return nil, errors.New("cannot read key from a directory")
+		}
+		bts, err = ioutil.ReadFile(key)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		bts = []byte(key)
+	}
+	return bts, nil
+}
+
+func Base64Decode(b []byte) ([]byte, error) {
+	var (
+		err       error
+		bts       []byte
+		encodings = []*base64.Encoding{base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding, base64.StdEncoding}
+	)
+	for _, encoding := range encodings {
+		err = nil
+		if bts, err = encoding.DecodeString(string(b)); err == nil {
+			break
+		}
+	}
+	return bts, err
 }

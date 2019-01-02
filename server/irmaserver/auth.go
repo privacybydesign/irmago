@@ -1,16 +1,14 @@
 package irmaserver
 
 import (
-	"encoding/base64"
-	"io/ioutil"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -83,16 +81,14 @@ func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) err
 		return errors.Errorf("Requestor %s has no authentication key", name)
 	}
 
-	var err error
-	var bts []byte
-	// We accept any of the base64 encodings
-	encodings := []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding}
-	for _, encoding := range encodings {
-		err = nil
-		if bts, err = encoding.DecodeString(requestor.AuthenticationKey); err == nil {
-			break
-		}
+	// Read file contents or string contents
+	bts, err := fs.ReadKey(requestor.AuthenticationKey)
+	if err != nil {
+		return err
 	}
+
+	// We accept any of the base64 encodings
+	bts, err = fs.Base64Decode(bts)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to base64 decode hmac key of requestor "+name, 0)
 	}
@@ -109,16 +105,9 @@ func (pkauth *PublicKeyAuthenticator) Authenticate(
 }
 
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
-	var bts []byte
-	var err error
-	if strings.HasPrefix(requestor.AuthenticationKey, "-----BEGIN") {
-		bts = []byte(requestor.AuthenticationKey)
-	}
-	if _, err := os.Stat(requestor.AuthenticationKey); err == nil {
-		bts, err = ioutil.ReadFile(requestor.AuthenticationKey)
-		if err != nil {
-			return err
-		}
+	bts, err := fs.ReadKey(requestor.AuthenticationKey)
+	if err != nil {
+		return err
 	}
 	if len(bts) == 0 {
 		return errors.Errorf("Requestor %s has invalid public key", name)
@@ -154,7 +143,11 @@ func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requ
 	if requestor.AuthenticationKey == "" {
 		return errors.Errorf("Requestor %s has no authentication key", name)
 	}
-	pskauth.presharedkeys[requestor.AuthenticationKey] = name
+	bts, err := fs.ReadKey(requestor.AuthenticationKey)
+	if err != nil {
+		return err
+	}
+	pskauth.presharedkeys[string(bts)] = name
 	return nil
 }
 
@@ -166,12 +159,13 @@ func jwtKeyExtractor(publickeys map[string]interface{}) func(token *jwt.Token) (
 		var ok bool
 		kid, ok := token.Header["kid"]
 		if !ok {
-			return nil, errors.New("No kid jwt header found")
+			kid = token.Claims.(*jwt.StandardClaims).Issuer
 		}
 		requestor, ok := kid.(string)
 		if !ok {
-			return nil, errors.New("kid jwt header was not a string")
+			return nil, errors.New("requestor name was not a string")
 		}
+		token.Claims.(*jwt.StandardClaims).Issuer = requestor
 		if pk, ok := publickeys[requestor]; ok {
 			return pk, nil
 		}
@@ -205,7 +199,7 @@ func jwtAuthenticate(
 	// Verify JWT signature. We do not yet store the JWT contents here, because we need to know the session type first
 	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.
 	claims := &jwt.StandardClaims{}
-	token, err := jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
+	_, err = jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
 	if err != nil {
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
@@ -222,7 +216,7 @@ func jwtAuthenticate(
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
 
-	requestor := token.Header["kid"].(string) // presence in Header and type is already checked by jwtKeyExtractor
+	requestor := claims.Issuer // presence is ensured by jwtKeyExtractor
 	return true, parsedJwt.SessionRequest(), requestor, nil
 }
 

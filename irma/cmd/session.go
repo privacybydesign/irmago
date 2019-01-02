@@ -10,9 +10,11 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/mdp/qrterminal"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmarequestor"
 	"github.com/spf13/cobra"
@@ -31,7 +33,8 @@ var sessionCmd = &cobra.Command{
 	Short: "Perform an IRMA disclosure, issuance or signature session",
 	Example: `irma session --disclose irma-demo.MijnOverheid.root.BSN
 irma session --sign irma-demo.MijnOverheid.root.BSN --message message
-irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN`,
+irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
+irma session --disclose irma-demo.MijnOverheid.root.BSN --server http://localhost:48680 --authmethod psk --key presharedkey`,
 	Run: func(cmd *cobra.Command, args []string) {
 		request, irmaconfig, err := configure(cmd)
 		if err != nil {
@@ -41,12 +44,16 @@ irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose i
 		var result *server.SessionResult
 		serverurl, _ := cmd.Flags().GetString("server")
 		noqr, _ := cmd.Flags().GetBool("noqr")
+		flags := cmd.Flags()
 		if serverurl == "" {
-			port, _ := cmd.Flags().GetInt("port")
-			privatekeysPath, _ := cmd.Flags().GetString("privatekeys")
+			port, _ := flags.GetInt("port")
+			privatekeysPath, _ := flags.GetString("privatekeys")
 			result, err = libraryRequest(request, irmaconfig, port, privatekeysPath, noqr)
 		} else {
-			result, err = serverRequest(request, serverurl, noqr)
+			authmethod, _ := flags.GetString("authmethod")
+			key, _ := flags.GetString("key")
+			name, _ := flags.GetString("name")
+			result, err = serverRequest(request, serverurl, authmethod, key, name, noqr)
 		}
 		if err != nil {
 			die("Session failed", err)
@@ -93,15 +100,14 @@ func libraryRequest(
 
 func serverRequest(
 	request irma.SessionRequest,
-	serverurl string,
+	serverurl, authmethod, key, name string,
 	noqr bool,
 ) (*server.SessionResult, error) {
 	logger.Debug("Server URL: ", serverurl)
-	qr := &irma.Qr{}
 
 	// Start session at server
-	transport := irma.NewHTTPTransport(serverurl)
-	if err := transport.Post("session", qr, request); err != nil {
+	qr, transport, err := postRequest(serverurl, request, name, authmethod, key)
+	if err != nil {
 		return nil, err
 	}
 
@@ -111,18 +117,17 @@ func serverRequest(
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
-	token := qr.URL[strings.LastIndex(qr.URL, "/")+1:]
 	statuschan := make(chan server.Status)
 
 	// Wait untill client connects
-	go poll(token, server.StatusInitialized, transport, statuschan)
+	go poll(server.StatusInitialized, transport, statuschan)
 	status := <-statuschan
 	if status != server.StatusConnected {
 		return nil, errors.Errorf("Unexpected status: %s", status)
 	}
 
 	// Wait untill client finishes
-	go poll(token, server.StatusConnected, transport, statuschan)
+	go poll(server.StatusConnected, transport, statuschan)
 	status = <-statuschan
 	if status != server.StatusDone {
 		return nil, errors.Errorf("Unexpected status: %s", status)
@@ -130,10 +135,60 @@ func serverRequest(
 
 	// Retrieve session result
 	result := &server.SessionResult{}
-	if err := transport.Get(fmt.Sprintf("session/%s/result", token), result); err != nil {
+	if err := transport.Get("result", result); err != nil {
 		return nil, errors.WrapPrefix(err, "Failed to get session result", 0)
 	}
 	return result, nil
+}
+
+func postRequest(serverurl string, request irma.SessionRequest, name, authmethod, key string) (*irma.Qr, *irma.HTTPTransport, error) {
+	var (
+		err       error
+		sk        interface{}
+		qr        = &irma.Qr{}
+		transport = irma.NewHTTPTransport(serverurl)
+	)
+
+	switch authmethod {
+	case "none":
+		err = transport.Post("session", qr, request)
+	case "psk":
+		transport.SetHeader("Authentication", key)
+		err = transport.Post("session", qr, request)
+	case "hmac", "rsa":
+		var (
+			jwtalg jwt.SigningMethod
+			jwtstr string
+			bts    []byte
+		)
+		if bts, err = fs.ReadKey(key); err != nil {
+			return nil, nil, err
+		}
+		if authmethod == "hmac" {
+			jwtalg = jwt.SigningMethodHS256
+			if sk, err = fs.Base64Decode(bts); err != nil {
+				return nil, nil, err
+			}
+		}
+		if authmethod == "rsa" {
+			jwtalg = jwt.SigningMethodRS256
+			if sk, err = jwt.ParseRSAPrivateKeyFromPEM(bts); err != nil {
+				return nil, nil, err
+			}
+		}
+
+		if jwtstr, err = irma.SignedRequestorJwt(request, jwtalg, sk, name); err != nil {
+			return nil, nil, err
+		}
+		logger.Debug("Session request JWT: ", jwtstr)
+		err = transport.Post("session", qr, jwtstr)
+	default:
+		return nil, nil, errors.New("Invalid authentication method (must be none, psk, hmac or rsa)")
+	}
+
+	token := qr.URL[strings.LastIndex(qr.URL, "/")+1:]
+	transport.Server += fmt.Sprintf("session/%s/", token)
+	return qr, transport, err
 }
 
 // Configuration functions
@@ -191,20 +246,20 @@ func configure(cmd *cobra.Command) (irma.SessionRequest, *irma.Configuration, er
 // Helper functions
 
 // poll recursively polls the session status until a status different from initialStatus is received.
-func poll(t string, initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
+func poll(initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
 	// First we wait
 	<-time.NewTimer(pollInterval).C
 
 	// Get session status
 	var status string
-	if err := transport.Get(fmt.Sprintf("session/%s/status", t), &status); err != nil {
+	if err := transport.Get("status", &status); err != nil {
 		_ = server.LogFatal(err)
 	}
 	status = strings.Trim(status, `"`)
 
 	// If the status has not yet changed, schedule another poll
 	if server.Status(status) == initialStatus {
-		go poll(t, initialStatus, transport, statuschan)
+		go poll(initialStatus, transport, statuschan)
 	} else {
 		logger.Trace("Stopped polling, new status ", status)
 		statuschan <- server.Status(status)
@@ -375,6 +430,9 @@ func init() {
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 
 	flags.StringP("server", "s", "", "Server to post request to (leave blank to use builtin library)")
+	flags.StringP("authmethod", "a", "none", "Authentication method to server (none, psk, rsa, hmac)")
+	flags.String("key", "", "Key to sign request with")
+	flags.String("name", "", "Requestor name")
 
 	flags.StringArray("disclose", nil, "Add an attribute disjunction (comma-separated)")
 	flags.StringArray("issue", nil, "Add a credential to issue")
