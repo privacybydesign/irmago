@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bwesterb/go-atum"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
@@ -92,37 +93,83 @@ type ServerJwt struct {
 	IssuedAt   Timestamp `json:"iat"`
 }
 
+type RequestorBaseRequest struct {
+	ResultJwtValidity int    `json:"validity"`    // Validity of session result JWT in seconds
+	CallbackUrl       string `json:"callbackUrl"` // URL to post session result to
+}
+
+type RequestorRequest interface {
+	Validator
+	SessionRequest() SessionRequest
+}
+
 // A ServiceProviderRequest contains a disclosure request.
 type ServiceProviderRequest struct {
+	RequestorBaseRequest
 	Request *DisclosureRequest `json:"request"`
 }
 
 // A SignatureRequestorRequest contains a signing request.
 type SignatureRequestorRequest struct {
+	RequestorBaseRequest
 	Request *SignatureRequest `json:"request"`
 }
 
 // An IdentityProviderRequest contains an issuance request.
 type IdentityProviderRequest struct {
+	RequestorBaseRequest
 	Request *IssuanceRequest `json:"request"`
 }
 
 // ServiceProviderJwt is a requestor JWT for a disclosure session.
 type ServiceProviderJwt struct {
 	ServerJwt
-	Request ServiceProviderRequest `json:"sprequest"`
+	Request *ServiceProviderRequest `json:"sprequest"`
 }
 
 // SignatureRequestorJwt is a requestor JWT for a signing session.
 type SignatureRequestorJwt struct {
 	ServerJwt
-	Request SignatureRequestorRequest `json:"absrequest"`
+	Request *SignatureRequestorRequest `json:"absrequest"`
 }
 
 // IdentityProviderJwt is a requestor JWT for issuance session.
 type IdentityProviderJwt struct {
 	ServerJwt
-	Request IdentityProviderRequest `json:"iprequest"`
+	Request *IdentityProviderRequest `json:"iprequest"`
+}
+
+func (r *ServiceProviderRequest) Validate() error {
+	if r.Request == nil {
+		return errors.New("Not a ServiceProviderRequest")
+	}
+	return r.Request.Validate()
+}
+
+func (r *SignatureRequestorRequest) Validate() error {
+	if r.Request == nil {
+		return errors.New("Not a SignatureRequestorRequest")
+	}
+	return r.Request.Validate()
+}
+
+func (r *IdentityProviderRequest) Validate() error {
+	if r.Request == nil {
+		return errors.New("Not a IdentityProviderRequest")
+	}
+	return r.Request.Validate()
+}
+
+func (r *ServiceProviderRequest) SessionRequest() SessionRequest {
+	return r.Request
+}
+
+func (r *SignatureRequestorRequest) SessionRequest() SessionRequest {
+	return r.Request
+}
+
+func (r *IdentityProviderRequest) SessionRequest() SessionRequest {
+	return r.Request
 }
 
 // SessionRequest is an IRMA session.
@@ -464,7 +511,10 @@ func NewServiceProviderJwt(servername string, dr *DisclosureRequest) *ServicePro
 			IssuedAt:   Timestamp(time.Now()),
 			Type:       "verification_request",
 		},
-		Request: ServiceProviderRequest{Request: dr},
+		Request: &ServiceProviderRequest{
+			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: 120},
+			Request:              dr,
+		},
 	}
 }
 
@@ -476,7 +526,10 @@ func NewSignatureRequestorJwt(servername string, sr *SignatureRequest) *Signatur
 			IssuedAt:   Timestamp(time.Now()),
 			Type:       "signature_request",
 		},
-		Request: SignatureRequestorRequest{Request: sr},
+		Request: &SignatureRequestorRequest{
+			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: 120},
+			Request:              sr,
+		},
 	}
 }
 
@@ -488,61 +541,98 @@ func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityPro
 			IssuedAt:   Timestamp(time.Now()),
 			Type:       "issue_request",
 		},
-		Request: IdentityProviderRequest{Request: ir},
+		Request: &IdentityProviderRequest{
+			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: 120},
+			Request:              ir,
+		},
 	}
 }
 
 // A RequestorJwt contains an IRMA session object.
 type RequestorJwt interface {
 	Action() Action
+	RequestorRequest() RequestorRequest
 	SessionRequest() SessionRequest
 	Requestor() string
 	Valid() error
+	Sign(jwt.SigningMethod, interface{}) (string, error)
 }
 
 func (jwt *ServerJwt) Requestor() string { return jwt.ServerName }
 
 // SessionRequest returns an IRMA session object.
-func (jwt *ServiceProviderJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
+func (claims *ServiceProviderJwt) SessionRequest() SessionRequest { return claims.Request.Request }
 
 // SessionRequest returns an IRMA session object.
-func (jwt *SignatureRequestorJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
+func (claims *SignatureRequestorJwt) SessionRequest() SessionRequest { return claims.Request.Request }
 
 // SessionRequest returns an IRMA session object.
-func (jwt *IdentityProviderJwt) SessionRequest() SessionRequest { return jwt.Request.Request }
+func (claims *IdentityProviderJwt) SessionRequest() SessionRequest { return claims.Request.Request }
 
-func (jwt *ServiceProviderJwt) Valid() error {
-	if jwt.Type != "verification_request" {
+func (claims *ServiceProviderJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+	return jwt.NewWithClaims(method, claims).SignedString(key)
+}
+
+func (claims *SignatureRequestorJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+	return jwt.NewWithClaims(method, claims).SignedString(key)
+}
+
+func (claims *IdentityProviderJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+	return jwt.NewWithClaims(method, claims).SignedString(key)
+}
+
+func (claims *ServiceProviderJwt) RequestorRequest() RequestorRequest { return claims.Request }
+
+func (claims *SignatureRequestorJwt) RequestorRequest() RequestorRequest { return claims.Request }
+
+func (claims *IdentityProviderJwt) RequestorRequest() RequestorRequest { return claims.Request }
+
+func (claims *ServiceProviderJwt) Valid() error {
+	if claims.Type != "verification_request" {
+
 		return errors.New("Verification jwt has invalid subject")
 	}
-	if time.Time(jwt.IssuedAt).After(time.Now()) {
+	if time.Time(claims.IssuedAt).After(time.Now()) {
 		return errors.New("Verification jwt not yet valid")
 	}
 	return nil
 }
 
-func (jwt *SignatureRequestorJwt) Valid() error {
-	if jwt.Type != "signature_request" {
+func (claims *SignatureRequestorJwt) Valid() error {
+	if claims.Type != "signature_request" {
 		return errors.New("Signature jwt has invalid subject")
 	}
-	if time.Time(jwt.IssuedAt).After(time.Now()) {
+	if time.Time(claims.IssuedAt).After(time.Now()) {
 		return errors.New("Signature jwt not yet valid")
 	}
 	return nil
 }
 
-func (jwt *IdentityProviderJwt) Valid() error {
-	if jwt.Type != "issue_request" {
+func (claims *IdentityProviderJwt) Valid() error {
+	if claims.Type != "issue_request" {
 		return errors.New("Issuance jwt has invalid subject")
 	}
-	if time.Time(jwt.IssuedAt).After(time.Now()) {
+	if time.Time(claims.IssuedAt).After(time.Now()) {
 		return errors.New("Issuance jwt not yet valid")
 	}
 	return nil
 }
 
-func (jwt *ServiceProviderJwt) Action() Action { return ActionDisclosing }
+func (claims *ServiceProviderJwt) Action() Action { return ActionDisclosing }
 
-func (jwt *SignatureRequestorJwt) Action() Action { return ActionSigning }
+func (claims *SignatureRequestorJwt) Action() Action { return ActionSigning }
 
-func (jwt *IdentityProviderJwt) Action() Action { return ActionIssuing }
+func (claims *IdentityProviderJwt) Action() Action { return ActionIssuing }
+
+func SignedRequestorJwt(request SessionRequest, alg jwt.SigningMethod, key interface{}, name string) (string, error) {
+	var jwtcontents RequestorJwt
+	switch r := request.(type) {
+	case *IssuanceRequest:
+		jwtcontents = NewIdentityProviderJwt(name, r)
+	case *DisclosureRequest:
+		jwtcontents = NewServiceProviderJwt(name, r)
+	case *SignatureRequest:
+		jwtcontents = NewSignatureRequestorJwt(name, r)
+	}
+	return jwtcontents.Sign(alg, key)
+}

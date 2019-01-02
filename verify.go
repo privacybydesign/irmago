@@ -1,8 +1,10 @@
 package irma
 
 import (
+	"crypto/rsa"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -30,6 +32,7 @@ const (
 
 // DisclosedAttribute represents a disclosed attribute.
 type DisclosedAttribute struct {
+	RawValue   *string                 `json:"rawvalue"`
 	Value      TranslatedString        `json:"value"` // Value of the disclosed attribute
 	Identifier AttributeTypeIdentifier `json:"id"`
 	Status     AttributeProofStatus    `json:"status"`
@@ -204,6 +207,7 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 	}
 	return &DisclosedAttribute{
 		Identifier: attrid,
+		RawValue:   attrval,
 		Value:      translateAttribute(attrval),
 	}, attrval, nil
 }
@@ -367,4 +371,47 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 
 	// All disjunctions satisfied and nothing expired, proof is valid!
 	return result, ProofStatusValid, nil
+}
+
+// ExpiredError indicates that something (e.g. a JWT) has expired.
+type ExpiredError struct {
+	Err error // underlying error
+}
+
+func (e ExpiredError) Error() string {
+	return "irmago: expired (" + e.Err.Error() + ")"
+}
+
+// ParseApiServerJwt verifies and parses a JWT as returned by an irma_api_server after a disclosure request into a key-value pair.
+func ParseApiServerJwt(inputJwt string, signingKey *rsa.PublicKey) (map[AttributeTypeIdentifier]*DisclosedAttribute, error) {
+	claims := struct {
+		jwt.StandardClaims
+		Attributes map[AttributeTypeIdentifier]string `json:"attributes"`
+	}{}
+	_, err := jwt.ParseWithClaims(inputJwt, claims, func(token *jwt.Token) (interface{}, error) {
+		return signingKey, nil
+	})
+	if err != nil {
+		if err, ok := err.(*jwt.ValidationError); ok && (err.Errors&jwt.ValidationErrorExpired) != 0 {
+			return nil, ExpiredError{err}
+		} else {
+			return nil, err
+		}
+	}
+
+	if claims.Subject != "disclosure_result" {
+		return nil, errors.New("JWT is not a disclosure result")
+	}
+
+	disclosedAttributes := make(map[AttributeTypeIdentifier]*DisclosedAttribute, len(claims.Attributes))
+	for id, value := range claims.Attributes {
+		disclosedAttributes[id] = &DisclosedAttribute{
+			Identifier: id,
+			RawValue:   &value,
+			Value:      translateAttribute(&value),
+			Status:     AttributeProofStatusPresent,
+		}
+	}
+
+	return disclosedAttributes, nil
 }
