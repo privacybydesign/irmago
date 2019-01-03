@@ -104,31 +104,26 @@ func Initialize(configuration *server.Configuration) error {
 	return nil
 }
 
-func StartSession(request irma.SessionRequest) (*irma.Qr, string, error) {
-	if err := request.Validate(); err != nil {
+func StartSession(req interface{}) (*irma.Qr, string, error) {
+	rrequest, err := server.ParseSessionRequest(req)
+	if err != nil {
 		return nil, "", server.LogError(err)
 	}
-	action := irma.ActionUnknown
-	switch request.(type) {
-	case *irma.DisclosureRequest:
-		action = irma.ActionDisclosing
-	case *irma.SignatureRequest:
-		action = irma.ActionSigning
-	case *irma.IssuanceRequest:
-		action = irma.ActionIssuing
+
+	request := rrequest.SessionRequest()
+	action := request.Action()
+	if action == irma.ActionIssuing {
 		if err := validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
 			return nil, "", server.LogError(err)
 		}
-	default:
-		return nil, "", server.LogError(errors.New("Invalid session type"))
 	}
 
-	session := newSession(action, request)
+	session := newSession(action, rrequest)
 	conf.Logger.Infof("%s session started, token %s", action, session.token)
 	if conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		conf.Logger.Debug("Session request: ", server.ToJson(request))
+		conf.Logger.Debug("Session request: ", server.ToJson(rrequest))
 	} else {
-		logPurgedRequest(request)
+		logPurgedRequest(rrequest)
 	}
 	return &irma.Qr{
 		Type: action,
@@ -143,6 +138,15 @@ func GetSessionResult(token string) *server.SessionResult {
 		return nil
 	}
 	return session.result
+}
+
+func GetRequest(token string) irma.RequestorRequest {
+	session := sessions.get(token)
+	if session == nil {
+		conf.Logger.Warn("Session request requested of unknown session ", token)
+		return nil
+	}
+	return session.rrequest
 }
 
 func CancelSession(token string) error {

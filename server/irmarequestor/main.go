@@ -28,7 +28,7 @@ func Initialize(configuration *server.Configuration) error {
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session token (the second return parameter) can be used in GetSessionResult()
 // and CancelSession().
-func StartSession(request irma.SessionRequest, handler SessionHandler) (*irma.Qr, string, error) {
+func StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
 	qr, token, err := core.StartSession(request)
 	if err != nil {
 		return nil, "", err
@@ -42,6 +42,10 @@ func StartSession(request irma.SessionRequest, handler SessionHandler) (*irma.Qr
 // GetSessionResult retrieves the result of the specified IRMA session.
 func GetSessionResult(token string) *server.SessionResult {
 	return core.GetSessionResult(token)
+}
+
+func GetRequest(token string) irma.RequestorRequest {
+	return core.GetRequest(token)
 }
 
 // CancelSession cancels the specified IRMA session.

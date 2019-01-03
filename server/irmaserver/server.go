@@ -138,13 +138,14 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	// We do this by feeding the HTTP POST details to all known authenticators, and see if
 	// one of them is applicable and able to authenticate the request.
 	var (
+		rrequest  irma.RequestorRequest
 		request   irma.SessionRequest
 		requestor string
 		rerr      *irma.RemoteError
 		applies   bool
 	)
 	for _, authenticator := range authenticators {
-		applies, request, requestor, rerr = authenticator.Authenticate(r.Header, body)
+		applies, rrequest, requestor, rerr = authenticator.Authenticate(r.Header, body)
 		if applies || rerr != nil {
 			break
 		}
@@ -163,6 +164,7 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Authorize request: check if the requestor is allowed to verify or issue
 	// the requested attributes or credentials
+	request = rrequest.SessionRequest()
 	if request.Action() == irma.ActionIssuing {
 		allowed, reason := conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
 		if !allowed {
@@ -184,7 +186,7 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, _, err := irmarequestor.StartSession(request, nil)
+	qr, _, err := irmarequestor.StartSession(rrequest, nil)
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return

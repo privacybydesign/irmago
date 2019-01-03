@@ -120,24 +120,51 @@ func WriteString(w http.ResponseWriter, str string) {
 	w.Write([]byte(str))
 }
 
-// ParseSessionRequest tries to parse the specified bytes as an
-// disclosure request, a signature request, and an issuance request, in that order.
-// Returns an error if none of the attempts work.
-func ParseSessionRequest(bts []byte) (request irma.SessionRequest, err error) {
-	request = &irma.DisclosureRequest{}
-	if err = irma.UnmarshalValidate(bts, request); err == nil {
-		return request, nil
+func ParseSessionRequest(request interface{}) (irma.RequestorRequest, error) {
+	switch r := request.(type) {
+	case irma.RequestorRequest:
+		return r, nil
+	case irma.SessionRequest:
+		return wrapSessionRequest(r)
+	case string:
+		return ParseSessionRequest([]byte(r))
+	case []byte:
+		var attempts = []irma.Validator{&irma.ServiceProviderRequest{}, &irma.SignatureRequestorRequest{}, &irma.IdentityProviderRequest{}}
+		t, err := tryUnmarshalJson(r, attempts)
+		if err == nil {
+			return t.(irma.RequestorRequest), nil
+		}
+		attempts = []irma.Validator{&irma.DisclosureRequest{}, &irma.SignatureRequest{}, &irma.IssuanceRequest{}}
+		t, err = tryUnmarshalJson(r, attempts)
+		if err == nil {
+			return wrapSessionRequest(t.(irma.SessionRequest))
+		}
+		return nil, errors.New("Failed to JSON unmarshal request bytes")
+	default:
+		return nil, errors.New("Invalid request type")
 	}
-	request = &irma.SignatureRequest{}
-	if err = irma.UnmarshalValidate(bts, request); err == nil {
-		return request, nil
+}
+
+func wrapSessionRequest(request irma.SessionRequest) (irma.RequestorRequest, error) {
+	switch r := request.(type) {
+	case *irma.DisclosureRequest:
+		return &irma.ServiceProviderRequest{Request: r}, nil
+	case *irma.SignatureRequest:
+		return &irma.SignatureRequestorRequest{Request: r}, nil
+	case *irma.IssuanceRequest:
+		return &irma.IdentityProviderRequest{Request: r}, nil
+	default:
+		return nil, errors.New("Invalid session type")
 	}
-	request = &irma.IssuanceRequest{}
-	if err = irma.UnmarshalValidate(bts, request); err == nil {
-		return request, nil
+}
+
+func tryUnmarshalJson(bts []byte, attempts []irma.Validator) (irma.Validator, error) {
+	for _, a := range attempts {
+		if err := irma.UnmarshalValidate(bts, a); err == nil {
+			return a, nil
+		}
 	}
-	Logger.Warn("Failed to parse as session request: ", string(bts))
-	return nil, errors.New("Invalid or disabled session type")
+	return nil, errors.New("")
 }
 
 func LocalIP() (string, error) {

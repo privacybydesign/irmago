@@ -14,10 +14,11 @@ import (
 type session struct {
 	sync.Mutex
 
-	action  irma.Action
-	token   string
-	version *irma.ProtocolVersion
-	request irma.SessionRequest
+	action   irma.Action
+	token    string
+	version  *irma.ProtocolVersion
+	rrequest irma.RequestorRequest
+	request  irma.SessionRequest
 
 	status     server.Status
 	lastActive time.Time
@@ -112,11 +113,12 @@ func (s memorySessionStore) deleteExpired() {
 
 var one *big.Int = big.NewInt(1)
 
-func newSession(action irma.Action, request irma.SessionRequest) *session {
+func newSession(action irma.Action, request irma.RequestorRequest) *session {
 	token := newSessionToken()
 	s := &session{
 		action:     action,
-		request:    request,
+		rrequest:   request,
+		request:    request.SessionRequest(),
 		lastActive: time.Now(),
 		token:      token,
 		result: &server.SessionResult{
@@ -126,8 +128,8 @@ func newSession(action irma.Action, request irma.SessionRequest) *session {
 	}
 	s.setStatus(server.StatusInitialized)
 	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
-	request.SetNonce(nonce)
-	request.SetContext(one)
+	s.request.SetNonce(nonce)
+	s.request.SetContext(one)
 	sessions.add(token, s)
 	return s
 }

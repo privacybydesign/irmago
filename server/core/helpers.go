@@ -130,26 +130,25 @@ func chooseProtocolVersion(min, max *irma.ProtocolVersion) (*irma.ProtocolVersio
 }
 
 // logPurgedRequest logs the request excluding any attribute values.
-func logPurgedRequest(request irma.SessionRequest) {
+func logPurgedRequest(request irma.RequestorRequest) {
 	// We want to log as much as possible of the request, but no attribute values.
 	// We cannot just remove them from the request parameter as that would break the calling code.
 	// So we create a deep copy of the request from which we can then safely remove whatever we want to.
 	// Ugly hack alert: the easiest way to do this seems to be to convert it to JSON and then back.
-	// As we do not know the precise type of request (may be *irma.DisclosureRequest,
-	// *irma.SignatureRequest, or *irma.IssuanceRequest), we use reflection to create a new instance
+	// As we do not know the precise type of request, we use reflection to create a new instance
 	// of the same type as request, into which we then unmarshal our copy.
 	cpy := reflect.New(reflect.TypeOf(request).Elem()).Interface()
 	bts, _ := json.Marshal(request)
 	_ = json.Unmarshal(bts, cpy)
 
 	// Remove required attribute values from any attributes to be disclosed
-	attrs := cpy.(irma.SessionRequest).ToDisclose()
+	attrs := cpy.(irma.RequestorRequest).SessionRequest().ToDisclose()
 	for _, disjunction := range attrs {
 		disjunction.Values = nil
 	}
 	// Remove attribute values from attributes to be issued
-	if isreq, ok := cpy.(*irma.IssuanceRequest); ok {
-		for _, cred := range isreq.Credentials {
+	if isreq, ok := cpy.(*irma.IdentityProviderRequest); ok {
+		for _, cred := range isreq.Request.Credentials {
 			cred.Attributes = nil
 		}
 	}

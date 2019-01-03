@@ -27,7 +27,7 @@ type Authenticator interface {
 	// it was not able to successfully authenticate the request).
 	Authenticate(
 		headers http.Header, body []byte,
-	) (applies bool, request irma.SessionRequest, requestor string, err *irma.RemoteError)
+	) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError)
 }
 
 type AuthenticationMethod string
@@ -55,7 +55,7 @@ var authenticators map[AuthenticationMethod]Authenticator
 
 func (NilAuthenticator) Authenticate(
 	headers http.Header, body []byte,
-) (bool, irma.SessionRequest, string, *irma.RemoteError) {
+) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	if headers.Get("Authentication") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
 		return false, nil, "", nil
 	}
@@ -72,7 +72,7 @@ func (NilAuthenticator) Initialize(name string, requestor Requestor) error {
 
 func (hauth *HmacAuthenticator) Authenticate(
 	headers http.Header, body []byte,
-) (applies bool, request irma.SessionRequest, requestor string, err *irma.RemoteError) {
+) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError) {
 	return jwtAuthenticate(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys)
 }
 
@@ -100,7 +100,7 @@ func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) err
 
 func (pkauth *PublicKeyAuthenticator) Authenticate(
 	headers http.Header, body []byte,
-) (bool, irma.SessionRequest, string, *irma.RemoteError) {
+) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	return jwtAuthenticate(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys)
 }
 
@@ -123,7 +123,7 @@ func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requesto
 
 func (pskauth *PresharedKeyAuthenticator) Authenticate(
 	headers http.Header, body []byte,
-) (bool, irma.SessionRequest, string, *irma.RemoteError) {
+) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	auth := headers.Get("Authentication")
 	if auth == "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
 		return false, nil, "", nil
@@ -176,7 +176,7 @@ func jwtKeyExtractor(publickeys map[string]interface{}) func(token *jwt.Token) (
 // jwtAuthenticate is a helper function for JWT-based authenticators that verifies and parses JWTs.
 func jwtAuthenticate(
 	headers http.Header, body []byte, signatureAlg string, keys map[string]interface{},
-) (bool, irma.SessionRequest, string, *irma.RemoteError) {
+) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	// Read JWT and check its type
 	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "text/plain") {
 		return false, nil, "", nil
@@ -217,7 +217,7 @@ func jwtAuthenticate(
 	}
 
 	requestor := claims.Issuer // presence is ensured by jwtKeyExtractor
-	return true, parsedJwt.SessionRequest(), requestor, nil
+	return true, parsedJwt.RequestorRequest(), requestor, nil
 }
 
 func jwtSignatureAlg(j string) (string, error) {
