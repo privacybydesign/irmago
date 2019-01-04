@@ -206,7 +206,7 @@ func jwtAuthenticate(
 	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
 	}
-	if time.Unix(claims.IssuedAt, 0).Add(10 * time.Minute).Before(time.Now()) { // TODO make configurable
+	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(conf.MaxRequestAge) * time.Second).Before(time.Now()) {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
 	}
 

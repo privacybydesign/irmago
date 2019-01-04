@@ -84,7 +84,13 @@ func (s memorySessionStore) deleteExpired() {
 	expired := make([]string, 0, len(s.m))
 	for token, session := range s.m {
 		session.Lock()
-		if session.lastActive.Add(5 * time.Minute).Before(time.Now()) {
+
+		timeout := 5 * time.Minute
+		if session.status == server.StatusInitialized && session.rrequest.Base().ClientTimeout != 0 {
+			timeout = time.Duration(session.rrequest.Base().ClientTimeout) * time.Second
+		}
+
+		if session.lastActive.Add(timeout).Before(time.Now()) {
 			if !session.finished() {
 				conf.Logger.Infof("Session %s expired", token)
 				session.markAlive()

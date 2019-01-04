@@ -95,12 +95,14 @@ type ServerJwt struct {
 
 type RequestorBaseRequest struct {
 	ResultJwtValidity int    `json:"validity"`    // Validity of session result JWT in seconds
+	ClientTimeout     int    `json:"timeout"`     // Wait this many seconds for the IRMA app to connect before the session times out
 	CallbackUrl       string `json:"callbackUrl"` // URL to post session result to
 }
 
 type RequestorRequest interface {
 	Validator
 	SessionRequest() SessionRequest
+	Base() RequestorBaseRequest
 }
 
 // A ServiceProviderRequest contains a disclosure request.
@@ -170,6 +172,18 @@ func (r *SignatureRequestorRequest) SessionRequest() SessionRequest {
 
 func (r *IdentityProviderRequest) SessionRequest() SessionRequest {
 	return r.Request
+}
+
+func (r *ServiceProviderRequest) Base() RequestorBaseRequest {
+	return r.RequestorBaseRequest
+}
+
+func (r *SignatureRequestorRequest) Base() RequestorBaseRequest {
+	return r.RequestorBaseRequest
+}
+
+func (r *IdentityProviderRequest) Base() RequestorBaseRequest {
+	return r.RequestorBaseRequest
 }
 
 // SessionRequest is an IRMA session.
@@ -624,7 +638,7 @@ func (claims *SignatureRequestorJwt) Action() Action { return ActionSigning }
 
 func (claims *IdentityProviderJwt) Action() Action { return ActionIssuing }
 
-func SignedRequestorJwt(request SessionRequest, alg jwt.SigningMethod, key interface{}, name string) (string, error) {
+func SignSessionRequest(request SessionRequest, alg jwt.SigningMethod, key interface{}, name string) (string, error) {
 	var jwtcontents RequestorJwt
 	switch r := request.(type) {
 	case *IssuanceRequest:
@@ -633,6 +647,22 @@ func SignedRequestorJwt(request SessionRequest, alg jwt.SigningMethod, key inter
 		jwtcontents = NewServiceProviderJwt(name, r)
 	case *SignatureRequest:
 		jwtcontents = NewSignatureRequestorJwt(name, r)
+	}
+	return jwtcontents.Sign(alg, key)
+}
+
+func SignRequestorRequest(request RequestorRequest, alg jwt.SigningMethod, key interface{}, name string) (string, error) {
+	var jwtcontents RequestorJwt
+	switch r := request.(type) {
+	case *IdentityProviderRequest:
+		jwtcontents = NewIdentityProviderJwt(name, nil)
+		jwtcontents.(*IdentityProviderJwt).Request = r
+	case *ServiceProviderRequest:
+		jwtcontents = NewServiceProviderJwt(name, nil)
+		jwtcontents.(*ServiceProviderJwt).Request = r
+	case *SignatureRequestorRequest:
+		jwtcontents = NewSignatureRequestorJwt(name, nil)
+		jwtcontents.(*SignatureRequestorJwt).Request = r
 	}
 	return jwtcontents.Sign(alg, key)
 }

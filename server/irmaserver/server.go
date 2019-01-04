@@ -227,7 +227,8 @@ func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := irmarequestor.GetSessionResult(chi.URLParam(r, "token"))
+	sessiontoken := chi.URLParam(r, "token")
+	res := irmarequestor.GetSessionResult(sessiontoken)
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -242,6 +243,10 @@ func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 	claims.Issuer = conf.JwtIssuer
 	claims.IssuedAt = time.Now().Unix()
 	claims.Subject = string(res.Type) + "_result"
+	validity := irmarequestor.GetRequest(sessiontoken).Base().ResultJwtValidity
+	if validity != 0 {
+		claims.ExpiresAt = time.Now().Unix() + int64(validity)
+	}
 
 	// Sign the jwt and return it
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -262,7 +267,8 @@ func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := irmarequestor.GetSessionResult(chi.URLParam(r, "token"))
+	sessiontoken := chi.URLParam(r, "token")
+	res := irmarequestor.GetSessionResult(sessiontoken)
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -287,6 +293,10 @@ func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		claims["iss"] = conf.JwtIssuer
 	}
 	claims["status"] = res.Status
+	validity := irmarequestor.GetRequest(sessiontoken).Base().ResultJwtValidity
+	if validity != 0 {
+		claims["exp"] = time.Now().Unix() + int64(validity)
+	}
 
 	// Disclosed credentials and possibly signature
 	m := make(map[irma.AttributeTypeIdentifier]string, len(res.Disclosed))

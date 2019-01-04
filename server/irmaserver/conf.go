@@ -47,6 +47,9 @@ type Configuration struct {
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
 	JwtPrivateKey string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
 
+	// Max age in seconds of a session request JWT (using iat field)
+	MaxRequestAge int `json:"maxrequestage" mapstructure:"maxrequestage"`
+
 	Verbose int  `json:"verbose" mapstructure:"verbose"`
 	Quiet   bool `json:"quiet" mapstructure:"quiet"`
 
