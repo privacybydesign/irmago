@@ -34,7 +34,8 @@ var sessionCmd = &cobra.Command{
 	Example: `irma session --disclose irma-demo.MijnOverheid.root.BSN
 irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
-irma session --disclose irma-demo.MijnOverheid.root.BSN --server http://localhost:48680 --authmethod psk --key presharedkey`,
+irma session --request '{"type":"disclosing","content":[{"label":"BSN","attributes":["irma-demo.MijnOverheid.root.BSN"]}]}'
+irma session --server http://localhost:48680 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN`,
 	Run: func(cmd *cobra.Command, args []string) {
 		request, irmaconfig, err := configure(cmd)
 		if err != nil {
@@ -69,7 +70,7 @@ irma session --disclose irma-demo.MijnOverheid.root.BSN --server http://localhos
 }
 
 func libraryRequest(
-	request irma.SessionRequest,
+	request irma.RequestorRequest,
 	irmaconfig *irma.Configuration,
 	port int,
 	privatekeysPath string,
@@ -99,7 +100,7 @@ func libraryRequest(
 }
 
 func serverRequest(
-	request irma.SessionRequest,
+	request irma.RequestorRequest,
 	serverurl, authmethod, key, name string,
 	noqr bool,
 ) (*server.SessionResult, error) {
@@ -141,7 +142,7 @@ func serverRequest(
 	return result, nil
 }
 
-func postRequest(serverurl string, request irma.SessionRequest, name, authmethod, key string) (*irma.Qr, *irma.HTTPTransport, error) {
+func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (*irma.Qr, *irma.HTTPTransport, error) {
 	var (
 		err       error
 		sk        interface{}
@@ -152,7 +153,7 @@ func postRequest(serverurl string, request irma.SessionRequest, name, authmethod
 	switch authmethod {
 	case "none":
 		err = transport.Post("session", qr, request)
-	case "psk":
+	case "token":
 		transport.SetHeader("Authentication", key)
 		err = transport.Post("session", qr, request)
 	case "hmac", "rsa":
@@ -177,13 +178,13 @@ func postRequest(serverurl string, request irma.SessionRequest, name, authmethod
 			}
 		}
 
-		if jwtstr, err = irma.SignedRequestorJwt(request, jwtalg, sk, name); err != nil {
+		if jwtstr, err = irma.SignRequestorRequest(request, jwtalg, sk, name); err != nil {
 			return nil, nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
 		err = transport.Post("session", qr, jwtstr)
 	default:
-		return nil, nil, errors.New("Invalid authentication method (must be none, psk, hmac or rsa)")
+		return nil, nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
 
 	token := qr.URL[strings.LastIndex(qr.URL, "/")+1:]
@@ -210,7 +211,7 @@ func configureServer(port int, privatekeysPath string, irmaconfig *irma.Configur
 	return irmarequestor.Initialize(config)
 }
 
-func configure(cmd *cobra.Command) (irma.SessionRequest, *irma.Configuration, error) {
+func configure(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, error) {
 	irmaconfigPath, err := cmd.Flags().GetString("irmaconf")
 	if err != nil {
 		return nil, nil, err
@@ -266,11 +267,27 @@ func poll(initialStatus server.Status, transport *irma.HTTPTransport, statuschan
 	}
 }
 
-func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma.SessionRequest, error) {
+func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma.RequestorRequest, error) {
 	disclose, _ := cmd.Flags().GetStringArray("disclose")
 	issue, _ := cmd.Flags().GetStringArray("issue")
 	sign, _ := cmd.Flags().GetStringArray("sign")
 	message, _ := cmd.Flags().GetString("message")
+	jsonrequest, _ := cmd.Flags().GetString("request")
+
+	if len(disclose) == 0 && len(issue) == 0 && len(sign) == 0 && message == "" {
+		if jsonrequest == "" {
+			return nil, errors.New("Provide either a complete session request using --request or construct one using the other flags")
+		}
+		request, err := server.ParseSessionRequest(jsonrequest)
+		if err != nil {
+			return nil, err
+		}
+		return request, nil
+	}
+
+	if jsonrequest != "" {
+		return nil, errors.New("Provide either a complete session request using --request or construct one using the other flags")
+	}
 
 	if len(sign) != 0 {
 		if len(disclose) != 0 {
@@ -284,32 +301,33 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 		}
 	}
 
-	var request irma.SessionRequest
+	var request irma.RequestorRequest
 	if len(disclose) != 0 {
 		disjunctions, err := parseDisjunctions(disclose, conf)
 		if err != nil {
 			return nil, err
 		}
-		request = &irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{
-				Type: irma.ActionDisclosing,
+		request = &irma.ServiceProviderRequest{
+			Request: &irma.DisclosureRequest{
+				BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
+				Content:     disjunctions,
 			},
-			Content: disjunctions,
 		}
+
 	}
 	if len(sign) != 0 {
 		disjunctions, err := parseDisjunctions(sign, conf)
 		if err != nil {
 			return nil, err
 		}
-		request = &irma.SignatureRequest{
-			DisclosureRequest: irma.DisclosureRequest{
-				BaseRequest: irma.BaseRequest{
-					Type: irma.ActionSigning,
+		request = &irma.SignatureRequestorRequest{
+			Request: &irma.SignatureRequest{
+				DisclosureRequest: irma.DisclosureRequest{
+					BaseRequest: irma.BaseRequest{Type: irma.ActionSigning},
+					Content:     disjunctions,
 				},
-				Content: disjunctions,
+				Message: message,
 			},
-			Message: message,
 		}
 	}
 	if len(issue) != 0 {
@@ -321,12 +339,14 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 		if err != nil {
 			return nil, err
 		}
-		request = &irma.IssuanceRequest{
-			BaseRequest: irma.BaseRequest{
-				Type: irma.ActionIssuing,
+		request = &irma.IdentityProviderRequest{
+			Request: &irma.IssuanceRequest{
+				BaseRequest: irma.BaseRequest{
+					Type: irma.ActionIssuing,
+				},
+				Credentials: creds,
+				Disclose:    disjunctions,
 			},
-			Credentials: creds,
-			Disclose:    disjunctions,
 		}
 	}
 
@@ -426,14 +446,15 @@ func init() {
 	flags.StringP("irmaconf", "i", defaultIrmaconfPath(), "path to irma_configuration")
 	flags.StringP("privatekeys", "k", "", "path to private keys")
 	flags.IntP("port", "p", 48680, "port to listen at")
-	flags.BoolP("noqr", "q", false, "Don't print as QR")
+	flags.Bool("noqr", false, "Print JSON instead of draw QR")
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 
 	flags.StringP("server", "s", "", "Server to post request to (leave blank to use builtin library)")
-	flags.StringP("authmethod", "a", "none", "Authentication method to server (none, psk, rsa, hmac)")
+	flags.StringP("authmethod", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
 	flags.String("key", "", "Key to sign request with")
 	flags.String("name", "", "Requestor name")
 
+	flags.StringP("request", "r", "", "JSON session request")
 	flags.StringArray("disclose", nil, "Add an attribute disjunction (comma-separated)")
 	flags.StringArray("issue", nil, "Add a credential to issue")
 	flags.StringArray("sign", nil, "Add an attribute disjunction to signature session")
