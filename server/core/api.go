@@ -59,6 +59,12 @@ func Initialize(configuration *server.Configuration) error {
 		}
 	}
 
+	if conf.SchemeUpdateInterval != 0 {
+		conf.IrmaConfiguration.AutoUpdateSchemes(uint(conf.SchemeUpdateInterval))
+	} else {
+		conf.Logger.Warn("Scheme updating disabled")
+	}
+
 	if conf.IssuerPrivateKeys == nil {
 		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
 	}

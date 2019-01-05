@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
@@ -58,7 +59,11 @@ var (
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
-	go sessions.deleteExpired()
+
+	gocron.Every(10).Seconds().Do(func() {
+		sessions.deleteExpired()
+	})
+	gocron.Start()
 }
 
 func (s *memorySessionStore) get(token string) *session {
@@ -78,6 +83,8 @@ func (s *memorySessionStore) update(token string, session *session) {
 }
 
 func (s memorySessionStore) deleteExpired() {
+	conf.Logger.Trace("Deleting expired sessions")
+
 	// First check which sessions have expired
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
@@ -110,11 +117,6 @@ func (s memorySessionStore) deleteExpired() {
 		delete(s.m, token)
 	}
 	s.Unlock()
-
-	// Schedule next run
-	time.AfterFunc(expiryTicker, func() {
-		s.deleteExpired()
-	})
 }
 
 var one *big.Int = big.NewInt(1)

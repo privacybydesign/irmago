@@ -32,6 +32,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
+	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago/internal/fs"
@@ -61,6 +62,7 @@ type Configuration struct {
 	initialized   bool
 	assets        string
 	readOnly      bool
+	cronchan      chan bool
 }
 
 // ConfigurationFileHash encodes the SHA256 hash of an authenticated
@@ -1177,6 +1179,41 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 
 	manager.index = newIndex
 	return
+}
+
+func (conf *Configuration) updateSchemes() error {
+	for id := range conf.SchemeManagers {
+		Logger.WithField("scheme", id).Info("Auto-updating scheme")
+		if err := conf.UpdateSchemeManager(id, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (conf *Configuration) AutoUpdateSchemes(interval uint) {
+	Logger.Infof("Updating schemes every %d minutes", interval)
+
+	gocron.Every(uint64(interval)).Minutes().Do(func() {
+		if err := conf.updateSchemes(); err != nil {
+			Logger.Error("Scheme autoupdater failed: ")
+			if e, ok := err.(*errors.Error); ok {
+				Logger.Error(e.ErrorStack())
+			} else {
+				Logger.Errorf("%s %s", reflect.TypeOf(err).String(), err.Error())
+			}
+		}
+	})
+
+	go gocron.RunAll()             // Perform updates now
+	conf.cronchan = gocron.Start() // Schedule updates (first one in interval minutes from now)
+}
+
+func (conf *Configuration) StopAutoUpdateSchemes() {
+	if conf.cronchan != nil {
+		Logger.Info("Stopped scheme autoupdater")
+		conf.cronchan <- true
+	}
 }
 
 // Methods containing consistency checks on irma_configuration

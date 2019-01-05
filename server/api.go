@@ -29,7 +29,9 @@ type Configuration struct {
 	// Path to writable dir to write cache to (only used if IrmaConfiguration is not given)
 	CachePath string `json:"cachepath" mapstructure:"cachepath"`
 	// Whether or not to download default IRMA schemes if the specified irma_configuration is empty
-	DownloadDefaultSchemes bool
+	DownloadDefaultSchemes bool `json:"downloadschemes" mapstructure:"downloadschemes"`
+	// Update all schemes every x minutes (0 to disable)
+	SchemeUpdateInterval int `json:"schemeupdate" mapstructure:"schemeupdate"`
 	// Path to issuer private keys to parse
 	IssuerPrivateKeysPath string `json:"privatekeys" mapstructure:"privatekeys"`
 	// Issuer private keys
