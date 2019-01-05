@@ -65,10 +65,10 @@ func Stop() error {
 	}
 
 	// Now check errors
-	if err1 != nil {
+	if err1 != nil && err1 != http.ErrServerClosed {
 		return err1
 	}
-	if err2 != nil {
+	if err2 != nil && err2 != http.ErrServerClosed {
 		return err2
 	}
 	return nil

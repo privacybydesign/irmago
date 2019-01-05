@@ -18,30 +18,59 @@ import (
 var logger = logrus.StandardLogger()
 var conf *irmaserver.Configuration
 
-func main() {
-	var cmd = &cobra.Command{
-		Use:   "irmaserver",
-		Short: "IRMA server for verifying and issuing attributes",
-		Run: func(command *cobra.Command, args []string) {
-			if err := configure(); err != nil {
-				die(errors.WrapPrefix(err, "Failed to configure server", 0))
-			}
-			if err := irmaserver.Start(conf); err != nil {
-				die(errors.WrapPrefix(err, "Failed to start server", 0))
-			}
-		},
-	}
+var RootCommand = &cobra.Command{
+	Use:   "irmad",
+	Short: "IRMA server for verifying and issuing attributes",
+	Run: func(command *cobra.Command, args []string) {
+		if err := configure(command); err != nil {
+			die(errors.WrapPrefix(err, "Failed to configure server", 0))
+		}
+		if err := irmaserver.Start(conf); err != nil {
+			die(errors.WrapPrefix(err, "Failed to start server", 0))
+		}
+	},
+}
 
+var RunCommand = &cobra.Command{
+	Use:   "run",
+	Short: "Run server (same as specifying no command)",
+	Run:   RootCommand.Run,
+}
+
+var CheckCommand = &cobra.Command{
+	Use:   "check",
+	Short: "Check server configuration correctness",
+	Long: `check reads the server configuration like the main command does, from a
+configuration file, command line flags, or environmental variables, and checks
+that the configuration is valid.
+
+Specify -v to see the configuration.`,
+	Run: func(command *cobra.Command, args []string) {
+		if err := configure(command); err != nil {
+			die(errors.WrapPrefix(err, "Failed to read configuration from file, args, or env vars", 0))
+		}
+		conf.SchemeUpdateInterval = 0
+		if err := irmaserver.Initialize(conf); err != nil {
+			die(errors.WrapPrefix(err, "Invalid configuration", 0))
+		}
+	},
+}
+
+func main() {
 	logger.Level = logrus.InfoLevel
 	logger.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 	})
 
-	if err := setFlags(cmd); err != nil {
-		die(errors.WrapPrefix(err, "Failed to attach flags", 0))
+	RootCommand.AddCommand(CheckCommand, RunCommand)
+
+	for _, cmd := range []*cobra.Command{RootCommand, CheckCommand, RunCommand} {
+		if err := setFlags(cmd); err != nil {
+			die(errors.WrapPrefix(err, "Failed to attach flags to "+cmd.Name()+" command", 0))
+		}
 	}
 
-	if err := cmd.Execute(); err != nil {
+	if err := RootCommand.Execute(); err != nil {
 		die(errors.WrapPrefix(err, "Failed to execute command", 0))
 	}
 }
@@ -82,7 +111,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags.StringP("listenaddr", "l", "0.0.0.0", "Address at which to listen")
 	flags.IntP("port", "p", 8088, "Port at which to listen")
 	flags.Int("clientport", 0, "If specified, start a separate server for the IRMA app at his port")
-	flags.String("clientlistenaddr", "0.0.0.0", "Address at which server for IRMA app listens")
+	flags.String("clientlistenaddr", "", "Address at which server for IRMA app listens")
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
 
@@ -93,14 +122,16 @@ func setFlags(cmd *cobra.Command) error {
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 
-	// Environment variables
-	viper.SetEnvPrefix("IRMASERVER")
-	viper.AutomaticEnv()
-
-	return viper.BindPFlags(flags)
+	return nil
 }
 
-func configure() error {
+func configure(cmd *cobra.Command) error {
+	viper.SetEnvPrefix("IRMASERVER")
+	viper.AutomaticEnv()
+	if err := viper.BindPFlags(cmd.Flags()); err != nil {
+		return err
+	}
+
 	// Locate and read configuration file
 	confpath := viper.GetString("config")
 	if confpath != "" {
@@ -182,7 +213,7 @@ func configure() error {
 	}
 
 	bts, _ := json.MarshalIndent(conf, "", "   ")
-	logger.Debug(string(bts), "\n")
+	logger.Debug("Configuration: ", string(bts), "\n")
 	logger.Debug("Done configuring")
 
 	return nil

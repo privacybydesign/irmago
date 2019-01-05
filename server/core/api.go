@@ -61,8 +61,6 @@ func Initialize(configuration *server.Configuration) error {
 
 	if conf.SchemeUpdateInterval != 0 {
 		conf.IrmaConfiguration.AutoUpdateSchemes(uint(conf.SchemeUpdateInterval))
-	} else {
-		conf.Logger.Info("Scheme updating disabled")
 	}
 
 	if conf.IssuerPrivateKeys == nil {
