@@ -181,6 +181,14 @@
   version = "v1.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:73f8f3d39f0f3100420067b1ea4d98533ac96526faef38e3646ebf43aa4ff246"
+  name = "github.com/jasonlvhit/gocron"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "54194c9749d48b073c9aeb2c787b6882e95dd0cd"
+
+[[projects]]
   digest = "1:0a69a1c0db3591fcefb47f115b224592c8dfa4368b7ba9fae509d5e16cdc95c8"
   name = "github.com/konsorten/go-windows-terminal-sequences"
   packages = ["."]
@@ -195,6 +203,14 @@
   pruneopts = "UT"
   revision = "c2353362d570a7bfa228149c62842019201cfb71"
   version = "v1.8.0"
+
+[[projects]]
+  digest = "1:0e42db95481686c820de449ddf7c4ce58ab28f06353bdbdce63219938aac971c"
+  name = "github.com/mdp/qrterminal"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6967d3624af633162b77160078e12a4c14174470"
+  version = "v1.0.1"
 
 [[projects]]
   digest = "1:53bc4cd4914cd7cd52139990d5170d6dc99067ae31c56530621b18b35fc30318"
@@ -397,6 +413,18 @@
   revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
   version = "v2.2.2"
 
+[[projects]]
+  digest = "1:5f7a1c7de691189fe96681441220afb5c2567b1875e8b2c06201732be4b9393a"
+  name = "rsc.io/qr"
+  packages = [
+    ".",
+    "coding",
+    "gf256",
+  ]
+  pruneopts = "UT"
+  revision = "ca9a01fc2f9505024045632c50e5e8cd6142fafe"
+  version = "v0.2.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -408,6 +436,8 @@
     "github.com/go-chi/cors",
     "github.com/go-errors/errors",
     "github.com/hashicorp/go-retryablehttp",
+    "github.com/jasonlvhit/gocron",
+    "github.com/mdp/qrterminal",
     "github.com/pkg/errors",
     "github.com/privacybydesign/gabi",
     "github.com/privacybydesign/gabi/big",
