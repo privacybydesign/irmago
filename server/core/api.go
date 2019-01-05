@@ -12,12 +12,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/sirupsen/logrus"
 )
 
 func Initialize(configuration *server.Configuration) error {

@@ -11,11 +11,11 @@ import (
 	"runtime"
 	"runtime/debug"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/sirupsen/logrus"
 )
 
 var Logger *logrus.Logger = logrus.StandardLogger()
