@@ -162,8 +162,9 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 			jwtstr string
 			bts    []byte
 		)
-		if bts, err = fs.ReadKey(key); err != nil {
-			return nil, nil, err
+		// If the key refers to an existing file, use contents of the file as key
+		if bts, err = fs.ReadKey("", key); err != nil {
+			bts = []byte(key)
 		}
 		if authmethod == "hmac" {
 			jwtalg = jwt.SigningMethodHS256

@@ -3,7 +3,6 @@ package irmaserver
 import (
 	"crypto/rsa"
 	"fmt"
-	"io/ioutil"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,7 +44,8 @@ type Configuration struct {
 	JwtIssuer string `json:"jwtissuer" mapstructure:"jwtissuer"`
 
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
-	JwtPrivateKey string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
+	JwtPrivateKey     string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
+	JwtPrivateKeyFile string `json:"jwtprivatekeyfile" mapstructure:"jwtprivatekeyfile"`
 
 	// Max age in seconds of a session request JWT (using iat field)
 	MaxRequestAge int `json:"maxrequestage" mapstructure:"maxrequestage"`
@@ -68,8 +68,9 @@ type Permissions struct {
 type Requestor struct {
 	Permissions `mapstructure:",squash"`
 
-	AuthenticationMethod AuthenticationMethod `json:"authmethod" mapstructure:"authmethod"`
-	AuthenticationKey    string               `json:"key" mapstructure:"key"`
+	AuthenticationMethod  AuthenticationMethod `json:"authmethod" mapstructure:"authmethod"`
+	AuthenticationKey     string               `json:"key" mapstructure:"key"`
+	AuthenticationKeyFile string               `json:"keyfile" mapstructure:"keyfile"`
 }
 
 // CanIssue returns whether or not the specified requestor may issue the specified credentials.
@@ -262,21 +263,13 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 }
 
 func (conf *Configuration) readPrivateKey() error {
-	if conf.JwtPrivateKey == "" {
+	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
 		return nil
 	}
 
-	var keybytes []byte
-	var err error
-	if strings.HasPrefix(conf.JwtPrivateKey, "-----BEGIN") {
-		keybytes = []byte(conf.JwtPrivateKey)
-	} else {
-		if err = fs.AssertPathExists(conf.JwtPrivateKey); err != nil {
-			return err
-		}
-		if keybytes, err = ioutil.ReadFile(conf.JwtPrivateKey); err != nil {
-			return err
-		}
+	keybytes, err := fs.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to read private key", 0)
 	}
 
 	conf.jwtPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)

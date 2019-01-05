@@ -77,14 +77,9 @@ func (hauth *HmacAuthenticator) Authenticate(
 }
 
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
-	if requestor.AuthenticationKey == "" {
-		return errors.Errorf("Requestor %s has no authentication key", name)
-	}
-
-	// Read file contents or string contents
-	bts, err := fs.ReadKey(requestor.AuthenticationKey)
+	bts, err := fs.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return err
+		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
 	}
 
 	// We accept any of the base64 encodings
@@ -105,13 +100,11 @@ func (pkauth *PublicKeyAuthenticator) Authenticate(
 }
 
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
-	bts, err := fs.ReadKey(requestor.AuthenticationKey)
+	bts, err := fs.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return err
+		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
 	}
-	if len(bts) == 0 {
-		return errors.Errorf("Requestor %s has invalid public key", name)
-	}
+
 	pk, err := jwt.ParseRSAPublicKeyFromPEM(bts)
 	if err != nil {
 		return err
@@ -140,12 +133,9 @@ func (pskauth *PresharedKeyAuthenticator) Authenticate(
 }
 
 func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requestor) error {
-	if requestor.AuthenticationKey == "" {
-		return errors.Errorf("Requestor %s has no authentication key", name)
-	}
-	bts, err := fs.ReadKey(requestor.AuthenticationKey)
+	bts, err := fs.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return err
+		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
 	}
 	pskauth.presharedkeys[string(bts)] = name
 	return nil

@@ -138,22 +138,40 @@ func CopyDirectory(src, dest string) error {
 	)
 }
 
-func ReadKey(key string) ([]byte, error) {
+// ReadKey returns either the content of the file specified at path, if it exists,
+// or []byte(key) otherwise. It is an error to specify both or none arguments, or
+// specify an empty or unreadable file. If there is no error then the return []byte is non-empty.
+func ReadKey(key, path string) ([]byte, error) {
+	if (key != "" && path != "") || (key == "" && path == "") {
+		return nil, errors.New("provide either key or path to key")
+	}
+
 	var bts []byte
-	if stat, err := os.Stat(key); err == nil {
+
+	if path == "" {
+		bts = []byte(key)
+	} else {
+		stat, err := os.Stat(path)
+		if err != nil {
+			return nil, errors.New("no key found at specified path")
+		}
 		if stat.IsDir() {
 			return nil, errors.New("cannot read key from a directory")
 		}
-		bts, err = ioutil.ReadFile(key)
+		bts, err = ioutil.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		bts = []byte(key)
+	}
+
+	if len(bts) == 0 {
+		return nil, errors.New("empty key provided")
 	}
 	return bts, nil
 }
 
+// Base64Decode decodes the specified bytes as any of the Base64 dialects:
+// standard encoding (+, /) and URL encoding (-, _), with or without padding.
 func Base64Decode(b []byte) ([]byte, error) {
 	var (
 		err       error

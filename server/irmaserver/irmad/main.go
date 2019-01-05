@@ -75,7 +75,8 @@ func setFlags(cmd *cobra.Command) error {
 	flags.String("cachepath", cachepath, "Directory for writing cache files to")
 	flags.Uint("schemeupdate", 60, "Update IRMA schemes every x minutes (0 to disable)")
 	flags.StringP("jwtissuer", "j", "irmaserver", "JWT issuer")
-	flags.StringP("jwtprivatekey", "w", "", "JWT private key or path to it")
+	flags.String("jwtprivatekey", "", "JWT private key")
+	flags.String("jwtprivatekeyfile", "", "Path to JWT private key")
 	flags.Int("maxrequestage", 300, "Max age in seconds of a session request JWT")
 	flags.StringP("url", "u", defaulturl, "External URL to server to which the IRMA client connects")
 	flags.StringP("listenaddr", "l", "0.0.0.0", "Address at which to listen")
@@ -151,6 +152,7 @@ func configure() error {
 		GlobalPermissions:              irmaserver.Permissions{},
 		JwtIssuer:                      viper.GetString("jwtissuer"),
 		JwtPrivateKey:                  viper.GetString("jwtprivatekey"),
+		JwtPrivateKeyFile:              viper.GetString("jwtprivatekeyfile"),
 		MaxRequestAge:                  viper.GetInt("maxrequestage"),
 		Verbose:                        viper.GetInt("verbose"),
 		Quiet:                          viper.GetBool("quiet"),
