@@ -58,7 +58,6 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
-		session.setStatus(server.StatusCancelled)
 		if err == irma.ErrorMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 		} else {
@@ -81,7 +80,6 @@ func (session *session) handlePostDisclosure(disclosure irma.Disclosure) (*irma.
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
-		session.setStatus(server.StatusCancelled)
 		if err == irma.ErrorMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 		} else {
