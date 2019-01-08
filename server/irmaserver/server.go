@@ -2,6 +2,8 @@
 package irmaserver
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -121,6 +123,8 @@ func Handler() http.Handler {
 	// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
 	router.Get("/session/{token}/result-jwt", handleJwtResult)
 	router.Get("/session/{token}/getproof", handleJwtProofs) // irma_api_server-compatible JWT
+
+	router.Get("/publickey", handlePublicKey)
 
 	return router
 }
@@ -318,4 +322,22 @@ func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.WriteString(w, resultJwt)
+}
+
+func handlePublicKey(w http.ResponseWriter, r *http.Request) {
+	if conf.jwtPrivateKey == nil {
+		server.WriteError(w, server.ErrorUnsupported, "")
+		return
+	}
+
+	bts, err := x509.MarshalPKIXPublicKey(&conf.jwtPrivateKey.PublicKey)
+	if err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+		return
+	}
+	pubBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: bts,
+	})
+	_, _ = w.Write(pubBytes)
 }
