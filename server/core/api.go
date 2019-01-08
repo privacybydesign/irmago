@@ -162,6 +162,30 @@ func CancelSession(token string) error {
 	return nil
 }
 
+func ParsePath(path string) (string, string, error) {
+	pattern := regexp.MustCompile("(\\w+)/?(|commitments|proofs|status|statusevents)$")
+	matches := pattern.FindStringSubmatch(path)
+	if len(matches) != 3 {
+		return "", "", server.LogWarning(errors.Errorf("Invalid URL: %s", path))
+	}
+	return matches[1], matches[2], nil
+}
+
+func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
+	session := sessions.get(token)
+	if session == nil {
+		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
+	}
+	if session.status.Finished() {
+		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
+	}
+
+	session.Lock()
+	defer session.Unlock()
+	session.eventSource().ServeHTTP(w, r)
+	return nil
+}
+
 func HandleProtocolMessage(
 	path string,
 	method string,
@@ -183,17 +207,13 @@ func HandleProtocolMessage(
 		conf.Logger.Trace("POST body: ", string(message))
 	}
 	conf.Logger.Trace("HTTP headers: ", server.ToJson(headers))
-	pattern := regexp.MustCompile("(\\w+)/?(|commitments|proofs|status)$")
-	matches := pattern.FindStringSubmatch(path)
-	if len(matches) != 3 {
-		conf.Logger.Warnf("Invalid URL: %s", path)
-		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
+	token, noun, err := ParsePath(path)
+	if err != nil {
+		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))
 		return
 	}
 
 	// Fetch the session
-	token := matches[1]
-	noun := matches[2]
 	session := sessions.get(token)
 	if session == nil {
 		conf.Logger.Warnf("Session not found: %s", token)
@@ -207,12 +227,11 @@ func HandleProtocolMessage(
 	// then we should inform the user by returning a SessionResult - but only if we have not
 	// already done this in the past, e.g. by a previous HTTP call handled by this function
 	defer func() {
-		if session.finished() && !session.returned {
+		if session.status.Finished() && !session.returned {
 			session.returned = true
 			result = session.result
 			conf.Logger.Infof("Session %s done, status %s", session.token, session.result.Status)
 		}
-		sessions.update(token, session)
 	}()
 
 	// Route to handler
@@ -241,6 +260,12 @@ func HandleProtocolMessage(
 		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 		return
 	default:
+		if noun == "statusevents" {
+			err := server.RemoteError(server.ErrorInvalidRequest, "server sent events not supported by this server")
+			status, output = server.JsonResponse(nil, err)
+			return
+		}
+
 		if method == http.MethodGet && noun == "status" {
 			status, output = server.JsonResponse(session.handleGetStatus())
 			return

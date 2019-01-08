@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"time"
 
@@ -10,15 +11,10 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"gopkg.in/antage/eventsource.v1"
 )
 
 // Session helpers
-
-func (session *session) finished() bool {
-	return session.status == server.StatusDone ||
-		session.status == server.StatusCancelled ||
-		session.status == server.StatusTimeout
-}
 
 func (session *session) markAlive() {
 	session.lastActive = time.Now()
@@ -29,6 +25,14 @@ func (session *session) setStatus(status server.Status) {
 	conf.Logger.Debugf("Status of session %s updated to %s", session.token, status)
 	session.status = status
 	session.result.Status = status
+	sessions.update(session)
+}
+
+func (session *session) onUpdate() {
+	if session.evtSource != nil {
+		conf.Logger.Tracef("Sending %s to SSE listeners of session %s", session.status, session.token)
+		session.evtSource.SendEventMessage(string(session.status), "", "")
+	}
 }
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
@@ -114,6 +118,18 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	}
 
 	return session.kssProofs[scheme], nil
+}
+
+var eventHeaders = [][]byte{[]byte("Access-Control-Allow-Origin: *")}
+
+func (session *session) eventSource() eventsource.EventSource {
+	if session.evtSource != nil {
+		return session.evtSource
+	}
+
+	conf.Logger.Trace("Making server sent event source for session ", session.token)
+	session.evtSource = eventsource.New(nil, func(_ *http.Request) [][]byte { return eventHeaders })
+	return session.evtSource
 }
 
 // Other

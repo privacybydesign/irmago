@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/core"
@@ -53,6 +54,10 @@ func CancelSession(token string) error {
 	return core.CancelSession(token)
 }
 
+func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
+	return core.SubscribeServerSentEvents(w, r, token)
+}
+
 // HttpHandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
 // with IRMA apps. Initialize() must be called before this.
 //
@@ -63,14 +68,28 @@ func CancelSession(token string) error {
 func HttpHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var message []byte
-		message, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+		var err error
+		if r.Method == http.MethodPost {
+			if message, err = ioutil.ReadAll(r.Body); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+
+		token, noun, err := core.ParsePath(r.URL.Path)
+		if err == nil && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
+			if err = SubscribeServerSentEvents(w, r, token); err != nil {
+				server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+			}
 			return
 		}
+
 		status, response, result := core.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
 		w.WriteHeader(status)
-		w.Write(response)
+		_, err = w.Write(response)
+		if err != nil {
+			_ = server.LogError(errors.WrapPrefix(err, "http.ResponseWriter.Write() returned error", 0))
+		}
 		if result != nil {
 			if handler, ok := handlers[result.Token]; ok {
 				go handler(result)

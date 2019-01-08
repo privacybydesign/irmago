@@ -30,6 +30,7 @@ var (
 	ErrorMalformedInput       Error = Error{Type: "MALFORMED_INPUT", Status: 400, Description: "Input could not be parsed"}
 	ErrorUnknown              Error = Error{Type: "EXCEPTION", Status: 500, Description: "Encountered unexpected problem"}
 
+	ErrorUnsupported     Error = Error{Type: "UNSUPPORTED", Status: 501, Description: "Unsupported by this server"}
 	ErrorInvalidRequest  Error = Error{Type: "INVALID_REQUEST", Status: 400, Description: "Invalid HTTP request"}
 	ErrorProtocolVersion Error = Error{Type: "PROTOCOL_VERSION", Status: 400, Description: "Protocol version negotiation failed"}
 )

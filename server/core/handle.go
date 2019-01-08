@@ -14,7 +14,7 @@ import (
 var conf *server.Configuration
 
 func (session *session) handleDelete() {
-	if session.finished() {
+	if session.status.Finished() {
 		return
 	}
 	session.markAlive()

@@ -87,13 +87,15 @@ func Initialize(config *Configuration) error {
 	return nil
 }
 
+var corsOptions = cors.Options{
+	AllowedOrigins: []string{"*"},
+	AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "Cache-Control"},
+	AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
+}
+
 func ClientHandler() http.Handler {
 	router := chi.NewRouter()
-	router.Use(cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
-		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
-	}).Handler)
+	router.Use(cors.New(corsOptions).Handler)
 
 	router.Mount("/irma/", irmarequestor.HttpHandlerFunc())
 	return router
@@ -103,11 +105,7 @@ func ClientHandler() http.Handler {
 // and IRMA client messages.
 func Handler() http.Handler {
 	router := chi.NewRouter()
-	router.Use(cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
-		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
-	}).Handler)
+	router.Use(cors.New(corsOptions).Handler)
 
 	if !conf.separateClientServer() {
 		// Mount server for irmaclient
@@ -118,6 +116,7 @@ func Handler() http.Handler {
 	router.Post("/session", handleCreate)
 	router.Delete("/session/{token}", handleDelete)
 	router.Get("/session/{token}/status", handleStatus)
+	router.Get("/session/{token}/statusevents", handleStatusEvents)
 	router.Get("/session/{token}/result", handleResult)
 
 	// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
@@ -206,6 +205,14 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.WriteJson(w, res.Status)
+}
+
+func handleStatusEvents(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	conf.Logger.Debug("new client subscribed to server sent events of session " + token)
+	if err := irmarequestor.SubscribeServerSentEvents(w, r, token); err != nil {
+		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+	}
 }
 
 func handleDelete(w http.ResponseWriter, r *http.Request) {

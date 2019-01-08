@@ -65,6 +65,10 @@ const (
 	StatusTimeout     Status = "TIMEOUT"     // Session timed out
 )
 
+func (status Status) Finished() bool {
+	return status == StatusDone || status == StatusCancelled || status == StatusTimeout
+}
+
 // RemoteError converts an error and an explaining message to an *irma.RemoteError.
 func RemoteError(err Error, message string) *irma.RemoteError {
 	stack := string(debug.Stack())
