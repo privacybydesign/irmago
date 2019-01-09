@@ -324,12 +324,13 @@
   version = "v1.0.0"
 
 [[projects]]
-  digest = "1:de37e343c64582d7026bf8ab6ac5b22a72eac54f3a57020db31524affed9f423"
+  branch = "fix-isset"
+  digest = "1:f94a7aac3422a2ab6d6c86fd7e75ebf772784b2467c872e2d2ba0ce060ebf2ec"
   name = "github.com/spf13/viper"
   packages = ["."]
   pruneopts = "UT"
-  revision = "6d33b5a963d922d182c91e8a1c88d81fd150cfd4"
-  version = "v1.3.1"
+  revision = "6c2a373fcd610e9ebefba8d50efb954706ec2f44"
+  source = "github.com/sietseringers/viper"
 
 [[projects]]
   digest = "1:7e8d267900c7fa7f35129a2a37596e38ed0f11ca746d6d9ba727980ee138f9f6"

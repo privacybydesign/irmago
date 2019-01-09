@@ -115,8 +115,8 @@ func setFlags(cmd *cobra.Command) error {
 	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
 
-	flags.StringSlice("disclose", nil, "Comma-separated list of attributes that all requestors may verify")
-	flags.StringSlice("sign", nil, "Comma-separated list of attributes that all requestors may request in signatures")
+	flags.StringSlice("disclose", nil, "Comma-separated list of attributes that all requestors may verify (default *)")
+	flags.StringSlice("sign", nil, "Comma-separated list of attributes that all requestors may request in signatures (default *)")
 	flags.StringSlice("issue", nil, "Comma-separated list of attributes that all requestors may issue")
 
 	flags.String("tlscertificate", "", "TLS certificate ")
@@ -184,13 +184,17 @@ func configure(cmd *cobra.Command) error {
 			SchemeUpdateInterval:  viper.GetInt("schemeupdate"),
 			Logger:                logger,
 		},
+		Permissions: irmaserver.Permissions{
+			Disclosing: handlePermission("disclose"),
+			Signing:    handlePermission("sign"),
+			Issuing:    viper.GetStringSlice("issue"),
+		},
 		ListenAddress:                  viper.GetString("listenaddr"),
 		Port:                           viper.GetInt("port"),
 		ClientListenAddress:            viper.GetString("clientlistenaddr"),
 		ClientPort:                     viper.GetInt("clientport"),
 		DisableRequestorAuthentication: viper.GetBool("noauth"),
 		Requestors:                     make(map[string]irmaserver.Requestor),
-		GlobalPermissions:              irmaserver.Permissions{},
 		JwtIssuer:                      viper.GetString("jwtissuer"),
 		JwtPrivateKey:                  viper.GetString("jwtprivatekey"),
 		JwtPrivateKeyFile:              viper.GetString("jwtprivatekeyfile"),
@@ -207,16 +211,6 @@ func configure(cmd *cobra.Command) error {
 		ClientTlsPrivateKey:      viper.GetString("clienttlsprivatekey"),
 		ClientTlsPrivateKeyFile:  viper.GetString("clienttlsprivatekeyfile"),
 	}
-
-	// Handle global permissions
-	if len(viper.GetStringMap("permissions")) > 0 { // First read config file
-		if err := viper.UnmarshalKey("permissions", &conf.GlobalPermissions); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal permissions from config file", 0)
-		}
-	}
-	conf.GlobalPermissions.Disclosing = handlePermission(conf.GlobalPermissions.Disclosing, "disclose")
-	conf.GlobalPermissions.Signing = handlePermission(conf.GlobalPermissions.Signing, "sign")
-	conf.GlobalPermissions.Issuing = handlePermission(conf.GlobalPermissions.Issuing, "issue")
 
 	// Handle requestors
 	if len(viper.GetStringMap("requestors")) > 0 { // First read config file
@@ -236,16 +230,13 @@ func configure(cmd *cobra.Command) error {
 	return nil
 }
 
-func handlePermission(conf []string, typ string) []string {
+func handlePermission(typ string) []string {
+	if !viper.IsSet(typ) {
+		return []string{"*"}
+	}
 	perms := viper.GetStringSlice(typ)
-	if len(perms) == 0 {
-		return conf
-	}
-	if perms[0] == "" {
-		perms = perms[1:]
-	}
-	if perms[len(perms)-1] == "" {
-		perms = perms[:len(perms)-1]
+	if perms == nil {
+		return []string{}
 	}
 	return perms
 }

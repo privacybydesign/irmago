@@ -18,6 +18,9 @@ import (
 type Configuration struct {
 	*server.Configuration `mapstructure:",squash"`
 
+	// Disclosing, signing or issuance permissions that apply to all requestors
+	Permissions `mapstructure:",squash"`
+
 	// Whether or not incoming session requests should be authenticated. If false, anyone
 	// can submit session requests. If true, the request is first authenticated against the
 	// server configuration before the server accepts it.
@@ -46,10 +49,6 @@ type Configuration struct {
 	// Requestor-specific permission and authentication configuration
 	RequestorsString string               `json:"-" mapstructure:"requestors"`
 	Requestors       map[string]Requestor `json:"requestors"`
-
-	// Disclosing, signing or issuance permissions that apply to all requestors
-	GlobalPermissionsString string      `json:"-" mapstructure:"permissions"`
-	GlobalPermissions       Permissions `json:"permissions" mapstructure:"permissions"`
 
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwtissuer" mapstructure:"jwtissuer"`
@@ -89,7 +88,7 @@ type Requestor struct {
 // the identity provider is allowed to verify the attributes being verified; use CanVerifyOrSign
 // for that).
 func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRequest) (bool, string) {
-	permissions := append(conf.Requestors[requestor].Issuing, conf.GlobalPermissions.Issuing...)
+	permissions := append(conf.Requestors[requestor].Issuing, conf.Issuing...)
 	if len(permissions) == 0 { // requestor is not present in the permissions
 		return false, ""
 	}
@@ -115,11 +114,11 @@ func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action,
 	var permissions []string
 	switch action {
 	case irma.ActionDisclosing:
-		permissions = append(conf.Requestors[requestor].Disclosing, conf.GlobalPermissions.Disclosing...)
+		permissions = append(conf.Requestors[requestor].Disclosing, conf.Disclosing...)
 	case irma.ActionIssuing:
-		permissions = append(conf.Requestors[requestor].Disclosing, conf.GlobalPermissions.Disclosing...)
+		permissions = append(conf.Requestors[requestor].Disclosing, conf.Disclosing...)
 	case irma.ActionSigning:
-		permissions = append(conf.Requestors[requestor].Signing, conf.GlobalPermissions.Signing...)
+		permissions = append(conf.Requestors[requestor].Signing, conf.Signing...)
 	}
 	if len(permissions) == 0 { // requestor is not present in the permissions
 		return false, ""
@@ -224,7 +223,7 @@ func (conf *Configuration) validatePermissions() error {
 		return errors.New("Requestors must not be configured when requestor authentication is disabled")
 	}
 
-	errs := conf.validatePermissionSet("Global", conf.GlobalPermissions)
+	errs := conf.validatePermissionSet("Global", conf.Permissions)
 	for name, requestor := range conf.Requestors {
 		errs = append(errs, conf.validatePermissionSet("Requestor "+name, requestor.Permissions)...)
 	}
