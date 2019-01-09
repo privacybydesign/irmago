@@ -58,8 +58,10 @@ func startServer(s *http.Server, handler http.Handler, name, addr string, port i
 	s.Handler = handler
 	var err error
 	if tlsConf != nil {
-		conf.Logger.Info(name, " TLS enabled")
 		s.TLSConfig = tlsConf
+		// Disable HTTP/2 (see package documentation of http): it breaks server side events :(
+		s.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+		conf.Logger.Info(name, " TLS enabled")
 		err = s.ListenAndServeTLS("", "")
 	} else {
 		err = s.ListenAndServe()
