@@ -119,6 +119,16 @@ func setFlags(cmd *cobra.Command) error {
 	flags.StringSlice("sign", nil, "Comma-separated list of attributes that all requestors may request in signatures")
 	flags.StringSlice("issue", nil, "Comma-separated list of attributes that all requestors may issue")
 
+	flags.String("tlscertificate", "", "TLS certificate ")
+	flags.String("tlscertificatefile", "", "Path to TLS certificate ")
+	flags.String("tlsprivatekey", "", "TLS private key")
+	flags.String("tlsprivatekeyfile", "", "Path to TLS private key")
+
+	flags.String("clienttlscertificate", "", "TLS certificate for IRMA app server")
+	flags.String("clienttlscertificatefile", "", "Path to TLS certificate for IRMA app server")
+	flags.String("clienttlsprivatekey", "", "TLS private key for IRMA app server")
+	flags.String("clienttlsprivatekeyfile", "", "Path to TLS private key for IRMA app server")
+
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 
@@ -187,6 +197,15 @@ func configure(cmd *cobra.Command) error {
 		MaxRequestAge:                  viper.GetInt("maxrequestage"),
 		Verbose:                        viper.GetInt("verbose"),
 		Quiet:                          viper.GetBool("quiet"),
+
+		TlsCertificate:           viper.GetString("tlscertificate"),
+		TlsCertificateFile:       viper.GetString("tlscertificatefile"),
+		TlsPrivateKey:            viper.GetString("tlsprivatekey"),
+		TlsPrivateKeyFile:        viper.GetString("tlsprivatekeyfile"),
+		ClientTlsCertificate:     viper.GetString("clienttlscertificate"),
+		ClientTlsCertificateFile: viper.GetString("clienttlscertificatefile"),
+		ClientTlsPrivateKey:      viper.GetString("clienttlsprivatekey"),
+		ClientTlsPrivateKeyFile:  viper.GetString("clienttlsprivatekeyfile"),
 	}
 
 	// Handle global permissions
@@ -212,8 +231,6 @@ func configure(cmd *cobra.Command) error {
 		}
 	}
 
-	bts, _ := json.MarshalIndent(conf, "", "   ")
-	logger.Debug("Configuration: ", string(bts), "\n")
 	logger.Debug("Done configuring")
 
 	return nil

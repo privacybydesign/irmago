@@ -2,7 +2,9 @@
 package irmaserver
 
 import (
+	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
@@ -39,20 +41,30 @@ func Start(config *Configuration) error {
 
 func startRequestorServer() {
 	serv = &http.Server{}
-	startServer(serv, Handler(), "Server", conf.ListenAddress, conf.Port)
+	tlsConf, _ := conf.tlsConfig()
+	startServer(serv, Handler(), "Server", conf.ListenAddress, conf.Port, tlsConf)
 }
 
 func startClientServer() {
 	clientserv = &http.Server{}
-	startServer(clientserv, ClientHandler(), "Client server", conf.ClientListenAddress, conf.ClientPort)
+	tlsConf, _ := conf.clientTlsConfig()
+	startServer(clientserv, ClientHandler(), "Client server", conf.ClientListenAddress, conf.ClientPort, tlsConf)
 }
 
-func startServer(s *http.Server, handler http.Handler, name, addr string, port int) {
+func startServer(s *http.Server, handler http.Handler, name, addr string, port int, tlsConf *tls.Config) {
 	fulladdr := fmt.Sprintf("%s:%d", addr, port)
 	conf.Logger.Info(name, " listening at ", fulladdr)
 	s.Addr = fulladdr
 	s.Handler = handler
-	if err := s.ListenAndServe(); err != http.ErrServerClosed {
+	var err error
+	if tlsConf != nil {
+		conf.Logger.Info(name, " TLS enabled")
+		s.TLSConfig = tlsConf
+		err = s.ListenAndServeTLS("", "")
+	} else {
+		err = s.ListenAndServe()
+	}
+	if err != http.ErrServerClosed {
 		_ = server.LogFatal(err)
 	}
 }
@@ -84,6 +96,8 @@ func Initialize(config *Configuration) error {
 	if err := conf.initialize(); err != nil {
 		return err
 	}
+	bts, _ := json.MarshalIndent(config, "", "   ")
+	config.Logger.Debug("Configuration: ", string(bts), "\n")
 	return nil
 }
 

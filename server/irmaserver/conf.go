@@ -2,6 +2,7 @@ package irmaserver
 
 import (
 	"crypto/rsa"
+	"crypto/tls"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -26,11 +27,21 @@ type Configuration struct {
 	ListenAddress string `json:"listenaddr" mapstructure:"listenaddr"`
 	// Port to listen at
 	Port int `json:"port" mapstructure:"port"`
+	// TLS configuration
+	TlsCertificate     string `json:"tlscertificate" mapstructure:"tlscertificate"`
+	TlsCertificateFile string `json:"tlscertificatefile" mapstructure:"tlscertificatefile"`
+	TlsPrivateKey      string `json:"tlsprivatekey" mapstructure:"tlsprivatekey"`
+	TlsPrivateKeyFile  string `json:"tlsprivatekeyfile" mapstructure:"tlsprivatekeyfile"`
 
 	// If specified, start a separate server for the IRMA app at his port
 	ClientPort int `json:"clientport" mapstructure:"clientport"`
 	// If clientport is specified, the server for the IRMA app listens at this address
 	ClientListenAddress string `json:"clientlistenaddr" mapstructure:"clientlistenaddr"`
+	// TLS configuration for irmaclient HTTP API
+	ClientTlsCertificate     string `json:"clienttlscertificate" mapstructure:"clienttlscertificate"`
+	ClientTlsCertificateFile string `json:"clienttlscertificatefile" mapstructure:"clienttlscertificatefile"`
+	ClientTlsPrivateKey      string `json:"clienttlsprivatekey" mapstructure:"clienttlsprivatekey"`
+	ClientTlsPrivateKeyFile  string `json:"clienttlsprivatekeyfile" mapstructure:"clienttlsprivatekeyfile"`
 
 	// Requestor-specific permission and authentication configuration
 	RequestorsString string               `json:"-" mapstructure:"requestors"`
@@ -172,6 +183,15 @@ func (conf *Configuration) initialize() error {
 		return errors.New("clientlistenaddr must be combined with a nonzero clientport")
 	}
 
+	tlsConf, err := conf.tlsConfig()
+	if err != nil {
+		return errors.WrapPrefix(err, "Failed to read TLS configuration", 0)
+	}
+	clientTlsConf, err := conf.clientTlsConfig()
+	if err != nil {
+		return errors.WrapPrefix(err, "Failed to read client TLS configuration", 0)
+	}
+
 	if err := conf.validatePermissions(); err != nil {
 		return err
 	}
@@ -188,6 +208,12 @@ func (conf *Configuration) initialize() error {
 		}
 		replace := "$1:" + strconv.Itoa(port)
 		conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
+		separateClientServer := conf.separateClientServer()
+		if (separateClientServer && clientTlsConf != nil) || (!separateClientServer && tlsConf != nil) {
+			if strings.HasPrefix(conf.URL, "http://") {
+				conf.URL = "https://" + conf.URL[len("http://"):]
+			}
+		}
 	}
 
 	return nil
@@ -260,6 +286,48 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 	}
 
 	return errs
+}
+
+func (conf *Configuration) clientTlsConfig() (*tls.Config, error) {
+	return conf.readTlsConf(conf.ClientTlsCertificate, conf.ClientTlsCertificateFile, conf.ClientTlsPrivateKey, conf.ClientTlsPrivateKeyFile)
+}
+
+func (conf *Configuration) tlsConfig() (*tls.Config, error) {
+	return conf.readTlsConf(conf.TlsCertificate, conf.TlsCertificateFile, conf.TlsPrivateKey, conf.TlsPrivateKeyFile)
+}
+
+func (conf *Configuration) readTlsConf(cert, certfile, key, keyfile string) (*tls.Config, error) {
+	if cert == "" && certfile == "" && key == "" && keyfile == "" {
+		return nil, nil
+	}
+
+	var certbts, keybts []byte
+	var err error
+	if certbts, err = fs.ReadKey(cert, certfile); err != nil {
+		return nil, err
+	}
+	if keybts, err = fs.ReadKey(key, keyfile); err != nil {
+		return nil, err
+	}
+
+	cer, err := tls.X509KeyPair(certbts, keybts)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		Certificates:             []tls.Certificate{cer},
+		MinVersion:               tls.VersionTLS12,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}, nil
 }
 
 func (conf *Configuration) readPrivateKey() error {
