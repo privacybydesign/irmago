@@ -154,13 +154,12 @@
   revision = "3b087ef2d313afe6c55b2f511d20db04ca767075"
 
 [[projects]]
-  digest = "1:c0d19ab64b32ce9fe5cf4ddceba78d5bc9807f0016db6b1183599da3dcc24d10"
+  digest = "1:ea40c24cdbacd054a6ae9de03e62c5f252479b96c716375aace5c120d68647c8"
   name = "github.com/hashicorp/hcl"
   packages = [
     ".",
     "hcl/ast",
     "hcl/parser",
-    "hcl/printer",
     "hcl/scanner",
     "hcl/strconv",
     "hcl/token",
@@ -316,12 +315,13 @@
   version = "v1.0.0"
 
 [[projects]]
-  digest = "1:1b21a2b4058a779f290c7341cd93267492e0ecea6c8b54f64a4a5fd7ff131034"
+  branch = "headers-in-flag-usage"
+  digest = "1:df9eb40c8a441518df2f01209df7f7063897883175dbca55fd01f9d6d6e18900"
   name = "github.com/spf13/pflag"
   packages = ["."]
   pruneopts = "UT"
-  revision = "e57e3eeb33f795204c1ca35f56c44f83227c6e66"
-  version = "v1.0.0"
+  revision = "a45bfec10d5967283b482dc135e35e339406c5f9"
+  source = "github.com/sietseringers/pflag"
 
 [[projects]]
   branch = "fix-isset"

@@ -54,6 +54,11 @@
   branch = "fix-isset"
 
 [[override]]
+  name = "github.com/spf13/pflag"
+  source = "github.com/sietseringers/pflag"
+  branch = "headers-in-flag-usage"
+
+[[override]]
   branch = "master"
   name = "github.com/timshannon/bolthold"
 
