@@ -38,7 +38,7 @@ var IrmaServerConfiguration = &irmaserver.Configuration{
 	Configuration: &server.Configuration{
 		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
-		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
 	DisableRequestorAuthentication: true,
@@ -49,7 +49,7 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 	Configuration: &server.Configuration{
 		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
-		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
 	Port: 48682,

@@ -25,7 +25,7 @@ func StartIrmaClientServer(t *testing.T) {
 	require.NoError(t, irmarequestor.Initialize(&server.Configuration{
 		URL:                   "http://localhost:48680",
 		Logger:                logger,
-		IrmaConfigurationPath: filepath.Join(testdata, "irma_configuration"),
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	}))
 

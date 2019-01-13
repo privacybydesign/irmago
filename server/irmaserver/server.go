@@ -30,6 +30,9 @@ func Start(config *Configuration) error {
 		return err
 	}
 
+	bts, _ := json.MarshalIndent(conf, "", "   ")
+	conf.Logger.Debug("Configuration: ", string(bts), "\n")
+
 	// Start server(s)
 	if conf.separateClientServer() {
 		go startClientServer()
@@ -98,8 +101,6 @@ func Initialize(config *Configuration) error {
 	if err := conf.initialize(); err != nil {
 		return err
 	}
-	bts, _ := json.MarshalIndent(config, "", "   ")
-	config.Logger.Debug("Configuration: ", string(bts), "\n")
 	return nil
 }
 

@@ -33,13 +33,10 @@ func Initialize(configuration *server.Configuration) error {
 
 	if conf.IrmaConfiguration == nil {
 		var err error
-		if conf.CachePath == "" {
-			conf.IrmaConfiguration, err = irma.NewConfiguration(conf.IrmaConfigurationPath)
+		if conf.SchemesAssetsPath == "" {
+			conf.IrmaConfiguration, err = irma.NewConfiguration(conf.SchemesPath)
 		} else {
-			conf.IrmaConfiguration, err = irma.NewConfigurationFromAssets(
-				filepath.Join(conf.CachePath, "irma_configuration"),
-				conf.IrmaConfigurationPath,
-			)
+			conf.IrmaConfiguration, err = irma.NewConfigurationFromAssets(conf.SchemesPath, conf.SchemesAssetsPath)
 		}
 		if err != nil {
 			return server.LogError(err)
@@ -58,7 +55,6 @@ func Initialize(configuration *server.Configuration) error {
 			return server.LogError(errors.New("no schemes found in irma_configuration folder " + conf.IrmaConfiguration.Path))
 		}
 	}
-
 	if conf.SchemeUpdateInterval != 0 {
 		conf.IrmaConfiguration.AutoUpdateSchemes(uint(conf.SchemeUpdateInterval))
 	}

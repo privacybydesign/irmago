@@ -49,10 +49,17 @@ Specify -v to see the configuration.`,
 		if err := configure(command); err != nil {
 			die(errors.WrapPrefix(err, "Failed to read configuration from file, args, or env vars", 0))
 		}
-		conf.SchemeUpdateInterval = 0
+		interval := conf.SchemeUpdateInterval
+		download := conf.DownloadDefaultSchemes
+		conf.SchemeUpdateInterval = 0       // Hack: put this to 0 to prevent Initialize() from immediately updating schemes
+		conf.DownloadDefaultSchemes = false // and this to false to prevent default scheme downloading
 		if err := irmaserver.Initialize(conf); err != nil {
 			die(errors.WrapPrefix(err, "Invalid configuration", 0))
 		}
+		conf.SchemeUpdateInterval = interval // restore previous values before printing configuration
+		conf.DownloadDefaultSchemes = download
+		bts, _ := json.MarshalIndent(conf, "", "   ")
+		conf.Logger.Debug("Configuration: ", string(bts), "\n")
 	},
 }
 
@@ -87,10 +94,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags := cmd.Flags()
 	flags.SortFlags = false
 
-	cachepath, err := server.CachePath()
-	if err != nil {
-		return err
-	}
+	schemespath := server.DefaultSchemesPath()
 	defaulturl, err := server.LocalIP()
 	if err != nil {
 		logger.Warn("Could not determine local IP address: ", err.Error())
@@ -98,33 +102,32 @@ func setFlags(cmd *cobra.Command) error {
 		defaulturl = "http://" + defaulturl + ":port"
 	}
 
-	flags.StringP("config", "c", "", "Path to configuration file")
-	flags.StringP("schemes-path", "i", "", "path to irma_configuration")
-	flags.String("cache-path", cachepath, "Directory for writing cache files to")
-	flags.Uint("schemes-update", 60, "Update IRMA schemes every x minutes (0 to disable)")
-	flags.Int("max-request-age", 300, "Max age in seconds of a session request JWT")
-	flags.StringP("url", "u", defaulturl, "External URL to server to which the IRMA client connects")
+	flags.StringP("config", "c", "", "path to configuration file")
+	flags.StringP("schemes-path", "i", schemespath, "path to irma_configuration")
+	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into schemes-path")
+	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
+	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
+	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects")
 
-	flags.StringP("listen-addr", "l", "0.0.0.0", "Address at which to listen")
-	flags.IntP("port", "p", 8088, "Port at which to listen")
-	flags.String("client-listen-addr", "", "Address at which server for IRMA app listens")
-	flags.Int("client-port", 0, "If specified, start a separate server for the IRMA app at his port")
-	flags.Lookup("listen-addr").Header = `Server address and port to listen on. If the client* configuration options are provided (see also the TLS flags)
+	flags.IntP("port", "p", 8088, "port at which to listen")
+	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
+	flags.Int("client-port", 0, "if specified, start a separate server for the IRMA app at this port")
+	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
+	flags.Lookup("port").Header = `Server address and port to listen on. If the client* configuration options are provided (see also the TLS flags)
 then the endpoints at /session for the requestor and /irma for the irmaclient (i.e. IRMA app) will listen on
 distinct network endpoints (e.g., localhost:1234/session and 0.0.0.0:5678/irma).`
 
-	flags.Bool("no-auth", false, "Whether or not to authenticate requestors")
-	flags.String("requestors", "", "Requestor configuration (in JSON)")
+	flags.Bool("no-auth", false, "whether or not to authenticate requestors")
+	flags.String("requestors", "", "requestor configuration (in JSON)")
 	flags.Lookup("no-auth").Header = `Requestor authentication. If disabled, then anyone that can reach this server can submit requests to it.
 If it is enabled, then requestor specific configuration must be provided.`
 
 	flags.StringSlice("disclose-perms", nil, "list of attributes that all requestors may verify (default *)")
 	flags.StringSlice("sign-perms", nil, "list of attributes that all requestors may request in signatures (default *)")
 	flags.StringSlice("issue-perms", nil, "list of attributes that all requestors may issue")
-	flags.Lookup("disclose-perms").Header = `Default requestor permissions. These apply to all requestors, in addition to any permissions a requestor may
-have specifically. May contain wildcards. Separate multiple with comma. Example: irma-demo.*,pbdf.*
-By default all requestors may use all attributes in disclosure and signature sessions.
-Pass empty string to disable session type.`
+	flags.Lookup("disclose-perms").Header = `Default requestor permissions. Apply to all requestors, in addition to requestor specific permissions.
+May contain wildcards. Separate multiple with comma. Example: irma-demo.*,pbdf.*. By default all requestors
+may use all attributes in disclosure and signature sessions. Pass empty string to disable session type.`
 
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.Lookup("privkeys").Header = `Path to a folder containing IRMA private keys, with filenames scheme.issuer.xml, e.g. irma-demo.MijnOverheid.xml.
@@ -132,19 +135,19 @@ Private keys may also be stored in the scheme (e.g. irma-demo/MijnOverheid/Priva
 
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
-	flags.String("jwt-privkeyfile", "", "Path to JWT private key")
+	flags.String("jwt-privkeyfile", "", "path to JWT private key")
 	flags.Lookup("jwt-issuer").Header = `JWT configuration. Can be omitted but then endpoints that return signed JWTs are disabled.
 All of the keys and certificates below are expected in PEM. Pass it either directly, or a path to it
 using the corresponding "-file" flag.`
 
-	flags.String("tls-cert", "", "TLS certificate")
-	flags.String("tls-cert-file", "", "Path to TLS certificate ")
+	flags.String("tls-cert", "", "TLS certificate (chain)")
+	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
-	flags.String("tls-privkey-file", "", "Path to TLS private key")
-	flags.String("client-tls-cert", "", "TLS certificate for IRMA app server")
-	flags.String("client-tls-cert-file", "", "Path to TLS certificate for IRMA app server")
+	flags.String("tls-privkey-file", "", "path to TLS private key")
+	flags.String("client-tls-cert", "", "TLS certificate (chain) for IRMA app server")
+	flags.String("client-tls-cert-file", "", "path to TLS certificate (chain) for IRMA app server")
 	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
-	flags.String("client-tls-privkey-file", "", "Path to TLS private key for IRMA app server")
+	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
 	flags.Lookup("tls-cert").Header = "TLS configuration. Leave empty to disable TLS."
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
@@ -199,12 +202,13 @@ func configure(cmd *cobra.Command) error {
 	// Read configuration from flags and/or environmental variables
 	conf = &irmaserver.Configuration{
 		Configuration: &server.Configuration{
-			IrmaConfigurationPath: viper.GetString("schemes-path"),
-			IssuerPrivateKeysPath: viper.GetString("privkeys"),
-			CachePath:             viper.GetString("cache-path"),
-			URL:                   viper.GetString("url"),
-			SchemeUpdateInterval:  viper.GetInt("schemes-update"),
-			Logger:                logger,
+			DownloadDefaultSchemes: true, // If we get passed an empty schemes-path, download default schemes into it
+			SchemesPath:            viper.GetString("schemes-path"),
+			SchemesAssetsPath:      viper.GetString("schemes-assets-path"),
+			SchemeUpdateInterval:   viper.GetInt("schemes-update"),
+			IssuerPrivateKeysPath:  viper.GetString("privkeys"),
+			URL:    viper.GetString("url"),
+			Logger: logger,
 		},
 		Permissions: irmaserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),

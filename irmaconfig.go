@@ -97,12 +97,14 @@ func (sme SchemeManagerError) Error() string {
 	return fmt.Sprintf("Error parsing scheme manager %s: %s", sme.Manager.Name(), sme.Err.Error())
 }
 
-// newConfiguration returns a new configuration. After this
+// NewConfiguration returns a new configuration. After this
 // ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string) (*Configuration, error) {
 	return newConfiguration(path, "")
 }
 
+// NewConfigurationReadOnly returns a new configuration whose representation on disk
+// is never altered. ParseFolder() should be called to parse the specified path.
 func NewConfigurationReadOnly(path string) (*Configuration, error) {
 	conf, err := newConfiguration(path, "")
 	if err != nil {
@@ -112,6 +114,8 @@ func NewConfigurationReadOnly(path string) (*Configuration, error) {
 	return conf, nil
 }
 
+// NewConfigurationFromAssets returns a new configuration, copying the schemes out of the assets folder to path.
+// ParseFolder() should be called to parse the specified path.
 func NewConfigurationFromAssets(path, assets string) (*Configuration, error) {
 	return newConfiguration(path, assets)
 }

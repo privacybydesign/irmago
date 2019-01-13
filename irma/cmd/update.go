@@ -7,6 +7,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/spf13/cobra"
 )
 
@@ -16,12 +17,12 @@ var updateCmd = &cobra.Command{
 	Long:  updateHelp(),
 	Run: func(cmd *cobra.Command, args []string) {
 		var paths []string
-		irmaconf := defaultIrmaconfPath()
+		irmaconf := server.DefaultSchemesPath()
 		if len(args) != 0 {
 			paths = args
 		} else {
 			if irmaconf == "" {
-				die("Failed to read default irma_configuration path", nil)
+				die("Failed to find default irma_configuration path", nil)
 			}
 			files, err := ioutil.ReadDir(irmaconf)
 			if err != nil {
@@ -70,7 +71,7 @@ func updateSchemeManager(paths []string) error {
 }
 
 func updateHelp() string {
-	defaultIrmaconf := defaultIrmaconfPath()
+	defaultIrmaconf := server.DefaultSchemesPath()
 	str := "The update command updates an IRMA scheme within an irma_configuration folder by comparing its index with the online version, and downloading any new and changed files.\n\n"
 	if defaultIrmaconf != "" {
 		str += "If no paths are given, the default schemes at " + defaultIrmaconf + " are updated.\n\n"

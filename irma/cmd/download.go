@@ -9,6 +9,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,7 @@ var downloadCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		var path string
 		var urls []string
-		defaultIrmaconf := defaultIrmaconfPath()
+		defaultIrmaconf := server.DefaultSchemesPath()
 
 		if len(args) == 0 {
 			path = defaultIrmaconf
@@ -99,7 +100,7 @@ func downloadSchemeManager(dest string, urls []string) error {
 }
 
 func downloadHelp() string {
-	defaultIrmaconf := defaultIrmaconfPath()
+	defaultIrmaconf := server.DefaultSchemesPath()
 	str := "The download command downloads and saves scheme managers given their URLs, saving it in path (i.e., an irma_configuration folder).\n\n"
 	if defaultIrmaconf != "" {
 		str += "If path is not given, the default path " + defaultIrmaconf + " is used.\n"

@@ -60,7 +60,7 @@ func EnsureDirectoryExists(path string) error {
 	if exists {
 		return nil
 	}
-	return os.Mkdir(path, 0700)
+	return os.MkdirAll(path, 0700)
 }
 
 func Empty(path string) bool {

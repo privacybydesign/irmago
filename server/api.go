@@ -22,14 +22,14 @@ var Logger *logrus.Logger = logrus.StandardLogger()
 
 // Configuration contains configuration for the irmarequestor library and irmaserver.
 type Configuration struct {
-	// irma_configuration. If not given, this will be popupated using IrmaConfigurationPath.
+	// irma_configuration. If not given, this will be popupated using SchemesPath.
 	IrmaConfiguration *irma.Configuration `json:"-"`
-	// Path to schemes to parse (only used if IrmaConfiguration is not given)
-	IrmaConfigurationPath string `json:"schemes_path" mapstructure:"schemes_path"`
-	// Path to writable dir to write cache to (only used if IrmaConfiguration is not given)
-	CachePath string `json:"cache_path" mapstructure:"cache_path"`
-	// Whether or not to download default IRMA schemes if the specified irma_configuration is empty
-	DownloadDefaultSchemes bool `json:"download_schemes" mapstructure:"download_schemes"`
+	// Path to IRMA schemes to parse into IrmaConfiguration (only used if IrmaConfiguration == nil)
+	SchemesPath string `json:"schemes_path" mapstructure:"schemes_path"`
+	// If specified, schemes found here are copied into SchemesPath (only used if IrmaConfiguration == nil)
+	SchemesAssetsPath string `json:"schemes_assets_path" mapstructure:"schemes_assets_path"`
+	// Whether or not to download default IRMA schemes if the specified schemes path is empty
+	DownloadDefaultSchemes bool `json:"schemes_download_default" mapstructure:"schemes_download_default"`
 	// Update all schemes every x minutes (0 to disable)
 	SchemeUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
 	// Path to issuer private keys to parse
@@ -210,17 +210,13 @@ func LocalIP() (string, error) {
 	return "", errors.New("No IP found")
 }
 
-func CachePath() (string, error) {
+func DefaultSchemesPath() string {
 	candidates := make([]string, 0, 2)
 	if runtime.GOOS != "windows" {
-		candidates = append(candidates, filepath.Join("/var/tmp", "irma"))
+		candidates = append(candidates, "/var/tmp/irma/irma_configuration")
 	}
-	candidates = append(candidates, filepath.Join(os.TempDir(), "irma"))
-	path := firstWritablePath(candidates)
-	if path == "" {
-		return "", errors.New("No writable temporary directory found")
-	}
-	return path, nil
+	candidates = append(candidates, filepath.Join(os.TempDir(), "irma", "irma_configuration"))
+	return firstWritablePath(candidates)
 }
 
 func firstWritablePath(paths []string) string {
@@ -255,7 +251,13 @@ func log(level logrus.Level, err error) error {
 }
 
 func LogFatal(err error) error {
-	return log(logrus.FatalLevel, err)
+	// using log() for this doesn't seem to do anything
+	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.TraceLevel) {
+		Logger.Fatal(e.ErrorStack())
+	} else {
+		Logger.Fatalf("%s %s", reflect.TypeOf(err).String(), err.Error())
+	}
+	return err
 }
 
 func LogError(err error) error {

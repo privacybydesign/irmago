@@ -444,7 +444,7 @@ func init() {
 
 	flags := sessionCmd.Flags()
 	flags.SortFlags = false
-	flags.StringP("irmaconf", "i", defaultIrmaconfPath(), "path to irma_configuration")
+	flags.StringP("irmaconf", "i", server.DefaultSchemesPath(), "path to irma_configuration")
 	flags.StringP("privatekeys", "k", "", "path to private keys")
 	flags.IntP("port", "p", 48680, "port to listen at")
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
