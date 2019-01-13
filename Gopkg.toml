@@ -51,7 +51,7 @@
 [[constraint]]
   name = "github.com/spf13/viper"
   source = "github.com/sietseringers/viper"
-  branch = "fix-isset"
+  branch = "add-file-key-replacer"
 
 [[override]]
   name = "github.com/spf13/pflag"

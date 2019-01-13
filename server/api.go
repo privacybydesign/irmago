@@ -25,15 +25,15 @@ type Configuration struct {
 	// irma_configuration. If not given, this will be popupated using IrmaConfigurationPath.
 	IrmaConfiguration *irma.Configuration `json:"-"`
 	// Path to schemes to parse (only used if IrmaConfiguration is not given)
-	IrmaConfigurationPath string `json:"irmaconf" mapstructure:"irmaconf"`
+	IrmaConfigurationPath string `json:"schemes_path" mapstructure:"schemes_path"`
 	// Path to writable dir to write cache to (only used if IrmaConfiguration is not given)
-	CachePath string `json:"cachepath" mapstructure:"cachepath"`
+	CachePath string `json:"cache_path" mapstructure:"cache_path"`
 	// Whether or not to download default IRMA schemes if the specified irma_configuration is empty
-	DownloadDefaultSchemes bool `json:"downloadschemes" mapstructure:"downloadschemes"`
+	DownloadDefaultSchemes bool `json:"download_schemes" mapstructure:"download_schemes"`
 	// Update all schemes every x minutes (0 to disable)
-	SchemeUpdateInterval int `json:"schemeupdate" mapstructure:"schemeupdate"`
+	SchemeUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
 	// Path to issuer private keys to parse
-	IssuerPrivateKeysPath string `json:"privatekeys" mapstructure:"privatekeys"`
+	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
 	// Issuer private keys
 	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions

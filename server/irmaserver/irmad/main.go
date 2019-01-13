@@ -99,53 +99,53 @@ func setFlags(cmd *cobra.Command) error {
 	}
 
 	flags.StringP("config", "c", "", "Path to configuration file")
-	flags.StringP("irmaconf", "i", "", "path to irma_configuration")
-	flags.String("cachepath", cachepath, "Directory for writing cache files to")
-	flags.Uint("schemeupdate", 60, "Update IRMA schemes every x minutes (0 to disable)")
-	flags.Int("maxrequestage", 300, "Max age in seconds of a session request JWT")
+	flags.StringP("schemes-path", "i", "", "path to irma_configuration")
+	flags.String("cache-path", cachepath, "Directory for writing cache files to")
+	flags.Uint("schemes-update", 60, "Update IRMA schemes every x minutes (0 to disable)")
+	flags.Int("max-request-age", 300, "Max age in seconds of a session request JWT")
 	flags.StringP("url", "u", defaulturl, "External URL to server to which the IRMA client connects")
 
-	flags.StringP("listenaddr", "l", "0.0.0.0", "Address at which to listen")
+	flags.StringP("listen-addr", "l", "0.0.0.0", "Address at which to listen")
 	flags.IntP("port", "p", 8088, "Port at which to listen")
-	flags.Int("clientport", 0, "If specified, start a separate server for the IRMA app at his port")
-	flags.String("clientlistenaddr", "", "Address at which server for IRMA app listens")
-	flags.Lookup("listenaddr").Header = `Server address and port to listen on. If the client* configuration options are provided (see also the TLS flags)
+	flags.String("client-listen-addr", "", "Address at which server for IRMA app listens")
+	flags.Int("client-port", 0, "If specified, start a separate server for the IRMA app at his port")
+	flags.Lookup("listen-addr").Header = `Server address and port to listen on. If the client* configuration options are provided (see also the TLS flags)
 then the endpoints at /session for the requestor and /irma for the irmaclient (i.e. IRMA app) will listen on
 distinct network endpoints (e.g., localhost:1234/session and 0.0.0.0:5678/irma).`
 
-	flags.Bool("noauth", false, "Whether or not to authenticate requestors")
+	flags.Bool("no-auth", false, "Whether or not to authenticate requestors")
 	flags.String("requestors", "", "Requestor configuration (in JSON)")
-	flags.Lookup("noauth").Header = `Requestor authentication. If disabled, then anyone that can reach this server can submit requests to it.
+	flags.Lookup("no-auth").Header = `Requestor authentication. If disabled, then anyone that can reach this server can submit requests to it.
 If it is enabled, then requestor specific configuration must be provided.`
 
-	flags.StringSlice("disclose", nil, "list of attributes that all requestors may verify (default *)")
-	flags.StringSlice("sign", nil, "list of attributes that all requestors may request in signatures (default *)")
-	flags.StringSlice("issue", nil, "list of attributes that all requestors may issue")
-	flags.Lookup("disclose").Header = `Default requestor permissions. These apply to all requestors, in addition to any permissions a requestor may
+	flags.StringSlice("disclose-perms", nil, "list of attributes that all requestors may verify (default *)")
+	flags.StringSlice("sign-perms", nil, "list of attributes that all requestors may request in signatures (default *)")
+	flags.StringSlice("issue-perms", nil, "list of attributes that all requestors may issue")
+	flags.Lookup("disclose-perms").Header = `Default requestor permissions. These apply to all requestors, in addition to any permissions a requestor may
 have specifically. May contain wildcards. Separate multiple with comma. Example: irma-demo.*,pbdf.*
 By default all requestors may use all attributes in disclosure and signature sessions.
 Pass empty string to disable session type.`
 
-	flags.StringP("privatekeys", "k", "", "path to IRMA private keys")
-	flags.Lookup("privatekeys").Header = `Path to a folder containing IRMA private keys, with filenames scheme.issuer.xml, e.g. irma-demo.MijnOverheid.xml.
+	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
+	flags.Lookup("privkeys").Header = `Path to a folder containing IRMA private keys, with filenames scheme.issuer.xml, e.g. irma-demo.MijnOverheid.xml.
 Private keys may also be stored in the scheme (e.g. irma-demo/MijnOverheid/PrivateKeys/0.xml).`
 
-	flags.StringP("jwtissuer", "j", "irmaserver", "JWT issuer")
-	flags.String("jwtprivatekey", "", "JWT private key")
-	flags.String("jwtprivatekeyfile", "", "Path to JWT private key")
-	flags.Lookup("jwtissuer").Header = `JWT configuration. Can be omitted but then endpoints that return signed JWTs are disabled.
+	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
+	flags.String("jwt-privkey", "", "JWT private key")
+	flags.String("jwt-privkeyfile", "", "Path to JWT private key")
+	flags.Lookup("jwt-issuer").Header = `JWT configuration. Can be omitted but then endpoints that return signed JWTs are disabled.
 All of the keys and certificates below are expected in PEM. Pass it either directly, or a path to it
 using the corresponding "-file" flag.`
 
-	flags.String("tlscertificate", "", "TLS certificate")
-	flags.String("tlscertificatefile", "", "Path to TLS certificate ")
-	flags.String("tlsprivatekey", "", "TLS private key")
-	flags.String("tlsprivatekeyfile", "", "Path to TLS private key")
-	flags.String("clienttlscertificate", "", "TLS certificate for IRMA app server")
-	flags.String("clienttlscertificatefile", "", "Path to TLS certificate for IRMA app server")
-	flags.String("clienttlsprivatekey", "", "TLS private key for IRMA app server")
-	flags.String("clienttlsprivatekeyfile", "", "Path to TLS private key for IRMA app server")
-	flags.Lookup("tlscertificate").Header = "TLS configuration. Leave empty to disable TLS."
+	flags.String("tls-cert", "", "TLS certificate")
+	flags.String("tls-cert-file", "", "Path to TLS certificate ")
+	flags.String("tls-privkey", "", "TLS private key")
+	flags.String("tls-privkey-file", "", "Path to TLS private key")
+	flags.String("client-tls-cert", "", "TLS certificate for IRMA app server")
+	flags.String("client-tls-cert-file", "", "Path to TLS certificate for IRMA app server")
+	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
+	flags.String("client-tls-privkey-file", "", "Path to TLS private key for IRMA app server")
+	flags.Lookup("tls-cert").Header = "TLS configuration. Leave empty to disable TLS."
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
@@ -155,6 +155,9 @@ using the corresponding "-file" flag.`
 }
 
 func configure(cmd *cobra.Command) error {
+	dashReplacer := strings.NewReplacer("-", "_")
+	viper.SetEnvKeyReplacer(dashReplacer)
+	viper.SetFileKeyReplacer(dashReplacer)
 	viper.SetEnvPrefix("IRMASERVER")
 	viper.AutomaticEnv()
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
@@ -196,39 +199,39 @@ func configure(cmd *cobra.Command) error {
 	// Read configuration from flags and/or environmental variables
 	conf = &irmaserver.Configuration{
 		Configuration: &server.Configuration{
-			IrmaConfigurationPath: viper.GetString("irmaconf"),
-			IssuerPrivateKeysPath: viper.GetString("privatekeys"),
-			CachePath:             viper.GetString("cachepath"),
+			IrmaConfigurationPath: viper.GetString("schemes-path"),
+			IssuerPrivateKeysPath: viper.GetString("privkeys"),
+			CachePath:             viper.GetString("cache-path"),
 			URL:                   viper.GetString("url"),
-			SchemeUpdateInterval:  viper.GetInt("schemeupdate"),
+			SchemeUpdateInterval:  viper.GetInt("schemes-update"),
 			Logger:                logger,
 		},
 		Permissions: irmaserver.Permissions{
-			Disclosing: handlePermission("disclose"),
-			Signing:    handlePermission("sign"),
-			Issuing:    viper.GetStringSlice("issue"),
+			Disclosing: handlePermission("disclose-perms"),
+			Signing:    handlePermission("sign-perms"),
+			Issuing:    viper.GetStringSlice("issue-perms"),
 		},
-		ListenAddress:                  viper.GetString("listenaddr"),
+		ListenAddress:                  viper.GetString("listen-addr"),
 		Port:                           viper.GetInt("port"),
-		ClientListenAddress:            viper.GetString("clientlistenaddr"),
-		ClientPort:                     viper.GetInt("clientport"),
-		DisableRequestorAuthentication: viper.GetBool("noauth"),
+		ClientListenAddress:            viper.GetString("client-listen-addr"),
+		ClientPort:                     viper.GetInt("client-port"),
+		DisableRequestorAuthentication: viper.GetBool("no-auth"),
 		Requestors:                     make(map[string]irmaserver.Requestor),
-		JwtIssuer:                      viper.GetString("jwtissuer"),
-		JwtPrivateKey:                  viper.GetString("jwtprivatekey"),
-		JwtPrivateKeyFile:              viper.GetString("jwtprivatekeyfile"),
-		MaxRequestAge:                  viper.GetInt("maxrequestage"),
+		JwtIssuer:                      viper.GetString("jwt-issuer"),
+		JwtPrivateKey:                  viper.GetString("jwt-privkey"),
+		JwtPrivateKeyFile:              viper.GetString("jwt-privkey-file"),
+		MaxRequestAge:                  viper.GetInt("max-request-age"),
 		Verbose:                        viper.GetInt("verbose"),
 		Quiet:                          viper.GetBool("quiet"),
 
-		TlsCertificate:           viper.GetString("tlscertificate"),
-		TlsCertificateFile:       viper.GetString("tlscertificatefile"),
-		TlsPrivateKey:            viper.GetString("tlsprivatekey"),
-		TlsPrivateKeyFile:        viper.GetString("tlsprivatekeyfile"),
-		ClientTlsCertificate:     viper.GetString("clienttlscertificate"),
-		ClientTlsCertificateFile: viper.GetString("clienttlscertificatefile"),
-		ClientTlsPrivateKey:      viper.GetString("clienttlsprivatekey"),
-		ClientTlsPrivateKeyFile:  viper.GetString("clienttlsprivatekeyfile"),
+		TlsCertificate:           viper.GetString("tls-cert"),
+		TlsCertificateFile:       viper.GetString("tls-cert-file"),
+		TlsPrivateKey:            viper.GetString("tls-privkey"),
+		TlsPrivateKeyFile:        viper.GetString("tls-privkey-file"),
+		ClientTlsCertificate:     viper.GetString("client-tls-cert"),
+		ClientTlsCertificateFile: viper.GetString("client-tls-cert-file"),
+		ClientTlsPrivateKey:      viper.GetString("client-tls-privkey"),
+		ClientTlsPrivateKeyFile:  viper.GetString("client-tls-privkey-file"),
 	}
 
 	// Handle requestors

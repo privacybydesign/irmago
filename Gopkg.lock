@@ -324,12 +324,12 @@
   source = "github.com/sietseringers/pflag"
 
 [[projects]]
-  branch = "fix-isset"
-  digest = "1:f94a7aac3422a2ab6d6c86fd7e75ebf772784b2467c872e2d2ba0ce060ebf2ec"
+  branch = "add-file-key-replacer"
+  digest = "1:27bd3e1223a9cb2b08955a6e9b279b9711c2fa3515d9b97bf03318b222fc1d52"
   name = "github.com/spf13/viper"
   packages = ["."]
   pruneopts = "UT"
-  revision = "6c2a373fcd610e9ebefba8d50efb954706ec2f44"
+  revision = "554683669b21cf5dc84d6ee1a81de1f605a28ff8"
   source = "github.com/sietseringers/viper"
 
 [[projects]]

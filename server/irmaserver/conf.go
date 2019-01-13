@@ -24,41 +24,41 @@ type Configuration struct {
 	// Whether or not incoming session requests should be authenticated. If false, anyone
 	// can submit session requests. If true, the request is first authenticated against the
 	// server configuration before the server accepts it.
-	DisableRequestorAuthentication bool `json:"noauth" mapstructure:"noauth"`
+	DisableRequestorAuthentication bool `json:"no_auth" mapstructure:"no_auth"`
 
 	// Address to listen at
-	ListenAddress string `json:"listenaddr" mapstructure:"listenaddr"`
+	ListenAddress string `json:"listen_addr" mapstructure:"listen_addr"`
 	// Port to listen at
 	Port int `json:"port" mapstructure:"port"`
 	// TLS configuration
-	TlsCertificate     string `json:"tlscertificate" mapstructure:"tlscertificate"`
-	TlsCertificateFile string `json:"tlscertificatefile" mapstructure:"tlscertificatefile"`
-	TlsPrivateKey      string `json:"tlsprivatekey" mapstructure:"tlsprivatekey"`
-	TlsPrivateKeyFile  string `json:"tlsprivatekeyfile" mapstructure:"tlsprivatekeyfile"`
+	TlsCertificate     string `json:"tls_cert" mapstructure:"tls_cert"`
+	TlsCertificateFile string `json:"tls_cert_file" mapstructure:"tls_cert_file"`
+	TlsPrivateKey      string `json:"tls_privkey" mapstructure:"tls_privkey"`
+	TlsPrivateKeyFile  string `json:"tls_privkey_file" mapstructure:"tls_privkey_file"`
 
 	// If specified, start a separate server for the IRMA app at his port
-	ClientPort int `json:"clientport" mapstructure:"clientport"`
+	ClientPort int `json:"client_port" mapstructure:"client_port"`
 	// If clientport is specified, the server for the IRMA app listens at this address
-	ClientListenAddress string `json:"clientlistenaddr" mapstructure:"clientlistenaddr"`
+	ClientListenAddress string `json:"client_listen_addr" mapstructure:"client_listen_addr"`
 	// TLS configuration for irmaclient HTTP API
-	ClientTlsCertificate     string `json:"clienttlscertificate" mapstructure:"clienttlscertificate"`
-	ClientTlsCertificateFile string `json:"clienttlscertificatefile" mapstructure:"clienttlscertificatefile"`
-	ClientTlsPrivateKey      string `json:"clienttlsprivatekey" mapstructure:"clienttlsprivatekey"`
-	ClientTlsPrivateKeyFile  string `json:"clienttlsprivatekeyfile" mapstructure:"clienttlsprivatekeyfile"`
+	ClientTlsCertificate     string `json:"client_tls_cert" mapstructure:"client_tls_cert"`
+	ClientTlsCertificateFile string `json:"client_tls_cert_file" mapstructure:"client_tls_cert_file"`
+	ClientTlsPrivateKey      string `json:"client_tls_privkey" mapstructure:"client_tls_privkey"`
+	ClientTlsPrivateKeyFile  string `json:"client_tls_privkey_file" mapstructure:"client_tls_privkey_file"`
 
 	// Requestor-specific permission and authentication configuration
 	RequestorsString string               `json:"-" mapstructure:"requestors"`
 	Requestors       map[string]Requestor `json:"requestors"`
 
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
-	JwtIssuer string `json:"jwtissuer" mapstructure:"jwtissuer"`
+	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
 
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
-	JwtPrivateKey     string `json:"jwtprivatekey" mapstructure:"jwtprivatekey"`
-	JwtPrivateKeyFile string `json:"jwtprivatekeyfile" mapstructure:"jwtprivatekeyfile"`
+	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
+	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 
 	// Max age in seconds of a session request JWT (using iat field)
-	MaxRequestAge int `json:"maxrequestage" mapstructure:"maxrequestage"`
+	MaxRequestAge int `json:"max_request_age" mapstructure:"max_request_age"`
 
 	Verbose int  `json:"verbose" mapstructure:"verbose"`
 	Quiet   bool `json:"quiet" mapstructure:"quiet"`
@@ -68,9 +68,9 @@ type Configuration struct {
 
 // Permissions specify which attributes or credential a requestor may verify or issue.
 type Permissions struct {
-	Disclosing []string `json:"disclose" mapstructure:"disclose"`
-	Signing    []string `json:"sign" mapstructure:"sign"`
-	Issuing    []string `json:"issue" mapstructure:"issue"`
+	Disclosing []string `json:"disclose_perms" mapstructure:"disclose_perms"`
+	Signing    []string `json:"sign_perms" mapstructure:"sign_perms"`
+	Issuing    []string `json:"issue_perms" mapstructure:"issue_perms"`
 }
 
 // Requestor contains all configuration (disclosure or verification permissions and authentication)
@@ -78,9 +78,9 @@ type Permissions struct {
 type Requestor struct {
 	Permissions `mapstructure:",squash"`
 
-	AuthenticationMethod  AuthenticationMethod `json:"authmethod" mapstructure:"authmethod"`
+	AuthenticationMethod  AuthenticationMethod `json:"auth_method" mapstructure:"auth_method"`
 	AuthenticationKey     string               `json:"key" mapstructure:"key"`
-	AuthenticationKeyFile string               `json:"keyfile" mapstructure:"keyfile"`
+	AuthenticationKeyFile string               `json:"key_file" mapstructure:"key_file"`
 }
 
 // CanIssue returns whether or not the specified requestor may issue the specified credentials.
