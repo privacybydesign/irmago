@@ -22,11 +22,11 @@ type session struct {
 	rrequest irma.RequestorRequest
 	request  irma.SessionRequest
 
-	status    server.Status
-	evtSource eventsource.EventSource
+	status     server.Status
+	prevStatus server.Status
+	evtSource  eventsource.EventSource
 
 	lastActive time.Time
-	returned   bool
 	result     *server.SessionResult
 
 	kssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
@@ -133,6 +133,7 @@ func newSession(action irma.Action, request irma.RequestorRequest) *session {
 		lastActive: time.Now(),
 		token:      token,
 		status:     server.StatusInitialized,
+		prevStatus: server.StatusInitialized,
 		result: &server.SessionResult{
 			Token:  token,
 			Type:   action,

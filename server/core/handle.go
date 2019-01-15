@@ -19,7 +19,7 @@ func (session *session) handleDelete() {
 	}
 	session.markAlive()
 
-	session.result = &server.SessionResult{Token: session.token, Status: server.StatusCancelled}
+	session.result = &server.SessionResult{Token: session.token, Status: server.StatusCancelled, Type: session.action}
 	session.setStatus(server.StatusCancelled)
 }
 

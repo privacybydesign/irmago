@@ -219,14 +219,12 @@ func HandleProtocolMessage(
 	session.Lock()
 	defer session.Unlock()
 
-	// However we return, if the session has been finished or cancelled by any of the handlers
-	// then we should inform the user by returning a SessionResult - but only if we have not
-	// already done this in the past, e.g. by a previous HTTP call handled by this function
+	// However we return, if the session status has been updated
+	// then we should inform the user by returning a SessionResult
 	defer func() {
-		if session.status.Finished() && !session.returned {
-			session.returned = true
+		if session.status != session.prevStatus {
+			session.prevStatus = session.status
 			result = session.result
-			conf.Logger.Infof("Session %s done, status %s", session.token, session.result.Status)
 		}
 	}()
 

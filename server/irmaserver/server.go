@@ -14,6 +14,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmarequestor"
@@ -204,9 +205,14 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if rrequest.Base().CallbackUrl != "" && conf.jwtPrivateKey == nil {
+		conf.Logger.Warn("Requestor %s provided callbackUrl but no JWT private key is installed")
+		server.WriteError(w, server.ErrorUnsupported, "")
+		return
+	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, _, err := irmarequestor.StartSession(rrequest, nil)
+	qr, _, err := irmarequestor.StartSession(rrequest, doResultCallback)
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -262,30 +268,14 @@ func handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := struct {
-		jwt.StandardClaims
-		*server.SessionResult
-	}{
-		SessionResult: res,
-	}
-	claims.Issuer = conf.JwtIssuer
-	claims.IssuedAt = time.Now().Unix()
-	claims.Subject = string(res.Type) + "_result"
-	validity := irmarequestor.GetRequest(sessiontoken).Base().ResultJwtValidity
-	if validity != 0 {
-		claims.ExpiresAt = time.Now().Unix() + int64(validity)
-	}
-
-	// Sign the jwt and return it
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	resultJwt, err := token.SignedString(conf.jwtPrivateKey)
+	j, err := resultJwt(res)
 	if err != nil {
 		conf.Logger.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}
-	server.WriteString(w, resultJwt)
+	server.WriteString(w, j)
 }
 
 func handleJwtProofs(w http.ResponseWriter, r *http.Request) {
@@ -364,4 +354,46 @@ func handlePublicKey(w http.ResponseWriter, r *http.Request) {
 		Bytes: bts,
 	})
 	_, _ = w.Write(pubBytes)
+}
+
+func resultJwt(sessionresult *server.SessionResult) (string, error) {
+	claims := struct {
+		jwt.StandardClaims
+		*server.SessionResult
+	}{
+		StandardClaims: jwt.StandardClaims{
+			Issuer:   conf.JwtIssuer,
+			IssuedAt: time.Now().Unix(),
+			Subject:  string(sessionresult.Type) + "_result",
+		},
+		SessionResult: sessionresult,
+	}
+	validity := irmarequestor.GetRequest(sessionresult.Token).Base().ResultJwtValidity
+	if validity != 0 {
+		claims.ExpiresAt = time.Now().Unix() + int64(validity)
+	}
+
+	// Sign the jwt and return it
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	return token.SignedString(conf.jwtPrivateKey)
+}
+
+func doResultCallback(result *server.SessionResult) {
+	callbackUrl := irmarequestor.GetRequest(result.Token).Base().CallbackUrl
+	if callbackUrl == "" || conf.jwtPrivateKey == nil {
+		return
+	}
+	conf.Logger.Debug("POSTing session result to ", callbackUrl)
+
+	j, err := resultJwt(result)
+	if err != nil {
+		_ = server.LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
+		return
+	}
+
+	var x string // dummy for the server's return value that we don't care about
+	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, j); err != nil {
+		// not our problem, log it and go on
+		conf.Logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
+	}
 }

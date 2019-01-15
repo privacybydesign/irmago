@@ -22,7 +22,7 @@ func (session *session) markAlive() {
 }
 
 func (session *session) setStatus(status server.Status) {
-	conf.Logger.Debugf("Status of session %s updated to %s", session.token, status)
+	conf.Logger.Debugf("Status of session %s updated from %s to %s", session.token, session.status, status)
 	session.status = status
 	session.result.Status = status
 	sessions.update(session)

@@ -90,8 +90,8 @@ func HttpHandlerFunc() http.HandlerFunc {
 		if err != nil {
 			_ = server.LogError(errors.WrapPrefix(err, "http.ResponseWriter.Write() returned error", 0))
 		}
-		if result != nil {
-			if handler, ok := handlers[result.Token]; ok {
+		if result != nil && result.Status.Finished() {
+			if handler := handlers[result.Token]; handler != nil {
 				go handler(result)
 			}
 		}
