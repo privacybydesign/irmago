@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/antage/eventsource.v1"
 )
 
@@ -18,11 +19,12 @@ import (
 
 func (session *session) markAlive() {
 	session.lastActive = time.Now()
-	conf.Logger.Debugf("session %s marked active at %s", session.token, session.lastActive.String())
+	conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debugf("Session marked active, expiry delayed")
 }
 
 func (session *session) setStatus(status server.Status) {
-	conf.Logger.Debugf("Status of session %s updated from %s to %s", session.token, session.status, status)
+	conf.Logger.WithFields(logrus.Fields{"session": session.token, "prevStatus": session.prevStatus, "status": status}).
+		Info("Session status updated")
 	session.status = status
 	session.result.Status = status
 	sessions.update(session)
@@ -30,7 +32,8 @@ func (session *session) setStatus(status server.Status) {
 
 func (session *session) onUpdate() {
 	if session.evtSource != nil {
-		conf.Logger.Tracef("Sending %s to SSE listeners of session %s", session.status, session.token)
+		conf.Logger.WithFields(logrus.Fields{"session": session.token, "status": session.status}).
+			Debug("Sending status to SSE listeners")
 		session.evtSource.SendEventMessage(string(session.status), "", "")
 	}
 }
@@ -102,7 +105,7 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 		if !contains {
 			return nil, errors.Errorf("no keyshare proof included for scheme %s", scheme.Name())
 		}
-		conf.Logger.Trace("Parsing keyshare ProofP JWT: ", str)
+		conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
 		claims := &struct {
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
@@ -127,7 +130,7 @@ func (session *session) eventSource() eventsource.EventSource {
 		return session.evtSource
 	}
 
-	conf.Logger.Trace("Making server sent event source for session ", session.token)
+	conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debug("Making server sent event source")
 	session.evtSource = eventsource.New(nil, func(_ *http.Request) [][]byte { return eventHeaders })
 	return session.evtSource
 }
@@ -145,8 +148,8 @@ func chooseProtocolVersion(min, max *irma.ProtocolVersion) (*irma.ProtocolVersio
 	}
 }
 
-// logPurgedRequest logs the request excluding any attribute values.
-func logPurgedRequest(request irma.RequestorRequest) {
+// purgeRequest logs the request excluding any attribute values.
+func purgeRequest(request irma.RequestorRequest) irma.RequestorRequest {
 	// We want to log as much as possible of the request, but no attribute values.
 	// We cannot just remove them from the request parameter as that would break the calling code.
 	// So we create a deep copy of the request from which we can then safely remove whatever we want to.
@@ -168,6 +171,6 @@ func logPurgedRequest(request irma.RequestorRequest) {
 			cred.Attributes = nil
 		}
 	}
-	// Convert back to JSON to log
-	conf.Logger.Info("Session request (purged of attribute values): ", server.ToJson(cpy))
+
+	return cpy.(irma.RequestorRequest)
 }

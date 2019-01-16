@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var logger = logrus.StandardLogger()
@@ -65,7 +66,7 @@ Specify -v to see the configuration.`,
 
 func main() {
 	logger.Level = logrus.InfoLevel
-	logger.SetFormatter(&logrus.TextFormatter{
+	logger.SetFormatter(&prefixed.TextFormatter{
 		FullTimestamp: true,
 	})
 

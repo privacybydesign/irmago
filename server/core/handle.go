@@ -4,6 +4,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/sirupsen/logrus"
 )
 
 // This file contains the handler functions for the protocol messages, receiving and returning normally
@@ -33,7 +34,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	if session.version, err = chooseProtocolVersion(min, max); err != nil {
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
-	conf.Logger.Debugf("Using protocol version %s for session %s", session.version.String(), session.token)
+	conf.Logger.WithFields(logrus.Fields{"session": session.token, "version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.SetVersion(session.version)
 
 	session.setStatus(server.StatusConnected)

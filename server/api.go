@@ -71,8 +71,17 @@ func (status Status) Finished() bool {
 
 // RemoteError converts an error and an explaining message to an *irma.RemoteError.
 func RemoteError(err Error, message string) *irma.RemoteError {
-	stack := string(debug.Stack())
-	Logger.Warnf("Session error: %d %s %s\n%s", err.Status, err.Type, message, stack)
+	var stack string
+	Logger.WithFields(logrus.Fields{
+		"status":      err.Status,
+		"description": err.Description,
+		"error":       err.Type,
+		"message":     message,
+	}).Warnf("Sending session error")
+	if Logger.IsLevelEnabled(logrus.TraceLevel) {
+		stack = string(debug.Stack())
+		Logger.Warn(stack)
+	}
 	return &irma.RemoteError{
 		Status:      err.Status,
 		Description: err.Description,
@@ -240,22 +249,27 @@ func Verbosity(level int) logrus.Level {
 	}
 }
 
+func TypeString(x interface{}) string {
+	return reflect.TypeOf(x).String()
+}
+
 func log(level logrus.Level, err error) error {
-	writer := Logger.WriterLevel(level)
+	writer := Logger.WithFields(logrus.Fields{"err": TypeString(err)}).WriterLevel(level)
 	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.TraceLevel) {
 		_, _ = writer.Write([]byte(e.ErrorStack()))
 	} else {
-		_, _ = writer.Write([]byte(fmt.Sprintf("%s %s", reflect.TypeOf(err).String(), err.Error())))
+		_, _ = writer.Write([]byte(fmt.Sprintf("%s", err.Error())))
 	}
 	return err
 }
 
 func LogFatal(err error) error {
+	logger := Logger.WithFields(logrus.Fields{"err": TypeString(err)})
 	// using log() for this doesn't seem to do anything
 	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.TraceLevel) {
-		Logger.Fatal(e.ErrorStack())
+		logger.Fatal(e.ErrorStack())
 	} else {
-		Logger.Fatalf("%s %s", reflect.TypeOf(err).String(), err.Error())
+		logger.Fatalf("%s", err.Error())
 	}
 	return err
 }

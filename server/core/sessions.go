@@ -10,6 +10,7 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/antage/eventsource.v1"
 )
 
@@ -98,11 +99,11 @@ func (s memorySessionStore) deleteExpired() {
 
 		if session.lastActive.Add(timeout).Before(time.Now()) {
 			if !session.status.Finished() {
-				conf.Logger.Infof("Session %s expired", token)
+				conf.Logger.WithFields(logrus.Fields{"session": session.token}).Infof("Session expired")
 				session.markAlive()
 				session.setStatus(server.StatusTimeout)
 			} else {
-				conf.Logger.Infof("Deleting %s", token)
+				conf.Logger.WithFields(logrus.Fields{"session": session.token}).Infof("Deleting session")
 				expired = append(expired, token)
 			}
 		}
@@ -141,7 +142,7 @@ func newSession(action irma.Action, request irma.RequestorRequest) *session {
 		},
 	}
 
-	conf.Logger.Debug("New session started: ", token)
+	conf.Logger.WithFields(logrus.Fields{"session": s.token}).Debug("New session started")
 	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
 	s.request.SetNonce(nonce)
 	s.request.SetContext(one)

@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmarequestor"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -189,8 +190,8 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	if request.Action() == irma.ActionIssuing {
 		allowed, reason := conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
 		if !allowed {
-			conf.Logger.Warn("Requestor %s tried to issue credential %s but it is not authorized to; full request: %s",
-				requestor, reason, server.ToJson(request))
+			conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+				Warn("Requestor not authorized to issue credential; full request: ", server.ToJson(request))
 			server.WriteError(w, server.ErrorUnauthorized, reason)
 			return
 		}
@@ -199,14 +200,14 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	if len(disjunctions) > 0 {
 		allowed, reason := conf.CanVerifyOrSign(requestor, request.Action(), disjunctions)
 		if !allowed {
-			conf.Logger.Warn("Requestor %s tried to verify attribute %s but it is not authorized to; full request: %s",
-				requestor, reason, server.ToJson(request))
+			conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+				Warn("Requestor not authorized to verify attribute; full request: ", server.ToJson(request))
 			server.WriteError(w, server.ErrorUnauthorized, reason)
 			return
 		}
 	}
 	if rrequest.Base().CallbackUrl != "" && conf.jwtPrivateKey == nil {
-		conf.Logger.Warn("Requestor %s provided callbackUrl but no JWT private key is installed")
+		conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
 		server.WriteError(w, server.ErrorUnsupported, "")
 		return
 	}
@@ -232,7 +233,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
-	conf.Logger.Debug("new client subscribed to server sent events of session " + token)
+	conf.Logger.WithFields(logrus.Fields{"session": token}).Debug("new client subscribed to server sent events")
 	if err := irmarequestor.SubscribeServerSentEvents(w, r, token); err != nil {
 		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
 	}
@@ -383,7 +384,7 @@ func doResultCallback(result *server.SessionResult) {
 	if callbackUrl == "" || conf.jwtPrivateKey == nil {
 		return
 	}
-	conf.Logger.Debug("POSTing session result to ", callbackUrl)
+	conf.Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl}).Debug("POSTing session result")
 
 	j, err := resultJwt(result)
 	if err != nil {

@@ -108,11 +108,11 @@ type SessionError struct {
 
 // RemoteError is an error message returned by the API server on errors.
 type RemoteError struct {
-	Status      int    `json:"status"`
-	ErrorName   string `json:"error"`
-	Description string `json:"description"`
-	Message     string `json:"message"`
-	Stacktrace  string `json:"stacktrace"`
+	Status      int    `json:"status,omitempty"`
+	ErrorName   string `json:"error,omitempty"`
+	Description string `json:"description,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Stacktrace  string `json:"stacktrace,omitempty"`
 }
 
 type Validator interface {

@@ -107,23 +107,23 @@ func Initialize(configuration *server.Configuration) error {
 func StartSession(req interface{}) (*irma.Qr, string, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
-		return nil, "", server.LogError(err)
+		return nil, "", err
 	}
 
 	request := rrequest.SessionRequest()
 	action := request.Action()
 	if action == irma.ActionIssuing {
 		if err := validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
-			return nil, "", server.LogError(err)
+			return nil, "", err
 		}
 	}
 
 	session := newSession(action, rrequest)
-	conf.Logger.Infof("%s session started, token %s", action, session.token)
+	conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.token}).Infof("Session started")
 	if conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		conf.Logger.Debug("Session request: ", server.ToJson(rrequest))
+		conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		logPurgedRequest(rrequest)
+		conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	return &irma.Qr{
 		Type: action,
@@ -198,7 +198,7 @@ func HandleProtocolMessage(
 		}
 	}
 
-	conf.Logger.Debugf("Routing protocol message: %s %s", method, path)
+	conf.Logger.WithFields(logrus.Fields{"method": method, "path": path}).Debugf("Routing protocol message")
 	if len(message) > 0 {
 		conf.Logger.Trace("POST body: ", string(message))
 	}
