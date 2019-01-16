@@ -719,6 +719,15 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	return nil
 }
 
+func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
+	scheme := client.Configuration.SchemeManagers[schemeid]
+	if scheme == nil || !scheme.Distributed() {
+		return false, 0, 0, errors.Errorf("Can't verify pin of scheme %s", schemeid.String())
+	}
+	kss := client.keyshareServers[schemeid]
+	return verifyPinWorker(pin, kss, irma.NewHTTPTransport(kss.URL))
+}
+
 func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
 	go func() {
 		err := client.keyshareChangePinWorker(manager, oldPin, newPin)

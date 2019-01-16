@@ -270,6 +270,33 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 	}))
 }
 
+func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
+	success bool, tries int, blocked int, err error) {
+	pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
+	pinresult := &keysharePinStatus{}
+	err = transport.Post("users/verify/pin", pinresult, pinmsg)
+	if err != nil {
+		return
+	}
+
+	switch pinresult.Status {
+	case kssPinSuccess:
+		success = true
+		kss.token = pinresult.Message
+		transport.SetHeader(kssAuthHeader, kss.token)
+		return
+	case kssPinFailure:
+		tries, err = strconv.Atoi(pinresult.Message)
+		return
+	case kssPinError:
+		blocked, err = strconv.Atoi(pinresult.Message)
+		return
+	default:
+		err = errors.New("Keyshare server returned unrecognized PIN status")
+		return
+	}
+}
+
 // Verify the specified pin at each of the keyshare servers involved in the specified session.
 // - If the pin did not verify at one of the keyshare servers but there are attempts remaining,
 // the amount of remaining attempts is returned as the second return value.
@@ -287,30 +314,11 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 
 		kss := ks.keyshareServers[manager]
 		transport := ks.transports[manager]
-		pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
-		pinresult := &keysharePinStatus{}
-		err = transport.Post("users/verify/pin", pinresult, pinmsg)
-		if err != nil {
-			return
-		}
-
-		switch pinresult.Status {
-		case kssPinSuccess:
-			kss.token = pinresult.Message
-			transport.SetHeader(kssAuthHeader, kss.token)
-		case kssPinFailure:
-			tries, err = strconv.Atoi(pinresult.Message)
-			return
-		case kssPinError:
-			blocked, err = strconv.Atoi(pinresult.Message)
-			return
-		default:
-			err = errors.New("Keyshare server returned unrecognized PIN status")
+		success, tries, blocked, err = verifyPinWorker(pin, kss, transport)
+		if !success {
 			return
 		}
 	}
-
-	success = true
 	return
 }
 
