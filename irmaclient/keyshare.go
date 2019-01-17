@@ -292,7 +292,11 @@ func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransp
 		blocked, err = strconv.Atoi(pinresult.Message)
 		return
 	default:
-		err = errors.New("Keyshare server returned unrecognized PIN status")
+		err = &irma.SessionError{
+			Err:       errors.New("Keyshare server returned unrecognized PIN status"),
+			ErrorType: irma.ErrorServerResponse,
+			Info:      "Keyshare server returned unrecognized PIN status",
+		}
 		return
 	}
 }

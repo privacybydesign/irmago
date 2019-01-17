@@ -717,10 +717,17 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	return nil
 }
 
+// KeyshareVerifyPin verifies the specified PIN at the keyshare server, returning if it succeeded;
+// if not, how many tries are left, or for how long the user is blocked. If an error is returned
+// it is of type *irma.SessionError.
 func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
 	scheme := client.Configuration.SchemeManagers[schemeid]
 	if scheme == nil || !scheme.Distributed() {
-		return false, 0, 0, errors.Errorf("Can't verify pin of scheme %s", schemeid.String())
+		return false, 0, 0, &irma.SessionError{
+			Err:       errors.Errorf("Can't verify pin of scheme %s", schemeid.String()),
+			ErrorType: irma.ErrorUnknownSchemeManager,
+			Info:      schemeid.String(),
+		}
 	}
 	kss := client.keyshareServers[schemeid]
 	return verifyPinWorker(pin, kss, irma.NewHTTPTransport(kss.URL))
