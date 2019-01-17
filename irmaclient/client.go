@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"math/big"
-	"sort"
 	"strconv"
 	"time"
 
@@ -195,7 +194,6 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 		}
 	}
 
-	sort.Sort(list)
 	return list
 }
 
