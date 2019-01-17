@@ -40,7 +40,7 @@ type Issuer struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	ContactAddress  string
 	ContactEMail    string
-	URL             string `xml:"baseURL"`
+	URL             string `xml:"ContactAddress"`
 	XMLVersion      int    `xml:"version,attr"`
 
 	Valid bool `xml:"-"`
@@ -58,6 +58,7 @@ type CredentialType struct {
 	Attributes      []AttributeDescription `xml:"Attributes>Attribute"`
 	XMLVersion      int                    `xml:"version,attr"`
 	XMLName         xml.Name               `xml:"IssueSpecification"`
+	IssueURL        TranslatedString       `xml:'IssueUrl'`
 
 	Valid bool `xml:"-"`
 }
