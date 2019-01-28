@@ -383,8 +383,6 @@ func (disjunction *AttributeDisjunction) satisfied() bool {
 
 	attr := disjunction.Attributes[*disjunction.index]
 	return !disjunction.HasValues() || disjunction.value == disjunction.Values[attr]
-
-	return false
 }
 
 // MatchesConfig returns true if all attributes contained in the disjunction are
