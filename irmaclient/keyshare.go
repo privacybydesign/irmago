@@ -52,20 +52,18 @@ type keyshareSession struct {
 }
 
 type keyshareServer struct {
-	URL                     string              `json:"url"`
-	Username                string              `json:"username"`
-	Nonce                   []byte              `json:"nonce"`
-	PrivateKey              *paillierPrivateKey `json:"keyPair"`
+	URL                     string `json:"url"`
+	Username                string `json:"username"`
+	Nonce                   []byte `json:"nonce"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
 	token                   string
 }
 
 type keyshareEnrollment struct {
-	Username  string             `json:"username"`
-	Pin       string             `json:"pin"`
-	PublicKey *paillierPublicKey `json:"publicKey"`
-	Email     *string            `json:"email"`
-	Language  string             `json:"language"`
+	Username string  `json:"username"`
+	Pin      string  `json:"pin"`
+	Email    *string `json:"email"`
+	Language string  `json:"language"`
 }
 
 type keyshareChangepin struct {
@@ -129,13 +127,11 @@ const (
 
 func newKeyshareServer(
 	schemeManagerIdentifier irma.SchemeManagerIdentifier,
-	privatekey *paillierPrivateKey,
 	url string,
 ) (ks *keyshareServer, err error) {
 	ks = &keyshareServer{
-		Nonce:                   make([]byte, 32),
-		URL:                     url,
-		PrivateKey:              privatekey,
+		Nonce: make([]byte, 32),
+		URL:   url,
 		SchemeManagerIdentifier: schemeManagerIdentifier,
 	}
 	_, err = rand.Read(ks.Nonce)
@@ -279,6 +275,37 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 	}))
 }
 
+func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
+	success bool, tries int, blocked int, err error) {
+	pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
+	pinresult := &keysharePinStatus{}
+	err = transport.Post("users/verify/pin", pinresult, pinmsg)
+	if err != nil {
+		return
+	}
+
+	switch pinresult.Status {
+	case kssPinSuccess:
+		success = true
+		kss.token = pinresult.Message
+		transport.SetHeader(kssAuthHeader, kss.token)
+		return
+	case kssPinFailure:
+		tries, err = strconv.Atoi(pinresult.Message)
+		return
+	case kssPinError:
+		blocked, err = strconv.Atoi(pinresult.Message)
+		return
+	default:
+		err = &irma.SessionError{
+			Err:       errors.New("Keyshare server returned unrecognized PIN status"),
+			ErrorType: irma.ErrorServerResponse,
+			Info:      "Keyshare server returned unrecognized PIN status",
+		}
+		return
+	}
+}
+
 // Verify the specified pin at each of the keyshare servers involved in the specified session.
 // - If the pin did not verify at one of the keyshare servers but there are attempts remaining,
 // the amount of remaining attempts is returned as the second return value.
@@ -296,30 +323,11 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 
 		kss := ks.keyshareServers[manager]
 		transport := ks.transports[manager]
-		pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
-		pinresult := &keysharePinStatus{}
-		err = transport.Post("users/verify/pin", pinresult, pinmsg)
-		if err != nil {
-			return
-		}
-
-		switch pinresult.Status {
-		case kssPinSuccess:
-			kss.token = pinresult.Message
-			transport.SetHeader(kssAuthHeader, "Bearer "+kss.token)
-		case kssPinFailure:
-			tries, err = strconv.Atoi(pinresult.Message)
-			return
-		case kssPinError:
-			blocked, err = strconv.Atoi(pinresult.Message)
-			return
-		default:
-			err = errors.New("Keyshare server returned unrecognized PIN status")
+		success, tries, blocked, err = verifyPinWorker(pin, kss, transport)
+		if !success {
 			return
 		}
 	}
-
-	success = true
 	return
 }
 
@@ -390,18 +398,7 @@ func (ks *keyshareSession) GetCommitments() {
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
 func (ks *keyshareSession) GetProofPs() {
 	_, issig := ks.session.(*irma.SignatureRequest)
-	_, issuing := ks.session.(*irma.IssuanceRequest)
 	challenge := ks.builders.Challenge(ks.session.GetContext(), ks.session.GetNonce(), issig)
-	kssChallenge := challenge
-
-	// In disclosure or signature sessions the challenge is Paillier encrypted.
-	if !issuing {
-		bytes, err := ks.keyshareServer.PrivateKey.Encrypt(challenge.Bytes())
-		if err != nil {
-			ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
-		}
-		kssChallenge = new(big.Int).SetBytes(bytes)
-	}
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[irma.SchemeManagerIdentifier]string{}
@@ -411,7 +408,7 @@ func (ks *keyshareSession) GetProofPs() {
 			continue
 		}
 		var jwt string
-		err := transport.Post("prove/getResponse", &jwt, kssChallenge)
+		err := transport.Post("prove/getResponse", &jwt, challenge)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
@@ -465,15 +462,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
-
-		// Decrypt the responses and populate a slice of ProofP's
 		proofPs[i] = claims.ProofP
-		bytes, err := ks.keyshareServer.PrivateKey.Decrypt(proofPs[i].SResponse.Bytes())
-		if err != nil {
-			ks.sessionHandler.KeyshareError(&managerID, err)
-			return
-		}
-		proofPs[i].SResponse = new(big.Int).SetBytes(bytes)
 	}
 
 	// Create merged proofs and finish protocol

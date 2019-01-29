@@ -3,12 +3,11 @@ package irmaclient
 import (
 	"encoding/json"
 	"errors"
-	gobig "math/big"
+
 	"os"
 	"testing"
 
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -80,33 +79,12 @@ func verifyCredentials(t *testing.T, client *Client) {
 	}
 }
 
-func verifyPaillierKey(t *testing.T, PrivateKey *paillierPrivateKey) {
-	require.NotNil(t, PrivateKey)
-	require.NotNil(t, PrivateKey.L)
-	require.NotNil(t, PrivateKey.U)
-	require.NotNil(t, PrivateKey.PublicKey.N)
-
-	require.Equal(t, gobig.NewInt(1), new(gobig.Int).Exp(gobig.NewInt(2), PrivateKey.L, PrivateKey.N))
-	require.Equal(t, PrivateKey.NSquared, new(gobig.Int).Exp(PrivateKey.N, gobig.NewInt(2), nil))
-
-	plaintext := "Hello Paillier!"
-	ciphertext, err := PrivateKey.Encrypt([]byte(plaintext))
-	require.NoError(t, err)
-	decrypted, err := PrivateKey.Decrypt(ciphertext)
-	require.NoError(t, err)
-	require.Equal(t, plaintext, string(decrypted))
-}
-
 func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
-	require.NotNil(t, client.paillierKeyCache)
 	require.NotNil(t, client.keyshareServers)
 	testManager := irma.NewSchemeManagerIdentifier("test")
 	require.Contains(t, client.keyshareServers, testManager)
 	kss := client.keyshareServers[testManager]
 	require.NotEmpty(t, kss.Nonce)
-
-	verifyPaillierKey(t, kss.PrivateKey)
-	verifyPaillierKey(t, client.paillierKeyCache)
 }
 
 func TestStorageDeserialization(t *testing.T) {
@@ -182,36 +160,6 @@ func TestCandidates(t *testing.T) {
 	json.Unmarshal([]byte(`{"attributes":{"irma-demo.MijnOverheid.ageLower.over12":null}}`), &disjunction)
 	attrs = client.Candidates(disjunction)
 	require.Empty(t, attrs)
-}
-
-func TestPaillier(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
-
-	challenge, _ := gabi.RandomBigInt(256)
-	comm, _ := gabi.RandomBigInt(1000)
-	resp, _ := gabi.RandomBigInt(1000)
-
-	sk := client.paillierKey(true)
-	bytes, err := sk.Encrypt(challenge.Bytes())
-	require.NoError(t, err)
-	cipher := new(big.Int).SetBytes(bytes)
-
-	bytes, err = sk.Encrypt(comm.Bytes())
-	require.NoError(t, err)
-	commcipher := new(big.Int).SetBytes(bytes)
-
-	// [[ c ]]^resp * [[ comm ]]
-	nsquared := big.Convert(sk.NSquared)
-	cipher.Exp(cipher, resp, nsquared).Mul(cipher, commcipher).Mod(cipher, nsquared)
-
-	bytes, err = sk.Decrypt(cipher.Bytes())
-	require.NoError(t, err)
-	plaintext := new(big.Int).SetBytes(bytes)
-	expected := new(big.Int).Set(challenge)
-	expected.Mul(expected, resp).Add(expected, comm)
-
-	require.Equal(t, plaintext, expected)
 }
 
 func TestCredentialRemoval(t *testing.T) {

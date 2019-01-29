@@ -57,6 +57,7 @@ type CredentialType struct {
 	AttributeTypes  []*AttributeType `xml:"Attributes>Attribute" json:"-"`
 	XMLVersion      int              `xml:"version,attr"`
 	XMLName         xml.Name         `xml:"IssueSpecification"`
+	IssueURL        TranslatedString `xml:'IssueURL'`
 
 	Valid bool `xml:"-"`
 }

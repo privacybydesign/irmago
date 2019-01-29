@@ -1,12 +1,9 @@
 package irmaclient
 
 import (
-	"crypto/rand"
-	"sort"
 	"strconv"
 	"time"
 
-	"github.com/credentials/go-go-gadget-paillier"
 	raven "github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -45,7 +42,6 @@ type Client struct {
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
 	credentialsCache map[irma.CredentialTypeIdentifier]map[int]*credential
 	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
-	paillierKeyCache *paillierPrivateKey
 	logs             []*LogEntry
 	updates          []update
 
@@ -174,12 +170,6 @@ func New(
 	if cm.keyshareServers, err = cm.storage.LoadKeyshareServers(); err != nil {
 		return nil, err
 	}
-	if cm.paillierKeyCache, err = cm.storage.LoadPaillierKeys(); err != nil {
-		return nil, err
-	}
-	if cm.paillierKeyCache == nil {
-		cm.paillierKey(false)
-	}
 
 	if len(cm.UnenrolledSchemeManagers()) > 1 {
 		return nil, errors.New("Too many keyshare servers")
@@ -202,7 +192,6 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 		}
 	}
 
-	sort.Sort(list)
 	return list
 }
 
@@ -687,32 +676,6 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 
 // Keyshare server handling
 
-// PaillierKey returns a new Paillier key (and generates a new one in a goroutine).
-func (client *Client) paillierKey(wait bool) *paillierPrivateKey {
-	cached := client.paillierKeyCache
-	ch := make(chan bool)
-
-	// Would just write client.paillierKeyCache instead of cached here, but the worker
-	// modifies client.paillierKeyCache, and we must be sure that the boolean here and
-	// the if-clause below match.
-	go client.paillierKeyWorker(cached == nil && wait, ch)
-	if cached == nil && wait {
-		<-ch
-		// generate yet another one for future calls, but no need to wait now
-		go client.paillierKeyWorker(false, ch)
-	}
-	return client.paillierKeyCache
-}
-
-func (client *Client) paillierKeyWorker(wait bool, ch chan bool) {
-	newkey, _ := paillier.GenerateKey(rand.Reader, 2048)
-	client.paillierKeyCache = (*paillierPrivateKey)(newkey)
-	client.storage.StorePaillierKeys(client.paillierKeyCache)
-	if wait {
-		ch <- true
-	}
-}
-
 func (client *Client) genSchemeManagersList(enrolled bool) []irma.SchemeManagerIdentifier {
 	list := []irma.SchemeManagerIdentifier{}
 	for name, manager := range client.Configuration.SchemeManagers {
@@ -754,15 +717,14 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	}
 
 	transport := irma.NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(managerID, client.paillierKey(true), manager.KeyshareServer)
+	kss, err := newKeyshareServer(managerID, manager.KeyshareServer)
 	if err != nil {
 		return err
 	}
 	message := keyshareEnrollment{
-		Email:     email,
-		Pin:       kss.HashedPin(pin),
-		Language:  lang,
-		PublicKey: (*paillierPublicKey)(&kss.PrivateKey.PublicKey),
+		Email:    email,
+		Pin:      kss.HashedPin(pin),
+		Language: lang,
 	}
 
 	qr := &irma.Qr{}
@@ -784,6 +746,22 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	})
 
 	return nil
+}
+
+// KeyshareVerifyPin verifies the specified PIN at the keyshare server, returning if it succeeded;
+// if not, how many tries are left, or for how long the user is blocked. If an error is returned
+// it is of type *irma.SessionError.
+func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
+	scheme := client.Configuration.SchemeManagers[schemeid]
+	if scheme == nil || !scheme.Distributed() {
+		return false, 0, 0, &irma.SessionError{
+			Err:       errors.Errorf("Can't verify pin of scheme %s", schemeid.String()),
+			ErrorType: irma.ErrorUnknownSchemeManager,
+			Info:      schemeid.String(),
+		}
+	}
+	kss := client.keyshareServers[schemeid]
+	return verifyPinWorker(pin, kss, irma.NewHTTPTransport(kss.URL))
 }
 
 func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
