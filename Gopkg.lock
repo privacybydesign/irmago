@@ -2,14 +2,6 @@
 
 
 [[projects]]
-  digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
-  name = "github.com/sirupsen/logrus"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "bcd833dfe83d3cebad139e4a29ed79cb2318bf95"
-  version = "v1.2.0"
-
-[[projects]]
   branch = "master"
   digest = "1:e730c8372514c662e9ed97228c2e2023f1ec99eb68f7bb56a44c1084733d85f5"
   name = "github.com/bwesterb/byteswriter"
@@ -66,20 +58,20 @@
   version = "v1.3.0"
 
 [[projects]]
-  branch = "master"
-  digest = "1:bc226e758ba692384ee6ccc506bfbb439e31d314a359d3f11d92f26ef60dd30c"
-  name = "github.com/credentials/go-go-gadget-paillier"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "720887075201f3105c335f837431426d54891b7f"
-
-[[projects]]
   digest = "1:a2c1d0e43bd3baaa071d1b9ed72c27d78169b2b269f71c105ac4ba34b1be4a39"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
   pruneopts = "UT"
   revision = "346938d642f2ec3594ed81d874461961cd0faa76"
   version = "v1.1.0"
+
+[[projects]]
+  digest = "1:76dc72490af7174349349838f2fe118996381b31ea83243812a97e5a0fd5ed55"
+  name = "github.com/dgrijalva/jwt-go"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "06ea1031745cb8b3dab3f6a236daf2b0aa468b7e"
+  version = "v3.2.0"
 
 [[projects]]
   branch = "master"
@@ -198,6 +190,14 @@
   revision = "1b01514224a1a60a6bcbb0b6b9d3a00ec14ae17f"
 
 [[projects]]
+  digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
+  name = "github.com/sirupsen/logrus"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "bcd833dfe83d3cebad139e4a29ed79cb2318bf95"
+  version = "v1.2.0"
+
+[[projects]]
   digest = "1:7ffc0983035bc7e297da3688d9fe19d60a420e9c38bef23f845c53788ed6a05e"
   name = "github.com/spf13/cobra"
   packages = ["."]
@@ -276,15 +276,15 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/sirupsen/logrus",
     "github.com/bwesterb/go-atum",
-    "github.com/credentials/go-go-gadget-paillier",
+    "github.com/dgrijalva/jwt-go",
     "github.com/getsentry/raven-go",
     "github.com/go-errors/errors",
     "github.com/hashicorp/go-retryablehttp",
     "github.com/pkg/errors",
     "github.com/privacybydesign/gabi",
     "github.com/privacybydesign/gabi/big",
+    "github.com/sirupsen/logrus",
     "github.com/spf13/cobra",
     "github.com/stretchr/testify/require",
   ]
