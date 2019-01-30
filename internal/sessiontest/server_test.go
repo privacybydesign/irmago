@@ -54,15 +54,16 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 	},
 	Port: 48682,
 	DisableRequestorAuthentication: false,
-	GlobalPermissions: irmaserver.Permissions{
+	MaxRequestAge:                  3,
+	Permissions: irmaserver.Permissions{
 		Disclosing: []string{"*"},
 		Signing:    []string{"*"},
 		Issuing:    []string{"*"},
 	},
 	Requestors: map[string]irmaserver.Requestor{
 		"requestor1": {
-			AuthenticationMethod: irmaserver.AuthenticationMethodPublicKey,
-			AuthenticationKey:    filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
+			AuthenticationMethod:  irmaserver.AuthenticationMethodPublicKey,
+			AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
 		},
 		"requestor2": {
 			AuthenticationMethod: irmaserver.AuthenticationMethodToken,
@@ -73,5 +74,5 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 			AuthenticationKey:    "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg==",
 		},
 	},
-	JwtPrivateKey: filepath.Join(testdata, "jwtkeys", "sk.pem"),
+	JwtPrivateKeyFile: filepath.Join(testdata, "jwtkeys", "sk.pem"),
 }
