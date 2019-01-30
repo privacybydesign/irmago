@@ -207,11 +207,15 @@ func startKeyshareSession(
 		claims := jwt.StandardClaims{}
 		_, err := parser.ParseWithClaims(ks.keyshareServer.token, &claims, ks.conf.KeyshareServerKeyFunc(managerID))
 		if err != nil {
+			irma.Logger.Info("Keyshare server token invalid, asking for PIN")
+			irma.Logger.Debug("Token: ", ks.keyshareServer.token)
 			ks.pinCheck = true
 		}
 		// Add a minute of leeway for possible clockdrift with the server,
 		// and for the rest of the protocol to take place with this token
-		if claims.VerifyExpiresAt(time.Now().Add(1*time.Minute).Unix(), true) {
+		if !claims.VerifyExpiresAt(time.Now().Add(1*time.Minute).Unix(), true) {
+			irma.Logger.Info("Keyshare server token expires too soon, asking for PIN")
+			irma.Logger.Debug("Token: ", ks.keyshareServer.token)
 			ks.pinCheck = true
 		}
 	}
@@ -458,7 +462,9 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
 		}{}
-		if _, err := jwt.ParseWithClaims(responses[managerID], &claims, ks.conf.KeyshareServerKeyFunc(managerID)); err != nil {
+		parser := new(jwt.Parser)
+		parser.SkipClaimsValidation = true // no need to abort due to clock drift issues
+		if _, err := parser.ParseWithClaims(responses[managerID], &claims, ks.conf.KeyshareServerKeyFunc(managerID)); err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}

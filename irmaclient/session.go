@@ -107,7 +107,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return client.newManualSession(disclosureRequest, handler, irma.ActionDisclosing)
 	}
 
-	handler.Failure(&irma.SessionError{Err: errors.New("Session request could not be parsed")})
+	handler.Failure(&irma.SessionError{Err: errors.New("Session request could not be parsed"), Info: sessionrequest})
 	return nil
 }
 
