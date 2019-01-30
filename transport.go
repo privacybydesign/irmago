@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/sirupsen/logrus"
 
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 	"github.com/privacybydesign/irmago/internal/fs"
