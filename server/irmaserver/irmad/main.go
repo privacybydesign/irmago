@@ -153,6 +153,7 @@ using the corresponding "-file" flag.`
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
+	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Lookup("verbose").Header = `Other options`
 
 	return nil
@@ -183,6 +184,9 @@ func configure(cmd *cobra.Command) error {
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 
 	// Set log level
+	if viper.GetBool("log-json") {
+		logger.SetFormatter(&logrus.JSONFormatter{})
+	}
 	logger.Level = server.Verbosity(viper.GetInt("verbose"))
 	if viper.GetBool("quiet") {
 		logger.Out = ioutil.Discard
@@ -228,6 +232,7 @@ func configure(cmd *cobra.Command) error {
 		MaxRequestAge:                  viper.GetInt("max-request-age"),
 		Verbose:                        viper.GetInt("verbose"),
 		Quiet:                          viper.GetBool("quiet"),
+		LogJSON:                        viper.GetBool("log-json"),
 
 		TlsCertificate:           viper.GetString("tls-cert"),
 		TlsCertificateFile:       viper.GetString("tls-cert-file"),

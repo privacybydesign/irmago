@@ -62,6 +62,7 @@ type Configuration struct {
 
 	Verbose int  `json:"verbose" mapstructure:"verbose"`
 	Quiet   bool `json:"quiet" mapstructure:"quiet"`
+	LogJSON bool `json:"log_json" mapstructure:"log_json"`
 
 	jwtPrivateKey *rsa.PrivateKey
 }

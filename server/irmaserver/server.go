@@ -32,8 +32,12 @@ func Start(config *Configuration) error {
 		return err
 	}
 
-	bts, _ := json.MarshalIndent(conf, "", "   ")
-	conf.Logger.Debug("Configuration: ", string(bts), "\n")
+	if conf.LogJSON {
+		conf.Logger.WithField("configuration", conf).Debug("Configuration")
+	} else {
+		bts, _ := json.MarshalIndent(conf, "", "   ")
+		conf.Logger.Debug("Configuration: ", string(bts), "\n")
+	}
 
 	// Start server(s)
 	if conf.separateClientServer() {
