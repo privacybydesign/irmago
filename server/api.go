@@ -78,7 +78,7 @@ func RemoteError(err Error, message string) *irma.RemoteError {
 		"error":       err.Type,
 		"message":     message,
 	}).Warnf("Sending session error")
-	if Logger.IsLevelEnabled(logrus.TraceLevel) {
+	if Logger.IsLevelEnabled(logrus.DebugLevel) {
 		stack = string(debug.Stack())
 		Logger.Warn(stack)
 	}
@@ -255,7 +255,7 @@ func TypeString(x interface{}) string {
 
 func log(level logrus.Level, err error) error {
 	writer := Logger.WithFields(logrus.Fields{"err": TypeString(err)}).WriterLevel(level)
-	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.TraceLevel) {
+	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.DebugLevel) {
 		_, _ = writer.Write([]byte(e.ErrorStack()))
 	} else {
 		_, _ = writer.Write([]byte(fmt.Sprintf("%s", err.Error())))
@@ -266,7 +266,7 @@ func log(level logrus.Level, err error) error {
 func LogFatal(err error) error {
 	logger := Logger.WithFields(logrus.Fields{"err": TypeString(err)})
 	// using log() for this doesn't seem to do anything
-	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.TraceLevel) {
+	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.DebugLevel) {
 		logger.Fatal(e.ErrorStack())
 	} else {
 		logger.Fatalf("%s", err.Error())

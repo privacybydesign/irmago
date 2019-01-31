@@ -85,7 +85,7 @@ func main() {
 
 func die(err *errors.Error) {
 	msg := err.Error()
-	if logger.IsLevelEnabled(logrus.TraceLevel) {
+	if logger.IsLevelEnabled(logrus.DebugLevel) {
 		msg += "\nStack trace:\n" + string(err.Stack())
 	}
 	logger.Fatal(msg)
