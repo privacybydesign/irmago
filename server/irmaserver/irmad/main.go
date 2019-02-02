@@ -118,7 +118,7 @@ func setFlags(cmd *cobra.Command) error {
 then the endpoints at /session for the requestor and /irma for the irmaclient (i.e. IRMA app) will listen on
 distinct network endpoints (e.g., localhost:1234/session and 0.0.0.0:5678/irma).`
 
-	flags.Bool("no-auth", false, "whether or not to authenticate requestors")
+	flags.Bool("no-auth", true, "whether or not to authenticate requestors")
 	flags.String("requestors", "", "requestor configuration (in JSON)")
 	flags.Lookup("no-auth").Header = `Requestor authentication. If disabled, then anyone that can reach this server can submit requests to it.
 If it is enabled, then requestor specific configuration must be provided.`
@@ -154,6 +154,7 @@ using the corresponding "-file" flag.`
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
+	flags.Bool("production", false, "Production mode")
 	flags.Lookup("verbose").Header = `Other options`
 
 	return nil
@@ -167,6 +168,11 @@ func configure(cmd *cobra.Command) error {
 	viper.AutomaticEnv()
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
 		return err
+	}
+
+	if viper.GetBool("production") {
+		viper.SetDefault("no-auth", false)
+		viper.SetDefault("url", "")
 	}
 
 	// Locate and read configuration file
@@ -218,7 +224,7 @@ func configure(cmd *cobra.Command) error {
 		Permissions: irmaserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),
 			Signing:    handlePermission("sign-perms"),
-			Issuing:    viper.GetStringSlice("issue-perms"),
+			Issuing:    handlePermission("issue-perms"),
 		},
 		ListenAddress:                  viper.GetString("listen-addr"),
 		Port:                           viper.GetInt("port"),
@@ -242,6 +248,8 @@ func configure(cmd *cobra.Command) error {
 		ClientTlsCertificateFile: viper.GetString("client-tls-cert-file"),
 		ClientTlsPrivateKey:      viper.GetString("client-tls-privkey"),
 		ClientTlsPrivateKeyFile:  viper.GetString("client-tls-privkey-file"),
+
+		Production: viper.GetBool("production"),
 	}
 
 	// Handle requestors
@@ -263,7 +271,7 @@ func configure(cmd *cobra.Command) error {
 }
 
 func handlePermission(typ string) []string {
-	if !viper.IsSet(typ) {
+	if !viper.IsSet(typ) && (!viper.GetBool("production") || typ != "issue-perms") {
 		return []string{"*"}
 	}
 	perms := viper.GetStringSlice(typ)

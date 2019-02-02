@@ -64,6 +64,8 @@ type Configuration struct {
 	Quiet   bool `json:"quiet" mapstructure:"quiet"`
 	LogJSON bool `json:"log_json" mapstructure:"log_json"`
 
+	Production bool `json:"production" mapstructure:"production"`
+
 	jwtPrivateKey *rsa.PrivateKey
 }
 
@@ -148,9 +150,23 @@ func (conf *Configuration) initialize() error {
 	}
 
 	if conf.DisableRequestorAuthentication {
-		conf.Logger.Warn("Authentication of incoming session requests disabled: anyone who can reach this server can use it")
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
+		conf.Logger.Warn("Authentication of incoming session requests disabled: anyone who can reach this server can use it")
+		havekeys, err := conf.HavePrivateKeys()
+		if err != nil {
+			return err
+		}
+		if len(conf.Permissions.Issuing) > 0 && havekeys {
+			if conf.separateClientServer() || !conf.Production {
+				conf.Logger.Warn("Issuance enabled and private keys installed: anyone who can reach this server can use it to issue attributes")
+			} else {
+				return errors.New("If issuing is enabled in production mode, requestor authentication must be enabled, or client_listen_addr and client_port must be used")
+			}
+		}
 	} else {
+		if len(conf.Requestors) == 0 {
+			return errors.New("No requestors configured; either configure one or more requestors or disable requestor authentication")
+		}
 		authenticators = map[AuthenticationMethod]Authenticator{
 			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}},
 			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]interface{}{}},
@@ -174,13 +190,13 @@ func (conf *Configuration) initialize() error {
 	}
 
 	if conf.ClientPort != 0 && conf.ClientPort == conf.Port {
-		return errors.New("If clientport is given it must be different from port")
+		return errors.New("If client_port is given it must be different from port")
 	}
 	if conf.ClientPort < 0 || conf.ClientPort > 65535 {
-		return errors.Errorf("clientport must be between 0 and 65535 (was %d)", conf.ClientPort)
+		return errors.Errorf("client_port must be between 0 and 65535 (was %d)", conf.ClientPort)
 	}
 	if conf.ClientListenAddress != "" && conf.ClientPort == 0 {
-		return errors.New("clientlistenaddr must be combined with a nonzero clientport")
+		return errors.New("client_listen_addr must be combined with a nonzero clientport")
 	}
 
 	tlsConf, err := conf.tlsConfig()
@@ -208,11 +224,16 @@ func (conf *Configuration) initialize() error {
 		}
 		replace := "$1:" + strconv.Itoa(port)
 		conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
+
 		separateClientServer := conf.separateClientServer()
 		if (separateClientServer && clientTlsConf != nil) || (!separateClientServer && tlsConf != nil) {
 			if strings.HasPrefix(conf.URL, "http://") {
 				conf.URL = "https://" + conf.URL[len("http://"):]
 			}
+		}
+		if !strings.HasPrefix(conf.URL, "https://") {
+			conf.Logger.Warnf("TLS is not enabled on the url \"%s\" to which the IRMA app will connect. "+
+				"Ensure that attributes are encrypted in transit by either enabling TLS or adding TLS in a reverse proxy.", conf.URL)
 		}
 	}
 

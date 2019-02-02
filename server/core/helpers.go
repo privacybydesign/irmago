@@ -51,7 +51,7 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	for _, cred := range request.Credentials {
 		// Check that we have the appropriate private key
 		iss := cred.CredentialTypeID.IssuerIdentifier()
-		privatekey, err := privatekey(iss)
+		privatekey, err := conf.PrivateKey(iss)
 		if err != nil {
 			return err
 		}
@@ -83,16 +83,6 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	}
 
 	return nil
-}
-
-func privatekey(id irma.IssuerIdentifier) (sk *gabi.PrivateKey, err error) {
-	sk = conf.IssuerPrivateKeys[id]
-	if sk == nil {
-		if sk, err = conf.IrmaConfiguration.PrivateKey(id); err != nil {
-			return nil, err
-		}
-	}
-	return sk, nil
 }
 
 func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, scheme irma.SchemeManagerIdentifier) (*gabi.ProofP, error) {
