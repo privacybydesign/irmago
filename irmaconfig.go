@@ -63,6 +63,7 @@ type Configuration struct {
 	assets        string
 	readOnly      bool
 	cronchan      chan bool
+	scheduler     *gocron.Scheduler
 }
 
 // ConfigurationFileHash encodes the SHA256 hash of an authenticated
@@ -1198,7 +1199,8 @@ func (conf *Configuration) updateSchemes() error {
 func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 	Logger.Infof("Updating schemes every %d minutes", interval)
 
-	gocron.Every(uint64(interval)).Minutes().Do(func() {
+	conf.scheduler = gocron.NewScheduler()
+	conf.scheduler.Every(uint64(interval)).Minutes().Do(func() {
 		if err := conf.updateSchemes(); err != nil {
 			Logger.Error("Scheme autoupdater failed: ")
 			if e, ok := err.(*errors.Error); ok {
@@ -1209,8 +1211,12 @@ func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 		}
 	})
 
-	go gocron.RunAll()             // Perform updates now
-	conf.cronchan = gocron.Start() // Schedule updates (first one in interval minutes from now)
+	conf.cronchan = conf.scheduler.Start() // Schedule updates (first one in interval minutes from now)
+	go func() {                            // Run first update after a small delay
+		<-time.NewTimer(200 * time.Millisecond).C
+		conf.scheduler.RunAll()
+	}()
+
 }
 
 func (conf *Configuration) StopAutoUpdateSchemes() {
