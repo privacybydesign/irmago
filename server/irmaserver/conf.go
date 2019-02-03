@@ -168,8 +168,8 @@ func (conf *Configuration) initialize() error {
 			return errors.New("No requestors configured; either configure one or more requestors or disable requestor authentication")
 		}
 		authenticators = map[AuthenticationMethod]Authenticator{
-			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}},
-			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]interface{}{}},
+			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},
+			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},
 			AuthenticationMethodToken:     &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
 		}
 

@@ -19,20 +19,20 @@ import (
 
 func (session *session) markAlive() {
 	session.lastActive = time.Now()
-	conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debugf("Session marked active, expiry delayed")
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debugf("Session marked active, expiry delayed")
 }
 
 func (session *session) setStatus(status server.Status) {
-	conf.Logger.WithFields(logrus.Fields{"session": session.token, "prevStatus": session.prevStatus, "status": status}).
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "prevStatus": session.prevStatus, "status": status}).
 		Info("Session status updated")
 	session.status = status
 	session.result.Status = status
-	sessions.update(session)
+	session.sessions.update(session)
 }
 
 func (session *session) onUpdate() {
 	if session.evtSource != nil {
-		conf.Logger.WithFields(logrus.Fields{"session": session.token, "status": session.status}).
+		session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "status": session.status}).
 			Debug("Sending status to SSE listeners")
 		session.evtSource.SendEventMessage(string(session.status), "", "")
 	}
@@ -47,18 +47,18 @@ func (session *session) fail(err server.Error, message string) *irma.RemoteError
 
 // Issuance helpers
 
-func validateIssuanceRequest(request *irma.IssuanceRequest) error {
+func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	for _, cred := range request.Credentials {
 		// Check that we have the appropriate private key
 		iss := cred.CredentialTypeID.IssuerIdentifier()
-		privatekey, err := conf.PrivateKey(iss)
+		privatekey, err := s.conf.PrivateKey(iss)
 		if err != nil {
 			return err
 		}
 		if privatekey == nil {
 			return errors.Errorf("missing private key of issuer %s", iss.String())
 		}
-		pubkey, err := conf.IrmaConfiguration.PublicKey(iss, int(privatekey.Counter))
+		pubkey, err := s.conf.IrmaConfiguration.PublicKey(iss, int(privatekey.Counter))
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		cred.KeyCounter = int(privatekey.Counter)
 
 		// Check that the credential is consistent with irma_configuration
-		if err := cred.Validate(conf.IrmaConfiguration); err != nil {
+		if err := cred.Validate(s.conf.IrmaConfiguration); err != nil {
 			return err
 		}
 
@@ -95,12 +95,12 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 		if !contains {
 			return nil, errors.Errorf("no keyshare proof included for scheme %s", scheme.Name())
 		}
-		conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
+		session.conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
 		claims := &struct {
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
 		}{}
-		token, err := jwt.ParseWithClaims(str, claims, conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
+		token, err := jwt.ParseWithClaims(str, claims, session.conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +120,7 @@ func (session *session) eventSource() eventsource.EventSource {
 		return session.evtSource
 	}
 
-	conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debug("Making server sent event source")
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debug("Making server sent event source")
 	session.evtSource = eventsource.New(nil, func(_ *http.Request) [][]byte { return eventHeaders })
 	return session.evtSource
 }

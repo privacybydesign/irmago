@@ -24,9 +24,13 @@ var RootCommand = &cobra.Command{
 	Short: "IRMA server for verifying and issuing attributes",
 	Run: func(command *cobra.Command, args []string) {
 		if err := configure(command); err != nil {
+			die(errors.WrapPrefix(err, "Failed to read configuration", 0))
+		}
+		serv, err := irmaserver.New(conf)
+		if err != nil {
 			die(errors.WrapPrefix(err, "Failed to configure server", 0))
 		}
-		if err := irmaserver.Start(conf); err != nil {
+		if err := serv.Start(conf); err != nil {
 			die(errors.WrapPrefix(err, "Failed to start server", 0))
 		}
 	},
@@ -52,9 +56,9 @@ Specify -v to see the configuration.`,
 		}
 		interval := conf.SchemeUpdateInterval
 		download := conf.DownloadDefaultSchemes
-		conf.SchemeUpdateInterval = 0       // Hack: put this to 0 to prevent Initialize() from immediately updating schemes
+		conf.SchemeUpdateInterval = 0       // Hack: put this to 0 to prevent verifyConfiguration() from immediately updating schemes
 		conf.DownloadDefaultSchemes = false // and this to false to prevent default scheme downloading
-		if err := irmaserver.Initialize(conf); err != nil {
+		if _, err := irmaserver.New(conf); err != nil {
 			die(errors.WrapPrefix(err, "Invalid configuration", 0))
 		}
 		conf.SchemeUpdateInterval = interval // restore previous values before printing configuration

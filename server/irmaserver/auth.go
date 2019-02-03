@@ -41,10 +41,12 @@ const (
 )
 
 type HmacAuthenticator struct {
-	hmackeys map[string]interface{}
+	hmackeys      map[string]interface{}
+	maxRequestAge int
 }
 type PublicKeyAuthenticator struct {
-	publickeys map[string]interface{}
+	publickeys    map[string]interface{}
+	maxRequestAge int
 }
 type PresharedKeyAuthenticator struct {
 	presharedkeys map[string]string
@@ -73,7 +75,7 @@ func (NilAuthenticator) Initialize(name string, requestor Requestor) error {
 func (hauth *HmacAuthenticator) Authenticate(
 	headers http.Header, body []byte,
 ) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError) {
-	return jwtAuthenticate(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys)
+	return jwtAuthenticate(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys, hauth.maxRequestAge)
 }
 
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
@@ -96,7 +98,7 @@ func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) err
 func (pkauth *PublicKeyAuthenticator) Authenticate(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
-	return jwtAuthenticate(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys)
+	return jwtAuthenticate(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys, pkauth.maxRequestAge)
 }
 
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
@@ -165,7 +167,7 @@ func jwtKeyExtractor(publickeys map[string]interface{}) func(token *jwt.Token) (
 
 // jwtAuthenticate is a helper function for JWT-based authenticators that verifies and parses JWTs.
 func jwtAuthenticate(
-	headers http.Header, body []byte, signatureAlg string, keys map[string]interface{},
+	headers http.Header, body []byte, signatureAlg string, keys map[string]interface{}, maxRequestAge int,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	// Read JWT and check its type
 	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "text/plain") {
@@ -196,7 +198,7 @@ func jwtAuthenticate(
 	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
 	}
-	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(conf.MaxRequestAge) * time.Second).Before(time.Now()) {
+	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
 	}
 

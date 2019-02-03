@@ -15,57 +15,49 @@ import (
 	"github.com/privacybydesign/irmago/server/core"
 )
 
+// Server is an irmareqestor server instance.
+type Server struct {
+	*core.Server
+	handlers map[string]SessionHandler
+}
+
 // SessionHandler is a function that can handle a session result
 // once an IRMA session has completed.
 type SessionHandler func(*server.SessionResult)
 
-var handlers = make(map[string]SessionHandler)
-
-// Initialize sets configuration.
-func Initialize(configuration *server.Configuration) error {
-	return core.Initialize(configuration)
+func New(conf *server.Configuration) (*Server, error) {
+	s, err := core.New(conf)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{
+		Server:   s,
+		handlers: make(map[string]SessionHandler),
+	}, nil
 }
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session token (the second return parameter) can be used in GetSessionResult()
 // and CancelSession().
-func StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
-	qr, token, err := core.StartSession(request)
+func (s *Server) StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
+	qr, token, err := s.Server.StartSession(request)
 	if err != nil {
 		return nil, "", err
 	}
 	if handler != nil {
-		handlers[token] = handler
+		s.handlers[token] = handler
 	}
 	return qr, token, nil
 }
 
-// GetSessionResult retrieves the result of the specified IRMA session.
-func GetSessionResult(token string) *server.SessionResult {
-	return core.GetSessionResult(token)
-}
-
-func GetRequest(token string) irma.RequestorRequest {
-	return core.GetRequest(token)
-}
-
-// CancelSession cancels the specified IRMA session.
-func CancelSession(token string) error {
-	return core.CancelSession(token)
-}
-
-func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
-	return core.SubscribeServerSentEvents(w, r, token)
-}
-
 // HttpHandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
-// with IRMA apps. Initialize() must be called before this.
+// with IRMA apps.
 //
 // Example usage:
 //   http.HandleFunc("/irma/", irmarequestor.HttpHandlerFunc())
 //
 // The IRMA app can then perform IRMA sessions at https://example.com/irma.
-func HttpHandlerFunc() http.HandlerFunc {
+func (s *Server) HttpHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var message []byte
 		var err error
@@ -78,20 +70,20 @@ func HttpHandlerFunc() http.HandlerFunc {
 
 		token, noun, err := core.ParsePath(r.URL.Path)
 		if err == nil && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
-			if err = SubscribeServerSentEvents(w, r, token); err != nil {
+			if err = s.SubscribeServerSentEvents(w, r, token); err != nil {
 				server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
 			}
 			return
 		}
 
-		status, response, result := core.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
+		status, response, result := s.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
 		w.WriteHeader(status)
 		_, err = w.Write(response)
 		if err != nil {
 			_ = server.LogError(errors.WrapPrefix(err, "http.ResponseWriter.Write() returned error", 0))
 		}
 		if result != nil && result.Status.Finished() {
-			if handler := handlers[result.Token]; handler != nil {
+			if handler := s.handlers[result.Token]; handler != nil {
 				go handler(result)
 			}
 		}

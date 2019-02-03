@@ -2,44 +2,13 @@ package sessiontest
 
 import (
 	"encoding/json"
-	"net/http"
-	"path/filepath"
 	"testing"
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmarequestor"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
-
-var irmaServer *http.Server
-
-func StartIrmaClientServer(t *testing.T) {
-	testdata := test.FindTestdataFolder(t)
-
-	logger := logrus.New()
-	logger.Level = logrus.WarnLevel
-	logger.Formatter = &logrus.TextFormatter{}
-	require.NoError(t, irmarequestor.Initialize(&server.Configuration{
-		URL:                   "http://localhost:48680",
-		Logger:                logger,
-		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
-		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-	}))
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", irmarequestor.HttpHandlerFunc())
-	irmaServer = &http.Server{Addr: ":48680", Handler: mux}
-	go func() {
-		_ = irmaServer.ListenAndServe()
-	}()
-}
-
-func StopIrmaClientServer() {
-	_ = irmaServer.Close()
-}
 
 func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
 	StartIrmaClientServer(t)
@@ -51,7 +20,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.S
 	clientChan := make(chan *SessionResult)
 	serverChan := make(chan *server.SessionResult)
 
-	qr, token, err := irmarequestor.StartSession(request, func(result *server.SessionResult) {
+	qr, token, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)

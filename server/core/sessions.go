@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
@@ -31,6 +30,9 @@ type session struct {
 	result     *server.SessionResult
 
 	kssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
+
+	conf     *server.Configuration
+	sessions sessionStore
 }
 
 type sessionStore interface {
@@ -42,7 +44,8 @@ type sessionStore interface {
 
 type memorySessionStore struct {
 	sync.RWMutex
-	m map[string]*session
+	conf *server.Configuration
+	m    map[string]*session
 }
 
 const (
@@ -53,19 +56,10 @@ const (
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
 	maxProtocolVersion = irma.NewVersion(2, 4)
-
-	sessions sessionStore = &memorySessionStore{
-		m: make(map[string]*session),
-	}
 )
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
-
-	gocron.Every(10).Seconds().Do(func() {
-		sessions.deleteExpired()
-	})
-	gocron.Start()
 }
 
 func (s *memorySessionStore) get(token string) *session {
@@ -99,11 +93,11 @@ func (s memorySessionStore) deleteExpired() {
 
 		if session.lastActive.Add(timeout).Before(time.Now()) {
 			if !session.status.Finished() {
-				conf.Logger.WithFields(logrus.Fields{"session": session.token}).Infof("Session expired")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Infof("Session expired")
 				session.markAlive()
 				session.setStatus(server.StatusTimeout)
 			} else {
-				conf.Logger.WithFields(logrus.Fields{"session": session.token}).Infof("Deleting session")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Infof("Deleting session")
 				expired = append(expired, token)
 			}
 		}
@@ -125,9 +119,9 @@ func (s memorySessionStore) deleteExpired() {
 
 var one *big.Int = big.NewInt(1)
 
-func newSession(action irma.Action, request irma.RequestorRequest) *session {
+func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
 	token := newSessionToken()
-	s := &session{
+	ses := &session{
 		action:     action,
 		rrequest:   request,
 		request:    request.SessionRequest(),
@@ -135,6 +129,8 @@ func newSession(action irma.Action, request irma.RequestorRequest) *session {
 		token:      token,
 		status:     server.StatusInitialized,
 		prevStatus: server.StatusInitialized,
+		conf:       s.conf,
+		sessions:   s.sessions,
 		result: &server.SessionResult{
 			Token:  token,
 			Type:   action,
@@ -142,13 +138,13 @@ func newSession(action irma.Action, request irma.RequestorRequest) *session {
 		},
 	}
 
-	conf.Logger.WithFields(logrus.Fields{"session": s.token}).Debug("New session started")
+	s.conf.Logger.WithFields(logrus.Fields{"session": ses.token}).Debug("New session started")
 	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
-	s.request.SetNonce(nonce)
-	s.request.SetContext(one)
-	sessions.add(token, s)
+	ses.request.SetNonce(nonce)
+	ses.request.SetContext(one)
+	s.sessions.add(token, ses)
 
-	return s
+	return ses
 }
 
 func newSessionToken() string {

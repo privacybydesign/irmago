@@ -12,8 +12,6 @@ import (
 // Maintaining the session state is done here, as well as checking whether the session is in the
 // appropriate status before handling the request.
 
-var conf *server.Configuration
-
 func (session *session) handleDelete() {
 	if session.status.Finished() {
 		return
@@ -34,7 +32,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	if session.version, err = chooseProtocolVersion(min, max); err != nil {
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
-	conf.Logger.WithFields(logrus.Fields{"session": session.token, "version": session.version.String()}).Debugf("Protocol version negotiated")
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.SetVersion(session.version)
 
 	session.setStatus(server.StatusConnected)
@@ -55,7 +53,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	var rerr *irma.RemoteError
 	session.result.Signature = signature
 	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(
-		conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
+		session.conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
@@ -77,7 +75,7 @@ func (session *session) handlePostDisclosure(disclosure irma.Disclosure) (*irma.
 	var err error
 	var rerr *irma.RemoteError
 	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(
-		conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
+		session.conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
@@ -104,13 +102,13 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 
 	// Compute list of public keys against which to verify the received proofs
 	disclosureproofs := irma.ProofList(commitments.Proofs[:discloseCount])
-	pubkeys, err := disclosureproofs.ExtractPublicKeys(conf.IrmaConfiguration)
+	pubkeys, err := disclosureproofs.ExtractPublicKeys(session.conf.IrmaConfiguration)
 	if err != nil {
 		return nil, session.fail(server.ErrorInvalidProofs, err.Error())
 	}
 	for _, cred := range request.Credentials {
 		iss := cred.CredentialTypeID.IssuerIdentifier()
-		pubkey, _ := conf.IrmaConfiguration.PublicKey(iss, cred.KeyCounter) // No error, already checked earlier
+		pubkey, _ := session.conf.IrmaConfiguration.PublicKey(iss, cred.KeyCounter) // No error, already checked earlier
 		pubkeys = append(pubkeys, pubkey)
 	}
 
@@ -118,7 +116,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	for i, proof := range commitments.Proofs {
 		pubkey := pubkeys[i]
 		schemeid := irma.NewIssuerIdentifier(pubkey.Issuer).SchemeManagerIdentifier()
-		if conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
+		if session.conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
 			proofP, err := session.getProofP(commitments, schemeid)
 			if err != nil {
 				return nil, session.fail(server.ErrorKeyshareProofMissing, err.Error())
@@ -129,7 +127,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 
 	// Verify all proofs and check disclosed attributes, if any, against request
 	session.result.Disclosed, session.result.ProofStatus, err = commitments.Disclosure().VerifyAgainstDisjunctions(
-		conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
+		session.conf.IrmaConfiguration, request.Disclose, request.Context, request.Nonce, pubkeys, false)
 	if err != nil {
 		if err == irma.ErrorMissingPublicKey {
 			return nil, session.fail(server.ErrorUnknownPublicKey, "")
@@ -148,11 +146,11 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	var sigs []*gabi.IssueSignatureMessage
 	for i, cred := range request.Credentials {
 		id := cred.CredentialTypeID.IssuerIdentifier()
-		pk, _ := conf.IrmaConfiguration.PublicKey(id, cred.KeyCounter)
-		sk, _ := conf.PrivateKey(id)
+		pk, _ := session.conf.IrmaConfiguration.PublicKey(id, cred.KeyCounter)
+		sk, _ := session.conf.PrivateKey(id)
 		issuer := gabi.NewIssuer(sk, pk, one)
 		proof := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
-		attributes, err := cred.AttributeList(conf.IrmaConfiguration, 0x03)
+		attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}

@@ -1,29 +1,40 @@
 package sessiontest
 
 import (
+	"net/http"
 	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmarequestor"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/require"
 )
 
 var (
+	httpServer     *http.Server
+	irmaServer     *irmarequestor.Server
+	combinedServer *irmaserver.Server
+
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
 )
 
 func init() {
-	logger.Level = logrus.WarnLevel
+	logger.Level = logrus.ErrorLevel
 	logger.Formatter = &logrus.TextFormatter{}
 }
 
 func StartIrmaServer(configuration *irmaserver.Configuration) {
 	go func() {
-		err := irmaserver.Start(configuration)
-		if err != nil {
+		var err error
+		if combinedServer, err = irmaserver.New(configuration); err != nil {
+			panic(err)
+		}
+		if err = combinedServer.Start(configuration); err != nil {
 			panic("Starting server failed: " + err.Error())
 		}
 	}()
@@ -31,7 +42,36 @@ func StartIrmaServer(configuration *irmaserver.Configuration) {
 }
 
 func StopIrmaServer() {
-	_ = irmaserver.Stop()
+	_ = combinedServer.Stop()
+}
+
+func StartIrmaClientServer(t *testing.T) {
+	testdata := test.FindTestdataFolder(t)
+
+	logger := logrus.New()
+	logger.Level = logrus.WarnLevel
+	logger.Formatter = &logrus.TextFormatter{}
+
+	var err error
+	irmaServer, err = irmarequestor.New(&server.Configuration{
+		URL:                   "http://localhost:48680",
+		Logger:                logger,
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+	})
+
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", irmaServer.HttpHandlerFunc())
+	httpServer = &http.Server{Addr: ":48680", Handler: mux}
+	go func() {
+		_ = httpServer.ListenAndServe()
+	}()
+}
+
+func StopIrmaClientServer() {
+	_ = httpServer.Close()
 }
 
 var IrmaServerConfiguration = &irmaserver.Configuration{

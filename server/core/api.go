@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
+	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
@@ -20,68 +21,89 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func Initialize(configuration *server.Configuration) error {
-	conf = configuration
+type Server struct {
+	conf      *server.Configuration
+	sessions  sessionStore
+	scheduler *gocron.Scheduler
+}
 
-	if conf.Logger == nil {
-		conf.Logger = logrus.New()
-		conf.Logger.Level = logrus.DebugLevel
-		conf.Logger.Formatter = &logrus.TextFormatter{}
+func New(conf *server.Configuration) (*Server, error) {
+	s := &Server{
+		conf:      conf,
+		scheduler: gocron.NewScheduler(),
+		sessions: &memorySessionStore{
+			m:    make(map[string]*session),
+			conf: conf,
+		},
 	}
-	server.Logger = conf.Logger
-	irma.Logger = conf.Logger
+	s.scheduler.Every(10).Seconds().Do(func() {
+		s.sessions.deleteExpired()
+	})
+	s.scheduler.Start()
 
-	if conf.IrmaConfiguration == nil {
+	return s, s.verifyConfiguration(s.conf)
+}
+
+func (s *Server) verifyConfiguration(configuration *server.Configuration) error {
+	if s.conf.Logger == nil {
+		s.conf.Logger = logrus.New()
+		s.conf.Logger.Level = logrus.DebugLevel
+		s.conf.Logger.Formatter = &logrus.TextFormatter{}
+	}
+	server.Logger = s.conf.Logger
+	irma.Logger = s.conf.Logger
+
+	if s.conf.IrmaConfiguration == nil {
 		var err error
-		if conf.SchemesAssetsPath == "" {
-			conf.IrmaConfiguration, err = irma.NewConfiguration(conf.SchemesPath)
+		if s.conf.SchemesAssetsPath == "" {
+			s.conf.IrmaConfiguration, err = irma.NewConfiguration(s.conf.SchemesPath)
 		} else {
-			conf.IrmaConfiguration, err = irma.NewConfigurationFromAssets(conf.SchemesPath, conf.SchemesAssetsPath)
+			s.conf.IrmaConfiguration, err = irma.NewConfigurationFromAssets(s.conf.SchemesPath, s.conf.SchemesAssetsPath)
 		}
 		if err != nil {
 			return server.LogError(err)
 		}
-		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
+		if err = s.conf.IrmaConfiguration.ParseFolder(); err != nil {
 			return server.LogError(err)
 		}
 	}
 
-	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
-		if conf.DownloadDefaultSchemes {
-			if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
+	if len(s.conf.IrmaConfiguration.SchemeManagers) == 0 {
+		if s.conf.DownloadDefaultSchemes {
+			if err := s.conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
 				return server.LogError(err)
 			}
 		} else {
-			return server.LogError(errors.New("no schemes found in irma_configuration folder " + conf.IrmaConfiguration.Path))
+			return server.LogError(errors.New("no schemes found in irma_configuration folder " + s.conf.IrmaConfiguration.Path))
 		}
 	}
-	if conf.SchemeUpdateInterval != 0 {
-		conf.IrmaConfiguration.AutoUpdateSchemes(uint(conf.SchemeUpdateInterval))
+	if s.conf.SchemeUpdateInterval != 0 {
+		s.conf.IrmaConfiguration.AutoUpdateSchemes(uint(s.conf.SchemeUpdateInterval))
 	}
 
-	if conf.IssuerPrivateKeys == nil {
-		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
+	if s.conf.IssuerPrivateKeys == nil {
+		s.conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
 	}
-	if conf.IssuerPrivateKeysPath != "" {
-		files, err := ioutil.ReadDir(conf.IssuerPrivateKeysPath)
+	if s.conf.IssuerPrivateKeysPath != "" {
+		files, err := ioutil.ReadDir(s.conf.IssuerPrivateKeysPath)
 		if err != nil {
 			return server.LogError(err)
 		}
 		for _, file := range files {
 			filename := file.Name()
 			issid := irma.NewIssuerIdentifier(strings.TrimSuffix(filename, filepath.Ext(filename))) // strip .xml
-			if _, ok := conf.IrmaConfiguration.Issuers[issid]; !ok {
+			if _, ok := s.conf.IrmaConfiguration.Issuers[issid]; !ok {
 				return server.LogError(errors.Errorf("Private key %s belongs to an unknown issuer", filename))
 			}
-			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(conf.IssuerPrivateKeysPath, filename))
+			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(s.conf.IssuerPrivateKeysPath, filename))
 			if err != nil {
 				return server.LogError(err)
 			}
-			conf.IssuerPrivateKeys[issid] = sk
+			s.conf.IssuerPrivateKeys[issid] = sk
 		}
 	}
-	for issid, sk := range conf.IssuerPrivateKeys {
-		pk, err := conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
+	for issid, sk := range s.conf.IssuerPrivateKeys {
+		pk, err := s.conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
 		if err != nil {
 			return server.LogError(err)
 		}
@@ -93,18 +115,18 @@ func Initialize(configuration *server.Configuration) error {
 		}
 	}
 
-	if conf.URL != "" {
-		if !strings.HasSuffix(conf.URL, "/") {
-			conf.URL = conf.URL + "/"
+	if s.conf.URL != "" {
+		if !strings.HasSuffix(s.conf.URL, "/") {
+			s.conf.URL = s.conf.URL + "/"
 		}
 	} else {
-		conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
+		s.conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
 	}
 
 	return nil
 }
 
-func StartSession(req interface{}) (*irma.Qr, string, error) {
+func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", err
@@ -113,44 +135,44 @@ func StartSession(req interface{}) (*irma.Qr, string, error) {
 	request := rrequest.SessionRequest()
 	action := request.Action()
 	if action == irma.ActionIssuing {
-		if err := validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
+		if err := s.validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
 			return nil, "", err
 		}
 	}
 
-	session := newSession(action, rrequest)
-	conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.token}).Infof("Session started")
-	if conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request: ", server.ToJson(rrequest))
+	session := s.newSession(action, rrequest)
+	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.token}).Infof("Session started")
+	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	return &irma.Qr{
 		Type: action,
-		URL:  conf.URL + session.token,
+		URL:  s.conf.URL + session.token,
 	}, session.token, nil
 }
 
-func GetSessionResult(token string) *server.SessionResult {
-	session := sessions.get(token)
+func (s *Server) GetSessionResult(token string) *server.SessionResult {
+	session := s.sessions.get(token)
 	if session == nil {
-		conf.Logger.Warn("Session result requested of unknown session ", token)
+		s.conf.Logger.Warn("Session result requested of unknown session ", token)
 		return nil
 	}
 	return session.result
 }
 
-func GetRequest(token string) irma.RequestorRequest {
-	session := sessions.get(token)
+func (s *Server) GetRequest(token string) irma.RequestorRequest {
+	session := s.sessions.get(token)
 	if session == nil {
-		conf.Logger.Warn("Session request requested of unknown session ", token)
+		s.conf.Logger.Warn("Session request requested of unknown session ", token)
 		return nil
 	}
 	return session.rrequest
 }
 
-func CancelSession(token string) error {
-	session := sessions.get(token)
+func (s *Server) CancelSession(token string) error {
+	session := s.sessions.get(token)
 	if session == nil {
 		return server.LogError(errors.Errorf("can't cancel unknown session %s", token))
 	}
@@ -167,8 +189,8 @@ func ParsePath(path string) (string, string, error) {
 	return matches[1], matches[2], nil
 }
 
-func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
-	session := sessions.get(token)
+func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
+	session := s.sessions.get(token)
 	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
 	}
@@ -182,7 +204,7 @@ func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token str
 	return nil
 }
 
-func HandleProtocolMessage(
+func (s *Server) HandleProtocolMessage(
 	path string,
 	method string,
 	headers map[string][]string,
@@ -198,11 +220,11 @@ func HandleProtocolMessage(
 		}
 	}
 
-	conf.Logger.WithFields(logrus.Fields{"method": method, "path": path}).Debugf("Routing protocol message")
+	s.conf.Logger.WithFields(logrus.Fields{"method": method, "path": path}).Debugf("Routing protocol message")
 	if len(message) > 0 {
-		conf.Logger.Trace("POST body: ", string(message))
+		s.conf.Logger.Trace("POST body: ", string(message))
 	}
-	conf.Logger.Trace("HTTP headers: ", server.ToJson(headers))
+	s.conf.Logger.Trace("HTTP headers: ", server.ToJson(headers))
 	token, noun, err := ParsePath(path)
 	if err != nil {
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))
@@ -210,9 +232,9 @@ func HandleProtocolMessage(
 	}
 
 	// Fetch the session
-	session := sessions.get(token)
+	session := s.sessions.get(token)
 	if session == nil {
-		conf.Logger.Warnf("Session not found: %s", token)
+		s.conf.Logger.Warnf("Session not found: %s", token)
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorSessionUnknown, ""))
 		return
 	}
