@@ -9,14 +9,15 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
+	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	httpServer     *http.Server
-	irmaServer     *irmaserver.Server
-	combinedServer *irmaserver.Server
+	httpServer      *http.Server
+	irmaServer      *irmaserver.Server
+	requestorServer *requestorserver.Server
 
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
@@ -27,24 +28,24 @@ func init() {
 	logger.Formatter = &logrus.TextFormatter{}
 }
 
-func StartIrmaServer(configuration *irmaserver.Configuration) {
+func StartRequestorServer(configuration *requestorserver.Configuration) {
 	go func() {
 		var err error
-		if combinedServer, err = irmaserver.New(configuration); err != nil {
+		if requestorServer, err = requestorserver.New(configuration); err != nil {
 			panic(err)
 		}
-		if err = combinedServer.Start(configuration); err != nil {
+		if err = requestorServer.Start(configuration); err != nil {
 			panic("Starting server failed: " + err.Error())
 		}
 	}()
 	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
-func StopIrmaServer() {
-	_ = combinedServer.Stop()
+func StopRequestorServer() {
+	_ = requestorServer.Stop()
 }
 
-func StartIrmaClientServer(t *testing.T) {
+func StartIrmaServer(t *testing.T) {
 	testdata := test.FindTestdataFolder(t)
 
 	logger := logrus.New()
@@ -69,11 +70,11 @@ func StartIrmaClientServer(t *testing.T) {
 	}()
 }
 
-func StopIrmaClientServer() {
+func StopIrmaServer() {
 	_ = httpServer.Close()
 }
 
-var IrmaServerConfiguration = &irmaserver.Configuration{
+var IrmaServerConfiguration = &requestorserver.Configuration{
 	Configuration: &server.Configuration{
 		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
@@ -84,7 +85,7 @@ var IrmaServerConfiguration = &irmaserver.Configuration{
 	Port: 48682,
 }
 
-var JwtServerConfiguration = &irmaserver.Configuration{
+var JwtServerConfiguration = &requestorserver.Configuration{
 	Configuration: &server.Configuration{
 		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
@@ -94,22 +95,22 @@ var JwtServerConfiguration = &irmaserver.Configuration{
 	Port: 48682,
 	DisableRequestorAuthentication: false,
 	MaxRequestAge:                  3,
-	Permissions: irmaserver.Permissions{
+	Permissions: requestorserver.Permissions{
 		Disclosing: []string{"*"},
 		Signing:    []string{"*"},
 		Issuing:    []string{"*"},
 	},
-	Requestors: map[string]irmaserver.Requestor{
+	Requestors: map[string]requestorserver.Requestor{
 		"requestor1": {
-			AuthenticationMethod:  irmaserver.AuthenticationMethodPublicKey,
+			AuthenticationMethod:  requestorserver.AuthenticationMethodPublicKey,
 			AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
 		},
 		"requestor2": {
-			AuthenticationMethod: irmaserver.AuthenticationMethodToken,
+			AuthenticationMethod: requestorserver.AuthenticationMethodToken,
 			AuthenticationKey:    "xa6=*&9?8jeUu5>.f-%rVg`f63pHim",
 		},
 		"requestor3": {
-			AuthenticationMethod: irmaserver.AuthenticationMethodHmac,
+			AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
 			AuthenticationKey:    "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg==",
 		},
 	},

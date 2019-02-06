@@ -187,8 +187,8 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	}
 
 	if TestType == "irmaserver" || TestType == "irmaserver-jwt" || TestType == "irmaserver-hmac-jwt" {
-		StartIrmaServer(JwtServerConfiguration)
-		defer StopIrmaServer()
+		StartRequestorServer(JwtServerConfiguration)
+		defer StopRequestorServer()
 	}
 
 	qr := startSession(t, request, sessiontype)

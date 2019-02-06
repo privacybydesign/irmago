@@ -11,8 +11,8 @@ import (
 )
 
 func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
-	StartIrmaClientServer(t)
-	defer StopIrmaClientServer()
+	StartIrmaServer(t)
+	defer StopIrmaServer()
 
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)
