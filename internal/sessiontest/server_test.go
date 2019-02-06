@@ -8,7 +8,6 @@ import (
 
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmarequestor"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -16,7 +15,7 @@ import (
 
 var (
 	httpServer     *http.Server
-	irmaServer     *irmarequestor.Server
+	irmaServer     *irmaserver.Server
 	combinedServer *irmaserver.Server
 
 	logger   = logrus.New()
@@ -53,7 +52,7 @@ func StartIrmaClientServer(t *testing.T) {
 	logger.Formatter = &logrus.TextFormatter{}
 
 	var err error
-	irmaServer, err = irmarequestor.New(&server.Configuration{
+	irmaServer, err = irmaserver.New(&server.Configuration{
 		URL:                   "http://localhost:48680",
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),

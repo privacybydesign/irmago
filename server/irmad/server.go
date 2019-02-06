@@ -17,14 +17,14 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmarequestor"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
 )
 
 type Server struct {
 	serv, clientserv *http.Server
 	conf             *Configuration
-	irmaserv         *irmarequestor.Server
+	irmaserv         *irmaserver.Server
 }
 
 // Start the server. If successful then it will not return until Stop() is called.
@@ -97,7 +97,7 @@ func (s *Server) Stop() error {
 }
 
 func New(config *Configuration) (*Server, error) {
-	irmaserv, err := irmarequestor.New(config.Configuration)
+	irmaserv, err := irmaserver.New(config.Configuration)
 	if err != nil {
 		return nil, err
 	}

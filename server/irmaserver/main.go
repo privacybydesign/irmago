@@ -3,7 +3,7 @@
 // IRMA sessions with irmaclient instances (i.e. the IRMA app). It
 // exposes functions for handling IRMA sessions and a HTTP handler
 // that handles the sessions with the irmaclient.
-package irmarequestor
+package irmaserver
 
 import (
 	"io/ioutil"
