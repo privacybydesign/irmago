@@ -1,4 +1,4 @@
-package irmad
+package requestorserver
 
 import (
 	"net/http"

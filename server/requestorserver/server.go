@@ -2,7 +2,7 @@
 // applications (the requestor) to perform IRMA sessions with irmaclient instances (i.e. the IRMA
 // app). It exposes a RESTful protocol with which the requestor can start and manage the session as
 // well as HTTP endpoints for the irmaclient.
-package irmad
+package requestorserver
 
 import (
 	"crypto/tls"

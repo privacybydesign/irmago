@@ -1,10 +1,10 @@
-package main
+package cmd
 
 import (
 	"encoding/json"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/server/irmad"
+	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ Specify -v to see the configuration.`,
 		download := conf.DownloadDefaultSchemes
 		conf.SchemeUpdateInterval = 0       // Hack: put this to 0 to prevent verifyConfiguration() from immediately updating schemes
 		conf.DownloadDefaultSchemes = false // and this to false to prevent default scheme downloading
-		if _, err := irmad.New(conf); err != nil {
+		if _, err := requestorserver.New(conf); err != nil {
 			die(errors.WrapPrefix(err, "Invalid configuration", 0))
 		}
 		conf.SchemeUpdateInterval = interval // restore previous values before printing configuration

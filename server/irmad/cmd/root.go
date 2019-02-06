@@ -1,23 +1,24 @@
 // Executable for the irmad.
-package main
+package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmad"
+	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var logger = logrus.StandardLogger()
-var conf *irmad.Configuration
+var conf *requestorserver.Configuration
 
 var RootCommand = &cobra.Command{
 	Use:   "irmad",
@@ -26,7 +27,7 @@ var RootCommand = &cobra.Command{
 		if err := configure(command); err != nil {
 			die(errors.WrapPrefix(err, "Failed to read configuration", 0))
 		}
-		serv, err := irmad.New(conf)
+		serv, err := requestorserver.New(conf)
 		if err != nil {
 			die(errors.WrapPrefix(err, "Failed to configure server", 0))
 		}
@@ -36,17 +37,12 @@ var RootCommand = &cobra.Command{
 	},
 }
 
-func main() {
-	logger.Level = logrus.InfoLevel
-	logger.SetFormatter(&prefixed.TextFormatter{
-		FullTimestamp: true,
-	})
-
-	if err := setFlags(RootCommand); err != nil {
-		die(errors.WrapPrefix(err, "Failed to attach flags to "+RootCommand.Name()+" command", 0))
-	}
+// Execute adds all child commands to the root command sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
 	if err := RootCommand.Execute(); err != nil {
-		die(errors.WrapPrefix(err, "Failed to execute command", 0))
+		fmt.Println(err)
+		os.Exit(-1)
 	}
 }
 
@@ -178,7 +174,7 @@ func configure(cmd *cobra.Command) error {
 	}
 
 	// Read configuration from flags and/or environmental variables
-	conf = &irmad.Configuration{
+	conf = &requestorserver.Configuration{
 		Configuration: &server.Configuration{
 			DownloadDefaultSchemes: true, // If we get passed an empty schemes-path, download default schemes into it
 			SchemesPath:            viper.GetString("schemes-path"),
@@ -188,7 +184,7 @@ func configure(cmd *cobra.Command) error {
 			URL:    viper.GetString("url"),
 			Logger: logger,
 		},
-		Permissions: irmad.Permissions{
+		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),
 			Signing:    handlePermission("sign-perms"),
 			Issuing:    handlePermission("issue-perms"),
@@ -198,7 +194,7 @@ func configure(cmd *cobra.Command) error {
 		ClientListenAddress:            viper.GetString("client-listen-addr"),
 		ClientPort:                     viper.GetInt("client-port"),
 		DisableRequestorAuthentication: viper.GetBool("no-auth"),
-		Requestors:                     make(map[string]irmad.Requestor),
+		Requestors:                     make(map[string]requestorserver.Requestor),
 		JwtIssuer:                      viper.GetString("jwt-issuer"),
 		JwtPrivateKey:                  viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:              viper.GetString("jwt-privkey-file"),
