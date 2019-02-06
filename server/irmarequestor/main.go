@@ -11,13 +11,13 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/servercore"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/core"
 )
 
 // Server is an irmareqestor server instance.
 type Server struct {
-	*core.Server
+	*servercore.Server
 	handlers map[string]SessionHandler
 }
 
@@ -26,7 +26,7 @@ type Server struct {
 type SessionHandler func(*server.SessionResult)
 
 func New(conf *server.Configuration) (*Server, error) {
-	s, err := core.New(conf)
+	s, err := servercore.New(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *Server) HttpHandlerFunc() http.HandlerFunc {
 			}
 		}
 
-		token, noun, err := core.ParsePath(r.URL.Path)
+		token, noun, err := servercore.ParsePath(r.URL.Path)
 		if err == nil && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
 			if err = s.SubscribeServerSentEvents(w, r, token); err != nil {
 				server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
