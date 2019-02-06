@@ -1,4 +1,4 @@
-package irmaserver
+package irmad
 
 import (
 	"crypto/rsa"

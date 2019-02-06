@@ -1,4 +1,4 @@
-// Executable for the irmaserver.
+// Executable for the irmad.
 package main
 
 import (
@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmaserver"
+	"github.com/privacybydesign/irmago/server/irmad"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -17,7 +17,7 @@ import (
 )
 
 var logger = logrus.StandardLogger()
-var conf *irmaserver.Configuration
+var conf *irmad.Configuration
 
 var RootCommand = &cobra.Command{
 	Use:   "irmad",
@@ -26,7 +26,7 @@ var RootCommand = &cobra.Command{
 		if err := configure(command); err != nil {
 			die(errors.WrapPrefix(err, "Failed to read configuration", 0))
 		}
-		serv, err := irmaserver.New(conf)
+		serv, err := irmad.New(conf)
 		if err != nil {
 			die(errors.WrapPrefix(err, "Failed to configure server", 0))
 		}
@@ -36,52 +36,15 @@ var RootCommand = &cobra.Command{
 	},
 }
 
-var RunCommand = &cobra.Command{
-	Use:   "run",
-	Short: "Run server (same as specifying no command)",
-	Run:   RootCommand.Run,
-}
-
-var CheckCommand = &cobra.Command{
-	Use:   "check",
-	Short: "Check server configuration correctness",
-	Long: `check reads the server configuration like the main command does, from a
-configuration file, command line flags, or environmental variables, and checks
-that the configuration is valid.
-
-Specify -v to see the configuration.`,
-	Run: func(command *cobra.Command, args []string) {
-		if err := configure(command); err != nil {
-			die(errors.WrapPrefix(err, "Failed to read configuration from file, args, or env vars", 0))
-		}
-		interval := conf.SchemeUpdateInterval
-		download := conf.DownloadDefaultSchemes
-		conf.SchemeUpdateInterval = 0       // Hack: put this to 0 to prevent verifyConfiguration() from immediately updating schemes
-		conf.DownloadDefaultSchemes = false // and this to false to prevent default scheme downloading
-		if _, err := irmaserver.New(conf); err != nil {
-			die(errors.WrapPrefix(err, "Invalid configuration", 0))
-		}
-		conf.SchemeUpdateInterval = interval // restore previous values before printing configuration
-		conf.DownloadDefaultSchemes = download
-		bts, _ := json.MarshalIndent(conf, "", "   ")
-		conf.Logger.Debug("Configuration: ", string(bts), "\n")
-	},
-}
-
 func main() {
 	logger.Level = logrus.InfoLevel
 	logger.SetFormatter(&prefixed.TextFormatter{
 		FullTimestamp: true,
 	})
 
-	RootCommand.AddCommand(CheckCommand, RunCommand)
-
-	for _, cmd := range []*cobra.Command{RootCommand, CheckCommand, RunCommand} {
-		if err := setFlags(cmd); err != nil {
-			die(errors.WrapPrefix(err, "Failed to attach flags to "+cmd.Name()+" command", 0))
-		}
+	if err := setFlags(RootCommand); err != nil {
+		die(errors.WrapPrefix(err, "Failed to attach flags to "+RootCommand.Name()+" command", 0))
 	}
-
 	if err := RootCommand.Execute(); err != nil {
 		die(errors.WrapPrefix(err, "Failed to execute command", 0))
 	}
@@ -215,7 +178,7 @@ func configure(cmd *cobra.Command) error {
 	}
 
 	// Read configuration from flags and/or environmental variables
-	conf = &irmaserver.Configuration{
+	conf = &irmad.Configuration{
 		Configuration: &server.Configuration{
 			DownloadDefaultSchemes: true, // If we get passed an empty schemes-path, download default schemes into it
 			SchemesPath:            viper.GetString("schemes-path"),
@@ -225,7 +188,7 @@ func configure(cmd *cobra.Command) error {
 			URL:    viper.GetString("url"),
 			Logger: logger,
 		},
-		Permissions: irmaserver.Permissions{
+		Permissions: irmad.Permissions{
 			Disclosing: handlePermission("disclose-perms"),
 			Signing:    handlePermission("sign-perms"),
 			Issuing:    handlePermission("issue-perms"),
@@ -235,7 +198,7 @@ func configure(cmd *cobra.Command) error {
 		ClientListenAddress:            viper.GetString("client-listen-addr"),
 		ClientPort:                     viper.GetInt("client-port"),
 		DisableRequestorAuthentication: viper.GetBool("no-auth"),
-		Requestors:                     make(map[string]irmaserver.Requestor),
+		Requestors:                     make(map[string]irmad.Requestor),
 		JwtIssuer:                      viper.GetString("jwt-issuer"),
 		JwtPrivateKey:                  viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:              viper.GetString("jwt-privkey-file"),

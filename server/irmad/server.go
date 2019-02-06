@@ -1,5 +1,5 @@
 // Package irmaserver is a server allowing IRMA verifiers, issuers or attribute-based signature applications (the requestor) to perform IRMA sessions with irmaclient instances (i.e. the IRMA app). It exposes a RESTful protocol with which the requestor can start and manage the session as well as HTTP endpoints for the irmaclient.
-package irmaserver
+package irmad
 
 import (
 	"crypto/tls"
