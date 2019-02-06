@@ -15,7 +15,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmarequestor"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -23,7 +23,8 @@ import (
 const pollInterval = 1000 * time.Millisecond
 
 var (
-	irmaServer *http.Server
+	httpServer *http.Server
+	irmaServer *irmaserver.Server
 	logger     *logrus.Logger
 )
 
@@ -63,8 +64,8 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 		printSessionResult(result)
 
 		// Done!
-		if irmaServer != nil {
-			_ = irmaServer.Close()
+		if httpServer != nil {
+			_ = httpServer.Close()
 		}
 	},
 }
@@ -83,7 +84,7 @@ func libraryRequest(
 
 	// Start the session
 	resultchan := make(chan *server.SessionResult)
-	qr, _, err := irmarequestor.StartSession(request, func(r *server.SessionResult) {
+	qr, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) {
 		resultchan <- r
 	})
 	if err != nil {
@@ -209,7 +210,8 @@ func configureServer(port int, privatekeysPath string, irmaconfig *irma.Configur
 		config.IssuerPrivateKeysPath = privatekeysPath
 	}
 
-	return irmarequestor.Initialize(config)
+	irmaServer, err = irmaserver.New(config)
+	return err
 }
 
 func configure(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, error) {
@@ -406,10 +408,10 @@ func parseDisjunctions(disjunctionsStr []string, conf *irma.Configuration) (irma
 
 func startServer(port int) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", irmarequestor.HttpHandlerFunc())
-	irmaServer = &http.Server{Addr: ":" + strconv.Itoa(port), Handler: mux}
+	mux.HandleFunc("/", irmaServer.HttpHandlerFunc())
+	httpServer = &http.Server{Addr: ":" + strconv.Itoa(port), Handler: mux}
 	go func() {
-		err := irmaServer.ListenAndServe()
+		err := httpServer.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			die("Failed to start server", err)
 		}
