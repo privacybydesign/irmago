@@ -53,7 +53,7 @@ func (s *Server) StartSession(request interface{}, handler SessionHandler) (*irm
 // with IRMA apps.
 //
 // Example usage:
-//   http.HandleFunc("/irma/", irmarequestor.HandlerFunc())
+//   http.HandleFunc("/irma/", irmaserver.HandlerFunc())
 //
 // The IRMA app can then perform IRMA sessions at https://example.com/irma.
 func (s *Server) HandlerFunc() http.HandlerFunc {

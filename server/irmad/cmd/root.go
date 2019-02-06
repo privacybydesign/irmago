@@ -1,4 +1,3 @@
-// Executable for the irmad.
 package cmd
 
 import (

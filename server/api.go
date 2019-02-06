@@ -20,7 +20,7 @@ import (
 
 var Logger *logrus.Logger = logrus.StandardLogger()
 
-// Configuration contains configuration for the irmarequestor library and irmaserver.
+// Configuration contains configuration for the irmaserver library and irmad.
 type Configuration struct {
 	// irma_configuration. If not given, this will be popupated using SchemesPath.
 	IrmaConfiguration *irma.Configuration `json:"-"`
