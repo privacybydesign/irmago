@@ -1,4 +1,4 @@
-// Package core is the core of the IRMA server library, allowing IRMA verifiers, issuers
+// Package servercore is the core of the IRMA server library, allowing IRMA verifiers, issuers
 // or attribute-based signature applications to perform IRMA sessions with irmaclient instances
 // (i.e. the IRMA app). It exposes a small interface to expose to other programming languages
 // through cgo. It is used by the irmarequestor package but otherwise not meant for use in Go.

@@ -1,8 +1,7 @@
-// Package irmarequestor is a library that allows IRMA verifiers,
-// issuers or attribute-based signature applications to perform
-// IRMA sessions with irmaclient instances (i.e. the IRMA app). It
-// exposes functions for handling IRMA sessions and a HTTP handler
-// that handles the sessions with the irmaclient.
+// Package irmaserver is a library that allows IRMA verifiers, issuers or attribute-based signature
+// applications to perform IRMA sessions with irmaclient instances (i.e. the IRMA app). It exposes
+// functions for handling IRMA sessions and a HTTP handler that handles the sessions with the
+// irmaclient.
 package irmaserver
 
 import (
