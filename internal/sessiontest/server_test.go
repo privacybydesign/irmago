@@ -62,7 +62,7 @@ func StartIrmaClientServer(t *testing.T) {
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", irmaServer.HttpHandlerFunc())
+	mux.HandleFunc("/", irmaServer.HandlerFunc())
 	httpServer = &http.Server{Addr: ":48680", Handler: mux}
 	go func() {
 		_ = httpServer.ListenAndServe()

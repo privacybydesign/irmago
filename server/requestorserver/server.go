@@ -123,7 +123,7 @@ func (s *Server) ClientHandler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(cors.New(corsOptions).Handler)
 
-	router.Mount("/irma/", s.irmaserv.HttpHandlerFunc())
+	router.Mount("/irma/", s.irmaserv.HandlerFunc())
 	return router
 }
 
@@ -135,7 +135,7 @@ func (s *Server) Handler() http.Handler {
 
 	if !s.conf.separateClientServer() {
 		// Mount server for irmaclient
-		router.Mount("/irma/", s.irmaserv.HttpHandlerFunc())
+		router.Mount("/irma/", s.irmaserv.HandlerFunc())
 	}
 
 	// Server routes

@@ -49,14 +49,14 @@ func (s *Server) StartSession(request interface{}, handler SessionHandler) (*irm
 	return qr, token, nil
 }
 
-// HttpHandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
+// HandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
 // with IRMA apps.
 //
 // Example usage:
-//   http.HandleFunc("/irma/", irmarequestor.HttpHandlerFunc())
+//   http.HandleFunc("/irma/", irmarequestor.HandlerFunc())
 //
 // The IRMA app can then perform IRMA sessions at https://example.com/irma.
-func (s *Server) HttpHandlerFunc() http.HandlerFunc {
+func (s *Server) HandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var message []byte
 		var err error

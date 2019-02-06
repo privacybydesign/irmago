@@ -408,7 +408,7 @@ func parseDisjunctions(disjunctionsStr []string, conf *irma.Configuration) (irma
 
 func startServer(port int) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", irmaServer.HttpHandlerFunc())
+	mux.HandleFunc("/", irmaServer.HandlerFunc())
 	httpServer = &http.Server{Addr: ":" + strconv.Itoa(port), Handler: mux}
 	go func() {
 		err := httpServer.ListenAndServe()
