@@ -216,7 +216,9 @@ func (conf *Configuration) initialize() error {
 		if !strings.HasSuffix(conf.URL, "/") {
 			conf.URL = conf.URL + "/"
 		}
-		conf.URL = conf.URL + "irma/"
+		if !strings.HasSuffix(conf.URL, "irma/") {
+			conf.URL = conf.URL + "irma/"
+		}
 		// replace "port" in url with actual port
 		port := conf.ClientPort
 		if port == 0 {
