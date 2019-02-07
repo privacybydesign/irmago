@@ -123,6 +123,17 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		s.conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
 	}
 
+	if s.conf.Email != "" {
+		// Very basic sanity checks
+		if !strings.Contains(s.conf.Email, "@") || strings.Contains(s.conf.Email, "\n") {
+			return server.LogError(errors.New("Invalid email address specified"))
+		}
+		t := irma.NewHTTPTransport("https://metrics.privacybydesign.foundation/history/email")
+		t.SetHeader("User-Agent", "irmaserver")
+		var x string
+		_ = t.Post("", &x, s.conf.Email)
+	}
+
 	return nil
 }
 

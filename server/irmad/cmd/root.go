@@ -118,6 +118,10 @@ using the corresponding "-file" flag.`
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
 	flags.Lookup("tls-cert").Header = "TLS configuration. Leave empty to disable TLS."
 
+	flags.String("email", "", "Email address of server admin, for incidental notifications such as breaking API changes")
+	flags.Bool("no-email", true, "Opt out of prodiding an email address with --email")
+	flags.Lookup("email").Header = "Email address. You are encouraged to provide your email address, so you can be notified of important changes. See README for more info."
+
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
@@ -139,6 +143,7 @@ func configure(cmd *cobra.Command) error {
 
 	if viper.GetBool("production") {
 		viper.SetDefault("no-auth", false)
+		viper.SetDefault("no-email", false)
 		viper.SetDefault("url", "")
 	}
 
@@ -186,6 +191,7 @@ func configure(cmd *cobra.Command) error {
 			SchemeUpdateInterval:   viper.GetInt("schemes-update"),
 			IssuerPrivateKeysPath:  viper.GetString("privkeys"),
 			URL:    viper.GetString("url"),
+			Email:  viper.GetString("email"),
 			Logger: logger,
 		},
 		Permissions: requestorserver.Permissions{
@@ -217,6 +223,13 @@ func configure(cmd *cobra.Command) error {
 		ClientTlsPrivateKeyFile:  viper.GetString("client-tls-privkey-file"),
 
 		Production: viper.GetBool("production"),
+	}
+
+	if !viper.GetBool("no-email") && conf.Email == "" {
+		return errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
+	}
+	if viper.GetBool("no-email") && conf.Email != "" {
+		return errors.New("--no-email cannot be combined with --email")
 	}
 
 	// Handle requestors

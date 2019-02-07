@@ -40,6 +40,10 @@ type Configuration struct {
 	URL string `json:"url" mapstructure:"url"`
 	// Logging
 	Logger *logrus.Logger `json:"-"`
+	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
+	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
+	// for more information
+	Email string
 }
 
 // SessionResult contains session information such as the session status, type, possible errors,
