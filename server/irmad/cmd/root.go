@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var logger = logrus.StandardLogger()
@@ -37,11 +36,17 @@ var RootCommand = &cobra.Command{
 }
 
 // Execute adds all child commands to the root command sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
+// This is called by main.main(). It only needs to happen once to the RootCommand.
 func Execute() {
+	logger.Level = logrus.InfoLevel
+	logger.SetFormatter(&prefixed.TextFormatter{
+		FullTimestamp: true,
+	})
+	if err := setFlags(RootCommand); err != nil {
+		die(errors.WrapPrefix(err, "Failed to attach flags to "+RootCommand.Name()+" command", 0))
+	}
 	if err := RootCommand.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(-1)
+		die(errors.Wrap(err, 0))
 	}
 }
 
