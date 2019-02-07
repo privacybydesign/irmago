@@ -9,6 +9,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/spf13/cobra"
+	"github.com/go-errors/errors"
 )
 
 // verifyCmd represents the verify command
@@ -84,6 +85,9 @@ func VerifyIrmaConfiguration(path string) error {
 	}
 	if err := conf.CheckKeys(); err != nil {
 		return err
+	}
+	if len(conf.SchemeManagers) == 0 {
+		return errors.New("Specified folder doesn't contain any schemes")
 	}
 
 	for _, manager := range conf.SchemeManagers {
