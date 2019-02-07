@@ -1,15 +1,15 @@
-# irmago
+# irmago &nbsp; [![GoDoc](https://godoc.org/github.com/privacybydesign/irmago?status.svg)](https://godoc.org/github.com/privacybydesign/irmago) [![Go Report Card](https://goreportcard.com/badge/github.com/privacybydesign/irmago)](https://goreportcard.com/report/github.com/privacybydesign/irmago)
 
 `irmago` is an IRMA implementation in Go. It contains multiple libraries and applications:
 
 * The Go package `irma` contains generic IRMA functionality used by all other components below, such as parsing [credential and issuer definitions and public keys](https://github.com/privacybydesign/irma-demo-schememanager), parsing [IRMA metadata attributes](https://credentials.github.io/docs/irma.html#the-metadata-attribute), and structs representing messages of the [IRMA protocol](https://credentials.github.io/protocols/irma-protocol/).
-* The Go package `irmaclient` is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
-* The `server` package contains the corresponding IRMA server as a Go library and as an executable.
-* The tool `irma` for generating IRMA issuer public/private keypairs, and for verifying and signing [IRMA schemes](https://credentials.github.io/docs/irma.html#scheme-managers).
+* The Go package [`irmaclient`](tree/master/irmaclient) is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
+* The [`server`](tree/master/server) package contains the corresponding IRMA server as a Go library and as an executable.
+* The tool [`irma`](tree/master/irma) for generating IRMA issuer public/private keypairs, and for verifying and signing [IRMA schemes](https://credentials.github.io/docs/irma.html#scheme-managers).
 
 ## Dependencies
 
-`irmago` uses [`dep`](https://github.com/golang/dep) for its dependencies. After [Installing `dep`](https://golang.github.io/dep/docs/installation.html) if necesssary, run
+`irmago` and its subpackages uses [`dep`](https://github.com/golang/dep) for its dependencies. After [Installing `dep`](https://golang.github.io/dep/docs/installation.html) if necesssary, run
 
     dep ensure
 

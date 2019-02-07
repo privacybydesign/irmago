@@ -1,4 +1,4 @@
-// Package irmad is a server allowing IRMA verifiers, issuers or attribute-based signature
+// Package requestorserver is a server allowing IRMA verifiers, issuers or attribute-based signature
 // applications (the requestor) to perform IRMA sessions with irmaclient instances (i.e. the IRMA
 // app). It exposes a RESTful protocol with which the requestor can start and manage the session as
 // well as HTTP endpoints for the irmaclient.
@@ -24,6 +24,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Server is a requestor server instance.
 type Server struct {
 	serv, clientserv *http.Server
 	conf             *Configuration
@@ -173,7 +174,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		rerr      *irma.RemoteError
 		applies   bool
 	)
-	for _, authenticator := range authenticators {
+	for _, authenticator := range authenticators { // rrequest abbreviates "requestor request"
 		applies, rrequest, requestor, rerr = authenticator.Authenticate(r.Header, body)
 		if applies || rerr != nil {
 			break

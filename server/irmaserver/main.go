@@ -14,7 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 )
 
-// Server is an irmareqestor server instance.
+// Server is an irmaserver instance.
 type Server struct {
 	*servercore.Server
 	handlers map[string]SessionHandler
@@ -24,6 +24,7 @@ type Server struct {
 // once an IRMA session has completed.
 type SessionHandler func(*server.SessionResult)
 
+// New creates a new Server instance with the specified configuration.
 func New(conf *server.Configuration) (*Server, error) {
 	s, err := servercore.New(conf)
 	if err != nil {
@@ -47,6 +48,27 @@ func (s *Server) StartSession(request interface{}, handler SessionHandler) (*irm
 		s.handlers[token] = handler
 	}
 	return qr, token, nil
+}
+
+// GetSessionResult retrieves the result of the specified IRMA session.
+func (s *Server) GetSessionResult(token string) *server.SessionResult {
+	return s.Server.GetSessionResult(token)
+}
+
+// GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
+func (s *Server) GetRequest(token string) irma.RequestorRequest {
+	return s.Server.GetRequest(token)
+}
+
+// CancelSession cancels the specified IRMA session.
+func (s *Server) CancelSession(token string) error {
+	return s.Server.CancelSession(token)
+}
+
+// SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
+// of the specified IRMA session.
+func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
+	return s.Server.SubscribeServerSentEvents(w, r, token)
 }
 
 // HandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
