@@ -24,14 +24,16 @@ var Logger *logrus.Logger = logrus.StandardLogger()
 type Configuration struct {
 	// irma_configuration. If not given, this will be popupated using SchemesPath.
 	IrmaConfiguration *irma.Configuration `json:"-"`
-	// Path to IRMA schemes to parse into IrmaConfiguration (only used if IrmaConfiguration == nil)
+	// Path to IRMA schemes to parse into IrmaConfiguration (only used if IrmaConfiguration == nil).
+	// If left empty, default value is taken using DefaultSchemesPath().
+	// If an empty folder is specified, default schemes (irma-demo and pbdf) are downloaded into it.
 	SchemesPath string `json:"schemes_path" mapstructure:"schemes_path"`
 	// If specified, schemes found here are copied into SchemesPath (only used if IrmaConfiguration == nil)
 	SchemesAssetsPath string `json:"schemes_assets_path" mapstructure:"schemes_assets_path"`
-	// Whether or not to download default IRMA schemes if the specified schemes path is empty
-	DownloadDefaultSchemes bool `json:"schemes_download_default" mapstructure:"schemes_download_default"`
-	// Update all schemes every x minutes (0 to disable)
-	SchemeUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
+	// Disable scheme updating
+	DisableSchemesUpdate bool `json:"disable_schemes_update" mapstructure:"disable_schemes_update"`
+	// Update all schemes every x minutes (default value 0 means 60) (use DisableSchemesUpdate to disable)
+	SchemesUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
 	// Path to issuer private keys to parse
 	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
 	// Issuer private keys

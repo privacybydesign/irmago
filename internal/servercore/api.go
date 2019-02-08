@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -54,7 +55,19 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 	irma.Logger = s.conf.Logger
 
 	if s.conf.IrmaConfiguration == nil {
-		var err error
+		var (
+			err    error
+			exists bool
+		)
+		if s.conf.SchemesPath == "" {
+			s.conf.SchemesPath = server.DefaultSchemesPath() // Returns an existing path
+		}
+		if exists, err = fs.PathExists(s.conf.SchemesPath); err != nil {
+			return server.LogError(err)
+		}
+		if !exists {
+			return server.LogError(errors.New("Nonexisting schemes_path provided"))
+		}
 		if s.conf.SchemesAssetsPath == "" {
 			s.conf.IrmaConfiguration, err = irma.NewConfiguration(s.conf.SchemesPath)
 		} else {
@@ -69,16 +82,16 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 	}
 
 	if len(s.conf.IrmaConfiguration.SchemeManagers) == 0 {
-		if s.conf.DownloadDefaultSchemes {
-			if err := s.conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
-				return server.LogError(err)
-			}
-		} else {
-			return server.LogError(errors.New("no schemes found in irma_configuration folder " + s.conf.IrmaConfiguration.Path))
+		s.conf.Logger.Infof("No schemes found in %s, downloading default (irma-demo and pbdf)", s.conf.SchemesPath)
+		if err := s.conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
+			return server.LogError(err)
 		}
 	}
-	if s.conf.SchemeUpdateInterval != 0 {
-		s.conf.IrmaConfiguration.AutoUpdateSchemes(uint(s.conf.SchemeUpdateInterval))
+	if s.conf.SchemesUpdateInterval == 0 {
+		s.conf.SchemesUpdateInterval = 60
+	}
+	if !s.conf.DisableSchemesUpdate {
+		s.conf.IrmaConfiguration.AutoUpdateSchemes(uint(s.conf.SchemesUpdateInterval))
 	}
 
 	if s.conf.IssuerPrivateKeys == nil {

@@ -185,11 +185,11 @@ func configure(cmd *cobra.Command) error {
 	// Read configuration from flags and/or environmental variables
 	conf = &requestorserver.Configuration{
 		Configuration: &server.Configuration{
-			DownloadDefaultSchemes: true, // If we get passed an empty schemes-path, download default schemes into it
-			SchemesPath:            viper.GetString("schemes-path"),
-			SchemesAssetsPath:      viper.GetString("schemes-assets-path"),
-			SchemeUpdateInterval:   viper.GetInt("schemes-update"),
-			IssuerPrivateKeysPath:  viper.GetString("privkeys"),
+			SchemesPath:           viper.GetString("schemes-path"),
+			SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
+			SchemesUpdateInterval: viper.GetInt("schemes-update"),
+			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
+			IssuerPrivateKeysPath: viper.GetString("privkeys"),
 			URL:    viper.GetString("url"),
 			Email:  viper.GetString("email"),
 			Logger: logger,
