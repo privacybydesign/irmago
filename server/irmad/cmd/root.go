@@ -71,42 +71,30 @@ func setFlags(cmd *cobra.Command) error {
 	}
 
 	flags.StringP("config", "c", "", "path to configuration file")
-	flags.StringP("schemes-path", "i", schemespath, "path to irma_configuration")
-	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into schemes-path")
+	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
+	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
-	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
+	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
 	flags.Int("client-port", 0, "if specified, start a separate server for the IRMA app at this port")
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
-	flags.Lookup("port").Header = `Server address and port to listen on. If the client* configuration options are provided (see also the TLS flags)
-then the endpoints at /session for the requestor and /irma for the irmaclient (i.e. IRMA app) will listen on
-distinct network endpoints (e.g., localhost:1234/session and 0.0.0.0:5678/irma).`
+	flags.Lookup("port").Header = `Server address and port to listen on`
 
 	flags.Bool("no-auth", true, "whether or not to authenticate requestors")
 	flags.String("requestors", "", "requestor configuration (in JSON)")
-	flags.Lookup("no-auth").Header = `Requestor authentication. If disabled, then anyone that can reach this server can submit requests to it.
-If it is enabled, then requestor specific configuration must be provided.`
-
 	flags.StringSlice("disclose-perms", nil, "list of attributes that all requestors may verify (default *)")
 	flags.StringSlice("sign-perms", nil, "list of attributes that all requestors may request in signatures (default *)")
-	flags.StringSlice("issue-perms", nil, "list of attributes that all requestors may issue")
-	flags.Lookup("disclose-perms").Header = `Default requestor permissions. Apply to all requestors, in addition to requestor specific permissions.
-May contain wildcards. Separate multiple with comma. Example: irma-demo.*,pbdf.*. By default all requestors
-may use all attributes in disclosure and signature sessions. Pass empty string to disable session type.`
-
-	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
-	flags.Lookup("privkeys").Header = `Path to a folder containing IRMA private keys, with filenames scheme.issuer.xml, e.g. irma-demo.MijnOverheid.xml.
-Private keys may also be stored in the scheme (e.g. irma-demo/MijnOverheid/PrivateKeys/0.xml).`
+	flags.StringSlice("issue-perms", nil, "list of attributes that all requestors may issue (default *)")
+	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
 	flags.String("jwt-privkeyfile", "", "path to JWT private key")
-	flags.Lookup("jwt-issuer").Header = `JWT configuration. Can be omitted but then endpoints that return signed JWTs are disabled.
-All of the keys and certificates below are expected in PEM. Pass it either directly, or a path to it
-using the corresponding "-file" flag.`
+	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
+	flags.Lookup("jwt-issuer").Header = `JWT configuration`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
@@ -116,11 +104,11 @@ using the corresponding "-file" flag.`
 	flags.String("client-tls-cert-file", "", "path to TLS certificate (chain) for IRMA app server")
 	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
-	flags.Lookup("tls-cert").Header = "TLS configuration. Leave empty to disable TLS."
+	flags.Lookup("tls-cert").Header = "TLS configuration (leave empty to disable TLS)"
 
-	flags.String("email", "", "Email address of server admin, for incidental notifications such as breaking API changes")
+	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
 	flags.Bool("no-email", true, "Opt out of prodiding an email address with --email")
-	flags.Lookup("email").Header = "Email address. You are encouraged to provide your email address, so you can be notified of important changes. See README for more info."
+	flags.Lookup("email").Header = "Email address (see README for more info)"
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
