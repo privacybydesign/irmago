@@ -24,6 +24,15 @@ type Server struct {
 // once an IRMA session has completed.
 type SessionHandler func(*server.SessionResult)
 
+// Default server instance
+var s *Server
+
+// Initialize the default server instance with the specified configuration using New().
+func Initialize(conf *server.Configuration) (err error) {
+	s, err = New(conf)
+	return
+}
+
 // New creates a new Server instance with the specified configuration.
 func New(conf *server.Configuration) (*Server, error) {
 	s, err := servercore.New(conf)
@@ -39,6 +48,9 @@ func New(conf *server.Configuration) (*Server, error) {
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session token (the second return parameter) can be used in GetSessionResult()
 // and CancelSession().
+func StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
+	return s.StartSession(request, handler)
+}
 func (s *Server) StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
 	qr, token, err := s.Server.StartSession(request)
 	if err != nil {
@@ -51,22 +63,34 @@ func (s *Server) StartSession(request interface{}, handler SessionHandler) (*irm
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
+func GetSessionResult(token string) *server.SessionResult {
+	return s.GetSessionResult(token)
+}
 func (s *Server) GetSessionResult(token string) *server.SessionResult {
 	return s.Server.GetSessionResult(token)
 }
 
 // GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
+func GetRequest(token string) irma.RequestorRequest {
+	return s.GetRequest(token)
+}
 func (s *Server) GetRequest(token string) irma.RequestorRequest {
 	return s.Server.GetRequest(token)
 }
 
 // CancelSession cancels the specified IRMA session.
+func CancelSession(token string) error {
+	return s.CancelSession(token)
+}
 func (s *Server) CancelSession(token string) error {
 	return s.Server.CancelSession(token)
 }
 
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
 // of the specified IRMA session.
+func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
+	return s.SubscribeServerSentEvents(w, r, token)
+}
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
 	return s.Server.SubscribeServerSentEvents(w, r, token)
 }
@@ -78,6 +102,9 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 //   http.HandleFunc("/irma/", irmaserver.HandlerFunc())
 //
 // The IRMA app can then perform IRMA sessions at https://example.com/irma.
+func HandlerFunc() http.HandlerFunc {
+	return s.HandlerFunc()
+}
 func (s *Server) HandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var message []byte
