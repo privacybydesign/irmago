@@ -66,8 +66,9 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 			return server.LogError(err)
 		}
 		if !exists {
-			return server.LogError(errors.New("Nonexisting schemes_path provided"))
+			return server.LogError(errors.Errorf("Nonexisting schemes_path provided: %s", s.conf.SchemesPath))
 		}
+		s.conf.Logger.WithField("schemes_path", s.conf.SchemesPath).Info("Determined schemes path")
 		if s.conf.SchemesAssetsPath == "" {
 			s.conf.IrmaConfiguration, err = irma.NewConfiguration(s.conf.SchemesPath)
 		} else {

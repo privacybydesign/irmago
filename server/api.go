@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -45,7 +46,7 @@ type Configuration struct {
 	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
 	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
 	// for more information
-	Email string
+	Email string `json:"email" mapstructure:"email"`
 }
 
 // SessionResult contains session information such as the session status, type, possible errors,
@@ -250,16 +251,47 @@ func LocalIP() (string, error) {
 	return "", errors.New("No IP found")
 }
 
+// DefaultSchemesPath returns the default path for IRMA schemes, using XDG Base Directory Specification
+// https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html:
+//  - %LOCALAPPDATA% (i.e. C:\Users\$user\AppData\Local) if on Windows,
+//  - $XDG_DATA_HOME if set, otherwise $HOME/.local/share
+//  - $XDG_DATA_DIRS if set, otherwise /usr/local/share/ and /usr/share/
+//  - then the OSes temp dir (os.TempDir()),
+// returning the first of these that exists or can be created.
 func DefaultSchemesPath() string {
-	candidates := make([]string, 0, 2)
-	if runtime.GOOS != "windows" {
-		candidates = append(candidates, "/var/tmp/irma/irma_configuration")
+	candidates := make([]string, 0, 8)
+	home := os.Getenv("HOME")
+	xdgDataHome := os.Getenv("XDG_DATA_HOME")
+	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
+
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
+		if appdata != "" {
+			candidates = append(candidates, appdata)
+		}
 	}
-	candidates = append(candidates, filepath.Join(os.TempDir(), "irma", "irma_configuration"))
-	return firstWritablePath(candidates)
+
+	if xdgDataHome != "" {
+		candidates = append(candidates, xdgDataHome)
+	}
+	if xdgDataHome == "" && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "share"))
+	}
+	if xdgDataDirs != "" {
+		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
+	} else {
+		candidates = append(candidates, "/usr/local/share", "/usr/share")
+	}
+	candidates = append(candidates, filepath.Join(os.TempDir()))
+
+	for i := range candidates {
+		candidates[i] = filepath.Join(candidates[i], "irma", "irma_configuration")
+	}
+
+	return firstExistingPath(candidates)
 }
 
-func firstWritablePath(paths []string) string {
+func firstExistingPath(paths []string) string {
 	for _, path := range paths {
 		if err := fs.EnsureDirectoryExists(path); err != nil {
 			continue
