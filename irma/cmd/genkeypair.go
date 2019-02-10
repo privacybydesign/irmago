@@ -36,9 +36,10 @@ import (
 
 // genkeypairCmd represents the genkeypair command
 var genkeypairCmd = &cobra.Command{
-	Use:   "genkeypair",
-	Short: "Generate an IRMA issuer keypair",
-	Long:  `The genkeypair command generates an IRMA issuer keypair.`,
+	Use:        "genkeypair",
+	Short:      "Generate an IRMA issuer keypair",
+	Long:       `The genkeypair command generates an IRMA issuer keypair.`,
+	Deprecated: `use "irma scheme issuer keygen" instead`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		keylength, err := cmd.Flags().GetInt("keylength")
 		if err != nil {
