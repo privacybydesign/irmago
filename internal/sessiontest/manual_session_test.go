@@ -1,5 +1,3 @@
-// +build !unit_tests
-
 package sessiontest
 
 import (
@@ -112,16 +110,6 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 
 	require.Equal(t, irma.ProofStatusMissingAttributes, status)
 	require.Equal(t, irma.AttributeProofStatusInvalidValue, attrs[0].Status)
-}
-
-func TestManualKeyShareSession(t *testing.T) {
-	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
-	ms := createManualSessionHandler(t, nil)
-
-	_, status := manualSessionHelper(t, nil, ms, request, request, false)
-	require.Equal(t, irma.ProofStatusValid, status)
-	_, status = manualSessionHelper(t, nil, ms, request, "", false)
-	require.Equal(t, irma.ProofStatusValid, status)
 }
 
 func TestManualSessionMultiProof(t *testing.T) {

@@ -1,5 +1,3 @@
-// +build !unit_tests
-
 package sessiontest
 
 import (
@@ -81,6 +79,10 @@ func TestRequestorDisclosureSession(t *testing.T) {
 }
 
 func TestRequestorIssuanceSession(t *testing.T) {
+	testRequestorIssuance(t, false)
+}
+
+func testRequestorIssuance(t *testing.T, keyshare bool) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := &irma.IssuanceRequest{
 		BaseRequest: irma.BaseRequest{Type: irma.ActionIssuing},
@@ -98,10 +100,13 @@ func TestRequestorIssuanceSession(t *testing.T) {
 		Attributes: map[string]string{
 			"BSN": "299792458",
 		},
-	}, {
-		CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
-		Attributes:       map[string]string{"email": "testusername"},
 	}}
+	if keyshare {
+		request.Credentials = append(request.Credentials, &irma.CredentialRequest{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
+			Attributes:       map[string]string{"email": "testusername"},
+		})
+	}
 	request.Disclose = []*irma.AttributeDisjunction{{
 		Label:      "foo",
 		Attributes: []irma.AttributeTypeIdentifier{attrid},

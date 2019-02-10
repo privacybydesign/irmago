@@ -227,35 +227,3 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		require.NoError(t, result.Err)
 	}
 }
-
-func keyshareSessions(t *testing.T, client *irmaclient.Client) {
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
-	issuanceRequest := getCombinedIssuanceRequest(id)
-	issuanceRequest.Credentials = append(issuanceRequest.Credentials,
-		&irma.CredentialRequest{
-			Validity:         &expiry,
-			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
-			Attributes:       map[string]string{"email": "testusername"},
-		},
-	)
-	sessionHelper(t, issuanceRequest, "issue", client)
-
-	disclosureRequest := getDisclosureRequest(id)
-	disclosureRequest.Content = append(disclosureRequest.Content,
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
-	sessionHelper(t, disclosureRequest, "verification", client)
-
-	sigRequest := getSigningRequest(id)
-	sigRequest.Content = append(sigRequest.Content,
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
-	sessionHelper(t, sigRequest, "signature", client)
-}

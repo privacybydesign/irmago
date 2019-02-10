@@ -1,5 +1,3 @@
-// +build !unit_tests
-
 package irmaclient
 
 import (
@@ -207,15 +205,6 @@ func TestWrongSchemeManager(t *testing.T) {
 		client.Configuration.SchemeManagers[irmademo].Status,
 		irma.SchemeManagerStatusValid,
 	)
-}
-
-// Test pinchange interaction
-func TestKeyshareChangePin(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
-
-	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
-	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
 }
 
 // ------

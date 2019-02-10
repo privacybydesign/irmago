@@ -1,5 +1,3 @@
-// +build !unit_tests
-
 package sessiontest
 
 import (
@@ -117,16 +115,6 @@ func TestAttributeByteEncoding(t *testing.T) {
 	the same positive bigint. */
 	request = getSpecialIssuanceRequest(false, "é")
 	sessionHelper(t, request, "issue", client)
-}
-
-// Use the existing keyshare enrollment and credentials
-// in a keyshare session of each session type.
-// Use keyshareuser.sql to enroll the user at the keyshare server.
-func TestKeyshareSessions(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
-
-	keyshareSessions(t, client)
 }
 
 func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
