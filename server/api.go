@@ -167,6 +167,10 @@ func WriteString(w http.ResponseWriter, str string) {
 	w.Write([]byte(str))
 }
 
+// ParseSessionRequest attempts to parse the input as an irma.RequestorRequest instance, accepting (skipping "irma.")
+//  - RequestorRequest instances directly (ServiceProviderRequest, SignatureRequestorRequest, IdentityProviderRequest)
+//  - SessionRequest instances (DisclosureRequest, SignatureRequest, IssuanceRequest)
+//  - JSON representations ([]byte or string) of any of the above.
 func ParseSessionRequest(request interface{}) (irma.RequestorRequest, error) {
 	switch r := request.(type) {
 	case irma.RequestorRequest:
@@ -214,7 +218,9 @@ func tryUnmarshalJson(bts []byte, attempts []irma.Validator) (irma.Validator, er
 	return nil, errors.New("")
 }
 
+// LocalIP returns the IP address of one of the (non-loopback) network interfaces
 func LocalIP() (string, error) {
+	// Based on https://play.golang.org/p/BDt3qEQ_2H from https://stackoverflow.com/a/23558495
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "", err

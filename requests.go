@@ -93,12 +93,16 @@ type ServerJwt struct {
 	IssuedAt   Timestamp `json:"iat"`
 }
 
+// RequestorBaseRequest contains fields present in all RequestorRequest types
+// with which the requestor configures an IRMA session.
 type RequestorBaseRequest struct {
 	ResultJwtValidity int    `json:"validity"`    // Validity of session result JWT in seconds
 	ClientTimeout     int    `json:"timeout"`     // Wait this many seconds for the IRMA app to connect before the session times out
 	CallbackUrl       string `json:"callbackUrl"` // URL to post session result to
 }
 
+// RequestorRequest is the message with which requestors start an IRMA session. It contains a
+// SessionRequest instance for the irmaclient along with extra fields in a RequestorBaseRequest.
 type RequestorRequest interface {
 	Validator
 	SessionRequest() SessionRequest
@@ -186,7 +190,7 @@ func (r *IdentityProviderRequest) Base() RequestorBaseRequest {
 	return r.RequestorBaseRequest
 }
 
-// SessionRequest is an IRMA session.
+// SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
 type SessionRequest interface {
 	Validator
 	GetNonce() *big.Int

@@ -48,6 +48,8 @@ func New(conf *server.Configuration) (*Server, error) {
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session token (the second return parameter) can be used in GetSessionResult()
 // and CancelSession().
+// The request parameter can be an irma.RequestorRequest, or an irma.SessionRequest, or a
+// ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
 func StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
 	return s.StartSession(request, handler)
 }
