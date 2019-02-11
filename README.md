@@ -2,10 +2,10 @@
 
 `irmago` is an IRMA implementation in Go. It contains multiple libraries and applications:
 
-* The commandline tool [`irma`](tree/master/irma), which contains an [IRMA server](tree/master/server/irmad); subcommands for manipulating [IRMA schemes](https://credentials.github.io/docs/irma.html#scheme-managers), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
+* The commandline tool [`irma`](irma), which contains an [IRMA server](server/irmad); subcommands for manipulating [IRMA schemes](https://credentials.github.io/docs/irma.html#scheme-managers), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
 * The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [credential and issuer definitions and public keys](https://github.com/privacybydesign/irma-demo-schememanager), parsing [IRMA metadata attributes](https://credentials.github.io/docs/irma.html#the-metadata-attribute), and structs representing messages of the [IRMA protocol](https://credentials.github.io/protocols/irma-protocol/).
-* The Go package [`irmaclient`](tree/master/irmaclient) is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
-* The [`server`](tree/master/server) package contains the corresponding IRMA server as a Go library and as an executable.
+* The Go package [`irmaclient`](irmaclient) is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
+* The [`server`](server) package contains the corresponding IRMA server as a Go library and as an executable.
 
 ## Dependencies
 
