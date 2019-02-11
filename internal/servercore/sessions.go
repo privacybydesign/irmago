@@ -78,7 +78,7 @@ func (s *memorySessionStore) update(session *session) {
 	session.onUpdate()
 }
 
-func (s memorySessionStore) deleteExpired() {
+func (s *memorySessionStore) deleteExpired() {
 	// First check which sessions have expired
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
