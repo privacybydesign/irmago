@@ -35,9 +35,7 @@ var RootCommand = &cobra.Command{
 	},
 }
 
-// Execute adds all child commands to the root command sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the RootCommand.
-func Execute() {
+func init() {
 	logger.Level = logrus.InfoLevel
 	logger.SetFormatter(&prefixed.TextFormatter{
 		FullTimestamp: true,
@@ -45,6 +43,11 @@ func Execute() {
 	if err := setFlags(RootCommand); err != nil {
 		die(errors.WrapPrefix(err, "Failed to attach flags to "+RootCommand.Name()+" command", 0))
 	}
+}
+
+// Execute adds all child commands to the root command sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the RootCommand.
+func Execute() {
 	if err := RootCommand.Execute(); err != nil {
 		die(errors.Wrap(err, 0))
 	}
