@@ -153,7 +153,8 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 		transport.SetHeader("Authentication", key)
 		err = transport.Post("session", qr, request)
 	case "hmac", "rsa":
-		jwtstr, err := signRequest(request, name, authmethod, key)
+		var jwtstr string
+		jwtstr, err = signRequest(request, name, authmethod, key)
 		if err != nil {
 			return nil, nil, err
 		}

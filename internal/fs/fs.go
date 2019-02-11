@@ -179,7 +179,6 @@ func Base64Decode(b []byte) ([]byte, error) {
 		encodings = []*base64.Encoding{base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding, base64.StdEncoding}
 	)
 	for _, encoding := range encodings {
-		err = nil
 		if bts, err = encoding.DecodeString(string(b)); err == nil {
 			break
 		}

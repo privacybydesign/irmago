@@ -188,18 +188,20 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 		tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwtcontents)
 		tok.Header["kid"] = "requestor1"
 		j, err = tok.SignedString(sk)
+		require.NoError(t, err)
 	case jwt.SigningMethodHS256:
 		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwtcontents)
 		tok.Header["kid"] = "requestor3"
 		bts, err := base64.StdEncoding.DecodeString(JwtServerConfiguration.Requestors["requestor3"].AuthenticationKey)
 		require.NoError(t, err)
 		j, err = tok.SignedString(bts)
+		require.NoError(t, err)
 	case jwt.SigningMethodNone:
 		tok := jwt.NewWithClaims(jwt.SigningMethodNone, jwtcontents)
 		tok.Header["kid"] = kid
 		j, err = tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
+		require.NoError(t, err)
 	}
-	require.NoError(t, err)
 
 	return j
 }

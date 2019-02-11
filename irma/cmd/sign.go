@@ -44,9 +44,9 @@ Careful: this command could fail and invalidate or destroy your scheme manager d
 		case 2:
 			sk = args[0]
 			confpath, err = filepath.Abs(args[1])
-			if err != nil {
-				return errors.WrapPrefix(err, "Invalid path", 0)
-			}
+		}
+		if err != nil {
+			return errors.WrapPrefix(err, "Invalid path", 0)
 		}
 
 		privatekey, err := readPrivateKey(sk)

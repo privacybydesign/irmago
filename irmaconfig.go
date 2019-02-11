@@ -1355,6 +1355,9 @@ func (conf *Configuration) CheckKeys() error {
 			continue
 		}
 		latest, err := conf.PublicKey(issuerid, indices[len(indices)-1])
+		if err != nil {
+			return err
+		}
 		now := time.Now().Unix()
 		if latest == nil || latest.ExpiryDate < now {
 			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no nonexpired public keys", issuerid.String()))

@@ -52,6 +52,9 @@ func updateSchemeManager(paths []string) error {
 
 	for _, path := range paths {
 		path, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
 		irmaconf, manager := filepath.Dir(path), filepath.Base(path)
 
 		conf, err := irma.NewConfiguration(irmaconf)
