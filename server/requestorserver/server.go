@@ -11,11 +11,13 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
@@ -125,6 +127,19 @@ func (s *Server) ClientHandler() http.Handler {
 	router.Use(cors.New(corsOptions).Handler)
 
 	router.Mount("/irma/", s.irmaserv.HandlerFunc())
+
+	if s.conf.StaticPath != "" {
+		url := s.conf.URL[:len(s.conf.URL)-6] + s.conf.StaticPrefix
+		s.conf.Logger.Infof("Hosting files at %s under %s", s.conf.StaticPath, url)
+		middleware.DefaultLogger = middleware.RequestLogger(&middleware.DefaultLogFormatter{
+			Logger:  log.New(s.conf.Logger.WriterLevel(logrus.TraceLevel), "static: ", 0),
+			NoColor: true,
+		})
+		router.Mount(s.conf.StaticPrefix,
+			http.StripPrefix(s.conf.StaticPrefix, middleware.Logger(http.FileServer(http.Dir(s.conf.StaticPath)))),
+		)
+	}
+
 	return router
 }
 

@@ -60,6 +60,11 @@ type Configuration struct {
 	// Max age in seconds of a session request JWT (using iat field)
 	MaxRequestAge int `json:"max_request_age" mapstructure:"max_request_age"`
 
+	// Host files under this path as static files (leave empty to disable)
+	StaticPath string `json:"static_path" mapstructure:"static_path"`
+	// Host static files under this URL prefix
+	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
+
 	Verbose int  `json:"verbose" mapstructure:"verbose"`
 	Quiet   bool `json:"quiet" mapstructure:"quiet"`
 	LogJSON bool `json:"log_json" mapstructure:"log_json"`
@@ -210,6 +215,18 @@ func (conf *Configuration) initialize() error {
 
 	if err := conf.validatePermissions(); err != nil {
 		return err
+	}
+
+	if conf.StaticPath != "" {
+		if err := fs.AssertPathExists(conf.StaticPath); err != nil {
+			return errors.WrapPrefix(err, "Invalid static_path", 0)
+		}
+		if conf.StaticPrefix[0] != '/' {
+			return errors.New("static_prefix must start with a slash, was " + conf.StaticPrefix)
+		}
+		if len(conf.StaticPrefix) > 1 && !strings.HasSuffix(conf.StaticPrefix, "/") {
+			conf.StaticPrefix = conf.StaticPrefix + "/"
+		}
 	}
 
 	if conf.URL != "" {

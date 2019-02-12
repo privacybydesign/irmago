@@ -78,6 +78,8 @@ func setFlags(cmd *cobra.Command) error {
 	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
+	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
+	flags.String("static-prefix", "/", "Host static files under this URL prefix")
 	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
@@ -203,6 +205,8 @@ func configure(cmd *cobra.Command) error {
 		Verbose:                        viper.GetInt("verbose"),
 		Quiet:                          viper.GetBool("quiet"),
 		LogJSON:                        viper.GetBool("log-json"),
+		StaticPath:                     viper.GetString("static-path"),
+		StaticPrefix:                   viper.GetString("static-prefix"),
 
 		TlsCertificate:           viper.GetString("tls-cert"),
 		TlsCertificateFile:       viper.GetString("tls-cert-file"),
