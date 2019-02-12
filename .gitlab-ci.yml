@@ -1,0 +1,48 @@
+image: privacybydesign/golang-dep:latest
+
+cache:
+  key: $CI_COMMIT_REF_SLUG
+  paths:
+  - vendor/
+
+stages:
+  - test
+  - build
+
+variables:
+  PACKAGE_NAME: github.com/privacybydesign/irmago
+  PLATFORMS: linux/amd64 darwin/amd64 windows/amd64 linux/arm linux/arm64
+
+before_script:
+  - set -euxo pipefail
+  - mkdir -p "$GOPATH/src/$(dirname "$PACKAGE_NAME")"
+  - ln -s "$CI_PROJECT_DIR" "$GOPATH/src/$PACKAGE_NAME"
+  - cd "$GOPATH/src/$PACKAGE_NAME"
+  - dep ensure
+
+unit_tests:
+  stage: test
+  script:
+  - go test -tags=local_tests -p 1 ./...
+
+binaries:
+  stage: build
+  artifacts:
+    paths:
+      - artifacts/*
+  script:
+    - mkdir -p artifacts
+    - for PLATFORM in $PLATFORMS; do
+        export GOOS=${PLATFORM%/*};
+        export GOARCH=${PLATFORM#*/};
+        export CGO_ENABLED=0;
+        export GOARM=7;
+
+        OUTPUT_NAME="irma-${CI_COMMIT_REF_SLUG}-${GOOS}-${GOARCH}";
+        if [[ "$GOOS" == "windows" ]]; then
+          OUTPUT_NAME="${OUTPUT_NAME}.exe";
+        fi;
+
+        go build -a -ldflags '-extldflags "-static"' -o "artifacts/$OUTPUT_NAME" ./irma;
+      done;
+
