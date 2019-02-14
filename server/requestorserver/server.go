@@ -127,17 +127,8 @@ func (s *Server) ClientHandler() http.Handler {
 	router.Use(cors.New(corsOptions).Handler)
 
 	router.Mount("/irma/", s.irmaserv.HandlerFunc())
-
 	if s.conf.StaticPath != "" {
-		url := s.conf.URL[:len(s.conf.URL)-6] + s.conf.StaticPrefix
-		s.conf.Logger.Infof("Hosting files at %s under %s", s.conf.StaticPath, url)
-		middleware.DefaultLogger = middleware.RequestLogger(&middleware.DefaultLogFormatter{
-			Logger:  log.New(s.conf.Logger.WriterLevel(logrus.TraceLevel), "static: ", 0),
-			NoColor: true,
-		})
-		router.Mount(s.conf.StaticPrefix,
-			http.StripPrefix(s.conf.StaticPrefix, middleware.Logger(http.FileServer(http.Dir(s.conf.StaticPath)))),
-		)
+		router.Mount(s.conf.StaticPrefix, s.StaticFilesHandler())
 	}
 
 	return router
@@ -152,6 +143,9 @@ func (s *Server) Handler() http.Handler {
 	if !s.conf.separateClientServer() {
 		// Mount server for irmaclient
 		router.Mount("/irma/", s.irmaserv.HandlerFunc())
+		if s.conf.StaticPath != "" {
+			router.Mount(s.conf.StaticPrefix, s.StaticFilesHandler())
+		}
 	}
 
 	// Server routes
@@ -168,6 +162,17 @@ func (s *Server) Handler() http.Handler {
 	router.Get("/publickey", s.handlePublicKey)
 
 	return router
+}
+
+func (s *Server) StaticFilesHandler() http.Handler {
+	url := s.conf.URL[:len(s.conf.URL)-6] + s.conf.StaticPrefix
+	s.conf.Logger.Infof("Hosting files at %s under %s", s.conf.StaticPath, url)
+	// Hook up chi middleware logger with our own logger
+	middleware.DefaultLogger = middleware.RequestLogger(&middleware.DefaultLogFormatter{
+		Logger:  log.New(s.conf.Logger.WriterLevel(logrus.TraceLevel), "static: ", 0),
+		NoColor: true,
+	})
+	return http.StripPrefix(s.conf.StaticPrefix, middleware.Logger(http.FileServer(http.Dir(s.conf.StaticPath))))
 }
 
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
