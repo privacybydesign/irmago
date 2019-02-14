@@ -182,7 +182,8 @@ func (conf *Configuration) initialize() error {
 		for name, requestor := range conf.Requestors {
 			authenticator, ok := authenticators[requestor.AuthenticationMethod]
 			if !ok {
-				return errors.Errorf("Requestor %s has unsupported authentication type", name)
+				return errors.Errorf("Requestor %s has unsupported authentication type %s (supported methods: %s, %s, %s)",
+					name, requestor.AuthenticationMethod, AuthenticationMethodToken, AuthenticationMethodHmac, AuthenticationMethodPublicKey)
 			}
 			if err := authenticator.Initialize(name, requestor); err != nil {
 				return err
