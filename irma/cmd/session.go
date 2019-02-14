@@ -177,9 +177,10 @@ func configureServer(port int, privatekeysPath string, irmaconfig *irma.Configur
 		return err
 	}
 	config := &server.Configuration{
-		IrmaConfiguration: irmaconfig,
-		Logger:            logger,
-		URL:               "http://" + ip + ":" + strconv.Itoa(port),
+		IrmaConfiguration:    irmaconfig,
+		Logger:               logger,
+		URL:                  "http://" + ip + ":" + strconv.Itoa(port),
+		DisableSchemesUpdate: true,
 	}
 	if privatekeysPath != "" {
 		config.IssuerPrivateKeysPath = privatekeysPath
