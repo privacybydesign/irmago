@@ -97,7 +97,7 @@ func setFlags(cmd *cobra.Command) error {
 
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
-	flags.String("jwt-privkeyfile", "", "path to JWT private key")
+	flags.String("jwt-privkey-file", "", "path to JWT private key")
 	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
 	flags.Lookup("jwt-issuer").Header = `JWT configuration`
 

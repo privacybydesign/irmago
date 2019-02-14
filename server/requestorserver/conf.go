@@ -382,6 +382,7 @@ func (conf *Configuration) readPrivateKey() error {
 	}
 
 	conf.jwtPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
+	conf.Logger.Info("Private key parsed, JWT endpoints enabled")
 	return err
 }
 
