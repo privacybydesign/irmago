@@ -25,8 +25,8 @@ import (
 	"unsafe"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/internal/servercore"
+	"github.com/privacybydesign/irmago/server"
 )
 
 var s *servercore.Server
@@ -36,17 +36,17 @@ func Initialize(IrmaConfiguration *C.char) *C.char {
 	if IrmaConfiguration == nil {
 		return C.CString("Missing IrmaConfiguration.")
 	}
-	
+
 	// Build the configuration structure
 	conf := new(server.Configuration)
 	err := json.Unmarshal([]byte(C.GoString(IrmaConfiguration)), conf)
 	if err != nil {
 		return C.CString(err.Error())
 	}
-	
+
 	// Run the actual core function
 	s, err = servercore.New(conf)
-	
+
 	// And properly return any errors
 	if err == nil {
 		return nil
@@ -59,7 +59,7 @@ func Initialize(IrmaConfiguration *C.char) *C.char {
 func StartSession(requestString *C.char) C.struct_StartSessionReturn {
 	// Create struct for return information
 	var result C.struct_StartSessionReturn
-	
+
 	// Check that we have required input
 	if requestString == nil {
 		result.irmaQr = nil
@@ -67,10 +67,10 @@ func StartSession(requestString *C.char) C.struct_StartSessionReturn {
 		result.error = C.CString("Missing request string.")
 		return result
 	}
-	
+
 	// Run the actual core function
 	qr, token, err := s.StartSession(C.GoString(requestString))
-	
+
 	// And properly return the result
 	if err != nil {
 		// return the core error
@@ -95,15 +95,15 @@ func StartSession(requestString *C.char) C.struct_StartSessionReturn {
 }
 
 //export GetSessionResult
-func GetSessionResult(token *C.char) *C.char{
+func GetSessionResult(token *C.char) *C.char {
 	// Check that we have required input
 	if token == nil {
 		return nil
 	}
-	
+
 	// Run the actual core function
 	result := s.GetSessionResult(C.GoString(token))
-	
+
 	// And properly return results
 	if result == nil {
 		// core error
@@ -118,15 +118,15 @@ func GetSessionResult(token *C.char) *C.char{
 }
 
 //export GetRequest
-func GetRequest(token *C.char) *C.char{
+func GetRequest(token *C.char) *C.char {
 	// Check that we have required input
 	if token == nil {
 		return nil
 	}
-	
+
 	// Run the core function
 	result := s.GetRequest(C.GoString(token))
-	
+
 	// And properly return results
 	if result == nil {
 		// core error
@@ -141,15 +141,15 @@ func GetRequest(token *C.char) *C.char{
 }
 
 //export CancelSession
-func CancelSession(token *C.char) *C.char{
+func CancelSession(token *C.char) *C.char {
 	// Check that we have required input
 	if token == nil {
 		return C.CString("Missing token.")
 	}
-	
+
 	// Run the core function
 	err := s.CancelSession(C.GoString(token))
-	
+
 	if err != nil {
 		return C.CString(err.Error())
 	}
@@ -158,12 +158,12 @@ func CancelSession(token *C.char) *C.char{
 
 func convertHeaders(headers C.struct_HttpHeaders) (map[string][]string, error) {
 	// Make the two arrays accessible via slices (https://github.com/golang/go/wiki/cgo#turning-c-arrays-into-go-slices)
-	headerKeys := (*[1<<30]*C.char)(unsafe.Pointer(headers.headerKeys))[:headers.length:headers.length]
-	headerValues := (*[1<<30]*C.char)(unsafe.Pointer(headers.headerValues))[:headers.length:headers.length]
-	
+	headerKeys := (*[1 << 30]*C.char)(unsafe.Pointer(headers.headerKeys))[:headers.length:headers.length]
+	headerValues := (*[1 << 30]*C.char)(unsafe.Pointer(headers.headerValues))[:headers.length:headers.length]
+
 	// Check and convert the input
 	result := map[string][]string{}
-	for i := 0; i<int(headers.length); i++ {
+	for i := 0; i < int(headers.length); i++ {
 		if headerKeys[i] == nil || headerValues[i] == nil {
 			return map[string][]string{}, errors.New("Missing header key or value")
 		}
@@ -171,7 +171,7 @@ func convertHeaders(headers C.struct_HttpHeaders) (map[string][]string, error) {
 		value := C.GoString(headerValues[i])
 		result[key] = append(result[key], value)
 	}
-	
+
 	return result, nil
 }
 
@@ -179,7 +179,7 @@ func convertHeaders(headers C.struct_HttpHeaders) (map[string][]string, error) {
 func HandleProtocolMessage(path *C.char, method *C.char, headers C.struct_HttpHeaders, message *C.char) C.struct_HandleProtocolMessageReturn {
 	// Space for result
 	var result C.struct_HandleProtocolMessageReturn
-	
+
 	// Check input
 	if path == nil || method == nil || message == nil {
 		result.status = 500
@@ -187,7 +187,7 @@ func HandleProtocolMessage(path *C.char, method *C.char, headers C.struct_HttpHe
 		result.SessionResult = nil
 		return result
 	}
-	
+
 	// Extract headers
 	headerMap, err := convertHeaders(headers)
 	if err != nil {
@@ -196,7 +196,7 @@ func HandleProtocolMessage(path *C.char, method *C.char, headers C.struct_HttpHe
 		result.SessionResult = nil
 		return result
 	}
-	
+
 	// Prepare return values
 	status, body, session := s.HandleProtocolMessage(C.GoString(path), C.GoString(method), headerMap, []byte(C.GoString(message)))
 	if session == nil {
