@@ -106,13 +106,12 @@ func GetSessionResult(token *C.char) *C.char {
 
 	// And properly return results
 	if result == nil {
-		// core error
 		return nil
 	}
 	resultJson, err := json.Marshal(result)
 	if err != nil {
 		// encoding error
-		return nil
+		return C.CString(err.Error())
 	}
 	return C.CString(string(resultJson))
 }
@@ -129,13 +128,12 @@ func GetRequest(token *C.char) *C.char {
 
 	// And properly return results
 	if result == nil {
-		// core error
 		return nil
 	}
 	resultJson, err := json.Marshal(result)
 	if err != nil {
 		// encoding error
-		return nil
+		return C.CString(err.Error())
 	}
 	return C.CString(string(resultJson))
 }
@@ -192,7 +190,7 @@ func HandleProtocolMessage(path *C.char, method *C.char, headers C.struct_HttpHe
 	headerMap, err := convertHeaders(headers)
 	if err != nil {
 		result.status = 500
-		result.body = C.CString("")
+		result.body = C.CString(err.Error())
 		result.SessionResult = nil
 		return result
 	}
@@ -206,7 +204,7 @@ func HandleProtocolMessage(path *C.char, method *C.char, headers C.struct_HttpHe
 		sessionJson, err := json.Marshal(session)
 		if err != nil {
 			result.status = 500
-			result.body = C.CString("")
+			result.body = C.CString(err.Error())
 			result.SessionResult = nil
 			return result
 		}
