@@ -58,7 +58,7 @@ var authenticators map[AuthenticationMethod]Authenticator
 func (NilAuthenticator) Authenticate(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
-	if headers.Get("Authentication") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
+	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
 		return false, nil, "", nil
 	}
 	request, err := server.ParseSessionRequest(body)
@@ -119,7 +119,7 @@ func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requesto
 func (pskauth *PresharedKeyAuthenticator) Authenticate(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
-	auth := headers.Get("Authentication")
+	auth := headers.Get("Authorization")
 	if auth == "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
 		return false, nil, "", nil
 	}
