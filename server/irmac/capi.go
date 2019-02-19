@@ -110,8 +110,8 @@ func GetSessionResult(token *C.char) *C.char {
 	}
 	resultJson, err := json.Marshal(result)
 	if err != nil {
-		// encoding error
-		return C.CString(err.Error())
+		// encoding error, should never occur
+		panic(err)
 	}
 	return C.CString(string(resultJson))
 }
@@ -132,8 +132,8 @@ func GetRequest(token *C.char) *C.char {
 	}
 	resultJson, err := json.Marshal(result)
 	if err != nil {
-		// encoding error
-		return C.CString(err.Error())
+		// encoding error, should never occur
+		panic(err)
 	}
 	return C.CString(string(resultJson))
 }
