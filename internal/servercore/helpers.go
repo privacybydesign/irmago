@@ -2,6 +2,7 @@ package servercore
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"time"
@@ -34,7 +35,8 @@ func (session *session) onUpdate() {
 	if session.evtSource != nil {
 		session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "status": session.status}).
 			Debug("Sending status to SSE listeners")
-		session.evtSource.SendEventMessage(string(session.status), "", "")
+		// We send JSON like the other APIs, so quote
+		session.evtSource.SendEventMessage(fmt.Sprintf(`"%s"`, session.status), "", "")
 	}
 }
 
