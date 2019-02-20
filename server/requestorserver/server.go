@@ -241,13 +241,16 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, _, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
-	server.WriteJson(w, qr)
+	server.WriteJson(w, server.SessionPackage{
+		SessionPtr: qr,
+		Token:      token,
+	})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +265,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	s.conf.Logger.WithFields(logrus.Fields{"session": token}).Debug("new client subscribed to server sent events")
-	if err := s.irmaserv.SubscribeServerSentEvents(w, r, token); err != nil {
+	if err := s.irmaserv.SubscribeServerSentEvents(w, r, token, true); err != nil {
 		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
 	}
 }

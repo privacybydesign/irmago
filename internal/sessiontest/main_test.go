@@ -13,11 +13,14 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
 func init() {
 	irma.ForceHttps = false
+	irma.Logger.SetLevel(logrus.WarnLevel)
 }
 
 func TestMain(m *testing.M) {
@@ -136,29 +139,35 @@ func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceR
 var TestType = "irmaserver-jwt"
 
 func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *irma.Qr {
-	var qr irma.Qr
-	var err error
+	var (
+		qr     *irma.Qr = new(irma.Qr)
+		sesPkg *server.SessionPackage
+		err    error
+	)
 
 	switch TestType {
 	case "apiserver":
 		url := "http://localhost:8088/irma_api_server/api/v2/" + sessiontype
-		err = irma.NewHTTPTransport(url).Post("", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodNone))
+		err = irma.NewHTTPTransport(url).Post("", qr, getJwt(t, request, sessiontype, jwt.SigningMethodNone))
 		qr.URL = url + "/" + qr.URL
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
+		err = irma.NewHTTPTransport(url).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
+		qr = sesPkg.SessionPtr
 	case "irmaserver-hmac-jwt":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("session", &qr, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
+		err = irma.NewHTTPTransport(url).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
+		qr = sesPkg.SessionPtr
 	case "irmaserver":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("session", &qr, request)
+		err = irma.NewHTTPTransport(url).Post("session", &sesPkg, request)
+		qr = sesPkg.SessionPtr
 	default:
 		t.Fatal("Invalid TestType")
 	}
 
 	require.NoError(t, err)
-	return &qr
+	return qr
 }
 
 func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg jwt.SigningMethod) string {

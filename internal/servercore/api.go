@@ -33,8 +33,9 @@ func New(conf *server.Configuration) (*Server, error) {
 		conf:      conf,
 		scheduler: gocron.NewScheduler(),
 		sessions: &memorySessionStore{
-			m:    make(map[string]*session),
-			conf: conf,
+			requestor: make(map[string]*session),
+			client:    make(map[string]*session),
+			conf:      conf,
 		},
 	}
 	s.scheduler.Every(10).Seconds().Do(func() {
@@ -174,7 +175,7 @@ func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {
 	}
 	return &irma.Qr{
 		Type: action,
-		URL:  s.conf.URL + session.token,
+		URL:  s.conf.URL + session.clientToken,
 	}, session.token, nil
 }
 
@@ -214,8 +215,13 @@ func ParsePath(path string) (string, string, error) {
 	return matches[1], matches[2], nil
 }
 
-func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
-	session := s.sessions.get(token)
+func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+	var session *session
+	if requestor {
+		session = s.sessions.get(token)
+	} else {
+		session = s.sessions.clientGet(token)
+	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
 	}
@@ -257,9 +263,9 @@ func (s *Server) HandleProtocolMessage(
 	}
 
 	// Fetch the session
-	session := s.sessions.get(token)
+	session := s.sessions.clientGet(token)
 	if session == nil {
-		s.conf.Logger.Warnf("Session not found: %s", token)
+		s.conf.Logger.WithField("clientToken", token).Warn("Session not found")
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorSessionUnknown, ""))
 		return
 	}

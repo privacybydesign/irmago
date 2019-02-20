@@ -16,11 +16,12 @@ import (
 type session struct {
 	sync.Mutex
 
-	action   irma.Action
-	token    string
-	version  *irma.ProtocolVersion
-	rrequest irma.RequestorRequest
-	request  irma.SessionRequest
+	action      irma.Action
+	token       string
+	clientToken string
+	version     *irma.ProtocolVersion
+	rrequest    irma.RequestorRequest
+	request     irma.SessionRequest
 
 	status     server.Status
 	prevStatus server.Status
@@ -37,7 +38,8 @@ type session struct {
 
 type sessionStore interface {
 	get(token string) *session
-	add(token string, session *session)
+	clientGet(token string) *session
+	add(session *session)
 	update(session *session)
 	deleteExpired()
 }
@@ -45,7 +47,9 @@ type sessionStore interface {
 type memorySessionStore struct {
 	sync.RWMutex
 	conf *server.Configuration
-	m    map[string]*session
+
+	requestor map[string]*session
+	client    map[string]*session
 }
 
 const (
@@ -62,16 +66,23 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func (s *memorySessionStore) get(token string) *session {
+func (s *memorySessionStore) get(t string) *session {
 	s.RLock()
 	defer s.RUnlock()
-	return s.m[token]
+	return s.requestor[t]
 }
 
-func (s *memorySessionStore) add(token string, session *session) {
+func (s *memorySessionStore) clientGet(t string) *session {
+	s.RLock()
+	defer s.RUnlock()
+	return s.client[t]
+}
+
+func (s *memorySessionStore) add(session *session) {
 	s.Lock()
 	defer s.Unlock()
-	s.m[token] = session
+	s.requestor[session.token] = session
+	s.client[session.clientToken] = session
 }
 
 func (s *memorySessionStore) update(session *session) {
@@ -82,8 +93,8 @@ func (s *memorySessionStore) deleteExpired() {
 	// First check which sessions have expired
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
-	expired := make([]string, 0, len(s.m))
-	for token, session := range s.m {
+	expired := make([]string, 0, len(s.requestor))
+	for token, session := range s.requestor {
 		session.Lock()
 
 		timeout := maxSessionLifetime
@@ -108,11 +119,11 @@ func (s *memorySessionStore) deleteExpired() {
 	// Using a write lock, delete the expired sessions
 	s.Lock()
 	for _, token := range expired {
-		session := s.m[token]
+		session := s.requestor[token]
 		if session.evtSource != nil {
 			session.evtSource.Close()
 		}
-		delete(s.m, token)
+		delete(s.requestor, token)
 	}
 	s.Unlock()
 }
@@ -121,16 +132,19 @@ var one *big.Int = big.NewInt(1)
 
 func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
 	token := newSessionToken()
+	clientToken := newSessionToken()
+
 	ses := &session{
-		action:     action,
-		rrequest:   request,
-		request:    request.SessionRequest(),
-		lastActive: time.Now(),
-		token:      token,
-		status:     server.StatusInitialized,
-		prevStatus: server.StatusInitialized,
-		conf:       s.conf,
-		sessions:   s.sessions,
+		action:      action,
+		rrequest:    request,
+		request:     request.SessionRequest(),
+		lastActive:  time.Now(),
+		token:       token,
+		clientToken: clientToken,
+		status:      server.StatusInitialized,
+		prevStatus:  server.StatusInitialized,
+		conf:        s.conf,
+		sessions:    s.sessions,
 		result: &server.SessionResult{
 			Token:  token,
 			Type:   action,
@@ -142,7 +156,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
 	ses.request.SetNonce(nonce)
 	ses.request.SetContext(one)
-	s.sessions.add(token, ses)
+	s.sessions.add(ses)
 
 	return ses
 }

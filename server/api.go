@@ -49,6 +49,11 @@ type Configuration struct {
 	Email string `json:"email" mapstructure:"email"`
 }
 
+type SessionPackage struct {
+	SessionPtr *irma.Qr `json:"sessionPtr"`
+	Token      string   `json:"token"`
+}
+
 // SessionResult contains session information such as the session status, type, possible errors,
 // and disclosed attributes or attribute-based signature if appropriate to the session type.
 type SessionResult struct {

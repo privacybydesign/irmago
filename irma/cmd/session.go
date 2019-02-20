@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -142,16 +141,16 @@ func serverRequest(
 func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (*irma.Qr, *irma.HTTPTransport, error) {
 	var (
 		err       error
-		qr        = &irma.Qr{}
+		pkg       = &server.SessionPackage{}
 		transport = irma.NewHTTPTransport(serverurl)
 	)
 
 	switch authmethod {
 	case "none":
-		err = transport.Post("session", qr, request)
+		err = transport.Post("session", pkg, request)
 	case "token":
 		transport.SetHeader("Authorization", key)
-		err = transport.Post("session", qr, request)
+		err = transport.Post("session", pkg, request)
 	case "hmac", "rsa":
 		var jwtstr string
 		jwtstr, err = signRequest(request, name, authmethod, key)
@@ -159,14 +158,14 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 			return nil, nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
-		err = transport.Post("session", qr, jwtstr)
+		err = transport.Post("session", pkg, jwtstr)
 	default:
 		return nil, nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
 
-	token := qr.URL[strings.LastIndex(qr.URL, "/")+1:]
+	token := pkg.Token
 	transport.Server += fmt.Sprintf("session/%s/", token)
-	return qr, transport, err
+	return pkg.SessionPtr, transport, err
 }
 
 // Configuration functions

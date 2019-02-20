@@ -90,11 +90,11 @@ func (s *Server) CancelSession(token string) error {
 
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
 // of the specified IRMA session.
-func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
-	return s.SubscribeServerSentEvents(w, r, token)
+func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+	return s.SubscribeServerSentEvents(w, r, token, requestor)
 }
-func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string) error {
-	return s.Server.SubscribeServerSentEvents(w, r, token)
+func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+	return s.Server.SubscribeServerSentEvents(w, r, token, requestor)
 }
 
 // HandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
@@ -120,7 +120,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 
 		token, noun, err := servercore.ParsePath(r.URL.Path)
 		if err == nil && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
-			if err = s.SubscribeServerSentEvents(w, r, token); err != nil {
+			if err = s.SubscribeServerSentEvents(w, r, token, false); err != nil {
 				server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
 			}
 			return
