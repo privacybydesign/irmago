@@ -52,13 +52,13 @@ type Configuration struct {
 // SessionResult contains session information such as the session status, type, possible errors,
 // and disclosed attributes or attribute-based signature if appropriate to the session type.
 type SessionResult struct {
-	Token       string
-	Status      Status
-	Type        irma.Action
-	ProofStatus irma.ProofStatus
-	Disclosed   []*irma.DisclosedAttribute
-	Signature   *irma.SignedMessage
-	Err         *irma.RemoteError
+	Token       string                     `json:"token"`
+	Status      Status                     `json:"status"`
+	Type        irma.Action                `json:"type"'`
+	ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
+	Disclosed   []*irma.DisclosedAttribute `json:"disclosed,omitempty"`
+	Signature   *irma.SignedMessage        `json:"signature,omitempty"`
+	Err         *irma.RemoteError          `json:"error,omitempty"`
 }
 
 // Status is the status of an IRMA session.

@@ -43,7 +43,7 @@ func (session *session) onUpdate() {
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
 	session.setStatus(server.StatusCancelled)
-	session.result = &server.SessionResult{Err: rerr, Token: session.token, Status: server.StatusCancelled}
+	session.result = &server.SessionResult{Err: rerr, Token: session.token, Status: server.StatusCancelled, Type: session.action}
 	return rerr
 }
 
