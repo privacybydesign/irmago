@@ -210,6 +210,7 @@ func startKeyshareSession(
 			irma.Logger.Info("Keyshare server token invalid, asking for PIN")
 			irma.Logger.Debug("Token: ", ks.keyshareServer.token)
 			ks.pinCheck = true
+			continue
 		}
 		// Add a minute of leeway for possible clockdrift with the server,
 		// and for the rest of the protocol to take place with this token
