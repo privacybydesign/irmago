@@ -85,7 +85,11 @@ func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]Tr
 		ct := conf.CredentialTypes[ctid]
 		for i := range ct.AttributeTypes {
 			attrid := ct.AttributeTypes[i].GetAttributeTypeIdentifier()
-			al.attrMap[attrid] = strings[i]
+			if i < len(strings) {
+				al.attrMap[attrid] = strings[i]
+			} else {
+				al.attrMap[attrid] = nil
+			}
 		}
 	}
 	return al.attrMap
