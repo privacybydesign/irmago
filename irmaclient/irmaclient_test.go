@@ -207,6 +207,30 @@ func TestWrongSchemeManager(t *testing.T) {
 	)
 }
 
+func TestCredentialInfoListNewAttribute(t *testing.T) {
+	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	require.NoError(t, client.Configuration.UpdateSchemeManager(schemeid, nil))
+	require.NoError(t, client.Configuration.ParseFolder())
+	require.NotNil(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid))
+
+	// irma-demo.RU.studentCard.newAttribute now exists in the scheme but not in the instance in the teststorage
+	for _, credinfo := range client.CredentialInfoList() {
+		if credinfo.ID == "studentCard" {
+			require.Nil(t, credinfo.Attributes[attrid])
+			require.NotEmpty(t, credinfo.Attributes[irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")])
+			return
+		}
+	}
+	require.Fail(t, "studentCard credential not found")
+}
+
 // ------
 
 type TestClientHandler struct {
