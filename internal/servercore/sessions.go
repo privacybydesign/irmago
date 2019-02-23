@@ -123,6 +123,7 @@ func (s *memorySessionStore) deleteExpired() {
 		if session.evtSource != nil {
 			session.evtSource.Close()
 		}
+		delete(s.client, session.clientToken)
 		delete(s.requestor, token)
 	}
 	s.Unlock()
