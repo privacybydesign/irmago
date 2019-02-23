@@ -5,6 +5,7 @@
 package requestorserver
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -28,9 +29,9 @@ import (
 
 // Server is a requestor server instance.
 type Server struct {
-	serv, clientserv *http.Server
-	conf             *Configuration
-	irmaserv         *irmaserver.Server
+	conf     *Configuration
+	irmaserv *irmaserver.Server
+	stop     chan struct{}
 }
 
 // Start the server. If successful then it will not return until Stop() is called.
@@ -42,64 +43,92 @@ func (s *Server) Start(config *Configuration) error {
 		s.conf.Logger.Debug("Configuration: ", string(bts), "\n")
 	}
 
-	// Start server(s)
+	// We start either one or two servers, depending on whether a separate client server is enabled, such that:
+	// - if any of them returns, the other is also stopped (neither of them is of use without the other)
+	// - if any of them returns an unexpected error (ie. other than http.ErrServerClosed), the error is logged and returned
+	// - we have a way of stopping all servers from outside (with Stop())
+	// - the function returns only after all servers have been stopped
+	// - any unexpected error is dealt with here instead of when stopping using Stop().
+	// Inspired by https://dave.cheney.net/practical-go/presentations/qcon-china.html#_never_start_a_goroutine_without_when_it_will_stop
+
+	count := 1
 	if s.conf.separateClientServer() {
-		go s.startClientServer()
+		count = 2
 	}
-	s.startRequestorServer()
+	done := make(chan error, count)
+	s.stop = make(chan struct{})
 
-	return nil
+	if s.conf.separateClientServer() {
+		go func() {
+			done <- s.startClientServer()
+		}()
+	}
+	go func() {
+		done <- s.startRequestorServer()
+	}()
+
+	var stopped bool
+	var err error
+	for i := 0; i < cap(done); i++ {
+		if err = <-done; err != nil {
+			_ = server.LogError(err)
+		}
+		if !stopped {
+			stopped = true
+			close(s.stop)
+		}
+	}
+
+	return err
 }
 
-func (s *Server) startRequestorServer() {
-	s.serv = &http.Server{}
+func (s *Server) startRequestorServer() error {
 	tlsConf, _ := s.conf.tlsConfig()
-	s.startServer(s.serv, s.Handler(), "Server", s.conf.ListenAddress, s.conf.Port, tlsConf)
+	return s.startServer(s.Handler(), "Server", s.conf.ListenAddress, s.conf.Port, tlsConf)
 }
 
-func (s *Server) startClientServer() {
-	s.clientserv = &http.Server{}
+func (s *Server) startClientServer() error {
 	tlsConf, _ := s.conf.clientTlsConfig()
-	s.startServer(s.clientserv, s.ClientHandler(), "Client server", s.conf.ClientListenAddress, s.conf.ClientPort, tlsConf)
+	return s.startServer(s.ClientHandler(), "Client server", s.conf.ClientListenAddress, s.conf.ClientPort, tlsConf)
 }
 
-func (s *Server) startServer(serv *http.Server, handler http.Handler, name, addr string, port int, tlsConf *tls.Config) {
+func (s *Server) startServer(handler http.Handler, name, addr string, port int, tlsConf *tls.Config) error {
 	fulladdr := fmt.Sprintf("%s:%d", addr, port)
 	s.conf.Logger.Info(name, " listening at ", fulladdr)
-	serv.Addr = fulladdr
-	serv.Handler = handler
-	var err error
+
+	serv := &http.Server{
+		Addr:      fulladdr,
+		Handler:   handler,
+		TLSConfig: tlsConf,
+	}
+
+	go func() {
+		<-s.stop
+		if err := serv.Shutdown(context.Background()); err != nil {
+			_ = server.LogError(err)
+		}
+	}()
+
 	if tlsConf != nil {
-		serv.TLSConfig = tlsConf
 		// Disable HTTP/2 (see package documentation of http): it breaks server side events :(
 		serv.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 		s.conf.Logger.Info(name, " TLS enabled")
-		err = serv.ListenAndServeTLS("", "")
+		return filterStopError(serv.ListenAndServeTLS("", ""))
 	} else {
-		err = serv.ListenAndServe()
-	}
-	if err != http.ErrServerClosed {
-		_ = server.LogFatal(err)
+		return filterStopError(serv.ListenAndServe())
 	}
 }
 
-func (s *Server) Stop() error {
-	var err1, err2 error
+func filterStopError(err error) error {
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
 
-	// Even if closing serv fails, we want to try closing clientserv
-	err1 = s.serv.Close()
-	if s.clientserv != nil {
-		err2 = s.clientserv.Close()
-	}
-
-	// Now check errors
-	if err1 != nil && err1 != http.ErrServerClosed {
-		return err1
-	}
-	if err2 != nil && err2 != http.ErrServerClosed {
-		return err2
-	}
-	return nil
+func (s *Server) Stop() {
+	s.irmaserv.Stop()
+	s.stop <- struct{}{}
 }
 
 func New(config *Configuration) (*Server, error) {

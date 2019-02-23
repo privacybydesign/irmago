@@ -23,9 +23,10 @@ import (
 )
 
 type Server struct {
-	conf      *server.Configuration
-	sessions  sessionStore
-	scheduler *gocron.Scheduler
+	conf          *server.Configuration
+	sessions      sessionStore
+	scheduler     *gocron.Scheduler
+	stopScheduler chan bool
 }
 
 func New(conf *server.Configuration) (*Server, error) {
@@ -41,9 +42,14 @@ func New(conf *server.Configuration) (*Server, error) {
 	s.scheduler.Every(10).Seconds().Do(func() {
 		s.sessions.deleteExpired()
 	})
-	s.scheduler.Start()
+	s.stopScheduler = s.scheduler.Start()
 
 	return s, s.verifyConfiguration(s.conf)
+}
+
+func (s *Server) Stop() {
+	s.stopScheduler <- true
+	s.sessions.stop()
 }
 
 func (s *Server) verifyConfiguration(configuration *server.Configuration) error {

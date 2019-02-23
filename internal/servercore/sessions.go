@@ -42,6 +42,7 @@ type sessionStore interface {
 	add(session *session)
 	update(session *session)
 	deleteExpired()
+	stop()
 }
 
 type memorySessionStore struct {
@@ -87,6 +88,16 @@ func (s *memorySessionStore) add(session *session) {
 
 func (s *memorySessionStore) update(session *session) {
 	session.onUpdate()
+}
+
+func (s *memorySessionStore) stop() {
+	s.Lock()
+	defer s.Unlock()
+	for _, session := range s.requestor {
+		if session.evtSource != nil {
+			session.evtSource.Close()
+		}
+	}
 }
 
 func (s *memorySessionStore) deleteExpired() {

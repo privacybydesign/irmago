@@ -42,7 +42,7 @@ func StartRequestorServer(configuration *requestorserver.Configuration) {
 }
 
 func StopRequestorServer() {
-	_ = requestorServer.Stop()
+	requestorServer.Stop()
 }
 
 func StartIrmaServer(t *testing.T) {

@@ -45,6 +45,14 @@ func New(conf *server.Configuration) (*Server, error) {
 	}, nil
 }
 
+// Stop the server.
+func Stop() {
+	s.Stop()
+}
+func (s *Server) Stop() {
+	s.Server.Stop()
+}
+
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session token (the second return parameter) can be used in GetSessionResult()
 // and CancelSession().

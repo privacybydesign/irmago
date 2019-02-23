@@ -202,7 +202,7 @@ func (conf *Configuration) initialize() error {
 		return errors.Errorf("client_port must be between 0 and 65535 (was %d)", conf.ClientPort)
 	}
 	if conf.ClientListenAddress != "" && conf.ClientPort == 0 {
-		return errors.New("client_listen_addr must be combined with a nonzero clientport")
+		return errors.New("client_listen_addr must be combined with a nonzero client_port")
 	}
 
 	tlsConf, err := conf.tlsConfig()
