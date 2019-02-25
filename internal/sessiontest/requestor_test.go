@@ -25,7 +25,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.S
 	})
 	require.NoError(t, err)
 
-	h := TestHandler{t, clientChan, client}
+	h := TestHandler{t, clientChan, client, nil}
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(j), h)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -53,7 +54,7 @@ type session struct {
 	Action     irma.Action
 	Handler    Handler
 	Version    *irma.ProtocolVersion
-	ServerName string
+	ServerName irma.TranslatedString
 
 	choice      *irma.DisclosureChoice
 	attrIndices irma.DisclosedAttributeIndices
@@ -66,6 +67,7 @@ type session struct {
 	builders         gabi.ProofBuilderList
 
 	// These are empty on manual sessions
+	Hostname  string
 	ServerURL string
 	transport *irma.HTTPTransport
 }
@@ -114,12 +116,11 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	session := &session{
-		Action:     action,
-		Handler:    handler,
-		client:     client,
-		Version:    minVersion,
-		ServerName: "",
-		request:    request,
+		Action:  action,
+		Handler: handler,
+		client:  client,
+		Version: minVersion,
+		request: request,
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
@@ -145,12 +146,12 @@ func (client *Client) newSchemeSession(qr *irma.SchemeManagerRequest, handler Ha
 func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
 	session := &session{
-		ServerURL:  qr.URL,
-		ServerName: u.Hostname(),
-		transport:  irma.NewHTTPTransport(qr.URL),
-		Action:     irma.Action(qr.Type),
-		Handler:    handler,
-		client:     client,
+		ServerURL: qr.URL,
+		Hostname:  u.Hostname(),
+		transport: irma.NewHTTPTransport(qr.URL),
+		Action:    irma.Action(qr.Type),
+		Handler:   handler,
+		client:    client,
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
@@ -197,6 +198,29 @@ func (session *session) getSessionInfo() {
 	session.processSessionInfo()
 }
 
+func serverName(hostname string, request irma.SessionRequest, conf *irma.Configuration) irma.TranslatedString {
+	sn := irma.NewTranslatedString(&hostname)
+
+	if ir, ok := request.(*irma.IssuanceRequest); ok {
+		// If there is only one issuer in the current request, use its name as ServerName
+		var iss irma.TranslatedString
+		for _, credreq := range ir.Credentials {
+			credIssuer := conf.Issuers[credreq.CredentialTypeID.IssuerIdentifier()].Name
+			if !reflect.DeepEqual(credIssuer, iss) { // Can't just test pointer equality: credIssuer != iss
+				if len(iss) != 0 {
+					return sn
+				}
+				iss = credIssuer
+			}
+		}
+		if len(iss) != 0 {
+			return iss
+		}
+	}
+
+	return sn
+}
+
 // processSessionInfo continues the session after all session state has been received:
 // it checks if the session can be performed and asks the user for consent.
 func (session *session) processSessionInfo() {
@@ -213,6 +237,8 @@ func (session *session) processSessionInfo() {
 		session.Version = irma.NewVersion(2, 0)
 		session.request.SetVersion(session.Version)
 	}
+
+	session.ServerName = serverName(session.Hostname, session.request, session.client.Configuration)
 
 	if session.Action == irma.ActionIssuing {
 		ir := session.request.(*irma.IssuanceRequest)
@@ -232,10 +258,9 @@ func (session *session) processSessionInfo() {
 		}
 	}
 
-	serverName := irma.NewTranslatedString(&session.ServerName)
 	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(serverName, missing)
+		session.Handler.UnsatisfiableRequest(session.ServerName, missing)
 		return
 	}
 	session.request.SetCandidates(candidates)
@@ -250,13 +275,13 @@ func (session *session) processSessionInfo() {
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			*session.request.(*irma.DisclosureRequest), serverName, callback)
+			*session.request.(*irma.DisclosureRequest), session.ServerName, callback)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			*session.request.(*irma.SignatureRequest), serverName, callback)
+			*session.request.(*irma.SignatureRequest), session.ServerName, callback)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			*session.request.(*irma.IssuanceRequest), serverName, callback)
+			*session.request.(*irma.IssuanceRequest), session.ServerName, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}

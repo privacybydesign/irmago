@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -90,12 +91,6 @@ func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 					"studentID":         "s1234567",
 					"level":             "42",
 				},
-			}, {
-				Validity:         expiry,
-				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
-				Attributes: map[string]string{
-					"BSN": "299792458",
-				},
 			},
 		},
 	}
@@ -133,6 +128,18 @@ func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceR
 	request.Disclose = irma.AttributeDisjunctionList{
 		&irma.AttributeDisjunction{Label: "foo", Attributes: []irma.AttributeTypeIdentifier{id}},
 	}
+	return request
+}
+
+func getMultipleIssuanceRequest() *irma.IssuanceRequest {
+	request := getIssuanceRequest(false)
+	request.Credentials = append(request.Credentials, &irma.CredentialRequest{
+		Validity:         request.Credentials[0].Validity,
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		Attributes: map[string]string{
+			"BSN": "299792458",
+		},
+	})
 	return request
 }
 
@@ -229,7 +236,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	qr := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
-	h := TestHandler{t, c, client}
+	h := TestHandler{t, c, client, expectedServerName(t, request, client.Configuration)}
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(qrjson), h)
@@ -237,4 +244,31 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
+}
+
+func expectedServerName(t *testing.T, request irma.SessionRequest, conf *irma.Configuration) irma.TranslatedString {
+	localhost := "localhost"
+	host := irma.NewTranslatedString(&localhost)
+
+	ir, ok := request.(*irma.IssuanceRequest)
+	if !ok {
+		return host
+	}
+
+	// In issuance sessions, the server name is expected to be:
+	// - the name of the issuer, if there is just one issuer
+	// - the hostname as usual otherwise
+
+	var name irma.TranslatedString
+	for _, credreq := range ir.Credentials {
+		n := conf.Issuers[credreq.CredentialTypeID.IssuerIdentifier()].Name
+		if !reflect.DeepEqual(name, n) {
+			if len(name) != 0 {
+				return host
+			}
+			name = n
+		}
+	}
+
+	return name
 }

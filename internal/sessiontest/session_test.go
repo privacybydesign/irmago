@@ -34,6 +34,11 @@ func TestIssuanceSession(t *testing.T) {
 	sessionHelper(t, request, "issue", nil)
 }
 
+func TestMultipleIssuanceSession(t *testing.T) {
+	request := getMultipleIssuanceRequest()
+	sessionHelper(t, request, "issue", nil)
+}
+
 func TestDefaultCredentialValidity(t *testing.T) {
 	client := parseStorage(t)
 	request := getIssuanceRequest(true)
@@ -74,7 +79,7 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
-	request := getIssuanceRequest(true)
+	request := getMultipleIssuanceRequest()
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 
 	require.Nil(t, client.Attributes(credid, 0))
@@ -234,7 +239,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 		URL:  "http://localhost:48681/irma_configuration/irma-demo",
 	})
 	require.NoError(t, err)
-	client.NewSession(string(qr), TestHandler{t, c, client})
+	client.NewSession(string(qr), TestHandler{t, c, client, nil})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}

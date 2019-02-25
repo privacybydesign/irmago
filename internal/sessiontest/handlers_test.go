@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/stretchr/testify/require"
 )
 
 type TestClientHandler struct {
@@ -60,9 +61,10 @@ func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifie
 }
 
 type TestHandler struct {
-	t      *testing.T
-	c      chan *SessionResult
-	client *irmaclient.Client
+	t                  *testing.T
+	c                  chan *SessionResult
+	client             *irmaclient.Client
+	expectedServerName irma.TranslatedString
 }
 
 func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
@@ -108,6 +110,9 @@ func (th TestHandler) RequestVerificationPermission(request irma.DisclosureReque
 			th.Failure(&irma.SessionError{Err: errors.New("No disclosure candidates found")})
 		}
 		choice.Attributes = append(choice.Attributes, candidates[0])
+	}
+	if len(th.expectedServerName) != 0 {
+		require.Equal(th.t, th.expectedServerName, ServerName)
 	}
 	callback(true, choice)
 }
