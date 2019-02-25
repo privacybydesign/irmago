@@ -98,14 +98,15 @@ func (al *AttributeList) Strings() []TranslatedString {
 			if val == nil {
 				continue
 			}
-			al.strings[i] = translateAttribute(val)
+			al.strings[i] = NewTranslatedString(val)
 		}
 	}
 	return al.strings
 }
 
-// Localize raw attribute values (to be implemented)
-func translateAttribute(attr *string) TranslatedString {
+// NewTranslatedString returns a TranslatedString containing the specified string for each supported language,
+// or nil when attr is nil.
+func NewTranslatedString(attr *string) TranslatedString {
 	if attr == nil {
 		return nil
 	}

@@ -29,16 +29,16 @@ type Handler interface {
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
-	UnsatisfiableRequest(ServerName string, missing irma.AttributeDisjunctionList)
+	UnsatisfiableRequest(ServerName irma.TranslatedString, missing irma.AttributeDisjunctionList)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 
-	RequestIssuancePermission(request irma.IssuanceRequest, ServerName string, callback PermissionHandler)
-	RequestVerificationPermission(request irma.DisclosureRequest, ServerName string, callback PermissionHandler)
-	RequestSignaturePermission(request irma.SignatureRequest, ServerName string, callback PermissionHandler)
+	RequestIssuancePermission(request irma.IssuanceRequest, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestVerificationPermission(request irma.DisclosureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestSignaturePermission(request irma.SignatureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
 	RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback PinHandler)
@@ -232,9 +232,10 @@ func (session *session) processSessionInfo() {
 		}
 	}
 
+	serverName := irma.NewTranslatedString(&session.ServerName)
 	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.ServerName, missing)
+		session.Handler.UnsatisfiableRequest(serverName, missing)
 		return
 	}
 	session.request.SetCandidates(candidates)
@@ -249,13 +250,13 @@ func (session *session) processSessionInfo() {
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			*session.request.(*irma.DisclosureRequest), session.ServerName, callback)
+			*session.request.(*irma.DisclosureRequest), serverName, callback)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			*session.request.(*irma.SignatureRequest), session.ServerName, callback)
+			*session.request.(*irma.SignatureRequest), serverName, callback)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			*session.request.(*irma.IssuanceRequest), session.ServerName, callback)
+			*session.request.(*irma.IssuanceRequest), serverName, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}

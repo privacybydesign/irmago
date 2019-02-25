@@ -208,7 +208,7 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 	return &DisclosedAttribute{
 		Identifier: attrid,
 		RawValue:   attrval,
-		Value:      translateAttribute(attrval),
+		Value:      NewTranslatedString(attrval),
 	}, attrval, nil
 }
 
@@ -408,7 +408,7 @@ func ParseApiServerJwt(inputJwt string, signingKey *rsa.PublicKey) (map[Attribut
 		disclosedAttributes[id] = &DisclosedAttribute{
 			Identifier: id,
 			RawValue:   &value,
-			Value:      translateAttribute(&value),
+			Value:      NewTranslatedString(&value),
 			Status:     AttributeProofStatusPresent,
 		}
 	}
