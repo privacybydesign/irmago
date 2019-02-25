@@ -18,7 +18,8 @@ import (
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
 
-var ForceHttps bool = true
+// disabled until we offer a convenient way to toggle this in irma_mobile
+var ForceHttps bool = false
 
 const (
 	MinVersionHeader = "X-IRMA-MinProtocolVersion"
