@@ -220,11 +220,13 @@ func configure(cmd *cobra.Command) error {
 		Production: viper.GetBool("production"),
 	}
 
-	if !viper.GetBool("no-email") && conf.Email == "" {
-		return errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
-	}
-	if viper.GetBool("no-email") && conf.Email != "" {
-		return errors.New("--no-email cannot be combined with --email")
+	if conf.Production {
+		if !viper.GetBool("no-email") && conf.Email == "" {
+			return errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
+		}
+		if viper.GetBool("no-email") && conf.Email != "" {
+			return errors.New("--no-email cannot be combined with --email")
+		}
 	}
 
 	// Handle requestors
