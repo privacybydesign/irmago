@@ -43,6 +43,8 @@ func init() {
 func NewHTTPTransport(serverURL string) *HTTPTransport {
 	if Logger.IsLevelEnabled(logrus.TraceLevel) {
 		transportlogger = log.New(Logger.WriterLevel(logrus.TraceLevel), "transport: ", 0)
+	} else {
+		transportlogger = log.New(ioutil.Discard, "", 0)
 	}
 
 	url := serverURL
