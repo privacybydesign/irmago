@@ -1,12 +1,12 @@
 package cmd
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"path/filepath"
 	"strings"
 
 	"github.com/go-errors/errors"
+	"github.com/mitchellh/mapstructure"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
@@ -230,15 +230,10 @@ func configure(cmd *cobra.Command) error {
 	}
 
 	// Handle requestors
-	if len(viper.GetStringMap("requestors")) > 0 { // First read config file
-		if err := viper.UnmarshalKey("requestors", &conf.Requestors); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal requestors from config file", 0)
-		}
-	}
-	requestors := viper.GetString("requestors") // Read flag or env var
+	requestors := viper.GetStringMap("requestors")
 	if len(requestors) > 0 {
-		if err := json.Unmarshal([]byte(requestors), &conf.Requestors); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal requestors from json", 0)
+		if err := mapstructure.Decode(requestors, &conf.Requestors); err != nil {
+			return errors.WrapPrefix(err, "Failed to unmarshal requestors from config file", 0)
 		}
 	}
 
