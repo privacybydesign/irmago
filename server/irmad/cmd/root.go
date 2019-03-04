@@ -3,6 +3,7 @@ package cmd
 import (
 	"io/ioutil"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -39,6 +40,7 @@ func init() {
 	logger.Level = logrus.InfoLevel
 	logger.SetFormatter(&prefixed.TextFormatter{
 		FullTimestamp: true,
+		DisableColors: runtime.GOOS == "windows",
 	})
 	if err := setFlags(RootCommand); err != nil {
 		die(errors.WrapPrefix(err, "Failed to attach flags to "+RootCommand.Name()+" command", 0))
