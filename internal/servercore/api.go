@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
@@ -237,7 +238,19 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 
 	session.Lock()
 	defer session.Unlock()
-	session.eventSource().ServeHTTP(w, r)
+
+	// The EventSource.onopen Javascript callback is not consistently called across browsers (Chrome yes, Firefox+Safari no).
+	// However, when the SSE connection has been opened the webclient needs some signal so that it can early detect SSE failures.
+	// So we manually send an "open" event. Unfortunately:
+	// - we need to give the webclient that connected just now some time, otherwise it will miss the "open" event
+	// - the "open" event also goes to all other webclients currently listening, as we have no way to send this
+	//   event to just the webclient currently listening. (Thus the handler of this "open" event must be idempotent.)
+	evtSource := session.eventSource()
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		evtSource.SendEventMessage("", "open", "")
+	}()
+	evtSource.ServeHTTP(w, r)
 	return nil
 }
 
