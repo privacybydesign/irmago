@@ -47,6 +47,8 @@ type Configuration struct {
 	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
 	// for more information
 	Email string `json:"email" mapstructure:"email"`
+	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
+	EnableSSE bool
 }
 
 type SessionPackage struct {

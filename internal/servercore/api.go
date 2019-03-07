@@ -223,6 +223,10 @@ func ParsePath(path string) (string, string, error) {
 }
 
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+	if !s.conf.EnableSSE {
+		return errors.New("Server sent events disabled")
+	}
+
 	var session *session
 	if requestor {
 		session = s.sessions.get(token)

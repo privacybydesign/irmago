@@ -129,7 +129,11 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		token, noun, err := servercore.ParsePath(r.URL.Path)
 		if err == nil && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
 			if err = s.SubscribeServerSentEvents(w, r, token, false); err != nil {
-				server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+				server.WriteResponse(w, nil, &irma.RemoteError{
+					Status:      server.ErrorUnsupported.Status,
+					ErrorName:   string(server.ErrorUnsupported.Type),
+					Description: server.ErrorUnsupported.Description,
+				})
 			}
 			return
 		}

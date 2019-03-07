@@ -83,6 +83,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
 	flags.String("static-prefix", "/", "Host static files under this URL prefix")
 	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects")
+	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
@@ -185,9 +186,10 @@ func configure(cmd *cobra.Command) error {
 			SchemesUpdateInterval: viper.GetInt("schemes-update"),
 			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
-			URL:    viper.GetString("url"),
-			Email:  viper.GetString("email"),
-			Logger: logger,
+			URL:       viper.GetString("url"),
+			Email:     viper.GetString("email"),
+			EnableSSE: viper.GetBool("sse"),
+			Logger:    logger,
 		},
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),

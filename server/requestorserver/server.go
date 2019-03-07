@@ -295,7 +295,11 @@ func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	s.conf.Logger.WithFields(logrus.Fields{"session": token}).Debug("new client subscribed to server sent events")
 	if err := s.irmaserv.SubscribeServerSentEvents(w, r, token, true); err != nil {
-		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+		server.WriteResponse(w, nil, &irma.RemoteError{
+			Status:      server.ErrorUnsupported.Status,
+			ErrorName:   string(server.ErrorUnsupported.Type),
+			Description: server.ErrorUnsupported.Description,
+		})
 	}
 }
 
