@@ -32,6 +32,7 @@ type Server struct {
 	conf     *Configuration
 	irmaserv *irmaserver.Server
 	stop     chan struct{}
+	stopped  chan struct{}
 }
 
 // Start the server. If successful then it will not return until Stop() is called.
@@ -57,6 +58,7 @@ func (s *Server) Start(config *Configuration) error {
 	}
 	done := make(chan error, count)
 	s.stop = make(chan struct{})
+	s.stopped = make(chan struct{}, count)
 
 	if s.conf.separateClientServer() {
 		go func() {
@@ -104,9 +106,12 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 
 	go func() {
 		<-s.stop
-		if err := serv.Shutdown(context.Background()); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		if err := serv.Shutdown(ctx); err != nil {
 			_ = server.LogError(err)
 		}
+		s.stopped <- struct{}{}
 	}()
 
 	if tlsConf != nil {
@@ -129,6 +134,10 @@ func filterStopError(err error) error {
 func (s *Server) Stop() {
 	s.irmaserv.Stop()
 	s.stop <- struct{}{}
+	<-s.stopped
+	if s.conf.separateClientServer() {
+		<-s.stopped
+	}
 }
 
 func New(config *Configuration) (*Server, error) {
