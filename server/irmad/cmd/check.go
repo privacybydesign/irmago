@@ -38,7 +38,7 @@ Specify -v to see the configuration.`,
 func init() {
 	RootCommand.AddCommand(CheckCommand)
 
-	if err := setFlags(CheckCommand); err != nil {
+	if err := setFlags(CheckCommand, productionMode()); err != nil {
 		die(errors.WrapPrefix(err, "Failed to attach flags to "+CheckCommand.Name()+" command", 0))
 	}
 }

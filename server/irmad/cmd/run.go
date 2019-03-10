@@ -14,7 +14,7 @@ var RunCommand = &cobra.Command{
 func init() {
 	RootCommand.AddCommand(RunCommand)
 
-	if err := setFlags(RunCommand); err != nil {
+	if err := setFlags(RunCommand, productionMode()); err != nil {
 		die(errors.WrapPrefix(err, "Failed to attach flags to "+RunCommand.Name()+" command", 0))
 	}
 }

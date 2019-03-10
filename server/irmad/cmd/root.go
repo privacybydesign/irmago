@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -34,7 +35,7 @@ var RootCommand = &cobra.Command{
 }
 
 func init() {
-	if err := setFlags(RootCommand); err != nil {
+	if err := setFlags(RootCommand, productionMode()); err != nil {
 		die(errors.WrapPrefix(err, "Failed to attach flags to "+RootCommand.Name()+" command", 0))
 	}
 }
@@ -55,17 +56,22 @@ func die(err *errors.Error) {
 	logger.Fatal(msg)
 }
 
-func setFlags(cmd *cobra.Command) error {
+func setFlags(cmd *cobra.Command, production bool) error {
 	flags := cmd.Flags()
 	flags.SortFlags = false
 
-	schemespath := server.DefaultSchemesPath()
-	defaulturl, err := server.LocalIP()
-	if err != nil {
-		logger.Warn("Could not determine local IP address: ", err.Error())
-	} else {
-		defaulturl = "http://" + defaulturl + ":port"
+	var defaulturl string
+	var err error
+	if !production {
+		defaulturl, err = server.LocalIP()
+		if err != nil {
+			logger.Warn("Could not determine local IP address: ", err.Error())
+		} else {
+			defaulturl = "http://" + defaulturl + ":port"
+		}
 	}
+
+	schemespath := server.DefaultSchemesPath()
 
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
@@ -83,11 +89,15 @@ func setFlags(cmd *cobra.Command) error {
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.Bool("no-auth", true, "whether or not to authenticate requestors")
+	flags.Bool("no-auth", !production, "whether or not to authenticate requestors")
 	flags.String("requestors", "", "requestor configuration (in JSON)")
 	flags.StringSlice("disclose-perms", nil, "list of attributes that all requestors may verify (default *)")
 	flags.StringSlice("sign-perms", nil, "list of attributes that all requestors may request in signatures (default *)")
-	flags.StringSlice("issue-perms", nil, "list of attributes that all requestors may issue (default *)")
+	issHelp := "list of attributes that all requestors may issue"
+	if !production {
+		issHelp += " (default *)"
+	}
+	flags.StringSlice("issue-perms", nil, issHelp)
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
@@ -108,7 +118,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags.Lookup("tls-cert").Header = "TLS configuration (leave empty to disable TLS)"
 
 	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
-	flags.Bool("no-email", true, "Opt out of prodiding an email address with --email")
+	flags.Bool("no-email", !production, "Opt out of prodiding an email address with --email")
 	flags.Lookup("email").Header = "Email address (see README for more info)"
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
@@ -128,12 +138,6 @@ func configure(cmd *cobra.Command) error {
 	viper.AutomaticEnv()
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
 		return err
-	}
-
-	if viper.GetBool("production") {
-		viper.SetDefault("no-auth", false)
-		viper.SetDefault("no-email", false)
-		viper.SetDefault("url", "")
 	}
 
 	// Locate and read configuration file
@@ -248,4 +252,23 @@ func handlePermission(typ string) []string {
 		return []string{}
 	}
 	return perms
+}
+
+// productionMode examines the arguments passed to the executably to see if --production is enabled.
+// (This should really be done using viper, but when the help message is printed, viper is not yet
+// initialized.)
+func productionMode() bool {
+	for i, arg := range os.Args {
+		if arg == "--production" {
+			if len(os.Args) == i+1 || strings.HasPrefix(os.Args[i+1], "--") {
+				return true
+			}
+			val := strings.ToLower(os.Args[i+1])
+			if val == "1" || val == "true" || val == "yes" || val == "t" {
+				return true
+			}
+			return false
+		}
+	}
+	return false
 }
