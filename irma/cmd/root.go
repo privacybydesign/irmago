@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 )
@@ -21,6 +22,18 @@ func Execute() {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
+}
+
+func init() {
+	RootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print irma version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("irma")
+			fmt.Println("Version: ", "0.1.0")
+			fmt.Println("OS/Arg:  ", runtime.GOOS+"/"+runtime.GOARCH)
+		},
+	})
 }
 
 func die(message string, err error) {
