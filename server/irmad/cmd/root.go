@@ -166,8 +166,12 @@ func configure(cmd *cobra.Command) error {
 		logger.Out = ioutil.Discard
 	}
 
-	logger.Debug("Configuring")
-	logger.Debug("Log level: ", logger.Level.String())
+	mode := "development"
+	if viper.GetBool("production") {
+		mode = "production"
+	}
+	logger.WithField("mode", mode).WithField("verbosity", server.Verbosity(viper.GetInt("verbose"))).Info("irma server running")
+
 	if err != nil {
 		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
 			logger.Info("No configuration file found")
