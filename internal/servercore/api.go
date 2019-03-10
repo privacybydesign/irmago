@@ -55,9 +55,7 @@ func (s *Server) Stop() {
 
 func (s *Server) verifyConfiguration(configuration *server.Configuration) error {
 	if s.conf.Logger == nil {
-		s.conf.Logger = logrus.New()
-		s.conf.Logger.Level = logrus.DebugLevel
-		s.conf.Logger.Formatter = &logrus.TextFormatter{}
+		s.conf.Logger = server.NewLogger(s.conf.Verbose, s.conf.Quiet, s.conf.LogJSON)
 	}
 	server.Logger = s.conf.Logger
 	irma.Logger = s.conf.Logger

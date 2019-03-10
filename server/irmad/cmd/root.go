@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"io/ioutil"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -13,10 +11,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/x-cray/logrus-prefixed-formatter"
 )
 
-var logger = logrus.StandardLogger()
+var logger = server.NewLogger(0, false, false)
 var conf *requestorserver.Configuration
 
 var RootCommand = &cobra.Command{
@@ -37,11 +34,6 @@ var RootCommand = &cobra.Command{
 }
 
 func init() {
-	logger.Level = logrus.InfoLevel
-	logger.SetFormatter(&prefixed.TextFormatter{
-		FullTimestamp: true,
-		DisableColors: runtime.GOOS == "windows",
-	})
 	if err := setFlags(RootCommand); err != nil {
 		die(errors.WrapPrefix(err, "Failed to attach flags to "+RootCommand.Name()+" command", 0))
 	}
@@ -157,21 +149,17 @@ func configure(cmd *cobra.Command) error {
 	}
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 
-	// Set log level
-	if viper.GetBool("log-json") {
-		logger.SetFormatter(&logrus.JSONFormatter{})
-	}
-	logger.Level = server.Verbosity(viper.GetInt("verbose"))
-	if viper.GetBool("quiet") {
-		logger.Out = ioutil.Discard
-	}
+	// Create our logger instance
+	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log-json"))
 
+	// First log output: hello, development or production mode, log level
 	mode := "development"
 	if viper.GetBool("production") {
 		mode = "production"
 	}
 	logger.WithField("mode", mode).WithField("verbosity", server.Verbosity(viper.GetInt("verbose"))).Info("irma server running")
 
+	// Now we finally examine and log any error from viper.ReadInConfig()
 	if err != nil {
 		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
 			logger.Info("No configuration file found")
@@ -193,6 +181,9 @@ func configure(cmd *cobra.Command) error {
 			URL:       viper.GetString("url"),
 			Email:     viper.GetString("email"),
 			EnableSSE: viper.GetBool("sse"),
+			Verbose:   viper.GetInt("verbose"),
+			Quiet:     viper.GetBool("quiet"),
+			LogJSON:   viper.GetBool("log-json"),
 			Logger:    logger,
 		},
 		Permissions: requestorserver.Permissions{
@@ -210,9 +201,6 @@ func configure(cmd *cobra.Command) error {
 		JwtPrivateKey:                  viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:              viper.GetString("jwt-privkey-file"),
 		MaxRequestAge:                  viper.GetInt("max-request-age"),
-		Verbose:                        viper.GetInt("verbose"),
-		Quiet:                          viper.GetBool("quiet"),
-		LogJSON:                        viper.GetBool("log-json"),
 		StaticPath:                     viper.GetString("static-path"),
 		StaticPrefix:                   viper.GetString("static-prefix"),
 

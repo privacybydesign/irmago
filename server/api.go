@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/sirupsen/logrus"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var Logger *logrus.Logger = logrus.StandardLogger()
@@ -41,14 +43,21 @@ type Configuration struct {
 	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
-	// Logging
-	Logger *logrus.Logger `json:"-"`
 	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
 	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
 	// for more information
 	Email string `json:"email" mapstructure:"email"`
 	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
 	EnableSSE bool
+
+	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
+	Verbose int `json:"verbose" mapstructure:"verbose"`
+	// Don't log anything at all
+	Quiet bool `json:"quiet" mapstructure:"quiet"`
+	// Output structured log in JSON format
+	LogJSON bool `json:"log_json" mapstructure:"log_json"`
+	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
+	Logger *logrus.Logger `json:"-"`
 }
 
 type SessionPackage struct {
@@ -361,4 +370,25 @@ func LogWarning(err error) error {
 func ToJson(o interface{}) string {
 	bts, _ := json.Marshal(o)
 	return string(bts)
+}
+
+func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
+	logger := logrus.New()
+
+	if quiet {
+		logger.Out = ioutil.Discard
+		return logger
+	}
+
+	logger.Level = Verbosity(verbosity)
+	if json {
+		logger.SetFormatter(&logrus.JSONFormatter{})
+	} else {
+		logger.SetFormatter(&prefixed.TextFormatter{
+			FullTimestamp: true,
+			DisableColors: runtime.GOOS == "windows",
+		})
+	}
+
+	return logger
 }

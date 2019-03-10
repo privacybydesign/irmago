@@ -65,10 +65,6 @@ type Configuration struct {
 	// Host static files under this URL prefix
 	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
 
-	Verbose int  `json:"verbose" mapstructure:"verbose"`
-	Quiet   bool `json:"quiet" mapstructure:"quiet"`
-	LogJSON bool `json:"log_json" mapstructure:"log_json"`
-
 	Production bool `json:"production" mapstructure:"production"`
 
 	jwtPrivateKey *rsa.PrivateKey
