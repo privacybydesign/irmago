@@ -139,6 +139,16 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		if !strings.HasSuffix(s.conf.URL, "/") {
 			s.conf.URL = s.conf.URL + "/"
 		}
+		if !strings.HasPrefix(s.conf.URL, "https://") {
+			if !s.conf.Production || s.conf.DisableTLS {
+				s.conf.DisableTLS = true
+				s.conf.Logger.Warnf("TLS is not enabled on the url \"%s\" to which the IRMA app will connect. "+
+					"Ensure that attributes are encrypted in transit by either enabling TLS or adding TLS in a reverse proxy.", s.conf.URL)
+			} else {
+				return server.LogError(errors.Errorf("Running without TLS in production mode is unsafe without a reverse proxy. " +
+					"Either use a https:// URL or explicitly disable TLS."))
+			}
+		}
 	} else {
 		s.conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
 	}

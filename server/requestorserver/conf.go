@@ -65,8 +65,6 @@ type Configuration struct {
 	// Host static files under this URL prefix
 	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
 
-	Production bool `json:"production" mapstructure:"production"`
-
 	jwtPrivateKey *rsa.PrivateKey
 }
 
@@ -246,10 +244,6 @@ func (conf *Configuration) initialize() error {
 			if strings.HasPrefix(conf.URL, "http://") {
 				conf.URL = "https://" + conf.URL[len("http://"):]
 			}
-		}
-		if !strings.HasPrefix(conf.URL, "https://") {
-			conf.Logger.Warnf("TLS is not enabled on the url \"%s\" to which the IRMA app will connect. "+
-				"Ensure that attributes are encrypted in transit by either enabling TLS or adding TLS in a reverse proxy.", conf.URL)
 		}
 	}
 

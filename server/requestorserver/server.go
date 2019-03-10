@@ -194,8 +194,12 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {
-	url := s.conf.URL[:len(s.conf.URL)-6] + s.conf.StaticPrefix
-	s.conf.Logger.Infof("Hosting files at %s under %s", s.conf.StaticPath, url)
+	if len(s.conf.URL) > 6 {
+		url := s.conf.URL[:len(s.conf.URL)-6] + s.conf.StaticPrefix
+		s.conf.Logger.Infof("Hosting files at %s under %s", s.conf.StaticPath, url)
+	} else { // URL not known, don't log it but otherwise continue
+		s.conf.Logger.Infof("Hosting files at %s", s.conf.StaticPath)
+	}
 	// Hook up chi middleware logger with our own logger
 	middleware.DefaultLogger = middleware.RequestLogger(&middleware.DefaultLogFormatter{
 		Logger:  log.New(s.conf.Logger.WriterLevel(logrus.TraceLevel), "static: ", 0),

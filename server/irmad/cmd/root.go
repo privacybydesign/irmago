@@ -104,6 +104,7 @@ func setFlags(cmd *cobra.Command) error {
 	flags.String("client-tls-cert-file", "", "path to TLS certificate (chain) for IRMA app server")
 	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
+	flags.Bool("no-tls", false, "Disable TLS")
 	flags.Lookup("tls-cert").Header = "TLS configuration (leave empty to disable TLS)"
 
 	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
@@ -178,13 +179,15 @@ func configure(cmd *cobra.Command) error {
 			SchemesUpdateInterval: viper.GetInt("schemes-update"),
 			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
-			URL:       viper.GetString("url"),
-			Email:     viper.GetString("email"),
-			EnableSSE: viper.GetBool("sse"),
-			Verbose:   viper.GetInt("verbose"),
-			Quiet:     viper.GetBool("quiet"),
-			LogJSON:   viper.GetBool("log-json"),
-			Logger:    logger,
+			URL:        viper.GetString("url"),
+			DisableTLS: viper.GetBool("no-tls"),
+			Email:      viper.GetString("email"),
+			EnableSSE:  viper.GetBool("sse"),
+			Verbose:    viper.GetInt("verbose"),
+			Quiet:      viper.GetBool("quiet"),
+			LogJSON:    viper.GetBool("log-json"),
+			Logger:     logger,
+			Production: viper.GetBool("production"),
 		},
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),
@@ -212,8 +215,6 @@ func configure(cmd *cobra.Command) error {
 		ClientTlsCertificateFile: viper.GetString("client-tls-cert-file"),
 		ClientTlsPrivateKey:      viper.GetString("client-tls-privkey"),
 		ClientTlsPrivateKeyFile:  viper.GetString("client-tls-privkey-file"),
-
-		Production: viper.GetBool("production"),
 	}
 
 	if conf.Production {

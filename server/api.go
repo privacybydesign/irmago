@@ -43,6 +43,10 @@ type Configuration struct {
 	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
+	// Required to be set to true if URL does not begin with https:// in production mode.
+	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
+	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
+	DisableTLS bool
 	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
 	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
 	// for more information
@@ -58,6 +62,9 @@ type Configuration struct {
 	LogJSON bool `json:"log_json" mapstructure:"log_json"`
 	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
 	Logger *logrus.Logger `json:"-"`
+
+	// Production mode: enables safer and stricter defaults and config checking
+	Production bool `json:"production" mapstructure:"production"`
 }
 
 type SessionPackage struct {
