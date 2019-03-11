@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/go-errors/errors"
 	"github.com/mitchellh/mapstructure"
@@ -28,8 +30,31 @@ var RootCommand = &cobra.Command{
 		if err != nil {
 			die(errors.WrapPrefix(err, "Failed to configure server", 0))
 		}
-		if err := serv.Start(conf); err != nil {
-			die(errors.WrapPrefix(err, "Failed to start server", 0))
+
+		stopped := make(chan struct{})
+		interrupt := make(chan os.Signal, 1)
+		signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+		go func() {
+			if err := serv.Start(conf); err != nil {
+				die(errors.WrapPrefix(err, "Failed to start server", 0))
+			}
+			conf.Logger.Debug("Server stopped")
+			stopped <- struct{}{}
+		}()
+
+		for {
+			select {
+			case <-interrupt:
+				conf.Logger.Debug("Caught interrupt")
+				serv.Stop() // causes serv.Start() above to return
+				conf.Logger.Debug("Sent stop signal to server")
+			case <-stopped:
+				conf.Logger.Info("Exiting")
+				close(stopped)
+				close(interrupt)
+				return
+			}
 		}
 	},
 }
