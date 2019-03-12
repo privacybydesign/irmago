@@ -98,9 +98,12 @@
   revision = "563b81fc02b75d664e54da31f787c2cc2186780b"
 
 [[projects]]
-  digest = "1:b9914f85d95a0968bafd1be1908ba29e2eafafd88d6fd13696be42bf5368c380"
+  digest = "1:a9fe0f8ff72c388d0128e88ce5f3c27d37dcd0950acd7cdb8323555f12463396"
   name = "github.com/go-chi/chi"
-  packages = ["."]
+  packages = [
+    ".",
+    "middleware",
+  ]
   pruneopts = "UT"
   revision = "b5294d10673813fac8558e7f47242bc9e61b4c25"
   version = "v3.3.3"
@@ -277,7 +280,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:61a44e70558a6fa59604ce3590db333d2fcd0b68a0da94d1fdc4a4d1b5b00450"
+  digest = "1:87248088d2335ebdd1eef89ddf2ce7fffb18026711c22d8c283b639d994fb5c0"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
@@ -285,7 +288,7 @@
     "safeprime",
   ]
   pruneopts = "UT"
-  revision = "a51e7b01af8aa69a74d3aea5221d6c38c9160489"
+  revision = "219a1cfc9ffab69238e339c50bb7edb007285fb2"
 
 [[projects]]
   branch = "master"
@@ -474,16 +477,19 @@
     "github.com/dgrijalva/jwt-go",
     "github.com/getsentry/raven-go",
     "github.com/go-chi/chi",
+    "github.com/go-chi/chi/middleware",
     "github.com/go-chi/cors",
     "github.com/go-errors/errors",
     "github.com/hashicorp/go-retryablehttp",
     "github.com/jasonlvhit/gocron",
     "github.com/mdp/qrterminal",
+    "github.com/mitchellh/mapstructure",
     "github.com/pkg/errors",
     "github.com/privacybydesign/gabi",
     "github.com/privacybydesign/gabi/big",
     "github.com/sirupsen/logrus",
     "github.com/spf13/cobra",
+    "github.com/spf13/pflag",
     "github.com/spf13/viper",
     "github.com/stretchr/testify/require",
     "github.com/x-cray/logrus-prefixed-formatter",
