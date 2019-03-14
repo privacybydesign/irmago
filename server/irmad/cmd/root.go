@@ -289,10 +289,7 @@ func productionMode() bool {
 				return true
 			}
 			val := strings.ToLower(os.Args[i+1])
-			if val == "1" || val == "true" || val == "yes" || val == "t" {
-				return true
-			}
-			return false
+			return val == "1" || val == "true" || val == "yes" || val == "t"
 		}
 	}
 	return false
