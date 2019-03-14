@@ -18,7 +18,7 @@ before_script:
   - mkdir -p "$GOPATH/src/$(dirname "$PACKAGE_NAME")"
   - ln -s "$CI_PROJECT_DIR" "$GOPATH/src/$PACKAGE_NAME"
   - cd "$GOPATH/src/$PACKAGE_NAME"
-  - dep ensure
+  - dep ensure -v
 
 unit_tests:
   stage: test
