@@ -88,10 +88,6 @@ func VerifyScheme(path string) error {
 }
 
 func VerifyIrmaConfiguration(path string) error {
-	if filepath.Base(path) != "irma_configuration" {
-		fmt.Printf("Notice: specified folder name is '%s'; when using in IRMA applications it should be called 'irma_configuration'\n", filepath.Base(path))
-	}
-
 	conf, err := irma.NewConfigurationReadOnly(path)
 	if err != nil {
 		return err
