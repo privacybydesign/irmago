@@ -980,7 +980,61 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (Sche
 		return nil, err
 	}
 	index := SchemeManagerIndex(make(map[string]ConfigurationFileHash))
-	return index, index.FromString(string(indexbts))
+	if err = index.FromString(string(indexbts)); err != nil {
+		return nil, err
+	}
+
+	return index, conf.checkUnsignedFiles(name, index)
+}
+
+func (conf *Configuration) checkUnsignedFiles(name string, index SchemeManagerIndex) error {
+	return filepath.Walk(filepath.Join(conf.Path, name), func(path string, info os.FileInfo, err error) error {
+		relpath, err := relativePath(conf.Path, path)
+		if err != nil {
+			return err
+		}
+		for _, ex := range sigExceptions {
+			if ex.MatchString(relpath) {
+				return nil
+			}
+		}
+
+		if info.IsDir() {
+			if !dirInScheme(index, relpath) {
+				conf.Warnings = append(conf.Warnings, "Ignored dir: "+relpath)
+			}
+		} else {
+			if _, ok := index[relpath]; !ok {
+				conf.Warnings = append(conf.Warnings, "Ignored file: "+relpath)
+			}
+		}
+
+		return nil
+	})
+}
+
+func dirInScheme(index SchemeManagerIndex, dir string) bool {
+	for indexpath := range index {
+		if strings.HasPrefix(indexpath, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// These files never occur in a scheme's index
+var sigExceptions = []*regexp.Regexp{
+	regexp.MustCompile(`/.git(/.*)?`),
+	regexp.MustCompile(`^.*?/pk\.pem$`),
+	regexp.MustCompile(`^.*?/sk\.pem$`),
+	regexp.MustCompile(`^.*?/index`),
+	regexp.MustCompile(`^.*?/index\.sig`),
+	regexp.MustCompile(`^.*?/AUTHORS$`),
+	regexp.MustCompile(`^.*?/LICENSE$`),
+	regexp.MustCompile(`^.*?/README\.md$`),
+	regexp.MustCompile(`^.*?/.*?/PrivateKeys$`),
+	regexp.MustCompile(`^.*?/.*?/PrivateKeys/\d+.xml$`),
+	regexp.MustCompile(`\.DS_Store$`),
 }
 
 func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
