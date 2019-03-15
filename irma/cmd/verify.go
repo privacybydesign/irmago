@@ -6,10 +6,10 @@ import (
 
 	"fmt"
 
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/spf13/cobra"
-	"github.com/go-errors/errors"
 )
 
 // verifyCmd represents the verify command
@@ -68,7 +68,23 @@ func VerifyScheme(path string) error {
 		return err
 	}
 
-	return conf.ParseSchemeManagerFolder(path, irma.NewSchemeManager(filepath.Base(path)))
+	scheme := irma.NewSchemeManager(filepath.Base(path))
+	if err = conf.ParseSchemeManagerFolder(path, scheme); err != nil {
+		return err
+	}
+
+	if err := conf.CheckKeys(); err != nil {
+		return err
+	}
+
+	if err := conf.VerifySchemeManager(scheme); err != nil {
+		return err
+	}
+
+	for _, warning := range conf.Warnings {
+		fmt.Println("Warning: " + warning)
+	}
+	return nil
 }
 
 func VerifyIrmaConfiguration(path string) error {
