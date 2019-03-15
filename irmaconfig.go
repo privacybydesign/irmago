@@ -1451,6 +1451,17 @@ func (conf *Configuration) CheckKeys() error {
 				return errors.Errorf("Private key %s of issuer %s does not belong to public key %s", filename, issuerid.String(), filename)
 			}
 		}
+
+		// Check that the current public key supports enough attributes for all credential types
+		// issued by this issuer
+		for id, typ := range conf.CredentialTypes {
+			if id.IssuerIdentifier() != issuerid {
+				continue
+			}
+			if len(typ.AttributeTypes)+2 > len(latest.R) {
+				return errors.Errorf("Latest public key of issuer %s does not support the amount of attributes that credential type %s requires (%d, required: %d)", issuerid.String(), id.String(), len(latest.R), len(typ.AttributeTypes)+2)
+			}
+		}
 	}
 
 	return nil
