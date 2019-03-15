@@ -267,13 +267,13 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		return
 	}
 	exists, err := conf.pathToDescription(manager, dir+"/description.xml", manager)
-	if !exists {
-		manager.Status = SchemeManagerStatusParsingError
-		return errors.New("Scheme manager description not found")
-	}
 	if err != nil {
 		manager.Status = SchemeManagerStatusParsingError
 		return
+	}
+	if !exists {
+		manager.Status = SchemeManagerStatusParsingError
+		return errors.New("Scheme manager description not found")
 	}
 	if err = conf.checkScheme(manager, dir); err != nil {
 		return
@@ -637,7 +637,11 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 	}
 	bts, found, err := conf.ReadAuthenticatedFile(manager, relativepath)
 	if !found {
-		return false, nil
+		for p := range manager.index {
+			expectedName := p[0:strings.Index(p, "/")]
+			return false, errors.Errorf("Folder must be called %s, not %s", expectedName, manager.ID)
+		}
+		return false, errors.New("")
 	}
 	if err != nil {
 		return true, err
