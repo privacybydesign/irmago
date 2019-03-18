@@ -277,9 +277,8 @@ func printQr(qr *irma.Qr, noqr bool) error {
 	if err != nil {
 		return err
 	}
-	if noqr {
-		fmt.Println(string(qrBts))
-	} else {
+	fmt.Printf("\nQR contents: %s\n", qrBts)
+	if !noqr {
 		qrterminal.GenerateWithConfig(string(qrBts), qrterminal.Config{
 			Level:     qrterminal.L,
 			Writer:    os.Stdout,
