@@ -30,7 +30,7 @@ func init() {
 		Short: "Print irma version information",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("irma")
-			fmt.Println("Version: ", "0.1.0")
+			fmt.Println("Version: ", "0.1.1")
 			fmt.Println("OS/Arg:  ", runtime.GOOS+"/"+runtime.GOARCH)
 		},
 	})
