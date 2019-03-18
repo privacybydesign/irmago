@@ -49,7 +49,7 @@ func StartIrmaServer(t *testing.T) {
 	testdata := test.FindTestdataFolder(t)
 
 	logger := logrus.New()
-	logger.Level = logrus.WarnLevel
+	logger.Level = logrus.ErrorLevel
 	logger.Formatter = &logrus.TextFormatter{}
 
 	var err error
