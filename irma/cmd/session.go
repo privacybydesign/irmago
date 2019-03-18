@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -39,13 +40,19 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 		}
 
 		var result *server.SessionResult
+		url, _ := cmd.Flags().GetString("url")
 		serverurl, _ := cmd.Flags().GetString("server")
 		noqr, _ := cmd.Flags().GetBool("noqr")
 		flags := cmd.Flags()
+
+		if url != "" && serverurl != "" {
+			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
+		}
+
 		if serverurl == "" {
 			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
-			result, err = libraryRequest(request, irmaconfig, port, privatekeysPath, noqr)
+			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr)
 		} else {
 			authmethod, _ := flags.GetString("authmethod")
 			key, _ := flags.GetString("key")
@@ -68,11 +75,12 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 func libraryRequest(
 	request irma.RequestorRequest,
 	irmaconfig *irma.Configuration,
+	url string,
 	port int,
 	privatekeysPath string,
 	noqr bool,
 ) (*server.SessionResult, error) {
-	if err := configureServer(port, privatekeysPath, irmaconfig); err != nil {
+	if err := configureServer(url, port, privatekeysPath, irmaconfig); err != nil {
 		return nil, err
 	}
 	startServer(port)
@@ -116,14 +124,14 @@ func serverRequest(
 
 	statuschan := make(chan server.Status)
 
-	// Wait untill client connects
+	// Wait until client connects
 	go poll(server.StatusInitialized, transport, statuschan)
 	status := <-statuschan
 	if status != server.StatusConnected {
 		return nil, errors.Errorf("Unexpected status: %s", status)
 	}
 
-	// Wait untill client finishes
+	// Wait until client finishes
 	go poll(server.StatusConnected, transport, statuschan)
 	status = <-statuschan
 	if status != server.StatusDone {
@@ -170,21 +178,22 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 
 // Configuration functions
 
-func configureServer(port int, privatekeysPath string, irmaconfig *irma.Configuration) error {
-	ip, err := server.LocalIP()
-	if err != nil {
-		return err
-	}
+func configureServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration) error {
+	// Replace "port" in url with actual port
+	replace := "$1:" + strconv.Itoa(port)
+	url = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(url), []byte(replace)))
+
 	config := &server.Configuration{
 		IrmaConfiguration:    irmaconfig,
 		Logger:               logger,
-		URL:                  "http://" + ip + ":" + strconv.Itoa(port),
+		URL:                  url,
 		DisableSchemesUpdate: true,
 	}
 	if privatekeysPath != "" {
 		config.IssuerPrivateKeysPath = privatekeysPath
 	}
 
+	var err error
 	irmaServer, err = irmaserver.New(config)
 	return err
 }
@@ -202,8 +211,16 @@ func configure(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, 
 func init() {
 	RootCmd.AddCommand(sessionCmd)
 
+	defaulturl, err := server.LocalIP()
+	if err != nil {
+		logger.Warn("Could not determine local IP address: ", err.Error())
+	} else {
+		defaulturl = "http://" + defaulturl + ":port"
+	}
+
 	flags := sessionCmd.Flags()
 	flags.SortFlags = false
+	flags.StringP("url", "u", defaulturl, "external URL used when using the builtin library")
 	flags.IntP("port", "p", 48680, "port to listen at")
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
 	flags.String("server", "", "Server to post request to (leave blank to use builtin library)")
