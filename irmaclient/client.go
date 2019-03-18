@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	raven "github.com/getsentry/raven-go"
+	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -485,67 +485,76 @@ func (client *Client) CheckSatisfiability(
 	return candidates, missing
 }
 
-func (client *Client) groupCredentials(choice *irma.DisclosureChoice, disjunctions irma.AttributeDisjunctionList) (
-	map[irma.CredentialIdentifier][]int, irma.DisclosedAttributeIndices, error,
+// attributeGroup points to a credential and some of its attributes which are to be disclosed
+type attributeGroup struct {
+	cred  irma.CredentialIdentifier
+	attrs []int
+}
+
+// Given the user's choice of attributes to be disclosed, group them per credential out of which they
+// are to be disclosed
+func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (
+	[]attributeGroup, irma.DisclosedAttributeIndices, error,
 ) {
-	grouped := make(map[irma.CredentialIdentifier][]int)
+	todisclose := make([]attributeGroup, 0, len(choice.Attributes))
 	if choice == nil || choice.Attributes == nil {
-		return grouped, irma.DisclosedAttributeIndices{}, nil
+		return todisclose, irma.DisclosedAttributeIndices{}, nil
 	}
 
+	// maps an irma.CredentialIdentifier to its index in the final ProofList
+	credIndices := make(map[irma.CredentialIdentifier]int)
 	attributeIndices := make(irma.DisclosedAttributeIndices, len(choice.Attributes))
 	for i, attribute := range choice.Attributes {
-		identifier := attribute.Type
+		var credIndex int
 		ici := attribute.CredentialIdentifier()
-
-		// If this is the first attribute of its credential type that we encounter
-		// in the disclosure choice, then there is no slice yet at grouped[ici]
-		if _, present := grouped[ici]; !present {
-			indices := make([]int, 1, 1)
-			indices[0] = 1 // Always include metadata
-			grouped[ici] = indices
+		if _, present := credIndices[ici]; !present {
+			credIndex = len(todisclose)
+			credIndices[ici] = credIndex
+			todisclose = append(todisclose, attributeGroup{
+				cred: ici, attrs: []int{1}, // Always disclose metadata
+			})
+		} else {
+			credIndex = credIndices[ici]
 		}
 
+		identifier := attribute.Type
 		if identifier.IsCredential() {
 			attributeIndices[i] = []*irma.DisclosedAttributeIndex{
-				{AttributeIndex: 1, Identifier: ici},
+				{CredentialIndex: credIndex, AttributeIndex: 1, Identifier: ici},
 			}
-			continue // In this case we only disclose the metadata attribute, which is already handled
+			continue // In this case we only disclose the metadata attribute, which is already handled above
 		}
-		index, err := client.Configuration.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
+
+		attrIndex, err := client.Configuration.CredentialTypes[identifier.CredentialTypeIdentifier()].IndexOf(identifier)
 		if err != nil {
 			return nil, nil, err
 		}
-
-		attributeIndices[i] = []*irma.DisclosedAttributeIndex{
-			{AttributeIndex: index + 2, Identifier: ici},
-		}
-
-		// These indices will be used in the []*big.Int at gabi.credential.Attributes,
+		// These attribute indices will be used in the []*big.Int at gabi.credential.Attributes,
 		// which doesn't know about the secret key and metadata attribute, so +2
-		grouped[ici] = append(grouped[ici], index+2)
+		attributeIndices[i] = []*irma.DisclosedAttributeIndex{
+			{CredentialIndex: credIndex, AttributeIndex: attrIndex + 2, Identifier: ici},
+		}
+		todisclose[credIndex].attrs = append(todisclose[credIndex].attrs, attrIndex+2)
 	}
 
-	return grouped, attributeIndices, nil
+	return todisclose, attributeIndices, nil
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
 func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.SessionRequest, issig bool,
 ) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, error) {
-	todisclose, disjunctionChoices, err := client.groupCredentials(choice, request.ToDisclose())
+	todisclose, attributeIndices, err := client.groupCredentials(choice)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
-
-	for i, choice := range disjunctionChoices {
-		cred, err := client.credentialByID(choice[0].Identifier)
+	for _, grp := range todisclose {
+		cred, err := client.credentialByID(grp.cred)
 		if err != nil {
 			return nil, nil, err
 		}
-		choice[0].CredentialIndex = i
-		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(todisclose[choice[0].Identifier]))
+		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(grp.attrs))
 	}
 
 	if issig {
@@ -565,7 +574,7 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 		}
 	}
 
-	return builders, disjunctionChoices, nil
+	return builders, attributeIndices, nil
 }
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.

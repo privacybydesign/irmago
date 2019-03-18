@@ -62,20 +62,39 @@ func TestRequestorSignatureSession(t *testing.T) {
 
 func TestRequestorDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	serverResult := requestorSessionHelper(t, &irma.DisclosureRequest{
+	request := &irma.DisclosureRequest{
 		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
 		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
 			Label:      "foo",
 			Attributes: []irma.AttributeTypeIdentifier{id},
 		}}),
-	})
-
-	require.Nil(t, serverResult.Err)
-	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
-	require.NotEmpty(t, serverResult.Disclosed)
+	}
+	serverResult := testRequestorDisclosure(t, request)
+	require.Len(t, serverResult.Disclosed, 1)
 	require.Equal(t, id, serverResult.Disclosed[0].Identifier)
 	require.Equal(t, "456", serverResult.Disclosed[0].Value["en"])
+}
 
+func TestRequestorDisclosureMultipleAttrs(t *testing.T) {
+	request := &irma.DisclosureRequest{
+		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
+		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
+			Label:      "foo",
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")},
+		}, {
+			Label:      "bar",
+			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")},
+		}}),
+	}
+	serverResult := testRequestorDisclosure(t, request)
+	require.Len(t, serverResult.Disclosed, 2)
+}
+
+func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest) *server.SessionResult {
+	serverResult := requestorSessionHelper(t, request)
+	require.Nil(t, serverResult.Err)
+	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
+	return serverResult
 }
 
 func TestRequestorIssuanceSession(t *testing.T) {
