@@ -1,7 +1,7 @@
 package servercore
 
 import (
-	"math/rand"
+	"crypto/rand"
 	"sync"
 	"time"
 
@@ -62,10 +62,6 @@ var (
 	minProtocolVersion = irma.NewVersion(2, 4)
 	maxProtocolVersion = irma.NewVersion(2, 4)
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 func (s *memorySessionStore) get(t string) *session {
 	s.RLock()
@@ -174,9 +170,17 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 }
 
 func newSessionToken() string {
-	b := make([]byte, 20)
+	count := 20
+
+	r := make([]byte, count)
+	_, err := rand.Read(r)
+	if err != nil {
+		panic(err)
+	}
+
+	b := make([]byte, count)
 	for i := range b {
-		b[i] = sessionChars[rand.Int63()%int64(len(sessionChars))]
+		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
 	}
 	return string(b)
 }
