@@ -22,11 +22,11 @@ var updateCmd = &cobra.Command{
 			paths = args
 		} else {
 			if irmaconf == "" {
-				die("Failed to find default irma_configuration path", nil)
+				die(errors.Wrap("Failed to find default irma_configuration path", 0))
 			}
 			files, err := ioutil.ReadDir(irmaconf)
 			if err != nil {
-				die("Failed to read default irma_configuration path", err)
+				die(errors.WrapPrefix(err, "Failed to read default irma_configuration path", 0))
 			}
 			paths = make([]string, 0, len(files))
 			for _, file := range files {
@@ -37,7 +37,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if err := updateSchemeManager(paths); err != nil {
-			die("Updating schemes failed", err)
+			die(errors.WrapPrefix(err, "Updating schemes failed", 0))
 		}
 	},
 }

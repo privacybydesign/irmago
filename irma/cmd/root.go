@@ -5,6 +5,8 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/go-errors/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -36,14 +38,10 @@ func init() {
 	})
 }
 
-func die(message string, err error) {
-	var m string
-	if message != "" {
-		m = message + ": "
+func die(err *errors.Error) {
+	msg := err.Error()
+	if logger.IsLevelEnabled(logrus.DebugLevel) {
+		msg += "\nStack trace:\n" + string(err.Stack())
 	}
-	if err != nil {
-		m = m + err.Error()
-	}
-	fmt.Println(m)
-	os.Exit(1)
+	logger.Fatal(msg)
 }

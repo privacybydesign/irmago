@@ -26,7 +26,7 @@ var requestCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		request, _, err := configureRequest(cmd)
 		if err != nil {
-			die("", err)
+			die(errors.Wrap(err, 0))
 		}
 
 		flags := cmd.Flags()
@@ -38,7 +38,7 @@ var requestCmd = &cobra.Command{
 			key, _ := flags.GetString("key")
 			name, _ := flags.GetString("name")
 			if output, err = signRequest(request, name, authmethod, key); err != nil {
-				die("Failed to sign request", err)
+				die(errors.WrapPrefix(err, "Failed to sign request", 0))
 			}
 		}
 
@@ -267,7 +267,7 @@ func startServer(port int) {
 	go func() {
 		err := httpServer.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
-			die("Failed to start server", err)
+			die(errors.WrapPrefix(err, "Failed to start server", 0))
 		}
 	}()
 }

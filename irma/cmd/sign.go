@@ -63,7 +63,7 @@ Careful: this command could fail and invalidate or destroy your scheme manager d
 			return err
 		}
 		if err := signManager(privatekey, confpath, skipverification); err != nil {
-			die("Failed to sign scheme", err)
+			die(errors.WrapPrefix(err, "Failed to sign scheme", 0))
 		}
 		return nil
 	},
@@ -127,7 +127,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 
 	// Verify that our folder is a valid scheme
 	if err := RunVerify(confpath, false); err != nil {
-		die("Scheme was signed but verification failed", err)
+		die(errors.WrapPrefix(err, "Scheme was signed but verification failed", 0))
 	}
 	return nil
 }

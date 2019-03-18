@@ -35,13 +35,14 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 	Run: func(cmd *cobra.Command, args []string) {
 		request, irmaconfig, err := configure(cmd)
 		if err != nil {
-			die("", err)
+			die(errors.Wrap(err, 0))
 		}
 
 		var result *server.SessionResult
 		serverurl, _ := cmd.Flags().GetString("server")
 		noqr, _ := cmd.Flags().GetBool("noqr")
 		flags := cmd.Flags()
+
 		if serverurl == "" {
 			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
@@ -53,7 +54,7 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 			result, err = serverRequest(request, serverurl, authmethod, key, name, noqr)
 		}
 		if err != nil {
-			die("Session failed", err)
+			die(errors.WrapPrefix(err, "Session failed", 0))
 		}
 
 		printSessionResult(result)

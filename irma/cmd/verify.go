@@ -33,7 +33,7 @@ var verifyCmd = &cobra.Command{
 			fmt.Println()
 			fmt.Println("Verification was successful.")
 		} else {
-			die("Verification failed", err)
+			die(errors.WrapPrefix(err, "Verification failed", 0))
 		}
 		return nil
 	},

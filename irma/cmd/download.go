@@ -35,15 +35,15 @@ var downloadCmd = &cobra.Command{
 		}
 		if path == defaultIrmaconf {
 			if defaultIrmaconf == "" {
-				die("Failed to determine default irma_configuration path", nil)
+				die(errors.Wrap("Failed to determine default irma_configuration path", 0))
 			}
 			if err := fs.EnsureDirectoryExists(defaultIrmaconf); err != nil {
-				die("Failed to create irma_configuration directory", err)
+				die(errors.WrapPrefix(err, "Failed to create irma_configuration directory", 0))
 			}
 			fmt.Println("No irma_configuration path specified, using " + defaultIrmaconf)
 		}
 		if err := downloadSchemeManager(path, urls); err != nil {
-			die("Downloading scheme failed", err)
+			die(errors.WrapPrefix(err, "Downloading scheme failed", 0))
 		}
 	},
 }

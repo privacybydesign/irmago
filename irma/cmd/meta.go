@@ -23,7 +23,7 @@ var metaCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		confpath, err := cmd.Flags().GetString("irmaconf")
 		if err != nil {
-			die("Failed to get irma_configuration flag", err)
+			die(errors.WrapPrefix(err, "Failed to get irma_configuration flag", 0))
 		}
 		metaint := new(big.Int)
 		_, ok := metaint.SetString(args[0], 10)
@@ -40,7 +40,7 @@ var metaCmd = &cobra.Command{
 		}
 
 		if err := printMetadataAttr(metaint, confpath); err != nil {
-			die("", err)
+			die(errors.Wrap(err, 0))
 		}
 		return nil
 	},
