@@ -280,7 +280,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:87248088d2335ebdd1eef89ddf2ce7fffb18026711c22d8c283b639d994fb5c0"
+  digest = "1:e27895931b46f22f3ff0ae360cc1dca66534a7e9f724d7ba4066698e42aeaab8"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
@@ -288,7 +288,7 @@
     "safeprime",
   ]
   pruneopts = "UT"
-  revision = "219a1cfc9ffab69238e339c50bb7edb007285fb2"
+  revision = "0a09f0a5a19772078f79da2e48b035e52cd8f15c"
 
 [[projects]]
   branch = "master"
