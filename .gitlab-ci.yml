@@ -36,7 +36,7 @@ binaries:
         export GOOS=${PLATFORM%/*};
         export GOARCH=${PLATFORM#*/};
         export CGO_ENABLED=0;
-        export GOARM=7;
+        export GOARM=6;
 
         OUTPUT_NAME="irma-${CI_COMMIT_REF_SLUG}-${GOOS}-${GOARCH}";
         if [[ "$GOOS" == "windows" ]]; then
