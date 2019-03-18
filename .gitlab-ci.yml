@@ -1,4 +1,4 @@
-image: privacybydesign/golang-dep:latest
+image: privacybydesign/golang_dep:latest
 
 cache:
   key: $CI_COMMIT_REF_SLUG
