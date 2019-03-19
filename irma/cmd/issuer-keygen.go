@@ -88,6 +88,7 @@ IRMA applications.`,
 		}
 
 		// Now generate the key pair
+		fmt.Println("Generating keys (may take several minutes)")
 		sysParams, ok := gabi.DefaultSystemParameters[keylength]
 		if !ok {
 			return errors.Errorf("Unsupported key length, should be one of %v", gabi.DefaultKeyLengths)
