@@ -58,7 +58,7 @@
   source = "github.com/sietseringers/pflag"
   branch = "headers-in-flag-usage"
 
-[[override]]
+[[constraint]]
   branch = "master"
   name = "github.com/timshannon/bolthold"
 

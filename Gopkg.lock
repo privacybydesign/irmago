@@ -10,12 +10,12 @@
   revision = "c31a76b641f8b94ffccad99eeeabf795e53b1e4a"
 
 [[projects]]
-  branch = "master"
-  digest = "1:670b0da164df747fbf79fb31921355d9e5c81a54bfe4c3ea7b2d4ec734f088c3"
+  digest = "1:9704a9f6e994a512656b73683c7f5c678168ef47e813b724302fcf5e5403f2d4"
   name = "github.com/bwesterb/go-atum"
   packages = ["."]
   pruneopts = "UT"
-  revision = "b79a6b33c09b7b8d49d2454bbde06162fdc0cd70"
+  revision = "9965266e59eee42f26153a8be40c1463c79ed17b"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
@@ -48,14 +48,6 @@
   pruneopts = "UT"
   revision = "5c37fe3735342a2e0d01c87a907579987c8936cc"
   version = "v1.0.0"
-
-[[projects]]
-  digest = "1:c28625428387b63dd7154eb857f51e700465cfbf7c06f619e71f2da33cefe47e"
-  name = "github.com/coreos/bbolt"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "583e8937c61f1af6513608ccc75c97b6abdf4ff9"
-  version = "v1.3.0"
 
 [[projects]]
   digest = "1:a2c1d0e43bd3baaa071d1b9ed72c27d78169b2b269f71c105ac4ba34b1be4a39"
@@ -380,11 +372,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f1bcadef588162241008b4806b1f2a9c92153cf442fd3d9ad3bc879518a5a824"
+  digest = "1:76af7360558e8354ace5de92cf5888dfdfdc960638a4604dc8eccc4db01839a8"
   name = "github.com/timshannon/bolthold"
   packages = ["."]
   pruneopts = "UT"
-  revision = "525de816b1a2c1cfbb67b5e9936a6b76e0c7f3e6"
+  revision = "eed35b7556710c9108bd536193dae1ecb91f16fa"
 
 [[projects]]
   digest = "1:39a425f98fb19427061a693fe6bf0683c9bddec4b25b17067e34fdb465e39cb9"
@@ -393,6 +385,14 @@
   pruneopts = "UT"
   revision = "bb2702d423886830dee131692131d35648c382e2"
   version = "v0.5.2"
+
+[[projects]]
+  digest = "1:5f7414cf41466d4b4dd7ec52b2cd3e481e08cfd11e7e24fef730c0e483e88bb1"
+  name = "go.etcd.io/bbolt"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "63597a96ec0ad9e6d43c3fc81e809909e0237461"
+  version = "v1.3.2"
 
 [[projects]]
   branch = "master"
@@ -484,6 +484,7 @@
     "github.com/spf13/pflag",
     "github.com/spf13/viper",
     "github.com/stretchr/testify/require",
+    "github.com/timshannon/bolthold",
     "github.com/x-cray/logrus-prefixed-formatter",
     "gopkg.in/antage/eventsource.v1",
   ]
