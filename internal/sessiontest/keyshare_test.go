@@ -11,12 +11,12 @@ import (
 )
 
 func TestManualKeyShareSession(t *testing.T) {
-	request := "{\"nonce\": 0, \"context\": 0, \"type\": \"signing\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"test.test.mijnirma.email\"]}]}"
+	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
 
 	_, status := manualSessionHelper(t, nil, ms, request, request, false)
 	require.Equal(t, irma.ProofStatusValid, status)
-	_, status = manualSessionHelper(t, nil, ms, request, "", false)
+	_, status = manualSessionHelper(t, nil, ms, request, nil, false)
 	require.Equal(t, irma.ProofStatusValid, status)
 }
 
@@ -44,20 +44,10 @@ func TestKeyshareSessions(t *testing.T) {
 	sessionHelper(t, issuanceRequest, "issue", client)
 
 	disclosureRequest := getDisclosureRequest(id)
-	disclosureRequest.Content = append(disclosureRequest.Content,
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
+	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
 	sessionHelper(t, disclosureRequest, "verification", client)
 
 	sigRequest := getSigningRequest(id)
-	sigRequest.Content = append(sigRequest.Content,
-		&irma.AttributeDisjunction{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		},
-	)
+	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
 	sessionHelper(t, sigRequest, "signature", client)
 }

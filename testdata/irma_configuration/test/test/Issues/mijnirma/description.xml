@@ -14,6 +14,7 @@
 		<en>Your MyIRMA login credential</en>
 		<nl>Uw MijnIRMA login credential</nl>
 	</Description>
+	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>true</ShouldBeSingleton>
 
 	<Attributes>

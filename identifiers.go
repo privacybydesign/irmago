@@ -172,6 +172,24 @@ func (id *AttributeTypeIdentifier) UnmarshalText(text []byte) error {
 	return nil
 }
 
+func (set *IrmaIdentifierSet) join(other *IrmaIdentifierSet) {
+	for scheme := range other.SchemeManagers {
+		set.SchemeManagers[scheme] = struct{}{}
+	}
+	for issuer := range other.Issuers {
+		set.Issuers[issuer] = struct{}{}
+	}
+	for ct := range other.CredentialTypes {
+		set.CredentialTypes[ct] = struct{}{}
+	}
+	for issuer := range other.PublicKeys {
+		if len(set.PublicKeys[issuer]) == 0 {
+			set.PublicKeys[issuer] = make([]int, 0, len(other.PublicKeys[issuer]))
+		}
+		set.PublicKeys[issuer] = append(set.PublicKeys[issuer], other.PublicKeys[issuer]...)
+	}
+}
+
 func (set *IrmaIdentifierSet) Distributed(conf *Configuration) bool {
 	for id := range set.SchemeManagers {
 		if conf.SchemeManagers[id].Distributed() {

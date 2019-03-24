@@ -49,72 +49,47 @@ func parseStorage(t *testing.T) *irmaclient.Client {
 }
 
 func getDisclosureRequest(id irma.AttributeTypeIdentifier) *irma.DisclosureRequest {
-	return &irma.DisclosureRequest{
-		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
-		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{id},
-		}}),
-	}
+	return irma.NewDisclosureRequest(id)
 }
 
 func getSigningRequest(id irma.AttributeTypeIdentifier) *irma.SignatureRequest {
-	return &irma.SignatureRequest{
-		Message: "test",
-		DisclosureRequest: irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{Type: irma.ActionSigning},
-			Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
-				Label:      "foo",
-				Attributes: []irma.AttributeTypeIdentifier{id},
-			}}),
-		},
-	}
+	return irma.NewSignatureRequest("test", id)
 }
 
 func getIssuanceRequest(defaultValidity bool) *irma.IssuanceRequest {
 	temp := irma.Timestamp(irma.FloorToEpochBoundary(time.Now().AddDate(1, 0, 0)))
 	var expiry *irma.Timestamp
-
 	if !defaultValidity {
 		expiry = &temp
 	}
-
-	return &irma.IssuanceRequest{
-		BaseRequest: irma.BaseRequest{Type: irma.ActionIssuing},
-		Credentials: []*irma.CredentialRequest{
-			{
-				Validity:         expiry,
-				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
-				Attributes: map[string]string{
-					"university":        "Radboud",
-					"studentCardNumber": "31415927",
-					"studentID":         "s1234567",
-					"level":             "42",
-				},
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			Validity:         expiry,
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Radboud",
+				"studentCardNumber": "31415927",
+				"studentID":         "s1234567",
+				"level":             "42",
 			},
 		},
-	}
+	})
 }
 
 func getNameIssuanceRequest() *irma.IssuanceRequest {
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
-
-	req := &irma.IssuanceRequest{
-		BaseRequest: irma.BaseRequest{Type: irma.ActionIssuing},
-		Credentials: []*irma.CredentialRequest{
-			{
-				Validity:         &expiry,
-				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
-				Attributes: map[string]string{
-					"firstnames": "Johan Pieter",
-					"firstname":  "Johan",
-					"familyname": "Stuivezand",
-				},
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			Validity:         &expiry,
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Johan Pieter",
+				"firstname":  "Johan",
+				"familyname": "Stuivezand",
 			},
 		},
-	}
+	})
 
-	return req
 }
 
 func getSpecialIssuanceRequest(defaultValidity bool, attribute string) *irma.IssuanceRequest {
@@ -125,9 +100,7 @@ func getSpecialIssuanceRequest(defaultValidity bool, attribute string) *irma.Iss
 
 func getCombinedIssuanceRequest(id irma.AttributeTypeIdentifier) *irma.IssuanceRequest {
 	request := getIssuanceRequest(false)
-	request.Disclose = irma.AttributeDisjunctionList{
-		&irma.AttributeDisjunction{Label: "foo", Attributes: []irma.AttributeTypeIdentifier{id}},
-	}
+	request.AddSingle(id, nil, nil)
 	return request
 }
 

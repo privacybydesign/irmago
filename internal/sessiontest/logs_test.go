@@ -65,8 +65,7 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.NotEmpty(t, attrs)
-	require.Equal(t, attrid, attrs[0].Identifier)
-	require.Equal(t, "s1234567", attrs[0].Value["en"])
+	require.Equal(t, attrid, attrs[0][0].Identifier)
 
 	test.ClearTestStorage(t)
 }

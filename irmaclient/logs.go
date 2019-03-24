@@ -62,9 +62,9 @@ func (entry *LogEntry) setSessionRequest() error {
 }
 
 // GetDisclosedCredentials gets the list of disclosed credentials for a log entry
-func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([]*irma.DisclosedAttribute, error) {
+func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([][]*irma.DisclosedAttribute, error) {
 	if entry.Type == actionRemoval {
-		return []*irma.DisclosedAttribute{}, nil
+		return [][]*irma.DisclosedAttribute{}, nil
 	}
 
 	request, err := entry.SessionRequest()
@@ -72,13 +72,13 @@ func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([]*irm
 		return nil, err
 	}
 	var disclosure *irma.Disclosure
-	disjunctions := request.ToDisclose()
+	disjunctions := request.Disclosure()
 	if entry.Type == irma.ActionIssuing {
 		disclosure = entry.IssueCommitment.Disclosure()
 	} else {
 		disclosure = entry.Disclosure
 	}
-	_, attrs, err := disclosure.DisclosedAttributes(conf, disjunctions)
+	_, attrs, err := disclosure.DisclosedAttributes(conf, disjunctions.Disclose)
 	return attrs, err
 }
 
@@ -107,7 +107,7 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 	return &irma.SignedMessage{
 		Signature: entry.Disclosure.Proofs,
 		Nonce:     sigrequest.Nonce,
-		Context:   sigrequest.Context,
+		Context:   sigrequest.GetContext(),
 		Message:   string(entry.SignedMessage),
 		Timestamp: entry.Timestamp,
 	}, nil

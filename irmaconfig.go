@@ -655,11 +655,16 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 	return true, nil
 }
 
-// Contains checks if the configuration contains the specified credential type.
-func (conf *Configuration) Contains(cred CredentialTypeIdentifier) bool {
+// ContainsCredentialType checks if the configuration contains the specified credential type.
+func (conf *Configuration) ContainsCredentialType(cred CredentialTypeIdentifier) bool {
 	return conf.SchemeManagers[cred.IssuerIdentifier().SchemeManagerIdentifier()] != nil &&
 		conf.Issuers[cred.IssuerIdentifier()] != nil &&
 		conf.CredentialTypes[cred] != nil
+}
+
+func (conf *Configuration) ContainsAttributeType(attr AttributeTypeIdentifier) bool {
+	_, contains := conf.AttributeTypes[attr]
+	return contains && conf.ContainsCredentialType(attr.CredentialTypeIdentifier())
 }
 
 func (conf *Configuration) isUpToDate(scheme SchemeManagerIdentifier) (bool, error) {
@@ -859,7 +864,6 @@ func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIde
 }
 
 func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers map[string]struct{}) error {
-	var disjunctions AttributeDisjunctionList
 	var typ *CredentialType
 	var contains bool
 
@@ -891,25 +895,19 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers
 				managers[credreq.CredentialTypeID.Root()] = struct{}{}
 			}
 		}
-		disjunctions = s.Disclose
-	case *DisclosureRequest:
-		disjunctions = s.Content
-	case *SignatureRequest:
-		disjunctions = s.Content
 	}
 
-	for _, disjunction := range disjunctions {
-		for _, attrid := range disjunction.Attributes {
-			credid := attrid.CredentialTypeIdentifier()
-			if typ, contains = conf.CredentialTypes[credid]; !contains {
-				managers[credid.Root()] = struct{}{}
-				continue
-			}
-			if !attrid.IsCredential() && !typ.ContainsAttribute(attrid) {
-				managers[credid.Root()] = struct{}{}
-			}
+	_ = session.Disclosure().Disclose.Iterate(func(attr *AttributeRequest) error {
+		credid := attr.Type.CredentialTypeIdentifier()
+		if typ, contains = conf.CredentialTypes[credid]; !contains {
+			managers[credid.Root()] = struct{}{}
+			return nil
 		}
-	}
+		if !attr.Type.IsCredential() && !typ.ContainsAttribute(attr.Type) {
+			managers[credid.Root()] = struct{}{}
+		}
+		return nil
+	})
 
 	return nil
 }

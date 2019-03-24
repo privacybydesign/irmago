@@ -266,9 +266,9 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	disjunctions := request.ToDisclose()
-	if len(disjunctions) > 0 {
-		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), disjunctions)
+	condiscon := request.Disclosure().Disclose
+	if len(condiscon) > 0 {
+		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), condiscon)
 		if !allowed {
 			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
 				Warn("Requestor not authorized to verify attribute; full request: ", server.ToJson(request))
@@ -378,11 +378,6 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		claims["subject"] = "verification_result"
 	case irma.ActionSigning:
 		claims["subject"] = "abs_result"
-	default:
-		if res == nil {
-			server.WriteError(w, server.ErrorInvalidRequest, "")
-			return
-		}
 	}
 	claims["iat"] = time.Now().Unix()
 	if s.conf.JwtIssuer != "" {
@@ -396,8 +391,10 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 
 	// Disclosed credentials and possibly signature
 	m := make(map[irma.AttributeTypeIdentifier]string, len(res.Disclosed))
-	for _, attr := range res.Disclosed {
-		m[attr.Identifier] = attr.Value[""]
+	for _, set := range res.Disclosed {
+		for _, attr := range set {
+			m[attr.Identifier] = attr.Value[""]
+		}
 	}
 	claims["attributes"] = m
 	if res.Signature != nil {

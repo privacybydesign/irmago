@@ -117,77 +117,82 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
 	return false
 }
 
-// DisclosedAttributes returns a slice containing the disclosed attributes that are present in the proof list.
-// If a non-empty and non-nil AttributeDisjunctionList is included, then the first attributes in the returned slice match
-// with the disjunction list in the disjunction list. If any of the given disjunctions is not matched by one
-// of the disclosed attributes, then the corresponding item in the returned slice has status AttributeProofStatusMissing.
-// The first return parameter of this function indicates whether or not all disjunctions (if present) are satisfied.
-func (d *Disclosure) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
-	if d.Indices == nil || len(disjunctions) == 0 {
-		return ProofList(d.Proofs).DisclosedAttributes(configuration, disjunctions)
+func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, conf *Configuration) (*DisclosedAttribute, *string, error) {
+	if len(pl) < index.CredentialIndex {
+		return nil, nil, errors.New("Credential index out of range")
+	}
+	proofd, ok := pl[index.CredentialIndex].(*gabi.ProofD)
+	if !ok {
+		// If with the index the user told us to look for the required attribute at this specific location,
+		// and the proof here is not a disclosure proof, then reject
+		return nil, nil, errors.New("ProofList contained proof of invalid type")
 	}
 
-	list := make([]*DisclosedAttribute, len(disjunctions))
-	usedAttrs := map[int]map[int]struct{}{} // keep track of attributes that satisfy the disjunctions
+	metadata := MetadataFromInt(proofd.ADisclosed[1], conf) // index 1 is metadata attribute
+	return parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
+}
 
-	// For each of the disjunctions, lookup the attribute that the user sent to satisfy this disjunction,
-	// using the indices specified by the user in d.Indices. Then see if the attribute satisfies the disjunction.
-	for i, disjunction := range disjunctions {
-		index := d.Indices[i][0]
-		proofd, ok := d.Proofs[index.CredentialIndex].(*gabi.ProofD)
-		if !ok {
-			// If with the index the user told us to look for the required attribute at this specific location,
-			// and the proof here is not a disclosure proof, then reject
-			return false, nil, errors.New("ProofList contained proof of invalid type")
-		}
-
-		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
-		attr, attrval, err := parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
-		if err != nil {
-			return false, nil, err
-		}
-
-		if disjunction.attemptSatisfy(attr.Identifier, attrval) {
-			list[i] = attr
-			if disjunction.satisfied() {
-				list[i].Status = AttributeProofStatusPresent
-			} else {
-				list[i].Status = AttributeProofStatusInvalidValue
-			}
-			if usedAttrs[index.CredentialIndex] == nil {
-				usedAttrs[index.CredentialIndex] = map[int]struct{}{}
-			}
-			usedAttrs[index.CredentialIndex][index.AttributeIndex] = struct{}{}
-		} else {
-			list[i] = &DisclosedAttribute{Status: AttributeProofStatusMissing}
-		}
-	}
-
-	// Loop over any extra attributes in d.Proofs not requested in any of the disjunctions
+func (d *Disclosure) extraIndices(condiscon AttributeConDisCon) []*DisclosedAttributeIndex {
+	disclosed := make([]map[int]struct{}, len(d.Proofs))
 	for i, proof := range d.Proofs {
 		proofd, ok := proof.(*gabi.ProofD)
 		if !ok {
 			continue
 		}
-		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
-		for attrIndex, attrInt := range proofd.ADisclosed {
-			if attrIndex == 0 || attrIndex == 1 { // Never add secret key or metadata (i.e. no-attribute disclosure) as extra
-				continue // Note that the secret should never be disclosed by the client, but we skip it to be sure
-			}
-			if _, used := usedAttrs[i][attrIndex]; used {
+		disclosed[i] = map[int]struct{}{}
+		for j := range proofd.ADisclosed {
+			if j <= 1 {
 				continue
 			}
-
-			attr, _, err := parseAttribute(attrIndex, metadata, attrInt)
-			if err != nil {
-				return false, nil, err
-			}
-			attr.Status = AttributeProofStatusExtra
-			list = append(list, attr)
+			disclosed[i][j] = struct{}{}
 		}
 	}
 
-	return len(disjunctions) == 0 || disjunctions.satisfied(), list, nil
+	for i, set := range d.Indices {
+		if len(condiscon) <= i {
+			continue
+		}
+		for _, index := range set {
+			delete(disclosed[index.CredentialIndex], index.AttributeIndex)
+		}
+	}
+
+	var extra []*DisclosedAttributeIndex
+	for i, attrs := range disclosed {
+		for j := range attrs {
+			extra = append(extra, &DisclosedAttributeIndex{CredentialIndex: i, AttributeIndex: j})
+		}
+	}
+
+	return extra
+}
+
+// DisclosedAttributes returns a slice containing for each item in the conjunction the disclosed
+// attributes that are present in the proof list. If a non-empty and non-nil AttributeDisjunctionList
+// is included, then the first attributes in the returned slice match with the disjunction list in
+// the disjunction list. The first return parameter of this function indicates whether or not all
+// disjunctions (if present) are satisfied.
+func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon AttributeConDisCon) (bool, [][]*DisclosedAttribute, error) {
+	complete, list, err := condiscon.Satisfy(d, configuration)
+	if err != nil {
+		return false, nil, err
+	}
+
+	var extra []*DisclosedAttribute
+	indices := d.extraIndices(condiscon)
+	for _, index := range indices {
+		attr, _, err := extractAttribute(d.Proofs, index, configuration)
+		if err != nil {
+			return false, nil, err
+		}
+		attr.Status = AttributeProofStatusExtra
+		extra = append(extra, attr)
+	}
+	if len(extra) > 0 {
+		list = append(list, extra)
+	}
+
+	return complete, list, nil
 }
 
 func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*DisclosedAttribute, *string, error) {
@@ -209,80 +214,17 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 		Identifier: attrid,
 		RawValue:   attrval,
 		Value:      NewTranslatedString(attrval),
+		Status:     AttributeProofStatusPresent,
 	}, attrval, nil
-}
-
-func (pl ProofList) DisclosedAttributes(configuration *Configuration, disjunctions AttributeDisjunctionList) (bool, []*DisclosedAttribute, error) {
-	var list []*DisclosedAttribute
-	list = make([]*DisclosedAttribute, len(disjunctions))
-	for i := range list {
-		// Populate list with AttributeProofStatusMissing; if an attribute that satisfies a disjunction
-		// is found below, the corresponding entry in the list is overwritten
-		list[i] = &DisclosedAttribute{
-			Status: AttributeProofStatusMissing,
-		}
-	}
-
-	// Temp slice for attributes that have not yet been matched to one of the disjunctions of the request
-	// When we are done matching disclosed attributes against the request, filling the first few slots of list,
-	// we append these to list just before returning
-	extraAttrs := map[AttributeTypeIdentifier]*DisclosedAttribute{}
-
-	for _, proof := range pl {
-		proofd, ok := proof.(*gabi.ProofD)
-		if !ok {
-			continue
-		}
-		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
-
-		for attrIndex, attrInt := range proofd.ADisclosed {
-			if attrIndex == 0 {
-				continue // Should never be disclosed, but skip it to be sure
-			}
-
-			attr, attrval, err := parseAttribute(attrIndex, metadata, attrInt)
-			if err != nil {
-				return false, nil, err
-			}
-
-			if attrIndex > 1 { // Never add metadata (i.e. no-attribute disclosure) as extra
-				extraAttrs[attr.Identifier] = attr
-			}
-			if len(disjunctions) == 0 {
-				continue
-			}
-
-			// See if the current attribute satisfies one of the disjunctions, if so, delete it from extraAttrs
-			for i, disjunction := range disjunctions {
-				if disjunction.attemptSatisfy(attr.Identifier, attrval) {
-					if disjunction.satisfied() {
-						attr.Status = AttributeProofStatusPresent
-					} else {
-						attr.Status = AttributeProofStatusInvalidValue
-					}
-					list[i] = attr
-					delete(extraAttrs, attr.Identifier)
-				}
-			}
-		}
-	}
-
-	// Any attributes still in here do not satisfy any of the specified disjunctions; append them now
-	for _, attr := range extraAttrs {
-		attr.Status = AttributeProofStatusExtra
-		list = append(list, attr)
-	}
-
-	return len(disjunctions) == 0 || disjunctions.satisfied(), list, nil
 }
 
 func (d *Disclosure) VerifyAgainstDisjunctions(
 	configuration *Configuration,
-	required AttributeDisjunctionList,
+	required AttributeConDisCon,
 	context, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
 	issig bool,
-) ([]*DisclosedAttribute, ProofStatus, error) {
+) ([][]*DisclosedAttribute, ProofStatus, error) {
 	// Cryptographically verify the IRMA disclosure proofs in the signature
 	valid, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, issig)
 	if !valid || err != nil {
@@ -303,8 +245,8 @@ func (d *Disclosure) VerifyAgainstDisjunctions(
 	return list, ProofStatusValid, nil
 }
 
-func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest) ([]*DisclosedAttribute, ProofStatus, error) {
-	list, status, err := d.VerifyAgainstDisjunctions(configuration, request.Content, request.Context, request.Nonce, nil, false)
+func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
+	list, status, err := d.VerifyAgainstDisjunctions(configuration, request.Disclose, request.GetContext(), request.GetNonce(), nil, false)
 	if err != nil {
 		return list, status, err
 	}
@@ -326,7 +268,7 @@ func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureReq
 //
 // The signature request is optional; if it is nil then the attribute-based signature is still verified, and all
 // containing attributes returned in the result.
-func (sm *SignedMessage) Verify(configuration *Configuration, request *SignatureRequest) ([]*DisclosedAttribute, ProofStatus, error) {
+func (sm *SignedMessage) Verify(configuration *Configuration, request *SignatureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
 	var message string
 
 	// First check if this signature matches the request
@@ -350,9 +292,9 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	}
 
 	// Now, cryptographically verify the IRMA disclosure proofs in the signature
-	var required AttributeDisjunctionList
+	var required AttributeConDisCon
 	if request != nil {
-		required = request.Content
+		required = request.Disclose
 	}
 	result, status, err := sm.Disclosure().VerifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), nil, true)
 	if status != ProofStatusValid || err != nil {

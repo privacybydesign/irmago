@@ -147,51 +147,6 @@ func TestParseIrmaConfiguration(t *testing.T) {
 	//	"irma-demo.MijnOverheid.root had improper hash")
 }
 
-func TestAttributeDisjunctionMarshaling(t *testing.T) {
-	conf := parseConfiguration(t)
-	disjunction := AttributeDisjunction{}
-
-	var _ json.Unmarshaler = &disjunction
-	var _ json.Marshaler = &disjunction
-
-	id := NewAttributeTypeIdentifier("MijnOverheid.ageLower.over18")
-
-	attrsjson := `
-	{
-		"label": "Over 18",
-		"attributes": {
-			"MijnOverheid.ageLower.over18": "yes",
-			"Thalia.age.over18": "Yes"
-		}
-	}`
-	require.NoError(t, json.Unmarshal([]byte(attrsjson), &disjunction))
-	require.True(t, disjunction.HasValues())
-	require.Contains(t, disjunction.Attributes, id)
-	require.Contains(t, disjunction.Values, id)
-	require.Equal(t, *disjunction.Values[id], "yes")
-
-	disjunction = AttributeDisjunction{}
-	attrsjson = `
-	{
-		"label": "Over 18",
-		"attributes": [
-			"MijnOverheid.ageLower.over18",
-			"Thalia.age.over18"
-		]
-	}`
-	require.NoError(t, json.Unmarshal([]byte(attrsjson), &disjunction))
-	require.False(t, disjunction.HasValues())
-	require.Contains(t, disjunction.Attributes, id)
-
-	require.True(t, disjunction.MatchesConfig(conf))
-
-	require.False(t, disjunction.satisfied())
-	index := 0
-	disjunction.selected = &disjunction.Attributes[0]
-	disjunction.index = &index
-	require.True(t, disjunction.satisfied())
-}
-
 func TestMetadataAttribute(t *testing.T) {
 	metadata := NewMetadataAttribute(0x02)
 	if metadata.Version() != 0x02 {
@@ -239,72 +194,19 @@ func TestTimestamp(t *testing.T) {
 	require.Equal(t, time.Time(*timestruct.Time).Unix(), int64(1500000000))
 }
 
-func TestServiceProvider(t *testing.T) {
-	var spjwt ServiceProviderJwt
-
-	var spjson = `{
-		"sprequest": {
-			"validity": 60,
-			"timeout": 60,
-			"request": {
-				"content": [
-					{
-						"label": "ID",
-						"attributes": ["irma-demo.RU.studentCard.studentID"]
-					}
-				]
-			}
-		}
-	}`
-
-	require.NoError(t, json.Unmarshal([]byte(spjson), &spjwt))
-	require.NotEmpty(t, spjwt.Request.Request.Content)
-	require.NotEmpty(t, spjwt.Request.Request.Content[0])
-	require.NotEmpty(t, spjwt.Request.Request.Content[0].Attributes)
-	require.Equal(t, spjwt.Request.Request.Content[0].Attributes[0].Name(), "studentID")
-
-	require.NotNil(t, spjwt.Request.Request.Content.Find(NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")))
-}
-
 func TestVerifyValidSig(t *testing.T) {
 	conf := parseConfiguration(t)
 
 	irmaSignedMessageJson := "{\"signature\":[{\"c\":\"pliyrSE7wXcDcKXuBtZW5bnucvBSXpILIRvnNBgx7hQ=\",\"A\":\"D/8wLPq9860bpXZ5c+VYyoPJ+Z8CWDZNQ0jXvst8qnPRdivy/GQIfJHjVnpOPlHbguphb/7JVbfcV3bZeybA3bCF/4UesjRUZlMf/iJ/QgKHbt41ogN1PPT5z7qBJpkxuNTIkHxaUPoDvhouHmuC9pNj4afRUyLJerxKPkpdBw0=\",\"e_response\":\"YOrKTrMSs4/QOUtPkT0YaYNEmW7Cs+cu624zr2xrHodyL88ub6yaXB7MGHAcQ1+iXsGN8jkfxB/0\",\"v_response\":\"AYSa1p8ISs//MsocJjODwWuPB/z6+iKHHi+sTToRs0eJ2X1gwmWoA5QB0aHjRkWye3/+2rtosfUzI77FlPQVnrbMERwcuYM/fx3fpNCpjm2qcs3AOJRcSRxcNFMe1+4ECsmJhByMDutS1KXAAKiNvnhEXx9f0JrQGwQFtpSFPh8dOuvEKUZHAUALr4FcHCa2HL9nDRiqy2KAOxE0nAANAcMaBo/ed+WZeHtv4CTB7egyYs27cklVbwlBzmRrbjNZk57ICd0jVd6SZ2Ir93r/aPejkyhQ03xh9RVVyhOn4bkbjKIBzEybXTJAXgNmvd6F8Ds00srBZVWlo7Z23JZ7\",\"a_responses\":{\"0\":\"QHTznWWrECRNNmUNcy0yGu2L6qsZU6qkvaII8QB8QjbUxpwHzSeJWkzrn/Kk1KIowfoqB1DKGaFLATvuBl+bCoJjea+2VfK9Ns8=\",\"2\":\"H57Y9CTXJ5MAVo+aFfNSbmRMFQpraBIZVOXiRxCD/P7Aw4fW8r9P5l9pO9DTUeExaqFzsLyF5i5EridVWxlP2Wv0zbH8ku9Sg9w=\",\"3\":\"joggAmOhqM4QsKdoLHAfaslzXqJswS7MwZ/5+AKYdkMaHQ45biMdZU/6R+B7bjvsumg2f6KyTyg0G+BI+wVdJOjh3kGezdANB7Y=\",\"5\":\"5YP4A82WWeqc33e5Zg/Q8lqQQ1amLE8mOxMwCXb3N4J0UJRfV9lUFvbH1Q3Yb3YHAZpzGvhN/pBacwqktMkP4L71PnMldqA+nqA=\"},\"a_disclosed\":{\"1\":\"AgAJuwB+AALWy2qU9p3l52l9LU1rVT4M\",\"4\":\"NDU2\"}}],\"nonce\":\"Kg==\",\"context\":\"BTk=\",\"message\":\"I owe you everything\",\"timestamp\":{\"Time\":1527196489,\"ServerUrl\":\"https://metrics.privacybydesign.foundation/atum\",\"Sig\":{\"Alg\":\"ed25519\",\"Data\":\"ZV1qkvDrFK14QrUSC66xTNr9HitCOV4vwfGX0bh3iwY7qyHCi9rIOE97KY8CZifU5oLgVhFWy5E+ALR+gEpACw==\",\"PublicKey\":\"e/nMAJF7nwrvNZRpuJljNpRx+CsT7caaXyn9OX683R8=\"}}}"
 	irmaSignedMessage := &SignedMessage{}
-	json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
-
-	request := "{\"nonce\": \"Kg==\", \"context\": \"BTk=\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	sigRequestJSON := []byte(request)
-	sigRequest := &SignatureRequest{}
-	json.Unmarshal(sigRequestJSON, sigRequest)
-	// Test marshalling of 'string' fields:
-	require.Equal(t, sigRequest.Nonce, big.NewInt(42))
-	require.Equal(t, sigRequest.Context, big.NewInt(1337))
-
-	// Test if we can verify it with the original request
-	var err error
-	attrs, status, err := irmaSignedMessage.Verify(conf, sigRequest)
+	err := json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
 	require.NoError(t, err)
-	require.Equal(t, status, ProofStatusValid)
+
+	attrs, status, err := irmaSignedMessage.Verify(conf, nil)
+	require.NoError(t, err)
+	require.Equal(t, ProofStatusValid, status)
 	require.Len(t, attrs, 1)
-	require.Equal(t, attrs[0].Status, AttributeProofStatusPresent)
-	require.Equal(t, attrs[0].Value["en"], "456")
-
-	// Test verify against unmatched request (i.e. different nonce, context or message)
-	unmatched := "{\"nonce\": \"Kg==\", \"context\": \"BTk=\", \"message\":\"I owe you NOTHING\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	unmatchedSigRequestJSON := []byte(unmatched)
-	unmatchedSigRequest := &SignatureRequest{}
-	json.Unmarshal(unmatchedSigRequestJSON, unmatchedSigRequest)
-	_, status, err = irmaSignedMessage.Verify(conf, unmatchedSigRequest)
-	require.NoError(t, err)
-	require.Equal(t, status, ProofStatusUnmatchedRequest)
-
-	// Test if we can also verify it without using the original request
-	attrs, status, err = irmaSignedMessage.Verify(conf, nil)
-	require.NoError(t, err)
-	require.Equal(t, status, ProofStatusValid)
-	require.Len(t, attrs, 1)
-	require.Equal(t, attrs[0].Value["en"], "456")
+	require.Equal(t, "456", attrs[0][0].Value["en"])
 }
 
 func TestVerifyInValidSig(t *testing.T) {
@@ -313,19 +215,10 @@ func TestVerifyInValidSig(t *testing.T) {
 	// Same json as valid case, but has modified c
 	irmaSignedMessageJson := "{\"signature\":[{\"c\":\"blablaE7wXcDcKXuBtZW5bnucvBSXpILIRvnNBgx7hQ=\",\"A\":\"D/8wLPq9860bpXZ5c+VYyoPJ+Z8CWDZNQ0jXvst8qnPRdivy/GQIfJHjVnpOPlHbguphb/7JVbfcV3bZeybA3bCF/4UesjRUZlMf/iJ/QgKHbt41ogN1PPT5z7qBJpkxuNTIkHxaUPoDvhouHmuC9pNj4afRUyLJerxKPkpdBw0=\",\"e_response\":\"YOrKTrMSs4/QOUtPkT0YaYNEmW7Cs+cu624zr2xrHodyL88ub6yaXB7MGHAcQ1+iXsGN8jkfxB/0\",\"v_response\":\"AYSa1p8ISs//MsocJjODwWuPB/z6+iKHHi+sTToRs0eJ2X1gwmWoA5QB0aHjRkWye3/+2rtosfUzI77FlPQVnrbMERwcuYM/fx3fpNCpjm2qcs3AOJRcSRxcNFMe1+4ECsmJhByMDutS1KXAAKiNvnhEXx9f0JrQGwQFtpSFPh8dOuvEKUZHAUALr4FcHCa2HL9nDRiqy2KAOxE0nAANAcMaBo/ed+WZeHtv4CTB7egyYs27cklVbwlBzmRrbjNZk57ICd0jVd6SZ2Ir93r/aPejkyhQ03xh9RVVyhOn4bkbjKIBzEybXTJAXgNmvd6F8Ds00srBZVWlo7Z23JZ7\",\"a_responses\":{\"0\":\"QHTznWWrECRNNmUNcy0yGu2L6qsZU6qkvaII8QB8QjbUxpwHzSeJWkzrn/Kk1KIowfoqB1DKGaFLATvuBl+bCoJjea+2VfK9Ns8=\",\"2\":\"H57Y9CTXJ5MAVo+aFfNSbmRMFQpraBIZVOXiRxCD/P7Aw4fW8r9P5l9pO9DTUeExaqFzsLyF5i5EridVWxlP2Wv0zbH8ku9Sg9w=\",\"3\":\"joggAmOhqM4QsKdoLHAfaslzXqJswS7MwZ/5+AKYdkMaHQ45biMdZU/6R+B7bjvsumg2f6KyTyg0G+BI+wVdJOjh3kGezdANB7Y=\",\"5\":\"5YP4A82WWeqc33e5Zg/Q8lqQQ1amLE8mOxMwCXb3N4J0UJRfV9lUFvbH1Q3Yb3YHAZpzGvhN/pBacwqktMkP4L71PnMldqA+nqA=\"},\"a_disclosed\":{\"1\":\"AgAJuwB+AALWy2qU9p3l52l9LU1rVT4M\",\"4\":\"NDU2\"}}],\"nonce\":\"Kg==\",\"context\":\"BTk=\",\"message\":\"I owe you everything\",\"timestamp\":{\"Time\":1527196489,\"ServerUrl\":\"https://metrics.privacybydesign.foundation/atum\",\"Sig\":{\"Alg\":\"ed25519\",\"Data\":\"ZV1qkvDrFK14QrUSC66xTNr9HitCOV4vwfGX0bh3iwY7qyHCi9rIOE97KY8CZifU5oLgVhFWy5E+ALR+gEpACw==\",\"PublicKey\":\"e/nMAJF7nwrvNZRpuJljNpRx+CsT7caaXyn9OX683R8=\"}}}"
 	irmaSignedMessage := &SignedMessage{}
-	json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
-
-	request := "{\"nonce\": \"Kg==\", \"context\": \"BTk=\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	sigRequestJSON := []byte(request)
-	sigRequest := &SignatureRequest{}
-	json.Unmarshal(sigRequestJSON, sigRequest)
-
-	var err error
-	_, status, err := irmaSignedMessage.Verify(conf, sigRequest)
+	err := json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
 	require.NoError(t, err)
-	require.Equal(t, status, ProofStatusInvalid)
 
-	_, status, err = irmaSignedMessage.Verify(conf, nil)
+	_, status, err := irmaSignedMessage.Verify(conf, nil)
 	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 }
@@ -336,20 +229,9 @@ func TestVerifyInValidNonce(t *testing.T) {
 	// Same json as valid case, but with modified nonce
 	irmaSignedMessageJson := "{\"signature\":[{\"c\":\"pliyrSE7wXcDcKXuBtZW5bnucvBSXpILIRvnNBgx7hQ=\",\"A\":\"D/8wLPq9860bpXZ5c+VYyoPJ+Z8CWDZNQ0jXvst8qnPRdivy/GQIfJHjVnpOPlHbguphb/7JVbfcV3bZeybA3bCF/4UesjRUZlMf/iJ/QgKHbt41ogN1PPT5z7qBJpkxuNTIkHxaUPoDvhouHmuC9pNj4afRUyLJerxKPkpdBw0=\",\"e_response\":\"YOrKTrMSs4/QOUtPkT0YaYNEmW7Cs+cu624zr2xrHodyL88ub6yaXB7MGHAcQ1+iXsGN8jkfxB/0\",\"v_response\":\"AYSa1p8ISs//MsocJjODwWuPB/z6+iKHHi+sTToRs0eJ2X1gwmWoA5QB0aHjRkWye3/+2rtosfUzI77FlPQVnrbMERwcuYM/fx3fpNCpjm2qcs3AOJRcSRxcNFMe1+4ECsmJhByMDutS1KXAAKiNvnhEXx9f0JrQGwQFtpSFPh8dOuvEKUZHAUALr4FcHCa2HL9nDRiqy2KAOxE0nAANAcMaBo/ed+WZeHtv4CTB7egyYs27cklVbwlBzmRrbjNZk57ICd0jVd6SZ2Ir93r/aPejkyhQ03xh9RVVyhOn4bkbjKIBzEybXTJAXgNmvd6F8Ds00srBZVWlo7Z23JZ7\",\"a_responses\":{\"0\":\"QHTznWWrECRNNmUNcy0yGu2L6qsZU6qkvaII8QB8QjbUxpwHzSeJWkzrn/Kk1KIowfoqB1DKGaFLATvuBl+bCoJjea+2VfK9Ns8=\",\"2\":\"H57Y9CTXJ5MAVo+aFfNSbmRMFQpraBIZVOXiRxCD/P7Aw4fW8r9P5l9pO9DTUeExaqFzsLyF5i5EridVWxlP2Wv0zbH8ku9Sg9w=\",\"3\":\"joggAmOhqM4QsKdoLHAfaslzXqJswS7MwZ/5+AKYdkMaHQ45biMdZU/6R+B7bjvsumg2f6KyTyg0G+BI+wVdJOjh3kGezdANB7Y=\",\"5\":\"5YP4A82WWeqc33e5Zg/Q8lqQQ1amLE8mOxMwCXb3N4J0UJRfV9lUFvbH1Q3Yb3YHAZpzGvhN/pBacwqktMkP4L71PnMldqA+nqA=\"},\"a_disclosed\":{\"1\":\"AgAJuwB+AALWy2qU9p3l52l9LU1rVT4M\",\"4\":\"NDU2\"}}],\"nonce\":\"aa==\",\"context\":\"BTk=\",\"message\":\"I owe you everything\",\"timestamp\":{\"Time\":1527196489,\"ServerUrl\":\"https://metrics.privacybydesign.foundation/atum\",\"Sig\":{\"Alg\":\"ed25519\",\"Data\":\"ZV1qkvDrFK14QrUSC66xTNr9HitCOV4vwfGX0bh3iwY7qyHCi9rIOE97KY8CZifU5oLgVhFWy5E+ALR+gEpACw==\",\"PublicKey\":\"e/nMAJF7nwrvNZRpuJljNpRx+CsT7caaXyn9OX683R8=\"}}}"
 	irmaSignedMessage := &SignedMessage{}
-	json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
+	require.NoError(t, json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage))
 
-	// Original request also has the same invalid nonce (otherwise we would get unmatched_request)
-	request := "{\"nonce\": \"aa==\", \"context\": \"BTk=\", \"message\":\"I owe you everything\",\"content\":[{\"label\":\"Student number (RU)\",\"attributes\":[\"irma-demo.RU.studentCard.studentID\"]}]}"
-	sigRequestJSON := []byte(request)
-	sigRequest := &SignatureRequest{}
-	json.Unmarshal(sigRequestJSON, sigRequest)
-
-	var err error
-	_, status, err := irmaSignedMessage.Verify(conf, sigRequest)
-	require.NoError(t, err)
-	require.Equal(t, status, ProofStatusInvalid)
-
-	_, status, err = irmaSignedMessage.Verify(conf, nil)
+	_, status, err := irmaSignedMessage.Verify(conf, nil)
 	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 }

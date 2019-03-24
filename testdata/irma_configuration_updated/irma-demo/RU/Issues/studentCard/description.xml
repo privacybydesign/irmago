@@ -14,7 +14,7 @@
 		<en>Student Card issued by the Radboud University Nijmegen</en>
 		<nl>Studentenkaart uitgegeven door de Radboud Universiteit Nijmegen</nl>
 	</Description>
-	<ShouldBeSingleton>true</ShouldBeSingleton>
+	<IssueURL><en></en><nl></nl></IssueURL>
 
 	<Attributes>
 		<Attribute id="university">

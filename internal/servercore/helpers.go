@@ -153,10 +153,13 @@ func purgeRequest(request irma.RequestorRequest) irma.RequestorRequest {
 	_ = json.Unmarshal(bts, cpy)
 
 	// Remove required attribute values from any attributes to be disclosed
-	attrs := cpy.(irma.RequestorRequest).SessionRequest().ToDisclose()
-	for _, disjunction := range attrs {
-		disjunction.Values = nil
-	}
+	_ = cpy.(irma.RequestorRequest).SessionRequest().Disclosure().Disclose.Iterate(
+		func(attr *irma.AttributeRequest) error {
+			attr.Value = nil
+			return nil
+		},
+	)
+
 	// Remove attribute values from attributes to be issued
 	if isreq, ok := cpy.(*irma.IdentityProviderRequest); ok {
 		for _, cred := range isreq.Request.Credentials {

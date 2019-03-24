@@ -14,6 +14,7 @@
 		<en>Root credential issued by MijnOverheid.nl</en>
 		<nl>Root-credential uitgegeven door MijnOverheid.nl</nl>
 	</Description>
+	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>true</ShouldBeSingleton>
 
 	<Attributes>

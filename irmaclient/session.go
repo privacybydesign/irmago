@@ -30,16 +30,16 @@ type Handler interface {
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
-	UnsatisfiableRequest(ServerName irma.TranslatedString, missing irma.AttributeDisjunctionList)
+	UnsatisfiableRequest(ServerName irma.TranslatedString, missing map[int]map[int]irma.AttributeCon)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 
-	RequestIssuancePermission(request irma.IssuanceRequest, ServerName irma.TranslatedString, callback PermissionHandler)
-	RequestVerificationPermission(request irma.DisclosureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
-	RequestSignaturePermission(request irma.SignatureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestIssuancePermission(request *irma.IssuanceRequest, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestVerificationPermission(request *irma.DisclosureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestSignaturePermission(request *irma.SignatureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
 	RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback PinHandler)
@@ -230,12 +230,13 @@ func (session *session) processSessionInfo() {
 		return
 	}
 
-	confirmedProtocolVersion := session.request.GetVersion()
+	baserequest := session.request.Base()
+	confirmedProtocolVersion := baserequest.Version
 	if confirmedProtocolVersion != nil {
 		session.Version = confirmedProtocolVersion
 	} else {
 		session.Version = irma.NewVersion(2, 0)
-		session.request.SetVersion(session.Version)
+		baserequest.Version = session.Version
 	}
 
 	session.ServerName = serverName(session.Hostname, session.request, session.client.Configuration)
@@ -258,30 +259,30 @@ func (session *session) processSessionInfo() {
 		}
 	}
 
-	candidates, missing := session.client.CheckSatisfiability(session.request.ToDisclose())
+	candidates, missing := session.client.CheckSatisfiability(session.request.Disclosure().Disclose)
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.ServerName, missing)
 		return
 	}
-	session.request.SetCandidates(candidates)
+	baserequest.Candidates = candidates
 
 	// Ask for permission to execute the session
 	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 		session.choice = choice
-		session.request.SetDisclosureChoice(choice)
+		baserequest.Choice = choice
 		go session.doSession(proceed)
 	})
 	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			*session.request.(*irma.DisclosureRequest), session.ServerName, callback)
+			session.request.(*irma.DisclosureRequest), session.ServerName, callback)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			*session.request.(*irma.SignatureRequest), session.ServerName, callback)
+			session.request.(*irma.SignatureRequest), session.ServerName, callback)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			*session.request.(*irma.IssuanceRequest), session.ServerName, callback)
+			session.request.(*irma.IssuanceRequest), session.ServerName, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -552,10 +553,12 @@ func (session *session) Distributed() bool {
 		return false
 	}
 
-	for _, ai := range session.choice.Attributes {
-		smi = ai.Type.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()
-		if session.client.Configuration.SchemeManagers[smi].Distributed() {
-			return true
+	for _, attrlist := range session.choice.Attributes {
+		for _, ai := range attrlist {
+			smi = ai.Type.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()
+			if session.client.Configuration.SchemeManagers[smi].Distributed() {
+				return true
+			}
 		}
 	}
 

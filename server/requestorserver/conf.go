@@ -112,7 +112,7 @@ func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRe
 
 // CanVerifyOrSign returns whether or not the specified requestor may use the selected attributes
 // in any of the supported session types.
-func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action, disjunctions irma.AttributeDisjunctionList) (bool, string) {
+func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action, disjunctions irma.AttributeConDisCon) (bool, string) {
 	var permissions []string
 	switch action {
 	case irma.ActionDisclosing:
@@ -126,20 +126,20 @@ func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action,
 		return false, ""
 	}
 
-	for _, disjunction := range disjunctions {
-		for _, attr := range disjunction.Attributes {
-			if contains(permissions, "*") ||
-				contains(permissions, attr.Root()+".*") ||
-				contains(permissions, attr.CredentialTypeIdentifier().IssuerIdentifier().String()+".*") ||
-				contains(permissions, attr.CredentialTypeIdentifier().String()+".*") ||
-				contains(permissions, attr.String()) {
-				continue
-			} else {
-				return false, attr.String()
-			}
+	err := disjunctions.Iterate(func(attr *irma.AttributeRequest) error {
+		if contains(permissions, "*") ||
+			contains(permissions, attr.Type.Root()+".*") ||
+			contains(permissions, attr.Type.CredentialTypeIdentifier().IssuerIdentifier().String()+".*") ||
+			contains(permissions, attr.Type.CredentialTypeIdentifier().String()+".*") ||
+			contains(permissions, attr.Type.String()) {
+			return nil
+		} else {
+			return errors.New(attr.Type.String())
 		}
+	})
+	if err != nil {
+		return false, err.Error()
 	}
-
 	return true, ""
 }
 

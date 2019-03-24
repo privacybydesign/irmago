@@ -18,7 +18,7 @@ var _ Handler = (*keyshareEnrollmentHandler)(nil)
 
 // Session handlers in the order they are called
 
-func (h *keyshareEnrollmentHandler) RequestIssuancePermission(request irma.IssuanceRequest, ServerName irma.TranslatedString, callback PermissionHandler) {
+func (h *keyshareEnrollmentHandler) RequestIssuancePermission(request *irma.IssuanceRequest, ServerName irma.TranslatedString, callback PermissionHandler) {
 	// Fetch the username from the credential request and save it along with the scheme manager
 	smi := request.Credentials[0].CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
 	attr := irma.NewAttributeTypeIdentifier(h.client.Configuration.SchemeManagers[smi].KeyshareAttribute)
@@ -55,10 +55,10 @@ func (h *keyshareEnrollmentHandler) fail(err error) {
 func (h *keyshareEnrollmentHandler) StatusUpdate(action irma.Action, status irma.Status) {}
 
 // The methods below should never be called, so we let each of them fail the session
-func (h *keyshareEnrollmentHandler) RequestVerificationPermission(request irma.DisclosureRequest, ServerName irma.TranslatedString, callback PermissionHandler) {
+func (h *keyshareEnrollmentHandler) RequestVerificationPermission(request *irma.DisclosureRequest, ServerName irma.TranslatedString, callback PermissionHandler) {
 	callback(false, nil)
 }
-func (h *keyshareEnrollmentHandler) RequestSignaturePermission(request irma.SignatureRequest, ServerName irma.TranslatedString, callback PermissionHandler) {
+func (h *keyshareEnrollmentHandler) RequestSignaturePermission(request *irma.SignatureRequest, ServerName irma.TranslatedString, callback PermissionHandler) {
 	callback(false, nil)
 }
 func (h *keyshareEnrollmentHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
@@ -79,6 +79,6 @@ func (h *keyshareEnrollmentHandler) KeyshareEnrollmentDeleted(manager irma.Schem
 func (h *keyshareEnrollmentHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	h.fail(errors.New("Keyshare enrollment failed: unenrolled"))
 }
-func (h *keyshareEnrollmentHandler) UnsatisfiableRequest(ServerName irma.TranslatedString, missing irma.AttributeDisjunctionList) {
+func (h *keyshareEnrollmentHandler) UnsatisfiableRequest(ServerName irma.TranslatedString, missing map[int]map[int]irma.AttributeCon) {
 	h.fail(errors.New("Keyshare enrollment failed: unsatisfiable"))
 }

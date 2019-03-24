@@ -160,51 +160,38 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 
 	var request irma.RequestorRequest
 	if len(disclose) != 0 {
-		disjunctions, err := parseDisjunctions(disclose, conf)
+		disclose, err := parseAttrs(disclose, conf)
 		if err != nil {
 			return nil, err
 		}
 		request = &irma.ServiceProviderRequest{
-			Request: &irma.DisclosureRequest{
-				BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
-				Content:     disjunctions,
-			},
+			Request: irma.NewDisclosureRequest(),
 		}
-
+		request.SessionRequest().(*irma.DisclosureRequest).Disclose = disclose
 	}
 	if len(sign) != 0 {
-		disjunctions, err := parseDisjunctions(sign, conf)
+		disclose, err := parseAttrs(sign, conf)
 		if err != nil {
 			return nil, err
 		}
 		request = &irma.SignatureRequestorRequest{
-			Request: &irma.SignatureRequest{
-				DisclosureRequest: irma.DisclosureRequest{
-					BaseRequest: irma.BaseRequest{Type: irma.ActionSigning},
-					Content:     disjunctions,
-				},
-				Message: message,
-			},
+			Request: irma.NewSignatureRequest(message),
 		}
+		request.SessionRequest().(*irma.SignatureRequest).Disclose = disclose
 	}
 	if len(issue) != 0 {
 		creds, err := parseCredentials(issue, conf)
 		if err != nil {
 			return nil, err
 		}
-		disjunctions, err := parseDisjunctions(disclose, conf)
+		disclose, err := parseAttrs(disclose, conf)
 		if err != nil {
 			return nil, err
 		}
 		request = &irma.IdentityProviderRequest{
-			Request: &irma.IssuanceRequest{
-				BaseRequest: irma.BaseRequest{
-					Type: irma.ActionIssuing,
-				},
-				Credentials: creds,
-				Disclose:    disjunctions,
-			},
+			Request: irma.NewIssuanceRequest(creds),
 		}
+		request.SessionRequest().(*irma.IssuanceRequest).Disclose = disclose
 	}
 
 	return request, nil
@@ -242,19 +229,18 @@ func parseCredentials(credentialsStr []string, conf *irma.Configuration) ([]*irm
 	return list, nil
 }
 
-func parseDisjunctions(disjunctionsStr []string, conf *irma.Configuration) (irma.AttributeDisjunctionList, error) {
-	list := make(irma.AttributeDisjunctionList, 0, len(disjunctionsStr))
-	for _, disjunctionStr := range disjunctionsStr {
-		disjunction := &irma.AttributeDisjunction{}
+func parseAttrs(attrsStr []string, conf *irma.Configuration) (irma.AttributeConDisCon, error) {
+	list := make(irma.AttributeConDisCon, 0, len(attrsStr))
+	for _, disjunctionStr := range attrsStr {
+		disjunction := irma.AttributeDisCon{}
 		attrids := strings.Split(disjunctionStr, ",")
 		for _, attridStr := range attrids {
 			attrid := irma.NewAttributeTypeIdentifier(attridStr)
 			if conf.AttributeTypes[attrid] == nil {
 				return nil, errors.New("unknown attribute: " + attridStr)
 			}
-			disjunction.Attributes = append(disjunction.Attributes, attrid)
+			disjunction = append(disjunction, irma.AttributeCon{irma.AttributeRequest{Type: attrid}})
 		}
-		disjunction.Label = disjunction.Attributes[0].Name()
 		list = append(list, disjunction)
 	}
 	return list, nil

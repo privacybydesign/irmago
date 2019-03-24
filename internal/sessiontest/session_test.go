@@ -132,18 +132,10 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 
 	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	disclosureRequest := irma.DisclosureRequest{
-		Content: irma.AttributeDisjunctionList{
-			&irma.AttributeDisjunction{
-				Label: "foo",
-				Attributes: []irma.AttributeTypeIdentifier{
-					attrid,
-				},
-			},
-		},
-	}
+	disclosureRequest := irma.NewDisclosureRequest(attrid)
 
-	client.Configuration.Download(&disclosureRequest)
+	_, err := client.Configuration.Download(disclosureRequest)
+	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 }
 
@@ -159,7 +151,8 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
-	client.Configuration.Download(issuanceRequest)
+	_, err := client.Configuration.Download(issuanceRequest)
+	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 }
 
@@ -175,7 +168,8 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
-	client.Configuration.Download(issuanceRequest)
+	_, err := client.Configuration.Download(issuanceRequest)
+	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
 }
 
@@ -189,7 +183,8 @@ func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
 
 	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
 	request := getIssuanceRequest(true)
-	client.Configuration.Download(request)
+	_, err := client.Configuration.Download(request)
+	require.NoError(t, err)
 
 	require.Contains(t, client.Configuration.CredentialTypes, credid)
 
@@ -206,14 +201,9 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 	require.NotContains(t, client.Configuration.CredentialTypes, credid)
 
 	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	request := &irma.DisclosureRequest{
-		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{attrid},
-		}}),
-	}
-	client.Configuration.Download(request)
-
+	request := irma.NewDisclosureRequest(attrid)
+	_, err := client.Configuration.Download(request)
+	require.NoError(t, err)
 	require.Contains(t, client.Configuration.CredentialTypes, credid)
 
 	test.ClearTestStorage(t)

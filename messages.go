@@ -1,12 +1,11 @@
 package irma
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"bytes"
 
 	"fmt"
 
@@ -201,6 +200,28 @@ const (
 	ErrorPanic = ErrorType("panic")
 )
 
+type Disclosure struct {
+	Proofs  gabi.ProofList            `json:"proofs"`
+	Indices DisclosedAttributeIndices `json:"indices"`
+}
+
+// DisclosedAttributeIndices contains, for each conjunction of an attribute disclosure request,
+// a list of attribute indices, pointing to where the disclosed attributes for that conjunction
+// can be found within a gabi.ProofList.
+type DisclosedAttributeIndices [][]*DisclosedAttributeIndex
+
+// DisclosedAttributeIndex points to a specific attribute in a gabi.ProofList.
+type DisclosedAttributeIndex struct {
+	CredentialIndex int                  `json:"cred"`
+	AttributeIndex  int                  `json:"attr"`
+	Identifier      CredentialIdentifier `json:"-"` // credential from which this attribute was disclosed
+}
+
+type IssueCommitmentMessage struct {
+	*gabi.IssueCommitmentMessage
+	Indices DisclosedAttributeIndices `json:"indices"`
+}
+
 func (e *SessionError) Error() string {
 	var buffer bytes.Buffer
 	typ := e.ErrorType
@@ -240,28 +261,6 @@ func (e *SessionError) Stack() string {
 	}
 
 	return ""
-}
-
-type Disclosure struct {
-	Proofs  gabi.ProofList            `json:"proofs"`
-	Indices DisclosedAttributeIndices `json:"indices"`
-}
-
-// DisclosedAttributeIndices contains, for each conjunction of an attribute disclosure request,
-// a list of attribute indices, pointing to where the disclosed attributes for that conjunction
-// can be found within a gabi.ProofList.
-type DisclosedAttributeIndices [][]*DisclosedAttributeIndex
-
-// DisclosedAttributeIndex points to a specific attribute in a gabi.ProofList.
-type DisclosedAttributeIndex struct {
-	CredentialIndex int                  `json:"cred"`
-	AttributeIndex  int                  `json:"attr"`
-	Identifier      CredentialIdentifier `json:"-"` // credential from which this attribute was disclosed
-}
-
-type IssueCommitmentMessage struct {
-	*gabi.IssueCommitmentMessage
-	Indices DisclosedAttributeIndices `json:"indices"`
 }
 
 func (i *IssueCommitmentMessage) Disclosure() *Disclosure {

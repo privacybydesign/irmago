@@ -27,8 +27,7 @@ func (sm *SignedMessage) GetNonce() *big.Int {
 }
 
 func (sm *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool {
-	return sm.Nonce.Cmp(request.Nonce) == 0 &&
-		sm.Context.Cmp(request.Context) == 0 &&
+	return sm.Context.Cmp(request.GetContext()) == 0 &&
 		sm.GetNonce().Cmp(request.GetNonce()) == 0
 }
 

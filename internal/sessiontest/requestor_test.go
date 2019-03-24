@@ -6,16 +6,19 @@ import (
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/stretchr/testify/require"
 )
 
-func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.SessionResult {
+func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) *server.SessionResult {
 	StartIrmaServer(t)
 	defer StopIrmaServer()
 
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	if client == nil {
+		client = parseStorage(t)
+		defer test.ClearTestStorage(t)
+	}
 
 	clientChan := make(chan *SessionResult)
 	serverChan := make(chan *server.SessionResult)
@@ -42,56 +45,35 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest) *server.S
 
 func TestRequestorSignatureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	serverResult := requestorSessionHelper(t, &irma.SignatureRequest{
-		Message: "message",
-		DisclosureRequest: irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{Type: irma.ActionSigning},
-			Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
-				Label:      "foo",
-				Attributes: []irma.AttributeTypeIdentifier{id},
-			}}),
-		},
-	})
+	serverResult := requestorSessionHelper(t, irma.NewSignatureRequest("message", id), nil)
 
 	require.Nil(t, serverResult.Err)
 	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
 	require.NotEmpty(t, serverResult.Disclosed)
-	require.Equal(t, id, serverResult.Disclosed[0].Identifier)
-	require.Equal(t, "456", serverResult.Disclosed[0].Value["en"])
+	require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
+	require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
 }
 
 func TestRequestorDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	request := &irma.DisclosureRequest{
-		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
-		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{id},
-		}}),
-	}
+	request := irma.NewDisclosureRequest(id)
 	serverResult := testRequestorDisclosure(t, request)
 	require.Len(t, serverResult.Disclosed, 1)
-	require.Equal(t, id, serverResult.Disclosed[0].Identifier)
-	require.Equal(t, "456", serverResult.Disclosed[0].Value["en"])
+	require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
+	require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
 }
 
 func TestRequestorDisclosureMultipleAttrs(t *testing.T) {
-	request := &irma.DisclosureRequest{
-		BaseRequest: irma.BaseRequest{Type: irma.ActionDisclosing},
-		Content: irma.AttributeDisjunctionList([]*irma.AttributeDisjunction{{
-			Label:      "foo",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")},
-		}, {
-			Label:      "bar",
-			Attributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")},
-		}}),
-	}
+	request := irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"),
+	)
 	serverResult := testRequestorDisclosure(t, request)
 	require.Len(t, serverResult.Disclosed, 2)
 }
 
 func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest) *server.SessionResult {
-	serverResult := requestorSessionHelper(t, request)
+	serverResult := requestorSessionHelper(t, request, nil)
 	require.Nil(t, serverResult.Err)
 	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
 	return serverResult
@@ -103,10 +85,7 @@ func TestRequestorIssuanceSession(t *testing.T) {
 
 func testRequestorIssuance(t *testing.T, keyshare bool) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	request := &irma.IssuanceRequest{
-		BaseRequest: irma.BaseRequest{Type: irma.ActionIssuing},
-	}
-	request.Credentials = []*irma.CredentialRequest{{
+	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
 		Attributes: map[string]string{
 			"university":        "Radboud",
@@ -119,22 +98,57 @@ func testRequestorIssuance(t *testing.T, keyshare bool) {
 		Attributes: map[string]string{
 			"BSN": "299792458",
 		},
-	}}
+	}}, attrid)
 	if keyshare {
 		request.Credentials = append(request.Credentials, &irma.CredentialRequest{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
 			Attributes:       map[string]string{"email": "testusername"},
 		})
 	}
-	request.Disclose = []*irma.AttributeDisjunction{{
-		Label:      "foo",
-		Attributes: []irma.AttributeTypeIdentifier{attrid},
-	}}
 
-	result := requestorSessionHelper(t, request)
+	result := requestorSessionHelper(t, request, nil)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
-	require.Equal(t, attrid, result.Disclosed[0].Identifier)
-	require.Equal(t, "456", result.Disclosed[0].Value["en"])
+	require.Equal(t, attrid, result.Disclosed[0][0].Identifier)
+	require.Equal(t, "456", result.Disclosed[0][0].Value["en"])
+}
+
+func TestConDisCon(t *testing.T) {
+	client := parseStorage(t)
+	ir := getMultipleIssuanceRequest()
+	ir.Credentials = append(ir.Credentials, &irma.CredentialRequest{
+		Validity:         ir.Credentials[0].Validity,
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+		Attributes: map[string]string{
+			"firstnames": "Jan Hendrik",
+			"firstname":  "Jan",
+			"familyname": "Klaassen",
+			"prefix":     "van",
+		},
+	})
+	requestorSessionHelper(t, ir, client)
+
+	dr := irma.NewDisclosureRequest()
+	dr.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.root.BSN"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstname"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+			},
+		},
+		//irma.AttributeDisCon{
+		//	irma.AttributeCon{
+		//		irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstname"),
+		//		irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+		//	},
+		//},
+	}
+
+	requestorSessionHelper(t, dr, client)
 }
