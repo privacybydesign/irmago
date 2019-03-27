@@ -17,15 +17,16 @@ import (
 
 // BaseRequest contains the context and nonce for an IRMA session.
 type BaseRequest struct {
-	Context *big.Int `json:"context,omitempty"`
-	Nonce   *big.Int `json:"nonce,omitempty"`
-	Type    Action   `json:"type"`
+	// Denotes session type, must be "disclosing", "signing" or "issuing"
+	Type Action `json:"type"`
 
-	Candidates [][][]*AttributeIdentifier `json:"-"`
-	Choice     *DisclosureChoice          `json:"-"`
-	Ids        *IrmaIdentifierSet         `json:"-"`
-
+	// Chosen by the IRMA server during the session
+	Context *big.Int         `json:"context,omitempty"`
+	Nonce   *big.Int         `json:"nonce,omitempty"`
 	Version *ProtocolVersion `json:"protocolVersion,omitempty"`
+
+	// cache for Identifiers() method
+	ids *IrmaIdentifierSet
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -49,9 +50,6 @@ type DisclosureRequest struct {
 type SignatureRequest struct {
 	*DisclosureRequest
 	Message string `json:"message"`
-
-	// Session state
-	Timestamp *atum.Timestamp `json:"-"`
 }
 
 // An IssuanceRequest is a request to issue certain credentials,
@@ -78,7 +76,7 @@ type CredentialRequest struct {
 type SessionRequest interface {
 	Validator
 	Base() *BaseRequest
-	GetNonce() *big.Int
+	GetNonce(timestamp *atum.Timestamp) *big.Int
 	Disclosure() *DisclosureRequest
 	Identifiers() *IrmaIdentifierSet
 	Action() Action
@@ -180,7 +178,7 @@ func (b *BaseRequest) GetContext() *big.Int {
 	return b.Context
 }
 
-func (b *BaseRequest) GetNonce() *big.Int {
+func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 	if b.Nonce == nil {
 		return bigZero
 	}
@@ -351,8 +349,8 @@ func (dr *DisclosureRequest) Disclosure() *DisclosureRequest {
 }
 
 func (dr *DisclosureRequest) Identifiers() *IrmaIdentifierSet {
-	if dr.Ids == nil {
-		dr.Ids = &IrmaIdentifierSet{
+	if dr.ids == nil {
+		dr.ids = &IrmaIdentifierSet{
 			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
@@ -361,13 +359,13 @@ func (dr *DisclosureRequest) Identifiers() *IrmaIdentifierSet {
 
 		_ = dr.Disclose.Iterate(func(a *AttributeRequest) error {
 			attr := a.Type
-			dr.Ids.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
-			dr.Ids.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
-			dr.Ids.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
+			dr.ids.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+			dr.ids.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
+			dr.ids.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
 			return nil
 		})
 	}
-	return dr.Ids
+	return dr.ids
 }
 
 func (dr *DisclosureRequest) Base() *BaseRequest {
@@ -462,8 +460,8 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 }
 
 func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
-	if ir.Ids == nil {
-		ir.Ids = &IrmaIdentifierSet{
+	if ir.ids == nil {
+		ir.ids = &IrmaIdentifierSet{
 			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
@@ -472,18 +470,18 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 
 		for _, credreq := range ir.Credentials {
 			issuer := credreq.CredentialTypeID.IssuerIdentifier()
-			ir.Ids.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
-			ir.Ids.Issuers[issuer] = struct{}{}
-			ir.Ids.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
-			if ir.Ids.PublicKeys[issuer] == nil {
-				ir.Ids.PublicKeys[issuer] = []int{}
+			ir.ids.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
+			ir.ids.Issuers[issuer] = struct{}{}
+			ir.ids.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
+			if ir.ids.PublicKeys[issuer] == nil {
+				ir.ids.PublicKeys[issuer] = []int{}
 			}
-			ir.Ids.PublicKeys[issuer] = append(ir.Ids.PublicKeys[issuer], credreq.KeyCounter)
+			ir.ids.PublicKeys[issuer] = append(ir.ids.PublicKeys[issuer], credreq.KeyCounter)
 		}
 
-		ir.Ids.join(ir.DisclosureRequest.Identifiers())
+		ir.ids.join(ir.DisclosureRequest.Identifiers())
 	}
-	return ir.Ids
+	return ir.ids
 }
 
 func (ir *IssuanceRequest) GetCredentialInfoList(conf *Configuration, version *ProtocolVersion) (CredentialInfoList, error) {
@@ -513,11 +511,11 @@ func (ir *IssuanceRequest) Validate() error {
 
 // GetNonce returns the nonce of this signature session
 // (with the message already hashed into it).
-func (sr *SignatureRequest) GetNonce() *big.Int {
-	return ASN1ConvertSignatureNonce(sr.Message, sr.BaseRequest.GetNonce(), sr.Timestamp)
+func (sr *SignatureRequest) GetNonce(timestamp *atum.Timestamp) *big.Int {
+	return ASN1ConvertSignatureNonce(sr.Message, sr.BaseRequest.GetNonce(nil), timestamp)
 }
 
-func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMessage, error) {
+func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp *atum.Timestamp) (*SignedMessage, error) {
 	signature, ok := message.(*Disclosure)
 
 	if !ok {
@@ -534,7 +532,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMe
 		Nonce:     nonce,
 		Context:   sr.GetContext(),
 		Message:   sr.Message,
-		Timestamp: sr.Timestamp,
+		Timestamp: timestamp,
 	}, nil
 }
 

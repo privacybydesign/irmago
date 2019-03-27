@@ -127,7 +127,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 
 	// Verify all proofs and check disclosed attributes, if any, against request
 	session.result.Disclosed, session.result.ProofStatus, err = commitments.Disclosure().VerifyAgainstDisjunctions(
-		session.conf.IrmaConfiguration, request.Disclose, request.GetContext(), request.GetNonce(), pubkeys, false)
+		session.conf.IrmaConfiguration, request.Disclose, request.GetContext(), request.GetNonce(nil), pubkeys, false)
 	if err != nil {
 		if err == irma.ErrorMissingPublicKey {
 			return nil, session.fail(server.ErrorUnknownPublicKey, "")

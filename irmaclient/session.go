@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -37,9 +38,9 @@ type Handler interface {
 	KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 
-	RequestIssuancePermission(request *irma.IssuanceRequest, ServerName irma.TranslatedString, callback PermissionHandler)
-	RequestVerificationPermission(request *irma.DisclosureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
-	RequestSignaturePermission(request *irma.SignatureRequest, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestVerificationPermission(request *irma.DisclosureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback PermissionHandler)
+	RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback PermissionHandler)
 	RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback PinHandler)
@@ -62,9 +63,12 @@ type session struct {
 	request     irma.SessionRequest
 	done        bool
 
-	// State for issuance protocol
+	// State for issuance sessions
 	issuerProofNonce *big.Int
 	builders         gabi.ProofBuilderList
+
+	// State for signature sessions
+	timestamp *atum.Timestamp
 
 	// These are empty on manual sessions
 	Hostname  string
@@ -264,25 +268,23 @@ func (session *session) processSessionInfo() {
 		session.Handler.UnsatisfiableRequest(session.ServerName, missing)
 		return
 	}
-	baserequest.Candidates = candidates
 
 	// Ask for permission to execute the session
 	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 		session.choice = choice
-		baserequest.Choice = choice
 		go session.doSession(proceed)
 	})
 	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			session.request.(*irma.DisclosureRequest), session.ServerName, callback)
+			session.request.(*irma.DisclosureRequest), candidates, session.ServerName, callback)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			session.request.(*irma.SignatureRequest), session.ServerName, callback)
+			session.request.(*irma.SignatureRequest), candidates, session.ServerName, callback)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			session.request.(*irma.IssuanceRequest), session.ServerName, callback)
+			session.request.(*irma.IssuanceRequest), candidates, session.ServerName, callback)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -321,6 +323,7 @@ func (session *session) doSession(proceed bool) {
 			session.client.Configuration,
 			session.client.keyshareServers,
 			session.issuerProofNonce,
+			session.timestamp,
 		)
 	}
 }
@@ -336,7 +339,7 @@ func (session *session) sendResponse(message interface{}) {
 
 	switch session.Action {
 	case irma.ActionSigning:
-		irmaSignature, err := session.request.(*irma.SignatureRequest).SignatureFromMessage(message)
+		irmaSignature, err := session.request.(*irma.SignatureRequest).SignatureFromMessage(message, session.timestamp)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
 			return
@@ -446,12 +449,10 @@ func (session *session) getBuilders() (gabi.ProofBuilderList, irma.DisclosedAttr
 	var choices irma.DisclosedAttributeIndices
 
 	switch session.Action {
-	case irma.ActionSigning:
-		builders, choices, err = session.client.ProofBuilders(session.choice, session.request, true)
-	case irma.ActionDisclosing:
-		builders, choices, err = session.client.ProofBuilders(session.choice, session.request, false)
+	case irma.ActionSigning, irma.ActionDisclosing:
+		builders, choices, session.timestamp, err = session.client.ProofBuilders(session.choice, session.request)
 	case irma.ActionIssuing:
-		builders, choices, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest))
+		builders, choices, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest), session.choice)
 	}
 
 	return builders, choices, issuerProofNonce, err
@@ -464,12 +465,10 @@ func (session *session) getProof() (interface{}, error) {
 	var err error
 
 	switch session.Action {
-	case irma.ActionSigning:
-		message, err = session.client.Proofs(session.choice, session.request, true)
-	case irma.ActionDisclosing:
-		message, err = session.client.Proofs(session.choice, session.request, false)
+	case irma.ActionSigning, irma.ActionDisclosing:
+		message, session.timestamp, err = session.client.Proofs(session.choice, session.request)
 	case irma.ActionIssuing:
-		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest))
+		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest), session.choice)
 	}
 
 	return message, err

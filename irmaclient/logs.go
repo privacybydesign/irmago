@@ -132,7 +132,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 		// Get the signed message and timestamp
 		request := session.request.(*irma.SignatureRequest)
 		entry.SignedMessage = []byte(request.Message)
-		entry.Timestamp = request.Timestamp
+		entry.Timestamp = session.timestamp
 
 		fallthrough
 	case irma.ActionDisclosing:

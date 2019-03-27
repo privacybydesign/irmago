@@ -246,7 +246,7 @@ func (d *Disclosure) VerifyAgainstDisjunctions(
 }
 
 func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
-	list, status, err := d.VerifyAgainstDisjunctions(configuration, request.Disclose, request.GetContext(), request.GetNonce(), nil, false)
+	list, status, err := d.VerifyAgainstDisjunctions(configuration, request.Disclose, request.GetContext(), request.GetNonce(nil), nil, false)
 	if err != nil {
 		return list, status, err
 	}
@@ -273,7 +273,6 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 
 	// First check if this signature matches the request
 	if request != nil {
-		request.Timestamp = sm.Timestamp
 		if !sm.MatchesNonceAndContext(request) {
 			return nil, ProofStatusUnmatchedRequest, nil
 		}
@@ -285,10 +284,8 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	}
 
 	// Verify the timestamp
-	if sm.Timestamp != nil {
-		if err := sm.VerifyTimestamp(message, configuration); err != nil {
-			return nil, ProofStatusInvalidTimestamp, nil
-		}
+	if err := sm.VerifyTimestamp(message, configuration); err != nil {
+		return nil, ProofStatusInvalidTimestamp, nil
 	}
 
 	// Now, cryptographically verify the IRMA disclosure proofs in the signature
@@ -302,10 +299,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	}
 
 	// Check if a credential is expired
-	var t time.Time
-	if sm.Timestamp != nil {
-		t = time.Unix(sm.Timestamp.Time, 0)
-	}
+	t := time.Unix(sm.Timestamp.Time, 0)
 	if expired := ProofList(sm.Signature).Expired(configuration, &t); expired {
 		// The ABS contains attributes that were expired at the time of creation of the ABS.
 		return result, ProofStatusExpired, nil

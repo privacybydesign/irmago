@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bwesterb/go-atum"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -48,6 +49,7 @@ type keyshareSession struct {
 	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
 	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
 	issuerProofNonce *big.Int
+	timestamp        *atum.Timestamp
 	pinCheck         bool
 }
 
@@ -159,6 +161,7 @@ func startKeyshareSession(
 	conf *irma.Configuration,
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
 	issuerProofNonce *big.Int,
+	timestamp *atum.Timestamp,
 ) {
 	ksscount := 0
 	for managerID := range session.Identifiers().SchemeManagers {
@@ -186,6 +189,7 @@ func startKeyshareSession(
 		conf:             conf,
 		keyshareServers:  keyshareServers,
 		issuerProofNonce: issuerProofNonce,
+		timestamp:        timestamp,
 		pinCheck:         false,
 	}
 
@@ -403,7 +407,7 @@ func (ks *keyshareSession) GetCommitments() {
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
 func (ks *keyshareSession) GetProofPs() {
 	_, issig := ks.session.(*irma.SignatureRequest)
-	challenge := ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(), issig)
+	challenge := ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), issig)
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[irma.SchemeManagerIdentifier]string{}

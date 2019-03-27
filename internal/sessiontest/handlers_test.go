@@ -101,28 +101,21 @@ func (th TestHandler) UnsatisfiableRequest(serverName irma.TranslatedString, mis
 		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 	})
 }
-func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	choice := &irma.DisclosureChoice{
-		Attributes: [][]*irma.AttributeIdentifier{},
-	}
-	var candidates [][]*irma.AttributeIdentifier
-	for _, disjunction := range request.Disclose {
-		candidates, _ = th.client.Candidates(disjunction)
-		if len(candidates) == 0 {
-			th.Failure(&irma.SessionError{Err: errors.New("No disclosure candidates found")})
-		}
-		choice.Attributes = append(choice.Attributes, candidates[rand.Intn(len(candidates))])
+func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	var choice irma.DisclosureChoice
+	for _, cand := range candidates {
+		choice.Attributes = append(choice.Attributes, cand[0])
 	}
 	if len(th.expectedServerName) != 0 {
 		require.Equal(th.t, th.expectedServerName, ServerName)
 	}
-	callback(true, choice)
+	callback(true, &choice)
 }
-func (th TestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(request.DisclosureRequest, ServerName, callback)
+func (th TestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	th.RequestVerificationPermission(request.DisclosureRequest, candidates, ServerName, callback)
 }
-func (th TestHandler) RequestSignaturePermission(request *irma.SignatureRequest, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(request.DisclosureRequest, ServerName, callback)
+func (th TestHandler) RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	th.RequestVerificationPermission(request.DisclosureRequest, candidates, ServerName, callback)
 }
 func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(true)
@@ -174,10 +167,10 @@ func (th *ManualTestHandler) Success(result string) {
 
 	th.c <- retval
 }
-func (th *ManualTestHandler) RequestSignaturePermission(request *irma.SignatureRequest, requesterName irma.TranslatedString, ph irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(request.DisclosureRequest, requesterName, ph)
+func (th *ManualTestHandler) RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, requesterName irma.TranslatedString, ph irmaclient.PermissionHandler) {
+	th.RequestVerificationPermission(request.DisclosureRequest, candidates, requesterName, ph)
 }
-func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, issuerName irma.TranslatedString, ph irmaclient.PermissionHandler) {
+func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, issuerName irma.TranslatedString, ph irmaclient.PermissionHandler) {
 	ph(true, nil)
 }
 
@@ -185,9 +178,9 @@ func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceReq
 func (th *ManualTestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
-func (th *ManualTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, verifierName irma.TranslatedString, ph irmaclient.PermissionHandler) {
+func (th *ManualTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, candidates [][][]*irma.AttributeIdentifier, verifierName irma.TranslatedString, ph irmaclient.PermissionHandler) {
 	var choice irma.DisclosureChoice
-	for _, cand := range request.Candidates {
+	for _, cand := range candidates {
 		choice.Attributes = append(choice.Attributes, cand[0])
 	}
 	ph(true, &choice)
