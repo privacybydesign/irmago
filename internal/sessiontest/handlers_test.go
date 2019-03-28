@@ -112,10 +112,10 @@ func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequ
 	callback(true, &choice)
 }
 func (th TestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(request.DisclosureRequest, candidates, ServerName, callback)
+	th.RequestVerificationPermission(&request.DisclosureRequest, candidates, ServerName, callback)
 }
 func (th TestHandler) RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(request.DisclosureRequest, candidates, ServerName, callback)
+	th.RequestVerificationPermission(&request.DisclosureRequest, candidates, ServerName, callback)
 }
 func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(true)
@@ -168,7 +168,7 @@ func (th *ManualTestHandler) Success(result string) {
 	th.c <- retval
 }
 func (th *ManualTestHandler) RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, requesterName irma.TranslatedString, ph irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(request.DisclosureRequest, candidates, requesterName, ph)
+	th.RequestVerificationPermission(&request.DisclosureRequest, candidates, requesterName, ph)
 }
 func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, issuerName irma.TranslatedString, ph irmaclient.PermissionHandler) {
 	ph(true, nil)

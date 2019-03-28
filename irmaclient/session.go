@@ -235,12 +235,12 @@ func (session *session) processSessionInfo() {
 	}
 
 	baserequest := session.request.Base()
-	confirmedProtocolVersion := baserequest.Version
+	confirmedProtocolVersion := baserequest.ProtocolVersion
 	if confirmedProtocolVersion != nil {
 		session.Version = confirmedProtocolVersion
 	} else {
 		session.Version = irma.NewVersion(2, 0)
-		baserequest.Version = session.Version
+		baserequest.ProtocolVersion = session.Version
 	}
 
 	session.ServerName = serverName(session.Hostname, session.request, session.client.Configuration)

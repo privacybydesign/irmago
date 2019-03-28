@@ -3,6 +3,7 @@ package irma
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -247,4 +248,217 @@ func TestAttributeDecoding(t *testing.T) {
 	oldAttribute, _ := new(big.Int).SetString("1835101285", 10)
 	oldString := decodeAttribute(oldAttribute, 2)
 	require.Equal(t, *oldString, expected)
+}
+
+func TestSessionRequests(t *testing.T) {
+	attrval := "hello"
+	sigMessage := "message to be signed"
+
+	base := &DisclosureRequest{
+		BaseRequest: BaseRequest{Type: ActionDisclosing, Version: 2},
+		Disclose: AttributeConDisCon{
+			AttributeDisCon{
+				AttributeCon{NewAttributeRequest("irma-demo.MijnOverheid.ageLimits.over18")},
+				AttributeCon{NewAttributeRequest("irma-demo.MijnOverheid.ageLimits.over21")},
+			},
+			AttributeDisCon{
+				AttributeCon{AttributeRequest{Type: NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.firstname"), Value: &attrval}},
+			},
+		},
+		Labels: map[int]TranslatedString{0: trivialTranslation("Age limit"), 1: trivialTranslation("First name")},
+	}
+
+	tests := []struct {
+		oldJson, currentJson   string
+		old, current, expected SessionRequest
+	}{
+		{
+			expected: base,
+			old:      &DisclosureRequest{},
+			oldJson: `{
+				"type": "disclosing",
+				"content": [{
+					"label": "Age limit",
+					"attributes": [
+						"irma-demo.MijnOverheid.ageLimits.over18",
+						"irma-demo.MijnOverheid.ageLimits.over21"
+					]
+				},
+				{
+					"label": "First name",
+					"attributes": {
+						"irma-demo.MijnOverheid.fullName.firstname": "hello"
+					}
+				}]
+			}`,
+			current: &DisclosureRequest{},
+			currentJson: `{
+				"type": "disclosing",
+				"v": 2,
+				"disclose": [
+					[
+						[
+							"irma-demo.MijnOverheid.ageLimits.over18"
+						],
+						[
+							"irma-demo.MijnOverheid.ageLimits.over21"
+						]
+					],
+					[
+						{
+							"irma-demo.MijnOverheid.fullName.firstname": "hello"
+						}
+					]
+				],
+				"labels": {
+					"0": {
+						"en": "Age limit",
+						"nl": "Age limit"
+					},
+					"1": {
+						"en": "First name",
+						"nl": "First name"
+					}
+				}
+			}`,
+		},
+
+		{
+			expected: &SignatureRequest{
+				DisclosureRequest{BaseRequest{Type: ActionSigning, Version: 2}, base.Disclose, base.Labels},
+				sigMessage,
+			},
+			old: &SignatureRequest{},
+			oldJson: `{
+				"type": "signing",
+				"message": "message to be signed",
+				"content": [{
+					"label": "Age limit",
+					"attributes": [
+						"irma-demo.MijnOverheid.ageLimits.over18",
+						"irma-demo.MijnOverheid.ageLimits.over21"
+					]
+				},
+				{
+					"label": "First name",
+					"attributes": {
+						"irma-demo.MijnOverheid.fullName.firstname": "hello"
+					}
+				}]
+			}`,
+			current: &SignatureRequest{},
+			currentJson: `{
+				"type": "signing",
+				"v": 2,
+				"disclose": [
+					[
+						[
+							"irma-demo.MijnOverheid.ageLimits.over18"
+						],
+						[
+							"irma-demo.MijnOverheid.ageLimits.over21"
+						]
+					],
+					[
+						{
+							"irma-demo.MijnOverheid.fullName.firstname": "hello"
+						}
+					]
+				],
+				"labels": {
+					"0": {
+						"en": "Age limit",
+						"nl": "Age limit"
+					},
+					"1": {
+						"en": "First name",
+						"nl": "First name"
+					}
+				},
+				"message": "message to be signed"
+			}`,
+		},
+
+		{
+			expected: &IssuanceRequest{
+				DisclosureRequest: DisclosureRequest{BaseRequest{Type: ActionIssuing, Version: 2}, base.Disclose, base.Labels},
+				Credentials: []*CredentialRequest{
+					{
+						CredentialTypeID: NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+						Attributes:       map[string]string{"BSN": "12345"},
+					},
+				},
+			},
+			old: &IssuanceRequest{},
+			oldJson: `{
+				"type": "issuing",
+				"credentials": [{
+					"credential": "irma-demo.MijnOverheid.root",
+					"attributes": { "BSN": "12345" }
+				}],
+				"disclose": [{
+					"label": "Age limit",
+					"attributes": [
+						"irma-demo.MijnOverheid.ageLimits.over18",
+						"irma-demo.MijnOverheid.ageLimits.over21"
+					]
+				},
+				{
+					"label": "First name",
+					"attributes": {
+						"irma-demo.MijnOverheid.fullName.firstname": "hello"
+					}
+				}]
+			}`,
+			current: &IssuanceRequest{},
+			currentJson: `{
+				"type": "issuing",
+				"v": 2,
+				"credentials": [
+					{
+						"credential": "irma-demo.MijnOverheid.root",
+						"attributes": {
+							"BSN": "12345"
+						}
+					}
+				],
+				"disclose": [
+					[
+						[
+							"irma-demo.MijnOverheid.ageLimits.over18"
+						],
+						[
+							"irma-demo.MijnOverheid.ageLimits.over21"
+						]
+					],
+					[
+						{
+							"irma-demo.MijnOverheid.fullName.firstname": "hello"
+						}
+					]
+				],
+				"labels": {
+					"0": {
+						"en": "Age limit",
+						"nl": "Age limit"
+					},
+					"1": {
+						"en": "First name",
+						"nl": "First name"
+					}
+				}
+			}`,
+		},
+	}
+
+	for _, tst := range tests {
+		require.NoError(t, json.Unmarshal([]byte(tst.oldJson), tst.old))
+		require.NoError(t, json.Unmarshal([]byte(tst.currentJson), tst.current))
+		require.True(t, reflect.DeepEqual(tst.old, tst.expected), "Legacy %s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
+		require.True(t, reflect.DeepEqual(tst.current, tst.expected), "%s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
+	}
+}
+
+func trivialTranslation(str string) TranslatedString {
+	return TranslatedString{"en": str, "nl": str}
 }

@@ -19,11 +19,13 @@ import (
 type BaseRequest struct {
 	// Denotes session type, must be "disclosing", "signing" or "issuing"
 	Type Action `json:"type"`
+	// Message version. Current version is 2.
+	Version int `json:"v"`
 
 	// Chosen by the IRMA server during the session
-	Context *big.Int         `json:"context,omitempty"`
-	Nonce   *big.Int         `json:"nonce,omitempty"`
-	Version *ProtocolVersion `json:"protocolVersion,omitempty"`
+	Context         *big.Int         `json:"context,omitempty"`
+	Nonce           *big.Int         `json:"nonce,omitempty"`
+	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
 
 	// cache for Identifiers() method
 	ids *IrmaIdentifierSet
@@ -38,7 +40,8 @@ type AttributeDisCon []AttributeCon
 // AttributeConDisCon is only satisfied if all of the containing AttributeDisCon are satisfied.
 type AttributeConDisCon []AttributeDisCon
 
-// A DisclosureRequest is a request to disclose certain attributes.
+// A DisclosureRequest is a request to disclose certain attributes. Construct new instances using
+// NewDisclosureRequest().
 type DisclosureRequest struct {
 	BaseRequest
 
@@ -46,16 +49,18 @@ type DisclosureRequest struct {
 	Labels   map[int]TranslatedString `json:"labels"`
 }
 
-// A SignatureRequest is a a request to sign a message with certain attributes.
+// A SignatureRequest is a a request to sign a message with certain attributes. Construct new
+// instances using NewSignatureRequest().
 type SignatureRequest struct {
-	*DisclosureRequest
+	DisclosureRequest
 	Message string `json:"message"`
 }
 
 // An IssuanceRequest is a request to issue certain credentials,
-// optionally also asking for certain attributes to be simultaneously disclosed.
+// optionally also asking for certain attributes to be simultaneously disclosed. Construct new
+// instances using NewIssuanceRequest().
 type IssuanceRequest struct {
-	*DisclosureRequest
+	DisclosureRequest
 	Credentials []*CredentialRequest `json:"credentials"`
 
 	// Derived data
@@ -221,6 +226,15 @@ func (c *AttributeCon) MarshalJSON() ([]byte, error) {
 
 func (c *AttributeCon) UnmarshalJSON(bts []byte) error {
 	var err error
+
+	var l []AttributeTypeIdentifier
+	if err = json.Unmarshal(bts, &l); err == nil {
+		for _, id := range l {
+			*c = append(*c, AttributeRequest{Type: id})
+		}
+		return nil
+	}
+
 	m := map[AttributeTypeIdentifier]*string{}
 	if err = json.Unmarshal(bts, &m); err == nil {
 		for id, val := range m {
@@ -229,14 +243,13 @@ func (c *AttributeCon) UnmarshalJSON(bts []byte) error {
 		return nil
 	}
 
-	var l []AttributeTypeIdentifier
-	if err = json.Unmarshal(bts, &l); err == nil {
-		for _, id := range l {
-			*c = append(*c, AttributeRequest{Type: id})
-		}
+	var s string
+	if err = json.Unmarshal(bts, &s); err == nil {
+		*c = append(*c, NewAttributeRequest(s))
+		return nil
 	}
 
-	return err
+	return errors.New("Failed to unmarshal attribute conjunction")
 }
 
 func (ar *AttributeRequest) Satisfy(attr AttributeTypeIdentifier, val *string) bool {
@@ -317,7 +330,7 @@ func (dr *DisclosureRequest) AddSingle(attr AttributeTypeIdentifier, value *stri
 
 func NewDisclosureRequest(attrs ...AttributeTypeIdentifier) *DisclosureRequest {
 	request := &DisclosureRequest{
-		BaseRequest: BaseRequest{Type: ActionDisclosing},
+		BaseRequest: BaseRequest{Type: ActionDisclosing, Version: 2},
 		Labels:      map[int]TranslatedString{},
 	}
 	for _, attr := range attrs {
@@ -330,7 +343,7 @@ func NewSignatureRequest(message string, attrs ...AttributeTypeIdentifier) *Sign
 	dr := NewDisclosureRequest(attrs...)
 	dr.Type = ActionSigning
 	return &SignatureRequest{
-		DisclosureRequest: dr,
+		DisclosureRequest: *dr,
 		Message:           message,
 	}
 }
@@ -339,7 +352,7 @@ func NewIssuanceRequest(creds []*CredentialRequest, attrs ...AttributeTypeIdenti
 	dr := NewDisclosureRequest(attrs...)
 	dr.Type = ActionIssuing
 	return &IssuanceRequest{
-		DisclosureRequest: dr,
+		DisclosureRequest: *dr,
 		Credentials:       creds,
 	}
 }

@@ -764,7 +764,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 			continue
 		}
 		sig := msg[i-offset]
-		attrs, err := request.Credentials[i-offset].AttributeList(client.Configuration, irma.GetMetadataVersion(request.Base().Version))
+		attrs, err := request.Credentials[i-offset].AttributeList(client.Configuration, irma.GetMetadataVersion(request.Base().ProtocolVersion))
 		if err != nil {
 			return err
 		}

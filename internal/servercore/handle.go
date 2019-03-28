@@ -33,7 +33,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
 	session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "version": session.version.String()}).Debugf("Protocol version negotiated")
-	session.request.Base().Version = session.version
+	session.request.Base().ProtocolVersion = session.version
 
 	session.setStatus(server.StatusConnected)
 	return session.request, nil
