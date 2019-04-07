@@ -342,13 +342,6 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 		message = sm.Message
 	}
 
-	// Verify the timestamp
-	if sm.Timestamp != nil {
-		if err := sm.VerifyTimestamp(message, configuration); err != nil {
-			return nil, ProofStatusInvalidTimestamp, nil
-		}
-	}
-
 	// Now, cryptographically verify the IRMA disclosure proofs in the signature
 	var required AttributeDisjunctionList
 	if request != nil {
@@ -359,17 +352,21 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 		return result, status, err
 	}
 
-	// Check if a credential is expired
-	var t time.Time
+	// Next, verify the timestamp
+	t := time.Now()
 	if sm.Timestamp != nil {
+		if err := sm.VerifyTimestamp(message, configuration); err != nil {
+			return nil, ProofStatusInvalidTimestamp, nil
+		}
 		t = time.Unix(sm.Timestamp.Time, 0)
 	}
+
+	// Check if a credential was expired at creation time, according to the timestamp
 	if expired := ProofList(sm.Signature).Expired(configuration, &t); expired {
-		// The ABS contains attributes that were expired at the time of creation of the ABS.
 		return result, ProofStatusExpired, nil
 	}
 
-	// All disjunctions satisfied and nothing expired, proof is valid!
+	// The attributes were valid, nonexpired, and the request was satisfied
 	return result, ProofStatusValid, nil
 }
 
