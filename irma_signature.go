@@ -43,7 +43,11 @@ func (sm *SignedMessage) Disclosure() *Disclosure {
 // where serverNonce is the nonce sent by the signature requestor.
 func ASN1ConvertSignatureNonce(message string, nonce *big.Int, timestamp *atum.Timestamp) *big.Int {
 	msgHash := sha256.Sum256([]byte(message))
-	tohash := []interface{}{nonce.Value(), new(gobig.Int).SetBytes(msgHash[:])}
+	n := nonce.Value()
+	if n == nil {
+		n = gobig.NewInt(0)
+	}
+	tohash := []interface{}{n, new(gobig.Int).SetBytes(msgHash[:])}
 	if timestamp != nil {
 		tohash = append(tohash, timestamp.Sig.Data)
 	}

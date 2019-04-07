@@ -237,6 +237,12 @@ func TestVerifyInValidNonce(t *testing.T) {
 	require.Equal(t, status, ProofStatusInvalid)
 }
 
+func TestEmptySignature(t *testing.T) {
+	msg := &SignedMessage{}
+	_, status, _ := msg.Verify(&Configuration{}, nil)
+	require.NotEqual(t, ProofStatusValid, status)
+}
+
 // Test attribute decoding with both old and new metadata versions
 func TestAttributeDecoding(t *testing.T) {
 	expected := "male"

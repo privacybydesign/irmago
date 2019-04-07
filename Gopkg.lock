@@ -280,7 +280,7 @@
     "safeprime",
   ]
   pruneopts = "UT"
-  revision = "aaea3165ae62f1b76480d714813b1c6341a3512e"
+  revision = "a5a01cfeac1cf9781b73016f7f5492fd1bfca2ff"
 
 [[projects]]
   digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
