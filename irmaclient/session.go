@@ -249,7 +249,7 @@ func (session *session) processSessionInfo() {
 		ir := session.request.(*irma.IssuanceRequest)
 		_, err := ir.GetCredentialInfoList(session.client.Configuration, session.Version)
 		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownCredentialType, Err: err})
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownIdentifier, Err: err})
 			return
 		}
 
@@ -480,12 +480,7 @@ func (session *session) getProof() (interface{}, error) {
 // and aborts the session if not
 func (session *session) checkKeyshareEnrollment() bool {
 	for id := range session.request.Identifiers().SchemeManagers {
-		manager, ok := session.client.Configuration.SchemeManagers[id]
-		if !ok {
-			session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorUnknownSchemeManager, Info: id.String()})
-			return false
-		}
-		distributed := manager.Distributed()
+		distributed := session.client.Configuration.SchemeManagers[id].Distributed()
 		_, enrolled := session.client.keyshareServers[id]
 		if distributed && !enrolled {
 			session.Handler.KeyshareEnrollmentMissing(id)
@@ -496,22 +491,17 @@ func (session *session) checkKeyshareEnrollment() bool {
 }
 
 func (session *session) checkAndUpateConfiguration() bool {
-	for id := range session.request.Identifiers().SchemeManagers {
-		manager, contains := session.client.Configuration.SchemeManagers[id]
-		if !contains {
-			session.fail(&irma.SessionError{
-				ErrorType: irma.ErrorUnknownSchemeManager,
-				Info:      id.String(),
-			})
-			return false
-		}
-		if !manager.Valid {
-			session.fail(&irma.SessionError{
-				ErrorType: irma.ErrorInvalidSchemeManager,
-				Info:      string(manager.Status),
-			})
-			return false
-		}
+	// Download missing credential types/issuers/public keys from the scheme manager
+	downloaded, err := session.client.Configuration.Download(session.request)
+	if uerr, ok := err.(*irma.UnknownIdentifierError); ok {
+		session.fail(&irma.SessionError{ErrorType: uerr.ErrorType, Err: uerr})
+		return false
+	} else if err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
+		return false
+	}
+	if downloaded != nil && !downloaded.Empty() {
+		session.client.handler.UpdateConfiguration(downloaded)
 	}
 
 	// Check if we are enrolled into all involved keyshare servers
@@ -519,15 +509,6 @@ func (session *session) checkAndUpateConfiguration() bool {
 		return false
 	}
 
-	// Download missing credential types/issuers/public keys from the scheme manager
-	downloaded, err := session.client.Configuration.Download(session.request)
-	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
-		return false
-	}
-	if downloaded != nil && !downloaded.Empty() {
-		session.client.handler.UpdateConfiguration(downloaded)
-	}
 	return true
 }
 

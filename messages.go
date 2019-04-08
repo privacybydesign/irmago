@@ -189,7 +189,7 @@ const (
 	// Server returned unexpected or malformed response
 	ErrorServerResponse = ErrorType("serverResponse")
 	// Credential type not present in our Configuration
-	ErrorUnknownCredentialType = ErrorType("unknownCredentialType")
+	ErrorUnknownIdentifier = ErrorType("unknownIdentifier")
 	// Error during downloading of credential type, issuer, or public keys
 	ErrorConfigurationDownload = ErrorType("configurationDownload")
 	// IRMA requests refers to unknown scheme manager
@@ -220,6 +220,10 @@ type DisclosedAttributeIndex struct {
 type IssueCommitmentMessage struct {
 	*gabi.IssueCommitmentMessage
 	Indices DisclosedAttributeIndices `json:"indices"`
+}
+
+func (err ErrorType) Error() string {
+	return string(err)
 }
 
 func (e *SessionError) Error() string {

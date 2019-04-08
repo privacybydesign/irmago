@@ -73,7 +73,7 @@ func VerifyScheme(path string) error {
 		return err
 	}
 
-	if err := conf.CheckKeys(); err != nil {
+	if err := conf.ValidateKeys(); err != nil {
 		return err
 	}
 
@@ -95,7 +95,7 @@ func VerifyIrmaConfiguration(path string) error {
 	if err := conf.ParseFolder(); err != nil {
 		return err
 	}
-	if err := conf.CheckKeys(); err != nil {
+	if err := conf.ValidateKeys(); err != nil {
 		return err
 	}
 	if len(conf.SchemeManagers) == 0 {

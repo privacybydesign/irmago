@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/privacybydesign/irmago"
@@ -207,6 +208,32 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.CredentialTypes, credid)
 
 	test.ClearTestStorage(t)
+}
+
+func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
+	client := parseStorage(t)
+	request := irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
+		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
+	)
+	_, err := client.Configuration.Download(request)
+	require.Error(t, err)
+
+	expectedErr := &irma.UnknownIdentifierError{
+		ErrorType: irma.ErrorUnknownIdentifier,
+		Missing: &irma.IrmaIdentifierSet{
+			SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
+			PublicKeys:     map[irma.IssuerIdentifier][]int{},
+			Issuers: map[irma.IssuerIdentifier]struct{}{
+				irma.NewIssuerIdentifier("irma-demo.baz"): struct{}{},
+			},
+			CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
+				irma.NewCredentialTypeIdentifier("irma-demo.RU.foo"):  struct{}{},
+				irma.NewCredentialTypeIdentifier("irma-demo.baz.qux"): struct{}{},
+			},
+		},
+	}
+	require.True(t, reflect.DeepEqual(expectedErr, err), "Download() returned incorrect missing identifier set")
 }
 
 // Test installing a new scheme manager from a qr, and do a(n issuance) session

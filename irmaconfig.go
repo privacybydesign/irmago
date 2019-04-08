@@ -82,6 +82,11 @@ type SchemeManagerError struct {
 	Err     error
 }
 
+type UnknownIdentifierError struct {
+	ErrorType
+	Missing *IrmaIdentifierSet
+}
+
 const (
 	SchemeManagerStatusValid               = SchemeManagerStatus("Valid")
 	SchemeManagerStatusUnprocessed         = SchemeManagerStatus("Unprocessed")
@@ -275,7 +280,7 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 		manager.Status = SchemeManagerStatusParsingError
 		return errors.New("Scheme manager description not found")
 	}
-	if err = conf.checkScheme(manager, dir); err != nil {
+	if err = conf.validateScheme(manager, dir); err != nil {
 		return
 	}
 
@@ -466,7 +471,7 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 			return errors.New("Unsupported issuer description")
 		}
 
-		if err = conf.checkIssuer(manager, issuer, dir); err != nil {
+		if err = conf.validateIssuer(manager, issuer, dir); err != nil {
 			return err
 		}
 
@@ -574,7 +579,7 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 		if !exists {
 			return nil
 		}
-		if err = conf.checkCredentialType(manager, issuer, cred, dir); err != nil {
+		if err = conf.validateCredentialType(manager, issuer, cred, dir); err != nil {
 			return err
 		}
 		foundcred = true
@@ -829,6 +834,10 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	return
 }
 
+func (e *UnknownIdentifierError) Error() string {
+	return "unknown identifiers: " + e.Missing.String()
+}
+
 // Download downloads the issuers, credential types and public keys specified in set
 // if the current Configuration does not already have them,  and checks their authenticity
 // using the scheme manager index.
@@ -836,34 +845,41 @@ func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIde
 	if conf.readOnly {
 		return nil, errors.New("cannot download into a read-only configuration")
 	}
-	managers := make(map[string]struct{}) // Managers that we must update
-	downloaded = &IrmaIdentifierSet{
-		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
-		Issuers:         map[IssuerIdentifier]struct{}{},
-		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+
+	missing, err := conf.checkIdentifiers(session)
+	if err != nil {
+		return nil, err
+	}
+	if len(missing.SchemeManagers) > 0 {
+		return nil, &UnknownIdentifierError{ErrorUnknownSchemeManager, missing}
 	}
 
-	// Calculate which scheme managers must be updated
-	if err = conf.checkIssuers(session.Identifiers(), managers); err != nil {
-		return
-	}
-	if err = conf.checkCredentialTypes(session, managers); err != nil {
-		return
-	}
-
-	// Update the scheme managers found above and parse them, if necessary
-	for id := range managers {
-		if err = conf.UpdateSchemeManager(NewSchemeManagerIdentifier(id), downloaded); err != nil {
+	// Update the scheme  found above and parse them, if necessary
+	downloaded = newIrmaIdentifierSet()
+	for id := range missing.allSchemes() {
+		if err = conf.UpdateSchemeManager(id, downloaded); err != nil {
 			return
 		}
 	}
+
 	if !downloaded.Empty() {
-		return downloaded, conf.ParseFolder()
+		if err = conf.ParseFolder(); err != nil {
+			return nil, err
+		}
 	}
+
+	// Check again if all identifiers are known in the Configuration
+	if missing, err = conf.checkIdentifiers(session); err != nil {
+		return nil, err
+	}
+	if !missing.Empty() {
+		return nil, &UnknownIdentifierError{ErrorUnknownIdentifier, missing}
+	}
+
 	return
 }
 
-func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers map[string]struct{}) error {
+func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing *IrmaIdentifierSet) {
 	var typ *CredentialType
 	var contains bool
 
@@ -873,7 +889,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers
 			// First check if we have this credential type
 			typ, contains = conf.CredentialTypes[credreq.CredentialTypeID]
 			if !contains {
-				managers[credreq.CredentialTypeID.Root()] = struct{}{}
+				missing.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
 				continue
 			}
 			newAttrs := make(map[string]string)
@@ -885,14 +901,14 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers
 			for _, attrtyp := range typ.AttributeTypes {
 				_, contains = newAttrs[attrtyp.ID]
 				if !contains && !attrtyp.IsOptional() {
-					managers[credreq.CredentialTypeID.Root()] = struct{}{}
+					missing.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
 					break
 				}
 				delete(newAttrs, attrtyp.ID)
 			}
 			// If there is anything left in newAttrs, then these are attributes that are not in the credentialtype
 			if len(newAttrs) > 0 {
-				managers[credreq.CredentialTypeID.Root()] = struct{}{}
+				missing.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
 			}
 		}
 	}
@@ -900,22 +916,43 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, managers
 	_ = session.Disclosure().Disclose.Iterate(func(attr *AttributeRequest) error {
 		credid := attr.Type.CredentialTypeIdentifier()
 		if typ, contains = conf.CredentialTypes[credid]; !contains {
-			managers[credid.Root()] = struct{}{}
+			missing.CredentialTypes[credid] = struct{}{}
 			return nil
 		}
 		if !attr.Type.IsCredential() && !typ.ContainsAttribute(attr.Type) {
-			managers[credid.Root()] = struct{}{}
+			missing.CredentialTypes[credid] = struct{}{}
 		}
 		return nil
 	})
 
-	return nil
+	return
 }
 
-func (conf *Configuration) checkIssuers(set *IrmaIdentifierSet, managers map[string]struct{}) error {
+func (conf *Configuration) checkIdentifiers(session SessionRequest) (*IrmaIdentifierSet, error) {
+	missing := newIrmaIdentifierSet()
+	conf.checkSchemes(session, missing)
+	if err := conf.checkIssuers(session.Identifiers(), missing); err != nil {
+		return nil, err
+	}
+	conf.checkCredentialTypes(session, missing)
+	return missing, nil
+}
+
+// CheckSchemes verifies that all schemes occuring in the specified session request occur in this
+// instance.
+func (conf *Configuration) checkSchemes(session SessionRequest, missing *IrmaIdentifierSet) {
+	for id := range session.Identifiers().SchemeManagers {
+		scheme, contains := conf.SchemeManagers[id]
+		if !contains || !scheme.Valid {
+			missing.SchemeManagers[id] = struct{}{}
+		}
+	}
+}
+
+func (conf *Configuration) checkIssuers(set *IrmaIdentifierSet, missing *IrmaIdentifierSet) error {
 	for issid := range set.Issuers {
 		if _, contains := conf.Issuers[issid]; !contains {
-			managers[issid.Root()] = struct{}{}
+			missing.Issuers[issid] = struct{}{}
 		}
 	}
 	for issid, keyids := range set.PublicKeys {
@@ -925,7 +962,7 @@ func (conf *Configuration) checkIssuers(set *IrmaIdentifierSet, managers map[str
 				return err
 			}
 			if pk == nil {
-				managers[issid.Root()] = struct{}{}
+				missing.PublicKeys[issid] = append(missing.PublicKeys[issid], keyid)
 			}
 		}
 	}
@@ -1282,11 +1319,11 @@ func (conf *Configuration) StopAutoUpdateSchemes() {
 	}
 }
 
-// Methods containing consistency checks on irma_configuration
+// Validation methods containing consistency checks on irma_configuration
 
-func (conf *Configuration) checkIssuer(manager *SchemeManager, issuer *Issuer, dir string) error {
+func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer, dir string) error {
 	issuerid := issuer.Identifier()
-	conf.checkTranslations(fmt.Sprintf("Issuer %s", issuerid.String()), issuer)
+	conf.validateTranslations(fmt.Sprintf("Issuer %s", issuerid.String()), issuer)
 	// Check that the issuer has public keys
 	pkpath := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(pkpath)
@@ -1309,9 +1346,9 @@ func (conf *Configuration) checkIssuer(manager *SchemeManager, issuer *Issuer, d
 	return nil
 }
 
-func (conf *Configuration) checkCredentialType(manager *SchemeManager, issuer *Issuer, cred *CredentialType, dir string) error {
+func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer *Issuer, cred *CredentialType, dir string) error {
 	credid := cred.Identifier()
-	conf.checkTranslations(fmt.Sprintf("Credential type %s", credid.String()), cred)
+	conf.validateTranslations(fmt.Sprintf("Credential type %s", credid.String()), cred)
 	if cred.XMLVersion < 4 {
 		return errors.New("Unsupported credential type description")
 	}
@@ -1327,10 +1364,10 @@ func (conf *Configuration) checkCredentialType(manager *SchemeManager, issuer *I
 	if err := fs.AssertPathExists(dir + "/logo.png"); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
 	}
-	return conf.checkAttributes(cred)
+	return conf.validateAttributes(cred)
 }
 
-func (conf *Configuration) checkAttributes(cred *CredentialType) error {
+func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 	name := cred.Identifier().String()
 	indices := make(map[int]struct{})
 	count := len(cred.AttributeTypes)
@@ -1338,7 +1375,7 @@ func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 		return errors.Errorf("Credenial type %s has no attributes", name)
 	}
 	for i, attr := range cred.AttributeTypes {
-		conf.checkTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
+		conf.validateTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
 		index := i
 		if attr.DisplayIndex != nil {
 			index = *attr.DisplayIndex
@@ -1354,7 +1391,7 @@ func (conf *Configuration) checkAttributes(cred *CredentialType) error {
 	return nil
 }
 
-func (conf *Configuration) checkScheme(scheme *SchemeManager, dir string) error {
+func (conf *Configuration) validateScheme(scheme *SchemeManager, dir string) error {
 	if scheme.XMLVersion < 7 {
 		scheme.Status = SchemeManagerStatusParsingError
 		return errors.New("Unsupported scheme manager description")
@@ -1369,13 +1406,13 @@ func (conf *Configuration) checkScheme(scheme *SchemeManager, dir string) error 
 			return errors.Errorf("Scheme %s has keyshare URL but no keyshare public key kss-0.pem", scheme.ID)
 		}
 	}
-	conf.checkTranslations(fmt.Sprintf("Scheme %s", scheme.ID), scheme)
+	conf.validateTranslations(fmt.Sprintf("Scheme %s", scheme.ID), scheme)
 	return nil
 }
 
-// checkTranslations checks for each member of the interface o that is of type TranslatedString
+// validateTranslations checks for each member of the interface o that is of type TranslatedString
 // that it contains all necessary translations.
-func (conf *Configuration) checkTranslations(file string, o interface{}) {
+func (conf *Configuration) validateTranslations(file string, o interface{}) {
 	langs := []string{"en", "nl"} // Hardcode these for now, TODO make configurable
 	v := reflect.ValueOf(o)
 
@@ -1396,7 +1433,7 @@ func (conf *Configuration) checkTranslations(file string, o interface{}) {
 	}
 }
 
-func (conf *Configuration) CheckKeys() error {
+func (conf *Configuration) ValidateKeys() error {
 	const expiryBoundary = int64(time.Hour/time.Second) * 24 * 31 // 1 month, TODO make configurable
 
 	for issuerid := range conf.Issuers {

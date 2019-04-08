@@ -43,6 +43,17 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	return serverResult
 }
 
+// Check that nonexistent IRMA identifiers in the session request fail the session
+func TestRequestorInvalidRequest(t *testing.T) {
+	StartIrmaServer(t)
+	defer StopIrmaServer()
+	_, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
+		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
+	), nil)
+	require.Error(t, err)
+}
+
 func TestRequestorSignatureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	serverResult := requestorSessionHelper(t, irma.NewSignatureRequest("message", id), nil)

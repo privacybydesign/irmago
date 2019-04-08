@@ -121,7 +121,7 @@ var TestType = "irmaserver-jwt"
 func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *irma.Qr {
 	var (
 		qr     *irma.Qr = new(irma.Qr)
-		sesPkg *server.SessionPackage
+		sesPkg server.SessionPackage
 		err    error
 	)
 

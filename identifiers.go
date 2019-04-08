@@ -1,6 +1,9 @@
 package irma
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type metaObjectIdentifier string
 
@@ -43,6 +46,15 @@ type IrmaIdentifierSet struct {
 	Issuers         map[IssuerIdentifier]struct{}
 	CredentialTypes map[CredentialTypeIdentifier]struct{}
 	PublicKeys      map[IssuerIdentifier][]int
+}
+
+func newIrmaIdentifierSet() *IrmaIdentifierSet {
+	return &IrmaIdentifierSet{
+		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
+		Issuers:         map[IssuerIdentifier]struct{}{},
+		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+		PublicKeys:      map[IssuerIdentifier][]int{},
+	}
 }
 
 // Parent returns the parent object of this identifier.
@@ -197,6 +209,48 @@ func (set *IrmaIdentifierSet) Distributed(conf *Configuration) bool {
 		}
 	}
 	return false
+}
+
+func (set *IrmaIdentifierSet) allSchemes() map[SchemeManagerIdentifier]struct{} {
+	schemes := make(map[SchemeManagerIdentifier]struct{})
+	for s := range set.SchemeManagers {
+		schemes[s] = struct{}{}
+	}
+	for i := range set.Issuers {
+		schemes[i.SchemeManagerIdentifier()] = struct{}{}
+	}
+	for i := range set.PublicKeys {
+		if len(set.PublicKeys[i]) > 0 {
+			schemes[i.SchemeManagerIdentifier()] = struct{}{}
+		}
+	}
+	for c := range set.CredentialTypes {
+		schemes[c.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+	}
+	return schemes
+}
+
+func (set *IrmaIdentifierSet) String() string {
+	var builder strings.Builder
+	for s := range set.SchemeManagers {
+		builder.WriteString(s.String() + ", ")
+	}
+	for i := range set.Issuers {
+		builder.WriteString(i.String() + ", ")
+	}
+	for i, keys := range set.PublicKeys {
+		for _, k := range keys {
+			builder.WriteString(fmt.Sprintf("%s-%d", i.String(), k))
+		}
+	}
+	for c := range set.CredentialTypes {
+		builder.WriteString(c.String() + ", ")
+	}
+	s := builder.String()
+	if len(s) > 0 { // strip trailing comma
+		s = s[:len(s)-2]
+	}
+	return s
 }
 
 func (set *IrmaIdentifierSet) Empty() bool {
