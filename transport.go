@@ -168,7 +168,7 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	if _, resultstr := result.(*string); resultstr {
 		*result.(*string) = string(body)
 	} else {
-		err = json.Unmarshal(body, result)
+		err = UnmarshalValidate(body, result)
 		if err != nil {
 			return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 		}

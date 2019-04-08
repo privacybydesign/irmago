@@ -394,6 +394,11 @@ func (dr *DisclosureRequest) Validate() error {
 	if len(dr.Disclose) == 0 {
 		return errors.New("Disclosure request had no attributes")
 	}
+	for _, discon := range dr.Disclose {
+		if len(discon) == 0 {
+			return errors.New("Empty disjunction")
+		}
+	}
 	return nil
 }
 
@@ -519,6 +524,11 @@ func (ir *IssuanceRequest) Validate() error {
 	if len(ir.Credentials) == 0 {
 		return errors.New("Empty issuance request")
 	}
+	for _, cred := range ir.Credentials {
+		if cred.Validity.Floor().Before(Timestamp(time.Now())) {
+			return errors.New("Expired credential request")
+		}
+	}
 	return nil
 }
 
@@ -561,6 +571,11 @@ func (sr *SignatureRequest) Validate() error {
 	if len(sr.Disclose) == 0 {
 		return errors.New("Signature request had no attributes")
 	}
+	for _, discon := range sr.Disclose {
+		if len(discon) == 0 {
+			return errors.New("Empty disjunction")
+		}
+	}
 	return nil
 }
 
@@ -591,6 +606,10 @@ func (t *Timestamp) UnmarshalJSON(b []byte) error {
 // Timestamp implements Stringer.
 func (t *Timestamp) String() string {
 	return fmt.Sprint(time.Time(*t).Unix())
+}
+
+func (t *Timestamp) Floor() Timestamp {
+	return Timestamp(time.Unix((time.Time(*t).Unix()/ExpiryFactor)*ExpiryFactor, 0))
 }
 
 func readTimestamp(path string) (*Timestamp, bool, error) {
