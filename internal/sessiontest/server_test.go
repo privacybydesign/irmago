@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var (
@@ -25,7 +26,7 @@ var (
 
 func init() {
 	logger.Level = logrus.ErrorLevel
-	logger.Formatter = &logrus.TextFormatter{}
+	logger.Formatter = &prefixed.TextFormatter{ForceFormatting: true, ForceColors: true}
 }
 
 func StartRequestorServer(configuration *requestorserver.Configuration) {

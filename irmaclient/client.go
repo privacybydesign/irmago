@@ -515,6 +515,13 @@ func (client *Client) Candidates(discon irma.AttributeDisCon) (
 	candidates = [][]*irma.AttributeIdentifier{}
 
 	for _, con := range discon {
+		if len(con) == 0 {
+			// An empty conjunction means the containing disjunction is optional
+			// so it is satisfied by sending no attributes
+			candidates = append(candidates, []*irma.AttributeIdentifier{})
+			continue
+		}
+
 		// Build a list containing, for each attribute in this conjunction, a list of credential
 		// instances containing the attribute. Writing schematically a sample conjunction of three
 		// attribute types as [ a.a.a.a, a.a.a.b, a.a.b.x ], we map this to:

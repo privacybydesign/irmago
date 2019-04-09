@@ -95,16 +95,16 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	session.markAlive()
 
 	request := session.request.(*irma.IssuanceRequest)
-	discloseCount := len(request.Disclose)
-	if len(commitments.Proofs) != len(request.Credentials)+discloseCount {
-		return nil, session.fail(server.ErrorAttributesMissing, "")
+	discloseCount := len(commitments.Proofs) - len(request.Credentials)
+	if discloseCount < 0 {
+		return nil, session.fail(server.ErrorMalformedInput, "Received insufficient proofs")
 	}
 
 	// Compute list of public keys against which to verify the received proofs
 	disclosureproofs := irma.ProofList(commitments.Proofs[:discloseCount])
 	pubkeys, err := disclosureproofs.ExtractPublicKeys(session.conf.IrmaConfiguration)
 	if err != nil {
-		return nil, session.fail(server.ErrorInvalidProofs, err.Error())
+		return nil, session.fail(server.ErrorMalformedInput, err.Error())
 	}
 	for _, cred := range request.Credentials {
 		iss := cred.CredentialTypeID.IssuerIdentifier()
@@ -149,7 +149,10 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		pk, _ := session.conf.IrmaConfiguration.PublicKey(id, cred.KeyCounter)
 		sk, _ := session.conf.PrivateKey(id)
 		issuer := gabi.NewIssuer(sk, pk, one)
-		proof := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
+		proof, ok := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
+		if !ok {
+			return nil, session.fail(server.ErrorMalformedInput, "Received invalid issuance commitment")
+		}
 		attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())

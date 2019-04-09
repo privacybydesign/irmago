@@ -206,7 +206,7 @@ func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
 func (c *AttributeCon) MarshalJSON() ([]byte, error) {
 	var vals bool
 	m := map[AttributeTypeIdentifier]*string{}
-	var l []AttributeTypeIdentifier
+	l := make([]AttributeTypeIdentifier, 0, len(*c))
 
 	for _, attr := range *c {
 		m[attr.Type] = attr.Value
@@ -256,34 +256,37 @@ func (ar *AttributeRequest) Satisfy(attr AttributeTypeIdentifier, val *string) b
 	return ar.Type == attr && (ar.Value == nil || (val != nil && *ar.Value == *val))
 }
 
-func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) ([]*DisclosedAttribute, error) {
+func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	if len(indices) < len(c) {
-		return nil, nil
+		return false, nil, nil
 	}
 	attrs := make([]*DisclosedAttribute, 0, len(c))
+	if len(c) == 0 {
+		return true, attrs, nil
+	}
 
 	for j := range c {
 		index := indices[j]
 		attr, val, err := extractAttribute(proofs, index, conf)
 		if err != nil {
-			return nil, err
+			return false, nil, err
 		}
 		if !c[j].Satisfy(attr.Identifier, val) {
-			return nil, nil
+			return false, nil, nil
 		}
 		attrs = append(attrs, attr)
 	}
-	return attrs, nil
+	return true, attrs, nil
 }
 
-func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) ([]*DisclosedAttribute, error) {
+func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	for _, con := range dc {
-		attrs, err := con.Satisfy(proofs, indices, conf)
-		if len(attrs) > 0 || err != nil {
-			return attrs, err
+		satisfied, attrs, err := con.Satisfy(proofs, indices, conf)
+		if satisfied || err != nil {
+			return true, attrs, err
 		}
 	}
-	return nil, nil
+	return false, nil, nil
 }
 
 func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuration) (bool, [][]*DisclosedAttribute, error) {
@@ -294,11 +297,11 @@ func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuratio
 	complete := true
 
 	for i, discon := range cdc {
-		attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[i], conf)
+		satisfied, attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[i], conf)
 		if err != nil {
 			return false, nil, err
 		}
-		if len(attrs) > 0 {
+		if satisfied {
 			list[i] = attrs
 		} else {
 			complete = false

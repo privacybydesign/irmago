@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/privacybydesign/irmago"
@@ -162,4 +163,58 @@ func TestConDisCon(t *testing.T) {
 	}
 
 	requestorSessionHelper(t, dr, client)
+}
+
+func TestOptionalDisclosure(t *testing.T) {
+	client := parseStorage(t)
+	university := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university")
+	studentid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+
+	radboud := "Radboud"
+	attrs1 := irma.AttributeConDisCon{
+		irma.AttributeDisCon{ // Including one non-optional disjunction is required in disclosure and signature sessions
+			irma.AttributeCon{irma.AttributeRequest{Type: university}},
+		},
+		irma.AttributeDisCon{
+			irma.AttributeCon{},
+			irma.AttributeCon{irma.AttributeRequest{Type: studentid}},
+		},
+	}
+	disclosed1 := [][]*irma.DisclosedAttribute{
+		{
+			{
+				RawValue:   &radboud,
+				Value:      map[string]string{"": radboud, "en": radboud, "nl": radboud},
+				Identifier: irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"),
+				Status:     irma.AttributeProofStatusPresent,
+			},
+		},
+		{},
+	}
+	attrs2 := irma.AttributeConDisCon{ // In issuance sessions, it is allowed that all disjunctions are optional
+		irma.AttributeDisCon{
+			irma.AttributeCon{},
+			irma.AttributeCon{irma.AttributeRequest{Type: studentid}},
+		},
+	}
+	disclosed2 := [][]*irma.DisclosedAttribute{{}}
+
+	tests := []struct {
+		request   irma.SessionRequest
+		attrs     irma.AttributeConDisCon
+		disclosed [][]*irma.DisclosedAttribute
+	}{
+		{irma.NewDisclosureRequest(), attrs1, disclosed1},
+		{irma.NewSignatureRequest("message"), attrs1, disclosed1},
+		{getIssuanceRequest(true), attrs1, disclosed1},
+		{getIssuanceRequest(true), attrs2, disclosed2},
+	}
+
+	for _, args := range tests {
+		args.request.Disclosure().Disclose = args.attrs
+
+		// TestHandler always prefers the first option when given any choice, so it will not disclose the optional attribute
+		result := requestorSessionHelper(t, args.request, client)
+		require.True(t, reflect.DeepEqual(args.disclosed, result.Disclosed))
+	}
 }
