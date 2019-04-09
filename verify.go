@@ -94,7 +94,31 @@ func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int,
 		}
 	}
 
-	return gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers), nil
+	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers) {
+		return false, nil
+	}
+
+	// Verify that any singleton credential occurs at most once in the prooflist
+	singletons := map[CredentialTypeIdentifier]bool{}
+	for _, proof := range pl {
+		proofd, ok := proof.(*gabi.ProofD)
+		if !ok {
+			continue
+		}
+		typ := MetadataFromInt(proofd.ADisclosed[1], configuration).CredentialType()
+		if typ == nil {
+			return false, errors.New("Received unknown credential type")
+		}
+		if typ.IsSingleton {
+			if !singletons[typ.Identifier()] { // Seen for the first time
+				singletons[typ.Identifier()] = true
+			} else { // Seen for the second time
+				return false, nil
+			}
+		}
+	}
+
+	return true, nil
 }
 
 // Expired returns true if any of the contained disclosure proofs is specified at the specified time,
