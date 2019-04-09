@@ -289,6 +289,25 @@ func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAtt
 	return false, nil, nil
 }
 
+func (cdc AttributeConDisCon) Validate(conf *Configuration) error {
+	for _, discon := range cdc {
+		for _, con := range discon {
+			var nonsingleton *CredentialTypeIdentifier
+			for _, attr := range con {
+				typ := attr.Type.CredentialTypeIdentifier()
+				if !conf.CredentialTypes[typ].IsSingleton {
+					if nonsingleton != nil && *nonsingleton != typ {
+						return errors.New("Multiple non-singletons within one inner conjunction are not allowed")
+					} else {
+						nonsingleton = &typ
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuration) (bool, [][]*DisclosedAttribute, error) {
 	if len(disclosure.Indices) < len(cdc) {
 		return false, nil, nil

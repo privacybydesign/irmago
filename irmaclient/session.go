@@ -230,7 +230,8 @@ func serverName(hostname string, request irma.SessionRequest, conf *irma.Configu
 func (session *session) processSessionInfo() {
 	defer session.recoverFromPanic()
 
-	if !session.checkAndUpateConfiguration() {
+	if err := session.checkAndUpateConfiguration(); err != nil {
+		session.fail(err.(*irma.SessionError))
 		return
 	}
 
@@ -490,15 +491,13 @@ func (session *session) checkKeyshareEnrollment() bool {
 	return true
 }
 
-func (session *session) checkAndUpateConfiguration() bool {
+func (session *session) checkAndUpateConfiguration() error {
 	// Download missing credential types/issuers/public keys from the scheme manager
 	downloaded, err := session.client.Configuration.Download(session.request)
 	if uerr, ok := err.(*irma.UnknownIdentifierError); ok {
-		session.fail(&irma.SessionError{ErrorType: uerr.ErrorType, Err: uerr})
-		return false
+		return &irma.SessionError{ErrorType: uerr.ErrorType, Err: uerr}
 	} else if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
-		return false
+		return &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err}
 	}
 	if downloaded != nil && !downloaded.Empty() {
 		session.client.handler.UpdateConfiguration(downloaded)
@@ -506,10 +505,14 @@ func (session *session) checkAndUpateConfiguration() bool {
 
 	// Check if we are enrolled into all involved keyshare servers
 	if !session.checkKeyshareEnrollment() {
-		return false
+		return &irma.SessionError{ErrorType: irma.ErrorKeyshare}
 	}
 
-	return true
+	if err = session.request.Disclosure().Disclose.Validate(session.client.Configuration); err != nil {
+		return &irma.SessionError{ErrorType: irma.ErrorInvalidRequest}
+	}
+
+	return nil
 }
 
 // IsInteractive returns whether this session uses an API server or not.

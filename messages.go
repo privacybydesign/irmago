@@ -196,6 +196,8 @@ const (
 	ErrorUnknownSchemeManager = ErrorType("unknownSchemeManager")
 	// A session is requested involving a scheme manager that has some problem
 	ErrorInvalidSchemeManager = ErrorType("invalidSchemeManager")
+	// Invalid session request
+	ErrorInvalidRequest = ErrorType("invalidRequest")
 	// Recovered panic
 	ErrorPanic = ErrorType("panic")
 )

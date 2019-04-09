@@ -168,8 +168,10 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 }
 
 func (s *Server) validateRequest(request irma.SessionRequest) error {
-	_, err := s.conf.IrmaConfiguration.Download(request)
-	return err
+	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
+		return err
+	}
+	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
 }
 
 func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {

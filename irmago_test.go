@@ -468,3 +468,53 @@ func TestSessionRequests(t *testing.T) {
 func trivialTranslation(str string) TranslatedString {
 	return TranslatedString{"en": str, "nl": str}
 }
+
+func TestConDisconSingletons(t *testing.T) {
+	tests := []struct {
+		attrs   AttributeConDisCon
+		allowed bool
+	}{
+		{
+			AttributeConDisCon{
+				AttributeDisCon{
+					AttributeCon{
+						NewAttributeRequest("irma-demo.RU.studentCard.studentID"), // singleton
+						NewAttributeRequest("test.test.email.email"),              // singleton
+					},
+				},
+			},
+			false, // multiple singletons in one inner conjunction is not allowed
+		},
+		{
+			AttributeConDisCon{
+				AttributeDisCon{
+					AttributeCon{
+						NewAttributeRequest("irma-demo.RU.studentCard.studentID"), // non singleton
+						NewAttributeRequest("test.test.mijnirma.email"),           // non singleton
+					},
+				},
+			},
+			true,
+		},
+		{
+			AttributeConDisCon{
+				AttributeDisCon{
+					AttributeCon{
+						NewAttributeRequest("irma-demo.MijnOverheid.root.BSN"), // singleton
+						NewAttributeRequest("test.test.mijnirma.email"),        // non singleton
+					},
+				},
+			},
+			true,
+		},
+	}
+
+	conf := parseConfiguration(t)
+	for _, args := range tests {
+		if args.allowed {
+			require.NoError(t, args.attrs.Validate(conf))
+		} else {
+			require.Error(t, args.attrs.Validate(conf))
+		}
+	}
+}
