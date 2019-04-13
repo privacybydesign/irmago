@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"runtime/debug"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -584,7 +585,7 @@ func panicToError(e interface{}) *irma.SessionError {
 	default: // nop
 	}
 	fmt.Println("Panic: " + info)
-	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info}
+	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info + "\n\n" + string(debug.Stack())}
 }
 
 // Idempotently send DELETE to remote server, returning whether or not we did something
