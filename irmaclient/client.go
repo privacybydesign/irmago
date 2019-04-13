@@ -496,13 +496,13 @@ type attributeGroup struct {
 func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (
 	[]attributeGroup, irma.DisclosedAttributeIndices, error,
 ) {
-	todisclose := make([]attributeGroup, 0, len(choice.Attributes))
 	if choice == nil || choice.Attributes == nil {
-		return todisclose, irma.DisclosedAttributeIndices{}, nil
+		return []attributeGroup{}, irma.DisclosedAttributeIndices{}, nil
 	}
 
 	// maps an irma.CredentialIdentifier to its index in the final ProofList
 	credIndices := make(map[irma.CredentialIdentifier]int)
+	todisclose := make([]attributeGroup, 0, len(choice.Attributes))
 	attributeIndices := make(irma.DisclosedAttributeIndices, len(choice.Attributes))
 	for i, attribute := range choice.Attributes {
 		var credIndex int
