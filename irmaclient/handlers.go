@@ -20,9 +20,10 @@ var _ Handler = (*keyshareEnrollmentHandler)(nil)
 
 func (h *keyshareEnrollmentHandler) RequestIssuancePermission(request irma.IssuanceRequest, ServerName irma.TranslatedString, callback PermissionHandler) {
 	// Fetch the username from the credential request and save it along with the scheme manager
-	smi := request.Credentials[0].CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
-	attr := irma.NewAttributeTypeIdentifier(h.client.Configuration.SchemeManagers[smi].KeyshareAttribute)
-	h.kss.Username = request.Credentials[0].Attributes[attr.Name()]
+	for _, attr := range request.Credentials[0].Attributes {
+		h.kss.Username = attr
+		break
+	}
 
 	// Do the issuance
 	callback(true, nil)
