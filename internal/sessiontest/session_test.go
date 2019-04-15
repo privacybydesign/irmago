@@ -40,7 +40,7 @@ func TestMultipleIssuanceSession(t *testing.T) {
 }
 
 func TestDefaultCredentialValidity(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	request := getIssuanceRequest(true)
 	sessionHelper(t, request, "issue", client)
 }
@@ -63,7 +63,7 @@ func TestIssuanceOptionalSetAttributes(t *testing.T) {
 }
 
 func TestLargeAttribute(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
 	require.NoError(t, client.RemoveAllCredentials())
@@ -76,7 +76,7 @@ func TestLargeAttribute(t *testing.T) {
 }
 
 func TestIssuanceSingletonCredential(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
 	request := getMultipleIssuanceRequest()
@@ -100,7 +100,7 @@ indicates the sign of the integer. In Go this is not the case. This resulted in 
 signatures being issued in the issuance protocol in two distinct ways, of which we test here
 that they have been fixed. */
 func TestAttributeByteEncoding(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 	require.NoError(t, client.RemoveAllCredentials())
 
@@ -123,7 +123,7 @@ func TestAttributeByteEncoding(t *testing.T) {
 }
 
 func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
@@ -148,7 +148,7 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
@@ -164,7 +164,7 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
@@ -180,7 +180,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 
@@ -197,7 +197,7 @@ func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
@@ -223,7 +223,7 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 // within this manager to test the autmatic downloading of credential definitions,
 // issuers, and public keys.
 func TestDownloadSchemeManager(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
 	// Remove irma-demo scheme manager as we need to test adding it

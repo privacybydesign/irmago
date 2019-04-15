@@ -35,17 +35,18 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func parseStorage(t *testing.T) *irmaclient.Client {
+func parseStorage(t *testing.T) (*irmaclient.Client, *TestClientHandler) {
 	test.SetupTestStorage(t)
+	handler := &TestClientHandler{t: t, c: make(chan error)}
 	path := test.FindTestdataFolder(t)
 	client, err := irmaclient.New(
 		filepath.Join(path, "storage", "test"),
 		filepath.Join(path, "irma_configuration"),
 		"",
-		&TestClientHandler{t: t},
+		handler,
 	)
 	require.NoError(t, err)
-	return client
+	return client, handler
 }
 
 func getDisclosureRequest(id irma.AttributeTypeIdentifier) *irma.DisclosureRequest {
@@ -224,7 +225,7 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 
 func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) {
 	if client == nil {
-		client = parseStorage(t)
+		client, _ = parseStorage(t)
 		defer test.ClearTestStorage(t)
 	}
 

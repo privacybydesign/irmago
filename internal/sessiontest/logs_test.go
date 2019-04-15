@@ -9,7 +9,7 @@ import (
 )
 
 func TestLogging(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 
 	logs, err := client.Logs()
 	oldLogLength := len(logs)
