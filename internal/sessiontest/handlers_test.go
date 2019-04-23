@@ -96,7 +96,7 @@ func (th TestHandler) Failure(err *irma.SessionError) {
 		th.t.Fatal(err)
 	}
 }
-func (th TestHandler) UnsatisfiableRequest(serverName irma.TranslatedString, missing map[int]map[int]irma.AttributeCon) {
+func (th TestHandler) UnsatisfiableRequest(request irma.SessionRequest, serverName irma.TranslatedString, missing map[int]map[int]irma.AttributeCon) {
 	th.Failure(&irma.SessionError{
 		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 	})

@@ -31,17 +31,29 @@ type Handler interface {
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
-	UnsatisfiableRequest(ServerName irma.TranslatedString, missing map[int]map[int]irma.AttributeCon)
+	UnsatisfiableRequest(request irma.SessionRequest,
+		ServerName irma.TranslatedString,
+		missing map[int]map[int]irma.AttributeCon)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 
-	RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback PermissionHandler)
-	RequestVerificationPermission(request *irma.DisclosureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback PermissionHandler)
-	RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback PermissionHandler)
-	RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool))
+	RequestIssuancePermission(request *irma.IssuanceRequest,
+		candidates [][][]*irma.AttributeIdentifier,
+		ServerName irma.TranslatedString,
+		callback PermissionHandler)
+	RequestVerificationPermission(request *irma.DisclosureRequest,
+		candidates [][][]*irma.AttributeIdentifier,
+		ServerName irma.TranslatedString,
+		callback PermissionHandler)
+	RequestSignaturePermission(request *irma.SignatureRequest,
+		candidates [][][]*irma.AttributeIdentifier,
+		ServerName irma.TranslatedString,
+		callback PermissionHandler)
+	RequestSchemeManagerPermission(manager *irma.SchemeManager,
+		callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }
@@ -266,7 +278,7 @@ func (session *session) processSessionInfo() {
 
 	candidates, missing := session.client.CheckSatisfiability(session.request.Disclosure().Disclose)
 	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.ServerName, missing)
+		session.Handler.UnsatisfiableRequest(session.request, session.ServerName, missing)
 		return
 	}
 
