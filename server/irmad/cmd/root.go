@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -256,7 +257,10 @@ func configure(cmd *cobra.Command) error {
 	}
 
 	// Handle requestors
-	requestors := viper.GetStringMap("requestors")
+	requestors, err := cast.ToStringMapE(viper.Get("requestors"))
+	if err != nil {
+		return errors.WrapPrefix(err, "Failed to unmarshal requestors from flag or env var", 0)
+	}
 	if len(requestors) > 0 {
 		if err := mapstructure.Decode(requestors, &conf.Requestors); err != nil {
 			return errors.WrapPrefix(err, "Failed to unmarshal requestors from config file", 0)
