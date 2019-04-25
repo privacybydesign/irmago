@@ -288,9 +288,15 @@ func productionMode() bool {
 			if len(os.Args) == i+1 || strings.HasPrefix(os.Args[i+1], "--") {
 				return true
 			}
-			val := strings.ToLower(os.Args[i+1])
-			return val == "1" || val == "true" || val == "yes" || val == "t"
+			if checkConfVal(os.Args[i+1]) {
+				return true
+			}
 		}
 	}
-	return false
+
+	return checkConfVal(os.Getenv("IRMASERVER_PRODUCTION"))
+}
+func checkConfVal(val string) bool {
+	lc := strings.ToLower(val)
+	return lc == "1" || lc == "true" || lc == "yes" || lc == "t"
 }
