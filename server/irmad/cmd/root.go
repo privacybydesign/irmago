@@ -257,9 +257,11 @@ func configure(cmd *cobra.Command) error {
 	}
 
 	// Handle requestors
-	requestors, err := cast.ToStringMapE(viper.Get("requestors"))
-	if err != nil {
-		return errors.WrapPrefix(err, "Failed to unmarshal requestors from flag or env var", 0)
+	var requestors map[string]interface{}
+	if val, flagOrEnv := viper.Get("requestors").(string); !flagOrEnv || val != "" {
+		if requestors, err = cast.ToStringMapE(viper.Get("requestors")); err != nil {
+			return errors.WrapPrefix(err, "Failed to unmarshal requestors from flag or env var", 0)
+		}
 	}
 	if len(requestors) > 0 {
 		if err := mapstructure.Decode(requestors, &conf.Requestors); err != nil {
