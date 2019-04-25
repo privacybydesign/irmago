@@ -95,6 +95,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	session.markAlive()
 
 	request := session.request.(*irma.IssuanceRequest)
+
 	discloseCount := len(commitments.Proofs) - len(request.Credentials)
 	if discloseCount < 0 {
 		return nil, session.fail(server.ErrorMalformedInput, "Received insufficient proofs")

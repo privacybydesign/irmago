@@ -17,7 +17,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	defer StopIrmaServer()
 
 	if client == nil {
-		client = parseStorage(t)
+		client, _ = parseStorage(t)
 		defer test.ClearTestStorage(t)
 	}
 
@@ -95,6 +95,37 @@ func TestRequestorIssuanceSession(t *testing.T) {
 	testRequestorIssuance(t, false)
 }
 
+func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
+	var ir irma.IssuanceRequest
+	require.NoError(t, irma.UnmarshalValidate([]byte(`{
+		"type":"issuing",
+		"credentials": [
+			{
+				"credential":"irma-demo.MijnOverheid.root",
+				"attributes" : {
+					"BSN":"12345"
+				}
+			}
+		],
+		"disclose" : [
+			{
+				"label":"Initialen",
+				"attributes":["irma-demo.RU.studentCard.studentCardNumber"]
+			},
+			{
+				"label":"Achternaam",
+				"attributes" : ["irma-demo.RU.studentCard.studentID"]
+			},
+			{
+				"label":"Geboortedatum",
+				"attributes":["irma-demo.RU.studentCard.university"]
+			}
+		]
+	}`), &ir))
+
+	require.Equal(t, server.StatusDone, requestorSessionHelper(t, &ir, nil).Status)
+}
+
 func testRequestorIssuance(t *testing.T, keyshare bool) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
@@ -127,7 +158,7 @@ func testRequestorIssuance(t *testing.T, keyshare bool) {
 }
 
 func TestConDisCon(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	ir := getMultipleIssuanceRequest()
 	ir.Credentials = append(ir.Credentials, &irma.CredentialRequest{
 		Validity:         ir.Credentials[0].Validity,
@@ -166,7 +197,7 @@ func TestConDisCon(t *testing.T) {
 }
 
 func TestOptionalDisclosure(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	university := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university")
 	studentid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 

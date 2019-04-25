@@ -272,7 +272,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f7c906dec3dd744b5e351a4aa770d3ab027e634b859d4d3635a42be3b25b1edc"
+  digest = "1:bb1a0e54dd761717865f96b989b382e0abf7f4863081cc65f5982799208254dd"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",

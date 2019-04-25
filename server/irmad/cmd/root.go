@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -256,7 +257,12 @@ func configure(cmd *cobra.Command) error {
 	}
 
 	// Handle requestors
-	requestors := viper.GetStringMap("requestors")
+	var requestors map[string]interface{}
+	if val, flagOrEnv := viper.Get("requestors").(string); !flagOrEnv || val != "" {
+		if requestors, err = cast.ToStringMapE(viper.Get("requestors")); err != nil {
+			return errors.WrapPrefix(err, "Failed to unmarshal requestors from flag or env var", 0)
+		}
+	}
 	if len(requestors) > 0 {
 		if err := mapstructure.Decode(requestors, &conf.Requestors); err != nil {
 			return errors.WrapPrefix(err, "Failed to unmarshal requestors from config file", 0)
@@ -288,9 +294,15 @@ func productionMode() bool {
 			if len(os.Args) == i+1 || strings.HasPrefix(os.Args[i+1], "--") {
 				return true
 			}
-			val := strings.ToLower(os.Args[i+1])
-			return val == "1" || val == "true" || val == "yes" || val == "t"
+			if checkConfVal(os.Args[i+1]) {
+				return true
+			}
 		}
 	}
-	return false
+
+	return checkConfVal(os.Getenv("IRMASERVER_PRODUCTION"))
+}
+func checkConfVal(val string) bool {
+	lc := strings.ToLower(val)
+	return lc == "1" || lc == "true" || lc == "yes" || lc == "t"
 }

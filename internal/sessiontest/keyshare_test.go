@@ -7,10 +7,11 @@ import (
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
-func TestManualKeyShareSession(t *testing.T) {
+func TestManualKeyshareSession(t *testing.T) {
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
 
@@ -24,13 +25,32 @@ func TestRequestorIssuanceKeyshareSession(t *testing.T) {
 	testRequestorIssuance(t, true)
 }
 
+func TestKeyshareRegister(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	require.NoError(t, client.KeyshareRemoveAll())
+	require.NoError(t, client.RemoveAllCredentials())
+
+	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+	require.NoError(t, <-handler.c)
+
+	require.Len(t, client.CredentialInfoList(), 1)
+
+	sessionHelper(t, getIssuanceRequest(true), "issue", client)
+	keyshareSessions(t, client)
+}
+
 // Use the existing keyshare enrollment and credentials
 // in a keyshare session of each session type.
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
+	keyshareSessions(t, client)
+}
 
+func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	issuanceRequest := getCombinedIssuanceRequest(id)

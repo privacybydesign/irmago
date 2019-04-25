@@ -25,7 +25,7 @@ func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *Manual
 
 func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
 	if client == nil {
-		client = parseStorage(t)
+		client, _ = parseStorage(t)
 		defer test.ClearTestStorage(t)
 	}
 
@@ -110,7 +110,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 }
 
 func TestManualSessionMultiProof(t *testing.T) {
-	client := parseStorage(t)
+	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
 	// First, we need to issue an extra credential (BSN)

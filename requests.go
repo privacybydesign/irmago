@@ -547,7 +547,7 @@ func (ir *IssuanceRequest) Validate() error {
 		return errors.New("Empty issuance request")
 	}
 	for _, cred := range ir.Credentials {
-		if cred.Validity.Floor().Before(Timestamp(time.Now())) {
+		if cred.Validity != nil && cred.Validity.Floor().Before(Timestamp(time.Now())) {
 			return errors.New("Expired credential request")
 		}
 	}

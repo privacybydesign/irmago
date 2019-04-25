@@ -318,10 +318,13 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	}
 
 	// Next, verify the timestamp
-	if err := sm.VerifyTimestamp(message, configuration); err != nil {
-		return nil, ProofStatusInvalidTimestamp, nil
+	t := time.Now()
+	if sm.Timestamp != nil {
+		if err := sm.VerifyTimestamp(message, configuration); err != nil {
+			return nil, ProofStatusInvalidTimestamp, nil
+		}
+		t = time.Unix(sm.Timestamp.Time, 0)
 	}
-	t := time.Unix(sm.Timestamp.Time, 0)
 
 	// Check if a credential was expired at creation time, according to the timestamp
 	if expired := ProofList(sm.Signature).Expired(configuration, &t); expired {
