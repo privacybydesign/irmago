@@ -95,9 +95,10 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	session.markAlive()
 
 	request := session.request.(*irma.IssuanceRequest)
-	discloseCount := len(request.Disclose)
-	if len(commitments.Proofs) != len(request.Credentials)+discloseCount {
-		return nil, session.fail(server.ErrorAttributesMissing, "")
+
+	discloseCount := len(commitments.Proofs) - len(request.Credentials)
+	if discloseCount < 0 {
+		return nil, session.fail(server.ErrorMalformedInput, "Received insufficient proofs")
 	}
 
 	// Compute list of public keys against which to verify the received proofs

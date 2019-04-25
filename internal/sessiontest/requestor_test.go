@@ -101,6 +101,37 @@ func TestRequestorIssuanceSession(t *testing.T) {
 	testRequestorIssuance(t, false)
 }
 
+func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
+	var ir irma.IssuanceRequest
+	require.NoError(t, irma.UnmarshalValidate([]byte(`{
+		"type":"issuing",
+		"credentials": [
+			{
+				"credential":"irma-demo.MijnOverheid.root",
+				"attributes" : {
+					"BSN":"12345"
+				}
+			}
+		],
+		"disclose" : [
+			{
+				"label":"Initialen",
+				"attributes":["irma-demo.RU.studentCard.studentCardNumber"]
+			},
+			{
+				"label":"Achternaam",
+				"attributes" : ["irma-demo.RU.studentCard.studentID"]
+			},
+			{
+				"label":"Geboortedatum",
+				"attributes":["irma-demo.RU.studentCard.university"]
+			}
+		]
+	}`), &ir))
+
+	require.Equal(t, server.StatusDone, requestorSessionHelper(t, &ir).Status)
+}
+
 func testRequestorIssuance(t *testing.T, keyshare bool) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := &irma.IssuanceRequest{
