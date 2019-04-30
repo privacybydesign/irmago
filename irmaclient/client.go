@@ -568,7 +568,7 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 			disclosed = append(disclosed, d)
 		}
 		r := request.(*irma.SignatureRequest)
-		r.Timestamp, err = irma.GetTimestamp(r.Message, sigs, disclosed)
+		r.Timestamp, err = irma.GetTimestamp(r.Message, sigs, disclosed, client.Configuration)
 		if err != nil {
 			return nil, nil, err
 		}

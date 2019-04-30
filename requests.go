@@ -439,6 +439,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMe
 		Context:   sr.Context,
 		Message:   sr.Message,
 		Timestamp: sr.Timestamp,
+		Version:   2,
 	}, nil
 }
 

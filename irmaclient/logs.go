@@ -20,9 +20,10 @@ type LogEntry struct {
 	request irma.SessionRequest // cached parsed version of Request; get with LogEntry.SessionRequest()
 
 	// Session type-specific info
-	Removed       map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"` // In case of credential removal
-	SignedMessage []byte                                                    `json:",omitempty"` // In case of signature sessions
-	Timestamp     *atum.Timestamp                                           `json:",omitempty"` // In case of signature sessions
+	Removed          map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"` // In case of credential removal
+	SignedMessage    []byte                                                    `json:",omitempty"` // In case of signature sessions
+	Timestamp        *atum.Timestamp                                           `json:",omitempty"` // In case of signature sessions
+	SignatureVersion int                                                       `json:",omitempty"` // In case of signature sessions
 
 	IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
 	Disclosure      *irma.Disclosure             `json:",omitempty"`
@@ -110,6 +111,7 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 		Context:   sigrequest.Context,
 		Message:   string(entry.SignedMessage),
 		Timestamp: entry.Timestamp,
+		Version:   entry.SignatureVersion,
 	}, nil
 }
 
@@ -133,6 +135,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 		request := session.request.(*irma.SignatureRequest)
 		entry.SignedMessage = []byte(request.Message)
 		entry.Timestamp = request.Timestamp
+		entry.SignatureVersion = 2
 
 		fallthrough
 	case irma.ActionDisclosing:
