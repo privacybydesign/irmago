@@ -578,6 +578,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp 
 		Context:   sr.GetContext(),
 		Message:   sr.Message,
 		Timestamp: timestamp,
+		Version:   2,
 	}, nil
 }
 

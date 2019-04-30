@@ -3,10 +3,10 @@ package irma
 import (
 	"crypto/sha256"
 	"encoding/asn1"
-	"errors"
 	gobig "math/big"
 
 	"github.com/bwesterb/go-atum"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 )
@@ -14,8 +14,8 @@ import (
 // GetTimestamp GETs a signed timestamp (a signature over the current time and the parameters)
 // over the message to be signed, the randomized signatures over the attributes, and the disclosed
 // attributes, for in attribute-based signature sessions.
-func GetTimestamp(message string, sigs []*big.Int, disclosed [][]*big.Int) (*atum.Timestamp, error) {
-	nonce, err := TimestampRequest(message, sigs, disclosed)
+func GetTimestamp(message string, sigs []*big.Int, disclosed [][]*big.Int, conf *Configuration) (*atum.Timestamp, error) {
+	nonce, err := TimestampRequest(message, sigs, disclosed, true, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -29,27 +29,46 @@ func GetTimestamp(message string, sigs []*big.Int, disclosed [][]*big.Int) (*atu
 // TimestampRequest computes the nonce to be signed by a timestamp server, given a message to be signed
 // in an attribute-based signature session along with the randomized signatures over the attributes
 // and the disclosed attributes.
-func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int) ([]byte, error) {
+func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, new bool, conf *Configuration) ([]byte, error) {
 	msgHash := sha256.Sum256([]byte(message))
 
 	// Convert the sigs and disclosed (double) slices to (double) slices of gobig.Int's for asn1
 	sigsint := make([]*gobig.Int, len(sigs))
-	disclosedint := make([][]*gobig.Int, len(disclosed))
 	for i, k := range sigs {
 		sigsint[i] = k.Value()
 	}
+
+	disclosedint := make([][]*gobig.Int, len(disclosed))
+	dlreps := make([]*gobig.Int, len(disclosed))
+	var d interface{} = disclosedint
 	for i, _ := range disclosed {
-		disclosedint[i] = make([]*gobig.Int, len(disclosed[i]))
-		for j, k := range disclosed[i] {
-			disclosedint[i][j] = k.Value()
+		if !new {
+			disclosedint[i] = make([]*gobig.Int, len(disclosed[i]))
+			for j, k := range disclosed[i] {
+				disclosedint[i][j] = k.Value()
+			}
+		} else {
+			if len(disclosed[i]) < 2 || disclosed[i][1].Cmp(bigZero) == 0 {
+				return nil, errors.Errorf("metadata attribute of credential %d not disclosed", i)
+			}
+			meta := MetadataFromInt(disclosed[i][1], conf)
+			pk, err := conf.PublicKey(meta.CredentialType().IssuerIdentifier(), meta.KeyCounter())
+			if err != nil {
+				return nil, err
+			}
+			dlreps[i] = gabi.RepresentToPublicKey(pk, disclosed[i]).Value()
 		}
 	}
+	if new {
+		d = dlreps
+	}
+
 	bts, err := asn1.Marshal(struct {
 		Sigs      []*gobig.Int
 		MsgHash   []byte
-		Disclosed [][]*gobig.Int
+		Disclosed interface{}
 	}{
-		sigsint, msgHash[:], disclosedint,
+		sigsint, msgHash[:], d,
 	})
 	if err != nil {
 		return nil, err
@@ -93,7 +112,7 @@ func (sm *SignedMessage) VerifyTimestamp(message string, conf *Configuration) er
 		}
 	}
 
-	bts, err := TimestampRequest(message, sigs, disclosed)
+	bts, err := TimestampRequest(message, sigs, disclosed, sm.Version >= 2, conf)
 	if err != nil {
 		return err
 	}

@@ -20,6 +20,9 @@ type SignedMessage struct {
 	Context   *big.Int                  `json:"context"`
 	Message   string                    `json:"message"`
 	Timestamp *atum.Timestamp           `json:"timestamp"`
+
+	// Message version. Current version is 2.
+	Version int `json:"v,omitempty"`
 }
 
 func (sm *SignedMessage) GetNonce() *big.Int {
