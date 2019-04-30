@@ -375,9 +375,9 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	// Fill standard claims
 	switch res.Type {
 	case irma.ActionDisclosing:
-		claims["subject"] = "verification_result"
+		claims["sub"] = "disclosure_result"
 	case irma.ActionSigning:
-		claims["subject"] = "abs_result"
+		claims["sub"] = "abs_result"
 	default:
 		if res == nil {
 			server.WriteError(w, server.ErrorInvalidRequest, "")
@@ -388,7 +388,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	if s.conf.JwtIssuer != "" {
 		claims["iss"] = s.conf.JwtIssuer
 	}
-	claims["status"] = res.Status
+	claims["status"] = res.ProofStatus
 	validity := s.irmaserv.GetRequest(sessiontoken).Base().ResultJwtValidity
 	if validity != 0 {
 		claims["exp"] = time.Now().Unix() + int64(validity)
