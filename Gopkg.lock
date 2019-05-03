@@ -272,7 +272,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:bb1a0e54dd761717865f96b989b382e0abf7f4863081cc65f5982799208254dd"
+  digest = "1:efc4c33449984cda3f7880142fbf35fdc16c7e9c4c27c50a8e77bd055400cceb"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
@@ -280,7 +280,7 @@
     "safeprime",
   ]
   pruneopts = "UT"
-  revision = "a5a01cfeac1cf9781b73016f7f5492fd1bfca2ff"
+  revision = "ce779395f4c98898f21f8c49f71f4b3353995127"
 
 [[projects]]
   digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
@@ -480,6 +480,7 @@
     "github.com/privacybydesign/gabi",
     "github.com/privacybydesign/gabi/big",
     "github.com/sirupsen/logrus",
+    "github.com/spf13/cast",
     "github.com/spf13/cobra",
     "github.com/spf13/pflag",
     "github.com/spf13/viper",
