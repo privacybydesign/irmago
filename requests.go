@@ -193,13 +193,14 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 // CredentialTypes returns an array of all credential types occuring in this conjunction.
 func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
 	var result []CredentialTypeIdentifier
-	tmp := map[CredentialTypeIdentifier]struct{}{}
+
 	for _, attr := range c {
-		tmp[attr.Type.CredentialTypeIdentifier()] = struct{}{}
+		typ := attr.Type.CredentialTypeIdentifier()
+		if len(result) == 0 || result[len(result)-1] != typ {
+			result = append(result, typ)
+		}
 	}
-	for cred := range tmp {
-		result = append(result, cred)
-	}
+
 	return result
 }
 

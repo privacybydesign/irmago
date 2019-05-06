@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"encoding/json"
 	"errors"
 
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -150,6 +152,32 @@ func TestCandidates(t *testing.T) {
 	attrs, missing = client.Candidates(disjunction)
 	require.NotEmpty(t, missing)
 	require.Empty(t, attrs)
+}
+
+func TestCandidateConjunctionOrder(t *testing.T) {
+	client := parseStorage(t)
+
+	j := `[
+	  [
+	    [
+	      "irma-demo.RU.studentCard.level",
+	      "test.test.mijnirma.email"
+	    ]
+	  ]
+	]`
+
+	cdc := irma.AttributeConDisCon{}
+	require.NoError(t, json.Unmarshal([]byte(j), &cdc))
+	assert.Equal(t,
+		"irma-demo.RU.studentCard.level",
+		cdc[0][0][0].Type.String(),
+	)
+
+	for i := 1; i < 20; i++ {
+		candidates, missing := client.CheckSatisfiability(cdc)
+		require.Empty(t, missing)
+		require.Equal(t, "irma-demo.RU.studentCard.level", candidates[0][0][0].Type.String())
+	}
 }
 
 func TestCredentialRemoval(t *testing.T) {
