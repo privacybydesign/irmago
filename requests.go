@@ -204,6 +204,24 @@ func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
 	return result
 }
 
+func (c AttributeCon) Validate() error {
+	// Unlike AttributeDisCon, we don't have to check here that the current instance is of length 0,
+	// as that is actually a valid conjunction: one that specifies that the containing disjunction
+	// is optional.
+
+	credtypes := map[CredentialTypeIdentifier]struct{}{}
+	var last CredentialTypeIdentifier
+	for _, attr := range c {
+		typ := attr.Type.CredentialTypeIdentifier()
+		if _, contains := credtypes[typ]; contains && last != typ {
+			return errors.New("Within inner conjunctions, attributes from the same credential type must be adjacent")
+		}
+		last = typ
+		credtypes[typ] = struct{}{}
+	}
+	return nil
+}
+
 func (c *AttributeCon) MarshalJSON() ([]byte, error) {
 	var vals bool
 	m := map[AttributeTypeIdentifier]*string{}
@@ -278,6 +296,19 @@ func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttribu
 		attrs = append(attrs, attr)
 	}
 	return true, attrs, nil
+}
+
+func (dc AttributeDisCon) Validate() error {
+	if len(dc) == 0 {
+		return errors.New("Empty disjunction")
+	}
+	var err error
+	for _, con := range dc {
+		if err = con.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
@@ -417,9 +448,10 @@ func (dr *DisclosureRequest) Validate() error {
 	if len(dr.Disclose) == 0 {
 		return errors.New("Disclosure request had no attributes")
 	}
+	var err error
 	for _, discon := range dr.Disclose {
-		if len(discon) == 0 {
-			return errors.New("Empty disjunction")
+		if err = discon.Validate(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -552,6 +584,12 @@ func (ir *IssuanceRequest) Validate() error {
 			return errors.New("Expired credential request")
 		}
 	}
+	var err error
+	for _, discon := range ir.Disclose {
+		if err = discon.Validate(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -595,9 +633,10 @@ func (sr *SignatureRequest) Validate() error {
 	if len(sr.Disclose) == 0 {
 		return errors.New("Signature request had no attributes")
 	}
+	var err error
 	for _, discon := range sr.Disclose {
-		if len(discon) == 0 {
-			return errors.New("Empty disjunction")
+		if err = discon.Validate(); err != nil {
+			return err
 		}
 	}
 	return nil
