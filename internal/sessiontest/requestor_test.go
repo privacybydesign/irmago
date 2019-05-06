@@ -56,14 +56,27 @@ func TestRequestorInvalidRequest(t *testing.T) {
 }
 
 func TestRequestorSignatureSession(t *testing.T) {
+	client, _ := parseStorage(t)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	serverResult := requestorSessionHelper(t, irma.NewSignatureRequest("message", id), nil)
+	serverResult := requestorSessionHelper(t, irma.NewSignatureRequest("message", id), client)
 
 	require.Nil(t, serverResult.Err)
 	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
 	require.NotEmpty(t, serverResult.Disclosed)
 	require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
 	require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
+
+	// Load the updated scheme in which an attribute was added to the studentCard credential type
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	require.NoError(t, client.Configuration.UpdateSchemeManager(schemeid, nil))
+	require.NoError(t, client.Configuration.ParseFolder())
+	require.Contains(t, client.Configuration.AttributeTypes, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute"))
+
+	// Check that the just created credential is still valid after the new attribute has been added
+	_, status, err := serverResult.Signature.Verify(client.Configuration, nil)
+	require.NoError(t, err)
+	require.Equal(t, irma.ProofStatusValid, status)
 }
 
 func TestRequestorDisclosureSession(t *testing.T) {
