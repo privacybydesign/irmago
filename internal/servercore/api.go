@@ -111,6 +111,10 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		}
 		for _, file := range files {
 			filename := file.Name()
+			if filepath.Ext(filename) != ".xml" && strings.Count(filename, ".") != 3 {
+				s.conf.Logger.Infof("Skipping non-private key file %s encountered in private keys path", filename)
+				continue
+			}
 			issid := irma.NewIssuerIdentifier(strings.TrimSuffix(filename, filepath.Ext(filename))) // strip .xml
 			if _, ok := s.conf.IrmaConfiguration.Issuers[issid]; !ok {
 				return server.LogError(errors.Errorf("Private key %s belongs to an unknown issuer", filename))
