@@ -1244,14 +1244,14 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 	return
 }
 
-func (conf *Configuration) updateSchemes() error {
+func (conf *Configuration) UpdateSchemes() error {
 	for id := range conf.SchemeManagers {
 		Logger.WithField("scheme", id).Info("Auto-updating scheme")
 		if err := conf.UpdateSchemeManager(id, nil); err != nil {
 			return err
 		}
 	}
-	return nil
+	return conf.ParseFolder()
 }
 
 func (conf *Configuration) AutoUpdateSchemes(interval uint) {
@@ -1259,7 +1259,7 @@ func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 
 	conf.scheduler = gocron.NewScheduler()
 	conf.scheduler.Every(uint64(interval)).Minutes().Do(func() {
-		if err := conf.updateSchemes(); err != nil {
+		if err := conf.UpdateSchemes(); err != nil {
 			Logger.Error("Scheme autoupdater failed: ")
 			if e, ok := err.(*errors.Error); ok {
 				Logger.Error(e.ErrorStack())
