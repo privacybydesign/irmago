@@ -114,7 +114,7 @@ func (sm *SignedMessage) VerifyTimestamp(message string, conf *Configuration) er
 		}
 	}
 
-	bts, err := TimestampRequest(message, sigs, disclosed, sm.Version >= 2, conf)
+	bts, err := TimestampRequest(message, sigs, disclosed, sm.Version() >= 2, conf)
 	if err != nil {
 		return err
 	}

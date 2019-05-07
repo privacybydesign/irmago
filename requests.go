@@ -433,13 +433,13 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}) (*SignedMe
 	}
 
 	return &SignedMessage{
+		LDContext: SignedMessageLDContext,
 		Signature: signature.Proofs,
 		Indices:   signature.Indices,
 		Nonce:     sr.Nonce,
 		Context:   sr.Context,
 		Message:   sr.Message,
 		Timestamp: sr.Timestamp,
-		Version:   2,
 	}, nil
 }
 
