@@ -18,6 +18,7 @@ type SchemeManager struct {
 	URL               string           `xml:"Url"`
 	Contact           string           `xml:"contact"`
 	Description       TranslatedString
+	MinimumAppVersion SchemeAppVersion
 	KeyshareServer    string
 	KeyshareWebsite   string
 	KeyshareAttribute string
@@ -30,6 +31,11 @@ type SchemeManager struct {
 	Timestamp Timestamp
 
 	index SchemeManagerIndex
+}
+
+type SchemeAppVersion struct {
+	Android int `xml:"Android"`
+	IOS     int `xml:"iOS"`
 }
 
 // Issuer describes an issuer.
