@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"strconv"
 	"time"
+	"path/filepath"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/getsentry/raven-go"
@@ -140,7 +141,7 @@ func New(
 		handler:               handler,
 	}
 
-	cm.Configuration, err = irma.NewConfigurationFromAssets(storagePath+"/irma_configuration", irmaConfigurationPath)
+	cm.Configuration, err = irma.NewConfigurationFromAssets(filepath.Join(storagePath,"irma_configuration"), irmaConfigurationPath)
 	if err != nil {
 		return nil, err
 	}

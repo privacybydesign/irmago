@@ -68,7 +68,7 @@ func (conf *Configuration) downloadPrivateKeys(scheme *SchemeManager) error {
 		}
 		for _, index := range indices {
 			remote := fmt.Sprintf("%s/PrivateKeys/%d.xml", issid.Name(), index)
-			local := fmt.Sprintf("%s/%s/%s", conf.Path, scheme.ID, remote)
+			local := filepath.Join(conf.Path, scheme.ID, remote)
 			if err = transport.GetFile(remote, filepath.FromSlash(local)); err != nil {
 				Logger.Warnf("Downloading private key %d of issuer %s failed", index, issid.String())
 			}

@@ -143,8 +143,8 @@ func defaultCounter(path string) (counter int) {
 func init() {
 	issuerCmd.AddCommand(issuerKeygenCmd)
 
-	issuerKeygenCmd.Flags().StringP("privatekey", "s", "", `File to write private key to (default "PrivateKeys/$counter.xml")`)
-	issuerKeygenCmd.Flags().StringP("publickey", "p", "", `File to write public key to (default "PublicKeys/$counter.xml")`)
+	issuerKeygenCmd.Flags().StringP("privatekey", "s", "", `File to write private key to (default "PrivateKeys`+string(os.PathSeparator)+`$counter.xml")`)
+	issuerKeygenCmd.Flags().StringP("publickey", "p", "", `File to write public key to (default "PublicKeys`+string(os.PathSeparator)+`$counter.xml")`)
 	issuerKeygenCmd.Flags().StringP("expirydate", "e", "", "Expiry date for the key pair. Specify in RFC3339 (\"2006-01-02T15:04:05+07:00\") format. Alternatively, use the --valid-for option.")
 	issuerKeygenCmd.Flags().StringP("valid-for", "v", "1y", "The duration key pair should be valid starting from now. Specify as a number followed by either y, M, d, h, or m (for years, months, days, hours, and minutes, respectively). For example, use \"2y\" for a expiry date 2 years from now. This flag is ignored when expirydate flag is used.")
 	issuerKeygenCmd.Flags().IntP("keylength", "l", 2048, "Keylength")

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/privacybydesign/gabi"
@@ -28,10 +29,11 @@ func TestMain(m *testing.M) {
 
 func parseStorage(t *testing.T) *Client {
 	test.SetupTestStorage(t)
-	require.NoError(t, fs.CopyDirectory("../testdata/teststorage", "../testdata/storage/test"))
+	require.NoError(t, fs.CopyDirectory(filepath.Join("..", "testdata", "teststorage"),
+		filepath.Join("..", "testdata", "storage", "test")))
 	client, err := New(
-		"../testdata/storage/test",
-		"../testdata/irma_configuration",
+		filepath.Join("..", "testdata", "storage", "test"),
+		filepath.Join("..", "testdata", "irma_configuration"),
 		"",
 		&TestClientHandler{t: t},
 	)
@@ -212,7 +214,7 @@ func TestWrongSchemeManager(t *testing.T) {
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove("../testdata/storage/test/irma_configuration/irma-demo/index"))
+	require.NoError(t, os.Remove(filepath.Join("..", "testdata", "storage", "test", "irma_configuration", "irma-demo", "index")))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)

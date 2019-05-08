@@ -309,28 +309,6 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-// relativePath returns, given a outer path that contains the inner path,
-// the relative path between outer an inner, which is such that
-// outer/returnvalue refers to inner.
-func relativePath(outer string, inner string) (string, error) {
-	// Take Abs() of both paths to ensure that we don't fail on e.g.
-	// outer = "./foo" and inner = "foo/bar"
-	outerAbs, err := filepath.Abs(outer)
-	if err != nil {
-		return "", err
-	}
-	innerAbs, err := filepath.Abs(inner)
-	if err != nil {
-		return "", err
-	}
-	if !strings.HasPrefix(innerAbs, outerAbs) {
-		return "", errors.New("inner path is not contained in outer path")
-	}
-
-	// These are used as key in the scheme index, so always use forward slashes
-	return strings.Replace(innerAbs[len(outerAbs)+1:], string(filepath.Separator), "/", -1), nil
-}
-
 // PrivateKey returns the specified private key, or nil if not present in the Configuration.
 func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, error) {
 	if sk := conf.privateKeys[id]; sk != nil {
@@ -524,7 +502,7 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil {
 			return err
 		}
-		relativepath, err := relativePath(conf.Path, file)
+		relativepath, err := filepath.Rel(conf.Path, file)
 		if err != nil {
 			return err
 		}
@@ -637,7 +615,7 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 		return false, nil
 	}
 
-	relativepath, err := relativePath(conf.Path, path)
+	relativepath, err := filepath.Rel(conf.Path, path)
 	if err != nil {
 		return false, err
 	}
@@ -1035,12 +1013,12 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (Sche
 
 func (conf *Configuration) checkUnsignedFiles(name string, index SchemeManagerIndex) error {
 	return filepath.Walk(filepath.Join(conf.Path, name), func(path string, info os.FileInfo, err error) error {
-		relpath, err := relativePath(conf.Path, path)
+		relpath, err := filepath.Rel(conf.Path, path)
 		if err != nil {
 			return err
 		}
 		for _, ex := range sigExceptions {
-			if ex.MatchString(relpath) {
+			if ex.MatchString(filepath.ToSlash(relpath)) {
 				return nil
 			}
 		}
@@ -1143,19 +1121,19 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	}()
 
 	dir := filepath.Join(conf.Path, id.String())
-	if err := fs.AssertPathExists(dir+"/index", dir+"/index.sig", dir+"/pk.pem"); err != nil {
+	if err := fs.AssertPathExists(filepath.Join(dir, "index"), filepath.Join(dir, "index.sig"), filepath.Join(dir, "pk.pem")); err != nil {
 		return errors.New("Missing scheme manager index file, signature, or public key")
 	}
 
 	// Read and hash index file
-	indexbts, err := ioutil.ReadFile(dir + "/index")
+	indexbts, err := ioutil.ReadFile(filepath.Join(dir, "index"))
 	if err != nil {
 		return err
 	}
 	indexhash := sha256.Sum256(indexbts)
 
 	// Read and parse scheme manager public key
-	pkbts, err := ioutil.ReadFile(dir + "/pk.pem")
+	pkbts, err := ioutil.ReadFile(filepath.Join(dir, "pk.pem"))
 	if err != nil {
 		return err
 	}
@@ -1165,7 +1143,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	}
 
 	// Read and parse signature
-	sig, err := ioutil.ReadFile(dir + "/index.sig")
+	sig, err := ioutil.ReadFile(filepath.Join(dir, "index.sig"))
 	if err != nil {
 		return err
 	}
@@ -1270,12 +1248,12 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 			continue
 		}
 		var matches []string
-		matches = issPattern.FindStringSubmatch(filename)
+		matches = issPattern.FindStringSubmatch(filepath.ToSlash(filename))
 		if len(matches) == 3 {
 			issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", matches[1], matches[2]))
 			downloaded.Issuers[issid] = struct{}{}
 		}
-		matches = credPattern.FindStringSubmatch(filename)
+		matches = credPattern.FindStringSubmatch(filepath.ToSlash(filename))
 		if len(matches) == 4 {
 			credid := NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", matches[1], matches[2], matches[3]))
 			downloaded.CredentialTypes[credid] = struct{}{}
@@ -1355,7 +1333,7 @@ func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer
 	if manager.ID != issuer.SchemeManagerID {
 		return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
 	}
-	if err = fs.AssertPathExists(dir + "/logo.png"); err != nil {
+	if err = fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
 	}
 	return nil
@@ -1376,7 +1354,7 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 	if cred.SchemeManagerID != manager.ID {
 		return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
 	}
-	if err := fs.AssertPathExists(dir + "/logo.png"); err != nil {
+	if err := fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
 	}
 	return conf.validateAttributes(cred)

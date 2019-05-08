@@ -3,6 +3,7 @@ package irma
 import (
 	"encoding/xml"
 	"fmt"
+	"path/filepath"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/fs"
@@ -183,7 +184,7 @@ func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
 }
 
 func (ct *CredentialType) Logo(conf *Configuration) string {
-	path := fmt.Sprintf("%s/%s/%s/Issues/%s/logo.png", conf.Path, ct.SchemeManagerID, ct.IssuerID, ct.ID)
+	path := filepath.Join(conf.Path, ct.SchemeManagerID, ct.IssuerID, "Issues", ct.ID, "logo.png")
 	exists, err := fs.PathExists(path)
 	if err != nil || !exists {
 		return ""
