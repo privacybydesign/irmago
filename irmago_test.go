@@ -311,9 +311,9 @@ func TestSessionRequests(t *testing.T) {
 						]
 					],
 					[
-						{
-							"irma-demo.MijnOverheid.fullName.firstname": "hello"
-						}
+						[
+							{ "type": "irma-demo.MijnOverheid.fullName.firstname", "value": "hello" }
+						]
 					]
 				],
 				"labels": {
@@ -366,9 +366,9 @@ func TestSessionRequests(t *testing.T) {
 						]
 					],
 					[
-						{
-							"irma-demo.MijnOverheid.fullName.firstname": "hello"
-						}
+						[
+							{ "type": "irma-demo.MijnOverheid.fullName.firstname", "value": "hello" }
+						]
 					]
 				],
 				"labels": {
@@ -438,9 +438,9 @@ func TestSessionRequests(t *testing.T) {
 						]
 					],
 					[
-						{
-							"irma-demo.MijnOverheid.fullName.firstname": "hello"
-						}
+						[
+							{ "type": "irma-demo.MijnOverheid.fullName.firstname", "value": "hello" }
+						]
 					]
 				],
 				"labels": {
@@ -478,19 +478,19 @@ func TestConDisconSingletons(t *testing.T) {
 			AttributeConDisCon{
 				AttributeDisCon{
 					AttributeCon{
-						NewAttributeRequest("irma-demo.RU.studentCard.studentID"), // singleton
-						NewAttributeRequest("test.test.email.email"),              // singleton
+						NewAttributeRequest("irma-demo.RU.studentCard.studentID"), // non singleton
+						NewAttributeRequest("test.test.email.email"),              // non singleton
 					},
 				},
 			},
-			false, // multiple singletons in one inner conjunction is not allowed
+			false, // multiple non-singletons in one inner conjunction is not allowed
 		},
 		{
 			AttributeConDisCon{
 				AttributeDisCon{
 					AttributeCon{
 						NewAttributeRequest("irma-demo.RU.studentCard.studentID"), // non singleton
-						NewAttributeRequest("test.test.mijnirma.email"),           // non singleton
+						NewAttributeRequest("test.test.mijnirma.email"),           // singleton
 					},
 				},
 			},
@@ -501,7 +501,7 @@ func TestConDisconSingletons(t *testing.T) {
 				AttributeDisCon{
 					AttributeCon{
 						NewAttributeRequest("irma-demo.MijnOverheid.root.BSN"), // singleton
-						NewAttributeRequest("test.test.mijnirma.email"),        // non singleton
+						NewAttributeRequest("test.test.mijnirma.email"),        // singleton
 					},
 				},
 			},

@@ -167,8 +167,8 @@ type DisclosureChoice struct {
 // An AttributeRequest asks for an instance of an attribute type, possibly requiring it to have
 // a specified value, in a session request.
 type AttributeRequest struct {
-	Type  AttributeTypeIdentifier
-	Value *string
+	Type  AttributeTypeIdentifier `json:"type"`
+	Value *string                 `json:"value"`
 }
 
 var (
@@ -224,20 +224,19 @@ func (c AttributeCon) Validate() error {
 
 func (c *AttributeCon) MarshalJSON() ([]byte, error) {
 	var vals bool
-	m := map[AttributeTypeIdentifier]*string{}
 	l := make([]AttributeTypeIdentifier, 0, len(*c))
 
 	for _, attr := range *c {
-		m[attr.Type] = attr.Value
 		if attr.Value == nil {
 			l = append(l, attr.Type)
 		} else {
 			vals = true
+			break
 		}
 	}
 
 	if vals {
-		return json.Marshal(m)
+		return json.Marshal((*[]AttributeRequest)(c))
 	} else {
 		return json.Marshal(l)
 	}
@@ -254,11 +253,7 @@ func (c *AttributeCon) UnmarshalJSON(bts []byte) error {
 		return nil
 	}
 
-	m := map[AttributeTypeIdentifier]*string{}
-	if err = json.Unmarshal(bts, &m); err == nil {
-		for id, val := range m {
-			*c = append(*c, AttributeRequest{Type: id, Value: val})
-		}
+	if err = json.Unmarshal(bts, (*[]AttributeRequest)(c)); err == nil {
 		return nil
 	}
 

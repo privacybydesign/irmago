@@ -54,12 +54,24 @@ func checkType(typ, expected Action) error {
 
 // Reuses AttributeCon.UnmarshalJSON()
 func (l *legacyAttributeDisjunction) UnmarshalJSON(bts []byte) error {
-	var con AttributeCon
-	if err := json.Unmarshal(bts, &con); err != nil {
-		return err
+	var err error
+	var lst []AttributeTypeIdentifier
+	if err = json.Unmarshal(bts, &lst); err == nil {
+		for _, id := range lst {
+			*l = append(*l, AttributeRequest{Type: id})
+		}
+		return nil
 	}
-	*l = legacyAttributeDisjunction(con)
-	return nil
+
+	m := map[AttributeTypeIdentifier]*string{}
+	if err = json.Unmarshal(bts, &m); err == nil {
+		for id, val := range m {
+			*l = append(*l, AttributeRequest{Type: id, Value: val})
+		}
+		return nil
+	}
+
+	return errors.New("Failed to unmarshal legacy attribute conjunction")
 }
 
 func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
