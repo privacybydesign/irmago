@@ -11,18 +11,25 @@ import (
 	"github.com/privacybydesign/gabi/big"
 )
 
+const SignedMessageLDContext = "https://irma.app/ld/signature/v2"
+
 // SignedMessage is a message signed with an attribute-based signature
 // The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(nonce, SHA256(message), timestampSignature)
 type SignedMessage struct {
+	LDContext string                    `json:"@context"`
 	Signature gabi.ProofList            `json:"signature"`
 	Indices   DisclosedAttributeIndices `json:"indices"`
 	Nonce     *big.Int                  `json:"nonce"`
 	Context   *big.Int                  `json:"context"`
 	Message   string                    `json:"message"`
 	Timestamp *atum.Timestamp           `json:"timestamp"`
+}
 
-	// Message version. Current version is 2.
-	Version int `json:"v,omitempty"`
+func (sm *SignedMessage) Version() int {
+	if sm.LDContext == "" {
+		return 1
+	}
+	return 2
 }
 
 func (sm *SignedMessage) GetNonce() *big.Int {

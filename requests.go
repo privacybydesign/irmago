@@ -611,13 +611,13 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp 
 		nonce = bigZero
 	}
 	return &SignedMessage{
+		LDContext: SignedMessageLDContext,
 		Signature: signature.Proofs,
 		Indices:   signature.Indices,
 		Nonce:     nonce,
 		Context:   sr.GetContext(),
 		Message:   sr.Message,
 		Timestamp: timestamp,
-		Version:   2,
 	}, nil
 }
 

@@ -22,12 +22,21 @@ var (
 	httpServer *http.Server
 	irmaServer *irmaserver.Server
 	logger     *logrus.Logger
+	defaulturl string
 )
 
 // sessionCmd represents the session command
 var sessionCmd = &cobra.Command{
 	Use:   "session",
 	Short: "Perform an IRMA disclosure, issuance or signature session",
+	Long: `Perform an IRMA disclosure, issuance or signature session on the command line
+
+Using either the builtin IRMA server library, or an external IRMA server (specify its URL
+with --server), an IRMA session is started; the QR is printed in the terminal; and the session
+result is printed when the session completes or fails.
+
+A session request can either be constructed using the --disclose, --issue, and --sign together
+with --message flags, or it can be specified as JSON to the --request flag.`,
 	Example: `irma session --disclose irma-demo.MijnOverheid.root.BSN
 irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
@@ -45,7 +54,7 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 		noqr, _ := cmd.Flags().GetBool("noqr")
 		flags := cmd.Flags()
 
-		if url != "" && serverurl != "" {
+		if url != defaulturl && serverurl != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
 		}
 
@@ -211,7 +220,8 @@ func configure(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, 
 func init() {
 	RootCmd.AddCommand(sessionCmd)
 
-	defaulturl, err := server.LocalIP()
+	var err error
+	defaulturl, err = server.LocalIP()
 	if err != nil {
 		logger.Warn("Could not determine local IP address: ", err.Error())
 	} else {
@@ -220,10 +230,10 @@ func init() {
 
 	flags := sessionCmd.Flags()
 	flags.SortFlags = false
-	flags.StringP("url", "u", defaulturl, "external URL used when using the builtin library")
-	flags.IntP("port", "p", 48680, "port to listen at")
+	flags.String("server", "", "External IRMA server to post request to (leave blank to use builtin library)")
+	flags.StringP("url", "u", defaulturl, "external URL to which IRMA app connects (when not using --server)")
+	flags.IntP("port", "p", 48680, "port to listen at (when not using --server)")
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
-	flags.String("server", "", "Server to post request to (leave blank to use builtin library)")
 	flags.StringP("request", "r", "", "JSON session request")
 	flags.StringP("privkeys", "k", "", "path to private keys")
 

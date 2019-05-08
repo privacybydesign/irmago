@@ -20,10 +20,10 @@ type LogEntry struct {
 	request irma.SessionRequest // cached parsed version of Request; get with LogEntry.SessionRequest()
 
 	// Session type-specific info
-	Removed          map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"` // In case of credential removal
-	SignedMessage    []byte                                                    `json:",omitempty"` // In case of signature sessions
-	Timestamp        *atum.Timestamp                                           `json:",omitempty"` // In case of signature sessions
-	SignatureVersion int                                                       `json:",omitempty"` // In case of signature sessions
+	Removed                map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"` // In case of credential removal
+	SignedMessage          []byte                                                    `json:",omitempty"` // In case of signature sessions
+	Timestamp              *atum.Timestamp                                           `json:",omitempty"` // In case of signature sessions
+	SignedMessageLDContext string                                                    `json:",omitempty"` // In case of signature sessions
 
 	IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
 	Disclosure      *irma.Disclosure             `json:",omitempty"`
@@ -106,12 +106,12 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 	}
 	sigrequest := request.(*irma.SignatureRequest)
 	return &irma.SignedMessage{
+		LDContext: entry.SignedMessageLDContext,
 		Signature: entry.Disclosure.Proofs,
 		Nonce:     sigrequest.Nonce,
 		Context:   sigrequest.GetContext(),
 		Message:   string(entry.SignedMessage),
 		Timestamp: entry.Timestamp,
-		Version:   entry.SignatureVersion,
 	}, nil
 }
 
@@ -135,7 +135,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 		request := session.request.(*irma.SignatureRequest)
 		entry.SignedMessage = []byte(request.Message)
 		entry.Timestamp = session.timestamp
-		entry.SignatureVersion = 2
+		entry.SignedMessageLDContext = irma.SignedMessageLDContext
 
 		fallthrough
 	case irma.ActionDisclosing:
