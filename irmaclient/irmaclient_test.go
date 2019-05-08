@@ -27,10 +27,11 @@ func TestMain(m *testing.M) {
 
 func parseStorage(t *testing.T) *Client {
 	test.SetupTestStorage(t)
-	require.NoError(t, fs.CopyDirectory("../testdata/teststorage", "../testdata/storage/test"))
+	require.NoError(t, fs.CopyDirectory(".."+string(os.PathSeparator)+"testdata"+string(os.PathSeparator)+"teststorage",
+		".."+string(os.PathSeparator)+"testdata"+string(os.PathSeparator)+"storage"+string(os.PathSeparator)+"test"))
 	client, err := New(
-		"../testdata/storage/test",
-		"../testdata/irma_configuration",
+		".."+string(os.PathSeparator)+"testdata"+string(os.PathSeparator)+"storage"+string(os.PathSeparator)+"test",
+		".."+string(os.PathSeparator)+"testdata"+string(os.PathSeparator)+"irma_configuration",
 		"",
 		&TestClientHandler{t: t},
 	)
@@ -194,7 +195,8 @@ func TestWrongSchemeManager(t *testing.T) {
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove("../testdata/storage/test/irma_configuration/irma-demo/index"))
+	require.NoError(t, os.Remove(".."+string(os.PathSeparator)+"testdata"+string(os.PathSeparator)+"storage"+
+		string(os.PathSeparator)+"test"+string(os.PathSeparator)+"irma_configuration"+string(os.PathSeparator)+"irma-demo"+string(os.PathSeparator)+"index"))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)

@@ -31,7 +31,7 @@ const (
 )
 
 func (s *storage) path(p string) string {
-	return s.storagePath + "/" + p
+	return s.storagePath + string(os.PathSeparator) + p
 }
 
 // EnsureStorageExists initializes the credential storage folder,
@@ -72,7 +72,7 @@ func (s *storage) signatureFilename(attrs *irma.AttributeList) string {
 	// will be written to the same file, one overwriting the other - but that doesn't
 	// matter, because either one of the signatures is valid over both attribute lists,
 	// so keeping one of them suffices.
-	return signaturesDir + "/" + attrs.Hash()
+	return signaturesDir + string(os.PathSeparator) + attrs.Hash()
 }
 
 func (s *storage) DeleteSignature(attrs *irma.AttributeList) error {

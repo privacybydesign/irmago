@@ -3,6 +3,7 @@ package sessiontest
 import (
 	"encoding/json"
 	"testing"
+	"os"
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
@@ -253,14 +254,16 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
 	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
-	basepath := test.FindTestdataFolder(t) + "/storage/test/irma_configuration/irma-demo"
-	exists, err := fs.PathExists(basepath + "/description.xml")
+	basepath := test.FindTestdataFolder(t) + string(os.PathSeparator) + "storage"+string(os.PathSeparator)+
+		"test"+string(os.PathSeparator)+"irma_configuration"+string(os.PathSeparator)+"irma-demo"
+	exists, err := fs.PathExists(basepath + string(os.PathSeparator) + "description.xml")
 	require.NoError(t, err)
 	require.True(t, exists)
-	exists, err = fs.PathExists(basepath + "/RU/description.xml")
+	exists, err = fs.PathExists(basepath + string(os.PathSeparator) + "RU" + string(os.PathSeparator) + "description.xml")
 	require.NoError(t, err)
 	require.True(t, exists)
-	exists, err = fs.PathExists(basepath + "/RU/Issues/studentCard/description.xml")
+	exists, err = fs.PathExists(basepath + string(os.PathSeparator) + "RU" + string(os.PathSeparator) +
+		"Issues" + string(os.PathSeparator) + "studentCard" + string(os.PathSeparator) + "description.xml")
 	require.NoError(t, err)
 	require.True(t, exists)
 }

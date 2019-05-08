@@ -174,8 +174,8 @@ func configure(cmd *cobra.Command) error {
 	} else {
 		viper.SetConfigName("irmaserver")
 		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/irmaserver/")
-		viper.AddConfigPath("$HOME/.irmaserver")
+		viper.AddConfigPath(string(os.PathSeparator)+"etc"+string(os.PathSeparator)+"irmaserver"+string(os.PathSeparator))
+		viper.AddConfigPath("$HOME"+string(os.PathSeparator)+".irmaserver")
 	}
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 

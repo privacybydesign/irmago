@@ -95,13 +95,13 @@ func SaveFile(filepath string, content []byte) (err error) {
 	tempfilename := hex.EncodeToString(randBytes)
 
 	// Create temp file
-	err = ioutil.WriteFile(dir+"/"+tempfilename, content, 0600)
+	err = ioutil.WriteFile(dir+string(os.PathSeparator)+tempfilename, content, 0600)
 	if err != nil {
 		return
 	}
 
 	// Rename, overwriting old file
-	return os.Rename(dir+"/"+tempfilename, filepath)
+	return os.Rename(dir+string(os.PathSeparator)+tempfilename, filepath)
 }
 
 func CopyDirectory(src, dest string) error {

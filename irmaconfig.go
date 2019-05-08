@@ -1028,17 +1028,17 @@ func dirInScheme(index SchemeManagerIndex, dir string) bool {
 
 // These files never occur in a scheme's index
 var sigExceptions = []*regexp.Regexp{
-	regexp.MustCompile(`/.git(/.*)?`),
-	regexp.MustCompile(`^.*?/pk\.pem$`),
-	regexp.MustCompile(`^.*?/sk\.pem$`),
-	regexp.MustCompile(`^.*?/index`),
-	regexp.MustCompile(`^.*?/index\.sig`),
-	regexp.MustCompile(`^.*?/AUTHORS$`),
-	regexp.MustCompile(`^.*?/LICENSE$`),
-	regexp.MustCompile(`^.*?/README\.md$`),
-	regexp.MustCompile(`^.*?/.*?/PrivateKeys$`),
-	regexp.MustCompile(`^.*?/.*?/PrivateKeys/\d+.xml$`),
-	regexp.MustCompile(`\.DS_Store$`),
+	regexp.MustCompile(regexp.QuoteMeta(string(os.PathSeparator))+`.git(`+regexp.QuoteMeta(string(os.PathSeparator))+`.*)?`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`pk\.pem$`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`sk\.pem$`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`index`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`index\.sig`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`AUTHORS$`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`LICENSE$`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`README\.md$`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`PrivateKeys$`),
+	regexp.MustCompile(`^.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`.*?`+regexp.QuoteMeta(string(os.PathSeparator))+`PrivateKeys`+regexp.QuoteMeta(string(os.PathSeparator))+`\d+.xml$`),
+	regexp.MustCompile(regexp.QuoteMeta(string(os.PathSeparator))+`.DS_Store$`),
 }
 
 func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
@@ -1101,19 +1101,19 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	}()
 
 	dir := filepath.Join(conf.Path, id.String())
-	if err := fs.AssertPathExists(dir+"/index", dir+"/index.sig", dir+"/pk.pem"); err != nil {
+	if err := fs.AssertPathExists(dir+string(os.PathSeparator)+"index", dir+string(os.PathSeparator)+"index.sig", dir+string(os.PathSeparator)+"pk.pem"); err != nil {
 		return errors.New("Missing scheme manager index file, signature, or public key")
 	}
 
 	// Read and hash index file
-	indexbts, err := ioutil.ReadFile(dir + "/index")
+	indexbts, err := ioutil.ReadFile(dir + string(os.PathSeparator) + "index")
 	if err != nil {
 		return err
 	}
 	indexhash := sha256.Sum256(indexbts)
 
 	// Read and parse scheme manager public key
-	pkbts, err := ioutil.ReadFile(dir + "/pk.pem")
+	pkbts, err := ioutil.ReadFile(dir + string(os.PathSeparator) + "pk.pem")
 	if err != nil {
 		return err
 	}
@@ -1123,7 +1123,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	}
 
 	// Read and parse signature
-	sig, err := ioutil.ReadFile(dir + "/index.sig")
+	sig, err := ioutil.ReadFile(dir + string(os.PathSeparator) + "index.sig")
 	if err != nil {
 		return err
 	}
@@ -1199,8 +1199,8 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		return
 	}
 
-	issPattern := regexp.MustCompile("(.+)/(.+)/description\\.xml")
-	credPattern := regexp.MustCompile("(.+)/(.+)/Issues/(.+)/description\\.xml")
+	issPattern := regexp.MustCompile("(.+)"+regexp.QuoteMeta(string(os.PathSeparator))+"(.+)"+regexp.QuoteMeta(string(os.PathSeparator))+"description\\.xml")
+	credPattern := regexp.MustCompile("(.+)"+regexp.QuoteMeta(string(os.PathSeparator))+"(.+)"+regexp.QuoteMeta(string(os.PathSeparator))+"Issues"+regexp.QuoteMeta(string(os.PathSeparator))+"(.+)"+regexp.QuoteMeta(string(os.PathSeparator))+"description\\.xml")
 
 	// TODO: how to recover/fix local copy if err != nil below?
 	for filename, newHash := range newIndex {
@@ -1305,7 +1305,7 @@ func (conf *Configuration) checkIssuer(manager *SchemeManager, issuer *Issuer, d
 	if manager.ID != issuer.SchemeManagerID {
 		return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
 	}
-	if err = fs.AssertPathExists(dir + "/logo.png"); err != nil {
+	if err = fs.AssertPathExists(dir + string(os.PathSeparator) + "logo.png"); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
 	}
 	return nil
@@ -1326,7 +1326,7 @@ func (conf *Configuration) checkCredentialType(manager *SchemeManager, issuer *I
 	if cred.SchemeManagerID != manager.ID {
 		return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
 	}
-	if err := fs.AssertPathExists(dir + "/logo.png"); err != nil {
+	if err := fs.AssertPathExists(dir + string(os.PathSeparator) + "logo.png"); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
 	}
 	return conf.checkAttributes(cred)
