@@ -111,7 +111,7 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		}
 		for _, file := range files {
 			filename := file.Name()
-			if filepath.Ext(filename) != ".xml" && strings.Count(filename, ".") != 3 {
+			if filepath.Ext(filename) != ".xml" || strings.Count(filename, ".") != 3 {
 				s.conf.Logger.Infof("Skipping non-private key file %s encountered in private keys path", filename)
 				continue
 			}
