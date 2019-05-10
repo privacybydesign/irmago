@@ -82,7 +82,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	return &session.result.ProofStatus, rerr
 }
 
-func (session *session) handlePostDisclosure(disclosure irma.Disclosure) (*irma.ProofStatus, *irma.RemoteError) {
+func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma.ProofStatus, *irma.RemoteError) {
 	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}

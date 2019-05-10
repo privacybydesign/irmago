@@ -1,8 +1,12 @@
 package sessiontest
 
 import (
+	"bytes"
 	"encoding/json"
+	"io/ioutil"
+	"net/http"
 	"reflect"
+
 	"testing"
 
 	"github.com/privacybydesign/irmago"
@@ -15,8 +19,9 @@ import (
 type sessionOption int
 
 const (
-	sessionOptionUpdatedIrmaConfiguration = iota
+	sessionOptionUpdatedIrmaConfiguration sessionOption = 1 << iota
 	sessionOptionUnsatisfiableRequest
+	sessionOptionRetryPost
 )
 
 type requestorSessionResult struct {
@@ -41,12 +46,18 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	})
 	require.NoError(t, err)
 
-	var h irmaclient.Handler
-	if len(options) == 1 && options[0] == sessionOptionUnsatisfiableRequest {
-		h = UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil}}
-	} else {
-		h = TestHandler{t, clientChan, client, nil}
+	opts := 0
+	for _, o := range options {
+		opts |= int(o)
 	}
+
+	var h irmaclient.Handler
+	if opts&int(sessionOptionUnsatisfiableRequest) > 0 {
+		h = &UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil, ""}}
+	} else {
+		h = &TestHandler{t, clientChan, client, nil, ""}
+	}
+
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(j), h)
@@ -55,13 +66,29 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		require.NoError(t, clientResult.Err)
 	}
 
-	if len(options) == 1 && options[0] == sessionOptionUnsatisfiableRequest {
+	if opts&int(sessionOptionUnsatisfiableRequest) > 0 {
+		require.NotNil(t, clientResult)
 		return &requestorSessionResult{nil, clientResult.Missing}
-	} else {
-		serverResult := <-serverChan
-		require.Equal(t, token, serverResult.Token)
-		return &requestorSessionResult{serverResult, nil}
 	}
+
+	serverResult := <-serverChan
+	require.Equal(t, token, serverResult.Token)
+
+	if opts&int(sessionOptionRetryPost) > 0 {
+		req, err := http.NewRequest(http.MethodPost,
+			qr.URL+"/proofs",
+			bytes.NewBuffer([]byte(h.(*TestHandler).result)),
+		)
+		require.NoError(t, err)
+		req.Header.Add("Content-Type", "application/json")
+		res, err := new(http.Client).Do(req)
+		require.NoError(t, err)
+		require.True(t, res.StatusCode < 300)
+		_, err = ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+	}
+
+	return &requestorSessionResult{serverResult, nil}
 }
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
@@ -75,16 +102,37 @@ func TestRequestorInvalidRequest(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRequestorDoubleGET(t *testing.T) {
+	StartIrmaServer(t, false)
+	defer StopIrmaServer()
+	qr, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+	), nil)
+	require.NoError(t, err)
+
+	// Simulate the first GET by the client in the session protocol, twice
+	var o interface{}
+	transport := irma.NewHTTPTransport(qr.URL)
+	transport.SetHeader(irma.MinVersionHeader, "2.5")
+	transport.SetHeader(irma.MaxVersionHeader, "2.5")
+	require.NoError(t, transport.Get("", &o))
+	require.NoError(t, transport.Get("", &o))
+}
+
 func TestRequestorSignatureSession(t *testing.T) {
 	client, _ := parseStorage(t)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	serverResult := requestorSessionHelper(t, irma.NewSignatureRequest("message", id), client)
 
-	require.Nil(t, serverResult.Err)
-	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
-	require.NotEmpty(t, serverResult.Disclosed)
-	require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
-	require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
+	var serverResult *requestorSessionResult
+	for _, opt := range []sessionOption{0, sessionOptionRetryPost} {
+		serverResult = requestorSessionHelper(t, irma.NewSignatureRequest("message", id), client, opt)
+
+		require.Nil(t, serverResult.Err)
+		require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
+		require.NotEmpty(t, serverResult.Disclosed)
+		require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
+		require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
+	}
 
 	// Load the updated scheme in which an attribute was added to the studentCard credential type
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
@@ -102,10 +150,12 @@ func TestRequestorSignatureSession(t *testing.T) {
 func TestRequestorDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := irma.NewDisclosureRequest(id)
-	serverResult := testRequestorDisclosure(t, request)
-	require.Len(t, serverResult.Disclosed, 1)
-	require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
-	require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
+	for _, opt := range []sessionOption{0, sessionOptionRetryPost} {
+		serverResult := testRequestorDisclosure(t, request, opt)
+		require.Len(t, serverResult.Disclosed, 1)
+		require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
+		require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
+	}
 }
 
 func TestRequestorDisclosureMultipleAttrs(t *testing.T) {
@@ -117,8 +167,8 @@ func TestRequestorDisclosureMultipleAttrs(t *testing.T) {
 	require.Len(t, serverResult.Disclosed, 2)
 }
 
-func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest) *server.SessionResult {
-	serverResult := requestorSessionHelper(t, request, nil)
+func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest, options ...sessionOption) *server.SessionResult {
+	serverResult := requestorSessionHelper(t, request, nil, options...)
 	require.Nil(t, serverResult.Err)
 	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
 	return serverResult.SessionResult

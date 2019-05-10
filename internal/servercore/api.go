@@ -353,6 +353,10 @@ func (s *Server) handleProtocolMessage(
 			return
 		}
 		if method == http.MethodGet {
+			status, output = session.checkCache(message, server.StatusConnected)
+			if len(output) != 0 {
+				return
+			}
 			h := http.Header(headers)
 			min := &irma.ProtocolVersion{}
 			max := &irma.ProtocolVersion{}
@@ -365,10 +369,12 @@ func (s *Server) handleProtocolMessage(
 				return
 			}
 			status, output = server.JsonResponse(session.handleGetRequest(min, max))
+			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusConnected}
 			return
 		}
 		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 		return
+
 	default:
 		if noun == "statusevents" {
 			err := server.RemoteError(server.ErrorInvalidRequest, "server sent events not supported by this server")
@@ -388,30 +394,47 @@ func (s *Server) handleProtocolMessage(
 		}
 
 		if noun == "commitments" && session.action == irma.ActionIssuing {
+			status, output = session.checkCache(message, server.StatusDone)
+			if len(output) != 0 {
+				return
+			}
 			commitments := &irma.IssueCommitmentMessage{}
-			if err := irma.UnmarshalValidate(message, commitments); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
+			if err = irma.UnmarshalValidate(message, commitments); err != nil {
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
 				return
 			}
 			status, output = server.JsonResponse(session.handlePostCommitments(commitments))
+			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusDone}
 			return
 		}
+
 		if noun == "proofs" && session.action == irma.ActionDisclosing {
-			disclosure := irma.Disclosure{}
-			if err := irma.UnmarshalValidate(message, &disclosure); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
+			status, output = session.checkCache(message, server.StatusDone)
+			if len(output) != 0 {
+				return
+			}
+			disclosure := &irma.Disclosure{}
+			if err = irma.UnmarshalValidate(message, disclosure); err != nil {
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
 				return
 			}
 			status, output = server.JsonResponse(session.handlePostDisclosure(disclosure))
+			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusDone}
 			return
 		}
+
 		if noun == "proofs" && session.action == irma.ActionSigning {
+			status, output = session.checkCache(message, server.StatusDone)
+			if len(output) != 0 {
+				return
+			}
 			signature := &irma.SignedMessage{}
-			if err := irma.UnmarshalValidate(message, signature); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, ""))
+			if err = irma.UnmarshalValidate(message, signature); err != nil {
+				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
 				return
 			}
 			status, output = server.JsonResponse(session.handlePostSignature(signature))
+			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusDone}
 			return
 		}
 

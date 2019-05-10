@@ -210,7 +210,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	qr := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
-	h := TestHandler{t, c, client, expectedServerName(t, request, client.Configuration)}
+	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedServerName(t, request, client.Configuration)}
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(qrjson), h)

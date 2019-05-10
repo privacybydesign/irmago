@@ -366,7 +366,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 		URL:  "http://localhost:48681/irma_configuration/irma-demo",
 	})
 	require.NoError(t, err)
-	client.NewSession(string(qr), TestHandler{t, c, client, nil})
+	client.NewSession(string(qr), &TestHandler{t: t, c: c, client: client, expectedServerName: nil})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
@@ -419,7 +419,7 @@ func TestStaticQRSession(t *testing.T) {
 	c := make(chan *SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), TestHandler{t, c, client, host})
+	client.NewSession(string(bts), &TestHandler{t, c, client, host, ""})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
