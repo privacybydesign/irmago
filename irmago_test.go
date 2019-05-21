@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-	"os"
 
 	"github.com/privacybydesign/gabi/big"
 
@@ -46,7 +45,7 @@ func TestConfigurationAutocopy(t *testing.T) {
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	// The description.xml of the scheme manager under this folder has been edited
 	// to invalidate the scheme manager signature
-	conf, err := NewConfigurationReadOnly("testdata"+string(os.PathSeparator)+"irma_configuration_invalid")
+	conf, err := NewConfigurationReadOnly(filepath.Join("testdata","irma_configuration_invalid"))
 	require.NoError(t, err)
 
 	// Parsing it should return a SchemeManagerError
@@ -81,8 +80,8 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	test.CreateTestStorage(t)
 	defer test.ClearTestStorage(t)
 
-	conf, err := NewConfigurationFromAssets("testdata"+string(os.PathSeparator)+"storage"+string(os.PathSeparator)+"test"+string(os.PathSeparator)+"irma_configuration",
-		"testdata"+string(os.PathSeparator)+"irma_configuration_invalid")
+	conf, err := NewConfigurationFromAssets(filepath.Join("testdata", "storage", "test", "irma_configuration"),
+		filepath.Join("testdata","irma_configuration_invalid"))
 	require.NoError(t, err)
 
 	err = conf.ParseOrRestoreFolder()
@@ -96,8 +95,8 @@ func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	test.CreateTestStorage(t)
 	defer test.ClearTestStorage(t)
 
-	conf, err := NewConfigurationFromAssets("testdata"+string(os.PathSeparator)+"storage"+string(os.PathSeparator)+"test"+string(os.PathSeparator)+"irma_configuration",
-		"testdata"+string(os.PathSeparator)+"irma_configuration_invalid")
+	conf, err := NewConfigurationFromAssets(filepath.Join("testdata", "storage", "test", "irma_configuration"),
+		filepath.Join("testdata", "irma_configuration_invalid"))
 	require.NoError(t, err)
 
 	// Fails: no remote and the version in the assets is broken
@@ -106,7 +105,7 @@ func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	require.NotEmpty(t, conf.DisabledSchemeManagers)
 
 	// Try again from correct assets
-	conf.assets = "testdata"+string(os.PathSeparator)+"irma_configuration"
+	conf.assets = filepath.Join("testdata", "irma_configuration")
 	err = conf.ParseOrRestoreFolder()
 	require.NoError(t, err)
 	require.Empty(t, conf.DisabledSchemeManagers)
@@ -212,7 +211,7 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	conf, err := NewConfigurationReadOnly("testdata"+string(os.PathSeparator)+"irma_configuration")
+	conf, err := NewConfigurationReadOnly(filepath.Join("testdata", "irma_configuration"))
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 

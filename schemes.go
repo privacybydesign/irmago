@@ -3,7 +3,6 @@ package irma
 import (
 	"fmt"
 	"path/filepath"
-	"os"
 )
 
 // SchemeManagerPointer points to a remote IRMA scheme, containing information to download the scheme,
@@ -69,7 +68,7 @@ func (conf *Configuration) downloadPrivateKeys(scheme *SchemeManager) error {
 		}
 		for _, index := range indices {
 			remote := fmt.Sprintf("%s/PrivateKeys/%d.xml", issid.Name(), index)
-			local := fmt.Sprintf("%s"+string(os.PathSeparator)+"%s"+string(os.PathSeparator)+"%s", conf.Path, scheme.ID, remote)
+			local := filepath.Join(conf.Path, scheme.ID, remote)
 			if err = transport.GetFile(remote, filepath.FromSlash(local)); err != nil {
 				Logger.Warnf("Downloading private key %d of issuer %s failed", index, issid.String())
 			}

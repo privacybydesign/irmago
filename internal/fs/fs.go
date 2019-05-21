@@ -83,8 +83,8 @@ func Copy(src, dest string) error {
 // Save the filecontents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
-func SaveFile(filepath string, content []byte) (err error) {
-	dir := path.Dir(filepath)
+func SaveFile(fpath string, content []byte) (err error) {
+	dir := path.Dir(fpath)
 
 	// Read random data for filename and convert to hex
 	randBytes := make([]byte, 16)
@@ -95,13 +95,13 @@ func SaveFile(filepath string, content []byte) (err error) {
 	tempfilename := hex.EncodeToString(randBytes)
 
 	// Create temp file
-	err = ioutil.WriteFile(dir+string(os.PathSeparator)+tempfilename, content, 0600)
+	err = ioutil.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
 	if err != nil {
 		return
 	}
 
 	// Rename, overwriting old file
-	return os.Rename(dir+string(os.PathSeparator)+tempfilename, filepath)
+	return os.Rename(filepath.Join(dir, tempfilename), fpath)
 }
 
 func CopyDirectory(src, dest string) error {

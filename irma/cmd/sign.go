@@ -78,7 +78,7 @@ func init() {
 func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification bool) error {
 	// Write timestamp
 	bts := []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
-	if err := ioutil.WriteFile(confpath+string(os.PathSeparator)+"timestamp", bts, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(confpath, "timestamp"), bts, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write timestamp", 0)
 	}
 
@@ -93,7 +93,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 
 	// Write index
 	bts = []byte(index.String())
-	if err := ioutil.WriteFile(confpath+string(os.PathSeparator)+"index", bts, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(confpath, "index"), bts, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write index", 0)
 	}
 
@@ -107,7 +107,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to serialize signature:", 0)
 	}
-	if err = ioutil.WriteFile(confpath+string(os.PathSeparator)+"index.sig", sigbytes, 0644); err != nil {
+	if err = ioutil.WriteFile(filepath.Join(confpath, "index.sig"), sigbytes, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write index.sig", 0)
 	}
 
@@ -117,7 +117,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 		return errors.WrapPrefix(err, "Failed to serialize public key", 0)
 	}
 	pemEncodedPub := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: bts})
-	if err := ioutil.WriteFile(confpath+string(os.PathSeparator)+"pk.pem", pemEncodedPub, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(confpath, "pk.pem"), pemEncodedPub, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write public key", 0)
 	}
 
