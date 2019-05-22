@@ -998,7 +998,7 @@ func (conf *Configuration) checkUnsignedFiles(name string, index SchemeManagerIn
 			return err
 		}
 		for _, ex := range sigExceptions {
-			if ex.MatchString(relpath) {
+			if ex.MatchString(filepath.ToSlash(relpath)) {
 				return nil
 			}
 		}
@@ -1228,12 +1228,12 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 			continue
 		}
 		var matches []string
-		matches = issPattern.FindStringSubmatch(filename)
+		matches = issPattern.FindStringSubmatch(filepath.ToSlash(filename))
 		if len(matches) == 3 {
 			issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", matches[1], matches[2]))
 			downloaded.Issuers[issid] = struct{}{}
 		}
-		matches = credPattern.FindStringSubmatch(filename)
+		matches = credPattern.FindStringSubmatch(filepath.ToSlash(filename))
 		if len(matches) == 4 {
 			credid := NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", matches[1], matches[2], matches[3]))
 			downloaded.CredentialTypes[credid] = struct{}{}

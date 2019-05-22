@@ -148,14 +148,14 @@ func calculateFileHash(path string, info os.FileInfo, err error, confpath string
 	// Skip stuff we don't want
 	if info.IsDir() || // Can only sign files
 		strings.HasSuffix(path, "index") || // Skip the index file itself
-		strings.Contains(path, string(os.PathSeparator)+".git"+string(os.PathSeparator)) || // No need to traverse .git dirs, can take quite long
-		strings.Contains(path, string(os.PathSeparator)+"PrivateKeys"+string(os.PathSeparator)) { // Don't sign private keys
+		strings.Contains(filepath.ToSlash(path), "/.git/") || // No need to traverse .git dirs, can take quite long
+		strings.Contains(filepath.ToSlash(path), "/PrivateKeys/") { // Don't sign private keys
 		return nil
 	}
 	// Skip everything except the stuff we do want
 	if !strings.HasSuffix(path, ".xml") &&
 		!strings.HasSuffix(path, ".png") &&
-		!regexp.MustCompile("kss-\\d+\\.pem$").Match([]byte(filepath.Base(path))) &&
+		!regexp.MustCompile("kss-\\d+\\.pem$").Match([]byte(filepath.ToSlash(filepath.Base(path)))) &&
 		filepath.Base(path) != "timestamp" {
 		return nil
 	}
@@ -171,6 +171,6 @@ func calculateFileHash(path string, info os.FileInfo, err error, confpath string
 	relativePath = filepath.Join(filepath.Base(confpath), relativePath)
 
 	hash := sha256.Sum256(bts)
-	index[relativePath] = hash[:]
+	index[filepath.ToSlash(relativePath)] = hash[:]
 	return nil
 }
