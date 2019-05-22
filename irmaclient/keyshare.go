@@ -368,7 +368,8 @@ func (ks *keyshareSession) GetCommitments() {
 		comms := &proofPCommitmentMap{}
 		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
 		if err != nil {
-			if err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
+			if err.(*irma.SessionError) != nil && err.(*irma.SessionError).RemoteError != nil &&
+				err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
 				// JWT may be out of date due to clock drift; request pin and try again
 				// (but only if we did not ask for a PIN earlier)
 				ks.pinCheck = false
