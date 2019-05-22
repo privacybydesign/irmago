@@ -304,27 +304,6 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-// relativePath returns, given a outer path that contains the inner path,
-// the relative path between outer an inner, which is such that
-// outer/returnvalue refers to inner.
-func relativePath(outer string, inner string) (string, error) {
-	// Take Abs() of both paths to ensure that we don't fail on e.g.
-	// outer = "./foo" and inner = "foo/bar"
-	outerAbs, err := filepath.Abs(outer)
-	if err != nil {
-		return "", err
-	}
-	innerAbs, err := filepath.Abs(inner)
-	if err != nil {
-		return "", err
-	}
-	if !strings.HasPrefix(innerAbs, outerAbs) {
-		return "", errors.New("inner path is not contained in outer path")
-	}
-
-	return innerAbs[len(outerAbs)+1:], nil
-}
-
 // PrivateKey returns the specified private key, or nil if not present in the Configuration.
 func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, error) {
 	if sk := conf.privateKeys[id]; sk != nil {
@@ -518,7 +497,7 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil {
 			return err
 		}
-		relativepath, err := relativePath(conf.Path, file)
+		relativepath, err := filepath.Rel(conf.Path, file)
 		if err != nil {
 			return err
 		}
@@ -631,7 +610,7 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 		return false, nil
 	}
 
-	relativepath, err := relativePath(conf.Path, path)
+	relativepath, err := filepath.Rel(conf.Path, path)
 	if err != nil {
 		return false, err
 	}
@@ -993,7 +972,7 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (Sche
 
 func (conf *Configuration) checkUnsignedFiles(name string, index SchemeManagerIndex) error {
 	return filepath.Walk(filepath.Join(conf.Path, name), func(path string, info os.FileInfo, err error) error {
-		relpath, err := relativePath(conf.Path, path)
+		relpath, err := filepath.Rel(conf.Path, path)
 		if err != nil {
 			return err
 		}
