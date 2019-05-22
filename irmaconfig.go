@@ -1245,13 +1245,17 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 }
 
 func (conf *Configuration) UpdateSchemes() error {
+	var updated IrmaIdentifierSet
 	for id := range conf.SchemeManagers {
 		Logger.WithField("scheme", id).Info("Auto-updating scheme")
-		if err := conf.UpdateSchemeManager(id, nil); err != nil {
+		if err := conf.UpdateSchemeManager(id, &updated); err != nil {
 			return err
 		}
 	}
-	return conf.ParseFolder()
+	if !updated.Empty() {
+		return conf.ParseFolder()
+	}
+	return nil
 }
 
 func (conf *Configuration) AutoUpdateSchemes(interval uint) {
