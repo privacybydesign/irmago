@@ -47,6 +47,9 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 		if err != nil {
 			die("", err)
 		}
+		
+		// Make sure we always run with latest configuration
+		irmaconfig.UpdateSchemes()
 
 		var result *server.SessionResult
 		url, _ := cmd.Flags().GetString("url")
