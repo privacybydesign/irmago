@@ -9,14 +9,12 @@ import (
 // including its (pinned) public key.
 type SchemeManagerPointer struct {
 	Url       string // URL to download scheme from
-	Demo      bool   // Whether or not this is a demo scheme; if true, private keys are also downloaded
 	Publickey []byte // Public key of scheme against which to verify files after they have been downloaded
 }
 
 var DefaultSchemeManagers = [2]SchemeManagerPointer{
 	{
-		Url:  "https://privacybydesign.foundation/schememanager/irma-demo",
-		Demo: true,
+		Url: "https://privacybydesign.foundation/schememanager/irma-demo",
 		Publickey: []byte(`-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHVnmAY+kGkFZn7XXozdI4HY8GOjm
 54ngh4chTfn6WsTCf2w5rprfIqML61z2VTE4k8yJ0Z1QbyW6cdaao8obTQ==
@@ -41,11 +39,6 @@ func (conf *Configuration) DownloadDefaultSchemes() error {
 		}
 		if err := conf.InstallSchemeManager(scheme, s.Publickey); err != nil {
 			return err
-		}
-		if s.Demo {
-			if err := conf.downloadPrivateKeys(scheme); err != nil {
-				return err
-			}
 		}
 	}
 	Logger.Info("Finished downloading schemes")
