@@ -18,6 +18,7 @@ type SchemeManager struct {
 	Name              TranslatedString `xml:"Name"`
 	URL               string           `xml:"Url"`
 	Contact           string           `xml:"contact"`
+	Demo              bool             `xml:"Demo"` // Decides whether to download private keys
 	Description       TranslatedString
 	MinimumAppVersion SchemeAppVersion
 	KeyshareServer    string
