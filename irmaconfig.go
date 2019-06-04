@@ -1245,7 +1245,11 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 }
 
 func (conf *Configuration) UpdateSchemes() error {
-	var updated IrmaIdentifierSet
+	updated := &IrmaIdentifierSet{
+		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
+		Issuers:         map[IssuerIdentifier]struct{}{},
+		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+	}
 	for id := range conf.SchemeManagers {
 		Logger.WithField("scheme", id).Info("Auto-updating scheme")
 		if err := conf.UpdateSchemeManager(id, &updated); err != nil {
