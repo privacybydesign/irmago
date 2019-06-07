@@ -239,7 +239,7 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 }
 
 func generateSecretKey() (*secretKey, error) {
-	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
+	key, err := gabi.GenerateSecretAttribute()
 	if err != nil {
 		return nil, err
 	}
@@ -592,7 +592,7 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.Session
 
 // generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
 func generateIssuerProofNonce() (*big.Int, error) {
-	return gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
+	return gabi.GenerateNonce()
 }
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
