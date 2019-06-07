@@ -185,7 +185,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.token}).Debug("New session started")
-	nonce := common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabi.DefaultSystemParameters[2048].Lstatzk))
+	nonce, _ := gabi.GenerateNonce()
 	base.Nonce = nonce
 	base.Context = one
 	s.sessions.add(ses)
