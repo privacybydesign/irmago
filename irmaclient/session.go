@@ -92,9 +92,12 @@ type session struct {
 // We implement the handler for the keyshare protocol
 var _ keyshareSessionHandler = (*session)(nil)
 
-// Supported protocol versions. Minor version numbers should be reverse sorted.
+// Supported protocol versions. Minor version numbers should be sorted.
 var supportedVersions = map[int][]int{
-	2: {4},
+	2: {
+		4, // old protocol with legacy session requests
+		5, // introduces condiscon feature
+	},
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
 var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
@@ -170,7 +173,9 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		Handler:   handler,
 		client:    client,
 	}
+
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	min := minVersion
 
 	// Check if the action is one of the supported types
 	switch session.Action {
@@ -178,6 +183,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		session.request = &irma.DisclosureRequest{}
 	case irma.ActionSigning:
 		session.request = &irma.SignatureRequest{}
+		min = &irma.ProtocolVersion{2, 5} // New ABS format is not backwards compatible with old irma server
 	case irma.ActionIssuing:
 		session.request = &irma.IssuanceRequest{}
 	case irma.ActionUnknown:
@@ -187,7 +193,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		return nil
 	}
 
-	session.transport.SetHeader(irma.MinVersionHeader, minVersion.String())
+	session.transport.SetHeader(irma.MinVersionHeader, min.String())
 	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"

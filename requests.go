@@ -20,7 +20,7 @@ type BaseRequest struct {
 	// Denotes session type, must be "disclosing", "signing" or "issuing"
 	Type Action `json:"type"`
 	// Message version. Current version is 2.
-	Version int `json:"v"`
+	Version int `json:"v,omitempty"`
 
 	// Chosen by the IRMA server during the session
 	Context         *big.Int         `json:"context,omitempty"`
@@ -85,6 +85,7 @@ type SessionRequest interface {
 	Disclosure() *DisclosureRequest
 	Identifiers() *IrmaIdentifierSet
 	Action() Action
+	Legacy() (SessionRequest, error)
 }
 
 // Timestamp is a time.Time that marshals to Unix timestamps.

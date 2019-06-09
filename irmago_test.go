@@ -462,6 +462,9 @@ func TestSessionRequests(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(tst.currentJson), tst.current))
 		require.True(t, reflect.DeepEqual(tst.old, tst.expected), "Legacy %s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
 		require.True(t, reflect.DeepEqual(tst.current, tst.expected), "%s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
+
+		_, err := tst.expected.Legacy()
+		require.NoError(t, err)
 	}
 }
 

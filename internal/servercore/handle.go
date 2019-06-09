@@ -28,14 +28,30 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	}
 	session.markAlive()
 
+	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.token})
+
+	// Handle legacy clients that do not support condiscon, by attempting to convert the condiscon
+	// session request to the legacy session request format
+	legacy, legacyErr := session.request.Legacy()
+	session.legacyCompatible = legacyErr == nil
+	if legacyErr != nil {
+		logger.Info("Using condiscon: backwards compatibility with legacy IRMA apps is disabled")
+	}
+
 	var err error
-	if session.version, err = chooseProtocolVersion(min, max); err != nil {
+	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "version": session.version.String()}).Debugf("Protocol version negotiated")
+	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
 
 	session.setStatus(server.StatusConnected)
+
+	if session.version.Below(2, 5) {
+		logger.Info("Returning legacy session format")
+		legacy.Base().ProtocolVersion = session.version
+		return legacy, nil
+	}
 	return session.request, nil
 }
 

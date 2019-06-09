@@ -6,19 +6,80 @@ import (
 	"github.com/go-errors/errors"
 )
 
-type legacyAttributeDisjunction []AttributeRequest
+// This file contains compatibility code for the legacy, pre-condiscon session requests,
+// which supported only condis requests.
+//
+// Old requests can always be converted to new requests, and this is automatically done by the JSON
+// unmarshaler when it encounters a legacy session request.
+// New requests can be converted to old requests only if all inner conjunctions contain exactly
+// 1 attribute. This can be done using the Legacy() method.
+//
+// Droppping compatibility with pre-condiscon session requests should thus be more or less:
+// 1. delete this file
+// 2. solve all compiler errors by removing the lines on which they occur
+// 3. adjust the minimal supported protocol version in irmaclient and server
 
-type attributeDisjunction struct {
-	Label      string
-	Attributes legacyAttributeDisjunction
+// LegacyDisjunction is a disjunction of attributes from before the condiscon feature,
+// representing a list of attribute types one of which must be given by the user,
+// possibly requiring specific values. (C.f. AttributeCon, also defined as []AttributeRequest,
+// which is only satisfied if all listed attributes are given by the user.)
+type LegacyDisjunction []AttributeRequest
+
+type LegacyLabeledDisjunction struct {
+	Label      string            `json:"label"`
+	Attributes LegacyDisjunction `json:"attributes"`
 }
 
-type legacyDisclosureRequest struct {
+type LegacyDisclosureRequest struct {
 	BaseRequest
-	Content []attributeDisjunction `json:"content"`
+	Content []LegacyLabeledDisjunction `json:"content"`
 }
 
-func convertDisjunctions(disjunctions []attributeDisjunction) (
+func (dr *LegacyDisclosureRequest) Validate() error                 { panic("not implemented") }
+func (dr *LegacyDisclosureRequest) Disclosure() *DisclosureRequest  { panic("not implemented") }
+func (dr *LegacyDisclosureRequest) Identifiers() *IrmaIdentifierSet { panic("not implemented") }
+func (dr *LegacyDisclosureRequest) Base() *BaseRequest              { return &dr.BaseRequest }
+func (dr *LegacyDisclosureRequest) Action() Action                  { return dr.Type }
+func (dr *LegacyDisclosureRequest) Legacy() (SessionRequest, error) { return dr, nil }
+
+type LegacySignatureRequest struct {
+	LegacyDisclosureRequest
+	Message string `json:"message"`
+}
+
+type LegacyIssuanceRequest struct {
+	BaseRequest
+	Credentials []*CredentialRequest       `json:"credentials"`
+	Disclose    []LegacyLabeledDisjunction `json:"disclose"`
+}
+
+func (ir *LegacyIssuanceRequest) Validate() error                 { panic("not implemented") }
+func (ir *LegacyIssuanceRequest) Disclosure() *DisclosureRequest  { panic("not implemented") }
+func (ir *LegacyIssuanceRequest) Identifiers() *IrmaIdentifierSet { panic("not implemented") }
+func (ir *LegacyIssuanceRequest) Base() *BaseRequest              { return &ir.BaseRequest }
+func (ir *LegacyIssuanceRequest) Action() Action                  { return ir.Type }
+func (ir *LegacyIssuanceRequest) Legacy() (SessionRequest, error) { return ir, nil }
+
+func convertConDisCon(cdc AttributeConDisCon, labels map[int]TranslatedString) ([]LegacyLabeledDisjunction, error) {
+	var disjunctions []LegacyLabeledDisjunction
+	for i, dis := range cdc {
+		l := LegacyLabeledDisjunction{}
+		for _, con := range dis {
+			if len(con) != 1 {
+				return nil, errors.New("request not convertible to legacy request")
+			}
+			l.Attributes = append(l.Attributes, AttributeRequest{Type: con[0].Type, Value: con[0].Value})
+		}
+		l.Label = labels[i]["en"]
+		if l.Label == "" {
+			l.Label = l.Attributes[0].Type.Name()
+		}
+		disjunctions = append(disjunctions, l)
+	}
+	return disjunctions, nil
+}
+
+func convertDisjunctions(disjunctions []LegacyLabeledDisjunction) (
 	condiscon AttributeConDisCon, labels map[int]TranslatedString,
 ) {
 	labels = make(map[int]TranslatedString)
@@ -52,8 +113,7 @@ func checkType(typ, expected Action) error {
 	return nil
 }
 
-// Reuses AttributeCon.UnmarshalJSON()
-func (l *legacyAttributeDisjunction) UnmarshalJSON(bts []byte) error {
+func (l *LegacyDisjunction) UnmarshalJSON(bts []byte) error {
 	var err error
 	var lst []AttributeTypeIdentifier
 	if err = json.Unmarshal(bts, &lst); err == nil {
@@ -74,6 +134,49 @@ func (l *legacyAttributeDisjunction) UnmarshalJSON(bts []byte) error {
 	return errors.New("Failed to unmarshal legacy attribute conjunction")
 }
 
+func (l *LegacyDisjunction) MarshalJSON() ([]byte, error) {
+	hasvalues := false
+	for _, r := range *l {
+		if r.Value != nil {
+			hasvalues = true
+			break
+		}
+	}
+
+	var tmp interface{}
+	if hasvalues {
+		m := map[AttributeTypeIdentifier]*string{}
+		for _, r := range *l {
+			m[r.Type] = r.Value
+		}
+		tmp = m
+	} else {
+		var m []AttributeTypeIdentifier
+		for _, r := range *l {
+			m = append(m, r.Type)
+		}
+		tmp = m
+	}
+
+	return json.Marshal(tmp)
+}
+
+func (dr *DisclosureRequest) Legacy() (SessionRequest, error) {
+	disjunctions, err := convertConDisCon(dr.Disclose, dr.Labels)
+	if err != nil {
+		return nil, err
+	}
+	return &LegacyDisclosureRequest{
+		BaseRequest: BaseRequest{
+			Type:            dr.Type,
+			Context:         dr.Context,
+			Nonce:           dr.Nonce,
+			ProtocolVersion: dr.ProtocolVersion,
+		},
+		Content: disjunctions,
+	}, nil
+}
+
 func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
 	var version int
 	if version, err = parseVersion(bts); err != nil {
@@ -90,7 +193,7 @@ func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
 		return nil
 	}
 
-	var legacy legacyDisclosureRequest
+	var legacy LegacyDisclosureRequest
 	if err = json.Unmarshal(bts, &legacy); err != nil {
 		return err
 	}
@@ -99,6 +202,25 @@ func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
 	dr.Disclose, dr.Labels = convertDisjunctions(legacy.Content)
 
 	return checkType(legacy.Type, ActionDisclosing)
+}
+
+func (sr *SignatureRequest) Legacy() (SessionRequest, error) {
+	disjunctions, err := convertConDisCon(sr.Disclose, sr.Labels)
+	if err != nil {
+		return nil, err
+	}
+	return &LegacySignatureRequest{
+		Message: sr.Message,
+		LegacyDisclosureRequest: LegacyDisclosureRequest{
+			BaseRequest: BaseRequest{
+				Type:            sr.Type,
+				Context:         sr.Context,
+				Nonce:           sr.Nonce,
+				ProtocolVersion: sr.ProtocolVersion,
+			},
+			Content: disjunctions,
+		},
+	}, nil
 }
 
 func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
@@ -128,10 +250,7 @@ func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 		return nil
 	}
 
-	var legacy struct {
-		legacyDisclosureRequest
-		Message string `json:"message"`
-	}
+	var legacy LegacySignatureRequest
 	if err = json.Unmarshal(bts, &legacy); err != nil {
 		return err
 	}
@@ -141,6 +260,23 @@ func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 	sr.Message = legacy.Message
 
 	return checkType(legacy.Type, ActionSigning)
+}
+
+func (ir *IssuanceRequest) Legacy() (SessionRequest, error) {
+	disjunctions, err := convertConDisCon(ir.Disclose, ir.Labels)
+	if err != nil {
+		return nil, err
+	}
+	return &LegacyIssuanceRequest{
+		BaseRequest: BaseRequest{
+			Type:            ir.Type,
+			Context:         ir.Context,
+			Nonce:           ir.Nonce,
+			ProtocolVersion: ir.ProtocolVersion,
+		},
+		Credentials: ir.Credentials,
+		Disclose:    disjunctions,
+	}, nil
 }
 
 func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
@@ -166,11 +302,7 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 		return nil
 	}
 
-	var legacy struct {
-		BaseRequest
-		Credentials []*CredentialRequest   `json:"credentials"`
-		Disclose    []attributeDisjunction `json:"disclose"`
-	}
+	var legacy LegacyIssuanceRequest
 	if err = json.Unmarshal(bts, &legacy); err != nil {
 		return err
 	}
