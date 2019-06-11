@@ -155,6 +155,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		conf:        s.conf,
 		sessions:    s.sessions,
 		result: &server.SessionResult{
+			Legacy: request.SessionRequest().Base().Legacy(),
 			Token:  token,
 			Type:   action,
 			Status: server.StatusInitialized,

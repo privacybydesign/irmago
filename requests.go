@@ -27,8 +27,8 @@ type BaseRequest struct {
 	Nonce           *big.Int         `json:"nonce,omitempty"`
 	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
 
-	// cache for Identifiers() method
-	ids *IrmaIdentifierSet
+	ids    *IrmaIdentifierSet // cache for Identifiers() method
+	legacy bool
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -176,6 +176,10 @@ var (
 	bigZero = big.NewInt(0)
 	bigOne  = big.NewInt(1)
 )
+
+func (b *BaseRequest) Legacy() bool {
+	return b.legacy
+}
 
 func (b *BaseRequest) GetContext() *big.Int {
 	if b.Context == nil {

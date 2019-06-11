@@ -460,6 +460,7 @@ func TestSessionRequests(t *testing.T) {
 	for _, tst := range tests {
 		require.NoError(t, json.Unmarshal([]byte(tst.oldJson), tst.old))
 		require.NoError(t, json.Unmarshal([]byte(tst.currentJson), tst.current))
+		tst.old.Base().legacy = false
 		require.True(t, reflect.DeepEqual(tst.old, tst.expected), "Legacy %s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
 		require.True(t, reflect.DeepEqual(tst.current, tst.expected), "%s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
 

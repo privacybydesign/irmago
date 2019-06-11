@@ -198,6 +198,7 @@ func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
 		return err
 	}
 	dr.BaseRequest = legacy.BaseRequest
+	dr.legacy = true
 	dr.Version = 2
 	dr.Disclose, dr.Labels = convertDisjunctions(legacy.Content)
 
@@ -255,6 +256,7 @@ func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 		return err
 	}
 	sr.BaseRequest = legacy.BaseRequest
+	sr.legacy = true
 	sr.Version = 2
 	sr.Disclose, sr.Labels = convertDisjunctions(legacy.Content)
 	sr.Message = legacy.Message
@@ -307,6 +309,7 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 		return err
 	}
 	ir.BaseRequest = legacy.BaseRequest
+	ir.legacy = true
 	ir.Version = 2
 	ir.Credentials = legacy.Credentials
 	ir.Disclose, ir.Labels = convertDisjunctions(legacy.Disclose)

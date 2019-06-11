@@ -82,6 +82,8 @@ type SessionResult struct {
 	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
 	Signature   *irma.SignedMessage          `json:"signature,omitempty"`
 	Err         *irma.RemoteError            `json:"error,omitempty"`
+
+	Legacy bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
 }
 
 // Status is the status of an IRMA session.
@@ -94,6 +96,28 @@ const (
 	StatusDone        Status = "DONE"        // The session has completed successfully
 	StatusTimeout     Status = "TIMEOUT"     // Session timed out
 )
+
+// Remove this when dropping support for legacy pre-condiscon session requests
+func (r *SessionResult) MarshalJSON() ([]byte, error) {
+	if !r.Legacy {
+		type tmpSessionResult SessionResult
+		return json.Marshal((*tmpSessionResult)(r))
+	}
+
+	var disclosed []*irma.DisclosedAttribute
+	for _, l := range r.Disclosed {
+		disclosed = append(disclosed, l[0])
+	}
+	return json.Marshal(struct {
+		Token       string                     `json:"token"`
+		Status      Status                     `json:"status"`
+		Type        irma.Action                `json:"type"'`
+		ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
+		Disclosed   []*irma.DisclosedAttribute `json:"disclosed,omitempty"`
+		Signature   *irma.SignedMessage        `json:"signature,omitempty"`
+		Err         *irma.RemoteError          `json:"error,omitempty"`
+	}{r.Token, r.Status, r.Type, r.ProofStatus, disclosed, r.Signature, r.Err})
+}
 
 func (conf *Configuration) PrivateKey(id irma.IssuerIdentifier) (sk *gabi.PrivateKey, err error) {
 	sk = conf.IssuerPrivateKeys[id]
