@@ -179,7 +179,8 @@ func skipSigning(path string, info os.FileInfo, typ irma.SchemeType) bool {
 
 	switch typ {
 	case irma.SchemeTypeIssuer:
-		if strings.Contains(filepath.ToSlash(path), "/PrivateKeys/") { // Don't sign private keys
+		if strings.Contains(filepath.ToSlash(path), "/PrivateKeys/") || // Don't sign private keys
+			strings.Contains(filepath.ToSlash(path), "/Proofs/") { // Or key proofs
 			return true
 		}
 		if !strings.HasSuffix(path, ".xml") &&
