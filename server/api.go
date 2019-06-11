@@ -46,13 +46,13 @@ type Configuration struct {
 	// Required to be set to true if URL does not begin with https:// in production mode.
 	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
 	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
-	DisableTLS bool
+	DisableTLS bool `json:"disable_tls" mapstructure:"disable_tls"`
 	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
 	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
 	// for more information
 	Email string `json:"email" mapstructure:"email"`
 	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
-	EnableSSE bool
+	EnableSSE bool `json:"enable_sse" mapstructure:"enable_sse"`
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
