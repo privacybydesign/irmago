@@ -149,7 +149,8 @@ func calculateFileHash(path string, info os.FileInfo, err error, confpath string
 	if info.IsDir() || // Can only sign files
 		strings.HasSuffix(path, "index") || // Skip the index file itself
 		strings.Contains(path, "/.git/") || // No need to traverse .git dirs, can take quite long
-		strings.Contains(path, "/PrivateKeys/") { // Don't sign private keys
+		strings.Contains(path, "/PrivateKeys/") || // Don't sign private keys
+		strings.Contains(path, "/Proofs/") { // Or generation proofs
 		return nil
 	}
 	// Skip everything except the stuff we do want
