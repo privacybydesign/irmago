@@ -367,7 +367,7 @@ func (disjunction *AttributeDisjunction) attemptSatisfy(id AttributeTypeIdentifi
 			disjunction.selected = &id
 			disjunction.index = &index
 			disjunction.value = value
-			if !disjunction.HasValues() || disjunction.Values[id] == value {
+			if !disjunction.HasValues() || *disjunction.Values[id] == *value {
 				return true
 			}
 		}
@@ -383,7 +383,7 @@ func (disjunction *AttributeDisjunction) satisfied() bool {
 	}
 
 	attr := disjunction.Attributes[*disjunction.index]
-	return !disjunction.HasValues() || disjunction.value == disjunction.Values[attr]
+	return !disjunction.HasValues() || *disjunction.value == *disjunction.Values[attr]
 }
 
 // MatchesConfig returns true if all attributes contained in the disjunction are
