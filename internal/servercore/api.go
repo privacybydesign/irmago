@@ -111,8 +111,8 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		}
 		for _, file := range files {
 			filename := file.Name()
-			if filepath.Ext(filename) != ".xml" && strings.Count(filename, ".") != 3 {
-				s.conf.Logger.Infof("Skipping non-private key file %s encountered in private keys path", filename)
+			if filepath.Ext(filename) != ".xml" || filename[0] == '.' || strings.Count(filename, ".") != 2 {
+				s.conf.Logger.WithField("file", filename).Infof("Skipping non-private key file encountered in private keys path")
 				continue
 			}
 			issid := irma.NewIssuerIdentifier(strings.TrimSuffix(filename, filepath.Ext(filename))) // strip .xml

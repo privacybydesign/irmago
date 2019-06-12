@@ -54,7 +54,6 @@ type keyshareSession struct {
 }
 
 type keyshareServer struct {
-	URL                     string `json:"url"`
 	Username                string `json:"username"`
 	Nonce                   []byte `json:"nonce"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
@@ -127,13 +126,9 @@ const (
 	kssPinError       = "error"
 )
 
-func newKeyshareServer(
-	schemeManagerIdentifier irma.SchemeManagerIdentifier,
-	url string,
-) (ks *keyshareServer, err error) {
+func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (ks *keyshareServer, err error) {
 	ks = &keyshareServer{
 		Nonce: make([]byte, 32),
-		URL:   url,
 		SchemeManagerIdentifier: schemeManagerIdentifier,
 	}
 	_, err = rand.Read(ks.Nonce)
@@ -194,12 +189,13 @@ func startKeyshareSession(
 	}
 
 	for managerID := range session.Identifiers().SchemeManagers {
-		if !ks.conf.SchemeManagers[managerID].Distributed() {
+		scheme := ks.conf.SchemeManagers[managerID]
+		if !scheme.Distributed() {
 			continue
 		}
 
 		ks.keyshareServer = ks.keyshareServers[managerID]
-		transport := irma.NewHTTPTransport(ks.keyshareServer.URL)
+		transport := irma.NewHTTPTransport(scheme.KeyshareServer)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, "Bearer "+ks.keyshareServer.token)
 		transport.SetHeader(kssVersionHeader, "2")
@@ -372,7 +368,8 @@ func (ks *keyshareSession) GetCommitments() {
 		comms := &proofPCommitmentMap{}
 		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
 		if err != nil {
-			if err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
+			if err.(*irma.SessionError).RemoteError != nil &&
+				err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
 				// JWT may be out of date due to clock drift; request pin and try again
 				// (but only if we did not ask for a PIN earlier)
 				ks.pinCheck = false

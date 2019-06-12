@@ -116,7 +116,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.Bool("no-auth", !production, "whether or not to authenticate requestors")
+	flags.Bool("no-auth", !production, "whether or not to authenticate requestors (and reject all authenticated requests)")
 	flags.String("requestors", "", "requestor configuration (in JSON)")
 	flags.StringSlice("disclose-perms", nil, "list of attributes that all requestors may verify (default *)")
 	flags.StringSlice("sign-perms", nil, "list of attributes that all requestors may request in signatures (default *)")

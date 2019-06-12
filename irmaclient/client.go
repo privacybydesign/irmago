@@ -838,7 +838,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	}
 
 	transport := irma.NewHTTPTransport(manager.KeyshareServer)
-	kss, err := newKeyshareServer(managerID, manager.KeyshareServer)
+	kss, err := newKeyshareServer(managerID)
 	if err != nil {
 		return err
 	}
@@ -882,7 +882,7 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 		}
 	}
 	kss := client.keyshareServers[schemeid]
-	return verifyPinWorker(pin, kss, irma.NewHTTPTransport(kss.URL))
+	return verifyPinWorker(pin, kss, irma.NewHTTPTransport(scheme.KeyshareServer))
 }
 
 func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
@@ -900,7 +900,7 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 		return errors.New("Unknown keyshare server")
 	}
 
-	transport := irma.NewHTTPTransport(kss.URL)
+	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer)
 	message := keyshareChangepin{
 		Username: kss.Username,
 		OldPin:   kss.HashedPin(oldPin),
