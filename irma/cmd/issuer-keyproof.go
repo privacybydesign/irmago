@@ -377,7 +377,7 @@ func lastPrivateKeyIndex(path string) (counter int) {
 }
 
 func lastProofIndex(path string) (counter int) {
-	matches, _ := filepath.Glob(filepath.Join(path, "Proofs", "*.xml"))
+	matches, _ := filepath.Glob(filepath.Join(path, "Proofs", "*.json.gz"))
 	for _, match := range matches {
 		filename := filepath.Base(match)
 		c, err := strconv.Atoi(filename[:len(filename)-4])
