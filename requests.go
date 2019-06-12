@@ -15,20 +15,25 @@ import (
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
+const (
+	LDContextDisclosureRequest = "https://irma.app/ld/request/disclosure/v2"
+	LDContextSignatureRequest  = "https://irma.app/ld/request/signature/v2"
+	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
+)
+
 // BaseRequest contains the context and nonce for an IRMA session.
 type BaseRequest struct {
-	// Denotes session type, must be "disclosing", "signing" or "issuing"
-	Type Action `json:"type"`
-	// Message version. Current version is 2.
-	Version int `json:"v,omitempty"`
+	LDContext string `json:"@context,omitempty"`
 
 	// Chosen by the IRMA server during the session
 	Context         *big.Int         `json:"context,omitempty"`
 	Nonce           *big.Int         `json:"nonce,omitempty"`
 	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
 
-	ids    *IrmaIdentifierSet // cache for Identifiers() method
-	legacy bool
+	ids *IrmaIdentifierSet // cache for Identifiers() method
+
+	legacy bool   // Whether or not this was deserialized from a legacy (pre-condiscon) request
+	Type   Action `json:"type,omitempty"` // Session type, only used in legacy code
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -384,7 +389,7 @@ func (dr *DisclosureRequest) AddSingle(attr AttributeTypeIdentifier, value *stri
 
 func NewDisclosureRequest(attrs ...AttributeTypeIdentifier) *DisclosureRequest {
 	request := &DisclosureRequest{
-		BaseRequest: BaseRequest{Type: ActionDisclosing, Version: 2},
+		BaseRequest: BaseRequest{LDContext: LDContextDisclosureRequest},
 		Labels:      map[int]TranslatedString{},
 	}
 	for _, attr := range attrs {
@@ -395,7 +400,7 @@ func NewDisclosureRequest(attrs ...AttributeTypeIdentifier) *DisclosureRequest {
 
 func NewSignatureRequest(message string, attrs ...AttributeTypeIdentifier) *SignatureRequest {
 	dr := NewDisclosureRequest(attrs...)
-	dr.Type = ActionSigning
+	dr.LDContext = LDContextSignatureRequest
 	return &SignatureRequest{
 		DisclosureRequest: *dr,
 		Message:           message,
@@ -404,7 +409,7 @@ func NewSignatureRequest(message string, attrs ...AttributeTypeIdentifier) *Sign
 
 func NewIssuanceRequest(creds []*CredentialRequest, attrs ...AttributeTypeIdentifier) *IssuanceRequest {
 	dr := NewDisclosureRequest(attrs...)
-	dr.Type = ActionIssuing
+	dr.LDContext = LDContextIssuanceRequest
 	return &IssuanceRequest{
 		DisclosureRequest: *dr,
 		Credentials:       creds,
@@ -442,7 +447,7 @@ func (dr *DisclosureRequest) Base() *BaseRequest {
 func (dr *DisclosureRequest) Action() Action { return ActionDisclosing }
 
 func (dr *DisclosureRequest) Validate() error {
-	if dr.Type != ActionDisclosing {
+	if dr.LDContext != LDContextDisclosureRequest {
 		return errors.New("Not a disclosure request")
 	}
 	if len(dr.Disclose) == 0 {
@@ -573,7 +578,7 @@ func (ir *IssuanceRequest) GetCredentialInfoList(conf *Configuration, version *P
 func (ir *IssuanceRequest) Action() Action { return ActionIssuing }
 
 func (ir *IssuanceRequest) Validate() error {
-	if ir.Type != ActionIssuing {
+	if ir.LDContext != LDContextIssuanceRequest {
 		return errors.New("Not an issuance request")
 	}
 	if len(ir.Credentials) == 0 {
@@ -611,7 +616,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp 
 		nonce = bigZero
 	}
 	return &SignedMessage{
-		LDContext: SignedMessageLDContext,
+		LDContext: LDContextSignedMessage,
 		Signature: signature.Proofs,
 		Indices:   signature.Indices,
 		Nonce:     nonce,
@@ -624,7 +629,7 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp 
 func (sr *SignatureRequest) Action() Action { return ActionSigning }
 
 func (sr *SignatureRequest) Validate() error {
-	if sr.Type != ActionSigning {
+	if sr.LDContext != LDContextSignatureRequest {
 		return errors.New("Not a signature request")
 	}
 	if sr.Message == "" {

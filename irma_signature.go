@@ -11,7 +11,7 @@ import (
 	"github.com/privacybydesign/gabi/big"
 )
 
-const SignedMessageLDContext = "https://irma.app/ld/signature/v2"
+const LDContextSignedMessage = "https://irma.app/ld/signature/v2"
 
 // SignedMessage is a message signed with an attribute-based signature
 // The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(nonce, SHA256(message), timestampSignature)

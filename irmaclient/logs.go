@@ -135,7 +135,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 		request := session.request.(*irma.SignatureRequest)
 		entry.SignedMessage = []byte(request.Message)
 		entry.Timestamp = session.timestamp
-		entry.SignedMessageLDContext = irma.SignedMessageLDContext
+		entry.SignedMessageLDContext = irma.LDContextSignedMessage
 
 		fallthrough
 	case irma.ActionDisclosing:

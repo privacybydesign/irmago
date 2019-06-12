@@ -261,7 +261,7 @@ func TestSessionRequests(t *testing.T) {
 	sigMessage := "message to be signed"
 
 	base := &DisclosureRequest{
-		BaseRequest: BaseRequest{Type: ActionDisclosing, Version: 2},
+		BaseRequest: BaseRequest{LDContext: LDContextDisclosureRequest},
 		Disclose: AttributeConDisCon{
 			AttributeDisCon{
 				AttributeCon{NewAttributeRequest("irma-demo.MijnOverheid.ageLimits.over18")},
@@ -299,8 +299,7 @@ func TestSessionRequests(t *testing.T) {
 			}`,
 			current: &DisclosureRequest{},
 			currentJson: `{
-				"type": "disclosing",
-				"v": 2,
+				"@context": "https://irma.app/ld/request/disclosure/v2",
 				"disclose": [
 					[
 						[
@@ -331,7 +330,7 @@ func TestSessionRequests(t *testing.T) {
 
 		{
 			expected: &SignatureRequest{
-				DisclosureRequest{BaseRequest{Type: ActionSigning, Version: 2}, base.Disclose, base.Labels},
+				DisclosureRequest{BaseRequest{LDContext: LDContextSignatureRequest}, base.Disclose, base.Labels},
 				sigMessage,
 			},
 			old: &SignatureRequest{},
@@ -354,8 +353,7 @@ func TestSessionRequests(t *testing.T) {
 			}`,
 			current: &SignatureRequest{},
 			currentJson: `{
-				"type": "signing",
-				"v": 2,
+				"@context": "https://irma.app/ld/request/signature/v2",
 				"disclose": [
 					[
 						[
@@ -387,7 +385,7 @@ func TestSessionRequests(t *testing.T) {
 
 		{
 			expected: &IssuanceRequest{
-				DisclosureRequest: DisclosureRequest{BaseRequest{Type: ActionIssuing, Version: 2}, base.Disclose, base.Labels},
+				DisclosureRequest: DisclosureRequest{BaseRequest{LDContext: LDContextIssuanceRequest}, base.Disclose, base.Labels},
 				Credentials: []*CredentialRequest{
 					{
 						CredentialTypeID: NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
@@ -418,8 +416,7 @@ func TestSessionRequests(t *testing.T) {
 			}`,
 			current: &IssuanceRequest{},
 			currentJson: `{
-				"type": "issuing",
-				"v": 2,
+				"@context": "https://irma.app/ld/request/issuance/v2",
 				"credentials": [
 					{
 						"credential": "irma-demo.MijnOverheid.root",
@@ -460,7 +457,8 @@ func TestSessionRequests(t *testing.T) {
 	for _, tst := range tests {
 		require.NoError(t, json.Unmarshal([]byte(tst.oldJson), tst.old))
 		require.NoError(t, json.Unmarshal([]byte(tst.currentJson), tst.current))
-		tst.old.Base().legacy = false
+		tst.old.Base().legacy = false // We don't care about this field differing, override it
+		tst.old.Base().Type = ""      // same
 		require.True(t, reflect.DeepEqual(tst.old, tst.expected), "Legacy %s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
 		require.True(t, reflect.DeepEqual(tst.current, tst.expected), "%s did not unmarshal to expected value", reflect.TypeOf(tst.old).String())
 

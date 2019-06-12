@@ -39,13 +39,15 @@ func (dr *LegacyDisclosureRequest) Validate() error                 { panic("not
 func (dr *LegacyDisclosureRequest) Disclosure() *DisclosureRequest  { panic("not implemented") }
 func (dr *LegacyDisclosureRequest) Identifiers() *IrmaIdentifierSet { panic("not implemented") }
 func (dr *LegacyDisclosureRequest) Base() *BaseRequest              { return &dr.BaseRequest }
-func (dr *LegacyDisclosureRequest) Action() Action                  { return dr.Type }
+func (dr *LegacyDisclosureRequest) Action() Action                  { return ActionDisclosing }
 func (dr *LegacyDisclosureRequest) Legacy() (SessionRequest, error) { return dr, nil }
 
 type LegacySignatureRequest struct {
 	LegacyDisclosureRequest
 	Message string `json:"message"`
 }
+
+func (ir *LegacySignatureRequest) Action() Action { return ActionIssuing }
 
 type LegacyIssuanceRequest struct {
 	BaseRequest
@@ -57,7 +59,7 @@ func (ir *LegacyIssuanceRequest) Validate() error                 { panic("not i
 func (ir *LegacyIssuanceRequest) Disclosure() *DisclosureRequest  { panic("not implemented") }
 func (ir *LegacyIssuanceRequest) Identifiers() *IrmaIdentifierSet { panic("not implemented") }
 func (ir *LegacyIssuanceRequest) Base() *BaseRequest              { return &ir.BaseRequest }
-func (ir *LegacyIssuanceRequest) Action() Action                  { return ir.Type }
+func (ir *LegacyIssuanceRequest) Action() Action                  { return ActionIssuing }
 func (ir *LegacyIssuanceRequest) Legacy() (SessionRequest, error) { return ir, nil }
 
 func convertConDisCon(cdc AttributeConDisCon, labels map[int]TranslatedString) ([]LegacyLabeledDisjunction, error) {
@@ -96,14 +98,14 @@ func convertDisjunctions(disjunctions []LegacyLabeledDisjunction) (
 	return
 }
 
-func parseVersion(bts []byte) (int, error) {
+func parseLDContext(bts []byte) (string, error) {
 	var v struct {
-		Version int `json:"v"`
+		LDContext string `json:"@context"`
 	}
 	if err := json.Unmarshal(bts, &v); err != nil {
-		return 0, err
+		return "", err
 	}
-	return v.Version, nil
+	return v.LDContext, nil
 }
 
 func checkType(typ, expected Action) error {
@@ -168,7 +170,7 @@ func (dr *DisclosureRequest) Legacy() (SessionRequest, error) {
 	}
 	return &LegacyDisclosureRequest{
 		BaseRequest: BaseRequest{
-			Type:            dr.Type,
+			Type:            ActionDisclosing,
 			Context:         dr.Context,
 			Nonce:           dr.Nonce,
 			ProtocolVersion: dr.ProtocolVersion,
@@ -178,12 +180,12 @@ func (dr *DisclosureRequest) Legacy() (SessionRequest, error) {
 }
 
 func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
-	var version int
-	if version, err = parseVersion(bts); err != nil {
+	var ldContext string
+	if ldContext, err = parseLDContext(bts); err != nil {
 		return err
 	}
 
-	if version >= 2 {
+	if ldContext != "" {
 		type newDisclosureRequest DisclosureRequest // Same type with default JSON unmarshaler
 		var req newDisclosureRequest
 		if err = json.Unmarshal(bts, &req); err != nil {
@@ -199,7 +201,7 @@ func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
 	}
 	dr.BaseRequest = legacy.BaseRequest
 	dr.legacy = true
-	dr.Version = 2
+	dr.LDContext = LDContextDisclosureRequest
 	dr.Disclose, dr.Labels = convertDisjunctions(legacy.Content)
 
 	return checkType(legacy.Type, ActionDisclosing)
@@ -214,7 +216,7 @@ func (sr *SignatureRequest) Legacy() (SessionRequest, error) {
 		Message: sr.Message,
 		LegacyDisclosureRequest: LegacyDisclosureRequest{
 			BaseRequest: BaseRequest{
-				Type:            sr.Type,
+				Type:            ActionSigning,
 				Context:         sr.Context,
 				Nonce:           sr.Nonce,
 				ProtocolVersion: sr.ProtocolVersion,
@@ -225,12 +227,12 @@ func (sr *SignatureRequest) Legacy() (SessionRequest, error) {
 }
 
 func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
-	var version int
-	if version, err = parseVersion(bts); err != nil {
+	var ldContext string
+	if ldContext, err = parseLDContext(bts); err != nil {
 		return err
 	}
 
-	if version >= 2 {
+	if ldContext != "" {
 		var req struct { // Identical type with default JSON unmarshaler
 			BaseRequest
 			Disclose AttributeConDisCon       `json:"disclose"`
@@ -257,7 +259,7 @@ func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 	}
 	sr.BaseRequest = legacy.BaseRequest
 	sr.legacy = true
-	sr.Version = 2
+	sr.LDContext = LDContextSignatureRequest
 	sr.Disclose, sr.Labels = convertDisjunctions(legacy.Content)
 	sr.Message = legacy.Message
 
@@ -271,7 +273,7 @@ func (ir *IssuanceRequest) Legacy() (SessionRequest, error) {
 	}
 	return &LegacyIssuanceRequest{
 		BaseRequest: BaseRequest{
-			Type:            ir.Type,
+			Type:            ActionIssuing,
 			Context:         ir.Context,
 			Nonce:           ir.Nonce,
 			ProtocolVersion: ir.ProtocolVersion,
@@ -282,12 +284,12 @@ func (ir *IssuanceRequest) Legacy() (SessionRequest, error) {
 }
 
 func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
-	var version int
-	if version, err = parseVersion(bts); err != nil {
+	var ldContext string
+	if ldContext, err = parseLDContext(bts); err != nil {
 		return err
 	}
 
-	if version >= 2 {
+	if ldContext != "" {
 		var req struct { // Identical type with default JSON unmarshaler
 			BaseRequest
 			Disclose    AttributeConDisCon       `json:"disclose"`
@@ -310,7 +312,7 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 	}
 	ir.BaseRequest = legacy.BaseRequest
 	ir.legacy = true
-	ir.Version = 2
+	ir.LDContext = LDContextIssuanceRequest
 	ir.Credentials = legacy.Credentials
 	ir.Disclose, ir.Labels = convertDisjunctions(legacy.Disclose)
 
