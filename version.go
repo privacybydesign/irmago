@@ -6,6 +6,9 @@ package irma
 
 import "github.com/timshannon/bolthold"
 
+// Version of the IRMA command line and libraries
+const Version = "0.3.0"
+
 // go-atum requires a version of bolthold newer than the latest release v1.1, but go-atum does not
 // use dep, so by default dep fetches v1.1 which breaks the build. We make bolthold an explicit
 // dependency here, so that we can require its version to be sufficiently new in a [[constraint]] in

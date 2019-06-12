@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/mitchellh/mapstructure"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
@@ -188,7 +189,11 @@ func configure(cmd *cobra.Command) error {
 	if viper.GetBool("production") {
 		mode = "production"
 	}
-	logger.WithField("mode", mode).WithField("verbosity", server.Verbosity(viper.GetInt("verbose"))).Info("irma server running")
+	logger.WithFields(logrus.Fields{
+		"version":   irma.Version,
+		"mode":      mode,
+		"verbosity": server.Verbosity(viper.GetInt("verbose")),
+	}).Info("irma server running")
 
 	// Now we finally examine and log any error from viper.ReadInConfig()
 	if err != nil {

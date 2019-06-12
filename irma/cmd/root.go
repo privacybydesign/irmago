@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 
+	irma "github.com/privacybydesign/irmago"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +30,7 @@ func init() {
 		Short: "Print irma version information",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("irma")
-			fmt.Println("Version: ", "0.3.0")
+			fmt.Println("Version: ", irma.Version)
 			fmt.Println("OS/Arg:  ", runtime.GOOS+"/"+runtime.GOARCH)
 		},
 	})
