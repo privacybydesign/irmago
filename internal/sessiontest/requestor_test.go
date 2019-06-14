@@ -13,9 +13,18 @@ import (
 )
 
 func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) *server.SessionResult {
-	StartIrmaServer(t)
+	StartIrmaServer(t, false)
 	defer StopIrmaServer()
+	return requestorSesionWorker(t, request, client)
+}
 
+func requestorUpdatedSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) *server.SessionResult {
+	StartIrmaServer(t, true)
+	defer StopIrmaServer()
+	return requestorSesionWorker(t, request, client)
+}
+
+func requestorSesionWorker(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) *server.SessionResult {
 	if client == nil {
 		client, _ = parseStorage(t)
 		defer test.ClearTestStorage(t)
@@ -46,7 +55,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
 func TestRequestorInvalidRequest(t *testing.T) {
-	StartIrmaServer(t)
+	StartIrmaServer(t, false)
 	defer StopIrmaServer()
 	_, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),

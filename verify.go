@@ -24,10 +24,9 @@ const (
 	ProofStatusMissingAttributes = ProofStatus("MISSING_ATTRIBUTES") // Proof does not contain all requested attributes
 	ProofStatusExpired           = ProofStatus("EXPIRED")            // Attributes were expired at proof creation time (now, or according to timestamp in case of abs)
 
-	AttributeProofStatusPresent      = AttributeProofStatus("PRESENT")       // Attribute is disclosed and matches the value
-	AttributeProofStatusExtra        = AttributeProofStatus("EXTRA")         // Attribute is disclosed, but wasn't requested in request
-	AttributeProofStatusMissing      = AttributeProofStatus("MISSING")       // Attribute is NOT disclosed, but should be according to request
-	AttributeProofStatusInvalidValue = AttributeProofStatus("INVALID_VALUE") // Attribute is disclosed, but has invalid value according to request
+	AttributeProofStatusPresent = AttributeProofStatus("PRESENT") // Attribute is disclosed and matches the value
+	AttributeProofStatusExtra   = AttributeProofStatus("EXTRA")   // Attribute is disclosed, but wasn't requested in request
+	AttributeProofStatusNull    = AttributeProofStatus("NULL")    // Attribute is disclosed but is null
 )
 
 // DisclosedAttribute represents a disclosed attribute.
@@ -234,11 +233,15 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 		attrid = credtype.AttributeTypes[index-2].GetAttributeTypeIdentifier()
 		attrval = decodeAttribute(attr, metadata.Version())
 	}
+	status := AttributeProofStatusPresent
+	if attrval == nil {
+		status = AttributeProofStatusNull
+	}
 	return &DisclosedAttribute{
 		Identifier: attrid,
 		RawValue:   attrval,
 		Value:      NewTranslatedString(attrval),
-		Status:     AttributeProofStatusPresent,
+		Status:     status,
 	}, attrval, nil
 }
 

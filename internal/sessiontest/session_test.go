@@ -46,9 +46,18 @@ func TestDefaultCredentialValidity(t *testing.T) {
 	sessionHelper(t, request, "issue", client)
 }
 
-func TestIssuanceOptionalEmptyAttributes(t *testing.T) {
+func TestIssuanceDisclosureEmptyAttributes(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
 	req := getNameIssuanceRequest()
-	sessionHelper(t, req, "issue", nil)
+	sessionHelper(t, req, "issue", client)
+
+	// Test disclosing our null attribute
+	req2 := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.prefix"))
+	res := requestorSessionHelper(t, req2, client)
+	require.Nil(t, res.Err)
+	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
 
 func TestIssuanceOptionalZeroLengthAttributes(t *testing.T) {
@@ -123,6 +132,21 @@ func TestAttributeByteEncoding(t *testing.T) {
 	sessionHelper(t, request, "issue", client)
 }
 
+func TestOutdatedClientIrmaConfiguration(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	// Remove old studentCard credential from before support for optional attributes, and issue a new one
+	require.NoError(t, client.RemoveAllCredentials())
+	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client).Err)
+
+	// client does not have updated irma_configuration with new attribute irma-demo.RU.studentCard.newAttribute,
+	// and the server does. Disclose an attribute from this credential. The client implicitly discloses value 0
+	// for the new attribute, and the server accepts.
+	req := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
+	require.Nil(t, requestorUpdatedSessionHelper(t, req, client).Err)
+}
+
 func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
@@ -132,12 +156,32 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
 	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	disclosureRequest := irma.NewDisclosureRequest(attrid)
+	// Remove old studentCard credential from before support for optional attributes, and issue a new one
+	require.NoError(t, client.RemoveAllCredentials())
+	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client).Err)
 
-	_, err := client.Configuration.Download(disclosureRequest)
+	// Trigger downloading the updated irma_configuration using a disclosure request containing the
+	// new attribute, and inform the client
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	newAttrRequest := irma.NewDisclosureRequest(attrid)
+	downloaded, err := client.Configuration.Download(newAttrRequest)
 	require.NoError(t, err)
+	require.NoError(t, client.ConfigurationUpdated(downloaded))
+
+	// Our new attribute now exists in the configuration
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	// Disclose an old attribute (i.e. not newAttribute) to a server with an old configuration
+	// Since our client has a new configuration it hides the new attribute that is not yet in the
+	// server's configuration. All proofs are however valid as they should be and the server accepts.
+	levelRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
+	require.Nil(t, requestorSessionHelper(t, levelRequest, client).Err)
+
+	// Disclose newAttribute to a server with a new configuration. This attribute was added
+	// after we received a credential without it, so its value in this credential is 0.
+	res := requestorUpdatedSessionHelper(t, newAttrRequest, client)
+	require.Nil(t, res.Err)
+	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
 
 func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {

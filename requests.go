@@ -173,8 +173,9 @@ type DisclosureChoice struct {
 // An AttributeRequest asks for an instance of an attribute type, possibly requiring it to have
 // a specified value, in a session request.
 type AttributeRequest struct {
-	Type  AttributeTypeIdentifier `json:"type"`
-	Value *string                 `json:"value"`
+	Type     AttributeTypeIdentifier `json:"type"`
+	Value    *string                 `json:"value"`
+	Required bool                    `json:"required"`
 }
 
 var (
@@ -277,7 +278,9 @@ func (c *AttributeCon) UnmarshalJSON(bts []byte) error {
 }
 
 func (ar *AttributeRequest) Satisfy(attr AttributeTypeIdentifier, val *string) bool {
-	return ar.Type == attr && (ar.Value == nil || (val != nil && *ar.Value == *val))
+	return ar.Type == attr &&
+		(!ar.Required || val != nil) &&
+		(ar.Value == nil || (val != nil && *ar.Value == *val))
 }
 
 func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
