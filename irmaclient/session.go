@@ -519,6 +519,9 @@ func (session *session) checkAndUpateConfiguration() error {
 		return &irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err}
 	}
 	if downloaded != nil && !downloaded.Empty() {
+		if err = session.client.ConfigurationUpdated(downloaded); err != nil {
+			return err
+		}
 		session.client.handler.UpdateConfiguration(downloaded)
 	}
 

@@ -311,7 +311,7 @@ func (client *Client) RemoveAllCredentials() error {
 			if attrs.CredentialType() != nil {
 				removed[attrs.CredentialType().Identifier()] = attrs.Strings()
 			}
-			client.storage.DeleteSignature(attrs)
+			_ = client.storage.DeleteSignature(attrs)
 		}
 	}
 	client.attributes = map[irma.CredentialTypeIdentifier][]*irma.AttributeList{}
@@ -659,7 +659,7 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 		return nil, nil, nil, err
 	}
 
-	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
+	var builders gabi.ProofBuilderList
 	for _, grp := range todisclose {
 		cred, err := client.credentialByID(grp.cred)
 		if err != nil {
@@ -983,4 +983,47 @@ func (client *Client) applyPreferences() {
 	} else {
 		raven.SetDSN("")
 	}
+}
+
+// ConfigurationUpdated should be run after Configuration.Download().
+// For any credential type in the updated scheme to which new attributes were added, this function
+// sets the value of these new attributes to 0 in all instances that the client currently has of this
+// credential type.
+func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) error {
+	if downloaded == nil || len(downloaded.CredentialTypes) == 0 {
+		return nil
+	}
+
+	var contains bool
+	for id := range downloaded.CredentialTypes {
+		if _, contains = client.attributes[id]; !contains {
+			continue
+		}
+		for i := range client.attributes[id] {
+			attrs := client.attributes[id][i].Ints
+			diff := len(client.Configuration.CredentialTypes[id].AttributeTypes) - (len(attrs) - 1)
+			if diff <= 0 {
+				continue
+			}
+			attrs = append(attrs, make([]*big.Int, diff, diff)...)
+			for j := len(attrs) - diff; j < len(attrs); j++ {
+				attrs[j] = big.NewInt(0)
+			}
+			client.attributes[id][i].Ints = attrs
+
+			if _, contains = client.credentialsCache[id]; !contains {
+				continue
+			}
+			if _, contains = client.credentialsCache[id][i]; !contains {
+				continue
+			}
+			client.credentialsCache[id][i].Attributes = append(
+				client.credentialsCache[id][i].Attributes[:1],
+				attrs...,
+			)
+			client.credentialsCache[id][i].attrs = nil
+		}
+	}
+
+	return client.storage.StoreAttributes(client.attributes)
 }
