@@ -233,56 +233,37 @@ func (c AttributeCon) Validate() error {
 	return nil
 }
 
-func (c *AttributeCon) MarshalJSON() ([]byte, error) {
-	var vals bool
-	l := make([]AttributeTypeIdentifier, 0, len(*c))
+// AttributeRequest synonym with default JSON (un)marshaler
+type jsonAttributeRequest AttributeRequest
 
-	for _, attr := range *c {
-		if attr.Value == nil {
-			l = append(l, attr.Type)
-		} else {
-			vals = true
-			break
-		}
+func (ar *AttributeRequest) UnmarshalJSON(bts []byte) error {
+	var s AttributeTypeIdentifier
+
+	// first try to parse as JSON string into s
+	if err := json.Unmarshal(bts, &s); err == nil {
+		*ar = AttributeRequest{Type: s}
+		return nil
 	}
 
-	if vals {
-		return json.Marshal((*[]AttributeRequest)(c))
-	} else {
-		return json.Marshal(l)
-	}
+	return json.Unmarshal(bts, (*jsonAttributeRequest)(ar))
 }
 
-func (c *AttributeCon) UnmarshalJSON(bts []byte) error {
-	var err error
-
-	var l []AttributeTypeIdentifier
-	if err = json.Unmarshal(bts, &l); err == nil {
-		for _, id := range l {
-			*c = append(*c, AttributeRequest{Type: id})
-		}
-		return nil
+func (ar *AttributeRequest) MarshalJSON() ([]byte, error) {
+	if !ar.Required && ar.Value == nil {
+		return json.Marshal(ar.Type)
 	}
-
-	if err = json.Unmarshal(bts, (*[]AttributeRequest)(c)); err == nil {
-		return nil
-	}
-
-	var s string
-	if err = json.Unmarshal(bts, &s); err == nil {
-		*c = append(*c, NewAttributeRequest(s))
-		return nil
-	}
-
-	return errors.New("Failed to unmarshal attribute conjunction")
+	return json.Marshal((*jsonAttributeRequest)(ar))
 }
 
+// Satisfy indicates whether the given attribute type and value satisfies this AttributeRequest.
 func (ar *AttributeRequest) Satisfy(attr AttributeTypeIdentifier, val *string) bool {
 	return ar.Type == attr &&
 		(!ar.Required || val != nil) &&
 		(ar.Value == nil || (val != nil && *ar.Value == *val))
 }
 
+// Satisfy returns if each of the attributes specified by proofs and indices satisfies each of
+// the contained AttributeRequests's. If so it also returns a list of the disclosed attribute values.
 func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	if len(indices) < len(c) {
 		return false, nil, nil
@@ -319,6 +300,8 @@ func (dc AttributeDisCon) Validate() error {
 	return nil
 }
 
+// Satisfy returns true if the attributes specified by proofs and indices satisfies any one of the
+// contained AttributeCon's. If so it also returns a list of the disclosed attribute values.
 func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	for _, con := range dc {
 		satisfied, attrs, err := con.Satisfy(proofs, indices, conf)
@@ -348,6 +331,8 @@ func (cdc AttributeConDisCon) Validate(conf *Configuration) error {
 	return nil
 }
 
+// Satisfy returns true if each of the contained AttributeDisCon is satisfied by the specified disclosure.
+// If so it also returns the disclosed attributes.
 func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuration) (bool, [][]*DisclosedAttribute, error) {
 	if len(disclosure.Indices) < len(cdc) {
 		return false, nil, nil
