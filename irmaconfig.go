@@ -1234,8 +1234,8 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		return
 	}
 
-	issPattern := regexp.MustCompile("(.+)/(.+)/description\\.xml")
-	credPattern := regexp.MustCompile("(.+)/(.+)/Issues/(.+)/description\\.xml")
+	issPattern := regexp.MustCompile("^([^/]+)/([^/]+)/description\\.xml")
+	credPattern := regexp.MustCompile("^([^/]+)/([^/]+)/Issues/([^/]+)/description\\.xml")
 
 	// TODO: how to recover/fix local copy if err != nil below?
 	for filename, newHash := range newIndex {
