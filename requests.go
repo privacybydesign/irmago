@@ -173,9 +173,9 @@ type DisclosureChoice struct {
 // An AttributeRequest asks for an instance of an attribute type, possibly requiring it to have
 // a specified value, in a session request.
 type AttributeRequest struct {
-	Type     AttributeTypeIdentifier `json:"type"`
-	Value    *string                 `json:"value,omitempty"`
-	Required bool                    `json:"required,omitempty"`
+	Type    AttributeTypeIdentifier `json:"type"`
+	Value   *string                 `json:"value,omitempty"`
+	NotNull bool                    `json:"notNull,omitempty"`
 }
 
 var (
@@ -249,7 +249,7 @@ func (ar *AttributeRequest) UnmarshalJSON(bts []byte) error {
 }
 
 func (ar *AttributeRequest) MarshalJSON() ([]byte, error) {
-	if !ar.Required && ar.Value == nil {
+	if !ar.NotNull && ar.Value == nil {
 		return json.Marshal(ar.Type)
 	}
 	return json.Marshal((*jsonAttributeRequest)(ar))
@@ -258,7 +258,7 @@ func (ar *AttributeRequest) MarshalJSON() ([]byte, error) {
 // Satisfy indicates whether the given attribute type and value satisfies this AttributeRequest.
 func (ar *AttributeRequest) Satisfy(attr AttributeTypeIdentifier, val *string) bool {
 	return ar.Type == attr &&
-		(!ar.Required || val != nil) &&
+		(!ar.NotNull || val != nil) &&
 		(ar.Value == nil || (val != nil && *ar.Value == *val))
 }
 
