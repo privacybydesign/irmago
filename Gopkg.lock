@@ -484,6 +484,7 @@
     "github.com/spf13/cobra",
     "github.com/spf13/pflag",
     "github.com/spf13/viper",
+    "github.com/stretchr/testify/assert",
     "github.com/stretchr/testify/require",
     "github.com/timshannon/bolthold",
     "github.com/x-cray/logrus-prefixed-formatter",
