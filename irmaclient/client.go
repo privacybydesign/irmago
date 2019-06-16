@@ -93,6 +93,14 @@ type ClientHandler interface {
 	UpdateAttributes()
 }
 
+// MissingAttributes contains all attribute requests that the client cannot satisfy with its
+// current attributes.
+type MissingAttributes map[int][]map[int]MissingAttribute
+
+// MissingAttribute is an irma.AttributeRequest that is satisfied by none of the client's attributes
+// (with Go's default JSON marshaler instead of that of irma.AttributeRequest).
+type MissingAttribute irma.AttributeRequest
+
 type secretKey struct {
 	Key *big.Int
 }
@@ -513,7 +521,7 @@ func cartesianProduct(candidates [][]*irma.CredentialIdentifier) credCandidateSe
 // currently posesses (ie. len(candidates) == 0), then the second return parameter lists the missing
 // attributes that would be necessary to satisfy the disjunction.
 func (client *Client) Candidates(discon irma.AttributeDisCon) (
-	candidates [][]*irma.AttributeIdentifier, missing map[int]irma.AttributeCon,
+	candidates [][]*irma.AttributeIdentifier, missing []map[int]MissingAttribute,
 ) {
 	candidates = [][]*irma.AttributeIdentifier{}
 
@@ -558,22 +566,24 @@ func (client *Client) Candidates(discon irma.AttributeDisCon) (
 // missingAttributes returns for each of the conjunctions in the specified disjunction
 // a list of attributes that the client does not posess but which would be required to
 // satisfy the conjunction.
-func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]irma.AttributeCon {
-	missing := map[int]irma.AttributeCon{}
+func (client *Client) missingAttributes(discon irma.AttributeDisCon) []map[int]MissingAttribute {
+	missing := make([]map[int]MissingAttribute, len(discon))
 
 	for i, con := range discon {
-		for _, attr := range con {
-			creds := client.attributes[attr.Type.CredentialTypeIdentifier()]
+		missing[i] = map[int]MissingAttribute{}
+	conloop:
+		for j, req := range con {
+			creds := client.attributes[req.Type.CredentialTypeIdentifier()]
 			if len(creds) == 0 {
-				missing[i] = append(missing[i], attr)
+				missing[i][j] = MissingAttribute(req)
 				continue
 			}
 			for _, cred := range creds {
-				if attr.Satisfy(attr.Type, cred.UntranslatedAttribute(attr.Type)) {
-					continue
+				if req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
+					continue conloop
 				}
 			}
-			missing[i] = append(missing[i], attr)
+			missing[i][j] = MissingAttribute(req)
 		}
 	}
 
@@ -584,13 +594,13 @@ func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]irm
 // to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
 // are returned.
 func (client *Client) CheckSatisfiability(condiscon irma.AttributeConDisCon) (
-	candidates [][][]*irma.AttributeIdentifier, missing map[int]map[int]irma.AttributeCon,
+	candidates [][][]*irma.AttributeIdentifier, missing MissingAttributes,
 ) {
 	candidates = make([][][]*irma.AttributeIdentifier, len(condiscon))
-	missing = map[int]map[int]irma.AttributeCon{}
+	missing = MissingAttributes{}
 
 	for i, discon := range condiscon {
-		var m map[int]irma.AttributeCon
+		var m []map[int]MissingAttribute
 		candidates[i], m = client.Candidates(discon)
 		if len(candidates[i]) == 0 {
 			missing[i] = m

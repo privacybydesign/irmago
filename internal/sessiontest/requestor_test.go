@@ -12,23 +12,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) *server.SessionResult {
-	StartIrmaServer(t, false)
-	defer StopIrmaServer()
-	return requestorSesionWorker(t, request, client)
+type sessionOption int
+
+const (
+	sessionOptionUpdatedIrmaConfiguration = iota
+	sessionOptionUnsatisfiableRequest
+)
+
+type requestorSessionResult struct {
+	*server.SessionResult
+	Missing irmaclient.MissingAttributes
 }
 
-func requestorUpdatedSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) *server.SessionResult {
-	StartIrmaServer(t, true)
-	defer StopIrmaServer()
-	return requestorSesionWorker(t, request, client)
-}
-
-func requestorSesionWorker(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) *server.SessionResult {
+func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
 	if client == nil {
 		client, _ = parseStorage(t)
 		defer test.ClearTestStorage(t)
 	}
+
+	StartIrmaServer(t, len(options) == 1 && options[0] == sessionOptionUpdatedIrmaConfiguration)
+	defer StopIrmaServer()
 
 	clientChan := make(chan *SessionResult)
 	serverChan := make(chan *server.SessionResult)
@@ -38,7 +41,12 @@ func requestorSesionWorker(t *testing.T, request irma.SessionRequest, client *ir
 	})
 	require.NoError(t, err)
 
-	h := TestHandler{t, clientChan, client, nil}
+	var h irmaclient.Handler
+	if len(options) == 1 && options[0] == sessionOptionUnsatisfiableRequest {
+		h = UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil}}
+	} else {
+		h = TestHandler{t, clientChan, client, nil}
+	}
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(j), h)
@@ -47,10 +55,13 @@ func requestorSesionWorker(t *testing.T, request irma.SessionRequest, client *ir
 		require.NoError(t, clientResult.Err)
 	}
 
-	serverResult := <-serverChan
-
-	require.Equal(t, token, serverResult.Token)
-	return serverResult
+	if len(options) == 1 && options[0] == sessionOptionUnsatisfiableRequest {
+		return &requestorSessionResult{nil, clientResult.Missing}
+	} else {
+		serverResult := <-serverChan
+		require.Equal(t, token, serverResult.Token)
+		return &requestorSessionResult{serverResult, nil}
+	}
 }
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
@@ -110,7 +121,7 @@ func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest) *ser
 	serverResult := requestorSessionHelper(t, request, nil)
 	require.Nil(t, serverResult.Err)
 	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
-	return serverResult
+	return serverResult.SessionResult
 }
 
 func TestRequestorIssuanceSession(t *testing.T) {

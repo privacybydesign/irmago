@@ -174,8 +174,8 @@ type DisclosureChoice struct {
 // a specified value, in a session request.
 type AttributeRequest struct {
 	Type     AttributeTypeIdentifier `json:"type"`
-	Value    *string                 `json:"value"`
-	Required bool                    `json:"required"`
+	Value    *string                 `json:"value,omitempty"`
+	Required bool                    `json:"required,omitempty"`
 }
 
 var (

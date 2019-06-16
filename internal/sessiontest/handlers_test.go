@@ -96,7 +96,7 @@ func (th TestHandler) Failure(err *irma.SessionError) {
 		th.t.Fatal(err)
 	}
 }
-func (th TestHandler) UnsatisfiableRequest(request irma.SessionRequest, serverName irma.TranslatedString, missing map[int]map[int]irma.AttributeCon) {
+func (th TestHandler) UnsatisfiableRequest(request irma.SessionRequest, serverName irma.TranslatedString, missing irmaclient.MissingAttributes) {
 	th.Failure(&irma.SessionError{
 		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
 	})
@@ -128,6 +128,19 @@ type SessionResult struct {
 	Err              error
 	SignatureResult  *irma.SignedMessage
 	DisclosureResult *irma.Disclosure
+	Missing          irmaclient.MissingAttributes
+}
+
+type UnsatisfiableTestHandler struct {
+	TestHandler
+}
+
+func (th UnsatisfiableTestHandler) UnsatisfiableRequest(request irma.SessionRequest, serverName irma.TranslatedString, missing irmaclient.MissingAttributes) {
+	th.c <- &SessionResult{Missing: missing}
+}
+
+func (th UnsatisfiableTestHandler) Success(result string) {
+	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded")})
 }
 
 // ManualTestHandler embeds a TestHandler to inherit its methods.

@@ -80,6 +80,6 @@ func (h *keyshareEnrollmentHandler) KeyshareEnrollmentDeleted(manager irma.Schem
 func (h *keyshareEnrollmentHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	h.fail(errors.New("Keyshare enrollment failed: unenrolled"))
 }
-func (h *keyshareEnrollmentHandler) UnsatisfiableRequest(request irma.SessionRequest, ServerName irma.TranslatedString, missing map[int]map[int]irma.AttributeCon) {
+func (h *keyshareEnrollmentHandler) UnsatisfiableRequest(request irma.SessionRequest, ServerName irma.TranslatedString, missing MissingAttributes) {
 	h.fail(errors.New("Keyshare enrollment failed: unsatisfiable"))
 }

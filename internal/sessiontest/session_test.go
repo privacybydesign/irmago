@@ -8,6 +8,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,6 +104,48 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 	require.Nil(t, client.Attributes(credid, 1))
 }
 
+func TestUnsatisfiableDisclosureSession(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.root.BSN"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.mijnirma.email"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstname"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+		},
+	}
+
+	missing := irmaclient.MissingAttributes{}
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"0": [
+			{
+				"0": {"type": "irma-demo.MijnOverheid.root.BSN"}
+			},
+			{
+				"1": {"type": "irma-demo.MijnOverheid.fullName.firstname"},
+				"2": {"type": "irma-demo.MijnOverheid.fullName.familyname"}
+			}
+		]
+	}`), &missing))
+	require.True(t, reflect.DeepEqual(
+		missing,
+		requestorSessionHelper(t, request, client, sessionOptionUnsatisfiableRequest).Missing),
+	)
+}
+
 /* There is an annoying difference between how Java and Go convert big integers to and from
 byte arrays: in Java the sign of the integer is taken into account, but not in Go. This means
 that in Java, when converting a bigint to or from a byte array, the most significant bit
@@ -144,7 +187,7 @@ func TestOutdatedClientIrmaConfiguration(t *testing.T) {
 	// and the server does. Disclose an attribute from this credential. The client implicitly discloses value 0
 	// for the new attribute, and the server accepts.
 	req := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
-	require.Nil(t, requestorUpdatedSessionHelper(t, req, client).Err)
+	require.Nil(t, requestorSessionHelper(t, req, client, sessionOptionUpdatedIrmaConfiguration).Err)
 }
 
 func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
@@ -179,7 +222,7 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 
 	// Disclose newAttribute to a server with a new configuration. This attribute was added
 	// after we received a credential without it, so its value in this credential is 0.
-	res := requestorUpdatedSessionHelper(t, newAttrRequest, client)
+	res := requestorSessionHelper(t, newAttrRequest, client, sessionOptionUpdatedIrmaConfiguration)
 	require.Nil(t, res.Err)
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }

@@ -34,7 +34,7 @@ type Handler interface {
 	Failure(err *irma.SessionError)
 	UnsatisfiableRequest(request irma.SessionRequest,
 		ServerName irma.TranslatedString,
-		missing map[int]map[int]irma.AttributeCon)
+		missing MissingAttributes)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
