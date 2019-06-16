@@ -130,15 +130,15 @@ func TestUnsatisfiableDisclosureSession(t *testing.T) {
 
 	missing := irmaclient.MissingAttributes{}
 	require.NoError(t, json.Unmarshal([]byte(`{
-		"0": [
-			{
+		"0": {
+			"0": {
 				"0": {"type": "irma-demo.MijnOverheid.root.BSN"}
 			},
-			{
+			"1": {
 				"1": {"type": "irma-demo.MijnOverheid.fullName.firstname"},
 				"2": {"type": "irma-demo.MijnOverheid.fullName.familyname"}
 			}
-		]
+		}
 	}`), &missing))
 	require.True(t, reflect.DeepEqual(
 		missing,

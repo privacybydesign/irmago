@@ -95,7 +95,7 @@ type ClientHandler interface {
 
 // MissingAttributes contains all attribute requests that the client cannot satisfy with its
 // current attributes.
-type MissingAttributes map[int][]map[int]MissingAttribute
+type MissingAttributes map[int]map[int]map[int]MissingAttribute
 
 // MissingAttribute is an irma.AttributeRequest that is satisfied by none of the client's attributes
 // (with Go's default JSON marshaler instead of that of irma.AttributeRequest).
@@ -521,7 +521,7 @@ func cartesianProduct(candidates [][]*irma.CredentialIdentifier) credCandidateSe
 // currently posesses (ie. len(candidates) == 0), then the second return parameter lists the missing
 // attributes that would be necessary to satisfy the disjunction.
 func (client *Client) Candidates(discon irma.AttributeDisCon) (
-	candidates [][]*irma.AttributeIdentifier, missing []map[int]MissingAttribute,
+	candidates [][]*irma.AttributeIdentifier, missing map[int]map[int]MissingAttribute,
 ) {
 	candidates = [][]*irma.AttributeIdentifier{}
 
@@ -566,8 +566,8 @@ func (client *Client) Candidates(discon irma.AttributeDisCon) (
 // missingAttributes returns for each of the conjunctions in the specified disjunction
 // a list of attributes that the client does not posess but which would be required to
 // satisfy the conjunction.
-func (client *Client) missingAttributes(discon irma.AttributeDisCon) []map[int]MissingAttribute {
-	missing := make([]map[int]MissingAttribute, len(discon))
+func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]map[int]MissingAttribute {
+	missing := make(map[int]map[int]MissingAttribute, len(discon))
 
 	for i, con := range discon {
 		missing[i] = map[int]MissingAttribute{}
@@ -600,7 +600,7 @@ func (client *Client) CheckSatisfiability(condiscon irma.AttributeConDisCon) (
 	missing = MissingAttributes{}
 
 	for i, discon := range condiscon {
-		var m []map[int]MissingAttribute
+		var m map[int]map[int]MissingAttribute
 		candidates[i], m = client.Candidates(discon)
 		if len(candidates[i]) == 0 {
 			missing[i] = m
