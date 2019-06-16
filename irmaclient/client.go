@@ -477,17 +477,20 @@ outer:
 		var candidateSet []*irma.AttributeIdentifier
 		for _, cred := range s {
 			for _, attr := range con {
-				if attr.Type.CredentialTypeIdentifier() == cred.Type {
-					id := &irma.AttributeIdentifier{Type: attr.Type, CredentialHash: cred.Hash}
-					if attr.Value != nil {
-						attrs, _ := client.attributesByHash(cred.Hash)
-						val := attrs.UntranslatedAttribute(id.Type)
-						if val == nil || *attr.Value != *val {
-							continue outer
-						}
-					}
-					candidateSet = append(candidateSet, id)
+				if attr.Type.CredentialTypeIdentifier() != cred.Type {
+					continue
 				}
+				attrs, _ := client.attributesByHash(cred.Hash)
+				val := attrs.UntranslatedAttribute(attr.Type)
+				if !attr.Satisfy(attr.Type, val) {
+					// if the attribute in this credential instance has the wrong value, then we have
+					// to discard the entire candidate set
+					continue outer
+				}
+				candidateSet = append(candidateSet, &irma.AttributeIdentifier{
+					Type:           attr.Type,
+					CredentialHash: cred.Hash,
+				})
 			}
 		}
 		result = append(result, candidateSet)

@@ -50,8 +50,8 @@ type AttributeConDisCon []AttributeDisCon
 type DisclosureRequest struct {
 	BaseRequest
 
-	Disclose AttributeConDisCon       `json:"disclose"`
-	Labels   map[int]TranslatedString `json:"labels"`
+	Disclose AttributeConDisCon       `json:"disclose,omitempty"`
+	Labels   map[int]TranslatedString `json:"labels,omitempty"`
 }
 
 // A SignatureRequest is a a request to sign a message with certain attributes. Construct new
