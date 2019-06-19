@@ -197,6 +197,12 @@ func startKeyshareSession(
 		transport.SetHeader(kssVersionHeader, "2")
 		ks.transports[managerID] = transport
 
+		// Enforce that PIN is always asked when signing
+		if session.Action() == "signing" {
+			ks.pinCheck = true
+			continue
+		}
+
 		// Try to parse token as a jwt to see if it is still valid; if so we don't need to ask for the PIN
 		parser := new(jwt.Parser)
 		parser.SkipClaimsValidation = true // We want to verify expiry on our own below so we can add leeway
