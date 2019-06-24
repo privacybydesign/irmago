@@ -30,6 +30,25 @@ func TestNoAttributeDisclosureSession(t *testing.T) {
 	sessionHelper(t, request, "verification", nil)
 }
 
+func TestEmptyDisclosure(t *testing.T) {
+	// Disclosure request asking for an attribute value that the client doesn't have,
+	// and an empty conjunction as first option, which is always chosen by the test session handler
+	val := "client doesn't have this attr"
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{},
+			irma.AttributeCon{{Type: irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"), Value: &val}},
+		},
+	}
+
+	res := requestorSessionHelper(t, request, nil)
+	require.Nil(t, res.Err)
+	require.NotNil(t, res.SessionResult)
+	require.NotEmpty(t, res.SessionResult.Disclosed) // The outer conjunction was satisfied
+	require.Empty(t, res.SessionResult.Disclosed[0]) // by the empty set, so we get no attributes
+}
+
 func TestIssuanceSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)

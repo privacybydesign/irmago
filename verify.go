@@ -70,6 +70,11 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 
 // VerifyProofs verifies the proofs cryptographically.
 func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int, nonce *big.Int, publickeys []*gabi.PublicKey, isSig bool) (bool, error) {
+	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
+	if len(pl) == 0 {
+		return true, nil
+	}
+
 	if publickeys == nil {
 		var err error
 		publickeys, err = pl.ExtractPublicKeys(configuration)
