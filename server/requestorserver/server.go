@@ -5,6 +5,7 @@
 package requestorserver
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -14,6 +15,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -177,6 +179,7 @@ func (s *Server) ClientHandler() http.Handler {
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(cors.New(corsOptions).Handler)
+	router.Use(s.logHandler)
 
 	if !s.conf.separateClientServer() {
 		// Mount server for irmaclient
@@ -200,6 +203,43 @@ func (s *Server) Handler() http.Handler {
 	router.Get("/publickey", s.handlePublicKey)
 
 	return router
+}
+
+// Wrapper for logging HTTP traffic
+func (s *Server) logHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		if s.conf.Verbose >= 2 {
+			t1 := time.Now()
+			respBuf := bytes.NewBufferString(": ") // : for printing format
+			ww.Tee(respBuf)                        // Copy result into buffer for logging
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+
+			recipient := ""
+			// IP addresses of irmaclient users are hidden in logs for privacy
+			if !strings.HasPrefix(r.URL.EscapedPath(), "/irma/") {
+				recipient = " from " + r.RemoteAddr
+			}
+			s.conf.Logger.Tracef("=> New message \"%s %s://%s%s %s\"%s",
+				r.Method, scheme, r.Host, r.RequestURI, r.Proto, recipient)
+			s.conf.Logger.Trace("HTTP headers: ", server.ToJson(r.Header))
+
+			defer func() {
+				// Printing response after HTTP is served
+				resp := ""
+				if ww.BytesWritten() > 0 {
+					resp = respBuf.String()
+				}
+				s.conf.Logger.Tracef("<= Responded with %d in %s%s", ww.Status(), time.Since(t1).String(), resp)
+			}()
+		}
+
+		next.ServeHTTP(ww, r)
+		return
+	})
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {

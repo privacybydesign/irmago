@@ -298,11 +298,9 @@ func (s *Server) HandleProtocolMessage(
 		}
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"method": method, "path": path}).Debugf("Routing protocol message")
 	if len(message) > 0 {
 		s.conf.Logger.Trace("POST body: ", string(message))
 	}
-	s.conf.Logger.Trace("HTTP headers: ", server.ToJson(headers))
 	token, noun, err := ParsePath(path)
 	if err != nil {
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))

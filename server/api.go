@@ -184,7 +184,6 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 		Logger.Error("Failed to serialize response:", e.Error())
 		return http.StatusInternalServerError, nil
 	}
-	Logger.Tracef("HTTP JSON response: %d %s", status, string(b))
 	return status, b
 }
 
