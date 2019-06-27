@@ -61,7 +61,8 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 		if serverurl == "" {
 			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
-			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr)
+			verbosity, _ := cmd.Flags().GetCount("verbose")
+			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity)
 		} else {
 			authmethod, _ := flags.GetString("authmethod")
 			key, _ := flags.GetString("key")
@@ -88,8 +89,9 @@ func libraryRequest(
 	port int,
 	privatekeysPath string,
 	noqr bool,
+	verbosity int,
 ) (*server.SessionResult, error) {
-	if err := configureServer(url, port, privatekeysPath, irmaconfig); err != nil {
+	if err := configureServer(url, port, privatekeysPath, irmaconfig, verbosity); err != nil {
 		return nil, err
 	}
 	startServer(port)
@@ -187,7 +189,7 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 
 // Configuration functions
 
-func configureServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration) error {
+func configureServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration, verbosity int) error {
 	// Replace "port" in url with actual port
 	replace := "$1:" + strconv.Itoa(port)
 	url = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(url), []byte(replace)))
@@ -197,6 +199,7 @@ func configureServer(url string, port int, privatekeysPath string, irmaconfig *i
 		Logger:               logger,
 		URL:                  url,
 		DisableSchemesUpdate: true,
+		Verbose:              verbosity,
 	}
 	if privatekeysPath != "" {
 		config.IssuerPrivateKeysPath = privatekeysPath
