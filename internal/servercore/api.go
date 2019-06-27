@@ -287,6 +287,27 @@ func (s *Server) HandleProtocolMessage(
 	method string,
 	headers map[string][]string,
 	message []byte,
+) (int, []byte, *server.SessionResult) {
+	var start time.Time
+	if s.conf.Verbose >= 2 {
+		start = time.Now()
+		server.LogRequest(method, path, "", "", http.Header(headers))
+	}
+
+	status, output, result := s.handleProtocolMessage(path, method, headers, message)
+
+	if s.conf.Verbose >= 2 {
+		server.LogResponse(status, time.Now().Sub(start), output)
+	}
+
+	return status, output, result
+}
+
+func (s *Server) handleProtocolMessage(
+	path string,
+	method string,
+	headers map[string][]string,
+	message []byte,
 ) (status int, output []byte, result *server.SessionResult) {
 	// Parse path into session and action
 	if len(path) > 0 { // Remove any starting and trailing slash

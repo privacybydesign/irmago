@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -395,6 +396,29 @@ func LogError(err error) error {
 
 func LogWarning(err error) error {
 	return log(logrus.WarnLevel, err)
+}
+
+func LogRequest(method string, uri, proto, recipient string, headers http.Header) {
+	fields := logrus.Fields{
+		"method":  method,
+		"uri":     uri,
+		"headers": ToJson(headers),
+	}
+	if proto != "" {
+		fields["proto"] = proto
+	}
+	if recipient != "" {
+		fields["recipient"] = recipient
+	}
+	Logger.WithFields(fields).Tracef("=> request")
+}
+
+func LogResponse(status int, duration time.Duration, response []byte) {
+	Logger.WithFields(logrus.Fields{
+		"status":   status,
+		"duration": duration.String(),
+		"response": string(response),
+	}).Tracef("<= response")
 }
 
 func ToJson(o interface{}) string {
