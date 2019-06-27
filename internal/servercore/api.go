@@ -291,7 +291,7 @@ func (s *Server) HandleProtocolMessage(
 	var start time.Time
 	if s.conf.Verbose >= 2 {
 		start = time.Now()
-		server.LogRequest(method, path, "", "", http.Header(headers))
+		server.LogRequest(method, path, "", "", http.Header(headers), message)
 	}
 
 	status, output, result := s.handleProtocolMessage(path, method, headers, message)
@@ -319,10 +319,6 @@ func (s *Server) handleProtocolMessage(
 		}
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"method": method, "path": path}).Debugf("Routing protocol message")
-	if len(message) > 0 {
-		s.conf.Logger.Trace("POST body: ", string(message))
-	}
 	token, noun, err := ParsePath(path)
 	if err != nil {
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))

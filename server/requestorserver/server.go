@@ -15,7 +15,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -179,9 +178,6 @@ func (s *Server) ClientHandler() http.Handler {
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(cors.New(corsOptions).Handler)
-	if s.conf.Verbose >= 2 {
-		router.Use(s.logHandler)
-	}
 
 	if !s.conf.separateClientServer() {
 		// Mount server for irmaclient
@@ -191,18 +187,27 @@ func (s *Server) Handler() http.Handler {
 		}
 	}
 
-	// Server routes
-	router.Post("/session", s.handleCreate)
-	router.Delete("/session/{token}", s.handleDelete)
-	router.Get("/session/{token}/status", s.handleStatus)
-	router.Get("/session/{token}/statusevents", s.handleStatusEvents)
-	router.Get("/session/{token}/result", s.handleResult)
+	// Group main API endpoints, so we can attach our request/response logger to it
+	// while not adding it to the endpoints already added above (which do their own logging).
+	router.Group(func(r chi.Router) {
+		r.Use(cors.New(corsOptions).Handler)
+		if s.conf.Verbose >= 2 {
+			r.Use(s.logHandler)
+		}
 
-	// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
-	router.Get("/session/{token}/result-jwt", s.handleJwtResult)
-	router.Get("/session/{token}/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
+		// Server routes
+		r.Post("/session", s.handleCreate)
+		r.Delete("/session/{token}", s.handleDelete)
+		r.Get("/session/{token}/status", s.handleStatus)
+		r.Get("/session/{token}/statusevents", s.handleStatusEvents)
+		r.Get("/session/{token}/result", s.handleResult)
 
-	router.Get("/publickey", s.handlePublicKey)
+		// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
+		r.Get("/session/{token}/result-jwt", s.handleJwtResult)
+		r.Get("/session/{token}/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
+
+		r.Get("/publickey", s.handlePublicKey)
+	})
 
 	return router
 }
@@ -210,13 +215,17 @@ func (s *Server) Handler() http.Handler {
 // logHandler is middleware for logging HTTP requests and responses.
 func (s *Server) logHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// /irma/ is handled by the servercore library which does its own logging of these endpoints
-		if strings.HasPrefix(r.URL.EscapedPath(), "/irma/") {
-			next.ServeHTTP(w, r)
-			return
-		}
+		var message []byte
+		var err error
 
-		server.LogRequest(r.Method, r.URL.EscapedPath(), r.Proto, r.RemoteAddr, r.Header)
+		// Read r.Body, and then replace with a fresh ReadCloser for the next handler
+		if message, err = ioutil.ReadAll(r.Body); err != nil {
+			message = []byte("<failed to read body: " + err.Error() + ">")
+		}
+		_ = r.Body.Close()
+		r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+
+		server.LogRequest(r.Method, r.URL.String(), r.Proto, r.RemoteAddr, r.Header, message)
 
 		// copy output of HTTP handler to our buffer for later logging
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)

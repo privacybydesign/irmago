@@ -208,7 +208,6 @@ func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteE
 
 // WriteString writes the specified string to the http.ResponseWriter.
 func WriteString(w http.ResponseWriter, str string) {
-	Logger.Trace("HTTP text/plain response: ", str)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(str))
@@ -398,17 +397,20 @@ func LogWarning(err error) error {
 	return log(logrus.WarnLevel, err)
 }
 
-func LogRequest(method string, uri, proto, recipient string, headers http.Header) {
+func LogRequest(method, url, proto, from string, headers http.Header, message []byte) {
 	fields := logrus.Fields{
 		"method":  method,
-		"uri":     uri,
+		"url":     url,
 		"headers": ToJson(headers),
+	}
+	if len(message) > 0 {
+		fields["message"] = string(message)
 	}
 	if proto != "" {
 		fields["proto"] = proto
 	}
-	if recipient != "" {
-		fields["recipient"] = recipient
+	if from != "" {
+		fields["from"] = from
 	}
 	Logger.WithFields(fields).Tracef("=> request")
 }
