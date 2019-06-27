@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+
 	"path/filepath"
+	"time"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/timshannon/bolthold"
+	"go.etcd.io/bbolt"
 )
 
 // This file contains the storage struct and its methods,
@@ -17,6 +21,7 @@ import (
 // Storage provider for a Client
 type storage struct {
 	storagePath   string
+	db            *bolthold.Store
 	Configuration *irma.Configuration
 }
 
@@ -29,6 +34,8 @@ const (
 	logsFile        = "logs"
 	preferencesFile = "preferences"
 	signaturesDir   = "sigs"
+
+	databaseFile = "db"
 )
 
 func (s *storage) path(p string) string {
@@ -41,10 +48,19 @@ func (s *storage) path(p string) string {
 // Setting it up in a properly protected location (e.g., with automatic
 // backups to iCloud/Google disabled) is the responsibility of the user.
 func (s *storage) EnsureStorageExists() error {
-	if err := fs.AssertPathExists(s.storagePath); err != nil {
+	var err error
+	if err = fs.AssertPathExists(s.storagePath); err != nil {
 		return err
 	}
-	return fs.EnsureDirectoryExists(s.path(signaturesDir))
+	if err = fs.EnsureDirectoryExists(s.path(signaturesDir)); err != nil {
+		return err
+	}
+	s.db, err = bolthold.Open(s.path(databaseFile), 0600, &bolthold.Options{
+		Options: &bbolt.Options{Timeout: 1 * time.Second},
+		Encoder: json.Marshal,
+		Decoder: json.Unmarshal,
+	})
+	return err
 }
 
 func (s *storage) load(dest interface{}, path string) (err error) {
@@ -105,6 +121,14 @@ func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIde
 
 func (s *storage) StoreLogs(logs []*LogEntry) error {
 	return s.store(logs, logsFile)
+}
+
+func (s *storage) AddLogEntry(entry *LogEntry) error {
+	return s.db.Upsert(s.logEntryKey(entry), entry)
+}
+
+func (s *storage) logEntryKey(entry *LogEntry) interface{} {
+	return time.Time(entry.Time).UnixNano()
 }
 
 func (s *storage) StorePreferences(prefs Preferences) error {
@@ -180,12 +204,11 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 	return ksses, nil
 }
 
-func (s *storage) LoadLogs() (logs []*LogEntry, err error) {
-	logs = []*LogEntry{}
-	if err := s.load(&logs, logsFile); err != nil {
-		return nil, err
-	}
-	return logs, nil
+func (s *storage) LoadLogs(before time.Time, max int) ([]*LogEntry, error) {
+	var logs []*LogEntry
+	return logs, s.db.Find(&logs,
+		bolthold.Where(bolthold.Key).Lt(before.UnixNano()).Limit(max),
+	)
 }
 
 func (s *storage) LoadUpdates() (updates []update, err error) {

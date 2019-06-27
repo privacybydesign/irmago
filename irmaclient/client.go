@@ -44,7 +44,6 @@ type Client struct {
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
 	credentialsCache map[irma.CredentialTypeIdentifier]map[int]*credential
 	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
-	logs             []*LogEntry
 	updates          []update
 
 	// Where we store/load it to/from
@@ -289,7 +288,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	removed[id] = attrs.Strings()
 
 	if storenow {
-		return client.addLogEntry(&LogEntry{
+		return client.storage.AddLogEntry(&LogEntry{
 			Type:    actionRemoval,
 			Time:    irma.Timestamp(time.Now()),
 			Removed: removed,
@@ -333,10 +332,7 @@ func (client *Client) RemoveAllCredentials() error {
 		Time:    irma.Timestamp(time.Now()),
 		Removed: removed,
 	}
-	if err := client.addLogEntry(logentry); err != nil {
-		return err
-	}
-	return client.storage.StoreLogs(client.logs)
+	return client.storage.AddLogEntry(logentry)
 }
 
 // Attribute and credential getter methods
@@ -966,21 +962,9 @@ func (client *Client) KeyshareRemoveAll() error {
 
 // Add, load and store log entries
 
-func (client *Client) addLogEntry(entry *LogEntry) error {
-	client.logs = append(client.logs, entry)
-	return client.storage.StoreLogs(client.logs)
-}
-
-// Logs returns the log entries of past events.
-func (client *Client) Logs() ([]*LogEntry, error) {
-	if client.logs == nil || len(client.logs) == 0 {
-		var err error
-		client.logs, err = client.storage.LoadLogs()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return client.logs, nil
+// LoadLogs returns the log entries of past events.
+func (client *Client) LoadLogs(before time.Time, max int) ([]*LogEntry, error) {
+	return client.storage.LoadLogs(before, max)
 }
 
 // SetCrashReportingPreference toggles whether or not crash reports should be sent to Sentry.

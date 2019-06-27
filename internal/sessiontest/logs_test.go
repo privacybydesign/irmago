@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -11,7 +12,7 @@ import (
 func TestLogging(t *testing.T) {
 	client, _ := parseStorage(t)
 
-	logs, err := client.Logs()
+	logs, err := client.LoadLogs(time.Now(), 100)
 	oldLogLength := len(logs)
 	require.NoError(t, err)
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -21,7 +22,7 @@ func TestLogging(t *testing.T) {
 	request = getCombinedIssuanceRequest(attrid)
 	sessionHelper(t, request, "issue", client)
 
-	logs, err = client.Logs()
+	logs, err = client.LoadLogs(time.Now(), 100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
 
@@ -38,7 +39,7 @@ func TestLogging(t *testing.T) {
 	// Do disclosure session
 	request = getDisclosureRequest(attrid)
 	sessionHelper(t, request, "verification", client)
-	logs, err = client.Logs()
+	logs, err = client.LoadLogs(time.Now(), 100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
 
@@ -52,7 +53,7 @@ func TestLogging(t *testing.T) {
 	// Do signature session
 	request = getSigningRequest(attrid)
 	sessionHelper(t, request, "signature", client)
-	logs, err = client.Logs()
+	logs, err = client.LoadLogs(time.Now(), 100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)
 	entry = logs[len(logs)-1]
