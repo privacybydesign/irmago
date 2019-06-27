@@ -382,7 +382,10 @@ func (session *session) sendResponse(message interface{}) {
 				return
 			}
 		}
-		log, _ = session.createLogEntry(message) // TODO err
+		log, err = session.createLogEntry(message)
+		if err != nil {
+			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
+		}
 	case irma.ActionDisclosing:
 		messageJson, err = json.Marshal(message)
 		if err != nil {
@@ -400,7 +403,10 @@ func (session *session) sendResponse(message interface{}) {
 				return
 			}
 		}
-		log, _ = session.createLogEntry(message) // TODO err
+		log, err = session.createLogEntry(message)
+		if err != nil {
+			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
+		}
 	case irma.ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
@@ -411,10 +417,15 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 			return
 		}
-		log, _ = session.createLogEntry(message) // TODO err
+		log, err = session.createLogEntry(message)
+		if err != nil {
+			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
+		}
 	}
 
-	_ = session.client.addLogEntry(log) // TODO err
+	if err = session.client.storage.AddLogEntry(log); err != nil {
+		irma.Logger.Warn(errors.WrapPrefix(err, "Failed to write log entry", 0).ErrorStack())
+	}
 	if session.Action == irma.ActionIssuing {
 		session.client.handler.UpdateAttributes()
 	}
