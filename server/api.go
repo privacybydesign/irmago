@@ -397,11 +397,14 @@ func LogWarning(err error) error {
 	return log(logrus.WarnLevel, err)
 }
 
-func LogRequest(method, url, proto, from string, headers http.Header, message []byte) {
+func LogRequest(typ, method, url, proto, from string, headers http.Header, message []byte) {
 	fields := logrus.Fields{
-		"method":  method,
-		"url":     url,
-		"headers": ToJson(headers),
+		"type":   typ,
+		"method": method,
+		"url":    url,
+	}
+	if len(headers) > 0 {
+		fields["headers"] = headers
 	}
 	if len(message) > 0 {
 		fields["message"] = string(message)
@@ -416,11 +419,19 @@ func LogRequest(method, url, proto, from string, headers http.Header, message []
 }
 
 func LogResponse(status int, duration time.Duration, response []byte) {
-	Logger.WithFields(logrus.Fields{
+	fields := logrus.Fields{
 		"status":   status,
 		"duration": duration.String(),
-		"response": string(response),
-	}).Tracef("<= response")
+	}
+	if len(response) > 0 {
+		fields["response"] = string(response)
+	}
+	l := Logger.WithFields(fields)
+	if status < 400 {
+		l.Trace("<= response")
+	} else {
+		l.Warn("<= response")
+	}
 }
 
 func ToJson(o interface{}) string {

@@ -291,7 +291,7 @@ func (s *Server) HandleProtocolMessage(
 	var start time.Time
 	if s.conf.Verbose >= 2 {
 		start = time.Now()
-		server.LogRequest(method, path, "", "", http.Header(headers), message)
+		server.LogRequest("client", method, path, "", "", http.Header(headers), message)
 	}
 
 	status, output, result := s.handleProtocolMessage(path, method, headers, message)
