@@ -129,17 +129,16 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	if object != nil {
 		var objstr string
 		if objstr, isstr = object.(string); isstr {
+			Logger.Trace("transport: body: ", objstr)
 			reader = bytes.NewBuffer([]byte(objstr))
 		} else {
 			marshaled, err := json.Marshal(object)
 			if err != nil {
 				return &SessionError{ErrorType: ErrorSerialization, Err: err}
 			}
-			Logger.Debugf("%s %s: %s\n", method, url, string(marshaled))
+			Logger.Trace("transport: body: ", string(marshaled))
 			reader = bytes.NewBuffer(marshaled)
 		}
-	} else {
-		Logger.Debugf("%s %s\n", method, url)
 	}
 
 	res, err := transport.request(url, method, reader, isstr)
@@ -160,11 +159,11 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
 			return &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
 		}
-		Logger.Debugf("ERROR: %+v\n", apierr)
+		Logger.Tracef("transport: error: %+v", apierr)
 		return &SessionError{ErrorType: ErrorApi, RemoteStatus: res.StatusCode, RemoteError: apierr}
 	}
 
-	Logger.Debugf("RESPONSE: %s\n", string(body))
+	Logger.Tracef("transport: response: %s", string(body))
 	if _, resultstr := result.(*string); resultstr {
 		*result.(*string) = string(body)
 	} else {
