@@ -327,7 +327,8 @@ func relativePath(outer string, inner string) (string, error) {
 		return "", errors.New("inner path is not contained in outer path")
 	}
 
-	return innerAbs[len(outerAbs)+1:], nil
+	// These are used as key in the scheme index, so always use forward slashes
+	return strings.Replace(innerAbs[len(outerAbs)+1:], string(filepath.Separator), "/", -1), nil
 }
 
 // PrivateKey returns the specified private key, or nil if not present in the Configuration.
@@ -642,11 +643,10 @@ func (conf *Configuration) pathToDescription(manager *SchemeManager, path string
 	}
 	bts, found, err := conf.ReadAuthenticatedFile(manager, relativepath)
 	if !found {
-		for p := range manager.index {
-			expectedName := p[0:strings.Index(p, "/")]
-			return false, errors.Errorf("Folder must be called %s, not %s", expectedName, manager.ID)
+		if manager.index.Scheme() != manager.Identifier() {
+			return false, errors.Errorf("Folder must be called %s, not %s", manager.index.Scheme(), manager.ID)
 		}
-		return false, errors.New("")
+		return false, errors.Errorf("File %s not present in scheme index", relativepath)
 	}
 	if err != nil {
 		return true, err
@@ -1006,6 +1006,13 @@ func (i SchemeManagerIndex) FromString(s string) error {
 	}
 
 	return nil
+}
+
+func (i SchemeManagerIndex) Scheme() SchemeManagerIdentifier {
+	for p := range i {
+		return NewSchemeManagerIdentifier(p[0:strings.Index(p, "/")])
+	}
+	return NewSchemeManagerIdentifier("")
 }
 
 // parseIndex parses the index file of the specified manager.
