@@ -303,6 +303,10 @@ func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureReq
 func (sm *SignedMessage) Verify(configuration *Configuration, request *SignatureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
 	var message string
 
+	if len(sm.Signature) == 0 {
+		return nil, ProofStatusInvalid, nil
+	}
+
 	// First check if this signature matches the request
 	if request != nil {
 		if !sm.MatchesNonceAndContext(request) {
