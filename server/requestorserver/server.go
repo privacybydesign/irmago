@@ -236,7 +236,7 @@ func (s *Server) logHandler(typ string, logResponse, logHeaders, logFrom bool) f
 			if logFrom {
 				from = r.RemoteAddr
 			}
-			server.LogRequest(typ, r.Method, r.URL.String(), r.Proto, from, headers, message)
+			server.LogRequest(typ, r.Method, r.URL.String(), from, headers, message)
 
 			// copy output of HTTP handler to our buffer for later logging
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)

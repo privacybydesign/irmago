@@ -397,7 +397,7 @@ func LogWarning(err error) error {
 	return log(logrus.WarnLevel, err)
 }
 
-func LogRequest(typ, method, url, proto, from string, headers http.Header, message []byte) {
+func LogRequest(typ, method, url, from string, headers http.Header, message []byte) {
 	fields := logrus.Fields{
 		"type":   typ,
 		"method": method,
@@ -408,9 +408,6 @@ func LogRequest(typ, method, url, proto, from string, headers http.Header, messa
 	}
 	if len(message) > 0 {
 		fields["message"] = string(message)
-	}
-	if proto != "" {
-		fields["proto"] = proto
 	}
 	if from != "" {
 		fields["from"] = from
