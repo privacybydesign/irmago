@@ -13,11 +13,9 @@ import (
 var RootCmd = &cobra.Command{
 	Use:   "irma",
 	Short: "IRMA toolkit",
-	Long:  `IRMA toolkit`,
+	Long:  "IRMA toolkit\nDocumentation: https://irma.app/docs",
 }
 
-// Execute adds all child commands to the root command sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {
 		os.Exit(-1)
@@ -29,7 +27,8 @@ func init() {
 		Use:   "version",
 		Short: "Print irma version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("irma")
+			fmt.Println(RootCmd.Long)
+			fmt.Println()
 			fmt.Println("Version: ", irma.Version)
 			fmt.Println("OS/Arg:  ", runtime.GOOS+"/"+runtime.GOARCH)
 		},
