@@ -46,6 +46,9 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 	var d interface{} = disclosedint
 	for i, _ := range disclosed {
 		meta := MetadataFromInt(disclosed[i][1], conf)
+		if meta.CredentialType() == nil {
+			return nil, "", errors.New("Cannot compute timestamp request involving unknown credential types")
+		}
 		if !new {
 			disclosedint[i] = make([]*gobig.Int, len(disclosed[i]))
 			for j, k := range disclosed[i] {
