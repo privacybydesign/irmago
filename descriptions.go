@@ -23,6 +23,7 @@ type SchemeManager struct {
 	KeyshareServer    string
 	KeyshareWebsite   string
 	KeyshareAttribute string
+	TimestampServer   string
 	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
 
