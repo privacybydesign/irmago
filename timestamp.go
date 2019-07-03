@@ -28,9 +28,10 @@ func GetTimestamp(message string, sigs []*big.Int, disclosed [][]*big.Int, conf 
 
 // TimestampRequest computes the nonce to be signed by a timestamp server, given a message to be signed
 // in an attribute-based signature session along with the randomized signatures over the attributes
-// and the disclosed attributes.
+// and the disclosed attributes. The url of the timestamp server that should be used to validate the
+// request is returned as the second return value.
 func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, new bool, conf *Configuration) (
-	nonceToSign []byte, timestampServerUrl string, err error) {
+	[]byte, string, error) {
 	msgHash := sha256.Sum256([]byte(message))
 
 	// Convert the sigs and disclosed (double) slices to (double) slices of gobig.Int's for asn1
@@ -39,7 +40,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 		sigsint[i] = k.Value()
 	}
 
-	timestampServerUrl = ""
+	timestampServerUrl := ""
 	disclosedint := make([][]*gobig.Int, len(disclosed))
 	dlreps := make([]*gobig.Int, len(disclosed))
 	var d interface{} = disclosedint
