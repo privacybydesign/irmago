@@ -27,6 +27,7 @@ type LogEntry struct {
 	IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
 
 	// All session types
+	ServerName irma.TranslatedString `json:",omitempty"`
 	Version    *irma.ProtocolVersion `json:",omitempty"`
 	Disclosure *irma.Disclosure      `json:",omitempty"`
 	Request    json.RawMessage       `json:",omitempty"` // Message that started the session
@@ -123,10 +124,11 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 
 func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
 	entry := &LogEntry{
-		Type:    session.Action,
-		Time:    irma.Timestamp(time.Now()),
-		Version: session.Version,
-		request: session.request,
+		Type:       session.Action,
+		Time:       irma.Timestamp(time.Now()),
+		ServerName: session.ServerName,
+		Version:    session.Version,
+		request:    session.request,
 	}
 
 	if err := entry.setSessionRequest(); err != nil {
