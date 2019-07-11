@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 )
 
 // ProofStatus is the status of the complete proof
@@ -70,7 +71,13 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 }
 
 // VerifyProofs verifies the proofs cryptographically.
-func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int, nonce *big.Int, publickeys []*gabi.PublicKey, isSig bool) (bool, error) {
+func (pl ProofList) VerifyProofs(
+	configuration *Configuration,
+	context *big.Int, nonce *big.Int,
+	publickeys []*gabi.PublicKey,
+	revRecords map[CredentialTypeIdentifier][]revocation.Record,
+	isSig bool,
+) (bool, error) {
 	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
 	if len(pl) == 0 {
 		return true, nil
@@ -103,7 +110,9 @@ func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int,
 		return false, nil
 	}
 
-	// Verify that any singleton credential occurs at most once in the prooflist
+	// Perform per-proof verifications for each proof:
+	// - verify that any singleton credential occurs at most once in the prooflist
+	// - verify that all required nonrevocation proofs are present
 	singletons := map[CredentialTypeIdentifier]bool{}
 	for _, proof := range pl {
 		proofd, ok := proof.(*gabi.ProofD)
@@ -114,12 +123,36 @@ func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int,
 		if typ == nil {
 			return false, errors.New("Received unknown credential type")
 		}
+		id := typ.Identifier()
 		if typ.IsSingleton {
-			if !singletons[typ.Identifier()] { // Seen for the first time
-				singletons[typ.Identifier()] = true
+			if !singletons[id] { // Seen for the first time
+				singletons[id] = true
 			} else { // Seen for the second time
 				return false, nil
 			}
+		}
+
+		// The cryptographic validity of all included nonrevocation proofs has already been checked
+		// by ProofList.Verify() above, so all that remains here is to check if all expected
+		// nonrevocation proofs are present, and against the expected accumulator value:
+		// the last one in the update message set we provided along with the session request,
+		// OR the last (newer) one that the client included in its reply (TODO).
+		r := revRecords[id]
+		if len(r) == 0 { // no nonrevocation proof was requested for this credential
+			return true, nil
+		}
+		if !proofd.HasNonRevocationProof() {
+			return false, nil
+		}
+
+		// grab last message from accumulator update message set in request
+		keystore := configuration.RevocationKeystore(typ.Identifier().IssuerIdentifier())
+		msg, err := r[len(r)-1].UnmarshalVerify(keystore)
+		if err != nil {
+			return false, err
+		}
+		if msg.Accumulator.Nu.Cmp(proofd.NonRevocationProof.Nu) != 0 {
+			return false, errors.New("nonrevocation proof used wrong accumulator")
 		}
 	}
 
@@ -252,15 +285,23 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 	}, attrval, nil
 }
 
-func (d *Disclosure) VerifyAgainstDisjunctions(
+func (d *Disclosure) VerifyAgainstRequest(
 	configuration *Configuration,
-	required AttributeConDisCon,
+	request SessionRequest,
 	context, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
+	validAt *time.Time,
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
-	// Cryptographically verify the IRMA disclosure proofs in the signature
-	valid, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, issig)
+	var required AttributeConDisCon
+	var revRecords map[CredentialTypeIdentifier][]revocation.Record
+	if request != nil {
+		revRecords = request.Base().RevocationUpdates
+		required = request.Disclosure().Disclose
+	}
+
+	// Cryptographically verify all included IRMA proofs
+	valid, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, revRecords, issig)
 	if !valid || err != nil {
 		return nil, ProofStatusInvalid, err
 	}
@@ -276,21 +317,16 @@ func (d *Disclosure) VerifyAgainstDisjunctions(
 		return list, ProofStatusMissingAttributes, nil
 	}
 
+	// Check that all credentials were unexpired
+	if expired := ProofList(d.Proofs).Expired(configuration, validAt); expired {
+		return list, ProofStatusExpired, nil
+	}
+
 	return list, ProofStatusValid, nil
 }
 
 func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
-	list, status, err := d.VerifyAgainstDisjunctions(configuration, request.Disclose, request.GetContext(), request.GetNonce(nil), nil, false)
-	if err != nil {
-		return list, status, err
-	}
-
-	now := time.Now()
-	if expired := ProofList(d.Proofs).Expired(configuration, &now); expired {
-		return list, ProofStatusExpired, nil
-	}
-
-	return list, status, nil
+	return d.VerifyAgainstRequest(configuration, request, request.GetContext(), request.GetNonce(nil), nil, nil, false)
 }
 
 // Verify the attribute-based signature, optionally against a corresponding signature request. If the request is present
@@ -321,17 +357,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 		message = sm.Message
 	}
 
-	// Now, cryptographically verify the IRMA disclosure proofs in the signature
-	var required AttributeConDisCon
-	if request != nil {
-		required = request.Disclose
-	}
-	result, status, err := sm.Disclosure().VerifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), nil, true)
-	if status != ProofStatusValid || err != nil {
-		return result, status, err
-	}
-
-	// Next, verify the timestamp
+	// Next, verify the timestamp so we can safely use its time
 	t := time.Now()
 	if sm.Timestamp != nil {
 		if err := sm.VerifyTimestamp(message, configuration); err != nil {
@@ -340,13 +366,13 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 		t = time.Unix(sm.Timestamp.Time, 0)
 	}
 
-	// Check if a credential was expired at creation time, according to the timestamp
-	if expired := ProofList(sm.Signature).Expired(configuration, &t); expired {
-		return result, ProofStatusExpired, nil
+	// Finally, cryptographically verify the IRMA disclosure proofs in the signature
+	// and verify that it satisfies the signature request, if present
+	var r SessionRequest // wrapper for request to avoid avoid https://golang.org/doc/faq#nil_error
+	if request != nil {
+		r = request
 	}
-
-	// The attributes were valid, nonexpired, and the request was satisfied
-	return result, ProofStatusValid, nil
+	return sm.Disclosure().VerifyAgainstRequest(configuration, r, sm.Context, sm.GetNonce(), nil, &t, true)
 }
 
 // ExpiredError indicates that something (e.g. a JWT) has expired.

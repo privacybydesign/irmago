@@ -62,7 +62,11 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 			if err != nil {
 				return nil, "", err
 			}
-			dlreps[i] = gabi.RepresentToPublicKey(pk, disclosed[i]).Value()
+			r, err := gabi.RepresentToPublicKey(pk, disclosed[i], nil)
+			if err != nil {
+				return nil, err
+			}
+			dlreps[i] = r.Value()
 		}
 
 		// Determine timestamp server that should be used

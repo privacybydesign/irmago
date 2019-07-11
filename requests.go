@@ -13,6 +13,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -26,10 +27,15 @@ const (
 type BaseRequest struct {
 	LDContext string `json:"@context,omitempty"`
 
-	// Chosen by the IRMA server during the session
-	Context         *big.Int         `json:"context,omitempty"`
-	Nonce           *big.Int         `json:"nonce,omitempty"`
-	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
+	// Revocation instructs the client to include nonrevocation zero-knowledge proofs for the
+	// specified credential types.
+	Revocation RevocationSet `json:"revocation,omitempty"`
+
+	// Set by the IRMA server during the session
+	Context           *big.Int                                         `json:"context,omitempty"`
+	Nonce             *big.Int                                         `json:"nonce,omitempty"`
+	ProtocolVersion   *ProtocolVersion                                 `json:"protocolVersion,omitempty"`
+	RevocationUpdates map[CredentialTypeIdentifier][]revocation.Record `json:"revocationUpdates,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
@@ -37,6 +43,33 @@ type BaseRequest struct {
 	Type   Action `json:"type,omitempty"` // Session type, only used in legacy code
 
 	ClientReturnURL string `json:"clientReturnUrl,omitempty"` // URL to proceed to when IRMA session is completed
+}
+
+type RevocationSet map[CredentialTypeIdentifier]struct{}
+
+func (r *RevocationSet) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return json.Marshal(nil)
+	}
+	l := make([]CredentialTypeIdentifier, 0, len(*r))
+	for c := range *r {
+		l = append(l, c)
+	}
+	return json.Marshal(l)
+}
+
+func (r *RevocationSet) UnmarshalJSON(bts []byte) error {
+	var l []CredentialTypeIdentifier
+	if err := json.Unmarshal(bts, &l); err != nil {
+		return err
+	}
+	if *r == nil {
+		*r = RevocationSet{}
+	}
+	for _, c := range l {
+		(*r)[c] = struct{}{}
+	}
+	return nil
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -83,6 +116,7 @@ type CredentialRequest struct {
 	KeyCounter       int                      `json:"keyCounter,omitempty"`
 	CredentialTypeID CredentialTypeIdentifier `json:"credential"`
 	Attributes       map[string]string        `json:"attributes"`
+	RevocationKey    string                   `json:"revocationKey,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -202,6 +236,26 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 		return bigZero
 	}
 	return b.Nonce
+}
+
+const revocationUpdateCount = 5
+
+func (b *BaseRequest) SetRevocationRecords(conf *Configuration) error {
+	if len(b.Revocation) == 0 {
+		return nil
+	}
+	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]revocation.Record, len(b.Revocation))
+	for credid := range b.Revocation {
+		db, err := conf.RevocationDB(credid)
+		if err != nil {
+			return err
+		}
+		b.RevocationUpdates[credid], err = db.LatestRecords(revocationUpdateCount)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CredentialTypes returns an array of all credential types occuring in this conjunction.

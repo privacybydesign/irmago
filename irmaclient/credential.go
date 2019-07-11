@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 )
@@ -38,4 +39,28 @@ func (cred *credential) AttributeList() *irma.AttributeList {
 		cred.attrs = irma.NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.Conf)
 	}
 	return cred.attrs
+}
+
+func (cred *credential) PrepareNonrevocation(conf *irma.Configuration, request irma.SessionRequest) (bool, error) {
+	// If the requestor wants us to include a nonrevocation proof,
+	// it will have sent us the latest revocation update messages
+	m := request.Base().RevocationUpdates
+	credtype := cred.CredentialType().Identifier()
+	if len(m) == 0 || len(m[credtype]) == 0 {
+		return false, nil
+	}
+
+	revupdates := m[credtype]
+	nonrev := len(revupdates) > 0
+	keystore := conf.RevocationKeystore(credtype.IssuerIdentifier())
+	if updated, err := cred.NonRevocationWitness.Update(revupdates, keystore); err != nil {
+		return false, err
+	} else if updated {
+		cred.DiscardRevocationCache()
+	}
+	if nonrev && cred.NonRevocationWitness.Index < revupdates[len(revupdates)-1].EndIndex {
+		return false, errors.New("failed to update nonrevocation witness")
+		// TODO download missing update messages from issuer and retry
+	}
+	return nonrev, nil
 }

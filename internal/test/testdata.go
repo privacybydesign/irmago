@@ -88,8 +88,10 @@ func FindTestdataFolder(t *testing.T) string {
 // ClearTestStorage removes any output from previously run tests to ensure a clean state;
 // some of the tests don't like it when there is existing state in storage.
 func ClearTestStorage(t *testing.T) {
-	path := filepath.Join(FindTestdataFolder(t), "storage", "test")
-	err := os.RemoveAll(path)
+	path := filepath.Join(FindTestdataFolder(t), "storage")
+	err := os.RemoveAll(filepath.Join(path, "test"))
+	checkError(t, err)
+	err = os.RemoveAll(filepath.Join(path, "revocation"))
 	checkError(t, err)
 }
 
@@ -98,11 +100,13 @@ func CreateTestStorage(t *testing.T) {
 	path := filepath.Join(FindTestdataFolder(t), "storage")
 
 	// EnsureDirectoryExists eventually uses mkdir from the OS which is not recursive
-	// so we have to create the temporary test storage by two function calls.
+	// so we have to create the temporary test storage by multiple function calls.
 	// We ignore any error possibly returned by creating the first one, because if it errors,
 	// then the second one certainly will as well.
 	_ = fs.EnsureDirectoryExists(path)
 	err := fs.EnsureDirectoryExists(filepath.Join(path, "test"))
+	checkError(t, err)
+	err = fs.EnsureDirectoryExists(filepath.Join(path, "revocation"))
 	checkError(t, err)
 }
 

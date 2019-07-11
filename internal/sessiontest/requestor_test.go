@@ -5,10 +5,16 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+
+	"crypto/rand"
+	"path/filepath"
+
 	"reflect"
 
 	"testing"
 
+	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -22,6 +28,7 @@ const (
 	sessionOptionUpdatedIrmaConfiguration sessionOption = 1 << iota
 	sessionOptionUnsatisfiableRequest
 	sessionOptionRetryPost
+	sessionOptionIgnoreClientError
 )
 
 type requestorSessionResult struct {
@@ -62,7 +69,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	require.NoError(t, err)
 	client.NewSession(string(j), h)
 	clientResult := <-clientChan
-	if clientResult != nil {
+	if (len(options) == 0 || options[0] != sessionOptionIgnoreClientError) && clientResult != nil {
 		require.NoError(t, clientResult.Err)
 	}
 
@@ -175,7 +182,7 @@ func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest, opti
 }
 
 func TestRequestorIssuanceSession(t *testing.T) {
-	testRequestorIssuance(t, false)
+	testRequestorIssuance(t, false, nil)
 }
 
 func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
@@ -209,7 +216,7 @@ func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
 	require.Equal(t, server.StatusDone, requestorSessionHelper(t, &ir, nil).Status)
 }
 
-func testRequestorIssuance(t *testing.T, keyshare bool) {
+func testRequestorIssuance(t *testing.T, keyshare bool, client *irmaclient.Client) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
@@ -232,7 +239,7 @@ func testRequestorIssuance(t *testing.T, keyshare bool) {
 		})
 	}
 
-	result := requestorSessionHelper(t, request, nil)
+	result := requestorSessionHelper(t, request, client)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
@@ -332,4 +339,84 @@ func TestOptionalDisclosure(t *testing.T) {
 		result := requestorSessionHelper(t, args.request, client)
 		require.True(t, reflect.DeepEqual(args.disclosed, result.Disclosed))
 	}
+}
+
+func editDB(t *testing.T, path string, keystore revocation.Keystore, current bool, f func(*revocation.DB)) {
+	db, err := revocation.LoadDB(path, keystore)
+	require.NoError(t, err)
+	if current {
+		require.NoError(t, db.LoadCurrent())
+	}
+	f(db)
+	require.NoError(t, db.Close())
+}
+
+func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
+	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	req := irma.NewDisclosureRequest(attr)
+	req.Revocation = irma.RevocationSet{attr.CredentialTypeIdentifier(): struct{}{}}
+	result := requestorSessionHelper(t, req, client, options...)
+	require.Nil(t, result.Err)
+	return result
+}
+
+func TestRevocation(t *testing.T) {
+	// setup client, constants, and revocation key material
+	client, _ := parseStorage(t)
+	iss := irma.NewIssuerIdentifier("irma-demo.MijnOverheid")
+	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	dbPath := filepath.Join(testdata, "storage", "revocation", cred.String())
+	keystore := client.Configuration.RevocationKeystore(iss)
+	sk, err := client.Configuration.PrivateKey(iss)
+	require.NoError(t, err)
+	revsk, err := sk.RevocationKey()
+	require.NoError(t, err)
+
+	// enable revocation for our credential type by creating and saving an initial accumulator
+	editDB(t, dbPath, keystore, false, func(db *revocation.DB) {
+		require.NoError(t, db.EnableRevocation(revsk))
+	})
+
+	// issue MijnOverheid.root instance with revocation enabled
+	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+		RevocationKey:    "12345", // once revocation is required for a credential type, this key is required
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		Attributes: map[string]string{
+			"BSN": "299792458",
+		},
+	}})
+	result := requestorSessionHelper(t, request, client)
+	require.Nil(t, result.Err)
+
+	// perform disclosure session with nonrevocation proof
+	result = revocationSession(t, client)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+	require.NotEmpty(t, result.Disclosed)
+
+	// revoke fake other credential
+	e, err := rand.Prime(rand.Reader, 207)
+	require.NoError(t, err)
+	editDB(t, dbPath, keystore, true, func(db *revocation.DB) {
+		require.NoError(t, db.AddIssuanceRecord(&revocation.IssuanceRecord{
+			Key:  "fake",
+			Attr: big.Convert(e),
+		}))
+		require.NoError(t, db.Revoke(revsk, []byte("fake")))
+	})
+
+	// perform another disclosure session with nonrevocation proof
+	// client updates its witness to the new accumulator first
+	result = revocationSession(t, client)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+	require.NotEmpty(t, result.Disclosed)
+
+	// revoke our credential
+	editDB(t, dbPath, keystore, true, func(db *revocation.DB) {
+		require.NoError(t, db.Revoke(revsk, []byte("12345")))
+	})
+
+	// try to perform session with revoked credential
+	// client notices that is credential is revoked and aborts
+	result = revocationSession(t, client, sessionOptionIgnoreClientError)
+	require.Equal(t, result.Status, server.StatusCancelled)
 }

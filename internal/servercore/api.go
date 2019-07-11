@@ -49,24 +49,21 @@ func New(conf *server.Configuration) (*Server, error) {
 }
 
 func (s *Server) Stop() {
+	if err := s.conf.IrmaConfiguration.Close(); err != nil {
+		_ = server.LogWarning(err)
+	}
 	s.stopScheduler <- true
 	s.sessions.stop()
 }
 
-func (s *Server) verifyConfiguration(configuration *server.Configuration) error {
-	if s.conf.Logger == nil {
-		s.conf.Logger = server.NewLogger(s.conf.Verbose, s.conf.Quiet, s.conf.LogJSON)
-	}
-	server.Logger = s.conf.Logger
-	irma.Logger = s.conf.Logger
-
+func (s *Server) verifyIrmaConf(configuration *server.Configuration) error {
 	if s.conf.IrmaConfiguration == nil {
 		var (
 			err    error
 			exists bool
 		)
 		if s.conf.SchemesPath == "" {
-			s.conf.SchemesPath = server.DefaultSchemesPath() // Returns an existing path
+			s.conf.SchemesPath = irma.DefaultSchemesPath() // Returns an existing path
 		}
 		if exists, err = fs.PathExists(s.conf.SchemesPath); err != nil {
 			return server.LogError(err)
@@ -86,6 +83,10 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		if err = s.conf.IrmaConfiguration.ParseFolder(); err != nil {
 			return server.LogError(err)
 		}
+		if err = fs.EnsureDirectoryExists(s.conf.RevocationPath); err != nil {
+			return server.LogError(err)
+		}
+		s.conf.IrmaConfiguration.RevocationPath = s.conf.RevocationPath
 	}
 
 	if len(s.conf.IrmaConfiguration.SchemeManagers) == 0 {
@@ -104,6 +105,10 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		s.conf.SchemesUpdateInterval = 0
 	}
 
+	return nil
+}
+
+func (s *Server) verifyPrivateKeys(configuration *server.Configuration) error {
 	if s.conf.IssuerPrivateKeys == nil {
 		s.conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
 	}
@@ -141,7 +146,32 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 			return server.LogError(errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter))
 		}
 	}
+	for issid := range s.conf.IrmaConfiguration.Issuers {
+		sk, err := s.conf.PrivateKey(issid)
+		if err != nil {
+			return server.LogError(err)
+		}
+		if sk == nil || !sk.RevocationSupported() {
+			continue
+		}
+		for credid, credtype := range s.conf.IrmaConfiguration.CredentialTypes {
+			if credtype.IssuerIdentifier() != issid || !credtype.SupportsRevocation {
+				continue
+			}
+			db, err := s.conf.IrmaConfiguration.RevocationDB(credid)
+			if err != nil {
+				return server.LogError(err)
+			}
+			if err = db.LoadCurrent(); err != nil {
+				return server.LogError(err)
+			}
+		}
+	}
 
+	return nil
+}
+
+func (s *Server) verifyURL(configuration *server.Configuration) error {
 	if s.conf.URL != "" {
 		if !strings.HasSuffix(s.conf.URL, "/") {
 			s.conf.URL = s.conf.URL + "/"
@@ -159,7 +189,10 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 	} else {
 		s.conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
 	}
+	return nil
+}
 
+func (s *Server) verifyEmail(configuration *server.Configuration) error {
 	if s.conf.Email != "" {
 		// Very basic sanity checks
 		if !strings.Contains(s.conf.Email, "@") || strings.Contains(s.conf.Email, "\n") {
@@ -169,6 +202,22 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 		t.SetHeader("User-Agent", "irmaserver")
 		var x string
 		_ = t.Post("email", &x, s.conf.Email)
+	}
+	return nil
+}
+
+func (s *Server) verifyConfiguration(configuration *server.Configuration) error {
+	if s.conf.Logger == nil {
+		s.conf.Logger = server.NewLogger(s.conf.Verbose, s.conf.Quiet, s.conf.LogJSON)
+	}
+	server.Logger = s.conf.Logger
+	irma.Logger = s.conf.Logger
+
+	// loop to avoid repetetive err != nil line triplets
+	for _, f := range []func(*server.Configuration) error{s.verifyIrmaConf, s.verifyPrivateKeys, s.verifyURL, s.verifyEmail} {
+		if err := f(configuration); err != nil {
+			return err
+		}
 	}
 
 	return nil

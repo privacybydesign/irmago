@@ -300,7 +300,7 @@ func authmethodAlias(f *pflag.FlagSet, name string) pflag.NormalizedName {
 }
 
 func addRequestFlags(flags *pflag.FlagSet) {
-	flags.StringP("schemes-path", "s", server.DefaultSchemesPath(), "path to irma_configuration")
+	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
 	flags.StringP("auth-method", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
 	flags.SetNormalizeFunc(authmethodAlias)
 	flags.String("key", "", "Key to sign request with")

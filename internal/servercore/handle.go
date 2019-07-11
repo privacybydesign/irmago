@@ -1,7 +1,11 @@
 package servercore
 
 import (
+	"time"
+
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -26,9 +30,17 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	if session.status != server.StatusInitialized {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
-	session.markAlive()
 
+	session.markAlive()
 	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.token})
+
+	// we include the latest revocation records for the client here, as opposed to when the session
+	// was started, so that the client always gets the very latest revocation records
+	// TODO revocation database update mechanism
+	var err error
+	if err = session.request.Base().SetRevocationRecords(session.conf.IrmaConfiguration); err != nil {
+		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
+	}
 
 	// Handle legacy clients that do not support condiscon, by attempting to convert the condiscon
 	// session request to the legacy session request format
@@ -38,7 +50,6 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 		logger.Info("Using condiscon: backwards compatibility with legacy IRMA apps is disabled")
 	}
 
-	var err error
 	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
@@ -143,8 +154,10 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	}
 
 	// Verify all proofs and check disclosed attributes, if any, against request
-	session.result.Disclosed, session.result.ProofStatus, err = commitments.Disclosure().VerifyAgainstDisjunctions(
-		session.conf.IrmaConfiguration, request.Disclose, request.GetContext(), request.GetNonce(nil), pubkeys, false)
+	now := time.Now()
+	session.result.Disclosed, session.result.ProofStatus, err = commitments.Disclosure().VerifyAgainstRequest(
+		session.conf.IrmaConfiguration, request, request.GetContext(), request.GetNonce(nil), pubkeys, &now, false,
+	)
 	if err != nil {
 		if err == irma.ErrorMissingPublicKey {
 			return nil, session.fail(server.ErrorUnknownPublicKey, "")
@@ -174,10 +187,35 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, commitments.Nonce2)
+
+		var witness *revocation.Witness
+		var nonrevAttr *big.Int
+		if session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation {
+			db, err := session.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
+			if err != nil {
+				return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
+			}
+			if db.Enabled() {
+				if witness, err = sk.RevocationGenerateWitness(&db.Current); err != nil {
+					return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
+				}
+				nonrevAttr = witness.E
+				if err = db.AddIssuanceRecord(&revocation.IssuanceRecord{
+					Key:        cred.RevocationKey,
+					Attr:       nonrevAttr,
+					Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
+					ValidUntil: attributes.Expiry().UnixNano(),
+				}); err != nil {
+					return nil, session.fail(server.ErrorUnknown, "failed to save nonrevocation witness")
+				}
+			}
+		}
+
+		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, nonrevAttr, commitments.Nonce2)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
+		sig.NonRevocationWitness = witness
 		sigs = append(sigs, sig)
 	}
 

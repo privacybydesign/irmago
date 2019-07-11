@@ -11,7 +11,6 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/privacybydesign/irmago/server"
 	"github.com/spf13/cobra"
 )
 
@@ -99,5 +98,5 @@ func prettyprint(ob interface{}) string {
 func init() {
 	RootCmd.AddCommand(metaCmd)
 
-	metaCmd.Flags().StringP("irmaconf", "i", server.DefaultSchemesPath(), "path to irma_configuration")
+	metaCmd.Flags().StringP("irmaconf", "i", irma.DefaultSchemesPath(), "path to irma_configuration")
 }

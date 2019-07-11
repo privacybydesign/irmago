@@ -16,6 +16,7 @@
 	</Description>
 	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>true</ShouldBeSingleton>
+	<SupportsRevocation>true</SupportsRevocation>
 
 	<Attributes>
 		<Attribute id="BSN">

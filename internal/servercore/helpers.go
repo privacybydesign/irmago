@@ -94,6 +94,29 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 		cred.KeyCounter = int(privatekey.Counter)
 
+		// Check that the credential is consistent with irma_configuration
+		if err := cred.Validate(s.conf.IrmaConfiguration); err != nil {
+			return err
+		}
+		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation {
+			db, err := s.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
+			if err != nil {
+				return err
+			}
+			if !db.Enabled() {
+				s.conf.Logger.WithFields(logrus.Fields{"cred": cred.CredentialTypeID}).Warn("revocation supported in scheme but not enabled")
+			} else {
+				if len(cred.RevocationKey) == 0 {
+					return errors.New("revocationKey field unset on revocable credential")
+				}
+				if exists, err := db.KeyExists([]byte(cred.RevocationKey)); err != nil {
+					return err
+				} else if exists {
+					return errors.New("revocationKey already used")
+				}
+			}
+		}
+
 		// Ensure the credential has an expiry date
 		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
 		if cred.Validity == nil {

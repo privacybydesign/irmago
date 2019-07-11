@@ -2,13 +2,8 @@ package cmd
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/sha256"
-	"crypto/x509"
-	"encoding/asn1"
-	"encoding/pem"
 	"io/ioutil"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/spf13/cobra"
@@ -98,12 +94,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 	}
 
 	// Create and write signature
-	indexHash := sha256.Sum256(bts)
-	r, s, err := ecdsa.Sign(rand.Reader, privatekey, indexHash[:])
-	if err != nil {
-		return errors.WrapPrefix(err, "Failed to sign index:", 0)
-	}
-	sigbytes, err := asn1.Marshal([]*big.Int{r, s})
+	sigbytes, err := signed.Sign(privatekey, bts)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to serialize signature:", 0)
 	}
@@ -112,11 +103,10 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 	}
 
 	// Write public key
-	bts, err = x509.MarshalPKIXPublicKey(&privatekey.PublicKey)
+	pemEncodedPub, err := signed.MarshalPemPublicKey(&privatekey.PublicKey)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to serialize public key", 0)
 	}
-	pemEncodedPub := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: bts})
 	if err := ioutil.WriteFile(filepath.Join(confpath, "pk.pem"), pemEncodedPub, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write public key", 0)
 	}
@@ -137,8 +127,7 @@ func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	block, _ := pem.Decode(bts)
-	return x509.ParseECPrivateKey(block.Bytes)
+	return signed.UnmarshalPemPrivateKey(bts)
 }
 
 func calculateFileHash(path string, info os.FileInfo, confpath string, index irma.SchemeManagerIndex) error {

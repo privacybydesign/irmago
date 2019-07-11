@@ -98,7 +98,8 @@ func setFlags(cmd *cobra.Command, production bool) error {
 		}
 	}
 
-	schemespath := server.DefaultSchemesPath()
+	schemespath := irma.DefaultSchemesPath()
+	revocationpath := filepath.Join(irma.DefaultDataPath(), "revocation")
 
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
@@ -109,6 +110,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
 	flags.String("static-prefix", "/", "Host static files under this URL prefix")
 	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
+	flags.String("revocation-path", revocationpath, "path where revocation databases are stored")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
@@ -219,6 +221,7 @@ func configure(cmd *cobra.Command) error {
 			SchemesUpdateInterval: viper.GetInt("schemes-update"),
 			DisableSchemesUpdate:  viper.GetBool("disable-schemes-update") || viper.GetInt("schemes-update") == 0,
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
+			RevocationPath:        viper.GetString("revocation-path"),
 			URL:                   viper.GetString("url"),
 			DisableTLS:            viper.GetBool("no-tls"),
 			Email:                 viper.GetString("email"),

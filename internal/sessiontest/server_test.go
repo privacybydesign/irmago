@@ -26,7 +26,7 @@ var (
 )
 
 func init() {
-	logger.Level = logrus.ErrorLevel
+	logger.Level = logrus.TraceLevel
 	logger.Formatter = &prefixed.TextFormatter{ForceFormatting: true, ForceColors: true}
 }
 
@@ -54,15 +54,12 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 		irmaconf += "_updated"
 	}
 
-	logger := logrus.New()
-	logger.Level = logrus.ErrorLevel
-	logger.Formatter = &logrus.TextFormatter{}
-
 	var err error
 	irmaServer, err = irmaserver.New(&server.Configuration{
-		URL:         "http://localhost:48680",
-		Logger:      logger,
-		SchemesPath: filepath.Join(testdata, irmaconf),
+		URL:            "http://localhost:48680",
+		Logger:         logger,
+		SchemesPath:    filepath.Join(testdata, irmaconf),
+		RevocationPath: filepath.Join(testdata, "storage", "revocation"),
 	})
 
 	require.NoError(t, err)
@@ -76,6 +73,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 }
 
 func StopIrmaServer() {
+	irmaServer.Stop()
 	_ = httpServer.Close()
 }
 
@@ -85,6 +83,7 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		RevocationPath:        filepath.Join(testdata, "storage", "revocation"),
 	},
 	DisableRequestorAuthentication: true,
 	Port: 48682,
@@ -96,6 +95,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		RevocationPath:        filepath.Join(testdata, "storage", "revocation"),
 	},
 	Port: 48682,
 	DisableRequestorAuthentication: false,

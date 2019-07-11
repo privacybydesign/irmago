@@ -91,7 +91,6 @@ func (th TestHandler) Cancelled() {
 	th.Failure(&irma.SessionError{Err: errors.New("Cancelled")})
 }
 func (th TestHandler) Failure(err *irma.SessionError) {
-	th.t.Logf("Session failed: %+v\n", *err)
 	select {
 	case th.c <- &SessionResult{Err: err}:
 	default:

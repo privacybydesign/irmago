@@ -7,6 +7,15 @@ import (
 
 type metaObjectIdentifier string
 
+func (oi *metaObjectIdentifier) UnmarshalBinary(data []byte) error {
+	*oi = metaObjectIdentifier(data)
+	return nil
+}
+
+func (oi metaObjectIdentifier) MarshalBinary() (data []byte, err error) {
+	return []byte(oi), nil
+}
+
 // SchemeManagerIdentifier identifies a scheme manager. Equal to its ID. For example "irma-demo".
 type SchemeManagerIdentifier struct {
 	metaObjectIdentifier

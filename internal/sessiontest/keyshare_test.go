@@ -22,7 +22,7 @@ func TestManualKeyshareSession(t *testing.T) {
 }
 
 func TestRequestorIssuanceKeyshareSession(t *testing.T) {
-	testRequestorIssuance(t, true)
+	testRequestorIssuance(t, true, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {

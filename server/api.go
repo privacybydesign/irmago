@@ -6,18 +6,14 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
@@ -42,6 +38,8 @@ type Configuration struct {
 	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
 	// Issuer private keys
 	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
+	// Path at which to store revocation databases
+	RevocationPath string `json:"revocation_path" mapstructure:"revocation_path"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
@@ -299,56 +297,6 @@ func LocalIP() (string, error) {
 		}
 	}
 	return "", errors.New("No IP found")
-}
-
-// DefaultSchemesPath returns the default path for IRMA schemes, using XDG Base Directory Specification
-// https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html:
-//  - %LOCALAPPDATA% (i.e. C:\Users\$user\AppData\Local) if on Windows,
-//  - $XDG_DATA_HOME if set, otherwise $HOME/.local/share
-//  - $XDG_DATA_DIRS if set, otherwise /usr/local/share/ and /usr/share/
-//  - then the OSes temp dir (os.TempDir()),
-// returning the first of these that exists or can be created.
-func DefaultSchemesPath() string {
-	candidates := make([]string, 0, 8)
-	home := os.Getenv("HOME")
-	xdgDataHome := os.Getenv("XDG_DATA_HOME")
-	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
-
-	if runtime.GOOS == "windows" {
-		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
-		if appdata != "" {
-			candidates = append(candidates, appdata)
-		}
-	}
-
-	if xdgDataHome != "" {
-		candidates = append(candidates, xdgDataHome)
-	}
-	if xdgDataHome == "" && home != "" {
-		candidates = append(candidates, filepath.Join(home, ".local", "share"))
-	}
-	if xdgDataDirs != "" {
-		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
-	} else {
-		candidates = append(candidates, "/usr/local/share", "/usr/share")
-	}
-	candidates = append(candidates, filepath.Join(os.TempDir()))
-
-	for i := range candidates {
-		candidates[i] = filepath.Join(candidates[i], "irma", "irma_configuration")
-	}
-
-	return firstExistingPath(candidates)
-}
-
-func firstExistingPath(paths []string) string {
-	for _, path := range paths {
-		if err := fs.EnsureDirectoryExists(path); err != nil {
-			continue
-		}
-		return path
-	}
-	return ""
 }
 
 func Verbosity(level int) logrus.Level {

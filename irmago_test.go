@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi/big"
-
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"

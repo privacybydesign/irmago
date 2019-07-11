@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -24,17 +25,17 @@ import (
 
 	"encoding/hex"
 
-	"crypto/ecdsa"
 	"crypto/x509"
-	"encoding/asn1"
 	"encoding/pem"
-	gobig "math/big"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
+	"github.com/hashicorp/go-multierror"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -47,7 +48,8 @@ type Configuration struct {
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 
 	// Path to the irma_configuration folder that this instance represents
-	Path string
+	Path           string
+	RevocationPath string
 
 	// DisabledSchemeManagers keeps track of scheme managers that did not parse  succesfully
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
@@ -59,6 +61,7 @@ type Configuration struct {
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	privateKeys   map[IssuerIdentifier]*gabi.PrivateKey
 	reverseHashes map[string]CredentialTypeIdentifier
+	revDBs        map[CredentialTypeIdentifier]*revocation.DB
 	initialized   bool
 	assets        string
 	readOnly      bool
@@ -137,8 +140,9 @@ func NewConfigurationFromAssets(path, assets string) (*Configuration, error) {
 
 func newConfiguration(path string, assets string) (conf *Configuration, err error) {
 	conf = &Configuration{
-		Path:   path,
-		assets: assets,
+		Path:           path,
+		RevocationPath: filepath.Join(DefaultDataPath(), "revocation"),
+		assets:         assets,
 	}
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
@@ -318,7 +322,7 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-// PrivateKey returns the specified private key, or nil if not present in the Configuration.
+// PrivateKey returns the latest private key of the specified issuer, or nil if not present in the Configuration.
 func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, error) {
 	if sk := conf.privateKeys[id]; sk != nil {
 		return sk, nil
@@ -535,6 +539,66 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {
 	return conf.matchKeyPattern(issuerid, pubkeyPattern)
+}
+
+func (conf *Configuration) RevocationKeystore(issuerid IssuerIdentifier) revocation.Keystore {
+	return &issuerKeystore{issid: issuerid, conf: conf}
+}
+
+// issuerKeystore implements revocation.Keystore.
+type issuerKeystore struct {
+	issid IssuerIdentifier
+	conf  *Configuration
+}
+
+var _ revocation.Keystore = (*issuerKeystore)(nil)
+
+func (ks *issuerKeystore) PublicKey(counter uint) (*revocation.PublicKey, error) {
+	pk, err := ks.conf.PublicKey(ks.issid, int(counter))
+	if err != nil {
+		return nil, err
+	}
+	if pk == nil {
+		return nil, errors.Errorf("public key %d of issuer %s not found", counter, ks.issid)
+	}
+	if !pk.RevocationSupported() {
+		return nil, errors.Errorf("public key %d of issuer %s does not support revocation", counter, ks.issid)
+	}
+	rpk, err := pk.RevocationKey()
+	if err != nil {
+		return nil, err
+	}
+	return rpk, nil
+}
+
+func (conf *Configuration) RevocationDB(credid CredentialTypeIdentifier) (*revocation.DB, error) {
+	if conf.revDBs == nil {
+		conf.revDBs = make(map[CredentialTypeIdentifier]*revocation.DB)
+	}
+	if conf.revDBs[credid] == nil {
+		var err error
+		db, err := revocation.LoadDB(
+			filepath.Join(conf.RevocationPath, credid.String()),
+			conf.RevocationKeystore(credid.IssuerIdentifier()),
+		)
+		if err != nil {
+			return nil, err
+		}
+		conf.revDBs[credid] = db
+	}
+	return conf.revDBs[credid], nil
+}
+
+func (conf *Configuration) Close() error {
+	merr := &multierror.Error{}
+	var err error
+	for _, db := range conf.revDBs {
+		if err = db.Close(); err != nil {
+			merr = multierror.Append(merr, err)
+		}
+	}
+	conf.revDBs = nil
+	return merr.ErrorOrNil()
 }
 
 func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (i []int, err error) {
@@ -1130,14 +1194,13 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	if err != nil {
 		return err
 	}
-	indexhash := sha256.Sum256(indexbts)
 
 	// Read and parse scheme manager public key
 	pkbts, err := ioutil.ReadFile(filepath.Join(dir, "pk.pem"))
 	if err != nil {
 		return err
 	}
-	pk, err := ParsePemEcdsaPublicKey(pkbts)
+	pk, err := signed.UnmarshalPemPublicKey(pkbts)
 	if err != nil {
 		return err
 	}
@@ -1147,27 +1210,8 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	if err != nil {
 		return err
 	}
-	ints := make([]*gobig.Int, 0, 2)
-	_, err = asn1.Unmarshal(sig, &ints)
 
-	// Verify signature
-	if !ecdsa.Verify(pk, indexhash[:], ints[0], ints[1]) {
-		return errors.New("Scheme manager signature was invalid")
-	}
-	return nil
-}
-
-func ParsePemEcdsaPublicKey(pkbts []byte) (*ecdsa.PublicKey, error) {
-	pkblk, _ := pem.Decode(pkbts)
-	genericPk, err := x509.ParsePKIXPublicKey(pkblk.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	pk, ok := genericPk.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, errors.New("Invalid scheme manager public key")
-	}
-	return pk, nil
+	return signed.Verify(pk, indexbts, sig)
 }
 
 func (hash ConfigurationFileHash) String() string {
@@ -1522,4 +1566,67 @@ func (conf *Configuration) ValidateKeys() error {
 	}
 
 	return nil
+}
+
+// DefaultDataPath returns the default storage path for IRMA, using XDG Base Directory Specification
+// https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html:
+//  - %LOCALAPPDATA% (i.e. C:\Users\$user\AppData\Local) if on Windows,
+//  - $XDG_DATA_HOME if set, otherwise $HOME/.local/share
+//  - $XDG_DATA_DIRS if set, otherwise /usr/local/share/ and /usr/share/
+//  - then the OSes temp dir (os.TempDir()),
+// returning the first of these that exists or can be created.
+func DefaultDataPath() string {
+	candidates := make([]string, 0, 8)
+	home := os.Getenv("HOME")
+	xdgDataHome := os.Getenv("XDG_DATA_HOME")
+	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
+
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
+		if appdata != "" {
+			candidates = append(candidates, appdata)
+		}
+	}
+
+	if xdgDataHome != "" {
+		candidates = append(candidates, xdgDataHome)
+	}
+	if xdgDataHome == "" && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "share"))
+	}
+	if xdgDataDirs != "" {
+		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
+	} else {
+		candidates = append(candidates, "/usr/local/share", "/usr/share")
+	}
+	candidates = append(candidates, filepath.Join(os.TempDir()))
+
+	for i := range candidates {
+		candidates[i] = filepath.Join(candidates[i], "irma")
+	}
+
+	return firstExistingPath(candidates)
+}
+
+// DefaultSchemesPath returns the default storage path for irma_configuration,
+// namely DefaultDataPath + "/irma_configuration"
+func DefaultSchemesPath() string {
+	p := DefaultDataPath()
+	if p == "" {
+		return p
+	}
+	p = filepath.Join(p, "irma_configuration")
+	if err := fs.EnsureDirectoryExists(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+func firstExistingPath(paths []string) string {
+	for _, path := range paths {
+		if err := fs.EnsureDirectoryExists(path); err == nil {
+			return path
+		}
+	}
+	return ""
 }
