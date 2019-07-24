@@ -289,7 +289,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 
 	if storenow {
 		return client.storage.AddLogEntry(&LogEntry{
-			Type:    actionRemoval,
+			Type:    ActionRemoval,
 			Time:    irma.Timestamp(time.Now()),
 			Removed: removed,
 		})
@@ -328,7 +328,7 @@ func (client *Client) RemoveAllCredentials() error {
 	}
 
 	logentry := &LogEntry{
-		Type:    actionRemoval,
+		Type:    ActionRemoval,
 		Time:    irma.Timestamp(time.Now()),
 		Removed: removed,
 	}

@@ -34,7 +34,7 @@ type LogEntry struct {
 	request    irma.SessionRequest   // cached parsed version of Request; get with LogEntry.SessionRequest()
 }
 
-const actionRemoval = irma.Action("removal")
+const ActionRemoval = irma.Action("removal")
 
 func (entry *LogEntry) SessionRequest() (irma.SessionRequest, error) {
 	if entry.request != nil {
@@ -71,7 +71,7 @@ func (entry *LogEntry) setSessionRequest() error {
 
 // GetDisclosedCredentials gets the list of disclosed credentials for a log entry
 func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([][]*irma.DisclosedAttribute, error) {
-	if entry.Type == actionRemoval {
+	if entry.Type == ActionRemoval {
 		return [][]*irma.DisclosedAttribute{}, nil
 	}
 
@@ -136,7 +136,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	}
 
 	switch entry.Type {
-	case actionRemoval:
+	case ActionRemoval:
 
 	case irma.ActionSigning:
 		// Get the signed message and timestamp

@@ -207,7 +207,7 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 func (s *storage) LoadLogs(before time.Time, max int) ([]*LogEntry, error) {
 	var logs []*LogEntry
 	return logs, s.db.Find(&logs,
-		bolthold.Where(bolthold.Key).Lt(before.UnixNano()).Limit(max),
+		bolthold.Where(bolthold.Key).Lt(before.UnixNano()).SortBy("Time").Reverse().Limit(max),
 	)
 }
 
