@@ -436,6 +436,8 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		claims["sub"] = "disclosure_result"
 	case irma.ActionSigning:
 		claims["sub"] = "abs_result"
+	case irma.ActionIssuing:
+		claims["sub"] = "issue_result"
 	default:
 		server.WriteError(w, server.ErrorInvalidRequest, "")
 		return
