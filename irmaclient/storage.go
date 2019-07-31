@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"io/ioutil"
+	"math"
 	"os"
 
 	"path/filepath"
@@ -128,7 +129,8 @@ func (s *storage) AddLogEntry(entry *LogEntry) error {
 }
 
 func (s *storage) logEntryKey(entry *LogEntry) interface{} {
-	return time.Time(entry.Time).UnixNano()
+	// Time is inverted to reverse sorting order
+	return math.MaxInt64 ^ time.Time(entry.Time).UnixNano()
 }
 
 func (s *storage) StorePreferences(prefs Preferences) error {
@@ -205,9 +207,10 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 }
 
 func (s *storage) LoadLogs(before time.Time, max int) ([]*LogEntry, error) {
+	// Bolthold key uses inverted times, so before is inverted
 	var logs []*LogEntry
 	return logs, s.db.Find(&logs,
-		bolthold.Where(bolthold.Key).Lt(before.UnixNano()).SortBy("Time").Reverse().Limit(max),
+		bolthold.Where(bolthold.Key).Gt(math.MaxInt64^before.UnixNano()).Limit(max),
 	)
 }
 

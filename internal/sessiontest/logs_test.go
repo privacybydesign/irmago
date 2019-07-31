@@ -26,7 +26,7 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
 
-	entry := logs[len(logs)-1]
+	entry := logs[0]
 	require.NotNil(t, entry)
 	require.NoError(t, err)
 	issued, err := entry.GetIssuedCredentials(client.Configuration)
@@ -36,6 +36,8 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, disclosed)
 
+	time.Sleep(2 * time.Second)
+
 	// Do disclosure session
 	request = getDisclosureRequest(attrid)
 	sessionHelper(t, request, "verification", client)
@@ -43,12 +45,17 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
 
-	entry = logs[len(logs)-1]
+	entry = logs[0]
 	require.NotNil(t, entry)
 	require.NoError(t, err)
 	disclosed, err = entry.GetDisclosedCredentials(client.Configuration)
 	require.NoError(t, err)
 	require.NotEmpty(t, disclosed)
+
+	// Test before parameter
+	logs, err = client.LoadLogs(time.Time(entry.Time), 100)
+	require.NoError(t, err)
+	require.True(t, len(logs) == oldLogLength+1)
 
 	// Do signature session
 	request = getSigningRequest(attrid)
@@ -56,7 +63,7 @@ func TestLogging(t *testing.T) {
 	logs, err = client.LoadLogs(time.Now(), 100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)
-	entry = logs[len(logs)-1]
+	entry = logs[0]
 	require.NotNil(t, entry)
 	require.NoError(t, err)
 	sig, err := entry.GetSignedMessage()
