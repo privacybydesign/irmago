@@ -189,6 +189,18 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 	}
 }
 
+func copyObject(i interface{}) (interface{}, error) {
+	cpy := reflect.New(reflect.TypeOf(i).Elem()).Interface()
+	bts, err := json.Marshal(i)
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(bts, cpy); err != nil {
+		return nil, err
+	}
+	return cpy, nil
+}
+
 // purgeRequest logs the request excluding any attribute values.
 func purgeRequest(request irma.RequestorRequest) irma.RequestorRequest {
 	// We want to log as much as possible of the request, but no attribute values.
@@ -197,9 +209,10 @@ func purgeRequest(request irma.RequestorRequest) irma.RequestorRequest {
 	// Ugly hack alert: the easiest way to do this seems to be to convert it to JSON and then back.
 	// As we do not know the precise type of request, we use reflection to create a new instance
 	// of the same type as request, into which we then unmarshal our copy.
-	cpy := reflect.New(reflect.TypeOf(request).Elem()).Interface()
-	bts, _ := json.Marshal(request)
-	_ = json.Unmarshal(bts, cpy)
+	cpy, err := copyObject(request)
+	if err != nil {
+		panic(err)
+	}
 
 	// Remove required attribute values from any attributes to be disclosed
 	_ = cpy.(irma.RequestorRequest).SessionRequest().Disclosure().Disclose.Iterate(

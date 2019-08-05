@@ -63,7 +63,20 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 		legacy.Base().ProtocolVersion = session.version
 		return legacy, nil
 	}
-	return session.request, nil
+
+	// In case of issuance requests, strip revocation keys from []CredentialRequest
+	isreq, issuing := session.request.(*irma.IssuanceRequest)
+	if !issuing {
+		return session.request, nil
+	}
+	cpy, err := copyObject(isreq)
+	if err != nil {
+		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
+	}
+	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
+		cred.RevocationKey = ""
+	}
+	return cpy.(*irma.IssuanceRequest), nil
 }
 
 func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
