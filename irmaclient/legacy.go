@@ -54,16 +54,16 @@ func (f *fileStorage) signatureFilename(attrs *irma.AttributeList) string {
 	return filepath.Join(signaturesDir, attrs.Hash())
 }
 
-func (f *fileStorage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
-	sigpath := f.signatureFilename(attrs)
-	if err := fs.AssertPathExists(f.path(sigpath)); err != nil {
-		return nil, err
+func (f *fileStorage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, witness *revocation.Witness, err error) {
+	sigpath := s.signatureFilename(attrs)
+	if err := fs.AssertPathExists(s.path(sigpath)); err != nil {
+		return nil, nil, err
 	}
-	signature = new(gabi.CLSignature)
-	if err := f.load(signature, sigpath); err != nil {
-		return nil, err
+	sig := &clSignatureWitness{}
+	if err := s.loadFromFile(sig, sigpath); err != nil {
+		return nil, nil, err
 	}
-	return signature, nil
+	return sig.CLSignature, sig.Witness, nil
 }
 
 // LoadSecretKey retrieves and returns the secret key from file storage. When no secret key

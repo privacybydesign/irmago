@@ -9,8 +9,11 @@ import (
 	"github.com/go-errors/errors"
 
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/gabi/revocation"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
+
+	"github.com/go-errors/errors"
 	"go.etcd.io/bbolt"
 )
 
@@ -131,11 +134,19 @@ func (s *storage) TxDeleteAllSignatures(tx *transaction) error {
 	return tx.DeleteBucket([]byte(signaturesBucket))
 }
 
-func (s *storage) TxStoreSignature(tx *transaction, cred *credential) error {
-	return s.TxStoreCLSignature(tx, cred.AttributeList().Hash(), cred.Signature)
+type clSignatureWitness struct {
+	*gabi.CLSignature
+	Witness *revocation.Witness
 }
 
-func (s *storage) TxStoreCLSignature(tx *transaction, credHash string, sig *gabi.CLSignature) error {
+func (s *storage) TxStoreSignature(tx *transaction, cred *credential) error {
+	return s.TxStoreCLSignature(tx, cred.AttributeList().Hash(), &clSignatureWitness{
+		CLSignature: cred.Signature,
+		Witness:     cred.NonRevocationWitness,
+	})
+}
+
+func (s *storage) TxStoreCLSignature(tx *transaction, credHash string, sig *clSignatureWitness) error {
 	// We take the SHA256 hash over all attributes as the bucket key for the signature.
 	// This means that of the signatures of two credentials that have identical attributes
 	// only one gets stored, one overwriting the other - but that doesn't
@@ -232,15 +243,15 @@ func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
 	return s.txStore(tx, userdataBucket, updatesKey, updates)
 }
 
-func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
-	signature = new(gabi.CLSignature)
-	found, err := s.load(signaturesBucket, attrs.Hash(), signature)
+func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
+	sig := new(clSignatureWitness)
+	found, err := s.load(signaturesBucket, attrs.Hash(), sig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if !found {
-		return nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
+		return nil, nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
 	}
-	return
+	return sig.CLSignature, sig.Witness, nil
 }
 
 // LoadSecretKey retrieves and returns the secret key from bbolt storage, or if no secret key

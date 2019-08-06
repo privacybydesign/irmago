@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/privacybydesign/gabi"
-
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 )
 
 // This file contains the update mechanism for Client
@@ -90,14 +88,17 @@ var clientUpdates = []func(client *Client) error{
 			return err
 		}
 
-		sigs := make(map[string]*gabi.CLSignature)
+		sigs := make(map[string]*clSignatureWitness)
 		for _, attrlistlist := range attrs {
 			for _, attrlist := range attrlistlist {
-				sig, err := client.fileStorage.LoadSignature(attrlist)
+				sig, witness, err := client.fileStorage.LoadSignature(attrlist)
 				if err != nil {
 					return err
 				}
-				sigs[attrlist.Hash()] = sig
+				sigs[attrlist.Hash()] = &clSignatureWitness{
+					CLSignature: sig,
+					Witness:     witness,
+				}
 			}
 		}
 
