@@ -9,6 +9,6 @@
 		<en>Demo credentials within the IRMA domain</en>
 		<nl>Demo IRMA-credentials</nl>
 	</Description>
-	<TimestampServer>https://metrics.privacybydesign.foundation/atum</TimestampServer>
+	<TimestampServer>https://keyshare.privacybydesign.foundation/atumd/</TimestampServer>
 	<Contact>https://privacybydesign.foundation/</Contact>
 </SchemeManager>

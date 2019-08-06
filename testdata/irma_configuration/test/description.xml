@@ -12,6 +12,6 @@
 	<KeyshareServer>http://localhost:8080/irma_keyshare_server/api/v1</KeyshareServer>
 	<KeyshareWebsite>http://localhost:8080/irma_keyshare_server/mijnirma/</KeyshareWebsite>
 	<KeyshareAttribute>test.test.mijnirma.email</KeyshareAttribute>
-	<TimestampServer>https://metrics.privacybydesign.foundation/atum</TimestampServer>
+	<TimestampServer>https://keyshare.privacybydesign.foundation/atumd/</TimestampServer>
 	<Contact>https://privacybydesign.foundation/</Contact>
 </SchemeManager>
