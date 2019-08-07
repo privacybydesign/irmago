@@ -43,7 +43,7 @@ irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose i
 irma session --request '{"type":"disclosing","content":[{"label":"BSN","attributes":["irma-demo.MijnOverheid.root.BSN"]}]}'
 irma session --server http://localhost:8088 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN`,
 	Run: func(cmd *cobra.Command, args []string) {
-		request, irmaconfig, err := configure(cmd)
+		request, irmaconfig, err := configureSession(cmd)
 		if err != nil {
 			die("", err)
 		}
@@ -94,7 +94,7 @@ func libraryRequest(
 	noqr bool,
 	verbosity int,
 ) (*server.SessionResult, error) {
-	if err := configureServer(url, port, privatekeysPath, irmaconfig, verbosity); err != nil {
+	if err := configureSessionServer(url, port, privatekeysPath, irmaconfig, verbosity); err != nil {
 		return nil, err
 	}
 	startServer(port)
@@ -192,7 +192,7 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 
 // Configuration functions
 
-func configureServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration, verbosity int) error {
+func configureSessionServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration, verbosity int) error {
 	// Replace "port" in url with actual port
 	replace := "$1:" + strconv.Itoa(port)
 	url = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(url), []byte(replace)))
@@ -213,7 +213,7 @@ func configureServer(url string, port int, privatekeysPath string, irmaconfig *i
 	return err
 }
 
-func configure(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, error) {
+func configureSession(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, error) {
 	verbosity, _ := cmd.Flags().GetCount("verbose")
 	logger.Level = server.Verbosity(verbosity)
 	irma.Logger = logger
