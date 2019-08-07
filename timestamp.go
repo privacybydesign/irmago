@@ -64,7 +64,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 			}
 			r, err := gabi.RepresentToPublicKey(pk, disclosed[i], nil)
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			dlreps[i] = r.Value()
 		}
