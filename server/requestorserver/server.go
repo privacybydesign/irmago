@@ -387,7 +387,11 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
 	}
-	server.WriteJson(w, res)
+	if res.LegacySession {
+		server.WriteJson(w, res.Legacy())
+	} else {
+		server.WriteJson(w, res)
+	}
 }
 
 func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
@@ -495,20 +499,25 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resultJwt(sessionresult *server.SessionResult) (string, error) {
-	claims := struct {
-		jwt.StandardClaims
-		*server.SessionResult
-	}{
-		StandardClaims: jwt.StandardClaims{
-			Issuer:   s.conf.JwtIssuer,
-			IssuedAt: time.Now().Unix(),
-			Subject:  string(sessionresult.Type) + "_result",
-		},
-		SessionResult: sessionresult,
+	standardclaims := jwt.StandardClaims{
+		Issuer:   s.conf.JwtIssuer,
+		IssuedAt: time.Now().Unix(),
+		Subject:  string(sessionresult.Type) + "_result",
 	}
 	validity := s.irmaserv.GetRequest(sessionresult.Token).Base().ResultJwtValidity
-	if validity != 0 {
-		claims.ExpiresAt = time.Now().Unix() + int64(validity)
+	standardclaims.ExpiresAt = time.Now().Unix() + int64(validity)
+
+	var claims jwt.Claims
+	if sessionresult.LegacySession {
+		claims = struct {
+			jwt.StandardClaims
+			*server.LegacySessionResult
+		}{standardclaims, sessionresult.Legacy()}
+	} else {
+		claims = struct {
+			jwt.StandardClaims
+			*server.SessionResult
+		}{standardclaims, sessionresult}
 	}
 
 	// Sign the jwt and return it
