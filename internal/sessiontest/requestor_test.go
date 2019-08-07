@@ -362,6 +362,7 @@ func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessi
 
 func TestRevocation(t *testing.T) {
 	// setup client, constants, and revocation key material
+	defer test.ClearTestStorage(t)
 	client, _ := parseStorage(t)
 	iss := irma.NewIssuerIdentifier("irma-demo.MijnOverheid")
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")

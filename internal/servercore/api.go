@@ -162,8 +162,12 @@ func (s *Server) verifyPrivateKeys(configuration *server.Configuration) error {
 			if err != nil {
 				return server.LogError(err)
 			}
-			if err = db.LoadCurrent(); err != nil {
-				return server.LogError(err)
+			if !db.Enabled() {
+				s.conf.Logger.WithFields(logrus.Fields{"cred": credid}).Warn("revocation supported in scheme but not enabled")
+			} else {
+				if err = db.LoadCurrent(); err != nil {
+					return server.LogError(err)
+				}
 			}
 		}
 	}
