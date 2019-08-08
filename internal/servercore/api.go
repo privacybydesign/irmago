@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
@@ -168,6 +170,7 @@ func (s *Server) verifyPrivateKeys(configuration *server.Configuration) error {
 				if err = db.LoadCurrent(); err != nil {
 					return server.LogError(err)
 				}
+				s.conf.RevocableCredentials[credid] = struct{}{}
 			}
 		}
 	}
@@ -293,13 +296,21 @@ func (s *Server) CancelSession(token string) error {
 	return nil
 }
 
-func ParsePath(path string) (string, string, error) {
-	pattern := regexp.MustCompile("session/(\\w+)/?(|commitments|proofs|status|statusevents)$")
-	matches := pattern.FindStringSubmatch(path)
-	if len(matches) != 3 {
-		return "", "", server.LogWarning(errors.Errorf("Invalid URL: %s", path))
+func ParsePath(path string) (token, noun string, arg []string, err error) {
+	client := regexp.MustCompile("session/(\\w+)/?(|commitments|proofs|status|statusevents)$")
+	matches := client.FindStringSubmatch(path)
+	if len(matches) == 3 {
+		return matches[1], matches[2], nil, nil
 	}
-	return matches[1], matches[2], nil
+
+	rev := regexp.MustCompile("-/revocation/(records)/?(.*)$")
+	matches = rev.FindStringSubmatch(path)
+	if len(matches) == 3 {
+		args := strings.Split(matches[2], "/")
+		return "", matches[1], args, nil
+	}
+
+	return "", "", nil, server.LogWarning(errors.Errorf("Invalid URL: %s", path))
 }
 
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
@@ -375,12 +386,22 @@ func (s *Server) handleProtocolMessage(
 		}
 	}
 
-	token, noun, err := ParsePath(path)
+	token, noun, args, err := ParsePath(path)
 	if err != nil {
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))
-		return
 	}
 
+	if token != "" {
+		status, output, result = s.handleClientMessage(token, noun, method, headers, message)
+	} else {
+		status, output = s.handleRevocationMessage(noun, method, args, headers, message)
+	}
+	return
+}
+
+func (s *Server) handleClientMessage(
+	token, noun, method string, headers map[string][]string, message []byte,
+) (status int, output []byte, result *server.SessionResult) {
 	// Fetch the session
 	session := s.sessions.clientGet(token)
 	if session == nil {
@@ -497,4 +518,68 @@ func (s *Server) handleProtocolMessage(
 		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
 		return
 	}
+}
+
+func (s *Server) handleRevocationMessage(
+	noun, method string, args []string, headers map[string][]string, message []byte,
+) (int, []byte) {
+	if noun == "records" && method == http.MethodGet {
+		if len(args) != 2 {
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET records expects 2 url arguments"))
+		}
+		index, err := strconv.Atoi(args[1])
+		if err != nil {
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		cred := irma.NewCredentialTypeIdentifier(args[0])
+		return server.JsonResponse(s.handleGetRevocationRecords(cred, index))
+	}
+	if noun == "records" && method == http.MethodPost {
+		if len(args) != 1 {
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects 1 url arguments"))
+		}
+		cred := irma.NewCredentialTypeIdentifier(args[0])
+		var records []*revocation.Record
+		if err := json.Unmarshal(message, &records); err != nil {
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		return server.JsonResponse(s.handlePostRevocationRecords(cred, records))
+	}
+
+	return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
+}
+
+func (s *Server) handlePostRevocationRecords(
+	cred irma.CredentialTypeIdentifier, records []*revocation.Record,
+) (interface{}, *irma.RemoteError) {
+	if _, ok := s.conf.RevocableCredentials[cred]; !ok {
+		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+	}
+	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+	}
+	for _, r := range records {
+		if err = db.Add(r.Message, r.PublicKeyIndex); err != nil {
+			return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+		}
+	}
+	return nil, nil
+}
+
+func (s *Server) handleGetRevocationRecords(
+	cred irma.CredentialTypeIdentifier, index int,
+) ([]revocation.Record, *irma.RemoteError) {
+	if _, ok := s.conf.RevocableCredentials[cred]; !ok {
+		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+	}
+	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+	}
+	records, err := db.RevocationRecords(index)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+	}
+	return records, nil
 }

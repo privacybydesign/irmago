@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -40,6 +42,8 @@ type Configuration struct {
 	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
 	// Path at which to store revocation databases
 	RevocationPath string `json:"revocation_path" mapstructure:"revocation_path"`
+	// Credentials types for which revocation database should be hosted
+	RevocableCredentials map[irma.CredentialTypeIdentifier]struct{} `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
@@ -170,13 +174,29 @@ func RemoteError(err Error, message string) *irma.RemoteError {
 // JsonResponse JSON-marshals the specified object or error
 // and returns it along with a suitable HTTP status code
 func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+	return encodeValOrError(v, err, json.Marshal)
+}
+
+func GobResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+	return encodeValOrError(v, err, gobMarshal)
+}
+
+func gobMarshal(v interface{}) ([]byte, error) {
+	var b bytes.Buffer
+	if err := gob.NewEncoder(&b).Encode(v); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+func encodeValOrError(v interface{}, err *irma.RemoteError, encoder func(interface{}) ([]byte, error)) (int, []byte) {
 	msg := v
 	status := http.StatusOK
 	if err != nil {
 		msg = err
 		status = err.Status
 	}
-	b, e := json.Marshal(msg)
+	b, e := encoder(msg)
 	if e != nil {
 		Logger.Error("Failed to serialize response:", e.Error())
 		return http.StatusInternalServerError, nil
