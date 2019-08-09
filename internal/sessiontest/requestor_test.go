@@ -341,12 +341,10 @@ func TestOptionalDisclosure(t *testing.T) {
 	}
 }
 
-func editDB(t *testing.T, path string, keystore revocation.Keystore, current bool, f func(*revocation.DB)) {
+func editDB(t *testing.T, path string, keystore revocation.Keystore, enabled bool, f func(*revocation.DB)) {
 	db, err := revocation.LoadDB(path, keystore)
 	require.NoError(t, err)
-	if current {
-		require.NoError(t, db.LoadCurrent())
-	}
+	require.True(t, !enabled || db.Enabled())
 	f(db)
 	require.NoError(t, db.Close())
 }
@@ -354,7 +352,7 @@ func editDB(t *testing.T, path string, keystore revocation.Keystore, current boo
 func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
 	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	req := irma.NewDisclosureRequest(attr)
-	req.Revocation = irma.RevocationSet{attr.CredentialTypeIdentifier(): struct{}{}}
+	req.Revocation = []irma.CredentialTypeIdentifier{attr.CredentialTypeIdentifier()}
 	result := requestorSessionHelper(t, req, client, options...)
 	require.Nil(t, result.Err)
 	return result

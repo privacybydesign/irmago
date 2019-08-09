@@ -29,13 +29,13 @@ type BaseRequest struct {
 
 	// Revocation instructs the client to include nonrevocation zero-knowledge proofs for the
 	// specified credential types.
-	Revocation RevocationSet `json:"revocation,omitempty"`
+	Revocation []CredentialTypeIdentifier `json:"revocation,omitempty"`
 
 	// Set by the IRMA server during the session
-	Context           *big.Int                                         `json:"context,omitempty"`
-	Nonce             *big.Int                                         `json:"nonce,omitempty"`
-	ProtocolVersion   *ProtocolVersion                                 `json:"protocolVersion,omitempty"`
-	RevocationUpdates map[CredentialTypeIdentifier][]revocation.Record `json:"revocationUpdates,omitempty"`
+	Context           *big.Int                                          `json:"context,omitempty"`
+	Nonce             *big.Int                                          `json:"nonce,omitempty"`
+	ProtocolVersion   *ProtocolVersion                                  `json:"protocolVersion,omitempty"`
+	RevocationUpdates map[CredentialTypeIdentifier][]*revocation.Record `json:"revocationUpdates,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
@@ -43,33 +43,6 @@ type BaseRequest struct {
 	Type   Action `json:"type,omitempty"` // Session type, only used in legacy code
 
 	ClientReturnURL string `json:"clientReturnUrl,omitempty"` // URL to proceed to when IRMA session is completed
-}
-
-type RevocationSet map[CredentialTypeIdentifier]struct{}
-
-func (r *RevocationSet) MarshalJSON() ([]byte, error) {
-	if r == nil {
-		return json.Marshal(nil)
-	}
-	l := make([]CredentialTypeIdentifier, 0, len(*r))
-	for c := range *r {
-		l = append(l, c)
-	}
-	return json.Marshal(l)
-}
-
-func (r *RevocationSet) UnmarshalJSON(bts []byte) error {
-	var l []CredentialTypeIdentifier
-	if err := json.Unmarshal(bts, &l); err != nil {
-		return err
-	}
-	if *r == nil {
-		*r = RevocationSet{}
-	}
-	for _, c := range l {
-		(*r)[c] = struct{}{}
-	}
-	return nil
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -244,8 +217,8 @@ func (b *BaseRequest) SetRevocationRecords(conf *Configuration) error {
 	if len(b.Revocation) == 0 {
 		return nil
 	}
-	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]revocation.Record, len(b.Revocation))
-	for credid := range b.Revocation {
+	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]*revocation.Record, len(b.Revocation))
+	for _, credid := range b.Revocation {
 		db, err := conf.RevocationDB(credid)
 		if err != nil {
 			return err

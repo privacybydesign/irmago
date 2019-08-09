@@ -40,10 +40,6 @@ type Configuration struct {
 	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
 	// Issuer private keys
 	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
-	// Path at which to store revocation databases
-	RevocationPath string `json:"revocation_path" mapstructure:"revocation_path"`
-	// Credentials types for which revocation database should be hosted
-	RevocableCredentials map[irma.CredentialTypeIdentifier]struct{} `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
@@ -66,8 +62,17 @@ type Configuration struct {
 	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
 	Logger *logrus.Logger `json:"-"`
 
+	// Path at which to store revocation databases
+	RevocationPath string `json:"revocation_path" mapstructure:"revocation_path"`
+	// Credentials types for which revocation database should be hosted
+	RevocationServers map[irma.CredentialTypeIdentifier]RevocationServer `json:"revocation_servers" mapstructure:"revocation_servers"`
+
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
+}
+
+type RevocationServer struct {
+	PostURLs []string `json:"post_urls" mapstructure:"post_urls"`
 }
 
 type SessionPackage struct {

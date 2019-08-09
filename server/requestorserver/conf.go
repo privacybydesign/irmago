@@ -48,8 +48,7 @@ type Configuration struct {
 	ClientTlsPrivateKeyFile  string `json:"client_tls_privkey_file" mapstructure:"client_tls_privkey_file"`
 
 	// Requestor-specific permission and authentication configuration
-	RequestorsString string               `json:"-" mapstructure:"requestors"`
-	Requestors       map[string]Requestor `json:"requestors"`
+	Requestors map[string]Requestor `json:"requestors"`
 
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`

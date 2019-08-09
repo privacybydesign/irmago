@@ -57,19 +57,19 @@ type Issuer struct {
 
 // CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
 type CredentialType struct {
-	ID                 string           `xml:"CredentialID"`
-	Name               TranslatedString `xml:"Name"`
-	ShortName          TranslatedString `xml:"ShortName"`
-	IssuerID           string           `xml:"IssuerID"`
-	SchemeManagerID    string           `xml:"SchemeManager"`
-	IsSingleton        bool             `xml:"ShouldBeSingleton"`
-	DisallowDelete     bool             `xml:"DisallowDelete"`
-	Description        TranslatedString
-	AttributeTypes     []*AttributeType `xml:"Attributes>Attribute" json:"-"`
-	SupportsRevocation bool
-	XMLVersion         int              `xml:"version,attr"`
-	XMLName            xml.Name         `xml:"IssueSpecification"`
-	IssueURL           TranslatedString `xml:"IssueURL"`
+	ID               string           `xml:"CredentialID"`
+	Name             TranslatedString `xml:"Name"`
+	ShortName        TranslatedString `xml:"ShortName"`
+	IssuerID         string           `xml:"IssuerID"`
+	SchemeManagerID  string           `xml:"SchemeManager"`
+	IsSingleton      bool             `xml:"ShouldBeSingleton"`
+	DisallowDelete   bool             `xml:"DisallowDelete"`
+	Description      TranslatedString
+	AttributeTypes   []*AttributeType `xml:"Attributes>Attribute" json:"-"`
+	RevocationServer string
+	XMLVersion       int              `xml:"version,attr"`
+	XMLName          xml.Name         `xml:"IssueSpecification"`
+	IssueURL         TranslatedString `xml:"IssueURL"`
 
 	Valid bool `xml:"-"`
 }
@@ -96,6 +96,10 @@ func (ad AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {
 
 func (ad AttributeType) IsOptional() bool {
 	return ad.Optional == "true"
+}
+
+func (ct *CredentialType) SupportsRevocation() bool {
+	return ct.RevocationServer != ""
 }
 
 // ContainsAttribute tests whether the specified attribute is contained in this

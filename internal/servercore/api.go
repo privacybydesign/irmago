@@ -148,31 +148,30 @@ func (s *Server) verifyPrivateKeys(configuration *server.Configuration) error {
 			return server.LogError(errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter))
 		}
 	}
-	for issid := range s.conf.IrmaConfiguration.Issuers {
-		sk, err := s.conf.PrivateKey(issid)
+
+	return nil
+}
+
+func (s *Server) verifyRevocation(configuration *server.Configuration) error {
+	for credid, settings := range s.conf.RevocationServers {
+		if _, known := s.conf.IrmaConfiguration.CredentialTypes[credid]; !known {
+			return server.LogError(errors.Errorf("unknown credential type %s in revocation settings", credid))
+		}
+
+		db, err := s.conf.IrmaConfiguration.RevocationDB(credid)
 		if err != nil {
 			return server.LogError(err)
 		}
-		if sk == nil || !sk.RevocationSupported() {
-			continue
-		}
-		for credid, credtype := range s.conf.IrmaConfiguration.CredentialTypes {
-			if credtype.IssuerIdentifier() != issid || !credtype.SupportsRevocation {
-				continue
-			}
-			db, err := s.conf.IrmaConfiguration.RevocationDB(credid)
-			if err != nil {
-				return server.LogError(err)
-			}
-			if !db.Enabled() {
-				s.conf.Logger.WithFields(logrus.Fields{"cred": credid}).Warn("revocation supported in scheme but not enabled")
-			} else {
-				if err = db.LoadCurrent(); err != nil {
-					return server.LogError(err)
+
+		db.OnChange(func(record *revocation.Record) {
+			transport := irma.NewHTTPTransport("")
+			o := struct{}{}
+			for _, url := range settings.PostURLs {
+				if err := transport.Post(url+"/-/revocation/records", &o, &[]*revocation.Record{record}); err != nil {
+					s.conf.Logger.Warn("error sending revocation update", err)
 				}
-				s.conf.RevocableCredentials[credid] = struct{}{}
 			}
-		}
+		})
 	}
 
 	return nil
@@ -221,7 +220,9 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 	irma.Logger = s.conf.Logger
 
 	// loop to avoid repetetive err != nil line triplets
-	for _, f := range []func(*server.Configuration) error{s.verifyIrmaConf, s.verifyPrivateKeys, s.verifyURL, s.verifyEmail} {
+	for _, f := range []func(*server.Configuration) error{
+		s.verifyIrmaConf, s.verifyPrivateKeys, s.verifyRevocation, s.verifyURL, s.verifyEmail,
+	} {
 		if err := f(configuration); err != nil {
 			return err
 		}
@@ -552,9 +553,6 @@ func (s *Server) handleRevocationMessage(
 func (s *Server) handlePostRevocationRecords(
 	cred irma.CredentialTypeIdentifier, records []*revocation.Record,
 ) (interface{}, *irma.RemoteError) {
-	if _, ok := s.conf.RevocableCredentials[cred]; !ok {
-		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
-	}
 	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
@@ -569,8 +567,8 @@ func (s *Server) handlePostRevocationRecords(
 
 func (s *Server) handleGetRevocationRecords(
 	cred irma.CredentialTypeIdentifier, index int,
-) ([]revocation.Record, *irma.RemoteError) {
-	if _, ok := s.conf.RevocableCredentials[cred]; !ok {
+) ([]*revocation.Record, *irma.RemoteError) {
+	if _, ok := s.conf.RevocationServers[cred]; ok {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
 	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)

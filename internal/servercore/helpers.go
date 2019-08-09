@@ -98,7 +98,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if err := cred.Validate(s.conf.IrmaConfiguration); err != nil {
 			return err
 		}
-		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation {
+		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
 			db, err := s.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
 			if err != nil {
 				return err

@@ -203,7 +203,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 
 		var witness *revocation.Witness
 		var nonrevAttr *big.Int
-		if session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation {
+		if session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
 			db, err := session.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
 			if err != nil {
 				return nil, session.fail(server.ErrorIssuanceFailed, err.Error())

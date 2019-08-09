@@ -75,7 +75,7 @@ func (pl ProofList) VerifyProofs(
 	configuration *Configuration,
 	context *big.Int, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
-	revRecords map[CredentialTypeIdentifier][]revocation.Record,
+	revRecords map[CredentialTypeIdentifier][]*revocation.Record,
 	isSig bool,
 ) (bool, error) {
 	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
@@ -294,7 +294,7 @@ func (d *Disclosure) VerifyAgainstRequest(
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
 	var required AttributeConDisCon
-	var revRecords map[CredentialTypeIdentifier][]revocation.Record
+	var revRecords map[CredentialTypeIdentifier][]*revocation.Record
 	if request != nil {
 		revRecords = request.Base().RevocationUpdates
 		required = request.Disclosure().Disclose

@@ -250,20 +250,29 @@ func configureServer(cmd *cobra.Command) error {
 	}
 
 	// Handle requestors
-	var requestors map[string]interface{}
-	if val, flagOrEnv := viper.Get("requestors").(string); !flagOrEnv || val != "" {
-		if requestors, err = cast.ToStringMapE(viper.Get("requestors")); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal requestors from flag or env var", 0)
-		}
-	}
-	if len(requestors) > 0 {
-		if err := mapstructure.Decode(requestors, &conf.Requestors); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal requestors from config file", 0)
-		}
+	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
+		return err
 	}
 
 	logger.Debug("Done configuring")
 
+	return nil
+}
+
+func handleMapOrString(key string, dest interface{}) error {
+	var m map[string]interface{}
+	var err error
+	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
+		if m, err = cast.ToStringMapE(viper.Get(key)); err != nil {
+			return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from flag or env var", 0)
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	if err := mapstructure.Decode(m, dest); err != nil {
+		return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from config file", 0)
+	}
 	return nil
 }
 
