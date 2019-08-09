@@ -60,9 +60,6 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 		Logger:         logger,
 		SchemesPath:    filepath.Join(testdata, irmaconf),
 		RevocationPath: filepath.Join(testdata, "storage", "revocation"),
-		RevocationServers: map[irma.CredentialTypeIdentifier]server.RevocationServer{
-			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {},
-		},
 	})
 
 	require.NoError(t, err)

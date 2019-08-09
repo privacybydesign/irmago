@@ -235,3 +235,35 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	session.setStatus(server.StatusDone)
 	return sigs, nil
 }
+
+func (s *Server) handlePostRevocationRecords(
+	cred irma.CredentialTypeIdentifier, records []*revocation.Record,
+) (interface{}, *irma.RemoteError) {
+	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+	}
+	for _, r := range records {
+		if err = db.Add(r.Message, r.PublicKeyIndex); err != nil {
+			return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+		}
+	}
+	return nil, nil
+}
+
+func (s *Server) handleGetRevocationRecords(
+	cred irma.CredentialTypeIdentifier, index int,
+) ([]*revocation.Record, *irma.RemoteError) {
+	if _, ok := s.conf.RevocationServers[cred]; ok {
+		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+	}
+	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+	}
+	records, err := db.RevocationRecords(index)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+	}
+	return records, nil
+}
