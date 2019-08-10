@@ -30,7 +30,7 @@ func checkError(t *testing.T, err error) {
 var schemeServer *http.Server
 var badServer *http.Server
 var badServerCount int
-var testStorageDir = "teststorage"
+var testStorageDir = "client"
 
 func StartSchemeManagerHttpServer() {
 	path := FindTestdataFolder(nil)
@@ -88,32 +88,22 @@ func FindTestdataFolder(t *testing.T) string {
 // ClearTestStorage removes any output from previously run tests to ensure a clean state;
 // some of the tests don't like it when there is existing state in storage.
 func ClearTestStorage(t *testing.T) {
-	path := filepath.Join(FindTestdataFolder(t), "storage")
-	err := os.RemoveAll(filepath.Join(path, "test"))
-	checkError(t, err)
-	err = os.RemoveAll(filepath.Join(path, "revocation"))
-	checkError(t, err)
+	tmp := filepath.Join(FindTestdataFolder(t), "tmp")
+	checkError(t, os.RemoveAll(tmp))
+	checkError(t, fs.EnsureDirectoryExists(tmp))
 }
 
 func CreateTestStorage(t *testing.T) {
 	ClearTestStorage(t)
-	path := filepath.Join(FindTestdataFolder(t), "storage")
-
-	// EnsureDirectoryExists eventually uses mkdir from the OS which is not recursive
-	// so we have to create the temporary test storage by multiple function calls.
-	// We ignore any error possibly returned by creating the first one, because if it errors,
-	// then the second one certainly will as well.
-	_ = fs.EnsureDirectoryExists(path)
-	err := fs.EnsureDirectoryExists(filepath.Join(path, "test"))
-	checkError(t, err)
-	err = fs.EnsureDirectoryExists(filepath.Join(path, "revocation"))
-	checkError(t, err)
+	tmp := filepath.Join(FindTestdataFolder(t), "tmp")
+	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "client")))
+	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "revocation")))
 }
 
 func SetupTestStorage(t *testing.T) {
 	CreateTestStorage(t)
 	path := FindTestdataFolder(t)
-	err := fs.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(path, "storage", "test"))
+	err := fs.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(path, "tmp", "client"))
 	checkError(t, err)
 }
 

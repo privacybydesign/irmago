@@ -44,7 +44,7 @@ func parseExistingStorage(t *testing.T) (*irmaclient.Client, *TestClientHandler)
 	handler := &TestClientHandler{t: t, c: make(chan error)}
 	path := test.FindTestdataFolder(t)
 	client, err := irmaclient.New(
-		filepath.Join(path, "storage", "test"),
+		filepath.Join(path, "tmp", "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
 	)

@@ -59,7 +59,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 		URL:            "http://localhost:48680",
 		Logger:         logger,
 		SchemesPath:    filepath.Join(testdata, irmaconf),
-		RevocationPath: filepath.Join(testdata, "storage", "revocation"),
+		RevocationPath: filepath.Join(testdata, "tmp", "revocation"),
 	})
 
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-		RevocationPath:        filepath.Join(testdata, "storage", "revocation"),
+		RevocationPath:        filepath.Join(testdata, "tmp", "revocation"),
 	},
 	DisableRequestorAuthentication: true,
 	Port: 48682,
@@ -95,7 +95,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-		RevocationPath:        filepath.Join(testdata, "storage", "revocation"),
+		RevocationPath:        filepath.Join(testdata, "tmp", "revocation"),
 	},
 	Port: 48682,
 	DisableRequestorAuthentication: false,

@@ -437,7 +437,7 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
 	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
-	basepath := filepath.Join(test.FindTestdataFolder(t), "storage", "test", "irma_configuration", "irma-demo")
+	basepath := filepath.Join(test.FindTestdataFolder(t), "tmp", "client", "irma_configuration", "irma-demo")
 	exists, err := fs.PathExists(filepath.Join(basepath, "description.xml"))
 	require.NoError(t, err)
 	require.True(t, exists)

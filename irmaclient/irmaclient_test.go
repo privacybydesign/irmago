@@ -36,7 +36,7 @@ func parseStorage(t *testing.T) *Client {
 
 func parseExistingStorage(t *testing.T) *Client {
 	client, err := New(
-		filepath.Join("..", "testdata", "storage", "test"),
+		filepath.Join("..", "testdata", "tmp", "client"),
 		filepath.Join("..", "testdata", "irma_configuration"),
 		&TestClientHandler{t: t},
 	)
@@ -273,7 +273,7 @@ func TestWrongSchemeManager(t *testing.T) {
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove(filepath.Join("..", "testdata", "storage", "test", "irma_configuration", "irma-demo", "index")))
+	require.NoError(t, os.Remove(filepath.Join("..", "testdata", "tmp", "client", "irma_configuration", "irma-demo", "index")))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)
@@ -299,7 +299,7 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 	require.NoError(t, client.Configuration.ParseFolder())
 	require.NotNil(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid))
 
-	// irma-demo.RU.studentCard.newAttribute now exists in the scheme but not in the instance in the teststorage
+	// irma-demo.RU.studentCard.newAttribute now exists in the scheme but not in the instance in the testdata folder
 	for _, credinfo := range client.CredentialInfoList() {
 		if credinfo.ID == "studentCard" {
 			require.Nil(t, credinfo.Attributes[attrid])

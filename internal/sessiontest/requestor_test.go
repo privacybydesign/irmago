@@ -364,7 +364,7 @@ func TestRevocation(t *testing.T) {
 	client, _ := parseStorage(t)
 	iss := irma.NewIssuerIdentifier("irma-demo.MijnOverheid")
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
-	dbPath := filepath.Join(testdata, "storage", "revocation", cred.String())
+	dbPath := filepath.Join(testdata, "tmp", "revocation", cred.String())
 	keystore := client.Configuration.RevocationKeystore(iss)
 	sk, err := client.Configuration.PrivateKey(iss)
 	require.NoError(t, err)
