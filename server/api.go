@@ -14,66 +14,12 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var Logger *logrus.Logger = logrus.StandardLogger()
-
-// Configuration contains configuration for the irmaserver library and irmad.
-type Configuration struct {
-	// irma_configuration. If not given, this will be popupated using SchemesPath.
-	IrmaConfiguration *irma.Configuration `json:"-"`
-	// Path to IRMA schemes to parse into IrmaConfiguration (only used if IrmaConfiguration == nil).
-	// If left empty, default value is taken using DefaultSchemesPath().
-	// If an empty folder is specified, default schemes (irma-demo and pbdf) are downloaded into it.
-	SchemesPath string `json:"schemes_path" mapstructure:"schemes_path"`
-	// If specified, schemes found here are copied into SchemesPath (only used if IrmaConfiguration == nil)
-	SchemesAssetsPath string `json:"schemes_assets_path" mapstructure:"schemes_assets_path"`
-	// Disable scheme updating
-	DisableSchemesUpdate bool `json:"disable_schemes_update" mapstructure:"disable_schemes_update"`
-	// Update all schemes every x minutes (default value 0 means 60) (use DisableSchemesUpdate to disable)
-	SchemesUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
-	// Path to issuer private keys to parse
-	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
-	// Issuer private keys
-	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
-	// URL at which the IRMA app can reach this server during sessions
-	URL string `json:"url" mapstructure:"url"`
-	// Required to be set to true if URL does not begin with https:// in production mode.
-	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
-	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
-	DisableTLS bool `json:"no_tls" mapstructure:"no_tls"`
-	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
-	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
-	// for more information
-	Email string `json:"email" mapstructure:"email"`
-	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
-	EnableSSE bool `json:"enable_sse" mapstructure:"enable_sse"`
-
-	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
-	Verbose int `json:"verbose" mapstructure:"verbose"`
-	// Don't log anything at all
-	Quiet bool `json:"quiet" mapstructure:"quiet"`
-	// Output structured log in JSON format
-	LogJSON bool `json:"log_json" mapstructure:"log_json"`
-	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
-	Logger *logrus.Logger `json:"-"`
-
-	// Path at which to store revocation databases
-	RevocationPath string `json:"revocation_path" mapstructure:"revocation_path"`
-	// Credentials types for which revocation database should be hosted
-	RevocationServers map[irma.CredentialTypeIdentifier]RevocationServer `json:"revocation_servers" mapstructure:"revocation_servers"`
-
-	// Production mode: enables safer and stricter defaults and config checking
-	Production bool `json:"production" mapstructure:"production"`
-}
-
-type RevocationServer struct {
-	PostURLs []string `json:"post_urls" mapstructure:"post_urls"`
-}
 
 type SessionPackage struct {
 	SessionPtr *irma.Qr `json:"sessionPtr"`
@@ -123,31 +69,6 @@ func (r *SessionResult) Legacy() *LegacySessionResult {
 		disclosed = append(disclosed, l[0])
 	}
 	return &LegacySessionResult{r.Token, r.Status, r.Type, r.ProofStatus, disclosed, r.Signature, r.Err}
-}
-
-func (conf *Configuration) PrivateKey(id irma.IssuerIdentifier) (sk *gabi.PrivateKey, err error) {
-	sk = conf.IssuerPrivateKeys[id]
-	if sk == nil {
-		if sk, err = conf.IrmaConfiguration.PrivateKey(id); err != nil {
-			return nil, err
-		}
-	}
-	return sk, nil
-}
-
-func (conf *Configuration) HavePrivateKeys() (bool, error) {
-	var err error
-	var sk *gabi.PrivateKey
-	for id := range conf.IrmaConfiguration.Issuers {
-		sk, err = conf.PrivateKey(id)
-		if err != nil {
-			return false, err
-		}
-		if sk != nil {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (status Status) Finished() bool {

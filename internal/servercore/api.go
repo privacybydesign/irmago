@@ -6,9 +6,7 @@ package servercore
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net/http"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -16,11 +14,8 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
-	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -47,7 +42,7 @@ func New(conf *server.Configuration) (*Server, error) {
 	})
 	s.stopScheduler = s.scheduler.Start()
 
-	return s, s.verifyConfiguration(s.conf)
+	return s, s.conf.Check()
 }
 
 func (s *Server) Stop() {
@@ -56,179 +51,6 @@ func (s *Server) Stop() {
 	}
 	s.stopScheduler <- true
 	s.sessions.stop()
-}
-
-func (s *Server) verifyIrmaConf(configuration *server.Configuration) error {
-	if s.conf.IrmaConfiguration == nil {
-		var (
-			err    error
-			exists bool
-		)
-		if s.conf.SchemesPath == "" {
-			s.conf.SchemesPath = irma.DefaultSchemesPath() // Returns an existing path
-		}
-		if exists, err = fs.PathExists(s.conf.SchemesPath); err != nil {
-			return server.LogError(err)
-		}
-		if !exists {
-			return server.LogError(errors.Errorf("Nonexisting schemes_path provided: %s", s.conf.SchemesPath))
-		}
-		s.conf.Logger.WithField("schemes_path", s.conf.SchemesPath).Info("Determined schemes path")
-		if s.conf.SchemesAssetsPath == "" {
-			s.conf.IrmaConfiguration, err = irma.NewConfiguration(s.conf.SchemesPath)
-		} else {
-			s.conf.IrmaConfiguration, err = irma.NewConfigurationFromAssets(s.conf.SchemesPath, s.conf.SchemesAssetsPath)
-		}
-		if err != nil {
-			return server.LogError(err)
-		}
-		if err = s.conf.IrmaConfiguration.ParseFolder(); err != nil {
-			return server.LogError(err)
-		}
-		if err = fs.EnsureDirectoryExists(s.conf.RevocationPath); err != nil {
-			return server.LogError(err)
-		}
-		s.conf.IrmaConfiguration.RevocationPath = s.conf.RevocationPath
-	}
-
-	if len(s.conf.IrmaConfiguration.SchemeManagers) == 0 {
-		s.conf.Logger.Infof("No schemes found in %s, downloading default (irma-demo and pbdf)", s.conf.SchemesPath)
-		if err := s.conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
-			return server.LogError(err)
-		}
-	}
-
-	if !s.conf.DisableSchemesUpdate {
-		if s.conf.SchemesUpdateInterval == 0 {
-			s.conf.SchemesUpdateInterval = 60
-		}
-		s.conf.IrmaConfiguration.AutoUpdateSchemes(uint(s.conf.SchemesUpdateInterval))
-	} else {
-		s.conf.SchemesUpdateInterval = 0
-	}
-
-	return nil
-}
-
-func (s *Server) verifyPrivateKeys(configuration *server.Configuration) error {
-	if s.conf.IssuerPrivateKeys == nil {
-		s.conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
-	}
-	if s.conf.IssuerPrivateKeysPath != "" {
-		files, err := ioutil.ReadDir(s.conf.IssuerPrivateKeysPath)
-		if err != nil {
-			return server.LogError(err)
-		}
-		for _, file := range files {
-			filename := file.Name()
-			if filepath.Ext(filename) != ".xml" || filename[0] == '.' || strings.Count(filename, ".") != 2 {
-				s.conf.Logger.WithField("file", filename).Infof("Skipping non-private key file encountered in private keys path")
-				continue
-			}
-			issid := irma.NewIssuerIdentifier(strings.TrimSuffix(filename, filepath.Ext(filename))) // strip .xml
-			if _, ok := s.conf.IrmaConfiguration.Issuers[issid]; !ok {
-				return server.LogError(errors.Errorf("Private key %s belongs to an unknown issuer", filename))
-			}
-			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(s.conf.IssuerPrivateKeysPath, filename))
-			if err != nil {
-				return server.LogError(err)
-			}
-			s.conf.IssuerPrivateKeys[issid] = sk
-		}
-	}
-	for issid, sk := range s.conf.IssuerPrivateKeys {
-		pk, err := s.conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
-		if err != nil {
-			return server.LogError(err)
-		}
-		if pk == nil {
-			return server.LogError(errors.Errorf("Missing public key belonging to private key %s-%d", issid.String(), sk.Counter))
-		}
-		if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-			return server.LogError(errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter))
-		}
-	}
-
-	return nil
-}
-
-func (s *Server) verifyRevocation(configuration *server.Configuration) error {
-	for credid, settings := range s.conf.RevocationServers {
-		if _, known := s.conf.IrmaConfiguration.CredentialTypes[credid]; !known {
-			return server.LogError(errors.Errorf("unknown credential type %s in revocation settings", credid))
-		}
-
-		db, err := s.conf.IrmaConfiguration.RevocationDB(credid)
-		if err != nil {
-			return server.LogError(err)
-		}
-
-		db.OnChange(func(record *revocation.Record) {
-			transport := irma.NewHTTPTransport("")
-			o := struct{}{}
-			for _, url := range settings.PostURLs {
-				if err := transport.Post(url+"/-/revocation/records", &o, &[]*revocation.Record{record}); err != nil {
-					s.conf.Logger.Warn("error sending revocation update", err)
-				}
-			}
-		})
-	}
-
-	return nil
-}
-
-func (s *Server) verifyURL(configuration *server.Configuration) error {
-	if s.conf.URL != "" {
-		if !strings.HasSuffix(s.conf.URL, "/") {
-			s.conf.URL = s.conf.URL + "/"
-		}
-		if !strings.HasPrefix(s.conf.URL, "https://") {
-			if !s.conf.Production || s.conf.DisableTLS {
-				s.conf.DisableTLS = true
-				s.conf.Logger.Warnf("TLS is not enabled on the url \"%s\" to which the IRMA app will connect. "+
-					"Ensure that attributes are encrypted in transit by either enabling TLS or adding TLS in a reverse proxy.", s.conf.URL)
-			} else {
-				return server.LogError(errors.Errorf("Running without TLS in production mode is unsafe without a reverse proxy. " +
-					"Either use a https:// URL or explicitly disable TLS."))
-			}
-		}
-	} else {
-		s.conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
-	}
-	return nil
-}
-
-func (s *Server) verifyEmail(configuration *server.Configuration) error {
-	if s.conf.Email != "" {
-		// Very basic sanity checks
-		if !strings.Contains(s.conf.Email, "@") || strings.Contains(s.conf.Email, "\n") {
-			return server.LogError(errors.New("Invalid email address specified"))
-		}
-		t := irma.NewHTTPTransport("https://metrics.privacybydesign.foundation/history")
-		t.SetHeader("User-Agent", "irmaserver")
-		var x string
-		_ = t.Post("email", &x, s.conf.Email)
-	}
-	return nil
-}
-
-func (s *Server) verifyConfiguration(configuration *server.Configuration) error {
-	if s.conf.Logger == nil {
-		s.conf.Logger = server.NewLogger(s.conf.Verbose, s.conf.Quiet, s.conf.LogJSON)
-	}
-	server.Logger = s.conf.Logger
-	irma.Logger = s.conf.Logger
-
-	// loop to avoid repetetive err != nil line triplets
-	for _, f := range []func(*server.Configuration) error{
-		s.verifyIrmaConf, s.verifyPrivateKeys, s.verifyRevocation, s.verifyURL, s.verifyEmail,
-	} {
-		if err := f(configuration); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (s *Server) validateRequest(request irma.SessionRequest) error {
