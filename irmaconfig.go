@@ -571,7 +571,32 @@ func (ks *issuerKeystore) PublicKey(counter uint) (*revocation.PublicKey, error)
 	return rpk, nil
 }
 
+func (conf *Configuration) RevocationUpdates(credid CredentialTypeIdentifier, index uint64) ([]*revocation.Record, error) {
+	var records []*revocation.Record
+	err := NewHTTPTransport(conf.CredentialTypes[credid].RevocationServer).
+		Get(fmt.Sprintf("/-/revocation/records/%s/%d", credid, index), &records)
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (conf *Configuration) RevocationUpdateDB(credid CredentialTypeIdentifier) error {
+	db, err := conf.RevocationDB(credid)
+	if err != nil {
+		return err
+	}
+	records, err := conf.RevocationUpdates(credid, db.Current.Index+1)
+	if err != nil {
+		return err
+	}
+	return db.AddRecords(records)
+}
+
 func (conf *Configuration) RevocationDB(credid CredentialTypeIdentifier) (*revocation.DB, error) {
+	if _, known := conf.CredentialTypes[credid]; !known {
+		return nil, errors.New("unknown credential type")
+	}
 	if conf.revDBs == nil {
 		conf.revDBs = make(map[CredentialTypeIdentifier]*revocation.DB)
 	}

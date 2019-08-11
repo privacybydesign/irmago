@@ -109,7 +109,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 				if len(cred.RevocationKey) == 0 {
 					return errors.New("revocationKey field unset on revocable credential")
 				}
-				if exists, err := db.KeyExists([]byte(cred.RevocationKey)); err != nil {
+				if exists, err := db.IssuanceRecordExists([]byte(cred.RevocationKey)); err != nil {
 					return err
 				} else if exists {
 					return errors.New("revocationKey already used")

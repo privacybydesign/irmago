@@ -243,10 +243,8 @@ func (s *Server) handlePostRevocationRecords(
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
-	for _, r := range records {
-		if err = db.Add(r.Message, r.PublicKeyIndex); err != nil {
-			return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
-		}
+	if err = db.AddRecords(records); err != nil {
+		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 	return nil, nil
 }
