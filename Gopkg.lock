@@ -372,11 +372,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:76af7360558e8354ace5de92cf5888dfdfdc960638a4604dc8eccc4db01839a8"
+  digest = "1:fd5705ffb618d324b4dac34e75907a32c7e1635e0e6988edbe304d06eea04d8b"
   name = "github.com/timshannon/bolthold"
   packages = ["."]
   pruneopts = "UT"
-  revision = "eed35b7556710c9108bd536193dae1ecb91f16fa"
+  revision = "a85bcc049a2edd8d12f9b3a5944fd72299959d19"
 
 [[projects]]
   digest = "1:39a425f98fb19427061a693fe6bf0683c9bddec4b25b17067e34fdb465e39cb9"
@@ -488,6 +488,7 @@
     "github.com/stretchr/testify/require",
     "github.com/timshannon/bolthold",
     "github.com/x-cray/logrus-prefixed-formatter",
+    "go.etcd.io/bbolt",
     "gopkg.in/antage/eventsource.v1",
   ]
   solver-name = "gps-cdcl"

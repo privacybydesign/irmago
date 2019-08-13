@@ -59,10 +59,8 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+1)
 
 	// Do signature session
-	/* Test disabled because of bolthold issue https://github.com/timshannon/bolthold/issues/68
-	 * Log storing and the timestamp server use different encoding mechanisms in bolthold, this is not supported.
-	 * This is only a test issue and no problem for production.
-
+	// This test might fail due to bolthold issue https://github.com/timshannon/bolthold/issues/68
+	// This issue is fixed, so just run `dep ensure -update github.com/timshannon/bolthold`
 	request = getSigningRequest(attrid)
 	sessionHelper(t, request, "signature", client)
 	logs, err = client.LoadLogs(time.Now(), 100)
@@ -79,7 +77,6 @@ func TestLogging(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.NotEmpty(t, attrs)
 	require.Equal(t, attrid, attrs[0][0].Identifier)
-	*/
 
 	test.ClearTestStorage(t)
 }
