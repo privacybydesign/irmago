@@ -98,6 +98,7 @@ func CreateTestStorage(t *testing.T) {
 	tmp := filepath.Join(FindTestdataFolder(t), "tmp")
 	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "client")))
 	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "revocation")))
+	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "issuer")))
 }
 
 func SetupTestStorage(t *testing.T) {

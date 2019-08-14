@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -36,9 +36,8 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 
 	// we include the latest revocation records for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
-	// TODO revocation database update mechanism
 	var err error
-	if err = session.request.Base().SetRevocationRecords(session.conf.IrmaConfiguration); err != nil {
+	if err = session.conf.IrmaConfiguration.RevocationSetRecords(session.request.Base()); err != nil {
 		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 
@@ -200,30 +199,10 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-
-		var witness *revocation.Witness
-		var nonrevAttr *big.Int
-		if session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
-			db, err := session.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
-			if err != nil {
-				return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
-			}
-			if db.Enabled() {
-				if witness, err = sk.RevocationGenerateWitness(&db.Current); err != nil {
-					return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
-				}
-				nonrevAttr = witness.E
-				if err = db.AddIssuanceRecord(&revocation.IssuanceRecord{
-					Key:        cred.RevocationKey,
-					Attr:       nonrevAttr,
-					Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
-					ValidUntil: attributes.Expiry().UnixNano(),
-				}); err != nil {
-					return nil, session.fail(server.ErrorUnknown, "failed to save nonrevocation witness")
-				}
-			}
+		witness, nonrevAttr, err := session.handleRevocation(cred, attributes, sk)
+		if err != nil {
+			return nil, session.fail(server.ErrorIssuanceFailed, err.Error()) // TODO error type
 		}
-
 		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, nonrevAttr, commitments.Nonce2)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
@@ -252,7 +231,7 @@ func (s *Server) handlePostRevocationRecords(
 func (s *Server) handleGetRevocationRecords(
 	cred irma.CredentialTypeIdentifier, index int,
 ) ([]*revocation.Record, *irma.RemoteError) {
-	if _, ok := s.conf.RevocationServers[cred]; ok {
+	if _, ok := s.conf.RevocationServers[cred]; !ok {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
 	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
@@ -264,4 +243,34 @@ func (s *Server) handleGetRevocationRecords(
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 	return records, nil
+}
+
+func (s *Server) handleRevoke(
+	cred irma.CredentialTypeIdentifier, msg signed.Message,
+) (string, *irma.RemoteError) {
+	sk, err := s.conf.IrmaConfiguration.PrivateKey(cred.IssuerIdentifier())
+	if err != nil {
+		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	}
+	if sk == nil {
+		return "", server.RemoteError(server.ErrorUnknownPublicKey, "")
+	}
+	rsk, err := sk.RevocationKey()
+	if err != nil {
+		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	}
+
+	var cmd revocation.Command
+	if err = signed.UnmarshalVerify(&rsk.ECDSA.PublicKey, msg, &cmd); err != nil {
+		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	}
+
+	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
+	if err != nil {
+		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	}
+	if err = db.RevokeAttr(rsk, cmd.E); err != nil {
+		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	}
+	return "OK", nil
 }

@@ -342,11 +342,13 @@ func TestOptionalDisclosure(t *testing.T) {
 }
 
 func editDB(t *testing.T, path string, keystore revocation.Keystore, enabled bool, f func(*revocation.DB)) {
+	StopRevocationServer()
 	db, err := revocation.LoadDB(path, keystore)
 	require.NoError(t, err)
 	require.True(t, !enabled || db.Enabled())
 	f(db)
 	require.NoError(t, db.Close())
+	StartRevocationServer(t)
 }
 
 func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
@@ -364,7 +366,7 @@ func TestRevocation(t *testing.T) {
 	client, _ := parseStorage(t)
 	iss := irma.NewIssuerIdentifier("irma-demo.MijnOverheid")
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
-	dbPath := filepath.Join(testdata, "tmp", "revocation", cred.String())
+	dbPath := filepath.Join(testdata, "tmp", "issuer", cred.String())
 	keystore := client.Configuration.RevocationKeystore(iss)
 	sk, err := client.Configuration.PrivateKey(iss)
 	require.NoError(t, err)
@@ -372,6 +374,7 @@ func TestRevocation(t *testing.T) {
 	require.NoError(t, err)
 
 	// enable revocation for our credential type by creating and saving an initial accumulator
+	StartRevocationServer(t)
 	editDB(t, dbPath, keystore, false, func(db *revocation.DB) {
 		require.NoError(t, db.EnableRevocation(revsk))
 	})

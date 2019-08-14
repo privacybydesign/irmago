@@ -76,6 +76,7 @@ type Permissions struct {
 	Disclosing []string `json:"disclose_perms" mapstructure:"disclose_perms"`
 	Signing    []string `json:"sign_perms" mapstructure:"sign_perms"`
 	Issuing    []string `json:"issue_perms" mapstructure:"issue_perms"`
+	Revoking   []string `json:"revoke_perms" mapstructure:"revoke_perms"`
 }
 
 // Requestor contains all configuration (disclosure or verification permissions and authentication)
@@ -142,6 +143,24 @@ func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action,
 	})
 	if err != nil {
 		return false, err.Error()
+	}
+	return true, ""
+}
+
+func (conf *Configuration) CanRevoke(requestor string, cred irma.CredentialTypeIdentifier) (bool, string) {
+	permissions := append(conf.Requestors[requestor].Revoking, conf.Revoking...)
+	if len(permissions) == 0 { // requestor is not present in the permissions
+		return false, ""
+	}
+	sk, err := conf.IrmaConfiguration.PrivateKey(cred.IssuerIdentifier())
+	if err != nil {
+		return false, err.Error()
+	}
+	if sk != nil {
+		return false, "private key not found"
+	}
+	if !contains(permissions, cred.String()) {
+		return false, cred.String()
 	}
 	return true, ""
 }
@@ -295,13 +314,15 @@ func (conf *Configuration) validatePermissions() error {
 }
 
 func (conf *Configuration) validatePermissionSet(requestor string, requestorperms Permissions) []string {
+	// TODO other concistency checks with the rest of the Configuration
 	var errs []string
 	perms := map[string][]string{
 		"issuing":    requestorperms.Issuing,
 		"signing":    requestorperms.Signing,
 		"disclosing": requestorperms.Disclosing,
+		"revoking":   requestorperms.Revoking,
 	}
-	permissionlength := map[string]int{"issuing": 3, "signing": 4, "disclosing": 4}
+	permissionlength := map[string]int{"issuing": 3, "signing": 4, "disclosing": 4, "revoking": 3}
 
 	for typ, typeperms := range perms {
 		for _, permission := range typeperms {

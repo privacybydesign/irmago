@@ -21,6 +21,7 @@ const (
 	LDContextDisclosureRequest = "https://irma.app/ld/request/disclosure/v2"
 	LDContextSignatureRequest  = "https://irma.app/ld/request/signature/v2"
 	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
+	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
 )
 
 // BaseRequest contains the context and nonce for an IRMA session.
@@ -165,6 +166,11 @@ type IdentityProviderJwt struct {
 	Request *IdentityProviderRequest `json:"iprequest"`
 }
 
+type RevocationJwt struct {
+	ServerJwt
+	Request *RevocationRequest `json:"revrequest"`
+}
+
 // A RequestorJwt contains an IRMA session object.
 type RequestorJwt interface {
 	Action() Action
@@ -186,6 +192,19 @@ type AttributeRequest struct {
 	Type    AttributeTypeIdentifier `json:"type"`
 	Value   *string                 `json:"value,omitempty"`
 	NotNull bool                    `json:"notNull,omitempty"`
+}
+
+type RevocationRequest struct {
+	LDContext      string                   `json:"@context,omitempty"`
+	CredentialType CredentialTypeIdentifier `json:"type"`
+	Key            string                   `json:"key"`
+}
+
+func (r *RevocationRequest) Validate() error {
+	if r.LDContext == LDContextRevocationRequest {
+		return errors.New("not a revocation request")
+	}
+	return nil
 }
 
 var (
@@ -212,24 +231,6 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 }
 
 const revocationUpdateCount = 5
-
-func (b *BaseRequest) SetRevocationRecords(conf *Configuration) error {
-	if len(b.Revocation) == 0 {
-		return nil
-	}
-	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]*revocation.Record, len(b.Revocation))
-	for _, credid := range b.Revocation {
-		db, err := conf.RevocationDB(credid)
-		if err != nil {
-			return err
-		}
-		b.RevocationUpdates[credid], err = db.LatestRecords(revocationUpdateCount)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // CredentialTypes returns an array of all credential types occuring in this conjunction.
 func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
@@ -905,6 +906,13 @@ func (claims *IdentityProviderJwt) Valid() error {
 	}
 	if time.Time(claims.IssuedAt).After(time.Now()) {
 		return errors.New("Issuance jwt not yet valid")
+	}
+	return nil
+}
+
+func (claims *RevocationJwt) Valid() error {
+	if time.Time(claims.IssuedAt).After(time.Now()) {
+		return errors.New("Signature jwt not yet valid")
 	}
 	return nil
 }

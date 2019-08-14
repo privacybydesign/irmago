@@ -1,7 +1,6 @@
 package irmaclient
 
 import (
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 )
@@ -58,9 +57,19 @@ func (cred *credential) PrepareNonrevocation(conf *irma.Configuration, request i
 	} else if updated {
 		cred.DiscardRevocationCache()
 	}
-	if nonrev && cred.NonRevocationWitness.Index < revupdates[len(revupdates)-1].EndIndex {
-		return false, errors.New("failed to update nonrevocation witness")
-		// TODO download missing update messages from issuer and retry
+
+	// TODO (in both branches): attach our newer updates to response
+	if nonrev && cred.NonRevocationWitness.Index >= revupdates[len(revupdates)-1].EndIndex {
+		return nonrev, nil
 	}
-	return nonrev, nil
+
+	// nonrevocation witness is still out of date after applying the updates from the request,
+	// i.e. we were too far behind. Update from revocation server.
+	records, err := conf.RevocationGetUpdates(credtype, cred.NonRevocationWitness.Index+1)
+	if err != nil {
+		return nonrev, err
+	}
+	_, err = cred.NonRevocationWitness.Update(records, keystore)
+	return nonrev, err
+
 }

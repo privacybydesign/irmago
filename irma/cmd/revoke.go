@@ -10,19 +10,43 @@ var revokeCmd = &cobra.Command{
 	Short: "Revoke a previously issued credential identified by a given key",
 	Args:  cobra.RangeArgs(2, 3),
 	Run: func(cmd *cobra.Command, args []string) {
-		path := irma.DefaultDataPath()
-		if len(args) > 2 {
-			path = args[2]
+		irmaconf := irma.DefaultSchemesPath()
+		if len(args) == 3 {
+			irmaconf = args[2]
+		} else if irmaconf == "" {
+			die("Failed to find default irma_configuration path", nil)
 		}
 
-		db, sk := configureRevocation(cmd, path, args[0])
-		if err := db.Revoke(sk, []byte(args[1])); err != nil {
-			die("failed to revoke", err)
+		conf, err := irma.NewConfigurationReadOnly(irmaconf)
+		if err != nil {
+			die("", err)
+		}
+		if err = conf.ParseFolder(); err != nil {
+			die("", err)
+		}
+		cred := irma.NewCredentialTypeIdentifier(args[0])
+		if _, known := conf.CredentialTypes[cred]; !known {
+			die("unknown credential type", nil)
+		}
+
+		flags := cmd.Flags()
+		authmethod, _ := flags.GetString("authmethod")
+		key, _ := flags.GetString("key")
+		name, _ := flags.GetString("name")
+
+		_ = &irma.RevocationRequest{
+			LDContext:      irma.LDContextRevocationRequest,
+			CredentialType: cred,
+			Key:            args[1],
 		}
 	},
 }
 
 func init() {
-	revokeCmd.Flags().StringP("privatekey", "s", "", `Issuer private key for specified credential type`)
+	flags := revocationCmd.Flags()
+	flags.StringP("authmethod", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
+	flags.String("key", "", "Key to sign request with")
+	flags.String("name", "", "Requestor name")
+
 	revocationCmd.AddCommand(revokeCmd)
 }

@@ -164,6 +164,7 @@ const (
 	ActionSigning       = Action("signing")
 	ActionIssuing       = Action("issuing")
 	ActionRedirect      = Action("redirect")
+	ActionRevoking      = Action("revoking")
 	ActionUnknown       = Action("unknown")
 )
 

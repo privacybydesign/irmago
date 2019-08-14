@@ -17,16 +17,18 @@ import (
 )
 
 var (
-	httpServer      *http.Server
-	irmaServer      *irmaserver.Server
-	requestorServer *requestorserver.Server
+	httpServer       *http.Server
+	irmaServer       *irmaserver.Server
+	revHttpServer    *http.Server
+	revocationServer *irmaserver.Server
+	requestorServer  *requestorserver.Server
 
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
 )
 
 func init() {
-	logger.Level = logrus.ErrorLevel
+	logger.Level = logrus.TraceLevel
 	logger.Formatter = &prefixed.TextFormatter{ForceFormatting: true, ForceColors: true}
 }
 
@@ -45,6 +47,32 @@ func StartRequestorServer(configuration *requestorserver.Configuration) {
 
 func StopRequestorServer() {
 	requestorServer.Stop()
+}
+
+func StartRevocationServer(t *testing.T) {
+	var err error
+	revocationServer, err = irmaserver.New(&server.Configuration{
+		Logger:               logger,
+		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
+		RevocationPath:       filepath.Join(testdata, "tmp", "issuer"),
+		DisableSchemesUpdate: true,
+		RevocationServers: map[irma.CredentialTypeIdentifier]server.RevocationServer{
+			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {},
+		},
+	})
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", revocationServer.HandlerFunc())
+	revHttpServer = &http.Server{Addr: ":48683", Handler: mux}
+	go func() {
+		_ = revHttpServer.ListenAndServe()
+	}()
+}
+
+func StopRevocationServer() {
+	revocationServer.Stop()
+	_ = revHttpServer.Close()
 }
 
 func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {

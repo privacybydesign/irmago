@@ -11,6 +11,8 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -73,6 +75,40 @@ func (session *session) checkCache(message []byte, expectedStatus server.Status)
 }
 
 // Issuance helpers
+
+func (session *session) handleRevocation(
+	cred *irma.CredentialRequest, attributes *irma.AttributeList, sk *gabi.PrivateKey,
+) (witness *revocation.Witness, nonrevAttr *big.Int, err error) {
+	if !session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
+		return
+	}
+	if _, ours := session.conf.RevocationServers[cred.CredentialTypeID]; !ours {
+		// ensure the client always gets an up to date nonrevocation witness
+		// TODO: post IssuanceRecord to remote?
+		if err = session.conf.IrmaConfiguration.RevocationUpdateDB(cred.CredentialTypeID); err != nil {
+			return
+		}
+	}
+	db, err := session.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
+	if err != nil {
+		return
+	}
+	if db.Enabled() {
+		if witness, err = sk.RevocationGenerateWitness(&db.Current); err != nil {
+			return
+		}
+		nonrevAttr = witness.E
+		if err = db.AddIssuanceRecord(&revocation.IssuanceRecord{
+			Key:        cred.RevocationKey,
+			Attr:       nonrevAttr,
+			Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
+			ValidUntil: attributes.Expiry().UnixNano(),
+		}); err != nil {
+			return nil, nil, err
+		}
+	}
+	return
+}
 
 func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	for _, cred := range request.Credentials {

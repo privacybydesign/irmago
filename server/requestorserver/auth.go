@@ -28,6 +28,10 @@ type Authenticator interface {
 	Authenticate(
 		headers http.Header, body []byte,
 	) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError)
+
+	AuthenticateRevocation(
+		headers http.Header, body []byte,
+	) (applies bool, request *irma.RevocationRequest, requestor string, err *irma.RemoteError)
 }
 
 type AuthenticationMethod string
@@ -68,6 +72,17 @@ func (NilAuthenticator) Authenticate(
 	return true, request, "", nil
 }
 
+func (NilAuthenticator) AuthenticateRevocation(headers http.Header, body []byte) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
+	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
+		return false, nil, "", nil
+	}
+	r := &irma.RevocationRequest{}
+	if err := irma.UnmarshalValidate(body, r); err != nil {
+		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
+	}
+	return true, r, "", nil
+}
+
 func (NilAuthenticator) Initialize(name string, requestor Requestor) error {
 	return nil
 }
@@ -76,6 +91,10 @@ func (hauth *HmacAuthenticator) Authenticate(
 	headers http.Header, body []byte,
 ) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError) {
 	return jwtAuthenticate(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys, hauth.maxRequestAge)
+}
+
+func (hauth *HmacAuthenticator) AuthenticateRevocation(headers http.Header, body []byte) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
+	return jwtAutheticateRevocation(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys, hauth.maxRequestAge)
 }
 
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
@@ -99,6 +118,10 @@ func (pkauth *PublicKeyAuthenticator) Authenticate(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	return jwtAuthenticate(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys, pkauth.maxRequestAge)
+}
+
+func (pkauth *PublicKeyAuthenticator) AuthenticateRevocation(headers http.Header, body []byte) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
+	return jwtAutheticateRevocation(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys, pkauth.maxRequestAge)
 }
 
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
@@ -132,6 +155,22 @@ func (pskauth *PresharedKeyAuthenticator) Authenticate(
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
 	return true, request, requestor, nil
+}
+
+func (pskauth *PresharedKeyAuthenticator) AuthenticateRevocation(headers http.Header, body []byte) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
+	auth := headers.Get("Authorization")
+	if auth == "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
+		return false, nil, "", nil
+	}
+	requestor, ok := pskauth.presharedkeys[auth]
+	if !ok {
+		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "")
+	}
+	r := &irma.RevocationRequest{}
+	if err := irma.UnmarshalValidate(body, r); err != nil {
+		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
+	}
+	return true, r, requestor, nil
 }
 
 func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requestor) error {
@@ -169,29 +208,15 @@ func jwtKeyExtractor(publickeys map[string]interface{}) func(token *jwt.Token) (
 func jwtAuthenticate(
 	headers http.Header, body []byte, signatureAlg string, keys map[string]interface{}, maxRequestAge int,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
-	// Read JWT and check its type
-	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "text/plain") {
-		return false, nil, "", nil
-	}
-	requestorJwt := string(body)
-
-	// We need to establish the signature method with which the JWT was signed. We do this by just
-	// inspecting the JWT header here, before the signature is verified (which is done below). I suppose
-	// it would be more idiomatic to have the KeyFunc which is fed to jwt.ParseWithClaims() perform this
-	// task, but then the KeyFunc would need access to all public keys here instead of the ones belonging
-	// to the signature algorithm we are expecting (specified by signatureAlg). Security-wise it makes no
-	// difference: either way the alg header is examined before the signature is verified.
-	alg, err := jwtSignatureAlg(requestorJwt)
-	if err != nil || alg != signatureAlg {
-		// If err != nil, ie. we failed to determine the JWT signature algorithm, we assume that the
-		// request is not meant for this authenticator. So we don't return err
+	if !jwtApplies(headers, body, signatureAlg) {
 		return false, nil, "", nil
 	}
 
 	// Verify JWT signature. We do not yet store the JWT contents here, because we need to know the session type first
 	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.
 	claims := &jwt.StandardClaims{}
-	_, err = jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
+	requestorJwt := string(body)
+	_, err := jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
 	if err != nil {
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
@@ -210,6 +235,44 @@ func jwtAuthenticate(
 
 	requestor := claims.Issuer // presence is ensured by jwtKeyExtractor
 	return true, parsedJwt.RequestorRequest(), requestor, nil
+}
+
+func jwtAutheticateRevocation(
+	headers http.Header, body []byte, signatureAlg string, keys map[string]interface{}, maxRequestAge int,
+) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
+	if !jwtApplies(headers, body, signatureAlg) {
+		return false, nil, "", nil
+	}
+	s := &irma.RevocationJwt{}
+	if _, err := jwt.ParseWithClaims(string(body), s, jwtKeyExtractor(keys)); err != nil {
+		return false, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
+	}
+	if time.Unix(time.Time(s.IssuedAt).Unix(), 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
+		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
+	}
+	return true, s.Request, s.ServerName, nil
+}
+
+func jwtApplies(headers http.Header, body []byte, signatureAlg string) bool {
+	// Read JWT and check its type
+	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "text/plain") {
+		return false
+	}
+
+	// We need to establish the signature method with which the JWT was signed. We do this by just
+	// inspecting the JWT header here, before the signature is verified (which is done below). I suppose
+	// it would be more idiomatic to have the KeyFunc which is fed to jwt.ParseWithClaims() perform this
+	// task, but then the KeyFunc would need access to all public keys here instead of the ones belonging
+	// to the signature algorithm we are expecting (specified by signatureAlg). Security-wise it makes no
+	// difference: either way the alg header is examined before the signature is verified.
+	alg, err := jwtSignatureAlg(string(body))
+	if err != nil || alg != signatureAlg {
+		// If err != nil, ie. we failed to determine the JWT signature algorithm, we assume that the
+		// request is not meant for this authenticator. So we don't return err
+		return false
+	}
+
+	return true
 }
 
 func jwtSignatureAlg(j string) (string, error) {

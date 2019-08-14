@@ -30,7 +30,6 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
-	"github.com/hashicorp/go-multierror"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -539,91 +538,6 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {
 	return conf.matchKeyPattern(issuerid, pubkeyPattern)
-}
-
-func (conf *Configuration) RevocationKeystore(issuerid IssuerIdentifier) revocation.Keystore {
-	return &issuerKeystore{issid: issuerid, conf: conf}
-}
-
-// issuerKeystore implements revocation.Keystore.
-type issuerKeystore struct {
-	issid IssuerIdentifier
-	conf  *Configuration
-}
-
-var _ revocation.Keystore = (*issuerKeystore)(nil)
-
-func (ks *issuerKeystore) PublicKey(counter uint) (*revocation.PublicKey, error) {
-	pk, err := ks.conf.PublicKey(ks.issid, int(counter))
-	if err != nil {
-		return nil, err
-	}
-	if pk == nil {
-		return nil, errors.Errorf("public key %d of issuer %s not found", counter, ks.issid)
-	}
-	if !pk.RevocationSupported() {
-		return nil, errors.Errorf("public key %d of issuer %s does not support revocation", counter, ks.issid)
-	}
-	rpk, err := pk.RevocationKey()
-	if err != nil {
-		return nil, err
-	}
-	return rpk, nil
-}
-
-func (conf *Configuration) RevocationUpdates(credid CredentialTypeIdentifier, index uint64) ([]*revocation.Record, error) {
-	var records []*revocation.Record
-	err := NewHTTPTransport(conf.CredentialTypes[credid].RevocationServer).
-		Get(fmt.Sprintf("/-/revocation/records/%s/%d", credid, index), &records)
-	if err != nil {
-		return nil, err
-	}
-	return records, nil
-}
-
-func (conf *Configuration) RevocationUpdateDB(credid CredentialTypeIdentifier) error {
-	db, err := conf.RevocationDB(credid)
-	if err != nil {
-		return err
-	}
-	records, err := conf.RevocationUpdates(credid, db.Current.Index+1)
-	if err != nil {
-		return err
-	}
-	return db.AddRecords(records)
-}
-
-func (conf *Configuration) RevocationDB(credid CredentialTypeIdentifier) (*revocation.DB, error) {
-	if _, known := conf.CredentialTypes[credid]; !known {
-		return nil, errors.New("unknown credential type")
-	}
-	if conf.revDBs == nil {
-		conf.revDBs = make(map[CredentialTypeIdentifier]*revocation.DB)
-	}
-	if conf.revDBs[credid] == nil {
-		var err error
-		db, err := revocation.LoadDB(
-			filepath.Join(conf.RevocationPath, credid.String()),
-			conf.RevocationKeystore(credid.IssuerIdentifier()),
-		)
-		if err != nil {
-			return nil, err
-		}
-		conf.revDBs[credid] = db
-	}
-	return conf.revDBs[credid], nil
-}
-
-func (conf *Configuration) Close() error {
-	merr := &multierror.Error{}
-	var err error
-	for _, db := range conf.revDBs {
-		if err = db.Close(); err != nil {
-			merr = multierror.Append(merr, err)
-		}
-	}
-	conf.revDBs = nil
-	return merr.ErrorOrNil()
 }
 
 func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (i []int, err error) {

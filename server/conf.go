@@ -77,9 +77,12 @@ func (conf *Configuration) Check() error {
 
 	// loop to avoid repetetive err != nil line triplets
 	for _, f := range []func() error{
-		conf.verifyIrmaConf, conf.verifyPrivateKeys, conf.verifyRevocation, conf.verifyURL, conf.verifyEmail,
+		conf.verifyIrmaConf, conf.verifyPrivateKeys, conf.verifyURL, conf.verifyEmail, conf.verifyRevocation,
 	} {
 		if err := f(); err != nil {
+			if e := conf.IrmaConfiguration.Close(); e != nil {
+				_ = LogError(err)
+			}
 			return err
 		}
 	}

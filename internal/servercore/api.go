@@ -28,6 +28,10 @@ type Server struct {
 }
 
 func New(conf *server.Configuration) (*Server, error) {
+	if err := conf.Check(); err != nil {
+		return nil, err
+	}
+
 	s := &Server{
 		conf:      conf,
 		scheduler: gocron.NewScheduler(),
@@ -40,9 +44,18 @@ func New(conf *server.Configuration) (*Server, error) {
 	s.scheduler.Every(10).Seconds().Do(func() {
 		s.sessions.deleteExpired()
 	})
+
+	// TODO: how do we not update revocation state for credential types of which we are the authoritative server?
+	//s.scheduler.Every(5).Minutes().Do(func() {
+	//	if err := s.conf.IrmaConfiguration.RevocationUpdateAll(); err != nil {
+	//		s.conf.Logger.Error("failed to update revocation database:")
+	//		_ = server.LogError(err)
+	//	}
+	//})
+
 	s.stopScheduler = s.scheduler.Start()
 
-	return s, s.conf.Check()
+	return s, nil
 }
 
 func (s *Server) Stop() {
@@ -120,17 +133,17 @@ func (s *Server) CancelSession(token string) error {
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {
-	client := regexp.MustCompile("session/(\\w+)/?(|commitments|proofs|status|statusevents)$")
-	matches := client.FindStringSubmatch(path)
-	if len(matches) == 3 {
-		return matches[1], matches[2], nil, nil
-	}
-
 	rev := regexp.MustCompile("-/revocation/(records)/?(.*)$")
-	matches = rev.FindStringSubmatch(path)
+	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")
 		return "", matches[1], args, nil
+	}
+
+	client := regexp.MustCompile("session/(\\w+)/?(|commitments|proofs|status|statusevents)$")
+	matches = client.FindStringSubmatch(path)
+	if len(matches) == 3 {
+		return matches[1], matches[2], nil, nil
 	}
 
 	return "", "", nil, server.LogWarning(errors.Errorf("Invalid URL: %s", path))
@@ -368,6 +381,13 @@ func (s *Server) handleRevocationMessage(
 		}
 		return server.JsonResponse(s.handlePostRevocationRecords(cred, records))
 	}
+	//if noun == "revoke" && method == http.MethodPost {
+	//	if len(args) != 1 {
+	//		return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects 1 url arguments"))
+	//	}
+	//	cred := irma.NewCredentialTypeIdentifier(args[0])
+	//	return server.JsonResponse(s.handleRevoke(cred, message))
+	//}
 
 	return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
 }

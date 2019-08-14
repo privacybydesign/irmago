@@ -295,13 +295,17 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// one of them is applicable and able to authenticate the request.
 	var (
 		rrequest  irma.RequestorRequest
-		request   irma.SessionRequest
+		revreq    *irma.RevocationRequest
 		requestor string
 		rerr      *irma.RemoteError
 		applies   bool
 	)
 	for _, authenticator := range authenticators { // rrequest abbreviates "requestor request"
 		applies, rrequest, requestor, rerr = authenticator.Authenticate(r.Header, body)
+		if applies || rerr != nil {
+			break
+		}
+		applies, revreq, requestor, rerr = authenticator.AuthenticateRevocation(r.Header, body)
 		if applies || rerr != nil {
 			break
 		}
@@ -323,9 +327,17 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if rrequest != nil {
+		s.handleCreateSession(w, requestor, rrequest)
+	} else {
+		s.handleCreateRevocation(w, requestor, revreq)
+	}
+}
+
+func (s *Server) handleCreateSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
 	// Authorize request: check if the requestor is allowed to verify or issue
 	// the requested attributes or credentials
-	request = rrequest.SessionRequest()
+	request := rrequest.SessionRequest()
 	if request.Action() == irma.ActionIssuing {
 		allowed, reason := s.conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
 		if !allowed {
@@ -377,6 +389,20 @@ func (s *Server) handleCreateStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.WriteJson(w, qr)
+}
+
+func (s *Server) handleCreateRevocation(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
+	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
+	if !allowed {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "message": reason}).
+			Warn("Requestor not authorized to revoke credential; full request: ", server.ToJson(request))
+		server.WriteError(w, server.ErrorUnauthorized, reason)
+		return
+	}
+	if err := s.conf.IrmaConfiguration.Revoke(request.CredentialType, request.Key); err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+	}
+	server.WriteString(w, "OK")
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
