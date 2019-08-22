@@ -3,9 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"io/ioutil"
-	"math"
 	"os"
-
 	"path/filepath"
 	"time"
 
@@ -125,12 +123,7 @@ func (s *storage) StoreLogs(logs []*LogEntry) error {
 }
 
 func (s *storage) AddLogEntry(entry *LogEntry) error {
-	return s.db.Upsert(s.logEntryKey(entry), entry)
-}
-
-func (s *storage) logEntryKey(entry *LogEntry) interface{} {
-	// Time is inverted to reverse sorting order
-	return math.MaxInt64 ^ time.Time(entry.Time).UnixNano()
+	return s.db.Insert(bolthold.NextSequence(), entry)
 }
 
 func (s *storage) StorePreferences(prefs Preferences) error {
@@ -206,12 +199,38 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 	return ksses, nil
 }
 
-func (s *storage) LoadLogs(before time.Time, max int) ([]*LogEntry, error) {
-	// Bolthold key uses inverted times, so before is inverted
+// Returns all logs stored before log with ID 'startBeforeIndex' sorted from new to old with a maximum result
+// length of 'max'. If startBeforeIndex is "". no before is used and the newest logs will be returned.
+func (s *storage) LoadLogsBefore(startBeforeIndex string, max int) ([]*LogEntry, error) {
 	var logs []*LogEntry
-	return logs, s.db.Find(&logs,
-		bolthold.Where(bolthold.Key).Gt(math.MaxInt64^before.UnixNano()).Limit(max),
-	)
+	return logs, s.db.Bolt().View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte("LogEntry"))
+		if bucket == nil {
+			return nil
+		}
+		c := bucket.Cursor()
+
+		var k, v []byte
+		if startBeforeIndex == "" {
+			k, v = c.Last()
+		} else {
+			c.Seek([]byte(startBeforeIndex))
+			k, v = c.Prev()
+		}
+
+		for ; k != nil && len(logs) < max; k, v = c.Prev() {
+			var log LogEntry
+			if err := json.Unmarshal(v, &log); err != nil {
+				return err
+			}
+
+			// Manually set ID in struct, because somehow bolthold does not store this (also not when uint64 is used)
+			log.ID = string(k)
+
+			logs = append(logs, &log)
+		}
+		return nil
+	})
 }
 
 func (s *storage) LoadUpdates() (updates []update, err error) {

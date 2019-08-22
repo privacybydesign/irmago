@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/timshannon/bolthold"
 	"time"
 
 	"github.com/privacybydesign/irmago"
@@ -60,7 +61,7 @@ var clientUpdates = []func(client *Client) error{
 		// Open one bolt transaction to process all our log entries in
 		err = client.storage.db.Bolt().Update(func(tx *bbolt.Tx) error {
 			for _, log := range logs {
-				// As log.Request is a json.RawMessage it woult not get updated to the new session request
+				// As log.Request is a json.RawMessage it would not get updated to the new session request
 				// format by re-marshaling the containing struct, as normal struct members would,
 				// so update it manually now by marshaling the session request into it.
 				req, err := log.SessionRequest()
@@ -71,7 +72,7 @@ var clientUpdates = []func(client *Client) error{
 				if err != nil {
 					return err
 				}
-				if err = client.storage.db.TxUpsert(tx, client.storage.logEntryKey(log), log); err != nil {
+				if err = client.storage.db.TxUpsert(tx, bolthold.NextSequence(), log); err != nil {
 					return err
 				}
 			}
