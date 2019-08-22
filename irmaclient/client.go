@@ -1,9 +1,9 @@
 package irmaclient
 
 import (
+	"path/filepath"
 	"strconv"
 	"time"
-	"path/filepath"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/getsentry/raven-go"
@@ -140,7 +140,7 @@ func New(
 		handler:               handler,
 	}
 
-	cm.Configuration, err = irma.NewConfigurationFromAssets(filepath.Join(storagePath,"irma_configuration"), irmaConfigurationPath)
+	cm.Configuration, err = irma.NewConfigurationFromAssets(filepath.Join(storagePath, "irma_configuration"), irmaConfigurationPath)
 	if err != nil {
 		return nil, err
 	}
@@ -962,9 +962,16 @@ func (client *Client) KeyshareRemoveAll() error {
 
 // Add, load and store log entries
 
-// LoadLogs returns the log entries of past events.
-func (client *Client) LoadLogs(before time.Time, max int) ([]*LogEntry, error) {
-	return client.storage.LoadLogs(before, max)
+// LoadNewestLogs returns the log entries of latest past events
+// (sorted from new to old, the result length is limited to max).
+func (client *Client) LoadNewestLogs(max int) ([]*LogEntry, error) {
+	return client.storage.LoadLogsBefore("", max)
+}
+
+// LoadLogsBefore returns the log entries of past events that took place before log entry with ID 'beforeIndex'
+// (sorted from new to old, the result length is limited to max).
+func (client *Client) LoadLogsBefore(beforeIndex string, max int) ([]*LogEntry, error) {
+	return client.storage.LoadLogsBefore(beforeIndex, max)
 }
 
 // SetCrashReportingPreference toggles whether or not crash reports should be sent to Sentry.
