@@ -301,7 +301,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		applies   bool
 	)
 	for _, authenticator := range authenticators { // rrequest abbreviates "requestor request"
-		applies, rrequest, requestor, rerr = authenticator.Authenticate(r.Header, body)
+		applies, rrequest, requestor, rerr = authenticator.AuthenticateSession(r.Header, body)
 		if applies || rerr != nil {
 			break
 		}

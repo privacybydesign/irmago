@@ -20,12 +20,12 @@ type Authenticator interface {
 	// Used to parse keys or populate caches for later use.
 	Initialize(name string, requestor Requestor) error
 
-	// Authenticate checks, given the HTTP header and POST body, if the authenticator is known
+	// AuthenticateSession checks, given the HTTP header and POST body, if the authenticator is known
 	// and allowed to submit session requests. It returns whether or not the current authenticator
 	// is applicable to this sesion requests; the request itself; the name of the requestor;
 	// or an error (which is only non-nil if applies is true; i.e. this authenticator applies but
 	// it was not able to successfully authenticate the request).
-	Authenticate(
+	AuthenticateSession(
 		headers http.Header, body []byte,
 	) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError)
 
@@ -59,7 +59,7 @@ type NilAuthenticator struct{}
 
 var authenticators map[AuthenticationMethod]Authenticator
 
-func (NilAuthenticator) Authenticate(
+func (NilAuthenticator) AuthenticateSession(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
@@ -87,7 +87,7 @@ func (NilAuthenticator) Initialize(name string, requestor Requestor) error {
 	return nil
 }
 
-func (hauth *HmacAuthenticator) Authenticate(
+func (hauth *HmacAuthenticator) AuthenticateSession(
 	headers http.Header, body []byte,
 ) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError) {
 	return jwtAuthenticate(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys, hauth.maxRequestAge)
@@ -114,7 +114,7 @@ func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) err
 
 }
 
-func (pkauth *PublicKeyAuthenticator) Authenticate(
+func (pkauth *PublicKeyAuthenticator) AuthenticateSession(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	return jwtAuthenticate(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys, pkauth.maxRequestAge)
@@ -139,7 +139,7 @@ func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requesto
 	return nil
 }
 
-func (pskauth *PresharedKeyAuthenticator) Authenticate(
+func (pskauth *PresharedKeyAuthenticator) AuthenticateSession(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	auth := headers.Get("Authorization")
