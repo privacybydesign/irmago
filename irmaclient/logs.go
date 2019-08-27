@@ -12,7 +12,7 @@ import (
 // LogEntry is a log entry of a past event.
 type LogEntry struct {
 	// General info
-	ID   string `boltholdKey:"ID"`
+	ID   uint64 `boltholdKey:"ID"`
 	Type irma.Action
 	Time irma.Timestamp // Time at which the session was completed
 

@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/privacybydesign/gabi"
@@ -123,6 +124,7 @@ func (s *storage) StoreLogs(logs []*LogEntry) error {
 }
 
 func (s *storage) AddLogEntry(entry *LogEntry) error {
+	// TODO: Key is stored in string format which breaks sorting order
 	return s.db.Insert(bolthold.NextSequence(), entry)
 }
 
@@ -199,9 +201,26 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 	return ksses, nil
 }
 
-// Returns all logs stored before log with ID 'startBeforeIndex' sorted from new to old with a maximum result
-// length of 'max'. If startBeforeIndex is "". no before is used and the newest logs will be returned.
-func (s *storage) LoadLogsBefore(startBeforeIndex string, max int) ([]*LogEntry, error) {
+// Returns all logs stored before log with ID 'startBeforeIndex' sorted from new to old with
+// a maximum result length of 'max'.
+func (s *storage) LoadLogsBefore(startBeforeIndex uint64, max int) ([]*LogEntry, error) {
+	return s.loadLogsFromBbolt(max, func(c *bbolt.Cursor) (key, value []byte) {
+		c.Seek([]byte(strconv.FormatUint(startBeforeIndex, 10)))
+		return c.Prev()
+	})
+}
+
+// Returns the latest logs stored sorted from new to old with a maximum result length of 'max'
+func (s *storage) LoadNewestLogs(max int) ([]*LogEntry, error) {
+	return s.loadLogsFromBbolt(max, func(c *bbolt.Cursor) (key, value []byte) {
+		return c.Last()
+	})
+}
+
+// Returns the logs stored sorted from new to old with a maximum result length of 'max' where the starting position
+// of the bbolt cursor can be manipulated by the anonymous function 'startAt'. 'startAt' should return
+// the key and the value of the first element from the bbolt database that should be loaded.
+func (s *storage) loadLogsFromBbolt(max int, startAt func(*bbolt.Cursor) (key, value []byte)) ([]*LogEntry, error) {
 	var logs []*LogEntry
 	return logs, s.db.Bolt().View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte("LogEntry"))
@@ -210,22 +229,18 @@ func (s *storage) LoadLogsBefore(startBeforeIndex string, max int) ([]*LogEntry,
 		}
 		c := bucket.Cursor()
 
-		var k, v []byte
-		if startBeforeIndex == "" {
-			k, v = c.Last()
-		} else {
-			c.Seek([]byte(startBeforeIndex))
-			k, v = c.Prev()
-		}
-
-		for ; k != nil && len(logs) < max; k, v = c.Prev() {
+		for k, v := startAt(c); k != nil && len(logs) < max; k, v = c.Prev() {
 			var log LogEntry
 			if err := json.Unmarshal(v, &log); err != nil {
 				return err
 			}
 
 			// Manually set ID in struct, because somehow bolthold does not store this (also not when uint64 is used)
-			log.ID = string(k)
+			id, err := strconv.ParseUint(string(k), 10, 64)
+			if err != nil {
+				return err
+			}
+			log.ID = id
 
 			logs = append(logs, &log)
 		}
