@@ -965,12 +965,12 @@ func (client *Client) KeyshareRemoveAll() error {
 // LoadNewestLogs returns the log entries of latest past events
 // (sorted from new to old, the result length is limited to max).
 func (client *Client) LoadNewestLogs(max int) ([]*LogEntry, error) {
-	return client.storage.LoadLogsBefore("", max)
+	return client.storage.LoadNewestLogs(max)
 }
 
 // LoadLogsBefore returns the log entries of past events that took place before log entry with ID 'beforeIndex'
 // (sorted from new to old, the result length is limited to max).
-func (client *Client) LoadLogsBefore(beforeIndex string, max int) ([]*LogEntry, error) {
+func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error) {
 	return client.storage.LoadLogsBefore(beforeIndex, max)
 }
 
