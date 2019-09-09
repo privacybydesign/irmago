@@ -45,13 +45,21 @@ func New(conf *server.Configuration) (*Server, error) {
 		s.sessions.deleteExpired()
 	})
 
-	// TODO: how do we not update revocation state for credential types of which we are the authoritative server?
-	//s.scheduler.Every(5).Minutes().Do(func() {
-	//	if err := s.conf.IrmaConfiguration.RevocationUpdateAll(); err != nil {
-	//		s.conf.Logger.Error("failed to update revocation database:")
-	//		_ = server.LogError(err)
-	//	}
-	//})
+	s.scheduler.Every(5).Minutes().Do(func() {
+		for credid, credtype := range s.conf.IrmaConfiguration.CredentialTypes {
+			if !credtype.SupportsRevocation() {
+				continue
+			}
+			if _, ours := conf.RevocationServers[credid]; ours {
+				// TODO rethink this condition
+				continue
+			}
+			if err := s.conf.IrmaConfiguration.RevocationUpdateDB(credid); err != nil {
+				s.conf.Logger.Error("failed to update revocation database for %s:", credid.String())
+				_ = server.LogError(err)
+			}
+		}
+	})
 
 	s.stopScheduler = s.scheduler.Start()
 
@@ -132,8 +140,12 @@ func (s *Server) CancelSession(token string) error {
 	return nil
 }
 
+func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
+	return s.conf.IrmaConfiguration.Revoke(credid, key)
+}
+
 func ParsePath(path string) (token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile("-/revocation/(records)/?(.*)$")
+	rev := regexp.MustCompile("-/revocation/(records|issuancerecord)/?(.*)$")
 	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")
@@ -381,13 +393,17 @@ func (s *Server) handleRevocationMessage(
 		}
 		return server.JsonResponse(s.handlePostRevocationRecords(cred, records))
 	}
-	//if noun == "revoke" && method == http.MethodPost {
-	//	if len(args) != 1 {
-	//		return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects 1 url arguments"))
-	//	}
-	//	cred := irma.NewCredentialTypeIdentifier(args[0])
-	//	return server.JsonResponse(s.handleRevoke(cred, message))
-	//}
+	if noun == "issuancerecord" && method == http.MethodPost {
+		if len(args) != 2 {
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"))
+		}
+		cred := irma.NewCredentialTypeIdentifier(args[0])
+		counter, err := strconv.Atoi(args[1])
+		if err != nil {
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		return server.JsonResponse(s.handlePostIssuanceRecord(cred, counter, message))
+	}
 
 	return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
 }

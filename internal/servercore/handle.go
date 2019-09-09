@@ -199,7 +199,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-		witness, nonrevAttr, err := session.handleRevocation(cred, attributes, sk)
+		witness, nonrevAttr, err := session.issuanceHandleRevocation(cred, attributes, sk)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error()) // TODO error type
 		}
@@ -245,32 +245,39 @@ func (s *Server) handleGetRevocationRecords(
 	return records, nil
 }
 
-func (s *Server) handleRevoke(
-	cred irma.CredentialTypeIdentifier, msg signed.Message,
+func (s *Server) handlePostIssuanceRecord(
+	cred irma.CredentialTypeIdentifier, counter int, message []byte,
 ) (string, *irma.RemoteError) {
-	sk, err := s.conf.IrmaConfiguration.PrivateKey(cred.IssuerIdentifier())
+	if _, ours := s.conf.RevocationServers[cred]; !ours {
+		return "", server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+	}
+
+	// Grab the counter-th issuer public key, with which the message should be signed,
+	// and verify and unmarshal the issuance record
+	pk, err := s.conf.IrmaConfiguration.PublicKey(cred.IssuerIdentifier(), counter)
 	if err != nil {
 		return "", server.RemoteError(server.ErrorUnknown, err.Error())
 	}
-	if sk == nil {
+	if pk == nil {
 		return "", server.RemoteError(server.ErrorUnknownPublicKey, "")
 	}
-	rsk, err := sk.RevocationKey()
+	revpk, err := pk.RevocationKey()
 	if err != nil {
 		return "", server.RemoteError(server.ErrorUnknown, err.Error())
 	}
-
-	var cmd revocation.Command
-	if err = signed.UnmarshalVerify(&rsk.ECDSA.PublicKey, msg, &cmd); err != nil {
-		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	var rec revocation.IssuanceRecord
+	if err := signed.UnmarshalVerify(revpk.ECDSA, message, &rec); err != nil {
+		return "", server.RemoteError(server.ErrorUnauthorized, err.Error())
 	}
 
+	// Insert the record into the database
 	db, err := s.conf.IrmaConfiguration.RevocationDB(cred)
 	if err != nil {
 		return "", server.RemoteError(server.ErrorUnknown, err.Error())
 	}
-	if err = db.RevokeAttr(rsk, cmd.E); err != nil {
+	if err = db.AddIssuanceRecord(&rec); err != nil {
 		return "", server.RemoteError(server.ErrorUnknown, err.Error())
 	}
+
 	return "OK", nil
 }

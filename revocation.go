@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/gabi/signed"
 )
 
 func (conf *Configuration) RevocationKeystore(issuerid IssuerIdentifier) revocation.Keystore {
@@ -125,6 +126,37 @@ func (conf *Configuration) revocationUpdateDelayed(credid CredentialTypeIdentifi
 		}
 	}
 	return nil
+}
+
+func (conf *Configuration) SendRevocationIssuanceRecord(
+	cred CredentialTypeIdentifier, rec *revocation.IssuanceRecord,
+) error {
+	credtype := conf.CredentialTypes[cred]
+	if credtype == nil {
+		return errors.New("unknown credential type")
+	}
+	if credtype.RevocationServer == "" {
+		return errors.New("credential type has no revocation server")
+	}
+	sk, err := conf.PrivateKey(cred.IssuerIdentifier())
+	if err != nil {
+		return err
+	}
+	if sk == nil {
+		return errors.New("private key not found")
+	}
+	revsk, err := sk.RevocationKey()
+	if err != nil {
+		return err
+	}
+
+	message, err := signed.MarshalSign(revsk.ECDSA, rec)
+	if err != nil {
+		return err
+	}
+	return NewHTTPTransport(credtype.RevocationServer).Post(
+		fmt.Sprintf("-/revocation/issuancerecord/%s/%d", cred, sk.Counter), nil, []byte(message),
+	)
 }
 
 func (conf *Configuration) Revoke(credid CredentialTypeIdentifier, key string) error {

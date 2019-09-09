@@ -96,6 +96,13 @@ func (s *Server) CancelSession(token string) error {
 	return s.Server.CancelSession(token)
 }
 
+func Revoke(credid irma.CredentialTypeIdentifier, key string) error {
+	return s.Revoke(credid, key)
+}
+func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
+	return s.Server.Revoke(credid, key)
+}
+
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
 // of the specified IRMA session.
 func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {

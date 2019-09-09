@@ -330,7 +330,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if rrequest != nil {
 		s.handleCreateSession(w, requestor, rrequest)
 	} else {
-		s.handleCreateRevocation(w, requestor, revreq)
+		s.handleRevoke(w, requestor, revreq)
 	}
 }
 
@@ -391,7 +391,7 @@ func (s *Server) handleCreateStatic(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, qr)
 }
 
-func (s *Server) handleCreateRevocation(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
+func (s *Server) handleRevoke(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
 	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
 	if !allowed {
 		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "message": reason}).
@@ -399,7 +399,7 @@ func (s *Server) handleCreateRevocation(w http.ResponseWriter, requestor string,
 		server.WriteError(w, server.ErrorUnauthorized, reason)
 		return
 	}
-	if err := s.conf.IrmaConfiguration.Revoke(request.CredentialType, request.Key); err != nil {
+	if err := s.irmaserv.Revoke(request.CredentialType, request.Key); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 	}
 	server.WriteString(w, "OK")

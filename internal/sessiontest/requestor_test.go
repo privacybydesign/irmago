@@ -6,14 +6,12 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"crypto/rand"
 	"path/filepath"
 
 	"reflect"
 
 	"testing"
 
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -341,16 +339,6 @@ func TestOptionalDisclosure(t *testing.T) {
 	}
 }
 
-func editDB(t *testing.T, path string, keystore revocation.Keystore, enabled bool, f func(*revocation.DB)) {
-	StopRevocationServer()
-	db, err := revocation.LoadDB(path, keystore)
-	require.NoError(t, err)
-	require.True(t, !enabled || db.Enabled())
-	f(db)
-	require.NoError(t, db.Close())
-	StartRevocationServer(t)
-}
-
 func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
 	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	req := irma.NewDisclosureRequest(attr)
@@ -366,7 +354,6 @@ func TestRevocation(t *testing.T) {
 	client, _ := parseStorage(t)
 	iss := irma.NewIssuerIdentifier("irma-demo.MijnOverheid")
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
-	dbPath := filepath.Join(testdata, "tmp", "issuer", cred.String())
 	keystore := client.Configuration.RevocationKeystore(iss)
 	sk, err := client.Configuration.PrivateKey(iss)
 	require.NoError(t, err)
@@ -374,48 +361,45 @@ func TestRevocation(t *testing.T) {
 	require.NoError(t, err)
 
 	// enable revocation for our credential type by creating and saving an initial accumulator
-	StartRevocationServer(t)
-	editDB(t, dbPath, keystore, false, func(db *revocation.DB) {
-		require.NoError(t, db.EnableRevocation(revsk))
-	})
+	db, err := revocation.LoadDB(filepath.Join(testdata, "tmp", "issuer", cred.String()), keystore)
+	require.NoError(t, err)
+	require.NoError(t, db.EnableRevocation(revsk))
+	require.NoError(t, db.Close()) // so StartRevocationServer() can open it again
 
-	// issue MijnOverheid.root instance with revocation enabled
+	StartRevocationServer(t)
+
+	// issue two MijnOverheid.root instances with revocation enabled
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
-		RevocationKey:    "12345", // once revocation is required for a credential type, this key is required
-		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		RevocationKey:    "cred0", // once revocation is required for a credential type, this key is required
+		CredentialTypeID: cred,
 		Attributes: map[string]string{
 			"BSN": "299792458",
 		},
 	}})
 	result := requestorSessionHelper(t, request, client)
 	require.Nil(t, result.Err)
+	// issue second one which overwrites the first one, as our credtype is a singleton
+	// this is ok, as we use cred0 only to revoke it, to see if cred1 keeps working
+	request.Credentials[0].RevocationKey = "cred1"
+	result = requestorSessionHelper(t, request, client)
+	require.Nil(t, result.Err)
 
-	// perform disclosure session with nonrevocation proof
+	// perform disclosure session (of cred1) with nonrevocation proof
 	result = revocationSession(t, client)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
-	// revoke fake other credential
-	e, err := rand.Prime(rand.Reader, 207)
-	require.NoError(t, err)
-	editDB(t, dbPath, keystore, true, func(db *revocation.DB) {
-		require.NoError(t, db.AddIssuanceRecord(&revocation.IssuanceRecord{
-			Key:  "fake",
-			Attr: big.Convert(e),
-		}))
-		require.NoError(t, db.Revoke(revsk, []byte("fake")))
-	})
+	// revoke cred0
+	require.NoError(t, revocationServer.Revoke(cred, "cred0"))
 
-	// perform another disclosure session with nonrevocation proof
+	// perform another disclosure session with nonrevocation proof to see that cred1 still works
 	// client updates its witness to the new accumulator first
 	result = revocationSession(t, client)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
-	// revoke our credential
-	editDB(t, dbPath, keystore, true, func(db *revocation.DB) {
-		require.NoError(t, db.Revoke(revsk, []byte("12345")))
-	})
+	// revoke cred1
+	require.NoError(t, revocationServer.Revoke(cred, "cred1"))
 
 	// try to perform session with revoked credential
 	// client notices that is credential is revoked and aborts

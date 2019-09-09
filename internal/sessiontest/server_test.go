@@ -53,9 +53,9 @@ func StartRevocationServer(t *testing.T) {
 	var err error
 	revocationServer, err = irmaserver.New(&server.Configuration{
 		Logger:               logger,
-		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
-		RevocationPath:       filepath.Join(testdata, "tmp", "issuer"),
 		DisableSchemesUpdate: true,
+		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
+		RevocationPath:       filepath.Join(testdata, "tmp", "issuer"), // todo rename this path to revocation?
 		RevocationServers: map[irma.CredentialTypeIdentifier]server.RevocationServer{
 			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {},
 		},
@@ -84,10 +84,11 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 
 	var err error
 	irmaServer, err = irmaserver.New(&server.Configuration{
-		URL:            "http://localhost:48680",
-		Logger:         logger,
-		SchemesPath:    filepath.Join(testdata, irmaconf),
-		RevocationPath: filepath.Join(testdata, "tmp", "revocation"),
+		URL:                  "http://localhost:48680",
+		Logger:               logger,
+		DisableSchemesUpdate: true,
+		SchemesPath:          filepath.Join(testdata, irmaconf),
+		RevocationPath:       filepath.Join(testdata, "tmp", "revocation"),
 	})
 
 	require.NoError(t, err)

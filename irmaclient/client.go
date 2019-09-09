@@ -216,12 +216,21 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		id = cred.CredentialType().Identifier()
 	}
 
-	// Don't add duplicate creds
+	// If we receive a duplicate credential it should overwrite the previous one; remove it first
+	// (it makes no sense to possess duplicate credentials, but the new signature might contain new
+	// functionality such as a nonrevocation witness, so it does not suffice to just return here)
+	index := -1
 	for _, attrlistlist := range client.attributes {
-		for _, attrs := range attrlistlist {
+		for i, attrs := range attrlistlist {
 			if attrs.Hash() == cred.AttributeList().Hash() {
-				return nil
+				index = i
+				break
 			}
+		}
+	}
+	if index != -1 {
+		if err = client.remove(id, index, false); err != nil {
+			return err
 		}
 	}
 

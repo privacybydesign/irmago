@@ -76,34 +76,43 @@ func (session *session) checkCache(message []byte, expectedStatus server.Status)
 
 // Issuance helpers
 
-func (session *session) handleRevocation(
+func (session *session) issuanceHandleRevocation(
 	cred *irma.CredentialRequest, attributes *irma.AttributeList, sk *gabi.PrivateKey,
 ) (witness *revocation.Witness, nonrevAttr *big.Int, err error) {
 	if !session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
 		return
 	}
+
+	// ensure the client always gets an up to date nonrevocation witness
 	if _, ours := session.conf.RevocationServers[cred.CredentialTypeID]; !ours {
-		// ensure the client always gets an up to date nonrevocation witness
-		// TODO: post IssuanceRecord to remote?
 		if err = session.conf.IrmaConfiguration.RevocationUpdateDB(cred.CredentialTypeID); err != nil {
 			return
 		}
 	}
+
 	db, err := session.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
 	if err != nil {
 		return
 	}
-	if db.Enabled() {
-		if witness, err = sk.RevocationGenerateWitness(&db.Current); err != nil {
-			return
-		}
-		nonrevAttr = witness.E
-		if err = db.AddIssuanceRecord(&revocation.IssuanceRecord{
-			Key:        cred.RevocationKey,
-			Attr:       nonrevAttr,
-			Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
-			ValidUntil: attributes.Expiry().UnixNano(),
-		}); err != nil {
+	if !db.Enabled() {
+		return
+	}
+
+	if witness, err = sk.RevocationGenerateWitness(&db.Current); err != nil {
+		return
+	}
+	nonrevAttr = witness.E
+	issrecord := &revocation.IssuanceRecord{
+		Key:        cred.RevocationKey,
+		Attr:       nonrevAttr,
+		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
+		ValidUntil: attributes.Expiry().UnixNano(),
+	}
+	err = session.conf.IrmaConfiguration.SendRevocationIssuanceRecord(cred.CredentialTypeID, issrecord)
+	if err != nil {
+		_ = server.LogWarning(errors.WrapPrefix(err, "Failed to send issuance record to revocation server", 0))
+		session.conf.Logger.Warn("Storing issuance record locally")
+		if err = db.AddIssuanceRecord(issrecord); err != nil {
 			return nil, nil, err
 		}
 	}
