@@ -29,9 +29,19 @@ each dependency. To install the `irma` command line tool:
 
 ## Running the unit tests
 
-For running the unit tests, you need to run [irma_keyshare_server](https://github.com/credentials/irma_keyshare_server) and [irma_api_server](https://github.com/credentials/irma_api_server) locally.
+The tests can be run using:
+
+    go test -v -p 1 --tags=local_tests ./...
+
+* The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
+* The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
+
+The command above only runs the local tests. These tests cover all regular use cases. The tests that are dependent on the [irma_keyshare_server](https://github.com/credentials/irma_keyshare_server) are skipped. These tests are only relevant for client implementations, like the IRMA app. 
+
+If you do want to also run the tests using a keyshare server, you have to run your own local instance. How to set up a keyshare server suitable for these tests is described below. After this is done, the tests can be added by removing the `--tags=local_tests` parameter from the command.
 
 ### IRMA Keyshare Server
+An [irma_keyshare_server](https://github.com/credentials/irma_keyshare_server) suitable for testing `irmago` can be set up in the following way:
 
 - Copy or symlink the `irma_configuration` folder from `testdata/` to the configuration of the Keyshare server.
     - Note that a `gradle appRun` won't automatically use the new `irma_configuration` folder if it was already built with an old one. For this, use `gradle clean`.
@@ -40,16 +50,5 @@ For running the unit tests, you need to run [irma_keyshare_server](https://githu
         mysql -uirma -pirma irma_keyshare < keyshareuser.sql
 
 - Make sure `check_user_enabled` is set to false in the Keyshare server configuration. Other options are already setup correctly in the example configuration.
-
-
-### IRMA API Server
-- Copy or symlink the `irma_configuration` folder from `testdata/` to the configuration of the IRMA api server.
-    - Note that a `gradle appRun` won't automatically use the new `irma_configuration` folder if it was already built with an old one. For this, use `gradle clean`.
-
-
-### Running the tests
-The tests can be run by using:
-
-    go test -v ./...
 
 <!-- vim: set ts=4 sw=4: -->
