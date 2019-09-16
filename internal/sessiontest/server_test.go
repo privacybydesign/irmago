@@ -64,11 +64,14 @@ func StartRevocationServer(t *testing.T) {
 	revocationServer, err = irmaserver.New(conf)
 	require.NoError(t, err)
 
-	sk, err := conf.IrmaConfiguration.RevocationStorage.PrivateKey(cred.IssuerIdentifier())
+	sk, err := conf.PrivateKey(cred.IssuerIdentifier())
+	require.NoError(t, err)
+	require.NotNil(t, sk)
+	revsk, err := sk.RevocationKey()
 	require.NoError(t, err)
 	db, err := conf.IrmaConfiguration.RevocationStorage.DB(cred)
 	require.NoError(t, err)
-	err = db.EnableRevocation(sk)
+	err = db.EnableRevocation(revsk)
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()

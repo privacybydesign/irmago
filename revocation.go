@@ -314,21 +314,6 @@ func (rs *RevocationStorage) loadDB(credid CredentialTypeIdentifier) (*DB, error
 	return db, nil
 }
 
-func (rs *RevocationStorage) PrivateKey(issid IssuerIdentifier) (*revocation.PrivateKey, error) {
-	pk, err := rs.conf.PrivateKey(issid)
-	if err != nil {
-		return nil, err
-	}
-	if pk == nil {
-		return nil, errors.Errorf("unknown public key: %s", issid)
-	}
-	revpk, err := pk.RevocationKey()
-	if err != nil {
-		return nil, err
-	}
-	return revpk, nil
-}
-
 func (rs *RevocationStorage) PublicKey(issid IssuerIdentifier, counter uint) (*revocation.PublicKey, error) {
 	pk, err := rs.conf.PublicKey(issid, int(counter))
 	if err != nil {
@@ -506,14 +491,6 @@ func (rs *RevocationStorage) Close() error {
 
 func (rs *RevocationStorage) keystore(issuerid IssuerIdentifier) keystore {
 	return func(counter uint) (*revocation.PublicKey, error) {
-		key, err := rs.conf.PublicKey(issuerid, int(counter))
-		if err != nil {
-			return nil, err
-		}
-		revkey, err := key.RevocationKey()
-		if err != nil {
-			return nil, err
-		}
-		return revkey, nil
+		return rs.PublicKey(issuerid, counter)
 	}
 }
