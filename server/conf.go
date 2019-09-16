@@ -213,16 +213,16 @@ func (conf *Configuration) verifyRevocation() error {
 			return LogError(errors.Errorf("unknown credential type %s in revocation settings", credid))
 		}
 
-		db, err := conf.IrmaConfiguration.RevocationStorage.RevocationDB(credid)
+		db, err := conf.IrmaConfiguration.RevocationStorage.DB(credid)
 		if err != nil {
 			return LogError(err)
 		}
 
-		db.OnChange(func(record *irma.Record) {
+		db.OnChange(func(record *irma.RevocationRecord) {
 			transport := irma.NewHTTPTransport("")
 			o := struct{}{}
 			for _, url := range settings.PostURLs {
-				if err := transport.Post(url+"/-/revocation/records", &o, &[]*irma.Record{record}); err != nil {
+				if err := transport.Post(url+"/-/revocation/records", &o, &[]*irma.RevocationRecord{record}); err != nil {
 					conf.Logger.Warn("error sending revocation update", err)
 				}
 			}

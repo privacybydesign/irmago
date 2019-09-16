@@ -15,20 +15,14 @@ import (
 )
 
 type (
-	// Keystore provides support for revocation public key rollover.
-	Keystore interface {
-		// PublicKey either returns the specified, non-nil public key or an error
-		PublicKey(counter uint) (*revocation.PublicKey, error)
-	}
-
 	// DB is a bolthold database storing revocation state for a particular accumulator
-	// (Record instances, and IssuanceRecord instances if used by an issuer).
+	// (RevocationRecord instances, and IssuanceRecord instances if used by an issuer).
 	DB struct {
 		Current  revocation.Accumulator
 		Updated  time.Time
-		onChange []func(*Record)
+		onChange []func(*RevocationRecord)
 		bolt     *bolthold.Store
-		keystore Keystore
+		keystore keystore
 	}
 
 	RevocationStorage struct {
@@ -36,8 +30,10 @@ type (
 		conf *Configuration
 	}
 
-	// Record contains a signed AccumulatorUpdate and associated information.
-	Record struct {
+	// RevocationRecord contains a signed AccumulatorUpdate and associated information and is ued
+	// by clients, issuers and verifiers to update their revocation state, so that they can create
+	// and verify nonrevocation proofs and witnesses.
+	RevocationRecord struct {
 		StartIndex     uint64
 		EndIndex       uint64
 		PublicKeyIndex uint
@@ -61,39 +57,12 @@ type (
 	currentRecord struct {
 		Index uint64
 	}
+
+	// keystore provides support for revocation public key rollover.
+	keystore func(counter uint) (*revocation.PublicKey, error)
 )
 
 const boltCurrentIndexKey = "currentIndex"
-
-func (conf *Configuration) RevocationKeystore(issuerid IssuerIdentifier) Keystore {
-	return &issuerKeystore{issid: issuerid, conf: conf}
-}
-
-// issuerKeystore implements Keystore.
-type issuerKeystore struct {
-	issid IssuerIdentifier
-	conf  *Configuration
-}
-
-var _ Keystore = (*issuerKeystore)(nil)
-
-func (ks *issuerKeystore) PublicKey(counter uint) (*revocation.PublicKey, error) {
-	pk, err := ks.conf.PublicKey(ks.issid, int(counter))
-	if err != nil {
-		return nil, err
-	}
-	if pk == nil {
-		return nil, errors.Errorf("public key %d of issuer %s not found", counter, ks.issid)
-	}
-	if !pk.RevocationSupported() {
-		return nil, errors.Errorf("public key %d of issuer %s does not support revocation", counter, ks.issid)
-	}
-	rpk, err := pk.RevocationKey()
-	if err != nil {
-		return nil, err
-	}
-	return rpk, nil
-}
 
 func (rdb *DB) EnableRevocation(sk *revocation.PrivateKey) error {
 	msg, acc, err := revocation.NewAccumulator(sk)
@@ -128,15 +97,15 @@ func (rdb *DB) Revoke(sk *revocation.PrivateKey, key []byte) error {
 // Get returns all records that a client requires to update its revocation state if it is currently
 // at the specified index, that is, all records whose end index is greater than or equal to
 // the specified index.
-func (rdb *DB) RevocationRecords(index int) ([]*Record, error) {
-	var records []*Record
+func (rdb *DB) RevocationRecords(index int) ([]*RevocationRecord, error) {
+	var records []*RevocationRecord
 	if err := rdb.bolt.Find(&records, bolthold.Where(bolthold.Key).Ge(uint64(index))); err != nil {
 		return nil, err
 	}
 	return records, nil
 }
 
-func (rdb *DB) LatestRecords(count int) ([]*Record, error) {
+func (rdb *DB) LatestRecords(count int) ([]*RevocationRecord, error) {
 	c := int(rdb.Current.Index) - count + 1
 	if c < 0 {
 		c = 0
@@ -168,7 +137,7 @@ func (rdb *DB) IssuanceRecord(key []byte) (*IssuanceRecord, error) {
 	return r, nil
 }
 
-func (rdb *DB) AddRecords(records []*Record) error {
+func (rdb *DB) AddRecords(records []*RevocationRecord) error {
 	var err error
 	for _, r := range records {
 		if err = rdb.Add(r.Message, r.PublicKeyIndex); err != nil {
@@ -183,7 +152,7 @@ func (rdb *DB) Add(updateMsg signed.Message, counter uint) error {
 	var err error
 	var update revocation.AccumulatorUpdate
 
-	pk, err := rdb.keystore.PublicKey(counter)
+	pk, err := rdb.keystore(counter)
 	if err != nil {
 		return err
 	}
@@ -199,7 +168,7 @@ func (rdb *DB) Add(updateMsg signed.Message, counter uint) error {
 
 func (rdb *DB) add(update revocation.AccumulatorUpdate, updateMsg signed.Message, pkCounter uint, tx *bolt.Tx) error {
 	var err error
-	record := &Record{
+	record := &RevocationRecord{
 		StartIndex:     update.StartIndex,
 		EndIndex:       update.Accumulator.Index,
 		PublicKeyIndex: pkCounter,
@@ -251,11 +220,11 @@ func (rdb *DB) loadCurrent() error {
 		return err
 	}
 
-	var record Record
+	var record RevocationRecord
 	if err := rdb.bolt.Get(currentIndex.Index, &record); err != nil {
 		return err
 	}
-	pk, err := rdb.keystore.PublicKey(record.PublicKeyIndex)
+	pk, err := rdb.keystore(record.PublicKeyIndex)
 	if err != nil {
 		return err
 	}
@@ -304,12 +273,12 @@ func (rdb *DB) Close() error {
 	return nil
 }
 
-func (rdb *DB) OnChange(handler func(*Record)) {
+func (rdb *DB) OnChange(handler func(*RevocationRecord)) {
 	rdb.onChange = append(rdb.onChange, handler)
 }
 
-func (r *Record) UnmarshalVerify(keystore Keystore) (*revocation.AccumulatorUpdate, error) {
-	pk, err := keystore.PublicKey(r.PublicKeyIndex)
+func (r *RevocationRecord) UnmarshalVerify(keystore keystore) (*revocation.AccumulatorUpdate, error) {
+	pk, err := keystore(r.PublicKeyIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -324,9 +293,9 @@ func (r *Record) UnmarshalVerify(keystore Keystore) (*revocation.AccumulatorUpda
 	return msg, nil
 }
 
-func (rs *RevocationStorage) LoadDB(credid CredentialTypeIdentifier) (*DB, error) {
+func (rs *RevocationStorage) loadDB(credid CredentialTypeIdentifier) (*DB, error) {
 	path := filepath.Join(rs.conf.RevocationPath, credid.String())
-	keystore := rs.conf.RevocationKeystore(credid.IssuerIdentifier())
+	keystore := rs.keystore(credid.IssuerIdentifier())
 
 	b, err := bolthold.Open(path, 0600, &bolthold.Options{Options: &bolt.Options{Timeout: 1 * time.Second}})
 	if err != nil {
@@ -375,7 +344,7 @@ func (rs *RevocationStorage) PublicKey(issid IssuerIdentifier, counter uint) (*r
 	return revpk, nil
 }
 
-func (rs *RevocationStorage) UpdateWitness(w *revocation.Witness, msgs []*Record, issid IssuerIdentifier) (bool, error) {
+func (rs *RevocationStorage) UpdateWitness(w *revocation.Witness, msgs []*RevocationRecord, issid IssuerIdentifier) (bool, error) {
 	var err error
 	var pk *revocation.PublicKey
 	oldindex := w.Index
@@ -390,8 +359,8 @@ func (rs *RevocationStorage) UpdateWitness(w *revocation.Witness, msgs []*Record
 	return w.Index == oldindex, nil
 }
 
-func (rs *RevocationStorage) RevocationGetUpdates(credid CredentialTypeIdentifier, index uint64) ([]*Record, error) {
-	var records []*Record
+func (rs *RevocationStorage) GetUpdates(credid CredentialTypeIdentifier, index uint64) ([]*RevocationRecord, error) {
+	var records []*RevocationRecord
 	err := NewHTTPTransport(rs.conf.CredentialTypes[credid].RevocationServer).
 		Get(fmt.Sprintf("-/revocation/records/%s/%d", credid, index), &records)
 	if err != nil {
@@ -400,27 +369,27 @@ func (rs *RevocationStorage) RevocationGetUpdates(credid CredentialTypeIdentifie
 	return records, nil
 }
 
-func (rs *RevocationStorage) RevocationUpdateAll() error {
+func (rs *RevocationStorage) UpdateAll() error {
 	var err error
 	for credid := range rs.dbs {
-		if err = rs.RevocationUpdateDB(credid); err != nil {
+		if err = rs.UpdateDB(credid); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (rs *RevocationStorage) RevocationSetRecords(b *BaseRequest) error {
+func (rs *RevocationStorage) SetRecords(b *BaseRequest) error {
 	if len(b.Revocation) == 0 {
 		return nil
 	}
-	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]*Record, len(b.Revocation))
+	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]*RevocationRecord, len(b.Revocation))
 	for _, credid := range b.Revocation {
-		db, err := rs.RevocationDB(credid)
+		db, err := rs.DB(credid)
 		if err != nil {
 			return err
 		}
-		if err = rs.revocationUpdateDelayed(credid, db); err != nil {
+		if err = rs.updateDelayed(credid, db); err != nil {
 			return err
 		}
 		b.RevocationUpdates[credid], err = db.LatestRecords(revocationUpdateCount)
@@ -431,8 +400,8 @@ func (rs *RevocationStorage) RevocationSetRecords(b *BaseRequest) error {
 	return nil
 }
 
-func (rs *RevocationStorage) RevocationUpdateDB(credid CredentialTypeIdentifier) error {
-	db, err := rs.RevocationDB(credid)
+func (rs *RevocationStorage) UpdateDB(credid CredentialTypeIdentifier) error {
+	db, err := rs.DB(credid)
 	if err != nil {
 		return err
 	}
@@ -440,14 +409,14 @@ func (rs *RevocationStorage) RevocationUpdateDB(credid CredentialTypeIdentifier)
 	if db.Enabled() {
 		index = db.Current.Index + 1
 	}
-	records, err := rs.RevocationGetUpdates(credid, index)
+	records, err := rs.GetUpdates(credid, index)
 	if err != nil {
 		return err
 	}
 	return db.AddRecords(records)
 }
 
-func (rs *RevocationStorage) RevocationDB(credid CredentialTypeIdentifier) (*DB, error) {
+func (rs *RevocationStorage) DB(credid CredentialTypeIdentifier) (*DB, error) {
 	if _, known := rs.conf.CredentialTypes[credid]; !known {
 		return nil, errors.New("unknown credential type")
 	}
@@ -456,7 +425,7 @@ func (rs *RevocationStorage) RevocationDB(credid CredentialTypeIdentifier) (*DB,
 	}
 	if rs.dbs[credid] == nil {
 		var err error
-		db, err := rs.LoadDB(credid)
+		db, err := rs.loadDB(credid)
 		if err != nil {
 			return nil, err
 		}
@@ -465,18 +434,16 @@ func (rs *RevocationStorage) RevocationDB(credid CredentialTypeIdentifier) (*DB,
 	return rs.dbs[credid], nil
 }
 
-func (rs *RevocationStorage) revocationUpdateDelayed(credid CredentialTypeIdentifier, db *DB) error {
+func (rs *RevocationStorage) updateDelayed(credid CredentialTypeIdentifier, db *DB) error {
 	if db.Updated.Before(time.Now().Add(-5 * time.Minute)) {
-		if err := rs.RevocationUpdateDB(credid); err != nil {
+		if err := rs.UpdateDB(credid); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (rs *RevocationStorage) SendRevocationIssuanceRecord(
-	cred CredentialTypeIdentifier, rec *IssuanceRecord,
-) error {
+func (rs *RevocationStorage) SendIssuanceRecord(cred CredentialTypeIdentifier, rec *IssuanceRecord) error {
 	credtype := rs.conf.CredentialTypes[cred]
 	if credtype == nil {
 		return errors.New("unknown credential type")
@@ -518,7 +485,7 @@ func (rs *RevocationStorage) Revoke(credid CredentialTypeIdentifier, key string)
 		return err
 	}
 
-	db, err := rs.RevocationDB(credid)
+	db, err := rs.DB(credid)
 	if err != nil {
 		return err
 	}
@@ -535,4 +502,18 @@ func (rs *RevocationStorage) Close() error {
 	}
 	rs.dbs = nil
 	return merr.ErrorOrNil()
+}
+
+func (rs *RevocationStorage) keystore(issuerid IssuerIdentifier) keystore {
+	return func(counter uint) (*revocation.PublicKey, error) {
+		key, err := rs.conf.PublicKey(issuerid, int(counter))
+		if err != nil {
+			return nil, err
+		}
+		revkey, err := key.RevocationKey()
+		if err != nil {
+			return nil, err
+		}
+		return revkey, nil
+	}
 }

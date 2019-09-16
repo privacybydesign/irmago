@@ -53,7 +53,7 @@ func New(conf *server.Configuration) (*Server, error) {
 				// TODO rethink this condition
 				continue
 			}
-			if err := s.conf.IrmaConfiguration.RevocationStorage.RevocationUpdateDB(credid); err != nil {
+			if err := s.conf.IrmaConfiguration.RevocationStorage.UpdateDB(credid); err != nil {
 				s.conf.Logger.Error("failed to update revocation database for %s:", credid.String())
 				_ = server.LogError(err)
 			}
@@ -386,7 +386,7 @@ func (s *Server) handleRevocationMessage(
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects 1 url arguments"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		var records []*irma.Record
+		var records []*irma.RevocationRecord
 		if err := json.Unmarshal(message, &records); err != nil {
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}

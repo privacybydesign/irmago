@@ -64,7 +64,7 @@ func (cred *credential) PrepareNonrevocation(conf *irma.Configuration, request i
 
 	// nonrevocation witness is still out of date after applying the updates from the request,
 	// i.e. we were too far behind. Update from revocation server.
-	revupdates, err := conf.RevocationStorage.RevocationGetUpdates(credtype, cred.NonRevocationWitness.Index+1)
+	revupdates, err := conf.RevocationStorage.GetUpdates(credtype, cred.NonRevocationWitness.Index+1)
 	if err != nil {
 		return nonrev, err
 	}

@@ -66,7 +66,7 @@ func StartRevocationServer(t *testing.T) {
 
 	sk, err := conf.IrmaConfiguration.RevocationStorage.PrivateKey(cred.IssuerIdentifier())
 	require.NoError(t, err)
-	db, err := conf.IrmaConfiguration.RevocationStorage.RevocationDB(cred)
+	db, err := conf.IrmaConfiguration.RevocationStorage.DB(cred)
 	require.NoError(t, err)
 	err = db.EnableRevocation(sk)
 	require.NoError(t, err)

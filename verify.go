@@ -74,7 +74,7 @@ func (pl ProofList) VerifyProofs(
 	configuration *Configuration,
 	context *big.Int, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
-	revRecords map[CredentialTypeIdentifier][]*Record,
+	revRecords map[CredentialTypeIdentifier][]*RevocationRecord,
 	isSig bool,
 ) (bool, error) {
 	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
@@ -145,7 +145,7 @@ func (pl ProofList) VerifyProofs(
 		}
 
 		// grab last message from accumulator update message set in request
-		keystore := configuration.RevocationKeystore(typ.Identifier().IssuerIdentifier())
+		keystore := configuration.RevocationStorage.keystore(typ.Identifier().IssuerIdentifier())
 		msg, err := r[len(r)-1].UnmarshalVerify(keystore)
 		if err != nil {
 			return false, err
@@ -293,7 +293,7 @@ func (d *Disclosure) VerifyAgainstRequest(
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
 	var required AttributeConDisCon
-	var revRecords map[CredentialTypeIdentifier][]*Record
+	var revRecords map[CredentialTypeIdentifier][]*RevocationRecord
 	if request != nil {
 		revRecords = request.Base().RevocationUpdates
 		required = request.Disclosure().Disclose

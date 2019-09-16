@@ -36,7 +36,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	// we include the latest revocation records for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
 	var err error
-	if err = session.conf.IrmaConfiguration.RevocationStorage.RevocationSetRecords(session.request.Base()); err != nil {
+	if err = session.conf.IrmaConfiguration.RevocationStorage.SetRecords(session.request.Base()); err != nil {
 		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 
@@ -215,9 +215,9 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 }
 
 func (s *Server) handlePostRevocationRecords(
-	cred irma.CredentialTypeIdentifier, records []*irma.Record,
+	cred irma.CredentialTypeIdentifier, records []*irma.RevocationRecord,
 ) (interface{}, *irma.RemoteError) {
-	db, err := s.conf.IrmaConfiguration.RevocationStorage.RevocationDB(cred)
+	db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
@@ -229,11 +229,11 @@ func (s *Server) handlePostRevocationRecords(
 
 func (s *Server) handleGetRevocationRecords(
 	cred irma.CredentialTypeIdentifier, index int,
-) ([]*irma.Record, *irma.RemoteError) {
+) ([]*irma.RevocationRecord, *irma.RemoteError) {
 	if _, ok := s.conf.RevocationServers[cred]; !ok {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	db, err := s.conf.IrmaConfiguration.RevocationStorage.RevocationDB(cred)
+	db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
@@ -270,7 +270,7 @@ func (s *Server) handlePostIssuanceRecord(
 	}
 
 	// Insert the record into the database
-	db, err := s.conf.IrmaConfiguration.RevocationStorage.RevocationDB(cred)
+	db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred)
 	if err != nil {
 		return "", server.RemoteError(server.ErrorUnknown, err.Error())
 	}
