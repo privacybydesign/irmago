@@ -33,7 +33,6 @@ import (
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
@@ -45,6 +44,8 @@ type Configuration struct {
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
+
+	RevocationStorage *RevocationStorage
 
 	// Path to the irma_configuration folder that this instance represents
 	Path           string
@@ -60,7 +61,6 @@ type Configuration struct {
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
 	privateKeys   map[IssuerIdentifier]*gabi.PrivateKey
 	reverseHashes map[string]CredentialTypeIdentifier
-	revDBs        map[CredentialTypeIdentifier]*revocation.DB
 	initialized   bool
 	assets        string
 	readOnly      bool
@@ -143,6 +143,7 @@ func newConfiguration(path string, assets string) (conf *Configuration, err erro
 		RevocationPath: filepath.Join(DefaultDataPath(), "revocation"),
 		assets:         assets,
 	}
+	conf.RevocationStorage = &RevocationStorage{conf: conf}
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
 		if err = fs.AssertPathExists(conf.assets); err != nil {

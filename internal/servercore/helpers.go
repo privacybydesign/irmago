@@ -85,12 +85,12 @@ func (session *session) issuanceHandleRevocation(
 
 	// ensure the client always gets an up to date nonrevocation witness
 	if _, ours := session.conf.RevocationServers[cred.CredentialTypeID]; !ours {
-		if err = session.conf.IrmaConfiguration.RevocationUpdateDB(cred.CredentialTypeID); err != nil {
+		if err = session.conf.IrmaConfiguration.RevocationStorage.RevocationUpdateDB(cred.CredentialTypeID); err != nil {
 			return
 		}
 	}
 
-	db, err := session.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
+	db, err := session.conf.IrmaConfiguration.RevocationStorage.RevocationDB(cred.CredentialTypeID)
 	if err != nil {
 		return
 	}
@@ -102,13 +102,13 @@ func (session *session) issuanceHandleRevocation(
 		return
 	}
 	nonrevAttr = witness.E
-	issrecord := &revocation.IssuanceRecord{
+	issrecord := &irma.IssuanceRecord{
 		Key:        cred.RevocationKey,
 		Attr:       nonrevAttr,
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
-	err = session.conf.IrmaConfiguration.SendRevocationIssuanceRecord(cred.CredentialTypeID, issrecord)
+	err = session.conf.IrmaConfiguration.RevocationStorage.SendRevocationIssuanceRecord(cred.CredentialTypeID, issrecord)
 	if err != nil {
 		_ = server.LogWarning(errors.WrapPrefix(err, "Failed to send issuance record to revocation server", 0))
 		session.conf.Logger.Warn("Storing issuance record locally")
@@ -144,7 +144,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 			return err
 		}
 		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
-			db, err := s.conf.IrmaConfiguration.RevocationDB(cred.CredentialTypeID)
+			db, err := s.conf.IrmaConfiguration.RevocationStorage.RevocationDB(cred.CredentialTypeID)
 			if err != nil {
 				return err
 			}

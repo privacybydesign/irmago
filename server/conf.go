@@ -8,7 +8,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/sirupsen/logrus"
@@ -80,7 +79,7 @@ func (conf *Configuration) Check() error {
 		conf.verifyIrmaConf, conf.verifyPrivateKeys, conf.verifyURL, conf.verifyEmail, conf.verifyRevocation,
 	} {
 		if err := f(); err != nil {
-			if e := conf.IrmaConfiguration.Close(); e != nil {
+			if e := conf.IrmaConfiguration.RevocationStorage.Close(); e != nil {
 				_ = LogError(err)
 			}
 			return err
@@ -214,16 +213,16 @@ func (conf *Configuration) verifyRevocation() error {
 			return LogError(errors.Errorf("unknown credential type %s in revocation settings", credid))
 		}
 
-		db, err := conf.IrmaConfiguration.RevocationDB(credid)
+		db, err := conf.IrmaConfiguration.RevocationStorage.RevocationDB(credid)
 		if err != nil {
 			return LogError(err)
 		}
 
-		db.OnChange(func(record *revocation.Record) {
+		db.OnChange(func(record *irma.Record) {
 			transport := irma.NewHTTPTransport("")
 			o := struct{}{}
 			for _, url := range settings.PostURLs {
-				if err := transport.Post(url+"/-/revocation/records", &o, &[]*revocation.Record{record}); err != nil {
+				if err := transport.Post(url+"/-/revocation/records", &o, &[]*irma.Record{record}); err != nil {
 					conf.Logger.Warn("error sending revocation update", err)
 				}
 			}

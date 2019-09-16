@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -54,7 +53,7 @@ func New(conf *server.Configuration) (*Server, error) {
 				// TODO rethink this condition
 				continue
 			}
-			if err := s.conf.IrmaConfiguration.RevocationUpdateDB(credid); err != nil {
+			if err := s.conf.IrmaConfiguration.RevocationStorage.RevocationUpdateDB(credid); err != nil {
 				s.conf.Logger.Error("failed to update revocation database for %s:", credid.String())
 				_ = server.LogError(err)
 			}
@@ -67,7 +66,7 @@ func New(conf *server.Configuration) (*Server, error) {
 }
 
 func (s *Server) Stop() {
-	if err := s.conf.IrmaConfiguration.Close(); err != nil {
+	if err := s.conf.IrmaConfiguration.RevocationStorage.Close(); err != nil {
 		_ = server.LogWarning(err)
 	}
 	s.stopScheduler <- true
@@ -141,7 +140,7 @@ func (s *Server) CancelSession(token string) error {
 }
 
 func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
-	return s.conf.IrmaConfiguration.Revoke(credid, key)
+	return s.conf.IrmaConfiguration.RevocationStorage.Revoke(credid, key)
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {
@@ -387,7 +386,7 @@ func (s *Server) handleRevocationMessage(
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects 1 url arguments"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		var records []*revocation.Record
+		var records []*irma.Record
 		if err := json.Unmarshal(message, &records); err != nil {
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}

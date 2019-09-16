@@ -6,13 +6,10 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"path/filepath"
-
 	"reflect"
 
 	"testing"
 
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -352,20 +349,7 @@ func TestRevocation(t *testing.T) {
 	// setup client, constants, and revocation key material
 	defer test.ClearTestStorage(t)
 	client, _ := parseStorage(t)
-	iss := irma.NewIssuerIdentifier("irma-demo.MijnOverheid")
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
-	keystore := client.Configuration.RevocationKeystore(iss)
-	sk, err := client.Configuration.PrivateKey(iss)
-	require.NoError(t, err)
-	revsk, err := sk.RevocationKey()
-	require.NoError(t, err)
-
-	// enable revocation for our credential type by creating and saving an initial accumulator
-	db, err := revocation.LoadDB(filepath.Join(testdata, "tmp", "issuer", cred.String()), keystore)
-	require.NoError(t, err)
-	require.NoError(t, db.EnableRevocation(revsk))
-	require.NoError(t, db.Close()) // so StartRevocationServer() can open it again
-
 	StartRevocationServer(t)
 
 	// issue two MijnOverheid.root instances with revocation enabled

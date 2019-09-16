@@ -51,15 +51,24 @@ func StopRequestorServer() {
 
 func StartRevocationServer(t *testing.T) {
 	var err error
-	revocationServer, err = irmaserver.New(&server.Configuration{
+	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	conf := &server.Configuration{
 		Logger:               logger,
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
 		RevocationPath:       filepath.Join(testdata, "tmp", "issuer"), // todo rename this path to revocation?
 		RevocationServers: map[irma.CredentialTypeIdentifier]server.RevocationServer{
-			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {},
+			cred: {},
 		},
-	})
+	}
+	revocationServer, err = irmaserver.New(conf)
+	require.NoError(t, err)
+
+	sk, err := conf.IrmaConfiguration.RevocationStorage.PrivateKey(cred.IssuerIdentifier())
+	require.NoError(t, err)
+	db, err := conf.IrmaConfiguration.RevocationStorage.RevocationDB(cred)
+	require.NoError(t, err)
+	err = db.EnableRevocation(sk)
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()
