@@ -329,21 +329,6 @@ func (rs *RevocationStorage) PublicKey(issid IssuerIdentifier, counter uint) (*r
 	return revpk, nil
 }
 
-func (rs *RevocationStorage) UpdateWitness(w *revocation.Witness, msgs []*RevocationRecord, issid IssuerIdentifier) (bool, error) {
-	var err error
-	var pk *revocation.PublicKey
-	oldindex := w.Index
-	for _, msg := range msgs {
-		if pk, err = rs.PublicKey(issid, msg.PublicKeyIndex); err != nil {
-			return false, err
-		}
-		if err = w.Update(pk, msg.Message); err != nil {
-			return false, err
-		}
-	}
-	return w.Index == oldindex, nil
-}
-
 func (rs *RevocationStorage) GetUpdates(credid CredentialTypeIdentifier, index uint64) ([]*RevocationRecord, error) {
 	var records []*RevocationRecord
 	err := NewHTTPTransport(rs.conf.CredentialTypes[credid].RevocationServer).

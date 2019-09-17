@@ -711,9 +711,14 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		nonrev, err := cred.PrepareNonrevocation(client.Configuration, request)
+		nonrev, updated, err := cred.prepareNonrevocation(client.Configuration, request)
 		if err != nil {
 			return nil, nil, nil, err
+		}
+		if updated {
+			if err = client.storage.StoreSignature(cred); err != nil {
+				return nil, nil, nil, err
+			}
 		}
 		builder, err = cred.CreateDisclosureProofBuilder(grp.attrs, nonrev)
 		if err != nil {
