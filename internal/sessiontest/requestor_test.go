@@ -336,11 +336,15 @@ func TestOptionalDisclosure(t *testing.T) {
 	}
 }
 
-func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
+func revocationRequest() irma.SessionRequest {
 	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	req := irma.NewDisclosureRequest(attr)
 	req.Revocation = []irma.CredentialTypeIdentifier{attr.CredentialTypeIdentifier()}
-	result := requestorSessionHelper(t, req, client, options...)
+	return req
+}
+
+func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
+	result := requestorSessionHelper(t, revocationRequest(), client, options...)
 	require.Nil(t, result.Err)
 	return result
 }
@@ -372,6 +376,10 @@ func TestRevocation(t *testing.T) {
 	result = revocationSession(t, client)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
+
+	req := revocationRequest()
+	require.NoError(t, client.Configuration.RevocationStorage.SetRecords(req.Base()))
+	require.NoError(t, client.PrepareNonrevocation(req))
 
 	// revoke cred0
 	require.NoError(t, revocationServer.Revoke(cred, "cred0"))

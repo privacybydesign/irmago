@@ -229,6 +229,12 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 	return b.Nonce
 }
 
+func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
+	// If the requestor wants us to include a nonrevocation proof,
+	// it will have sent us the latest revocation update messages
+	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id]) > 0
+}
+
 const revocationUpdateCount = 5
 
 // CredentialTypes returns an array of all credential types occuring in this conjunction.

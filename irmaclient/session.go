@@ -72,11 +72,12 @@ type session struct {
 	Version    *irma.ProtocolVersion
 	ServerName irma.TranslatedString
 
-	choice      *irma.DisclosureChoice
-	attrIndices irma.DisclosedAttributeIndices
-	client      *Client
-	request     irma.SessionRequest
-	done        bool
+	choice         *irma.DisclosureChoice
+	attrIndices    irma.DisclosedAttributeIndices
+	client         *Client
+	request        irma.SessionRequest
+	done           bool
+	prepRevocation chan error
 
 	// State for issuance sessions
 	issuerProofNonce *big.Int
@@ -138,11 +139,12 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	session := &session{
-		Action:  action,
-		Handler: handler,
-		client:  client,
-		Version: minVersion,
-		request: request,
+		Action:         action,
+		Handler:        handler,
+		client:         client,
+		Version:        minVersion,
+		request:        request,
+		prepRevocation: make(chan error),
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
@@ -181,12 +183,13 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
 	session := &session{
-		ServerURL: qr.URL,
-		Hostname:  u.Hostname(),
-		transport: irma.NewHTTPTransport(qr.URL),
-		Action:    irma.Action(qr.Type),
-		Handler:   handler,
-		client:    client,
+		ServerURL:      qr.URL,
+		Hostname:       u.Hostname(),
+		transport:      irma.NewHTTPTransport(qr.URL),
+		Action:         irma.Action(qr.Type),
+		Handler:        handler,
+		client:         client,
+		prepRevocation: make(chan error),
 	}
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
@@ -304,6 +307,11 @@ func (session *session) processSessionInfo() {
 		return
 	}
 
+	// Prepare and update all revocation state asynchroniously while the user makes her choices
+	go func() {
+		session.prepRevocation <- session.client.PrepareNonrevocation(session.request)
+	}()
+
 	// Ask for permission to execute the session
 	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 		session.choice = choice
@@ -342,6 +350,12 @@ func (session *session) doSession(proceed bool) {
 		return
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+
+	// wait for revocation preparation to finish
+	err := <-session.prepRevocation
+	if err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
+	}
 
 	if !session.Distributed() {
 		message, err := session.getProof()
@@ -455,6 +469,13 @@ func (session *session) sendResponse(message interface{}) {
 	}
 	session.done = true
 	session.Handler.Success(string(messageJson))
+
+	go func() {
+		if err := session.client.repopulateNonrevCaches(session.request); err != nil {
+			raven.CaptureError(err, nil)
+			irma.Logger.Error(err)
+		}
+	}()
 }
 
 // managerSession performs a "session" in which a new scheme manager is added (asking for permission first).

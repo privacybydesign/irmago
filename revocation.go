@@ -72,7 +72,7 @@ func (rdb *DB) EnableRevocation(sk *revocation.PrivateKey) error {
 	if err = rdb.Add(msg, sk.Counter); err != nil {
 		return err
 	}
-	rdb.Current = acc
+	rdb.Current = *acc
 	return nil
 }
 

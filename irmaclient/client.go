@@ -150,6 +150,10 @@ func New(
 	if schemeMgrErr != nil && !isSchemeMgrErr {
 		return nil, schemeMgrErr
 	}
+	cm.Configuration.RevocationPath = filepath.Join(storagePath, "revocation")
+	if err = fs.EnsureDirectoryExists(cm.Configuration.RevocationPath); err != nil {
+		return nil, err
+	}
 
 	// Ensure storage path exists, and populate it with necessary files
 	cm.storage = storage{storagePath: storagePath, Configuration: cm.Configuration}
@@ -696,6 +700,55 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (
 	return todisclose, attributeIndices, nil
 }
 
+// PrepareNonrevocation updates the revocation state for each credential in the request
+// requiring a nonrevocation proof, using the updates included in the request, or the remote
+// revocation server if those do not suffice.
+func (client *Client) PrepareNonrevocation(request irma.SessionRequest) error {
+	var err error
+	var cred *credential
+	var updated bool
+	for id := range request.Disclosure().Identifiers().CredentialTypes {
+		typ := client.Configuration.CredentialTypes[id]
+		if !typ.SupportsRevocation() {
+			continue
+		}
+		for i := 0; i < len(client.attrs(id)); i++ {
+			if cred, err = client.credential(id, i); err != nil {
+				return err
+			}
+			if updated, err = cred.prepareNonrevocation(client.Configuration, request); err != nil {
+				return err
+			}
+			if updated {
+				if err = client.storage.StoreSignature(cred); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (client *Client) repopulateNonrevCaches(request irma.SessionRequest) error {
+	var err error
+	var cred *credential
+	for id := range request.Disclosure().Identifiers().CredentialTypes {
+		typ := client.Configuration.CredentialTypes[id]
+		if !typ.SupportsRevocation() {
+			continue
+		}
+		for i := 0; i < len(client.attrs(id)); i++ {
+			if cred, err = client.credential(id, i); err != nil {
+				return err
+			}
+			if err = cred.PrepareNonrevCache(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
 func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.SessionRequest,
 ) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *atum.Timestamp, error) {
@@ -711,15 +764,7 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		nonrev, updated, err := cred.prepareNonrevocation(client.Configuration, request)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if updated {
-			if err = client.storage.StoreSignature(cred); err != nil {
-				return nil, nil, nil, err
-			}
-		}
+		nonrev := request.Base().RequestsRevocation(cred.CredentialType().Identifier())
 		builder, err = cred.CreateDisclosureProofBuilder(grp.attrs, nonrev)
 		if err != nil {
 			return nil, nil, nil, err
