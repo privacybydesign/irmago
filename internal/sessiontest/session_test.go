@@ -1,10 +1,13 @@
 package sessiontest
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"path/filepath"
 	"reflect"
 	"testing"
-	"path/filepath"
+	"time"
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
@@ -387,4 +390,42 @@ func TestDownloadSchemeManager(t *testing.T) {
 	exists, err = fs.PathExists(filepath.Join(basepath, "RU", "Issues", "studentCard", "description.xml"))
 	require.NoError(t, err)
 	require.True(t, exists)
+}
+
+func TestStaticQRSession(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer test.ClearTestStorage(t)
+	StartRequestorServer(JwtServerConfiguration)
+	defer StopRequestorServer()
+
+	// start server to receive session result callback after the session
+	var received bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		received = true
+	})
+	s := &http.Server{Addr: ":48685", Handler: mux}
+	go func() { _ = s.ListenAndServe() }()
+
+	// setup static QR and other variables
+	qr := &irma.Qr{
+		Type: irma.ActionRedirect,
+		URL:  "http://localhost:48682/session/-/static/staticsession",
+	}
+	bts, err := json.Marshal(qr)
+	require.NoError(t, err)
+	localhost := "localhost"
+	host := irma.NewTranslatedString(&localhost)
+	c := make(chan *SessionResult)
+
+	// Perform session
+	client.NewSession(string(bts), TestHandler{t, c, client, host})
+	if result := <-c; result != nil {
+		require.NoError(t, result.Err)
+	}
+
+	// give irma server time to post session result to the server started above, and check the call was received
+	time.Sleep(200 * time.Millisecond)
+	require.NoError(t, s.Shutdown(context.Background()))
+	require.True(t, received)
 }

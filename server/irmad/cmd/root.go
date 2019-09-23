@@ -125,6 +125,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 		issHelp += " (default *)"
 	}
 	flags.StringSlice("issue-perms", nil, issHelp)
+	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
@@ -274,8 +275,29 @@ func configure(cmd *cobra.Command) error {
 		}
 	}
 
+	if err = handleMapOrString("static-sessions", &conf.StaticSessions); err != nil {
+		return err
+	}
+
 	logger.Debug("Done configuring")
 
+	return nil
+}
+
+func handleMapOrString(key string, dest interface{}) error {
+	var m map[string]interface{}
+	var err error
+	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
+		if m, err = cast.ToStringMapE(viper.Get(key)); err != nil {
+			return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from flag or env var", 0)
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	if err := mapstructure.Decode(m, dest); err != nil {
+		return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from config file", 0)
+	}
 	return nil
 }
 

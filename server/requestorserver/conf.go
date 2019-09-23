@@ -3,6 +3,7 @@ package requestorserver
 import (
 	"crypto/rsa"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -65,7 +66,10 @@ type Configuration struct {
 	// Host static files under this URL prefix
 	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
 
-	jwtPrivateKey *rsa.PrivateKey
+	StaticSessions map[string]interface{} `json:"static_sessions"`
+
+	staticSessions map[string]irma.RequestorRequest
+	jwtPrivateKey  *rsa.PrivateKey
 }
 
 // Permissions specify which attributes or credential a requestor may verify or issue.
@@ -245,6 +249,32 @@ func (conf *Configuration) initialize() error {
 				conf.URL = "https://" + conf.URL[len("http://"):]
 			}
 		}
+	}
+
+	if len(conf.StaticSessions) != 0 && conf.jwtPrivateKey == nil {
+		conf.Logger.Warn("Static sessions enabled and no JWT private key installed. Ensure that POSTs to the callback URLs of static sessions are trustworthy by keeping the callback URLs secret and by using HTTPS.")
+	}
+	conf.staticSessions = make(map[string]irma.RequestorRequest)
+	for name, r := range conf.StaticSessions {
+		if !regexp.MustCompile("^[a-zA-Z0-9_]+$").MatchString(name) {
+			return errors.Errorf("static session name %s not allowed, must be alphanumeric", name)
+		}
+		j, err := json.Marshal(r)
+		if err != nil {
+			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
+		}
+		rrequest, err := server.ParseSessionRequest(j)
+		if err != nil {
+			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
+		}
+		action := rrequest.SessionRequest().Action()
+		if action != irma.ActionDisclosing && action != irma.ActionSigning {
+			return errors.Errorf("static session %s must be either a disclosing or signing session", name)
+		}
+		if rrequest.Base().CallbackUrl == "" {
+			return errors.Errorf("static session %s has no callback URL", name)
+		}
+		conf.staticSessions[name] = rrequest
 	}
 
 	return nil

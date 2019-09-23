@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -163,13 +164,21 @@ var corsOptions = cors.Options{
 func (s *Server) ClientHandler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(cors.New(corsOptions).Handler)
+	s.attachClientEndpoints(router)
+	return router
+}
 
+func (s *Server) attachClientEndpoints(router *chi.Mux) {
 	router.Mount("/irma/", s.irmaserv.HandlerFunc())
 	if s.conf.StaticPath != "" {
 		router.Mount(s.conf.StaticPrefix, s.StaticFilesHandler())
 	}
-
-	return router
+	router.Group(func(r chi.Router) {
+		if s.conf.Verbose >= 2 {
+			r.Use(s.logHandler("staticsession", true, true, true))
+		}
+		r.Post("/session/-/static/{name}", s.handleCreateStatic)
+	})
 }
 
 // Handler returns a http.Handler that handles all IRMA requestor messages
@@ -180,10 +189,7 @@ func (s *Server) Handler() http.Handler {
 
 	if !s.conf.separateClientServer() {
 		// Mount server for irmaclient
-		router.Mount("/irma/", s.irmaserv.HandlerFunc())
-		if s.conf.StaticPath != "" {
-			router.Mount(s.conf.StaticPrefix, s.StaticFilesHandler())
-		}
+		s.attachClientEndpoints(router)
 	}
 
 	router.NotFound(s.logHandler("requestor", false, true, true)(router.NotFoundHandler()).ServeHTTP)
@@ -351,6 +357,21 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		SessionPtr: qr,
 		Token:      token,
 	})
+}
+
+func (s *Server) handleCreateStatic(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	rrequest := s.conf.staticSessions[name]
+	if rrequest == nil {
+		server.WriteError(w, server.ErrorInvalidRequest, "unknown static session")
+		return
+	}
+	qr, _, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	server.WriteJson(w, qr)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -527,20 +548,42 @@ func (s *Server) resultJwt(sessionresult *server.SessionResult) (string, error) 
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
 	callbackUrl := s.irmaserv.GetRequest(result.Token).Base().CallbackUrl
-	if callbackUrl == "" || s.conf.jwtPrivateKey == nil {
+	if callbackUrl == "" {
 		return
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl}).Debug("POSTing session result")
 
-	j, err := s.resultJwt(result)
-	if err != nil {
-		_ = server.LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
-		return
+	logger := s.conf.Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
+	if !strings.HasPrefix(callbackUrl, "https") {
+		if s.conf.Production {
+			logger.Error("Not POSTing session result to callback URL without TLS: attributes would be unencrypted in transit")
+			return
+		} else {
+			logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
+		}
+	} else {
+		logger.Debug("POSTing session result")
+	}
+
+	var res string
+	if s.conf.jwtPrivateKey != nil {
+		var err error
+		res, err = s.resultJwt(result)
+		if err != nil {
+			_ = server.LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
+			return
+		}
+	} else {
+		bts, err := json.Marshal(result)
+		if err != nil {
+			_ = server.LogError(errors.WrapPrefix(err, "Failed to marshal session result for result callback", 0))
+			return
+		}
+		res = string(bts)
 	}
 
 	var x string // dummy for the server's return value that we don't care about
-	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, j); err != nil {
+	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, res); err != nil {
 		// not our problem, log it and go on
-		s.conf.Logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
+		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
 	}
 }

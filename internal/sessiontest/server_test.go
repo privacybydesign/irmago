@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -116,6 +117,19 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 		"requestor3": {
 			AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
 			AuthenticationKey:    "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg==",
+		},
+	},
+	StaticSessions: map[string]interface{}{
+		"staticsession": irma.ServiceProviderRequest{
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				CallbackUrl: "http://localhost:48685",
+			},
+			Request: &irma.DisclosureRequest{
+				BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
+				Disclose: irma.AttributeConDisCon{
+					{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
+				},
+			},
 		},
 	},
 	JwtPrivateKeyFile: filepath.Join(testdata, "jwtkeys", "sk.pem"),

@@ -164,6 +164,19 @@ func (client *Client) newSchemeSession(qr *irma.SchemeManagerRequest, handler Ha
 
 // newQrSession creates and starts a new interactive IRMA session
 func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
+	if qr.Type == irma.ActionRedirect {
+		newqr := &irma.Qr{}
+		if err := irma.NewHTTPTransport("").Post(qr.URL, newqr, struct{}{}); err != nil {
+			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorTransport, Err: errors.Wrap(err, 0)})
+			return nil
+		}
+		if newqr.Type == irma.ActionRedirect { // explicitly avoid infinite recursion
+			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: errors.New("infinite static QR recursion")})
+			return nil
+		}
+		return client.newQrSession(newqr, handler)
+	}
+
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
 	session := &session{
 		ServerURL: qr.URL,
