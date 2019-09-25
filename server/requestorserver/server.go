@@ -554,12 +554,7 @@ func (s *Server) doResultCallback(result *server.SessionResult) {
 
 	logger := s.conf.Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
 	if !strings.HasPrefix(callbackUrl, "https") {
-		if s.conf.Production {
-			logger.Error("Not POSTing session result to callback URL without TLS: attributes would be unencrypted in transit")
-			return
-		} else {
-			logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
-		}
+		logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
 	} else {
 		logger.Debug("POSTing session result")
 	}
