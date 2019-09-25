@@ -247,10 +247,11 @@ func TestOptionalDisclosure(t *testing.T) {
 	disclosed1 := [][]*irma.DisclosedAttribute{
 		{
 			{
-				RawValue:   &radboud,
-				Value:      map[string]string{"": radboud, "en": radboud, "nl": radboud},
-				Identifier: irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"),
-				Status:     irma.AttributeProofStatusPresent,
+				RawValue:     &radboud,
+				Value:        map[string]string{"": radboud, "en": radboud, "nl": radboud},
+				Identifier:   irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"),
+				Status:       irma.AttributeProofStatusPresent,
+				IssuanceTime: irma.Timestamp(client.Attributes(university.CredentialTypeIdentifier(), 0).SigningDate()),
 			},
 		},
 		{},
