@@ -1,17 +1,16 @@
 package irmaclient
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/timshannon/bolthold"
 	"go.etcd.io/bbolt"
 )
 
@@ -21,7 +20,7 @@ import (
 // Storage provider for a Client
 type storage struct {
 	storagePath   string
-	db            *bolthold.Store
+	db            *bbolt.DB
 	Configuration *irma.Configuration
 }
 
@@ -36,6 +35,11 @@ const (
 	signaturesDir   = "sigs"
 
 	databaseFile = "db"
+)
+
+// Bucketnames bbolt
+const (
+	logsBucket = "logs"
 )
 
 func (s *storage) path(p string) string {
@@ -55,11 +59,7 @@ func (s *storage) EnsureStorageExists() error {
 	if err = fs.EnsureDirectoryExists(s.path(signaturesDir)); err != nil {
 		return err
 	}
-	s.db, err = bolthold.Open(s.path(databaseFile), 0600, &bolthold.Options{
-		Options: &bbolt.Options{Timeout: 1 * time.Second},
-		Encoder: json.Marshal,
-		Decoder: json.Unmarshal,
-	})
+	s.db, err = bbolt.Open(s.path(databaseFile), 0600, &bbolt.Options{Timeout: 1 * time.Second})
 	return err
 }
 
@@ -124,8 +124,31 @@ func (s *storage) StoreLogs(logs []*LogEntry) error {
 }
 
 func (s *storage) AddLogEntry(entry *LogEntry) error {
-	// TODO: Key is stored in string format which breaks sorting order
-	return s.db.Insert(bolthold.NextSequence(), entry)
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		return s.TxAddLogEntry(tx, entry)
+	})
+}
+
+func (s *storage) TxAddLogEntry(tx *bbolt.Tx, entry *LogEntry) error {
+	b, err := tx.CreateBucketIfNotExists([]byte(logsBucket))
+	if err != nil {
+		return err
+	}
+
+	entry.ID, err = b.NextSequence()
+	if err != nil {
+		return err
+	}
+	k := s.logEntryKeyToBytes(entry.ID)
+	v, err := json.Marshal(entry)
+
+	return b.Put(k, v)
+}
+
+func (s *storage) logEntryKeyToBytes(id uint64) []byte {
+	k := make([]byte, 8)
+	binary.BigEndian.PutUint64(k, id)
+	return k
 }
 
 func (s *storage) StorePreferences(prefs Preferences) error {
@@ -205,7 +228,7 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 // a maximum result length of 'max'.
 func (s *storage) LoadLogsBefore(startBeforeIndex uint64, max int) ([]*LogEntry, error) {
 	return s.loadLogsFromBbolt(max, func(c *bbolt.Cursor) (key, value []byte) {
-		c.Seek([]byte(strconv.FormatUint(startBeforeIndex, 10)))
+		c.Seek(s.logEntryKeyToBytes(startBeforeIndex))
 		return c.Prev()
 	})
 }
@@ -222,8 +245,8 @@ func (s *storage) LoadNewestLogs(max int) ([]*LogEntry, error) {
 // the key and the value of the first element from the bbolt database that should be loaded.
 func (s *storage) loadLogsFromBbolt(max int, startAt func(*bbolt.Cursor) (key, value []byte)) ([]*LogEntry, error) {
 	var logs []*LogEntry
-	return logs, s.db.Bolt().View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte("LogEntry"))
+	return logs, s.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(logsBucket))
 		if bucket == nil {
 			return nil
 		}
@@ -234,13 +257,6 @@ func (s *storage) loadLogsFromBbolt(max int, startAt func(*bbolt.Cursor) (key, v
 			if err := json.Unmarshal(v, &log); err != nil {
 				return err
 			}
-
-			// Manually set ID in struct, because somehow bolthold does not store this (also not when uint64 is used)
-			id, err := strconv.ParseUint(string(k), 10, 64)
-			if err != nil {
-				return err
-			}
-			log.ID = id
 
 			logs = append(logs, &log)
 		}

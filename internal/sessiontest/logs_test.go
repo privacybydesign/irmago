@@ -53,6 +53,7 @@ func TestLogging(t *testing.T) {
 	logs, err = client.LoadLogsBefore(entry.ID, 100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
+	require.True(t, logs[0].ID < entry.ID)
 
 	// Test max parameter
 	logs, err = client.LoadNewestLogs(1)
@@ -60,8 +61,6 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+1)
 
 	// Do signature session
-	// This test might fail due to bolthold issue https://github.com/timshannon/bolthold/issues/68
-	// This issue is fixed, so just run `dep ensure -update github.com/timshannon/bolthold`
 	request = getSigningRequest(attrid)
 	sessionHelper(t, request, "signature", client)
 	logs, err = client.LoadNewestLogs(100)
