@@ -177,7 +177,7 @@ func (s *Server) attachClientEndpoints(router *chi.Mux) {
 		if s.conf.Verbose >= 2 {
 			r.Use(s.logHandler("staticsession", true, true, true))
 		}
-		r.Post("/session/-/static/{name}", s.handleCreateStatic)
+		r.Post("/irma/-/static/{name}", s.handleCreateStatic)
 	})
 }
 
