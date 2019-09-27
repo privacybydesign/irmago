@@ -59,21 +59,6 @@ func TestIssuanceSession(t *testing.T) {
 	sessionHelper(t, request, "issue", nil)
 }
 
-func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
-	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
-	request := getCombinedIssuanceRequest(id)
-	sessionHelper(t, request, "issue", nil)
-
-	sessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{
-		{
-			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.email"),
-			Attributes: map[string]string{
-				"email": "example@example.com",
-			},
-		},
-	}, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")), "issue", nil)
-}
-
 func TestMultipleIssuanceSession(t *testing.T) {
 	request := getMultipleIssuanceRequest()
 	sessionHelper(t, request, "issue", nil)
@@ -425,7 +410,7 @@ func TestStaticQRSession(t *testing.T) {
 	// setup static QR and other variables
 	qr := &irma.Qr{
 		Type: irma.ActionRedirect,
-		URL:  "http://localhost:48682/session/-/static/staticsession",
+		URL:  "http://localhost:48682/irma/-/static/staticsession",
 	}
 	bts, err := json.Marshal(qr)
 	require.NoError(t, err)

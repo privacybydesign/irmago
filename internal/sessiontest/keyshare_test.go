@@ -71,3 +71,18 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
 	sessionHelper(t, sigRequest, "signature", client)
 }
+
+func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
+	request := getCombinedIssuanceRequest(id)
+	sessionHelper(t, request, "issue", nil)
+
+	sessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.email"),
+			Attributes: map[string]string{
+				"email": "example@example.com",
+			},
+		},
+	}, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")), "issue", nil)
+}
