@@ -167,7 +167,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	// Copy any new or updated scheme managers out of the assets into storage
 	if conf.assets != "" {
-		err = iterateSubfolders(conf.assets, func(dir string) error {
+		err = iterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
 			scheme := NewSchemeManagerIdentifier(filepath.Base(dir))
 			uptodate, err := conf.isUpToDate(scheme)
 			if err != nil {
@@ -185,7 +185,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	// Parse scheme managers in storage
 	var mgrerr *SchemeManagerError
-	err = iterateSubfolders(conf.Path, func(dir string) error {
+	err = iterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
 		manager := NewSchemeManager(filepath.Base(dir))
 		err := conf.ParseSchemeManagerFolder(dir, manager)
 		if err == nil {
@@ -437,7 +437,7 @@ func (conf *Configuration) Prune() {
 }
 
 func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path string) error {
-	return iterateSubfolders(path, func(dir string) error {
+	return iterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		issuer := &Issuer{}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", issuer)
 		if err != nil {
@@ -549,7 +549,7 @@ func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern st
 // parse $schememanager/$issuer/Issues/*/description.xml
 func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer *Issuer, path string) error {
 	var foundcred bool
-	err := iterateSubfolders(path, func(dir string) error {
+	err := iterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		cred := &CredentialType{}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", cred)
 		if err != nil {
@@ -584,30 +584,48 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 // iterateSubfolders iterates over the subfolders of the specified path,
 // calling the specified handler each time. If anything goes wrong, or
 // if the caller returns a non-nil error, an error is immediately returned.
-func iterateSubfolders(path string, handler func(string) error) error {
-	dirs, err := filepath.Glob(path + "/*")
+func iterateSubfolders(path string, handler func(string, os.FileInfo) error) error {
+	return iterateFiles(path, true, handler)
+}
+
+func iterateFiles(path string, onlyDirs bool, handler func(string, os.FileInfo) error) error {
+	files, err := filepath.Glob(filepath.Join(path, "*"))
 	if err != nil {
 		return err
 	}
 
-	for _, dir := range dirs {
-		stat, err := os.Stat(dir)
+	for _, file := range files {
+		stat, err := os.Stat(file)
 		if err != nil {
 			return err
 		}
-		if !stat.IsDir() {
+		if onlyDirs && !stat.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(dir, "/.git") {
+		if filepath.Base(file) == ".git" {
 			continue
 		}
-		err = handler(dir)
+		err = handler(file, stat)
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// walkDir recursively walks the file tree rooted at path, following symlinks (unlike filepath.Walk).
+// Avoiding loops is the responsibility of the caller.
+func walkDir(path string, handler func(string, os.FileInfo) error) error {
+	return iterateFiles(path, false, func(p string, info os.FileInfo) error {
+		if info.IsDir() {
+			if err := handler(p, info); err != nil {
+				return err
+			}
+			return walkDir(p, handler)
+		}
+		return handler(p, info)
+	})
 }
 
 func (conf *Configuration) pathToDescription(manager *SchemeManager, path string, description interface{}) (bool, error) {
@@ -1012,7 +1030,7 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (Sche
 }
 
 func (conf *Configuration) checkUnsignedFiles(name string, index SchemeManagerIndex) error {
-	return filepath.Walk(filepath.Join(conf.Path, name), func(path string, info os.FileInfo, err error) error {
+	return walkDir(filepath.Join(conf.Path, name), func(path string, info os.FileInfo) error {
 		relpath, err := filepath.Rel(conf.Path, path)
 		if err != nil {
 			return err
