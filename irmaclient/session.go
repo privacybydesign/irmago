@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/bwesterb/go-atum"
-	"github.com/getsentry/raven-go"
+	raven "github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -77,7 +77,7 @@ type session struct {
 	client         *Client
 	request        irma.SessionRequest
 	done           bool
-	prepRevocation chan error
+	prepRevocation chan error // used when nonrevocation preprocessing is done
 
 	// State for issuance sessions
 	issuerProofNonce *big.Int
@@ -138,6 +138,8 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
+	client.stopJobs()
+
 	session := &session{
 		Action:         action,
 		Handler:        handler,
@@ -180,6 +182,8 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		}
 		return client.newQrSession(newqr, handler)
 	}
+
+	client.stopJobs()
 
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
 	session := &session{
@@ -309,7 +313,7 @@ func (session *session) processSessionInfo() {
 
 	// Prepare and update all revocation state asynchroniously while the user makes her choices
 	go func() {
-		session.prepRevocation <- session.client.PrepareNonrevocation(session.request)
+		session.prepRevocation <- session.client.NonrevPreprare(session.request)
 	}()
 
 	// Ask for permission to execute the session
@@ -468,14 +472,9 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.done = true
+	session.client.nonrevRepopulateCaches(session.request)
+	session.client.startJobs()
 	session.Handler.Success(string(messageJson))
-
-	go func() {
-		if err := session.client.repopulateNonrevCaches(session.request); err != nil {
-			raven.CaptureError(err, nil)
-			irma.Logger.Error(err)
-		}
-	}()
 }
 
 // managerSession performs a "session" in which a new scheme manager is added (asking for permission first).
@@ -652,11 +651,14 @@ func panicToError(e interface{}) *irma.SessionError {
 }
 
 // Idempotently send DELETE to remote server, returning whether or not we did something
+// TODO this function does more, rename
 func (session *session) delete() bool {
 	if !session.done {
 		if session.IsInteractive() {
 			session.transport.Delete()
 		}
+		session.client.nonrevRepopulateCaches(session.request)
+		session.client.startJobs()
 		session.done = true
 		return true
 	}

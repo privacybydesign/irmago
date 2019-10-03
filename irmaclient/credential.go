@@ -41,18 +41,18 @@ func (cred *credential) AttributeList() *irma.AttributeList {
 	return cred.attrs
 }
 
-// prepareNonrevocation attempts to update the credential's nonrevocation witness from
+// NonrevPrepare attempts to update the credential's nonrevocation witness from
 // 1) the session request, and then 2) the revocation server if our witness is too far out of date.
 // Returns whether or not the credential's nonrevocation state was updated. If so the caller should
 // persist the updated credential to storage.
-func (cred *credential) prepareNonrevocation(conf *irma.Configuration, request irma.SessionRequest) (bool, error) {
+func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.SessionRequest) (bool, error) {
 	credtype := cred.CredentialType().Identifier()
 	if !request.Base().RequestsRevocation(credtype) {
 		return false, nil
 	}
 
 	revupdates := request.Base().RevocationUpdates[credtype]
-	updated, err := cred.updateNonrevWitness(revupdates, conf.RevocationStorage)
+	updated, err := cred.NonrevApplyUpdates(revupdates, conf.RevocationStorage)
 	if err != nil {
 		return updated, err
 	}
@@ -68,12 +68,12 @@ func (cred *credential) prepareNonrevocation(conf *irma.Configuration, request i
 	if err != nil {
 		return updated, err
 	}
-	return cred.updateNonrevWitness(revupdates, conf.RevocationStorage)
+	return cred.NonrevApplyUpdates(revupdates, conf.RevocationStorage)
 }
 
-// updateNonrevWitness updates the credential's nonrevocation witness using the specified messages,
+// NonrevApplyUpdates updates the credential's nonrevocation witness using the specified messages,
 // if they all verify and if their indices are ahead and adjacent to that of our witness.
-func (cred *credential) updateNonrevWitness(messages []*irma.RevocationRecord, rs *irma.RevocationStorage) (bool, error) {
+func (cred *credential) NonrevApplyUpdates(messages []*irma.RevocationRecord, rs *irma.RevocationStorage) (bool, error) {
 	var err error
 	var pk *revocation.PublicKey
 	oldindex := cred.NonRevocationWitness.Index
@@ -86,5 +86,5 @@ func (cred *credential) updateNonrevWitness(messages []*irma.RevocationRecord, r
 		}
 	}
 
-	return cred.NonRevocationWitness.Index != oldindex, cred.PrepareNonrevCache()
+	return cred.NonRevocationWitness.Index != oldindex, cred.NonrevPrepareCache()
 }

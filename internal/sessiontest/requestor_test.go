@@ -379,7 +379,7 @@ func TestRevocation(t *testing.T) {
 
 	req := revocationRequest()
 	require.NoError(t, client.Configuration.RevocationStorage.SetRecords(req.Base()))
-	require.NoError(t, client.PrepareNonrevocation(req))
+	require.NoError(t, client.NonrevPreprare(req))
 
 	// revoke cred0
 	require.NoError(t, revocationServer.Revoke(cred, "cred0"))

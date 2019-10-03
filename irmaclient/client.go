@@ -57,6 +57,9 @@ type Client struct {
 	Configuration         *irma.Configuration
 	irmaConfigurationPath string
 	handler               ClientHandler
+
+	jobsCancel chan struct{}
+	jobChan    chan func()
 }
 
 // SentryDSN should be set in the init() function
@@ -188,32 +191,62 @@ func New(
 		return nil, errors.New("Too many keyshare servers")
 	}
 
-	reportErr := func(err error) {
-		irma.Logger.Error(err)
-		raven.CaptureError(err, nil)
-		return
-	}
-
-	defer func() {
-		var cred *credential
-		var err error
-		for credid, attrsets := range client.attributes {
-			for i := range attrsets {
-				if cred, err = client.credential(credid, i); err != nil {
-					reportErr(err)
-				}
-				if err = cred.PrepareNonrevCache(); err != nil {
-					reportErr(err)
+	client.jobChan = make(chan func(), 100)
+	for credid, attrsets := range client.attributes {
+		for i := range attrsets {
+			credid := credid // make copy of same name to capture the value for closure below
+			i := i           // same, see https://golang.org/doc/faq#closures_and_goroutines
+			client.jobChan <- func() {
+				if err := client.nonrevCredPrepareCache(credid, i); err != nil {
+					client.reportError(err)
 				}
 			}
 		}
-	}()
+	}
+	go client.startJobs()
 
 	return client, schemeMgrErr
 }
 
 func (client *Client) Close() error {
 	return client.storage.Close()
+}
+
+func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
+	cred, err := client.credential(credid, index)
+	if err != nil {
+		return err
+	}
+	return cred.NonrevPrepareCache()
+}
+
+func (client *Client) reportError(err error) {
+	irma.Logger.Error(err)
+	raven.CaptureError(err, nil)
+}
+
+func (client *Client) startJobs() {
+	if client.jobsCancel != nil { // already running
+		return
+	}
+
+	client.jobsCancel = make(chan struct{})
+	for {
+		select {
+		case <-client.jobsCancel:
+			client.jobsCancel = nil
+			return
+		case job := <-client.jobChan:
+			job()
+		}
+	}
+}
+
+func (client *Client) stopJobs() {
+	if client.jobsCancel == nil {
+		return
+	}
+	close(client.jobsCancel)
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
@@ -721,10 +754,10 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (
 	return todisclose, attributeIndices, nil
 }
 
-// PrepareNonrevocation updates the revocation state for each credential in the request
+// NonrevPrepare updates the revocation state for each credential in the request
 // requiring a nonrevocation proof, using the updates included in the request, or the remote
 // revocation server if those do not suffice.
-func (client *Client) PrepareNonrevocation(request irma.SessionRequest) error {
+func (client *Client) NonrevPreprare(request irma.SessionRequest) error {
 	var err error
 	var cred *credential
 	var updated bool
@@ -737,7 +770,7 @@ func (client *Client) PrepareNonrevocation(request irma.SessionRequest) error {
 			if cred, err = client.credential(id, i); err != nil {
 				return err
 			}
-			if updated, err = cred.prepareNonrevocation(client.Configuration, request); err != nil {
+			if updated, err = cred.NonrevPrepare(client.Configuration, request); err != nil {
 				return err
 			}
 			if updated {
@@ -750,24 +783,22 @@ func (client *Client) PrepareNonrevocation(request irma.SessionRequest) error {
 	return nil
 }
 
-func (client *Client) repopulateNonrevCaches(request irma.SessionRequest) error {
-	var err error
-	var cred *credential
+func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
 	for id := range request.Disclosure().Identifiers().CredentialTypes {
 		typ := client.Configuration.CredentialTypes[id]
 		if !typ.SupportsRevocation() {
 			continue
 		}
 		for i := 0; i < len(client.attrs(id)); i++ {
-			if cred, err = client.credential(id, i); err != nil {
-				return err
-			}
-			if err = cred.PrepareNonrevCache(); err != nil {
-				return err
+			id := id
+			i := i
+			client.jobChan <- func() {
+				if err := client.nonrevCredPrepareCache(id, i); err != nil {
+					client.reportError(err)
+				}
 			}
 		}
 	}
-	return nil
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
