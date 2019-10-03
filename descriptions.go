@@ -49,6 +49,7 @@ type Issuer struct {
 	SchemeManagerID string           `xml:"SchemeManager"`
 	ContactAddress  string
 	ContactEMail    string
+	DeprecatedSince Timestamp
 	XMLVersion      int `xml:"version,attr"`
 
 	Valid bool `xml:"-"`
@@ -68,6 +69,7 @@ type CredentialType struct {
 	XMLVersion      int              `xml:"version,attr"`
 	XMLName         xml.Name         `xml:"IssueSpecification"`
 	IssueURL        TranslatedString `xml:"IssueURL"`
+	DeprecatedSince Timestamp
 
 	Valid bool `xml:"-"`
 }
