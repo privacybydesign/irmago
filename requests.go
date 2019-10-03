@@ -2,6 +2,7 @@ package irma
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"strconv"
@@ -648,6 +649,19 @@ func (t Timestamp) Before(u Timestamp) bool {
 
 func (t Timestamp) After(u Timestamp) bool {
 	return time.Time(t).After(time.Time(u))
+}
+
+func (t *Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	return e.EncodeElement(t.String(), start)
+}
+
+func (t *Timestamp) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var ts int64
+	if err := d.DecodeElement(&ts, &start); err != nil {
+		return err
+	}
+	*t = Timestamp(time.Unix(ts, 0))
+	return nil
 }
 
 // MarshalJSON marshals a timestamp.
