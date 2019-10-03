@@ -130,7 +130,7 @@ func New(
 		return nil, err
 	}
 
-	cm := &Client{
+	client := &Client{
 		credentialsCache:      make(map[irma.CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
@@ -138,57 +138,78 @@ func New(
 		handler:               handler,
 	}
 
-	cm.Configuration, err = irma.NewConfigurationFromAssets(filepath.Join(storagePath, "irma_configuration"), irmaConfigurationPath)
+	client.Configuration, err = irma.NewConfigurationFromAssets(filepath.Join(storagePath, "irma_configuration"), irmaConfigurationPath)
 	if err != nil {
 		return nil, err
 	}
 
-	schemeMgrErr := cm.Configuration.ParseOrRestoreFolder()
+	schemeMgrErr := client.Configuration.ParseOrRestoreFolder()
 	// If schemMgrErr is of type SchemeManagerError, we continue and
 	// return it at the end; otherwise bail out now
 	_, isSchemeMgrErr := schemeMgrErr.(*irma.SchemeManagerError)
 	if schemeMgrErr != nil && !isSchemeMgrErr {
 		return nil, schemeMgrErr
 	}
-	cm.Configuration.RevocationPath = filepath.Join(storagePath, "revocation")
-	if err = fs.EnsureDirectoryExists(cm.Configuration.RevocationPath); err != nil {
+	client.Configuration.RevocationPath = filepath.Join(storagePath, "revocation")
+	if err = fs.EnsureDirectoryExists(client.Configuration.RevocationPath); err != nil {
 		return nil, err
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	cm.storage = storage{storagePath: storagePath, Configuration: cm.Configuration}
-	if err = cm.storage.EnsureStorageExists(); err != nil {
+	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration}
+	if err = client.storage.EnsureStorageExists(); err != nil {
 		return nil, err
 	}
 	// Legacy storage does not need ensuring existence
 	cm.fileStorage = fileStorage{storagePath: storagePath, Configuration: cm.Configuration}
 
-	if cm.Preferences, err = cm.storage.LoadPreferences(); err != nil {
+	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
 		return nil, err
 	}
-	cm.applyPreferences()
+	client.applyPreferences()
 
 	// Perform new update functions from clientUpdates, if any
-	if err = cm.update(); err != nil {
+	if err = client.update(); err != nil {
 		return nil, err
 	}
 
 	// Load our stuff
-	if cm.secretkey, err = cm.storage.LoadSecretKey(); err != nil {
+	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
 		return nil, err
 	}
-	if cm.attributes, err = cm.storage.LoadAttributes(); err != nil {
+	if client.attributes, err = client.storage.LoadAttributes(); err != nil {
 		return nil, err
 	}
-	if cm.keyshareServers, err = cm.storage.LoadKeyshareServers(); err != nil {
+	if client.keyshareServers, err = client.storage.LoadKeyshareServers(); err != nil {
 		return nil, err
 	}
 
-	if len(cm.UnenrolledSchemeManagers()) > 1 {
+	if len(client.UnenrolledSchemeManagers()) > 1 {
 		return nil, errors.New("Too many keyshare servers")
 	}
 
-	return cm, schemeMgrErr
+	reportErr := func(err error) {
+		irma.Logger.Error(err)
+		raven.CaptureError(err, nil)
+		return
+	}
+
+	defer func() {
+		var cred *credential
+		var err error
+		for credid, attrsets := range client.attributes {
+			for i := range attrsets {
+				if cred, err = client.credential(credid, i); err != nil {
+					reportErr(err)
+				}
+				if err = cred.PrepareNonrevCache(); err != nil {
+					reportErr(err)
+				}
+			}
+		}
+	}()
+
+	return client, schemeMgrErr
 }
 
 func (client *Client) Close() error {
