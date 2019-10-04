@@ -29,7 +29,12 @@ var (
 
 func init() {
 	logger.Level = logrus.TraceLevel
-	logger.Formatter = &prefixed.TextFormatter{ForceFormatting: true, ForceColors: true}
+	logger.Formatter = &prefixed.TextFormatter{
+		ForceFormatting: true,
+		ForceColors:     true,
+		FullTimestamp:   true,
+		TimestampFormat: "15:04:05.000000",
+	}
 }
 
 func StartRequestorServer(configuration *requestorserver.Configuration) {
