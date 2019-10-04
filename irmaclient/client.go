@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/keyproof/common"
+	"github.com/sirupsen/logrus"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -58,8 +59,8 @@ type Client struct {
 	irmaConfigurationPath string
 	handler               ClientHandler
 
-	jobsCancel chan struct{}
-	jobChan    chan func()
+	jobs      chan func()   // queue of jobs to run
+	jobsPause chan struct{} // sending pauses background jobs
 }
 
 // SentryDSN should be set in the init() function
@@ -191,19 +192,22 @@ func New(
 		return nil, errors.New("Too many keyshare servers")
 	}
 
-	client.jobChan = make(chan func(), 100)
+	client.jobs = make(chan func(), 100)
 	for credid, attrsets := range client.attributes {
-		for i := range attrsets {
+		for i, attrs := range attrsets {
+			if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
+				continue
+			}
 			credid := credid // make copy of same name to capture the value for closure below
 			i := i           // same, see https://golang.org/doc/faq#closures_and_goroutines
-			client.jobChan <- func() {
+			client.jobs <- func() {
 				if err := client.nonrevCredPrepareCache(credid, i); err != nil {
 					client.reportError(err)
 				}
 			}
 		}
 	}
-	go client.startJobs()
+	client.StartJobs()
 
 	return client, schemeMgrErr
 }
@@ -213,6 +217,7 @@ func (client *Client) Close() error {
 }
 
 func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
+	irma.Logger.WithFields(logrus.Fields{"credid": credid, "index": index}).Debug("Preparing cache")
 	cred, err := client.credential(credid, index)
 	if err != nil {
 		return err
@@ -225,28 +230,40 @@ func (client *Client) reportError(err error) {
 	raven.CaptureError(err, nil)
 }
 
-func (client *Client) startJobs() {
-	if client.jobsCancel != nil { // already running
+// StartJobs performs scheduled background jobs in separate goroutines.
+// Pause pending jobs with PauseJobs().
+func (client *Client) StartJobs() {
+	irma.Logger.Debug("starting jobs")
+	if client.jobsPause != nil {
+		irma.Logger.Debug("already running")
 		return
 	}
 
-	client.jobsCancel = make(chan struct{})
-	for {
-		select {
-		case <-client.jobsCancel:
-			client.jobsCancel = nil
-			return
-		case job := <-client.jobChan:
-			job()
+	client.jobsPause = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-client.jobsPause:
+				client.jobsPause = nil
+				irma.Logger.Debug("jobs stopped")
+				return
+			case job := <-client.jobs:
+				irma.Logger.Debug("doing job ", job)
+				job()
+				irma.Logger.Debug("job done ", job)
+			}
 		}
-	}
+	}()
 }
 
-func (client *Client) stopJobs() {
-	if client.jobsCancel == nil {
+// PauseJobs pauses background job processing.
+func (client *Client) PauseJobs() {
+	irma.Logger.Debug("pausing jobs")
+	if client.jobsPause == nil {
+		irma.Logger.Debug("already paused")
 		return
 	}
-	close(client.jobsCancel)
+	close(client.jobsPause)
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
@@ -783,16 +800,21 @@ func (client *Client) NonrevPreprare(request irma.SessionRequest) error {
 	return nil
 }
 
+// nonrevRepopulateCaches repopulates the consumed nonrevocation caches of the credentials involved
+// in the request, in background jobs, after the request has finished.
 func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
 	for id := range request.Disclosure().Identifiers().CredentialTypes {
 		typ := client.Configuration.CredentialTypes[id]
 		if !typ.SupportsRevocation() {
 			continue
 		}
-		for i := 0; i < len(client.attrs(id)); i++ {
+		for i, attrs := range client.attrs(id) {
+			if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
+				continue
+			}
 			id := id
 			i := i
-			client.jobChan <- func() {
+			client.jobs <- func() {
 				if err := client.nonrevCredPrepareCache(id, i); err != nil {
 					client.reportError(err)
 				}

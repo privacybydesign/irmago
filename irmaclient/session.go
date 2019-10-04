@@ -138,7 +138,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
-	client.stopJobs()
+	client.PauseJobs()
 
 	session := &session{
 		Action:         action,
@@ -183,7 +183,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		return client.newQrSession(newqr, handler)
 	}
 
-	client.stopJobs()
+	client.PauseJobs()
 
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
 	session := &session{
@@ -473,7 +473,7 @@ func (session *session) sendResponse(message interface{}) {
 	}
 	session.done = true
 	session.client.nonrevRepopulateCaches(session.request)
-	session.client.startJobs()
+	session.client.StartJobs()
 	session.Handler.Success(string(messageJson))
 }
 
@@ -658,7 +658,7 @@ func (session *session) delete() bool {
 			session.transport.Delete()
 		}
 		session.client.nonrevRepopulateCaches(session.request)
-		session.client.startJobs()
+		session.client.StartJobs()
 		session.done = true
 		return true
 	}
