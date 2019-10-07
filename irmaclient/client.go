@@ -580,7 +580,7 @@ func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]map
 				continue
 			}
 			for _, cred := range creds {
-				if req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
+				if cred.IsValid() && req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
 					continue conloop
 				}
 			}
