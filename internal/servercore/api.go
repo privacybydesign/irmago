@@ -206,7 +206,7 @@ func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {
 	}
 	return &irma.Qr{
 		Type: action,
-		URL:  s.conf.URL + session.clientToken,
+		URL:  s.conf.URL + "session/" + session.clientToken,
 	}, session.token, nil
 }
 
@@ -238,7 +238,7 @@ func (s *Server) CancelSession(token string) error {
 }
 
 func ParsePath(path string) (string, string, error) {
-	pattern := regexp.MustCompile("(\\w+)/?(|commitments|proofs|status|statusevents)$")
+	pattern := regexp.MustCompile("session/(\\w+)/?(|commitments|proofs|status|statusevents)$")
 	matches := pattern.FindStringSubmatch(path)
 	if len(matches) != 3 {
 		return "", "", server.LogWarning(errors.Errorf("Invalid URL: %s", path))

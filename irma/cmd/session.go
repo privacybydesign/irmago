@@ -47,7 +47,7 @@ irma session --server http://localhost:48680 --authmethod token --key mytoken --
 		if err != nil {
 			die("", err)
 		}
-		
+
 		// Make sure we always run with latest configuration
 		irmaconfig.UpdateSchemes()
 
@@ -231,7 +231,7 @@ func init() {
 	if err != nil {
 		logger.Warn("Could not determine local IP address: ", err.Error())
 	} else {
-		defaulturl = "http://" + defaulturl + ":port"
+		defaulturl = "http://" + defaulturl + ":port/session"
 	}
 
 	flags := sessionCmd.Flags()

@@ -410,7 +410,7 @@ func TestStaticQRSession(t *testing.T) {
 	// setup static QR and other variables
 	qr := &irma.Qr{
 		Type: irma.ActionRedirect,
-		URL:  "http://localhost:48682/irma/-/static/staticsession",
+		URL:  "http://localhost:48682/irma/session/staticsession",
 	}
 	bts, err := json.Marshal(qr)
 	require.NoError(t, err)
