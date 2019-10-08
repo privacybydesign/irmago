@@ -224,18 +224,18 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 	return ksses, nil
 }
 
-// Returns all logs stored before log with ID 'startBeforeIndex' sorted from new to old with
+// Returns all logs stored before log with ID 'index' sorted from new to old with
 // a maximum result length of 'max'.
-func (s *storage) LoadLogsBefore(startBeforeIndex uint64, max int) ([]*LogEntry, error) {
-	return s.loadLogsFromBbolt(max, func(c *bbolt.Cursor) (key, value []byte) {
-		c.Seek(s.logEntryKeyToBytes(startBeforeIndex))
+func (s *storage) LoadLogsBefore(index uint64, max int) ([]*LogEntry, error) {
+	return s.loadLogs(max, func(c *bbolt.Cursor) (key, value []byte) {
+		c.Seek(s.logEntryKeyToBytes(index))
 		return c.Prev()
 	})
 }
 
 // Returns the latest logs stored sorted from new to old with a maximum result length of 'max'
 func (s *storage) LoadNewestLogs(max int) ([]*LogEntry, error) {
-	return s.loadLogsFromBbolt(max, func(c *bbolt.Cursor) (key, value []byte) {
+	return s.loadLogs(max, func(c *bbolt.Cursor) (key, value []byte) {
 		return c.Last()
 	})
 }
@@ -243,8 +243,8 @@ func (s *storage) LoadNewestLogs(max int) ([]*LogEntry, error) {
 // Returns the logs stored sorted from new to old with a maximum result length of 'max' where the starting position
 // of the bbolt cursor can be manipulated by the anonymous function 'startAt'. 'startAt' should return
 // the key and the value of the first element from the bbolt database that should be loaded.
-func (s *storage) loadLogsFromBbolt(max int, startAt func(*bbolt.Cursor) (key, value []byte)) ([]*LogEntry, error) {
-	var logs []*LogEntry
+func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []byte)) ([]*LogEntry, error) {
+	logs := make([]*LogEntry, 0, max)
 	return logs, s.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(logsBucket))
 		if bucket == nil {

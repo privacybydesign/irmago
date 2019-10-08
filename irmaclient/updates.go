@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/privacybydesign/irmago"
@@ -47,16 +46,9 @@ var clientUpdates = []func(client *Client) error{
 	func(client *Client) error {
 		var logs []*LogEntry
 		var err error
-
-		start := time.Now()
-		fmt.Println(start.UnixNano(), "started")
 		if err = client.storage.load(&logs, logsFile); err != nil {
 			return err
 		}
-
-		loaded := time.Now()
-		fmt.Println(loaded.Sub(start), "loaded")
-
 		// Open one bolt transaction to process all our log entries in
 		err = client.storage.db.Update(func(tx *bbolt.Tx) error {
 			for _, log := range logs {
@@ -77,10 +69,6 @@ var clientUpdates = []func(client *Client) error{
 			}
 			return nil
 		})
-
-		done := time.Now()
-		fmt.Println(done.Sub(loaded), "done converting", len(logs), "logs")
-
 		return err
 	},
 }
