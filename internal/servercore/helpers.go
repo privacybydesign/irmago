@@ -48,13 +48,13 @@ func (session *session) fail(err server.Error, message string) *irma.RemoteError
 	return rerr
 }
 
-const retryTimeLimit = 5 * time.Second
+const retryTimeLimit = 10 * time.Second
 
 // checkCache returns a previously cached response, for replaying against multiple requests from
 // irmago's retryablehttp client, if:
 // - the same was POSTed as last time
-// - last time was not more than 5 seconds ago (retryablehttp client gives up before this)
-// - the status is now done (which it should be if this is the second time we receive this message).
+// - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
+// - the session status is what it is expected to be when receiving the request for a second time.
 func (session *session) checkCache(message []byte, expectedStatus server.Status) (int, []byte) {
 	if len(session.responseCache.response) > 0 {
 		if session.responseCache.sessionStatus != expectedStatus {
