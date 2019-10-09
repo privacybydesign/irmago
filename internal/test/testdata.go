@@ -48,24 +48,22 @@ func StopSchemeManagerHttpServer() {
 func StartBadHttpServer(count int, timeout time.Duration, success string) {
 	badServer = &http.Server{Addr: ":48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if badServerCount >= count {
-			fmt.Fprintln(w, success)
+			_, _ = fmt.Fprintln(w, success)
 			return
-		}
-		badServerCount++
-		if badServerCount == 1 {
+		} else {
+			badServerCount++
 			time.Sleep(timeout)
 		}
-		w.WriteHeader(500)
 	})}
 
 	go func() {
-		badServer.ListenAndServe()
+		_ = badServer.ListenAndServe()
 	}()
 	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
 func StopBadHttpServer() {
-	badServer.Close()
+	_ = badServer.Close()
 }
 
 // FindTestdataFolder finds the "testdata" folder which is in . or ..

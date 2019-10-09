@@ -133,6 +133,14 @@
   revision = "d5fe4b57a186c716b0e00b8c301cbd9b4182694d"
 
 [[projects]]
+  digest = "1:cf6b61e1b4c26b0c7526cee4a0cee6d8302b17798af4b2a56a90eedac0aef11a"
+  name = "github.com/hashicorp/go-hclog"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "5ccdce08c75b6c7b37af61159f13f6a4f5e2e928"
+  version = "v0.9.2"
+
+[[projects]]
   branch = "master"
   digest = "1:e5048c5da80697be2fcdecc944e29d2999e01fd7f48b643168443209779f3463"
   name = "github.com/hashicorp/go-multierror"
@@ -141,12 +149,12 @@
   revision = "b7773ae218740a7be65057fc60b366a49b538a44"
 
 [[projects]]
-  branch = "master"
-  digest = "1:27d0d41550b480f5a217f6ad9f82491248d092e9cea775845d8784e0fc7c7d1b"
+  digest = "1:bc4393e7d030ef4a548d9643997e2ae9064ed93d7ed140569b27336ee3b77464"
   name = "github.com/hashicorp/go-retryablehttp"
   packages = ["."]
   pruneopts = "UT"
-  revision = "3b087ef2d313afe6c55b2f511d20db04ca767075"
+  revision = "a83ad44d6a5fc343d7c4babf601092b3c189f402"
+  version = "v0.6.2"
 
 [[projects]]
   digest = "1:ea40c24cdbacd054a6ae9de03e62c5f252479b96c716375aace5c120d68647c8"
@@ -472,6 +480,7 @@
     "github.com/go-chi/chi/middleware",
     "github.com/go-chi/cors",
     "github.com/go-errors/errors",
+    "github.com/hashicorp/go-cleanhttp",
     "github.com/hashicorp/go-retryablehttp",
     "github.com/jasonlvhit/gocron",
     "github.com/mdp/qrterminal",

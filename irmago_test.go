@@ -46,7 +46,7 @@ func TestConfigurationAutocopy(t *testing.T) {
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	// The description.xml of the scheme manager under this folder has been edited
 	// to invalidate the scheme manager signature
-	conf, err := NewConfigurationReadOnly(filepath.Join("testdata","irma_configuration_invalid"))
+	conf, err := NewConfigurationReadOnly(filepath.Join("testdata", "irma_configuration_invalid"))
 	require.NoError(t, err)
 
 	// Parsing it should return a SchemeManagerError
@@ -64,7 +64,7 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 }
 
 func TestRetryHTTPRequest(t *testing.T) {
-	test.StartBadHttpServer(3, 1*time.Second, "42")
+	test.StartBadHttpServer(2, 1*time.Second, "42")
 	defer test.StopBadHttpServer()
 
 	transport := NewHTTPTransport("http://localhost:48682")
@@ -82,7 +82,7 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	defer test.ClearTestStorage(t)
 
 	conf, err := NewConfigurationFromAssets(filepath.Join("testdata", "storage", "test", "irma_configuration"),
-		filepath.Join("testdata","irma_configuration_invalid"))
+		filepath.Join("testdata", "irma_configuration_invalid"))
 	require.NoError(t, err)
 
 	err = conf.ParseOrRestoreFolder()
