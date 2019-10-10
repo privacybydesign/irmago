@@ -297,8 +297,11 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	return nil
 }
 
-// RemoveCredential removes the specified credential.
+// RemoveCredential removes the specified credential if that is allowed.
 func (client *Client) RemoveCredential(id irma.CredentialTypeIdentifier, index int) error {
+	if client.Configuration.CredentialTypes[id].DisallowDelete {
+		return errors.Errorf("configuration does not allow removal of credential type %s", id.String())
+	}
 	return client.remove(id, index, true)
 }
 
