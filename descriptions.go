@@ -62,6 +62,7 @@ type CredentialType struct {
 	IssuerID        string           `xml:"IssuerID"`
 	SchemeManagerID string           `xml:"SchemeManager"`
 	IsSingleton     bool             `xml:"ShouldBeSingleton"`
+	DisallowDelete  bool             `xml:"DisallowDelete"`
 	Description     TranslatedString
 	AttributeTypes  []*AttributeType `xml:"Attributes>Attribute" json:"-"`
 	XMLVersion      int              `xml:"version,attr"`
