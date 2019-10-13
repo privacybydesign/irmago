@@ -41,7 +41,7 @@ with --message flags, or it can be specified as JSON to the --request flag.`,
 irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
 irma session --request '{"type":"disclosing","content":[{"label":"BSN","attributes":["irma-demo.MijnOverheid.root.BSN"]}]}'
-irma session --server http://localhost:48680 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN`,
+irma session --server http://localhost:8088 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN`,
 	Run: func(cmd *cobra.Command, args []string) {
 		request, irmaconfig, err := configure(cmd)
 		if err != nil {

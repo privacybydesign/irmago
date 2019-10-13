@@ -13,7 +13,7 @@ import (
 var RootCmd = &cobra.Command{
 	Use:   "irma",
 	Short: "IRMA toolkit",
-	Long:  "IRMA toolkit\nDocumentation: https://irma.app/docs",
+	Long:  "IRMA toolkit v" + irma.Version + "\nDocumentation: https://irma.app/docs",
 }
 
 func Execute() {
