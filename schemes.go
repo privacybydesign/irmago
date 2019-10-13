@@ -3,6 +3,9 @@ package irma
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
+
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // SchemeManagerPointer points to a remote IRMA scheme, containing information to download the scheme,
@@ -45,7 +48,15 @@ func (conf *Configuration) DownloadDefaultSchemes() error {
 	return nil
 }
 
-func (conf *Configuration) downloadPrivateKeys(scheme *SchemeManager) error {
+// downloadDemoPrivateKeys attempts to download the scheme and issuer private keys, if the scheme is
+// a demo scheme and if they are not already present in the scheme, without failing if any of them
+// is not available.
+func (conf *Configuration) downloadDemoPrivateKeys(scheme *SchemeManager) error {
+	if !scheme.Demo {
+		return nil
+	}
+
+	Logger.Debugf("Attempting downloading of private keys of scheme %s", scheme.ID)
 	transport := NewHTTPTransport(scheme.URL)
 
 	err := transport.GetFile("sk.pem", filepath.Join(conf.Path, scheme.ID, "sk.pem"))
@@ -53,18 +64,25 @@ func (conf *Configuration) downloadPrivateKeys(scheme *SchemeManager) error {
 		Logger.Warnf("Downloading private key of scheme %s failed ", scheme.ID)
 	}
 
-	for issid := range conf.Issuers {
-		// For all public keys that this issuer has in storage, see if a corresponding private key can be downloaded
-		indices, err := conf.PublicKeyIndices(issid)
-		if err != nil {
-			return err
+	pkpath := fmt.Sprintf(pubkeyPattern, conf.Path, scheme.ID, "*")
+	files, err := filepath.Glob(pkpath)
+	if err != nil {
+		return err
+	}
+
+	// For each public key, attempt to download a corresponding private key
+	for _, file := range files {
+		i := strings.LastIndex(pkpath, "PublicKeys")
+		skpath := file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1)
+		parts := strings.Split(skpath, "/")
+		local := filepath.FromSlash(skpath)
+		exists, err := fs.PathExists(local)
+		if exists || err != nil {
+			continue
 		}
-		for _, index := range indices {
-			remote := fmt.Sprintf("%s/PrivateKeys/%d.xml", issid.Name(), index)
-			local := filepath.Join(conf.Path, scheme.ID, remote)
-			if err = transport.GetFile(remote, filepath.FromSlash(local)); err != nil {
-				Logger.Warnf("Downloading private key %d of issuer %s failed", index, issid.String())
-			}
+		remote := strings.Join(parts[len(parts)-3:len(parts)], "/")
+		if err = transport.GetFile(remote, local); err != nil {
+			Logger.Warnf("Downloading private key %s failed: %s", skpath, err)
 		}
 	}
 

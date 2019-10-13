@@ -1278,15 +1278,10 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		}
 	}
 
-	manager.index = newIndex
-
-	if manager.Demo {
-		// Download private keys if needed.
-		// These are unsigned so partial download isn't really an option.
-		if err := conf.downloadPrivateKeys(manager); err != nil {
-			return err
-		}
+	if err := conf.downloadDemoPrivateKeys(manager); err != nil {
+		return err
 	}
+
 	return
 }
 
