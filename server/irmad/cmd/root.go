@@ -104,6 +104,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
 	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
+	flags.Bool("disable-schemes-update", false, "disable IRMA scheme updating")
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
 	flags.String("static-prefix", "/", "Host static files under this URL prefix")
@@ -213,7 +214,7 @@ func configure(cmd *cobra.Command) error {
 			SchemesPath:           viper.GetString("schemes-path"),
 			SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
 			SchemesUpdateInterval: viper.GetInt("schemes-update"),
-			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
+			DisableSchemesUpdate:  viper.GetBool("disable-schemes-update") || viper.GetInt("schemes-update") == 0,
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
 			URL:        viper.GetString("url"),
 			DisableTLS: viper.GetBool("no-tls"),

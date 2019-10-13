@@ -94,11 +94,14 @@ func (s *Server) verifyConfiguration(configuration *server.Configuration) error 
 			return server.LogError(err)
 		}
 	}
-	if s.conf.SchemesUpdateInterval == 0 {
-		s.conf.SchemesUpdateInterval = 60
-	}
+
 	if !s.conf.DisableSchemesUpdate {
+		if s.conf.SchemesUpdateInterval == 0 {
+			s.conf.SchemesUpdateInterval = 60
+		}
 		s.conf.IrmaConfiguration.AutoUpdateSchemes(uint(s.conf.SchemesUpdateInterval))
+	} else {
+		s.conf.SchemesUpdateInterval = 0
 	}
 
 	if s.conf.IssuerPrivateKeys == nil {
