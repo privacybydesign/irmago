@@ -290,9 +290,19 @@ func init() {
 	addRequestFlags(flags)
 }
 
+func authmethodAlias(f *pflag.FlagSet, name string) pflag.NormalizedName {
+	switch name {
+	case "authmethod":
+		name = "auth-method"
+		break
+	}
+	return pflag.NormalizedName(name)
+}
+
 func addRequestFlags(flags *pflag.FlagSet) {
 	flags.StringP("schemes-path", "s", server.DefaultSchemesPath(), "path to irma_configuration")
-	flags.StringP("authmethod", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
+	flags.StringP("auth-method", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
+	flags.SetNormalizeFunc(authmethodAlias)
 	flags.String("key", "", "Key to sign request with")
 	flags.String("name", "", "Requestor name")
 	flags.StringArray("disclose", nil, "Add an attribute disjunction (comma-separated)")
