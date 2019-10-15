@@ -47,7 +47,7 @@ type Configuration struct {
 	// Required to be set to true if URL does not begin with https:// in production mode.
 	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
 	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
-	DisableTLS bool `json:"disable_tls" mapstructure:"disable_tls"`
+	DisableTLS bool `json:"no_tls" mapstructure:"no_tls"`
 	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
 	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
 	// for more information
