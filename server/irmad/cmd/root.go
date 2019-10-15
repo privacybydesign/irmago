@@ -190,6 +190,9 @@ func configure(cmd *cobra.Command) error {
 	mode := "development"
 	if viper.GetBool("production") {
 		mode = "production"
+		viper.SetDefault("no-auth", false)
+		viper.SetDefault("no-email", false)
+		viper.SetDefault("url", "")
 	}
 	logger.WithFields(logrus.Fields{
 		"version":   irma.Version,
@@ -319,7 +322,7 @@ func handlePermission(typ string) []string {
 func productionMode() bool {
 	for i, arg := range os.Args {
 		if arg == "--production" {
-			if len(os.Args) == i+1 || strings.HasPrefix(os.Args[i+1], "--") {
+			if len(os.Args) == i+1 || strings.HasPrefix(os.Args[i+1], "-") {
 				return true
 			}
 			if checkConfVal(os.Args[i+1]) {
