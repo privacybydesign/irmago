@@ -108,7 +108,7 @@ type ServerJwt struct {
 type RequestorBaseRequest struct {
 	ResultJwtValidity int    `json:"validity,omitempty"`    // Validity of session result JWT in seconds
 	ClientTimeout     int    `json:"timeout,omitempty"`     // Wait this many seconds for the IRMA app to connect before the session times out
-	CallbackUrl       string `json:"callbackUrl,omitempty"` // URL to post session result to
+	CallbackURL       string `json:"callbackUrl,omitempty"` // URL to post session result to
 }
 
 // RequestorRequest is the message with which requestors start an IRMA session. It contains a

@@ -87,7 +87,7 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
 	DisableRequestorAuthentication: true,
-	Port: 48682,
+	Port:                           48682,
 }
 
 var JwtServerConfiguration = &requestorserver.Configuration{
@@ -97,7 +97,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
-	Port: 48682,
+	Port:                           48682,
 	DisableRequestorAuthentication: false,
 	MaxRequestAge:                  3,
 	Permissions: requestorserver.Permissions{
@@ -122,7 +122,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 	StaticSessions: map[string]interface{}{
 		"staticsession": irma.ServiceProviderRequest{
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				CallbackUrl: "http://localhost:48685",
+				CallbackURL: "http://localhost:48685",
 			},
 			Request: &irma.DisclosureRequest{
 				BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
