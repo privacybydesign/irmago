@@ -269,6 +269,7 @@ func (s *Server) handleClientMessage(
 	}()
 
 	// Route to handler
+	var err error
 	switch len(noun) {
 	case 0:
 		if method == http.MethodDelete {
@@ -284,11 +285,11 @@ func (s *Server) handleClientMessage(
 			h := http.Header(headers)
 			min := &irma.ProtocolVersion{}
 			max := &irma.ProtocolVersion{}
-			if err := json.Unmarshal([]byte(h.Get(irma.MinVersionHeader)), min); err != nil {
+			if err = json.Unmarshal([]byte(h.Get(irma.MinVersionHeader)), min); err != nil {
 				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
 				return
 			}
-			if err := json.Unmarshal([]byte(h.Get(irma.MaxVersionHeader)), max); err != nil {
+			if err = json.Unmarshal([]byte(h.Get(irma.MaxVersionHeader)), max); err != nil {
 				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
 				return
 			}
@@ -301,8 +302,8 @@ func (s *Server) handleClientMessage(
 
 	default:
 		if noun == "statusevents" {
-			err := server.RemoteError(server.ErrorInvalidRequest, "server sent events not supported by this server")
-			status, output = server.JsonResponse(nil, err)
+			rerr := server.RemoteError(server.ErrorInvalidRequest, "server sent events not supported by this server")
+			status, output = server.JsonResponse(nil, rerr)
 			return
 		}
 

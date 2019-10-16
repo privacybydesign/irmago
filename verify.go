@@ -69,6 +69,41 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 	return publicKeys, nil
 }
 
+// Expired returns true if any of the contained disclosure proofs is specified at the specified time,
+// or now, when the specified time is nil.
+func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
+	if t == nil {
+		temp := time.Now()
+		t = &temp
+	}
+	for _, proof := range pl {
+		proofd, ok := proof.(*gabi.ProofD)
+		if !ok {
+			continue
+		}
+		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
+		if metadata.Expiry().Before(*t) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, conf *Configuration) (*DisclosedAttribute, *string, error) {
+	if len(pl) < index.CredentialIndex {
+		return nil, nil, errors.New("Credential index out of range")
+	}
+	proofd, ok := pl[index.CredentialIndex].(*gabi.ProofD)
+	if !ok {
+		// If with the index the user told us to look for the required attribute at this specific location,
+		// and the proof here is not a disclosure proof, then reject
+		return nil, nil, errors.New("ProofList contained proof of invalid type")
+	}
+
+	metadata := MetadataFromInt(proofd.ADisclosed[1], conf) // index 1 is metadata attribute
+	return parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
+}
+
 // VerifyProofs verifies the proofs cryptographically.
 func (pl ProofList) VerifyProofs(
 	configuration *Configuration,
@@ -156,41 +191,6 @@ func (pl ProofList) VerifyProofs(
 	}
 
 	return true, nil
-}
-
-// Expired returns true if any of the contained disclosure proofs is specified at the specified time,
-// or now, when the specified time is nil.
-func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
-	if t == nil {
-		temp := time.Now()
-		t = &temp
-	}
-	for _, proof := range pl {
-		proofd, ok := proof.(*gabi.ProofD)
-		if !ok {
-			continue
-		}
-		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
-		if metadata.Expiry().Before(*t) {
-			return true
-		}
-	}
-	return false
-}
-
-func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, conf *Configuration) (*DisclosedAttribute, *string, error) {
-	if len(pl) < index.CredentialIndex {
-		return nil, nil, errors.New("Credential index out of range")
-	}
-	proofd, ok := pl[index.CredentialIndex].(*gabi.ProofD)
-	if !ok {
-		// If with the index the user told us to look for the required attribute at this specific location,
-		// and the proof here is not a disclosure proof, then reject
-		return nil, nil, errors.New("ProofList contained proof of invalid type")
-	}
-
-	metadata := MetadataFromInt(proofd.ADisclosed[1], conf) // index 1 is metadata attribute
-	return parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
 }
 
 func (d *Disclosure) extraIndices(condiscon AttributeConDisCon) []*DisclosedAttributeIndex {

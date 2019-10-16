@@ -349,27 +349,34 @@ func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessi
 	return result
 }
 
-func TestRevocation(t *testing.T) {
-	// setup client, constants, and revocation key material
-	defer test.ClearTestStorage(t)
-	client, _ := parseStorage(t)
-	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+// revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
+func revocationSetup(t *testing.T) *irmaclient.Client {
 	StartRevocationServer(t)
 
-	// issue two MijnOverheid.root instances with revocation enabled
-	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
-		RevocationKey:    "cred0", // once revocation is required for a credential type, this key is required
-		CredentialTypeID: cred,
-		Attributes: map[string]string{
-			"BSN": "299792458",
-		},
-	}})
-	result := requestorSessionHelper(t, request, client)
+	// issue a MijnOverheid.root instance with revocation enabled
+	client, _ := parseStorage(t)
+	result := requestorSessionHelper(t, revocationIssuanceRequest, client)
 	require.Nil(t, result.Err)
-	// issue second one which overwrites the first one, as our credtype is a singleton
+
+	return client
+}
+
+var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+	RevocationKey:    "cred0", // once revocation is required for a credential type, this key is required
+	CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+	Attributes: map[string]string{
+		"BSN": "299792458",
+	},
+}})
+
+func TestRevocation(t *testing.T) {
+	defer test.ClearTestStorage(t)
+	client := revocationSetup(t)
+
+	// issue second credential which overwrites the first one, as our credtype is a singleton
 	// this is ok, as we use cred0 only to revoke it, to see if cred1 keeps working
-	request.Credentials[0].RevocationKey = "cred1"
-	result = requestorSessionHelper(t, request, client)
+	revocationIssuanceRequest.Credentials[0].RevocationKey = "cred1"
+	result := requestorSessionHelper(t, revocationIssuanceRequest, client)
 	require.Nil(t, result.Err)
 
 	// perform disclosure session (of cred1) with nonrevocation proof
@@ -377,11 +384,8 @@ func TestRevocation(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
-	req := revocationRequest()
-	require.NoError(t, client.Configuration.RevocationStorage.SetRecords(req.Base()))
-	require.NoError(t, client.NonrevPreprare(req))
-
 	// revoke cred0
+	cred := revocationIssuanceRequest.Credentials[0].CredentialTypeID
 	require.NoError(t, revocationServer.Revoke(cred, "cred0"))
 
 	// perform another disclosure session with nonrevocation proof to see that cred1 still works

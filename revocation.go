@@ -73,6 +73,7 @@ func (rdb *DB) EnableRevocation(sk *revocation.PrivateKey) error {
 		return err
 	}
 	rdb.Current = *acc
+	rdb.Updated = time.Now()
 	return nil
 }
 
@@ -304,6 +305,7 @@ func (rs *RevocationStorage) loadDB(credid CredentialTypeIdentifier) (*DB, error
 	db := &DB{
 		bolt:     b,
 		keystore: keystore,
+		Updated:  time.Unix(0, 0),
 	}
 	if db.Enabled() {
 		if err = db.loadCurrent(); err != nil {
