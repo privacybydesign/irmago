@@ -56,7 +56,10 @@ func (rdb *DB) EnableRevocation(sk *revocation.PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	if err = rdb.Add(msg, sk.Counter); err != nil {
+	if err = rdb.Add(&revocation.Record{
+		PublicKeyIndex: sk.Counter,
+		Message:        msg,
+	}); err != nil {
 		return err
 	}
 	rdb.Current = *acc
@@ -128,41 +131,29 @@ func (rdb *DB) IssuanceRecord(key []byte) (*IssuanceRecord, error) {
 func (rdb *DB) AddRecords(records []*revocation.Record) error {
 	var err error
 	for _, r := range records {
-		if err = rdb.Add(r.Message, r.PublicKeyIndex); err != nil {
+		if err = rdb.Add(r); err != nil {
 			return err
 		}
 	}
-	rdb.Updated = time.Now() // TODO update this in add()?
 	return nil
 }
 
-// TODO this should use revocation.Record.UnmarshalVerify
-func (rdb *DB) Add(updateMsg signed.Message, counter uint) error {
-	var err error
-	var update revocation.AccumulatorUpdate
+func (rdb *DB) Add(record *revocation.Record) error {
+	return rdb.bolt.Bolt().Update(func(tx *bolt.Tx) error {
+		return rdb.add(record, tx)
+	})
+}
 
-	pk, err := rdb.keystore(counter)
+func (rdb *DB) add(record *revocation.Record, tx *bolt.Tx) error {
+	pk, err := rdb.keystore(record.PublicKeyIndex)
+	if err != nil {
+		return err
+	}
+	update, err := record.UnmarshalVerify(pk)
 	if err != nil {
 		return err
 	}
 
-	if err = signed.UnmarshalVerify(pk.ECDSA, updateMsg, &update); err != nil {
-		return err
-	}
-
-	return rdb.bolt.Bolt().Update(func(tx *bolt.Tx) error {
-		return rdb.add(update, updateMsg, counter, tx)
-	})
-}
-
-func (rdb *DB) add(update revocation.AccumulatorUpdate, updateMsg signed.Message, pkCounter uint, tx *bolt.Tx) error {
-	var err error
-	record := &revocation.Record{
-		StartIndex:     update.StartIndex,
-		EndIndex:       update.Accumulator.Index,
-		PublicKeyIndex: pkCounter,
-		Message:        updateMsg,
-	}
 	if err = rdb.bolt.TxInsert(tx, update.Accumulator.Index, record); err != nil {
 		return err
 	}
@@ -191,6 +182,7 @@ func (rdb *DB) add(update revocation.AccumulatorUpdate, updateMsg signed.Message
 		f(record)
 	}
 
+	rdb.Updated = time.Now()
 	rdb.Current = update.Accumulator
 	return nil
 }
@@ -237,7 +229,7 @@ func (rdb *DB) revokeAttr(sk *revocation.PrivateKey, e *big.Int, tx *bolt.Tx) er
 	if err != nil {
 		return err
 	}
-	update := revocation.AccumulatorUpdate{
+	update := &revocation.AccumulatorUpdate{
 		Accumulator: *newAcc,
 		StartIndex:  newAcc.Index,
 		Revoked:     []*big.Int{e},
@@ -247,7 +239,12 @@ func (rdb *DB) revokeAttr(sk *revocation.PrivateKey, e *big.Int, tx *bolt.Tx) er
 	if err != nil {
 		return err
 	}
-	if err = rdb.add(update, updateMsg, sk.Counter, tx); err != nil {
+	if err = rdb.add(&revocation.Record{
+		StartIndex:     newAcc.Index,
+		EndIndex:       newAcc.Index,
+		PublicKeyIndex: sk.Counter,
+		Message:        updateMsg,
+	}, tx); err != nil {
 		return err
 	}
 	rdb.Current = *newAcc
