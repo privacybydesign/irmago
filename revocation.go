@@ -136,6 +136,7 @@ func (rdb *DB) AddRecords(records []*revocation.Record) error {
 	return nil
 }
 
+// TODO this should use revocation.Record.UnmarshalVerify
 func (rdb *DB) Add(updateMsg signed.Message, counter uint) error {
 	var err error
 	var update revocation.AccumulatorUpdate
@@ -267,7 +268,7 @@ func (rdb *DB) OnChange(handler func(*revocation.Record)) {
 
 func (rs *RevocationStorage) loadDB(credid CredentialTypeIdentifier) (*DB, error) {
 	path := filepath.Join(rs.conf.RevocationPath, credid.String())
-	keystore := rs.keystore(credid.IssuerIdentifier())
+	keystore := rs.Keystore(credid.IssuerIdentifier())
 
 	b, err := bolthold.Open(path, 0600, &bolthold.Options{Options: &bolt.Options{Timeout: 1 * time.Second}})
 	if err != nil {
@@ -447,7 +448,7 @@ func (rs *RevocationStorage) Close() error {
 	return merr.ErrorOrNil()
 }
 
-func (rs *RevocationStorage) keystore(issuerid IssuerIdentifier) revocation.Keystore {
+func (rs *RevocationStorage) Keystore(issuerid IssuerIdentifier) revocation.Keystore {
 	return func(counter uint) (*revocation.PublicKey, error) {
 		return rs.PublicKey(issuerid, counter)
 	}

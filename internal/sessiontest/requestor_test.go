@@ -380,25 +380,30 @@ func TestRevocation(t *testing.T) {
 	require.Nil(t, result.Err)
 
 	// perform disclosure session (of cred1) with nonrevocation proof
+	logger.Info("step 1")
 	result = revocationSession(t, client)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
 	// revoke cred0
+	logger.Info("step 2")
 	cred := revocationIssuanceRequest.Credentials[0].CredentialTypeID
 	require.NoError(t, revocationServer.Revoke(cred, "cred0"))
 
 	// perform another disclosure session with nonrevocation proof to see that cred1 still works
 	// client updates its witness to the new accumulator first
+	logger.Info("step 3")
 	result = revocationSession(t, client)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
 	// revoke cred1
+	logger.Info("step 4")
 	require.NoError(t, revocationServer.Revoke(cred, "cred1"))
 
 	// try to perform session with revoked credential
 	// client notices that is credential is revoked and aborts
+	logger.Info("step 5")
 	result = revocationSession(t, client, sessionOptionIgnoreClientError)
 	require.Equal(t, result.Status, server.StatusCancelled)
 }

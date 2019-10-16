@@ -91,16 +91,20 @@ func (session *session) issuanceHandleRevocation(
 	}
 
 	db, err := session.conf.IrmaConfiguration.RevocationStorage.DB(cred.CredentialTypeID)
-	if err != nil {
-		return
-	}
-	if !db.Enabled() {
+	if err != nil || !db.Enabled() {
 		return
 	}
 
+	records, err := db.LatestRecords(1)
+	if err != nil {
+		return
+	}
 	if witness, err = sk.RevocationGenerateWitness(&db.Current); err != nil {
 		return
 	}
+	witness.Record = records[len(records)-1]
+	witness.Nu = nil  // don't send to irmaclient, it will reconstruct it from witness.Record
+	witness.Index = 0 // same
 	nonrevAttr = witness.E
 	issrecord := &irma.IssuanceRecord{
 		Key:        cred.RevocationKey,

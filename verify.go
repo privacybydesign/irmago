@@ -171,7 +171,7 @@ func (pl ProofList) VerifyProofs(
 		// by ProofList.Verify() above, so all that remains here is to check if all expected
 		// nonrevocation proofs are present, and against the expected accumulator value:
 		// the last one in the update message set we provided along with the session request,
-		// OR the last (newer) one that the client included in its reply (TODO).
+		// OR a newer one included in the proofs itself.
 		r := revRecords[id]
 		if len(r) == 0 { // no nonrevocation proof was requested for this credential
 			return true, nil
@@ -179,14 +179,7 @@ func (pl ProofList) VerifyProofs(
 		if !proofd.HasNonRevocationProof() {
 			return false, nil
 		}
-
-		// grab last message from accumulator update message set in request
-		keystore := configuration.RevocationStorage.keystore(typ.Identifier().IssuerIdentifier())
-		msg, err := r[len(r)-1].UnmarshalVerify(keystore)
-		if err != nil {
-			return false, err
-		}
-		if msg.Accumulator.Nu.Cmp(proofd.NonRevocationProof.Nu) != 0 {
+		if proofd.NonRevocationProof.Accumulator.Index < r[len(r)-1].EndIndex {
 			return false, errors.New("nonrevocation proof used wrong accumulator")
 		}
 	}
