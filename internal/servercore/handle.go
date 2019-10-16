@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -215,7 +216,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 }
 
 func (s *Server) handlePostRevocationRecords(
-	cred irma.CredentialTypeIdentifier, records []*irma.RevocationRecord,
+	cred irma.CredentialTypeIdentifier, records []*revocation.Record,
 ) (interface{}, *irma.RemoteError) {
 	db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred)
 	if err != nil {
@@ -229,7 +230,7 @@ func (s *Server) handlePostRevocationRecords(
 
 func (s *Server) handleGetRevocationRecords(
 	cred irma.CredentialTypeIdentifier, index int,
-) ([]*irma.RevocationRecord, *irma.RemoteError) {
+) ([]*revocation.Record, *irma.RemoteError) {
 	if _, ok := s.conf.RevocationServers[cred]; !ok {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}

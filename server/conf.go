@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/sirupsen/logrus"
@@ -218,11 +219,11 @@ func (conf *Configuration) verifyRevocation() error {
 			return LogError(err)
 		}
 
-		db.OnChange(func(record *irma.RevocationRecord) {
+		db.OnChange(func(record *revocation.Record) {
 			transport := irma.NewHTTPTransport("")
 			o := struct{}{}
 			for _, url := range settings.PostURLs {
-				if err := transport.Post(url+"/-/revocation/records", &o, &[]*irma.RevocationRecord{record}); err != nil {
+				if err := transport.Post(url+"/-/revocation/records", &o, &[]*revocation.Record{record}); err != nil {
 					conf.Logger.Warn("error sending revocation update", err)
 				}
 			}

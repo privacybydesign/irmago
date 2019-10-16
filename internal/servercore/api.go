@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -387,7 +388,7 @@ func (s *Server) handleRevocationMessage(
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects 1 url arguments"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		var records []*irma.RevocationRecord
+		var records []*revocation.Record
 		if err := json.Unmarshal(message, &records); err != nil {
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}

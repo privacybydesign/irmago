@@ -73,7 +73,7 @@ func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.Ses
 
 // NonrevApplyUpdates updates the credential's nonrevocation witness using the specified messages,
 // if they all verify and if their indices are ahead and adjacent to that of our witness.
-func (cred *credential) NonrevApplyUpdates(messages []*irma.RevocationRecord, rs *irma.RevocationStorage) (bool, error) {
+func (cred *credential) NonrevApplyUpdates(messages []*revocation.Record, rs *irma.RevocationStorage) (bool, error) {
 	var err error
 	var pk *revocation.PublicKey
 	oldindex := cred.NonRevocationWitness.Index
