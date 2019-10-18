@@ -34,6 +34,8 @@ type BaseRequest struct {
 
 	legacy bool   // Whether or not this was deserialized from a legacy (pre-condiscon) request
 	Type   Action `json:"type,omitempty"` // Session type, only used in legacy code
+
+	ClientReturnURL string `json:"clientReturnUrl,omitempty"` // URL to proceed to when IRMA session is completed
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
