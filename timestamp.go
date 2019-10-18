@@ -37,7 +37,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 	// Convert the sigs and disclosed (double) slices to (double) slices of gobig.Int's for asn1
 	sigsint := make([]*gobig.Int, len(sigs))
 	for i, k := range sigs {
-		sigsint[i] = k.Value()
+		sigsint[i] = k.Go()
 	}
 
 	timestampServerUrl := ""
@@ -52,7 +52,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 		if !new {
 			disclosedint[i] = make([]*gobig.Int, len(disclosed[i]))
 			for j, k := range disclosed[i] {
-				disclosedint[i][j] = k.Value()
+				disclosedint[i][j] = k.Go()
 			}
 		} else {
 			if len(disclosed[i]) < 2 || disclosed[i][1].Cmp(bigZero) == 0 {
@@ -66,7 +66,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 			if err != nil {
 				return nil, "", err
 			}
-			dlreps[i] = r.Value()
+			dlreps[i] = r.Go()
 		}
 
 		// Determine timestamp server that should be used
