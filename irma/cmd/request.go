@@ -80,7 +80,7 @@ func configureRequest(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configur
 	if err != nil {
 		return nil, nil, err
 	}
-	irmaconfig, err := irma.NewConfiguration(irmaconfigPath)
+	irmaconfig, err := irma.NewConfiguration(irmaconfigPath, irma.ConfigurationOptions{})
 	if err != nil {
 		return nil, nil, err
 	}

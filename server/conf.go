@@ -8,7 +8,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/sirupsen/logrus"
@@ -54,17 +53,13 @@ type Configuration struct {
 	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
 	Logger *logrus.Logger `json:"-"`
 
-	// Path at which to store revocation databases
-	RevocationPath string `json:"revocation_path" mapstructure:"revocation_path"`
+	// Connection string for revocation database
+	RevocationDB string `json:"revocation_db" mapstructure:"revocation_db"`
 	// Credentials types for which revocation database should be hosted
-	RevocationServers map[irma.CredentialTypeIdentifier]RevocationServer `json:"revocation_servers" mapstructure:"revocation_servers"`
+	RevocationSettings map[irma.CredentialTypeIdentifier]*irma.RevocationSetting `json:"revocation_settings" mapstructure:"revocation_settings"`
 
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
-}
-
-type RevocationServer struct {
-	PostURLs []string `json:"post_urls" mapstructure:"post_urls"`
 }
 
 // Check ensures that the Configuration is loaded, usable and free of errors.
@@ -80,8 +75,10 @@ func (conf *Configuration) Check() error {
 		conf.verifyIrmaConf, conf.verifyPrivateKeys, conf.verifyURL, conf.verifyEmail, conf.verifyRevocation,
 	} {
 		if err := f(); err != nil {
-			if e := conf.IrmaConfiguration.RevocationStorage.Close(); e != nil {
-				_ = LogError(err)
+			if conf.IrmaConfiguration != nil {
+				if e := conf.IrmaConfiguration.RevocationStorage.Close(); e != nil {
+					_ = LogError(e)
+				}
 			}
 			return err
 		}
@@ -133,21 +130,17 @@ func (conf *Configuration) verifyIrmaConf() error {
 			return LogError(errors.Errorf("Nonexisting schemes_path provided: %s", conf.SchemesPath))
 		}
 		conf.Logger.WithField("schemes_path", conf.SchemesPath).Info("Determined schemes path")
-		if conf.SchemesAssetsPath == "" {
-			conf.IrmaConfiguration, err = irma.NewConfiguration(conf.SchemesPath)
-		} else {
-			conf.IrmaConfiguration, err = irma.NewConfigurationFromAssets(conf.SchemesPath, conf.SchemesAssetsPath)
-		}
+		conf.IrmaConfiguration, err = irma.NewConfiguration(conf.SchemesPath, irma.ConfigurationOptions{
+			Assets:             conf.SchemesAssetsPath,
+			RevocationDB:       conf.RevocationDB,
+			RevocationSettings: conf.RevocationSettings,
+		})
 		if err != nil {
 			return LogError(err)
 		}
 		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
 			return LogError(err)
 		}
-		if err = fs.EnsureDirectoryExists(conf.RevocationPath); err != nil {
-			return LogError(err)
-		}
-		conf.IrmaConfiguration.RevocationPath = conf.RevocationPath
 	}
 
 	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
@@ -209,25 +202,18 @@ func (conf *Configuration) verifyPrivateKeys() error {
 }
 
 func (conf *Configuration) verifyRevocation() error {
-	for credid, settings := range conf.RevocationServers {
+	for credid := range conf.RevocationSettings {
 		if _, known := conf.IrmaConfiguration.CredentialTypes[credid]; !known {
 			return LogError(errors.Errorf("unknown credential type %s in revocation settings", credid))
 		}
 
-		db, err := conf.IrmaConfiguration.RevocationStorage.DB(credid)
+		enabled, err := conf.IrmaConfiguration.RevocationStorage.RevocationEnabled(credid)
 		if err != nil {
-			return LogError(err)
+			return LogError(errors.Errorf("failed to check if revocation is enabled for %s", credid.String()))
 		}
-
-		db.OnChange(func(record *revocation.Record) {
-			transport := irma.NewHTTPTransport("")
-			o := struct{}{}
-			for _, url := range settings.PostURLs {
-				if err := transport.Post(url+"/-/revocation/records", &o, &[]*revocation.Record{record}); err != nil {
-					conf.Logger.Warn("error sending revocation update", err)
-				}
-			}
-		})
+		if !enabled {
+			return LogError(errors.Errorf("revocation not enabled for %s", credid.String()))
+		}
 	}
 
 	return nil

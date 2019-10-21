@@ -1,8 +1,12 @@
 package irma
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"strings"
+
+	"github.com/go-errors/errors"
+	"github.com/jinzhu/gorm"
 )
 
 type metaObjectIdentifier string
@@ -275,4 +279,24 @@ func (set *IrmaIdentifierSet) String() string {
 
 func (set *IrmaIdentifierSet) Empty() bool {
 	return len(set.SchemeManagers) == 0 && len(set.Issuers) == 0 && len(set.CredentialTypes) == 0 && len(set.PublicKeys) == 0 && len(set.AttributeTypes) == 0
+}
+
+func (oi metaObjectIdentifier) Value() (driver.Value, error) {
+	return oi.String(), nil
+}
+
+func (oi *metaObjectIdentifier) Scan(src interface{}) error {
+	s, ok := src.(string)
+	if !ok {
+		return errors.New("cannot convert source: not a string")
+	}
+	*oi = metaObjectIdentifier(s)
+	return nil
+}
+
+func (metaObjectIdentifier) GormDataType(dialect gorm.Dialect) string {
+	if dialect.GetName() == "postgres" {
+		return "text"
+	}
+	return ""
 }

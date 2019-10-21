@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -37,7 +36,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	// we include the latest revocation records for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
 	var err error
-	if err = session.conf.IrmaConfiguration.RevocationStorage.SetRecords(session.request.Base()); err != nil {
+	if err = session.conf.IrmaConfiguration.RevocationStorage.SetRevocationRecords(session.request.Base()); err != nil {
 		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 
@@ -215,30 +214,33 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	return sigs, nil
 }
 
-func (s *Server) handlePostRevocationRecords(
-	cred irma.CredentialTypeIdentifier, records []*revocation.Record,
-) (interface{}, *irma.RemoteError) {
-	db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred)
-	if err != nil {
-		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
-	}
-	if err = db.AddRecords(records); err != nil {
+func (s *Server) handlePostRevocationRecords(records []*irma.RevocationRecord) (interface{}, *irma.RemoteError) {
+	if err := s.conf.IrmaConfiguration.RevocationStorage.AddRevocationRecords(records); err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 	return nil, nil
 }
 
 func (s *Server) handleGetRevocationRecords(
-	cred irma.CredentialTypeIdentifier, index int,
-) ([]*revocation.Record, *irma.RemoteError) {
-	if _, ok := s.conf.RevocationServers[cred]; !ok {
+	cred irma.CredentialTypeIdentifier, index uint64,
+) ([]*irma.RevocationRecord, *irma.RemoteError) {
+	if _, ok := s.conf.RevocationSettings[cred]; !ok {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred)
+	records, err := s.conf.IrmaConfiguration.RevocationStorage.RevocationRecords(cred, index)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
-	records, err := db.RevocationRecords(index)
+	return records, nil
+}
+
+func (s *Server) handleGetLatestRevocationRecords(
+	cred irma.CredentialTypeIdentifier, count uint64,
+) ([]*irma.RevocationRecord, *irma.RemoteError) {
+	if _, ok := s.conf.RevocationSettings[cred]; !ok {
+		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+	}
+	records, err := s.conf.IrmaConfiguration.RevocationStorage.LatestRevocationRecords(cred, count)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
@@ -246,38 +248,28 @@ func (s *Server) handleGetRevocationRecords(
 }
 
 func (s *Server) handlePostIssuanceRecord(
-	cred irma.CredentialTypeIdentifier, counter int, message []byte,
+	cred irma.CredentialTypeIdentifier, counter uint64, message []byte,
 ) (string, *irma.RemoteError) {
-	if _, ours := s.conf.RevocationServers[cred]; !ours {
+	if settings := s.conf.RevocationSettings[cred]; settings == nil || settings.Mode != irma.RevocationModeServer {
 		return "", server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
 
 	// Grab the counter-th issuer public key, with which the message should be signed,
 	// and verify and unmarshal the issuance record
-	pk, err := s.conf.IrmaConfiguration.PublicKey(cred.IssuerIdentifier(), counter)
-	if err != nil {
-		return "", server.RemoteError(server.ErrorUnknown, err.Error())
-	}
-	if pk == nil {
-		return "", server.RemoteError(server.ErrorUnknownPublicKey, "")
-	}
-	revpk, err := pk.RevocationKey()
+	pk, err := s.conf.IrmaConfiguration.RevocationStorage.Keys.PublicKey(cred.IssuerIdentifier(), uint(counter))
 	if err != nil {
 		return "", server.RemoteError(server.ErrorUnknown, err.Error())
 	}
 	var rec irma.IssuanceRecord
-	if err := signed.UnmarshalVerify(revpk.ECDSA, message, &rec); err != nil {
+	if err := signed.UnmarshalVerify(pk.ECDSA, message, &rec); err != nil {
 		return "", server.RemoteError(server.ErrorUnauthorized, err.Error())
 	}
-
-	// Insert the record into the database
-	db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred)
-	if err != nil {
-		return "", server.RemoteError(server.ErrorUnknown, err.Error())
-	}
-	if err = db.AddIssuanceRecord(&rec); err != nil {
-		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	if rec.CredType != cred {
+		return "", server.RemoteError(server.ErrorInvalidRequest, "issuance record of wrong credential type")
 	}
 
+	if err = s.conf.IrmaConfiguration.RevocationStorage.AddIssuanceRecord(&rec); err != nil {
+		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+	}
 	return "OK", nil
 }

@@ -79,47 +79,52 @@ func (session *session) checkCache(message []byte, expectedStatus server.Status)
 func (session *session) issuanceHandleRevocation(
 	cred *irma.CredentialRequest, attributes *irma.AttributeList, sk *gabi.PrivateKey,
 ) (witness *revocation.Witness, nonrevAttr *big.Int, err error) {
-	if !session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
+	id := cred.CredentialTypeID
+	if !session.conf.IrmaConfiguration.CredentialTypes[id].SupportsRevocation() {
 		return
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
-	if _, ours := session.conf.RevocationServers[cred.CredentialTypeID]; !ours {
-		if err = session.conf.IrmaConfiguration.RevocationStorage.UpdateDB(cred.CredentialTypeID); err != nil {
+	if _, ours := session.conf.RevocationSettings[id]; !ours {
+		if err = session.conf.IrmaConfiguration.RevocationStorage.UpdateDB(id); err != nil {
 			return
 		}
 	}
 
-	db, err := session.conf.IrmaConfiguration.RevocationStorage.DB(cred.CredentialTypeID)
-	if err != nil || !db.Enabled() {
-		return
-	}
+	rs := session.conf.IrmaConfiguration.RevocationStorage
 
-	records, err := db.LatestRecords(1)
+	// Fetch latest revocation record, and then extract the current value of the accumulator
+	// from it to generate the witness from
+	records, err := rs.LatestRevocationRecords(id, 1)
 	if err != nil {
 		return
 	}
-	if witness, err = sk.RevocationGenerateWitness(&db.Current); err != nil {
+	r := records[len(records)-1]
+	pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), r.PublicKeyIndex)
+	if err != nil {
+		return nil, nil, err
+	}
+	msg, err := r.UnmarshalVerify(pk)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if witness, err = sk.RevocationGenerateWitness(&msg.Accumulator); err != nil {
 		return
 	}
-	witness.Record = records[len(records)-1]
-	witness.Nu = nil  // don't send to irmaclient, it will reconstruct it from witness.Record
-	witness.Index = 0 // same
+
+	witness.Record = &r.Record // attach previously selected reocation record to the witness for the client
+	witness.Nu = nil           // don't send to irmaclient, it will reconstruct it from witness.Record
+	witness.Index = 0          // same
 	nonrevAttr = witness.E
 	issrecord := &irma.IssuanceRecord{
+		CredType:   id,
 		Key:        cred.RevocationKey,
 		Attr:       nonrevAttr,
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
-	err = session.conf.IrmaConfiguration.RevocationStorage.SendIssuanceRecord(cred.CredentialTypeID, issrecord)
-	if err != nil {
-		_ = server.LogWarning(errors.WrapPrefix(err, "Failed to send issuance record to revocation server", 0))
-		session.conf.Logger.Warn("Storing issuance record locally")
-		if err = db.AddIssuanceRecord(issrecord); err != nil {
-			return nil, nil, err
-		}
-	}
+	err = session.conf.IrmaConfiguration.RevocationStorage.SaveIssuanceRecord(id, issrecord)
 	return
 }
 
@@ -147,22 +152,14 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if err := cred.Validate(s.conf.IrmaConfiguration); err != nil {
 			return err
 		}
+
 		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
-			db, err := s.conf.IrmaConfiguration.RevocationStorage.DB(cred.CredentialTypeID)
+			enabled, err := s.conf.IrmaConfiguration.RevocationStorage.RevocationEnabled(cred.CredentialTypeID)
 			if err != nil {
 				return err
 			}
-			if !db.Enabled() {
+			if !enabled {
 				s.conf.Logger.WithFields(logrus.Fields{"cred": cred.CredentialTypeID}).Warn("revocation supported in scheme but not enabled")
-			} else {
-				if len(cred.RevocationKey) == 0 {
-					return errors.New("revocationKey field unset on revocable credential")
-				}
-				if exists, err := db.IssuanceRecordExists([]byte(cred.RevocationKey)); err != nil {
-					return err
-				} else if exists {
-					return errors.New("revocationKey already used")
-				}
 			}
 		}
 

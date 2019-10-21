@@ -13,7 +13,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -33,10 +32,10 @@ type BaseRequest struct {
 	Revocation []CredentialTypeIdentifier `json:"revocation,omitempty"`
 
 	// Set by the IRMA server during the session
-	Context           *big.Int                                          `json:"context,omitempty"`
-	Nonce             *big.Int                                          `json:"nonce,omitempty"`
-	ProtocolVersion   *ProtocolVersion                                  `json:"protocolVersion,omitempty"`
-	RevocationUpdates map[CredentialTypeIdentifier][]*revocation.Record `json:"revocationUpdates,omitempty"`
+	Context           *big.Int                                         `json:"context,omitempty"`
+	Nonce             *big.Int                                         `json:"nonce,omitempty"`
+	ProtocolVersion   *ProtocolVersion                                 `json:"protocolVersion,omitempty"`
+	RevocationUpdates map[CredentialTypeIdentifier][]*RevocationRecord `json:"revocationUpdates,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 

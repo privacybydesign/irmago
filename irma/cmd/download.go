@@ -77,7 +77,10 @@ func downloadSchemeManager(dest string, urls []string) error {
 		}
 	}
 
-	conf, err := irma.NewConfiguration(dest)
+	conf, err := irma.NewConfiguration(dest, irma.ConfigurationOptions{})
+	if err != nil {
+		return err
+	}
 
 	if len(urls) == 0 {
 		if err := conf.DownloadDefaultSchemes(); err != nil {

@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -50,8 +49,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			if !credtype.SupportsRevocation() {
 				continue
 			}
-			if _, ours := conf.RevocationServers[credid]; ours {
-				// TODO rethink this condition
+			if s := conf.RevocationSettings[credid]; s != nil && s.Mode != irma.RevocationModeRequestor {
 				continue
 			}
 			if err := s.conf.IrmaConfiguration.RevocationStorage.UpdateDB(credid); err != nil {
@@ -145,7 +143,7 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error 
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile("-/revocation/(records|issuancerecord)/?(.*)$")
+	rev := regexp.MustCompile("-/revocation/(records|latestrecords|issuancerecord)/?(.*)$")
 	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")
@@ -372,34 +370,37 @@ func (s *Server) handleClientMessage(
 func (s *Server) handleRevocationMessage(
 	noun, method string, args []string, headers map[string][]string, message []byte,
 ) (int, []byte) {
-	if noun == "records" && method == http.MethodGet {
+	if (noun == "records" || noun == "latestrecords") && method == http.MethodGet {
 		if len(args) != 2 {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET records expects 2 url arguments"))
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET "+noun+" expects 2 url arguments"))
 		}
-		index, err := strconv.Atoi(args[1])
+		i, err := strconv.ParseUint(args[1], 10, 64)
 		if err != nil {
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		return server.JsonResponse(s.handleGetRevocationRecords(cred, index))
+		if noun == "records" {
+			return server.JsonResponse(s.handleGetRevocationRecords(cred, i))
+		} else {
+			return server.JsonResponse(s.handleGetLatestRevocationRecords(cred, i))
+		}
 	}
 	if noun == "records" && method == http.MethodPost {
-		if len(args) != 1 {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects 1 url arguments"))
+		if len(args) != 0 {
+			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST records expects no url arguments"))
 		}
-		cred := irma.NewCredentialTypeIdentifier(args[0])
-		var records []*revocation.Record
+		var records []*irma.RevocationRecord
 		if err := json.Unmarshal(message, &records); err != nil {
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
-		return server.JsonResponse(s.handlePostRevocationRecords(cred, records))
+		return server.JsonResponse(s.handlePostRevocationRecords(records))
 	}
 	if noun == "issuancerecord" && method == http.MethodPost {
 		if len(args) != 2 {
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		counter, err := strconv.Atoi(args[1])
+		counter, err := strconv.ParseUint(args[1], 10, 64)
 		if err != nil {
 			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}

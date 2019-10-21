@@ -14,7 +14,7 @@ import (
 )
 
 func parseConfiguration(t *testing.T) *Configuration {
-	conf, err := NewConfiguration("testdata/irma_configuration")
+	conf, err := NewConfiguration("testdata/irma_configuration", ConfigurationOptions{})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 	return conf
@@ -33,7 +33,7 @@ func TestConfigurationAutocopy(t *testing.T) {
 
 	path := filepath.Join("testdata", "tmp", "client", "irma_configuration")
 	require.NoError(t, fs.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
-	conf, err := NewConfigurationFromAssets(path, filepath.Join("testdata", "irma_configuration_updated"))
+	conf, err := NewConfiguration(path, ConfigurationOptions{Assets: filepath.Join("testdata", "irma_configuration_updated")})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 
@@ -45,7 +45,7 @@ func TestConfigurationAutocopy(t *testing.T) {
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	// The description.xml of the scheme manager under this folder has been edited
 	// to invalidate the scheme manager signature
-	conf, err := NewConfigurationReadOnly(filepath.Join("testdata", "irma_configuration_invalid"))
+	conf, err := NewConfiguration(filepath.Join("testdata", "irma_configuration_invalid"), ConfigurationOptions{ReadOnly: true})
 	require.NoError(t, err)
 
 	// Parsing it should return a SchemeManagerError
@@ -80,8 +80,9 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	test.CreateTestStorage(t)
 	defer test.ClearTestStorage(t)
 
-	conf, err := NewConfigurationFromAssets(filepath.Join("testdata", "tmp", "client", "irma_configuration"),
-		filepath.Join("testdata", "irma_configuration_invalid"))
+	conf, err := NewConfiguration(filepath.Join("testdata", "tmp", "client", "irma_configuration"), ConfigurationOptions{
+		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
+	})
 	require.NoError(t, err)
 
 	err = conf.ParseOrRestoreFolder()
@@ -95,8 +96,9 @@ func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	test.CreateTestStorage(t)
 	defer test.ClearTestStorage(t)
 
-	conf, err := NewConfigurationFromAssets(filepath.Join("testdata", "tmp", "client", "irma_configuration"),
-		filepath.Join("testdata", "irma_configuration_invalid"))
+	conf, err := NewConfiguration(filepath.Join("testdata", "tmp", "client", "irma_configuration"), ConfigurationOptions{
+		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
+	})
 	require.NoError(t, err)
 
 	// Fails: no remote and the version in the assets is broken
@@ -166,7 +168,7 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	conf, err := NewConfigurationReadOnly(filepath.Join("testdata", "irma_configuration"))
+	conf, err := NewConfiguration(filepath.Join("testdata", "irma_configuration"), ConfigurationOptions{ReadOnly: true})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 

@@ -39,7 +39,7 @@ func configureRevocation(cmd *cobra.Command, path, credtype string) (*revocation
 	}
 
 	// parse irma_configuration and lookup credential type
-	irmaconf, err := irma.NewConfiguration(filepath.Join(path, "irma_configuration"))
+	irmaconf, err := irma.NewConfiguration(filepath.Join(path, "irma_configuration"), irma.ConfigurationOptions{})
 	if err != nil {
 		die("failed to open irma_configuration", err)
 	}

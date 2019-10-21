@@ -1,6 +1,8 @@
 package irmaclient
 
 import (
+	"errors"
+
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
@@ -51,33 +53,44 @@ func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.Ses
 		return false, nil
 	}
 
+	// first try to update witness by applying the revocation update messages attached to the session request
+	keys := irma.RevocationKeys{Conf: conf}
 	revupdates := request.Base().RevocationUpdates[credtype]
-	updated, err := cred.NonrevApplyUpdates(revupdates, conf.RevocationStorage)
+	updated, err := cred.NonrevApplyUpdates(revupdates, keys)
 	if err != nil {
 		return updated, err
 	}
-
-	// TODO (in both branches): attach our newer updates to response
 	if cred.NonRevocationWitness.Index >= revupdates[len(revupdates)-1].EndIndex {
 		return updated, nil
 	}
 
-	// nonrevocation witness is still out of date after applying the updates from the request,
-	// i.e. we were too far behind. Update from revocation server.
-	revupdates, err = conf.RevocationStorage.GetUpdates(credtype, cred.NonRevocationWitness.Index+1)
+	// nonrevocation witness is still out of date after applying the updates from the request:
+	// we were too far behind. Update from revocation server.
+	revupdates, err = irma.RevocationClient{Conf: conf}.FetchRevocationRecords(credtype, cred.NonRevocationWitness.Index+1)
 	if err != nil {
 		return updated, err
 	}
-	return cred.NonrevApplyUpdates(revupdates, conf.RevocationStorage)
+	return cred.NonrevApplyUpdates(revupdates, keys)
 }
 
 // NonrevApplyUpdates updates the credential's nonrevocation witness using the specified messages,
 // if they all verify and if their indices are ahead and adjacent to that of our witness.
-func (cred *credential) NonrevApplyUpdates(messages []*revocation.Record, rs *irma.RevocationStorage) (bool, error) {
+func (cred *credential) NonrevApplyUpdates(messages []*irma.RevocationRecord, keys irma.RevocationKeys) (bool, error) {
 	oldindex := cred.NonRevocationWitness.Index
-	if err := cred.NonRevocationWitness.Update(rs.Keystore(cred.CredentialType().IssuerIdentifier()), messages); err != nil {
-		return false, err
+
+	var err error
+	var pk *revocation.PublicKey
+	for _, record := range messages {
+		if cred.CredentialType().IssuerIdentifier() != record.CredType.IssuerIdentifier() {
+			return false, errors.New("cannot apply revocation record of other credential type")
+		}
+		if pk, err = keys.PublicKey(cred.CredentialType().IssuerIdentifier(), record.PublicKeyIndex); err != nil {
+			return false, err
+		}
+		if err = cred.NonRevocationWitness.Update(pk, &record.Record); err != nil {
+			return false, err
+		}
 	}
 
-	return cred.NonRevocationWitness.Index != oldindex, cred.NonrevPrepareCache()
+	return cred.NonRevocationWitness.Index != oldindex, nil
 }

@@ -142,7 +142,10 @@ func New(
 		handler:               handler,
 	}
 
-	client.Configuration, err = irma.NewConfigurationFromAssets(filepath.Join(storagePath, "irma_configuration"), irmaConfigurationPath)
+	client.Configuration, err = irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -153,10 +156,6 @@ func New(
 	_, isSchemeMgrErr := schemeMgrErr.(*irma.SchemeManagerError)
 	if schemeMgrErr != nil && !isSchemeMgrErr {
 		return nil, schemeMgrErr
-	}
-	client.Configuration.RevocationPath = filepath.Join(storagePath, "revocation")
-	if err = fs.EnsureDirectoryExists(client.Configuration.RevocationPath); err != nil {
-		return nil, err
 	}
 
 	// Ensure storage path exists, and populate it with necessary files

@@ -35,6 +35,7 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/sirupsen/logrus"
 )
 
 // Configuration keeps track of scheme managers, issuers, credential types and public keys,
@@ -48,8 +49,7 @@ type Configuration struct {
 	RevocationStorage *RevocationStorage
 
 	// Path to the irma_configuration folder that this instance represents
-	Path           string
-	RevocationPath string
+	Path string
 
 	// DisabledSchemeManagers keeps track of scheme managers that did not parse  succesfully
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
@@ -114,36 +114,25 @@ func (sme SchemeManagerError) Error() string {
 	return fmt.Sprintf("Error parsing scheme manager %s: %s", sme.Manager.Name(), sme.Err.Error())
 }
 
+type ConfigurationOptions struct {
+	Assets             string
+	ReadOnly           bool
+	RevocationDB       string
+	RevocationSettings map[CredentialTypeIdentifier]*RevocationSetting
+}
+
 // NewConfiguration returns a new configuration. After this
 // ParseFolder() should be called to parse the specified path.
-func NewConfiguration(path string) (*Configuration, error) {
-	return newConfiguration(path, "")
-}
-
-// NewConfigurationReadOnly returns a new configuration whose representation on disk
-// is never altered. ParseFolder() should be called to parse the specified path.
-func NewConfigurationReadOnly(path string) (*Configuration, error) {
-	conf, err := newConfiguration(path, "")
-	if err != nil {
-		return nil, err
-	}
-	conf.readOnly = true
-	return conf, nil
-}
-
-// NewConfigurationFromAssets returns a new configuration, copying the schemes out of the assets folder to path.
-// ParseFolder() should be called to parse the specified path.
-func NewConfigurationFromAssets(path, assets string) (*Configuration, error) {
-	return newConfiguration(path, assets)
-}
-
-func newConfiguration(path string, assets string) (conf *Configuration, err error) {
+func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configuration, err error) {
 	conf = &Configuration{
-		Path:           path,
-		RevocationPath: filepath.Join(DefaultDataPath(), "revocation"),
-		assets:         assets,
+		Path:     path,
+		assets:   opts.Assets,
+		readOnly: opts.ReadOnly,
 	}
 	conf.RevocationStorage = &RevocationStorage{conf: conf}
+	if err = conf.RevocationStorage.Load(Logger.IsLevelEnabled(logrus.DebugLevel), opts.RevocationDB, opts.RevocationSettings); err != nil {
+		return nil, err
+	}
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
 		if err = fs.AssertPathExists(conf.assets); err != nil {

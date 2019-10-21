@@ -63,7 +63,7 @@ func RunVerify(path string, verbose bool) error {
 }
 
 func VerifyScheme(path string) error {
-	conf, err := irma.NewConfigurationReadOnly(filepath.Dir(path))
+	conf, err := irma.NewConfiguration(filepath.Dir(path), irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func VerifyScheme(path string) error {
 }
 
 func VerifyIrmaConfiguration(path string) error {
-	conf, err := irma.NewConfigurationReadOnly(path)
+	conf, err := irma.NewConfiguration(path, irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
