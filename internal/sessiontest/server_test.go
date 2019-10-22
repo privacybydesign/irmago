@@ -87,7 +87,7 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
 	DisableRequestorAuthentication: true,
-	Port:                           48682,
+	Port: 48682,
 }
 
 var JwtServerConfiguration = &requestorserver.Configuration{
@@ -97,9 +97,9 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 	},
-	Port:                           48682,
+	Port: 48682,
 	DisableRequestorAuthentication: false,
-	MaxRequestAge:                  3,
+	MaxRequestAge: 3,
 	Permissions: requestorserver.Permissions{
 		Disclosing: []string{"*"},
 		Signing:    []string{"*"},
