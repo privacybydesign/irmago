@@ -30,7 +30,7 @@ type PinHandler func(proceed bool, pin string)
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
 	StatusUpdate(action irma.Action, status irma.Status)
-	ClientReturnURLFound(clientReturnURL string)
+	ClientReturnURLSet(clientReturnURL string)
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
@@ -313,7 +313,7 @@ func (session *session) processSessionInfo() {
 
 	// Handle ClientReturnURL if one is found in the session request
 	if session.request.Base().ClientReturnURL != "" {
-		session.Handler.ClientReturnURLFound(session.request.Base().ClientReturnURL)
+		session.Handler.ClientReturnURLSet(session.request.Base().ClientReturnURL)
 	}
 
 	switch session.Action {
