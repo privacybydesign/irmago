@@ -1450,7 +1450,7 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 func (conf *Configuration) ValidateKeys() error {
 	const expiryBoundary = int64(time.Hour/time.Second) * 24 * 31 // 1 month, TODO make configurable
 
-	for issuerid := range conf.Issuers {
+	for issuerid, issuer := range conf.Issuers {
 		if err := conf.parseKeysFolder(issuerid); err != nil {
 			return err
 		}
@@ -1465,13 +1465,17 @@ func (conf *Configuration) ValidateKeys() error {
 		if err != nil {
 			return err
 		}
-		now := time.Now().Unix()
-		if latest == nil || latest.ExpiryDate < now {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no nonexpired public keys", issuerid.String()))
-		}
-		if latest != nil && latest.ExpiryDate > now && latest.ExpiryDate < now+expiryBoundary {
-			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Latest public key of issuer %s expires soon (at %s)",
-				issuerid.String(), time.Unix(latest.ExpiryDate, 0).String()))
+
+		// Check expiry date public keys only if issuer is not deprecated
+		now := time.Now()
+		if issuer.DeprecatedSince.IsZero() || issuer.DeprecatedSince.After(Timestamp(now)) {
+			if latest == nil || latest.ExpiryDate < now.Unix() {
+				conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no nonexpired public keys", issuerid.String()))
+			}
+			if latest != nil && latest.ExpiryDate > now.Unix() && latest.ExpiryDate < now.Unix()+expiryBoundary {
+				conf.Warnings = append(conf.Warnings, fmt.Sprintf("Latest public key of issuer %s expires soon (at %s)",
+					issuerid.String(), time.Unix(latest.ExpiryDate, 0).String()))
+			}
 		}
 
 		// Check private keys if any
