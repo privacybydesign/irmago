@@ -99,7 +99,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 	},
 	Port: 48682,
 	DisableRequestorAuthentication: false,
-	MaxRequestAge:                  3,
+	MaxRequestAge: 3,
 	Permissions: requestorserver.Permissions{
 		Disclosing: []string{"*"},
 		Signing:    []string{"*"},
@@ -122,7 +122,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 	StaticSessions: map[string]interface{}{
 		"staticsession": irma.ServiceProviderRequest{
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				CallbackUrl: "http://localhost:48685",
+				CallbackURL: "http://localhost:48685",
 			},
 			Request: &irma.DisclosureRequest{
 				BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},

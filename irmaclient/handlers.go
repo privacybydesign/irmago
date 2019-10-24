@@ -83,3 +83,6 @@ func (h *keyshareEnrollmentHandler) KeyshareEnrollmentMissing(manager irma.Schem
 func (h *keyshareEnrollmentHandler) UnsatisfiableRequest(request irma.SessionRequest, ServerName irma.TranslatedString, missing MissingAttributes) {
 	h.fail(errors.New("Keyshare enrollment failed: unsatisfiable"))
 }
+func (h *keyshareEnrollmentHandler) ClientReturnURLSet(clientReturnURL string) {
+	h.fail(errors.New("Keyshare enrollment session unexpectedly found an external return url"))
+}

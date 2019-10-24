@@ -340,7 +340,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if rrequest.Base().CallbackUrl != "" && s.conf.jwtPrivateKey == nil {
+	if rrequest.Base().CallbackURL != "" && s.conf.jwtPrivateKey == nil {
 		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
 		server.WriteError(w, server.ErrorUnsupported, "")
 		return
@@ -547,7 +547,7 @@ func (s *Server) resultJwt(sessionresult *server.SessionResult) (string, error) 
 }
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
-	callbackUrl := s.irmaserv.GetRequest(result.Token).Base().CallbackUrl
+	callbackUrl := s.irmaserv.GetRequest(result.Token).Base().CallbackURL
 	if callbackUrl == "" {
 		return
 	}
