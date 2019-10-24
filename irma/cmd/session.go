@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -13,7 +14,6 @@ import (
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/x-cray/logrus-prefixed-formatter"
 )
 
 const pollInterval = 1000 * time.Millisecond
@@ -215,9 +215,7 @@ func configureServer(url string, port int, privatekeysPath string, irmaconfig *i
 
 func configure(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, error) {
 	verbosity, _ := cmd.Flags().GetCount("verbose")
-	logger = logrus.New()
 	logger.Level = server.Verbosity(verbosity)
-	logger.Formatter = &prefixed.TextFormatter{FullTimestamp: true}
 	irma.Logger = logger
 
 	return configureRequest(cmd)
@@ -225,6 +223,9 @@ func configure(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, 
 
 func init() {
 	RootCmd.AddCommand(sessionCmd)
+
+	logger = logrus.New()
+	logger.Formatter = &prefixed.TextFormatter{FullTimestamp: true}
 
 	var err error
 	defaulturl, err = server.LocalIP()
