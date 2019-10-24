@@ -651,6 +651,11 @@ func (t Timestamp) After(u Timestamp) bool {
 	return time.Time(t).After(time.Time(u))
 }
 
+// To check whether Timestamp is uninitialized
+func (t Timestamp) IsZero() bool {
+	return time.Time(t).IsZero()
+}
+
 func (t *Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return e.EncodeElement(t.String(), start)
 }
