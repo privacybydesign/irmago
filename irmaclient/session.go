@@ -264,7 +264,7 @@ func serverName(hostname string, request irma.SessionRequest, conf *irma.Configu
 func (session *session) processSessionInfo() {
 	defer session.recoverFromPanic()
 
-	if err := session.checkAndUpateConfiguration(); err != nil {
+	if err := session.checkAndUpdateConfiguration(); err != nil {
 		session.fail(err.(*irma.SessionError))
 		return
 	}
@@ -545,7 +545,7 @@ func (session *session) checkKeyshareEnrollment() bool {
 	return true
 }
 
-func (session *session) checkAndUpateConfiguration() error {
+func (session *session) checkAndUpdateConfiguration() error {
 	// Download missing credential types/issuers/public keys from the scheme manager
 	downloaded, err := session.client.Configuration.Download(session.request)
 	if uerr, ok := err.(*irma.UnknownIdentifierError); ok {
