@@ -104,6 +104,7 @@ type SessionError struct {
 	Info         string
 	RemoteError  *RemoteError
 	RemoteStatus int
+	Handled      bool // set to true when error status is already communicated to session handler
 }
 
 // RemoteError is an error message returned by the API server on errors.
