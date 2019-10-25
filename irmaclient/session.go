@@ -533,16 +533,16 @@ func (session *session) getProof() (interface{}, error) {
 
 // checkKeyshareEnrollment checks if we are enrolled into all involved keyshare servers,
 // and aborts the session if not
-func (session *session) checkKeyshareEnrollment() bool {
+func (session *session) checkKeyshareEnrollment() error {
 	for id := range session.request.Identifiers().SchemeManagers {
 		distributed := session.client.Configuration.SchemeManagers[id].Distributed()
 		_, enrolled := session.client.keyshareServers[id]
 		if distributed && !enrolled {
 			session.Handler.KeyshareEnrollmentMissing(id)
-			return false
+			return &irma.SessionError{ErrorType: irma.ErrorKeyshare, Handled: true}
 		}
 	}
-	return true
+	return nil
 }
 
 func (session *session) checkAndUpdateConfiguration() error {
@@ -561,8 +561,8 @@ func (session *session) checkAndUpdateConfiguration() error {
 	}
 
 	// Check if we are enrolled into all involved keyshare servers
-	if !session.checkKeyshareEnrollment() {
-		return &irma.SessionError{ErrorType: irma.ErrorKeyshare}
+	if err = session.checkKeyshareEnrollment(); err != nil {
+		return err
 	}
 
 	if err = session.request.Disclosure().Disclose.Validate(session.client.Configuration); err != nil {
@@ -643,7 +643,7 @@ func (session *session) delete() bool {
 }
 
 func (session *session) fail(err *irma.SessionError) {
-	if session.delete() {
+	if session.delete() && !err.Handled {
 		err.Err = errors.Wrap(err.Err, 0)
 		session.Handler.Failure(err)
 	}
