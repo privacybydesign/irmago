@@ -98,6 +98,7 @@ func (th TestHandler) Failure(err *irma.SessionError) {
 		th.t.Fatal(err)
 	}
 }
+func (th TestHandler) ClientReturnURLSet(clientReturnUrl string) {}
 func (th TestHandler) UnsatisfiableRequest(request irma.SessionRequest, serverName irma.TranslatedString, missing irmaclient.MissingAttributes) {
 	th.Failure(&irma.SessionError{
 		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
