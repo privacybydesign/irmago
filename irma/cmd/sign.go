@@ -84,8 +84,8 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 
 	// Traverse dir and add file hashes to index
 	var index irma.SchemeManagerIndex = make(map[string]irma.ConfigurationFileHash)
-	err := filepath.Walk(confpath, func(path string, info os.FileInfo, err error) error {
-		return calculateFileHash(path, info, err, confpath, index)
+	err := fs.WalkDir(confpath, func(path string, info os.FileInfo) error {
+		return calculateFileHash(path, info, confpath, index)
 	})
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to calculate file index:", 0)
@@ -141,10 +141,7 @@ func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	return x509.ParseECPrivateKey(block.Bytes)
 }
 
-func calculateFileHash(path string, info os.FileInfo, err error, confpath string, index irma.SchemeManagerIndex) error {
-	if err != nil {
-		return err
-	}
+func calculateFileHash(path string, info os.FileInfo, confpath string, index irma.SchemeManagerIndex) error {
 	// Skip stuff we don't want
 	if info.IsDir() || // Can only sign files
 		strings.HasSuffix(path, "index") || // Skip the index file itself
