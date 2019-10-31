@@ -185,3 +185,50 @@ func Base64Decode(b []byte) ([]byte, error) {
 	}
 	return bts, err
 }
+
+// iterateSubfolders iterates over the subfolders of the specified path,
+// calling the specified handler each time. If anything goes wrong, or
+// if the caller returns a non-nil error, an error is immediately returned.
+func IterateSubfolders(path string, handler func(string, os.FileInfo) error) error {
+	return iterateFiles(path, true, handler)
+}
+
+func iterateFiles(path string, onlyDirs bool, handler func(string, os.FileInfo) error) error {
+	files, err := filepath.Glob(filepath.Join(path, "*"))
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		stat, err := os.Stat(file)
+		if err != nil {
+			return err
+		}
+		if onlyDirs && !stat.IsDir() {
+			continue
+		}
+		if filepath.Base(file) == ".git" {
+			continue
+		}
+		err = handler(file, stat)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// walkDir recursively walks the file tree rooted at path, following symlinks (unlike filepath.Walk).
+// Avoiding loops is the responsibility of the caller.
+func WalkDir(path string, handler func(string, os.FileInfo) error) error {
+	return iterateFiles(path, false, func(p string, info os.FileInfo) error {
+		if info.IsDir() {
+			if err := handler(p, info); err != nil {
+				return err
+			}
+			return WalkDir(p, handler)
+		}
+		return handler(p, info)
+	})
+}
