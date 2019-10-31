@@ -217,9 +217,18 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 	}
 
 	// If this is a singleton credential type, ensure we have at most one by removing any previous instance
-	if !id.Empty() && cred.CredentialType().IsSingleton {
-		for len(client.attrs(id)) != 0 {
-			client.remove(id, 0, false)
+	// If a credential already exists with exactly the same attribute values (except metadata), delete the previous credential
+	if !id.Empty() {
+		if cred.CredentialType().IsSingleton {
+			for len(client.attrs(id)) != 0 {
+				_ = client.remove(id, 0, false)
+			}
+		}
+
+		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
+			if client.attrs(id)[i].EqualsExceptMetadata(cred.AttributeList()) {
+				_ = client.remove(id, i, false)
+			}
 		}
 	}
 
