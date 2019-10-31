@@ -96,6 +96,20 @@ func TestIssuanceOptionalSetAttributes(t *testing.T) {
 	sessionHelper(t, req, "issue", nil)
 }
 
+func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	prevLen := len(client.CredentialInfoList())
+
+	req := getIssuanceRequest(true)
+	sessionHelper(t, req, "issue", client)
+
+	req = getIssuanceRequest(false)
+	sessionHelper(t, req, "issue", client)
+	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
+}
+
 func TestLargeAttribute(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)

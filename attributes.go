@@ -63,6 +63,22 @@ func (al *AttributeList) Info() *CredentialInfo {
 	return al.info
 }
 
+// EqualsExceptMetadata checks whether two AttributeLists have the same attribute values.
+// The attribute containing the metadata information is skipped in this check.
+func (al *AttributeList) EqualsExceptMetadata(ol *AttributeList) bool {
+	if len(al.Ints) != len(ol.Ints) {
+		return false
+	}
+
+	// Check whether value of all attributes, except for metadata attribute, is equal
+	for i := 1; i < len(al.Ints); i++ {
+		if al.Ints[i].Cmp(ol.Ints[i]) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func (al *AttributeList) Hash() string {
 	if al.h == "" {
 		bytes := []byte{}
