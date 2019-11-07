@@ -53,7 +53,6 @@ type Client struct {
 	Preferences           Preferences
 	Configuration         *irma.Configuration
 	irmaConfigurationPath string
-	androidStoragePath    string
 	handler               ClientHandler
 }
 
@@ -108,8 +107,6 @@ type secretKey struct {
 // New creates a new Client that uses the directory
 // specified by storagePath for (de)serializing itself. irmaConfigurationPath
 // is the path to a (possibly readonly) folder containing irma_configuration;
-// androidStoragePath is an optional path to the files of the old android app
-// (specify "" if you do not want to parse the old android app files),
 // and handler is used for informing the user of new stuff, and when a
 // enrollment to a keyshare server needs to happen.
 // The client returned by this function has been fully deserialized
@@ -120,7 +117,6 @@ type secretKey struct {
 func New(
 	storagePath string,
 	irmaConfigurationPath string,
-	androidStoragePath string,
 	handler ClientHandler,
 ) (*Client, error) {
 	var err error
@@ -136,7 +132,6 @@ func New(
 		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
-		androidStoragePath:    androidStoragePath,
 		handler:               handler,
 	}
 
