@@ -4,6 +4,7 @@ import (
 	"fmt"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"net/http"
+	neturl "net/url"
 	"regexp"
 	"strconv"
 	"time"
@@ -63,6 +64,10 @@ irma session --server http://localhost:8088 --authmethod token --key mytoken --d
 
 		if serverurl == "" {
 			port, _ := flags.GetInt("port")
+			if urlParsed, err := neturl.Parse(url); err == nil && urlParsed.Port() != string(port) {
+				logger.Warnf("Server runs on port %d and port in url is %s. If connection fails, try adding \"--port %[2]s\" flag to command.",
+					port, urlParsed.Port())
+			}
 			privatekeysPath, _ := flags.GetString("privkeys")
 			verbosity, _ := cmd.Flags().GetCount("verbose")
 			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity)
