@@ -128,18 +128,24 @@ func (rs *RevocationStorage) LatestRevocationRecords(typ CredentialTypeIdentifie
 func (rs *RevocationStorage) AddRevocationRecords(records []*RevocationRecord) error {
 	var err error
 	for _, r := range records {
-		if err = rs.AddRevocationRecord(r); err != nil {
+		if err = rs.addRevocationRecord(rs.db, r, false); err != nil {
 			return err
 		}
 	}
+
+	if len(records) > 0 {
+		// POST record to listeners, if any, asynchroniously
+		go rs.client.PostRevocationRecords(rs.getSettings(records[0].CredType).PostURLs, records)
+	}
+
 	return nil
 }
 
 func (rs *RevocationStorage) AddRevocationRecord(record *RevocationRecord) error {
-	return rs.addRevocationRecord(rs.db, record)
+	return rs.addRevocationRecord(rs.db, record, true)
 }
 
-func (rs *RevocationStorage) addRevocationRecord(tx revStorage, record *RevocationRecord) error {
+func (rs *RevocationStorage) addRevocationRecord(tx revStorage, record *RevocationRecord, post bool) error {
 	// Unmarshal and verify the record against the appropriate public key
 	pk, err := rs.Keys.PublicKey(record.CredType.IssuerIdentifier(), record.PublicKeyIndex)
 	if err != nil {
@@ -161,7 +167,10 @@ func (rs *RevocationStorage) addRevocationRecord(tx revStorage, record *Revocati
 
 	s := rs.getSettings(record.CredType)
 	s.updated = time.Now()
-	go rs.client.PostRevocationRecord(s, record) // POST record to listeners, if any, asynchroniously
+	if post {
+		// POST record to listeners, if any, asynchroniously
+		go rs.client.PostRevocationRecords(s.PostURLs, []*RevocationRecord{record})
+	}
 
 	return nil
 }
@@ -259,7 +268,7 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 		},
 		CredType: typ,
 	}
-	if err = rs.addRevocationRecord(tx, record); err != nil {
+	if err = rs.addRevocationRecord(tx, record, true); err != nil {
 		return err
 	}
 	return nil
@@ -419,11 +428,10 @@ func (rs *RevocationStorage) getSettings(typ CredentialTypeIdentifier) *Revocati
 	return rs.settings[typ]
 }
 
-// TODO support POSTing multiple records
-func (RevocationClient) PostRevocationRecord(s *RevocationSetting, record *RevocationRecord) {
+func (RevocationClient) PostRevocationRecords(urls []string, records []*RevocationRecord) {
 	transport := NewHTTPTransport("")
-	for _, url := range s.PostURLs {
-		if err := transport.Post(url+"/-/revocation/records", nil, &[]*RevocationRecord{record}); err != nil {
+	for _, url := range urls {
+		if err := transport.Post(url+"/-/revocation/records", nil, &records); err != nil {
 			Logger.Warn("error sending revocation update", err)
 		}
 	}
