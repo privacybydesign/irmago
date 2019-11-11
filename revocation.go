@@ -38,7 +38,7 @@ type (
 		updated  time.Time
 	}
 
-	RevocationMode int
+	RevocationMode string
 
 	RevocationRecord struct {
 		revocation.Record `gorm:"embedded"`
@@ -62,9 +62,9 @@ type (
 )
 
 const (
-	RevocationModeRequestor RevocationMode = iota
-	RevocationModeProxy
-	RevocationModeServer
+	RevocationModeRequestor RevocationMode = ""
+	RevocationModeProxy     RevocationMode = "proxy"
+	RevocationModeServer    RevocationMode = "server"
 )
 
 // Revocation record methods
@@ -362,12 +362,18 @@ func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, re
 // Misscelaneous methods
 
 func (rs *RevocationStorage) Load(debug bool, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
-	if connstr == "" {
-		for typ, s := range settings {
-			if s.Mode != RevocationModeRequestor {
-				return errors.Errorf("revocation mode for %s requires SQL database but no connection string given", typ)
-			}
+	var t *CredentialTypeIdentifier
+	for typ, s := range settings {
+		switch s.Mode {
+		case RevocationModeServer, RevocationModeProxy:
+			t = &typ
+		default:
+			return errors.Errorf("invalid revocation mode '%s' for %s (supported: %s, %s)",
+				s.Mode, typ, RevocationModeServer, RevocationModeProxy)
 		}
+	}
+	if t != nil && connstr == "" {
+		return errors.Errorf("revocation mode for %s requires SQL database but no connection string given", *t)
 	}
 
 	if connstr == "" {
