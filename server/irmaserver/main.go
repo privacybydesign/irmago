@@ -96,6 +96,9 @@ func (s *Server) CancelSession(token string) error {
 	return s.Server.CancelSession(token)
 }
 
+// Revoke revokes the earlier issued credential specified by key. (Can only be used if this server
+// is the revocation server for the specified credential type and if the corresponding
+// issuer private key is present in the server configuration.)
 func Revoke(credid irma.CredentialTypeIdentifier, key string) error {
 	return s.Revoke(credid, key)
 }

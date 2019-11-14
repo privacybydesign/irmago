@@ -13,6 +13,9 @@ import (
 )
 
 type (
+	// RevocationStorage stores and retrieves revocation-related data from and to a SQL database,
+	// and offers a revocation API for all other irmago code, including a Revoke() method that
+	// revokes an earlier issued credential.
 	RevocationStorage struct {
 		conf     *Configuration
 		db       revStorage
@@ -24,22 +27,31 @@ type (
 		client RevocationClient
 	}
 
+	// RevocationClient offers an HTTP client to the revocation server endpoints.
 	RevocationClient struct {
 		Conf *Configuration
 	}
 
+	// RevocationKeys contains helper functions for retrieving revocation private and public keys
+	// from an irma.Configuration instance.
 	RevocationKeys struct {
 		Conf *Configuration
 	}
 
+	// RevocationSetting contains revocation settings for a given credential type.
 	RevocationSetting struct {
 		Mode     RevocationMode `json:"mode"`
 		PostURLs []string       `json:"post_urls" mapstructure:"post_urls"`
 		updated  time.Time
 	}
 
+	// RevocationMode specifies for a given credential type what revocation operations are
+	// supported, and how the associated data is stored (SQL or memory).
 	RevocationMode string
 
+	// RevocationRecord contains a signed AccumulatorUpdate and associated information and is used
+	// by clients, issuers and verifiers to update their revocation state, so that they can create
+	// and verify nonrevocation proofs and witnesses.
 	RevocationRecord struct {
 		revocation.Record `gorm:"embedded"`
 		PublicKeyIndex    uint
@@ -63,13 +75,35 @@ type (
 )
 
 const (
+	// RevocationModeRequestor is the default revocation mode in which only RevocationRecord instances
+	// are consumed for issuance or verification. Uses an in-memory store.
 	RevocationModeRequestor RevocationMode = ""
-	RevocationModeProxy     RevocationMode = "proxy"
-	RevocationModeServer    RevocationMode = "server"
+
+	// RevocationModeProxy indicates that this server
+	// (1) allows fetching of RevocationRecord instances from its database,
+	// (2) relays all RevocationRecord instances it receives to the URLs configured in the containing
+	// RevocationSetting struct.
+	// Requires a SQL server to store and retrieve RevocationRecord instances from.
+	RevocationModeProxy RevocationMode = "proxy"
+
+	// RevocationModeServer indicates that this is the revocation server for a credential type,
+	// to which the credential type's RevocationServer URL should point.
+	// IssuanceRecord instances are sent to this server, as well as revocation commands, through
+	// revocation sessions or through the RevocationStorage.Revoke() method.
+	// Requires a SQL server to store and retrieve all records from and requires the issuer's
+	// private key to be accessible, in order to revoke and to sign new revocation records.
+	RevocationModeServer RevocationMode = "server"
+
+	// revocationUpdateCount specifies how many revocation records are attached to session requests
+	// for the client to update its revocation state.
+	revocationUpdateCount = 5
 )
 
 // Revocation record methods
 
+// EnableRevocation creates an initial accumulator for a given credential type. This function is the
+// only way to create such an initial accumulator and it must be called before anyone can use
+// revocation for this credential type. Requires the issuer private key.
 func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier) error {
 	hasRecords, err := rs.db.HasRecords(typ, (*RevocationRecord)(nil))
 	if err != nil {
@@ -103,7 +137,17 @@ func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier) erro
 	return nil
 }
 
-// Get returns all records that a client requires to update its revocation state if it is currently
+// RevocationEnabled returns whether or not revocation is enabled for the given credential type,
+// by checking if any revocation record exists in the database.
+func (rs *RevocationStorage) RevocationEnabled(typ CredentialTypeIdentifier) (bool, error) {
+	if rs.sqlMode {
+		return rs.db.HasRecords(typ, (*RevocationRecord)(nil))
+	} else {
+		return rs.memdb.HasRecords(typ), nil
+	}
+}
+
+// RevocationRecords returns all records that a client requires to update its revocation state if it is currently
 // at the specified index, that is, all records whose end index is greater than or equal to
 // the specified index.
 func (rs *RevocationStorage) RevocationRecords(typ CredentialTypeIdentifier, index uint64) ([]*RevocationRecord, error) {
@@ -176,16 +220,6 @@ func (rs *RevocationStorage) addRevocationRecord(tx revStorage, record *Revocati
 	return nil
 }
 
-// RevocationEnabled returns whether or not revocation is enabled for the given credential type,
-// by checking if any revocation record exists in the database.
-func (rs *RevocationStorage) RevocationEnabled(typ CredentialTypeIdentifier) (bool, error) {
-	if rs.sqlMode {
-		return rs.db.HasRecords(typ, (*RevocationRecord)(nil))
-	} else {
-		return rs.memdb.HasRecords(typ), nil
-	}
-}
-
 // Issuance records
 
 func (rs *RevocationStorage) IssuanceRecordExists(typ CredentialTypeIdentifier, key []byte) (bool, error) {
@@ -207,18 +241,14 @@ func (rs *RevocationStorage) IssuanceRecord(typ CredentialTypeIdentifier, key []
 
 // Revocation methods
 
-// Revoke revokes the credential specified specified by key if found within the current database,
-// by updating its revocation time to now, adding its revocation attribute to the current accumulator,
+// Revoke revokes the credential specified by key if found within the current database,
+// by updating its revocation time to now, removing its revocation attribute from the current accumulator,
 // and updating the revocation database on disk.
 func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) error {
-	sk, err := rs.conf.PrivateKey(typ.IssuerIdentifier())
-	if err != nil {
-		return err
+	if rs.getSettings(typ).Mode != RevocationModeServer {
+		return errors.Errorf("cannot revoke %s", typ)
 	}
-	if sk == nil {
-		return errors.New("private key not found")
-	}
-	rsk, err := sk.RevocationKey()
+	rsk, err := rs.Keys.PrivateKey(typ.IssuerIdentifier())
 	if err != nil {
 		return err
 	}
@@ -321,7 +351,7 @@ func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
 	return rs.AddRevocationRecords(records)
 }
 
-func (rs *RevocationStorage) updateIfOld(typ CredentialTypeIdentifier) error {
+func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
 	if rs.getSettings(typ).updated.Before(time.Now().Add(-5 * time.Minute)) {
 		if err := rs.UpdateDB(typ); err != nil {
 			return err
@@ -417,7 +447,7 @@ func (rs *RevocationStorage) SetRevocationRecords(b *BaseRequest) error {
 	var err error
 	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]*RevocationRecord, len(b.Revocation))
 	for _, credid := range b.Revocation {
-		if err = rs.updateIfOld(credid); err != nil {
+		if err = rs.UpdateIfOld(credid); err != nil {
 			return err
 		}
 		b.RevocationUpdates[credid], err = rs.LatestRevocationRecords(credid, revocationUpdateCount)

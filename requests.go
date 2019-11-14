@@ -23,18 +23,21 @@ const (
 	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
 )
 
-// BaseRequest contains the context and nonce for an IRMA session.
+// BaseRequest contains information used by all IRMA session types, such the context and nonce,
+// and revocation information.
 type BaseRequest struct {
 	LDContext string `json:"@context,omitempty"`
 
-	// Revocation instructs the client to include nonrevocation zero-knowledge proofs for the
+	// Set by the IRMA server during the session
+	Context         *big.Int         `json:"context,omitempty"`
+	Nonce           *big.Int         `json:"nonce,omitempty"`
+	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
+
+	// Revocation is set by the requestor to indicate that it requires nonrevocation proofs for the
 	// specified credential types.
 	Revocation []CredentialTypeIdentifier `json:"revocation,omitempty"`
-
-	// Set by the IRMA server during the session
-	Context           *big.Int                                         `json:"context,omitempty"`
-	Nonce             *big.Int                                         `json:"nonce,omitempty"`
-	ProtocolVersion   *ProtocolVersion                                 `json:"protocolVersion,omitempty"`
+	// RevocationUpdates contains revocation update messages for the client to update its
+	// revocation state.
 	RevocationUpdates map[CredentialTypeIdentifier][]*RevocationRecord `json:"revocationUpdates,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
@@ -229,13 +232,11 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 	return b.Nonce
 }
 
+// RequestsRevocation indicates whether or not the requestor requires a nonrevocation proof for
+// the given credential type; that is, whether or not it included revocation update messages.
 func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
-	// If the requestor wants us to include a nonrevocation proof,
-	// it will have sent us the latest revocation update messages
 	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id]) > 0
 }
-
-const revocationUpdateCount = 5
 
 // CredentialTypes returns an array of all credential types occuring in this conjunction.
 func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
