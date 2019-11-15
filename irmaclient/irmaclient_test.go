@@ -40,7 +40,7 @@ func parseStorage(t *testing.T) *Client {
 	return client
 }
 
-func testhelper(t *testing.T) (*Client, *irma.DisclosureRequest, *irma.Disclosure) {
+func parseDisclosure(t *testing.T) (*Client, *irma.DisclosureRequest, *irma.Disclosure) {
 	client := parseStorage(t)
 
 	requestJson := `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"M3LYmTr3CZDYZkMNK2uCCg==","protocolVersion":"2.5","disclose":[[["irma-demo.RU.studentCard.studentID"]]],"labels":{"0":null}}`
@@ -55,7 +55,7 @@ func testhelper(t *testing.T) (*Client, *irma.DisclosureRequest, *irma.Disclosur
 
 func TestVerify(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		client, request, disclosure := testhelper(t)
+		client, request, disclosure := parseDisclosure(t)
 		attr, status, err := disclosure.Verify(client.Configuration, request)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusValid, status)
@@ -63,7 +63,7 @@ func TestVerify(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		client, request, disclosure := testhelper(t)
+		client, request, disclosure := parseDisclosure(t)
 		disclosure.Proofs[0].(*gabi.ProofD).AResponses[0] = big.NewInt(100)
 		_, status, err := disclosure.Verify(client.Configuration, request)
 		require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestVerify(t *testing.T) {
 	})
 
 	t.Run("wrong attribute", func(t *testing.T) {
-		client, request, disclosure := testhelper(t)
+		client, request, disclosure := parseDisclosure(t)
 		request.Disclose[0][0][0].Type = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 		_, status, err := disclosure.Verify(client.Configuration, request)
 		require.NoError(t, err)
