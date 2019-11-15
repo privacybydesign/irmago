@@ -42,7 +42,6 @@ func parseStorage(t *testing.T) (*irmaclient.Client, *TestClientHandler) {
 	client, err := irmaclient.New(
 		filepath.Join(path, "storage", "test"),
 		filepath.Join(path, "irma_configuration"),
-		"",
 		handler,
 	)
 	require.NoError(t, err)
