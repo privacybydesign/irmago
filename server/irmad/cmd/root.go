@@ -108,7 +108,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
 	flags.String("static-prefix", "/", "Host static files under this URL prefix")
-	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects")
+	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
@@ -219,15 +219,15 @@ func configure(cmd *cobra.Command) error {
 			SchemesUpdateInterval: viper.GetInt("schemes-update"),
 			DisableSchemesUpdate:  viper.GetBool("disable-schemes-update") || viper.GetInt("schemes-update") == 0,
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
-			URL:        viper.GetString("url"),
-			DisableTLS: viper.GetBool("no-tls"),
-			Email:      viper.GetString("email"),
-			EnableSSE:  viper.GetBool("sse"),
-			Verbose:    viper.GetInt("verbose"),
-			Quiet:      viper.GetBool("quiet"),
-			LogJSON:    viper.GetBool("log-json"),
-			Logger:     logger,
-			Production: viper.GetBool("production"),
+			URL:                   viper.GetString("url"),
+			DisableTLS:            viper.GetBool("no-tls"),
+			Email:                 viper.GetString("email"),
+			EnableSSE:             viper.GetBool("sse"),
+			Verbose:               viper.GetInt("verbose"),
+			Quiet:                 viper.GetBool("quiet"),
+			LogJSON:               viper.GetBool("log-json"),
+			Logger:                logger,
+			Production:            viper.GetBool("production"),
 		},
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),

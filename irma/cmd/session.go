@@ -238,7 +238,7 @@ func init() {
 	flags := sessionCmd.Flags()
 	flags.SortFlags = false
 	flags.String("server", "", "External IRMA server to post request to (leave blank to use builtin library)")
-	flags.StringP("url", "u", defaulturl, "external URL to which IRMA app connects (when not using --server)")
+	flags.StringP("url", "u", defaulturl, "external URL to which IRMA app connects (when not using --server), \":port\" being replaced by --port value")
 	flags.IntP("port", "p", 48680, "port to listen at (when not using --server)")
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
 	flags.StringP("request", "r", "", "JSON session request")
