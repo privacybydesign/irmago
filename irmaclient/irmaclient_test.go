@@ -3,12 +3,12 @@ package irmaclient
 import (
 	"encoding/json"
 	"errors"
-
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -34,11 +34,49 @@ func parseStorage(t *testing.T) *Client {
 	client, err := New(
 		filepath.Join("..", "testdata", "storage", "test"),
 		filepath.Join("..", "testdata", "irma_configuration"),
-		"",
 		&TestClientHandler{t: t},
 	)
 	require.NoError(t, err)
 	return client
+}
+
+func testhelper(t *testing.T) (*Client, *irma.DisclosureRequest, *irma.Disclosure) {
+	client := parseStorage(t)
+
+	requestJson := `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"M3LYmTr3CZDYZkMNK2uCCg==","protocolVersion":"2.5","disclose":[[["irma-demo.RU.studentCard.studentID"]]],"labels":{"0":null}}`
+	dislosureJson := `{"proofs":[{"c":"l1WDHGtsbEO+rVhVoGBDpzluiU5riCKtgMu6Mn4zxDg=","A":"XRyyZFL5xcvQDrCEoIchQdd1qyGpMIafNoak/8aSZisQ5U7JEa54Yu8nW4L9/4fXqLDK1SyX/CvFXrELbFBX1qf1lJ19jTViU9jIpSOw3D8w/DeY7Kg0evwVKUQrcrJnT3ss8J5gM5eRF1E1AuRHgKywWYvtxFvHQs2ODN2qsWY=","e_response":"m41dWZjTVYN6RqnojdHwgfixZwBJKW189b/ehnG3YTt0dMKDUnrLBYhGyKtmstnLzYTuJaBDX4r8","v_response":"DajHvzCDcmxXvd4sucgnrOkaOyFaF0EcOf23ySy56SAiFzWBW1BkcMQ8AwjwnVzYS5vpHnkUDkgqovOsl74RJQMSdnjzu0URAvGZm7/3pXgBjR5Q0154oMC3+n19pQrX68xgEOK7Am6jflfNufyINIVOAm7SfObsjKRDMQcuHOLgoj5XIHPJ3EBJcFJzizmaaGuGHKEJ0+b4Zi8JCBMaP9mdDhsUJAtm190hYxcMb2CtIIiJqGRk+JcNmusRuJYcT9OLx/Xklj+qm6/5C0+jRQPdYNycVzwKel+HDWZyYymCSpjbR5mUw1IpK1QvszN5NIJXVCeDrMMRZcySfOUA","a_responses":{"0":"xxlDTyJ1xq6TuMYgiyisNJ82tiJsnFdBinGP5ZQtw7rxXcLrO6k7nE88wPDuejzEnF7+LgIes32BMC+Qr/C/qh//x7SuMxDujoY=","2":"8HEFx5JJ24Z/D6MRtE6m7Pyk9T61S7lnxdTaych7wEK3ZO+4qyFYVZwx4NLtTp1MRfTiUq6KhNd7Is2cEBAdZYaL3XBnNRQMNvw=","3":"2BleNpicu21GFR1kYJ6kpFct6pyFSYz8hw5tBHtGz7O54KgHySwZ6lI/J4hp1b5l3RWq6gZzlz/PzOLKxk3E3YOwS7e4hsQ7BFo=","5":"977MbEQ95ieN/lVJSUS5Y80nY5KigNtrId2RW87CIsCZQ892rPljuZ0s/UG16b3oEYFEx+WZPxKvGiQN0dJiB8BK3P8qPZlGIu4="},"a_disclosed":{"1":"AgAJuwB+AALWy2qU9p3l52l9LU1rVT4M","4":"NDU2"}}],"indices":[[{"cred":0,"attr":4}]]}`
+	request := &irma.DisclosureRequest{}
+	require.NoError(t, json.Unmarshal([]byte(requestJson), request))
+	disclosure := &irma.Disclosure{}
+	require.NoError(t, json.Unmarshal([]byte(dislosureJson), disclosure))
+
+	return client, request, disclosure
+}
+
+func TestVerify(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		client, request, disclosure := testhelper(t)
+		attr, status, err := disclosure.Verify(client.Configuration, request)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusValid, status)
+		require.Equal(t, "456", *attr[0][0].RawValue)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		client, request, disclosure := testhelper(t)
+		disclosure.Proofs[0].(*gabi.ProofD).AResponses[0] = big.NewInt(100)
+		_, status, err := disclosure.Verify(client.Configuration, request)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusInvalid, status)
+	})
+
+	t.Run("wrong attribute", func(t *testing.T) {
+		client, request, disclosure := testhelper(t)
+		request.Disclose[0][0][0].Type = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+		_, status, err := disclosure.Verify(client.Configuration, request)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusMissingAttributes, status)
+	})
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
