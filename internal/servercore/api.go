@@ -139,7 +139,18 @@ func (s *Server) CancelSession(token string) error {
 }
 
 func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
-	return s.conf.IrmaConfiguration.RevocationStorage.Revoke(credid, key)
+	sk, err := s.conf.PrivateKey(credid.IssuerIdentifier())
+	if err != nil {
+		return err
+	}
+	if sk == nil {
+		return errors.Errorf("cannot revoke: private key of %s not found", credid.IssuerIdentifier())
+	}
+	rsk, err := sk.RevocationKey()
+	if err != nil {
+		return err
+	}
+	return s.conf.IrmaConfiguration.RevocationStorage.Revoke(credid, key, rsk)
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {

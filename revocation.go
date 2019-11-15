@@ -104,7 +104,7 @@ const (
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
 // only way to create such an initial accumulator and it must be called before anyone can use
 // revocation for this credential type. Requires the issuer private key.
-func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier) error {
+func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *revocation.PrivateKey) error {
 	hasRecords, err := rs.db.HasRecords(typ, (*RevocationRecord)(nil))
 	if err != nil {
 		return err
@@ -113,10 +113,6 @@ func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier) erro
 		return errors.New("revocation record table not empty")
 	}
 
-	sk, err := rs.Keys.PrivateKey(typ.IssuerIdentifier())
-	if err != nil {
-		return err
-	}
 	msg, acc, err := revocation.NewAccumulator(sk)
 	if err != nil {
 		return err
@@ -244,13 +240,9 @@ func (rs *RevocationStorage) IssuanceRecord(typ CredentialTypeIdentifier, key []
 // Revoke revokes the credential specified by key if found within the current database,
 // by updating its revocation time to now, removing its revocation attribute from the current accumulator,
 // and updating the revocation database on disk.
-func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) error {
+func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, sk *revocation.PrivateKey) error {
 	if rs.getSettings(typ).Mode != RevocationModeServer {
 		return errors.Errorf("cannot revoke %s", typ)
-	}
-	rsk, err := rs.Keys.PrivateKey(typ.IssuerIdentifier())
-	if err != nil {
-		return err
 	}
 
 	return rs.db.Transaction(func(tx revStorage) error {
@@ -263,7 +255,7 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) er
 		if err = tx.Save(&cr); err != nil {
 			return err
 		}
-		return rs.revokeAttr(tx, typ, rsk, cr.Attr)
+		return rs.revokeAttr(tx, typ, sk, cr.Attr)
 	})
 }
 

@@ -88,7 +88,9 @@ func StartRevocationServer(t *testing.T) {
 	require.NoError(t, g.Close())
 
 	// Enable revocation for our credential type
-	require.NoError(t, irmaconf.RevocationStorage.EnableRevocation(cred))
+	sk, err := irmaconf.RevocationStorage.Keys.PrivateKey(cred.IssuerIdentifier())
+	require.NoError(t, err)
+	require.NoError(t, irmaconf.RevocationStorage.EnableRevocation(cred, sk))
 
 	// Start revocation server
 	revocationServer, err = irmaserver.New(conf)
@@ -156,7 +158,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 	},
 	Port: 48682,
 	DisableRequestorAuthentication: false,
-	MaxRequestAge: 3,
+	MaxRequestAge:                  3,
 	Permissions: requestorserver.Permissions{
 		Disclosing: []string{"*"},
 		Signing:    []string{"*"},
