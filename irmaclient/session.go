@@ -198,7 +198,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		session.request = &irma.DisclosureRequest{}
 	case irma.ActionSigning:
 		session.request = &irma.SignatureRequest{}
-		min = &irma.ProtocolVersion{2, 5} // New ABS format is not backwards compatible with old irma server
+		min = &irma.ProtocolVersion{Major: 2, Minor: 5} // New ABS format is not backwards compatible with old irma server
 	case irma.ActionIssuing:
 		session.request = &irma.IssuanceRequest{}
 	case irma.ActionUnknown:
