@@ -199,7 +199,8 @@ type AttributeRequest struct {
 type RevocationRequest struct {
 	LDContext      string                   `json:"@context,omitempty"`
 	CredentialType CredentialTypeIdentifier `json:"type"`
-	Key            string                   `json:"key"`
+	Key            string                   `json:"key,omitempty"`
+	Enable         bool                     `json:"enable,omitempty"`
 }
 
 func (r *RevocationRequest) Validate() error {
@@ -921,6 +922,10 @@ func (claims *RevocationJwt) Valid() error {
 		return errors.New("Signature jwt not yet valid")
 	}
 	return nil
+}
+
+func (claims *RevocationJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+	return jwt.NewWithClaims(method, claims).SignedString(key)
 }
 
 func (claims *ServiceProviderJwt) Action() Action { return ActionDisclosing }

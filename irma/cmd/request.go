@@ -46,7 +46,7 @@ var requestCmd = &cobra.Command{
 	},
 }
 
-func signRequest(request irma.RequestorRequest, name, authmethod, key string) (string, error) {
+func configureJWTKey(authmethod, key string) (interface{}, jwt.SigningMethod, error) {
 	var (
 		err    error
 		sk     interface{}
@@ -61,17 +61,25 @@ func signRequest(request irma.RequestorRequest, name, authmethod, key string) (s
 	case "hmac":
 		jwtalg = jwt.SigningMethodHS256
 		if sk, err = fs.Base64Decode(bts); err != nil {
-			return "", err
+			return nil, nil, err
 		}
 	case "rsa":
 		jwtalg = jwt.SigningMethodRS256
 		if sk, err = jwt.ParseRSAPrivateKeyFromPEM(bts); err != nil {
-			return "", err
+			return nil, nil, err
 		}
 	default:
-		return "", errors.Errorf("Unsupported signing algorithm: '%s'", authmethod)
+		return nil, nil, errors.Errorf("Unsupported signing algorithm: '%s'", authmethod)
 	}
 
+	return sk, jwtalg, nil
+}
+
+func signRequest(request irma.RequestorRequest, name, authmethod, key string) (string, error) {
+	sk, jwtalg, err := configureJWTKey(authmethod, key)
+	if err != nil {
+		return "", err
+	}
 	return irma.SignRequestorRequest(request, jwtalg, sk, name)
 }
 

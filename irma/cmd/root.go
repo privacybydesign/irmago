@@ -42,13 +42,16 @@ func init() {
 func die(message string, err error) {
 	var m string
 	if message != "" {
-		m = message + ": "
+		m = message
 	}
 	if err != nil {
+		if message != "" {
+			m += ": "
+		}
 		if e, ok := err.(*errors.Error); ok && logger.IsLevelEnabled(logrus.DebugLevel) {
 			m += e.ErrorStack()
 		} else {
-			m = m + err.Error()
+			m += err.Error()
 		}
 	}
 
