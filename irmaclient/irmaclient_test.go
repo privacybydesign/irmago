@@ -77,6 +77,15 @@ func TestVerify(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusMissingAttributes, status)
 	})
+
+	t.Run("wrong nonce", func(t *testing.T) {
+		client, request, disclosure := parseDisclosure(t)
+		request.Nonce = big.NewInt(100)
+		_, status, err := disclosure.Verify(client.Configuration, request)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusInvalid, status)
+	})
+
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
