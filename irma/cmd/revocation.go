@@ -4,10 +4,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// revocationCmd represents the revoke command
+// revocationCmd represents the revocation command
 var revocationCmd = &cobra.Command{
 	Use:   "revocation",
-	Short: "Revoke credentials and manage revocation database",
+	Short: "Revocation",
 }
 
 func init() {

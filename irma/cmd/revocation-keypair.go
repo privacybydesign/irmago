@@ -9,7 +9,8 @@ var revokeKeypairCmd = &cobra.Command{
 	Use:   "keypair PRIVATEKEY PUBLICKEY",
 	Short: "Augment an IRMA private-public keypair with revocation key material",
 	Long: `Augment an IRMA private-public keypair with newly generated revocation key material.
-This is required before credential types requiring revocation can be issued under this keypair.`,
+This is required before credential types requiring revocation can be issued under this keypair.
+(New keypairs generated with "irma scheme issuer keygen" already support revocation.)`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		sk, err := gabi.NewPrivateKeyFromFile(args[0])

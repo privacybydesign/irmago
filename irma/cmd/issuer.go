@@ -12,4 +12,5 @@ var issuerCmd = &cobra.Command{
 
 func init() {
 	schemeCmd.AddCommand(issuerCmd)
+	RootCmd.AddCommand(issuerCmd)
 }
