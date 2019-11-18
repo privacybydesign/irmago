@@ -60,22 +60,24 @@ func StartRevocationServer(t *testing.T) {
 
 	irma.Logger = logger
 	dbstr := "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
+	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	settings := map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+		cred: {Mode: irma.RevocationModeServer},
+	}
 	irmaconf, err := irma.NewConfiguration(filepath.Join(testdata, "irma_configuration"), irma.ConfigurationOptions{
-		RevocationDB: dbstr,
+		RevocationDB:       dbstr,
+		RevocationSettings: settings,
 	})
 	require.NoError(t, err)
 	require.NoError(t, irmaconf.ParseFolder())
 
-	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 	conf := &server.Configuration{
 		Logger:               logger,
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
-		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
-			cred: {Mode: irma.RevocationModeServer},
-		},
-		IrmaConfiguration: irmaconf,
-		RevocationDB:      dbstr,
+		RevocationSettings:   settings,
+		IrmaConfiguration:    irmaconf,
+		RevocationDB:         dbstr,
 	}
 
 	// Connect to database and clear records from previous test runs
