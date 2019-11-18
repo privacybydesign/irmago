@@ -302,7 +302,7 @@ func (ar *AttributeRequest) Satisfy(attr AttributeTypeIdentifier, val *string) b
 
 // Satisfy returns if each of the attributes specified by proofs and indices satisfies each of
 // the contained AttributeRequests's. If so it also returns a list of the disclosed attribute values.
-func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
+func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, revocation map[int]*time.Time, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	if len(indices) < len(c) {
 		return false, nil, nil
 	}
@@ -313,7 +313,7 @@ func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttribu
 
 	for j := range c {
 		index := indices[j]
-		attr, val, err := extractAttribute(proofs, index, conf)
+		attr, val, err := extractAttribute(proofs, index, revocation[index.CredentialIndex], conf)
 		if err != nil {
 			return false, nil, err
 		}
@@ -340,9 +340,9 @@ func (dc AttributeDisCon) Validate() error {
 
 // Satisfy returns true if the attributes specified by proofs and indices satisfies any one of the
 // contained AttributeCon's. If so it also returns a list of the disclosed attribute values.
-func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
+func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, revocation map[int]*time.Time, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	for _, con := range dc {
-		satisfied, attrs, err := con.Satisfy(proofs, indices, conf)
+		satisfied, attrs, err := con.Satisfy(proofs, indices, revocation, conf)
 		if satisfied || err != nil {
 			return true, attrs, err
 		}
@@ -371,7 +371,7 @@ func (cdc AttributeConDisCon) Validate(conf *Configuration) error {
 
 // Satisfy returns true if each of the contained AttributeDisCon is satisfied by the specified disclosure.
 // If so it also returns the disclosed attributes.
-func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuration) (bool, [][]*DisclosedAttribute, error) {
+func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, revocation map[int]*time.Time, conf *Configuration) (bool, [][]*DisclosedAttribute, error) {
 	if len(disclosure.Indices) < len(cdc) {
 		return false, nil, nil
 	}
@@ -379,7 +379,7 @@ func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuratio
 	complete := true
 
 	for i, discon := range cdc {
-		satisfied, attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[i], conf)
+		satisfied, attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[i], revocation, conf)
 		if err != nil {
 			return false, nil, err
 		}

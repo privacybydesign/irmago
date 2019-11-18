@@ -42,7 +42,11 @@ type (
 	RevocationSetting struct {
 		Mode     RevocationMode `json:"mode"`
 		PostURLs []string       `json:"post_urls" mapstructure:"post_urls"`
-		updated  time.Time
+
+		// set to now whenever a new revocation record is received, or when the RA indicates
+		// there are no new records. Thus it specifies up to what time our nonrevocation
+		// guarantees lasts.
+		updated time.Time
 	}
 
 	// RevocationMode specifies for a given credential type what revocation operations are
@@ -97,6 +101,12 @@ const (
 	// revocationUpdateCount specifies how many revocation records are attached to session requests
 	// for the client to update its revocation state.
 	revocationUpdateCount = 5
+
+	// revocationMaxAccumulatorAge is the default maximum for the 'accumulator age', which we
+	// define to be the amount of time since the last confirmation from the RA that the latest
+	// accumulator that we know is still the latest one: clients should prove nonrevocation
+	// against a 'younger' accumulator.
+	revocationMaxAccumulatorAge = 5 * time.Minute
 )
 
 // Revocation record methods
@@ -340,11 +350,19 @@ func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
 	if err != nil {
 		return err
 	}
-	return rs.AddRevocationRecords(records)
+
+	if err = rs.AddRevocationRecords(records); err != nil {
+		return err
+	}
+
+	// bump updated even if no new records were added
+	rs.getSettings(typ).updated = time.Now()
+	return nil
 }
 
 func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
-	if rs.getSettings(typ).updated.Before(time.Now().Add(-5 * time.Minute)) {
+	// update 10 seconds before the maximum, to stay below it
+	if rs.getSettings(typ).updated.Before(time.Now().Add(-revocationMaxAccumulatorAge + 10*time.Second)) {
 		if err := rs.UpdateDB(typ); err != nil {
 			return err
 		}
@@ -440,7 +458,18 @@ func (rs *RevocationStorage) SetRevocationRecords(b *BaseRequest) error {
 	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]*RevocationRecord, len(b.Revocation))
 	for _, credid := range b.Revocation {
 		if err = rs.UpdateIfOld(credid); err != nil {
-			return err
+			updated := rs.getSettings(credid).updated
+			if !updated.IsZero() {
+				Logger.Warnf("failed to fetch revocation updates for %s, nonrevocation is guaranteed only until %s ago:",
+					credid, time.Now().Sub(updated).String())
+				Logger.Warn(err)
+			} else {
+				Logger.Errorf("revocation is disabled for %s: failed to fetch revocation updates and none are known locally", credid)
+				Logger.Warn(err)
+				// We can offer no nonrevocation guarantees at all while the requestor explicitly
+				// asked for it; fail the session by returning an error
+				return err
+			}
 		}
 		b.RevocationUpdates[credid], err = rs.LatestRevocationRecords(credid, revocationUpdateCount)
 		if err != nil {
