@@ -87,7 +87,7 @@ func (entry *LogEntry) GetDisclosedCredentials(conf *irma.Configuration) ([][]*i
 	} else {
 		disclosure = entry.Disclosure
 	}
-	_, attrs, err := disclosure.DisclosedAttributes(conf, disjunctions.Disclose)
+	_, attrs, err := disclosure.DisclosedAttributes(conf, disjunctions.Disclose, nil)
 	return attrs, err
 }
 

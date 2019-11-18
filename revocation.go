@@ -40,8 +40,9 @@ type (
 
 	// RevocationSetting contains revocation settings for a given credential type.
 	RevocationSetting struct {
-		Mode     RevocationMode `json:"mode"`
-		PostURLs []string       `json:"post_urls" mapstructure:"post_urls"`
+		Mode                     RevocationMode `json:"mode"`
+		PostURLs                 []string       `json:"post_urls" mapstructure:"post_urls"`
+		MaxNonrevocationDuration uint           `json:"max_nonrev_duration" mapstructure:"max_nonrev_duration"` // in seconds, min 30
 
 		// set to now whenever a new revocation record is received, or when the RA indicates
 		// there are no new records. Thus it specifies up to what time our nonrevocation
@@ -102,11 +103,11 @@ const (
 	// for the client to update its revocation state.
 	revocationUpdateCount = 5
 
-	// revocationMaxAccumulatorAge is the default maximum for the 'accumulator age', which we
-	// define to be the amount of time since the last confirmation from the RA that the latest
-	// accumulator that we know is still the latest one: clients should prove nonrevocation
+	// revocationMaxAccumulatorAge is the default maximum in seconds for the 'accumulator age',
+	// which we define to be the amount of time since the last confirmation from the RA that the
+	// latest accumulator that we know is still the latest one: clients should prove nonrevocation
 	// against a 'younger' accumulator.
-	revocationMaxAccumulatorAge = 5 * time.Minute
+	revocationMaxAccumulatorAge uint = 5 * 60
 )
 
 // Revocation record methods
@@ -361,8 +362,9 @@ func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
 }
 
 func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
+	settings := rs.getSettings(typ)
 	// update 10 seconds before the maximum, to stay below it
-	if rs.getSettings(typ).updated.Before(time.Now().Add(-revocationMaxAccumulatorAge + 10*time.Second)) {
+	if settings.updated.Before(time.Now().Add(time.Duration(-settings.MaxNonrevocationDuration+10) * time.Second)) {
 		if err := rs.UpdateDB(typ); err != nil {
 			return err
 		}
@@ -435,6 +437,12 @@ func (rs *RevocationStorage) Load(debug bool, connstr string, settings map[Crede
 	} else {
 		rs.settings = map[CredentialTypeIdentifier]*RevocationSetting{}
 	}
+	for id, settings := range rs.settings {
+		if settings.MaxNonrevocationDuration != 0 && settings.MaxNonrevocationDuration < 30 {
+			return errors.Errorf("max_nonrev_duration setting for %s must be at least 30 seconds, was %d",
+				id, settings.MaxNonrevocationDuration)
+		}
+	}
 	rs.client = RevocationClient{Conf: rs.conf}
 	rs.Keys = RevocationKeys{Conf: rs.conf}
 	return nil
@@ -483,7 +491,11 @@ func (rs *RevocationStorage) getSettings(typ CredentialTypeIdentifier) *Revocati
 	if rs.settings[typ] == nil {
 		rs.settings[typ] = &RevocationSetting{}
 	}
-	return rs.settings[typ]
+	s := rs.settings[typ]
+	if s.MaxNonrevocationDuration == 0 {
+		s.MaxNonrevocationDuration = revocationMaxAccumulatorAge
+	}
+	return s
 }
 
 func (RevocationClient) PostRevocationRecords(urls []string, records []*RevocationRecord) {

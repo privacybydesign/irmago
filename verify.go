@@ -185,9 +185,9 @@ func (pl ProofList) VerifyProofs(
 			return false, nil, errors.New("nonrevocation proof used wrong accumulator")
 		}
 		if ours == theirs {
-			accAge := configuration.RevocationStorage.getSettings(id).updated
-			if time.Now().Sub(accAge) > revocationMaxAccumulatorAge {
-				revocation[i] = &accAge
+			settings := configuration.RevocationStorage.getSettings(id)
+			if uint(time.Now().Sub(settings.updated).Seconds()) > settings.MaxNonrevocationDuration {
+				revocation[i] = &settings.updated
 			}
 		}
 	}
@@ -236,6 +236,9 @@ func (d *Disclosure) extraIndices(condiscon AttributeConDisCon) []*DisclosedAttr
 // the disjunction list. The first return parameter of this function indicates whether or not all
 // disjunctions (if present) are satisfied.
 func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon AttributeConDisCon, revocation map[int]*time.Time) (bool, [][]*DisclosedAttribute, error) {
+	if revocation == nil {
+		revocation = map[int]*time.Time{}
+	}
 	complete, list, err := condiscon.Satisfy(d, revocation, configuration)
 	if err != nil {
 		return false, nil, err
