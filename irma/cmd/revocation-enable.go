@@ -6,13 +6,13 @@ import (
 )
 
 var revokeEnableCmd = &cobra.Command{
-	Use:   "enable CREDENTIALTYPE",
+	Use:   "enable CREDENTIALTYPE URL",
 	Short: "Enable revocation for a credential type",
 	Long: `Enable revocation for a given credential type.
 
 Must be done (and can only be done) by the issuer of the specified credential type, if enable in the
 scheme.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
 		schemespath, _ := flags.GetString("schemes-path")
@@ -20,6 +20,7 @@ scheme.`,
 		key, _ := flags.GetString("key")
 		name, _ := flags.GetString("name")
 		verbosity, _ := cmd.Flags().GetCount("verbose")
+		url := args[1]
 
 		request := &irma.RevocationRequest{
 			LDContext:      irma.LDContextRevocationRequest,
@@ -27,7 +28,7 @@ scheme.`,
 			Enable:         true,
 		}
 
-		postRevocation(request, schemespath, authmethod, key, name, verbosity)
+		postRevocation(request, url, schemespath, authmethod, key, name, verbosity)
 	},
 }
 

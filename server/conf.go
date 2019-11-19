@@ -202,17 +202,19 @@ func (conf *Configuration) verifyPrivateKeys() error {
 }
 
 func (conf *Configuration) verifyRevocation() error {
-	for credid := range conf.RevocationSettings {
+	for credid, settings := range conf.RevocationSettings {
 		if _, known := conf.IrmaConfiguration.CredentialTypes[credid]; !known {
 			return LogError(errors.Errorf("unknown credential type %s in revocation settings", credid))
 		}
 
-		enabled, err := conf.IrmaConfiguration.RevocationStorage.RevocationEnabled(credid)
-		if err != nil {
-			return LogError(errors.Errorf("failed to check if revocation is enabled for %s", credid.String()))
-		}
-		if !enabled {
-			return LogError(errors.Errorf("revocation not enabled for %s", credid.String()))
+		if settings.Mode == irma.RevocationModeServer {
+			enabled, err := conf.IrmaConfiguration.RevocationStorage.RevocationEnabled(credid)
+			if err != nil {
+				return LogError(errors.Errorf("failed to check if revocation is enabled for %s", credid.String()))
+			}
+			if !enabled {
+				return LogError(errors.Errorf("revocation not enabled for %s", credid.String()))
+			}
 		}
 	}
 

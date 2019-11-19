@@ -69,15 +69,15 @@ func (m memRevStorage) get(typ CredentialTypeIdentifier) *memRevRecords {
 }
 
 func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64, r *[]*RevocationRecord) {
-	ours := m.get(typ)
-	ours.Lock()
-	defer ours.Unlock()
+	records := m.get(typ)
+	records.Lock()
+	defer records.Unlock()
 
 	c := count
-	if c > uint64(len(ours.r)) {
-		c = uint64(len(ours.r))
+	if c > uint64(len(records.r)) {
+		c = uint64(len(records.r))
 	}
-	for _, rec := range ours.r[:c] {
+	for _, rec := range records.r[:c] {
 		Logger.Trace("membdb: get ", rec.StartIndex)
 		*r = append(*r, rec)
 	}

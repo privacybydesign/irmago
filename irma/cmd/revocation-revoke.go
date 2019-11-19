@@ -9,9 +9,9 @@ import (
 )
 
 var revokeCmd = &cobra.Command{
-	Use:   "revoke CREDENTIALTYPE KEY",
+	Use:   "revoke CREDENTIALTYPE KEY URL",
 	Short: "Revoke a previously issued credential identified by a given key",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
 		schemespath, _ := flags.GetString("schemes-path")
@@ -19,6 +19,7 @@ var revokeCmd = &cobra.Command{
 		key, _ := flags.GetString("key")
 		name, _ := flags.GetString("name")
 		verbosity, _ := cmd.Flags().GetCount("verbose")
+		url := args[2]
 
 		request := &irma.RevocationRequest{
 			LDContext:      irma.LDContextRevocationRequest,
@@ -26,11 +27,11 @@ var revokeCmd = &cobra.Command{
 			Key:            args[1],
 		}
 
-		postRevocation(request, schemespath, authmethod, key, name, verbosity)
+		postRevocation(request, url, schemespath, authmethod, key, name, verbosity)
 	},
 }
 
-func postRevocation(request *irma.RevocationRequest, schemespath, authmethod, key, name string, verbosity int) {
+func postRevocation(request *irma.RevocationRequest, url, schemespath, authmethod, key, name string, verbosity int) {
 	logger.Level = server.Verbosity(verbosity)
 	irma.Logger = logger
 
@@ -46,11 +47,11 @@ func postRevocation(request *irma.RevocationRequest, schemespath, authmethod, ke
 	if !known {
 		die("unknown credential type", nil)
 	}
-	if credtype.RevocationServer == "" {
+	if !credtype.SupportsRevocation() {
 		die("credential type does not support revocation", nil)
 	}
 
-	transport := irma.NewHTTPTransport(credtype.RevocationServer)
+	transport := irma.NewHTTPTransport(url)
 
 	switch authmethod {
 	case "none":

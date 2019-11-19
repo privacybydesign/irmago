@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/privacybydesign/gabi/big"
@@ -43,6 +44,7 @@ type (
 		Mode                     RevocationMode `json:"mode"`
 		PostURLs                 []string       `json:"post_urls" mapstructure:"post_urls"`
 		MaxNonrevocationDuration uint           `json:"max_nonrev_duration" mapstructure:"max_nonrev_duration"` // in seconds, min 30
+		ServerURL                string         `json:"server_url" mapstructure:"server_url"`
 
 		// set to now whenever a new revocation record is received, or when the RA indicates
 		// there are no new records. Thus it specifies up to what time our nonrevocation
@@ -375,20 +377,22 @@ func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
 // SaveIssuanceRecord either stores the issuance record locally, if we are the revocation server of
 // the crecential type, or it signs and sends it to the remote revocation server.
 func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, rec *IssuanceRecord) error {
-	// TODO store locally if appropriate?
-
 	// Just store it if we are the revocation server for this credential type
-	if rs.getSettings(typ).Mode == RevocationModeServer {
+	settings := rs.getSettings(typ)
+	if settings.Mode == RevocationModeServer {
 		return rs.AddIssuanceRecord(rec)
 	}
 
 	// We have to send it, sign it first
+	if settings.ServerURL == "" {
+		return errors.New("cannot send issuance record: no server_url configured")
+	}
 	credtype := rs.conf.CredentialTypes[typ]
 	if credtype == nil {
 		return errors.New("unknown credential type")
 	}
-	if credtype.RevocationServer == "" {
-		return errors.New("credential type has no revocation server")
+	if !credtype.SupportsRevocation() {
+		return errors.New("cannot send issuance record: credential type does not support revocation")
 	}
 	sk, err := rs.Keys.PrivateKey(typ.IssuerIdentifier())
 	if err != nil {
@@ -399,20 +403,27 @@ func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, re
 		return err
 	}
 
-	return rs.client.PostIssuanceRecord(typ, sk.Counter, message)
+	return rs.client.PostIssuanceRecord(typ, sk.Counter, message, settings.ServerURL)
 }
 
 // Misscelaneous methods
 
 func (rs *RevocationStorage) Load(debug bool, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
 	var t *CredentialTypeIdentifier
+
 	for typ, s := range settings {
 		switch s.Mode {
-		case RevocationModeServer, RevocationModeProxy:
+		case RevocationModeServer:
+			if s.ServerURL != "" {
+				return errors.New("server_url cannot be combined with server mode")
+			}
 			t = &typ
+		case RevocationModeProxy:
+			t = &typ
+		case RevocationModeRequestor: // noop
 		default:
-			return errors.Errorf("invalid revocation mode '%s' for %s (supported: %s, %s)",
-				s.Mode, typ, RevocationModeServer, RevocationModeProxy)
+			return errors.Errorf(`invalid revocation mode "%s" for %s (supported: "%s", "%s", "%s")`,
+				s.Mode, typ, RevocationModeRequestor, RevocationModeServer, RevocationModeProxy)
 		}
 	}
 	if t != nil && connstr == "" {
@@ -465,6 +476,9 @@ func (rs *RevocationStorage) SetRevocationRecords(b *BaseRequest) error {
 	var err error
 	b.RevocationUpdates = make(map[CredentialTypeIdentifier][]*RevocationRecord, len(b.Revocation))
 	for _, credid := range b.Revocation {
+		if !rs.conf.CredentialTypes[credid].SupportsRevocation() {
+			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme")
+		}
 		if err = rs.UpdateIfOld(credid); err != nil {
 			updated := rs.getSettings(credid).updated
 			if !updated.IsZero() {
@@ -507,8 +521,8 @@ func (RevocationClient) PostRevocationRecords(urls []string, records []*Revocati
 	}
 }
 
-func (client RevocationClient) PostIssuanceRecord(typ CredentialTypeIdentifier, counter uint, message signed.Message) error {
-	return NewHTTPTransport(client.Conf.CredentialTypes[typ].RevocationServer).Post(
+func (client RevocationClient) PostIssuanceRecord(typ CredentialTypeIdentifier, counter uint, message signed.Message, url string) error {
+	return NewHTTPTransport(url).Post(
 		fmt.Sprintf("-/revocation/issuancerecord/%s/%d", typ, counter), nil, []byte(message),
 	)
 }
@@ -516,22 +530,35 @@ func (client RevocationClient) PostIssuanceRecord(typ CredentialTypeIdentifier, 
 // FetchRevocationRecords gets revocation update messages from the revocation server, of the specified index and greater.
 func (client RevocationClient) FetchRevocationRecords(typ CredentialTypeIdentifier, index uint64) ([]*RevocationRecord, error) {
 	var records []*RevocationRecord
-	err := NewHTTPTransport(client.Conf.CredentialTypes[typ].RevocationServer).
-		Get(fmt.Sprintf("-/revocation/records/%s/%d", typ, index), &records)
-	if err != nil {
-		return nil, err
+	var err error
+	var errs multierror.Error
+	transport := NewHTTPTransport("")
+	for _, url := range client.Conf.CredentialTypes[typ].RevocationServers {
+		transport.Server = url
+		err = transport.Get(fmt.Sprintf("-/revocation/records/%s/%d", typ, index), &records)
+		if err == nil {
+			return records, nil
+		} else {
+			errs.Errors = append(errs.Errors, err)
+		}
 	}
-	return records, nil
+	return nil, errors.WrapPrefix(errs, "failed to download revocation records", 0)
 }
 
 func (client RevocationClient) FetchLatestRevocationRecords(typ CredentialTypeIdentifier, count uint64) ([]*RevocationRecord, error) {
 	var records []*RevocationRecord
-	err := NewHTTPTransport(client.Conf.CredentialTypes[typ].RevocationServer).
-		Get(fmt.Sprintf("-/revocation/latestrecords/%s/%d", typ, count), &records)
-	if err != nil {
-		return nil, err
+	var errs multierror.Error
+	transport := NewHTTPTransport("")
+	for _, url := range client.Conf.CredentialTypes[typ].RevocationServers {
+		transport.Server = url
+		err := transport.Get(fmt.Sprintf("-/revocation/latestrecords/%s/%d", typ, count), &records)
+		if err == nil {
+			return records, nil
+		} else {
+			errs.Errors = append(errs.Errors, err)
+		}
 	}
-	return records, nil
+	return nil, errors.WrapPrefix(errs, "failed to download latest revocation records", 0)
 }
 
 func (rs RevocationKeys) PrivateKey(issid IssuerIdentifier) (*revocation.PrivateKey, error) {
