@@ -515,7 +515,7 @@ func (rs *RevocationStorage) getSettings(typ CredentialTypeIdentifier) *Revocati
 func (RevocationClient) PostRevocationRecords(urls []string, records []*RevocationRecord) {
 	transport := NewHTTPTransport("")
 	for _, url := range urls {
-		if err := transport.Post(url+"/-/revocation/records", nil, &records); err != nil {
+		if err := transport.Post(url+"/revocation/records", nil, &records); err != nil {
 			Logger.Warn("error sending revocation update", err)
 		}
 	}
@@ -523,7 +523,7 @@ func (RevocationClient) PostRevocationRecords(urls []string, records []*Revocati
 
 func (client RevocationClient) PostIssuanceRecord(typ CredentialTypeIdentifier, counter uint, message signed.Message, url string) error {
 	return NewHTTPTransport(url).Post(
-		fmt.Sprintf("-/revocation/issuancerecord/%s/%d", typ, counter), nil, []byte(message),
+		fmt.Sprintf("revocation/issuancerecord/%s/%d", typ, counter), nil, []byte(message),
 	)
 }
 
@@ -535,7 +535,7 @@ func (client RevocationClient) FetchRevocationRecords(typ CredentialTypeIdentifi
 	transport := NewHTTPTransport("")
 	for _, url := range client.Conf.CredentialTypes[typ].RevocationServers {
 		transport.Server = url
-		err = transport.Get(fmt.Sprintf("-/revocation/records/%s/%d", typ, index), &records)
+		err = transport.Get(fmt.Sprintf("revocation/records/%s/%d", typ, index), &records)
 		if err == nil {
 			return records, nil
 		} else {
@@ -551,7 +551,7 @@ func (client RevocationClient) FetchLatestRevocationRecords(typ CredentialTypeId
 	transport := NewHTTPTransport("")
 	for _, url := range client.Conf.CredentialTypes[typ].RevocationServers {
 		transport.Server = url
-		err := transport.Get(fmt.Sprintf("-/revocation/latestrecords/%s/%d", typ, count), &records)
+		err := transport.Get(fmt.Sprintf("revocation/latestrecords/%s/%d", typ, count), &records)
 		if err == nil {
 			return records, nil
 		} else {

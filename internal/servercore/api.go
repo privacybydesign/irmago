@@ -154,7 +154,7 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error 
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile("-/revocation/(records|latestrecords|issuancerecord)/?(.*)$")
+	rev := regexp.MustCompile("revocation/(records|latestrecords|issuancerecord)/?(.*)$")
 	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")

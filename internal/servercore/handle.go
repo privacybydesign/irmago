@@ -214,7 +214,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	return sigs, nil
 }
 
-// POST -/revocation/records
+// POST revocation/records
 func (s *Server) handlePostRevocationRecords(records []*irma.RevocationRecord) (interface{}, *irma.RemoteError) {
 	if err := s.conf.IrmaConfiguration.RevocationStorage.AddRevocationRecords(records); err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
@@ -222,7 +222,7 @@ func (s *Server) handlePostRevocationRecords(records []*irma.RevocationRecord) (
 	return nil, nil
 }
 
-// GET -/revocation/records/{credtype}/{index}
+// GET revocation/records/{credtype}/{index}
 func (s *Server) handleGetRevocationRecords(
 	cred irma.CredentialTypeIdentifier, index uint64,
 ) ([]*irma.RevocationRecord, *irma.RemoteError) {
@@ -236,7 +236,7 @@ func (s *Server) handleGetRevocationRecords(
 	return records, nil
 }
 
-// GET -/revocation/latestrecords/{credtype}/{count}
+// GET revocation/latestrecords/{credtype}/{count}
 func (s *Server) handleGetLatestRevocationRecords(
 	cred irma.CredentialTypeIdentifier, count uint64,
 ) ([]*irma.RevocationRecord, *irma.RemoteError) {
@@ -250,7 +250,7 @@ func (s *Server) handleGetLatestRevocationRecords(
 	return records, nil
 }
 
-// POST -/revocation/issuancerecord/{credtype}/{keycounter}
+// POST revocation/issuancerecord/{credtype}/{keycounter}
 func (s *Server) handlePostIssuanceRecord(
 	cred irma.CredentialTypeIdentifier, counter uint64, message []byte,
 ) (string, *irma.RemoteError) {
