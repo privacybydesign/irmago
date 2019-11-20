@@ -314,7 +314,6 @@ func (conf *Configuration) validatePermissions() error {
 }
 
 func (conf *Configuration) validatePermissionSet(requestor string, requestorperms Permissions) []string {
-	// TODO other concistency checks with the rest of the Configuration
 	var errs []string
 	perms := map[string][]string{
 		"issuing":    requestorperms.Issuing,
@@ -351,9 +350,27 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 			}
 			if len(parts) > 2 && parts[2] != "*" {
 				id := irma.NewCredentialTypeIdentifier(strings.Join(parts[:3], "."))
-				if conf.IrmaConfiguration.CredentialTypes[id] == nil {
+				credtype := conf.IrmaConfiguration.CredentialTypes[id]
+				if credtype == nil {
 					errs = append(errs, fmt.Sprintf("%s %s permission '%s': unknown credential type", requestor, typ, permission))
 					continue
+				}
+				if typ == "issuing" || typ == "revoking" {
+					sk, err := conf.PrivateKey(credtype.IssuerIdentifier())
+					if err != nil {
+						errs = append(errs, fmt.Sprintf("%s %s permission '%s': failed to load private key: %s", requestor, typ, permission, err))
+						continue
+					}
+					if sk == nil {
+						errs = append(errs, fmt.Sprintf("%s %s permission '%s': private key not installed", requestor, typ, permission))
+						continue
+					}
+					if typ == "revoking" {
+						if _, err = sk.RevocationKey(); err != nil {
+							errs = append(errs, fmt.Sprintf("%s %s permission '%s': private key does not support revocation (add revocation key material to it using \"irma issuer revocation keypair\")", requestor, typ, permission))
+							continue
+						}
+					}
 				}
 			}
 			if len(parts) > 3 && parts[3] != "*" {

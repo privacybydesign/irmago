@@ -154,7 +154,6 @@ func (s sqlRevStorage) Save(o interface{}) error {
 }
 
 func (s sqlRevStorage) Last(typ CredentialTypeIdentifier, o interface{}) error {
-	// TODO merge with Latest?
 	return s.gorm.Last(o, "cred_type = ?", typ).Error
 }
 

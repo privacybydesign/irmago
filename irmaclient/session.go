@@ -650,9 +650,10 @@ func panicToError(e interface{}) *irma.SessionError {
 	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info + "\n\n" + string(debug.Stack())}
 }
 
-// Idempotently send DELETE to remote server, returning whether or not we did something
-// TODO this function does more, rename
-func (session *session) delete() bool {
+// finish the session, by sending a DELETE to the server if there is one, and restarting local
+// background jobs. This function is idempotent, doing nothing when called a second time. It
+// returns whether or not it did something.
+func (session *session) finish() bool {
 	if !session.done {
 		if session.IsInteractive() {
 			session.transport.Delete()
@@ -666,14 +667,14 @@ func (session *session) delete() bool {
 }
 
 func (session *session) fail(err *irma.SessionError) {
-	if session.delete() && err.ErrorType != irma.ErrorKeyshareUnenrolled {
+	if session.finish() && err.ErrorType != irma.ErrorKeyshareUnenrolled {
 		err.Err = errors.Wrap(err.Err, 0)
 		session.Handler.Failure(err)
 	}
 }
 
 func (session *session) cancel() {
-	if session.delete() {
+	if session.finish() {
 		session.Handler.Cancelled()
 	}
 }
