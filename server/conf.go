@@ -210,11 +210,28 @@ func (conf *Configuration) verifyRevocation() error {
 		if settings.Mode == irma.RevocationModeServer {
 			enabled, err := conf.IrmaConfiguration.RevocationStorage.RevocationEnabled(credid)
 			if err != nil {
-				return LogError(errors.Errorf("failed to check if revocation is enabled for %s", credid.String()))
+				return LogError(errors.WrapPrefix(err, "failed to check if revocation is enabled for "+credid.String(), 0))
 			}
 			if !enabled {
 				return LogError(errors.Errorf("revocation not enabled for %s", credid.String()))
 			}
+			_, err = conf.IrmaConfiguration.RevocationStorage.Keys.PrivateKey(credid.IssuerIdentifier())
+			if err != nil {
+				return LogError(errors.WrapPrefix(err, "failed to load private key of "+credid.IssuerIdentifier().String()+" (required for revocation)", 0))
+			}
+		}
+	}
+
+	for credid, credtype := range conf.IrmaConfiguration.CredentialTypes {
+		if !credtype.SupportsRevocation() {
+			continue
+		}
+		_, err := conf.IrmaConfiguration.RevocationStorage.Keys.PrivateKey(credid.IssuerIdentifier())
+		haveSK := err == nil
+		settings, ok := conf.RevocationSettings[credid]
+		serverConfigured := ok && settings.ServerURL != ""
+		if haveSK && !serverConfigured && settings.Mode != irma.RevocationModeServer {
+			return LogError(errors.Errorf("private key installed for %s, but no revocation server is configured", credid))
 		}
 	}
 
