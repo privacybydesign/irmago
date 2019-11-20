@@ -239,6 +239,18 @@ func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
 	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id]) > 0
 }
 
+func (b *BaseRequest) RevocationConsistent() error {
+	if len(b.Revocation) != len(b.RevocationUpdates) {
+		return errors.New("revocation and revocationUpdates do not have the same length")
+	}
+	for _, typ := range b.Revocation {
+		if _, present := b.RevocationUpdates[typ]; !present {
+			return errors.Errorf("type %s not present in revocationUpdates", typ)
+		}
+	}
+	return nil
+}
+
 // CredentialTypes returns an array of all credential types occuring in this conjunction.
 func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
 	var result []CredentialTypeIdentifier

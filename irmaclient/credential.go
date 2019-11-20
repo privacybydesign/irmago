@@ -49,13 +49,18 @@ func (cred *credential) AttributeList() *irma.AttributeList {
 // persist the updated credential to storage.
 func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.SessionRequest) (bool, error) {
 	credtype := cred.CredentialType().Identifier()
-	if !request.Base().RequestsRevocation(credtype) {
+	base := request.Base()
+	if !base.RequestsRevocation(credtype) {
 		return false, nil
+	}
+
+	if err := base.RevocationConsistent(); err != nil {
+		return false, err
 	}
 
 	// first try to update witness by applying the revocation update messages attached to the session request
 	keys := irma.RevocationKeys{Conf: conf}
-	revupdates := request.Base().RevocationUpdates[credtype]
+	revupdates := base.RevocationUpdates[credtype]
 	updated, err := cred.NonrevApplyUpdates(revupdates, keys)
 	if err != nil {
 		return updated, err
