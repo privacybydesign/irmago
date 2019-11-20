@@ -93,12 +93,12 @@ const (
 	// Requires a SQL server to store and retrieve RevocationRecord instances from.
 	RevocationModeProxy RevocationMode = "proxy"
 
-	// RevocationModeServer indicates that this is the revocation server for a credential type,
-	// to which the credential type's RevocationServer URL should point.
+	// RevocationModeServer indicates that this is a revocation server for a credential type.
 	// IssuanceRecord instances are sent to this server, as well as revocation commands, through
 	// revocation sessions or through the RevocationStorage.Revoke() method.
 	// Requires a SQL server to store and retrieve all records from and requires the issuer's
 	// private key to be accessible, in order to revoke and to sign new revocation records.
+	// In addition this mode exposes the same endpoints as RevocationModeProxy.
 	RevocationModeServer RevocationMode = "server"
 
 	// revocationUpdateCount specifies how many revocation records are attached to session requests
