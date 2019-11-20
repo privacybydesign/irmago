@@ -90,9 +90,9 @@ func StartRevocationServer(t *testing.T) {
 	require.NoError(t, g.Close())
 
 	// Enable revocation for our credential type
-	sk, err := irmaconf.RevocationStorage.Keys.PrivateKey(cred.IssuerIdentifier())
+	sk, err := irmaconf.Revocation.Keys.PrivateKey(cred.IssuerIdentifier())
 	require.NoError(t, err)
-	require.NoError(t, irmaconf.RevocationStorage.EnableRevocation(cred, sk))
+	require.NoError(t, irmaconf.Revocation.EnableRevocation(cred, sk))
 
 	// Start revocation server
 	revocationServer, err = irmaserver.New(conf)

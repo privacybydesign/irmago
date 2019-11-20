@@ -86,12 +86,12 @@ func (session *session) issuanceHandleRevocation(
 
 	// ensure the client always gets an up to date nonrevocation witness
 	if settings, ok := session.conf.RevocationSettings[id]; !ok || settings.Mode != irma.RevocationModeServer {
-		if err = session.conf.IrmaConfiguration.RevocationStorage.UpdateDB(id); err != nil {
+		if err = session.conf.IrmaConfiguration.Revocation.UpdateDB(id); err != nil {
 			return
 		}
 	}
 
-	rs := session.conf.IrmaConfiguration.RevocationStorage
+	rs := session.conf.IrmaConfiguration.Revocation
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
@@ -122,7 +122,7 @@ func (session *session) issuanceHandleRevocation(
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
-	err = session.conf.IrmaConfiguration.RevocationStorage.SaveIssuanceRecord(id, issrecord)
+	err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord)
 	return
 }
 
@@ -152,7 +152,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 
 		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
-			enabled, err := s.conf.IrmaConfiguration.RevocationStorage.RevocationEnabled(cred.CredentialTypeID)
+			enabled, err := s.conf.IrmaConfiguration.Revocation.RevocationEnabled(cred.CredentialTypeID)
 			if err != nil {
 				return err
 			}

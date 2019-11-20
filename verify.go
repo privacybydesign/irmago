@@ -185,7 +185,7 @@ func (pl ProofList) VerifyProofs(
 			return false, nil, errors.New("nonrevocation proof used wrong accumulator")
 		}
 		if ours == theirs {
-			settings := configuration.RevocationStorage.getSettings(id)
+			settings := configuration.Revocation.getSettings(id)
 			if uint(time.Now().Sub(settings.updated).Seconds()) > settings.MaxNonrevocationDuration {
 				revocation[i] = &settings.updated
 			}

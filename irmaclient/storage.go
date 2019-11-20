@@ -252,7 +252,7 @@ func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *
 		return nil, nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
 	}
 	if sig.Witness != nil {
-		pk, err := s.Configuration.RevocationStorage.Keys.PublicKey(
+		pk, err := s.Configuration.Revocation.Keys.PublicKey(
 			attrs.CredentialType().IssuerIdentifier(),
 			sig.Witness.Record.PublicKeyIndex,
 		)

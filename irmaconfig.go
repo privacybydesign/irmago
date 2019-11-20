@@ -46,7 +46,7 @@ type Configuration struct {
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 
-	RevocationStorage *RevocationStorage
+	Revocation *RevocationStorage
 
 	// Path to the irma_configuration folder that this instance represents
 	Path string
@@ -129,8 +129,8 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 		assets:   opts.Assets,
 		readOnly: opts.ReadOnly,
 	}
-	conf.RevocationStorage = &RevocationStorage{conf: conf}
-	if err = conf.RevocationStorage.Load(Logger.IsLevelEnabled(logrus.DebugLevel), opts.RevocationDB, opts.RevocationSettings); err != nil {
+	conf.Revocation = &RevocationStorage{conf: conf}
+	if err = conf.Revocation.Load(Logger.IsLevelEnabled(logrus.DebugLevel), opts.RevocationDB, opts.RevocationSettings); err != nil {
 		return nil, err
 	}
 

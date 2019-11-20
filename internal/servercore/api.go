@@ -52,7 +52,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			if s := conf.RevocationSettings[credid]; s != nil && s.Mode != irma.RevocationModeRequestor {
 				continue
 			}
-			if err := s.conf.IrmaConfiguration.RevocationStorage.UpdateDB(credid); err != nil {
+			if err := s.conf.IrmaConfiguration.Revocation.UpdateDB(credid); err != nil {
 				s.conf.Logger.Error("failed to update revocation database for %s:", credid.String())
 				_ = server.LogError(err)
 			}
@@ -65,7 +65,7 @@ func New(conf *server.Configuration) (*Server, error) {
 }
 
 func (s *Server) Stop() {
-	if err := s.conf.IrmaConfiguration.RevocationStorage.Close(); err != nil {
+	if err := s.conf.IrmaConfiguration.Revocation.Close(); err != nil {
 		_ = server.LogWarning(err)
 	}
 	s.stopScheduler <- true
@@ -150,7 +150,7 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error 
 	if err != nil {
 		return err
 	}
-	return s.conf.IrmaConfiguration.RevocationStorage.Revoke(credid, key, rsk)
+	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key, rsk)
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {
