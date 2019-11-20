@@ -61,7 +61,6 @@ type (
 	// and verify nonrevocation proofs and witnesses.
 	RevocationRecord struct {
 		revocation.Record `gorm:"embedded"`
-		PublicKeyIndex    uint
 		CredType          CredentialTypeIdentifier `gorm:"primary_key"`
 	}
 
@@ -132,12 +131,12 @@ func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *
 	}
 	r := &RevocationRecord{
 		Record: revocation.Record{
-			Message:    msg,
-			StartIndex: acc.Index,
-			EndIndex:   acc.Index,
+			PublicKeyIndex: sk.Counter,
+			Message:        msg,
+			StartIndex:     acc.Index,
+			EndIndex:       acc.Index,
 		},
-		PublicKeyIndex: sk.Counter,
-		CredType:       typ,
+		CredType: typ,
 	}
 
 	if err = rs.AddRevocationRecord(r); err != nil {
@@ -297,12 +296,12 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 	}
 	record := &RevocationRecord{
 		Record: revocation.Record{
-			StartIndex: newAcc.Index,
-			EndIndex:   newAcc.Index,
-			Message:    updateMsg,
+			StartIndex:     newAcc.Index,
+			EndIndex:       newAcc.Index,
+			PublicKeyIndex: sk.Counter,
+			Message:        updateMsg,
 		},
-		PublicKeyIndex: sk.Counter,
-		CredType:       typ,
+		CredType: typ,
 	}
 	if err = rs.addRevocationRecord(tx, record, true); err != nil {
 		return err
