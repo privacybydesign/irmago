@@ -55,10 +55,10 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 
 	switch authmethod {
 	case "none":
-		err = transport.Post("session", nil, request)
+		err = transport.Post("revocation", nil, request)
 	case "token":
 		transport.SetHeader("Authorization", key)
-		err = transport.Post("session", nil, request)
+		err = transport.Post("revocation", nil, request)
 	case "hmac", "rsa":
 		sk, jwtalg, err := configureJWTKey(authmethod, key)
 		j := irma.RevocationJwt{
@@ -72,7 +72,7 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 		if err != nil {
 			die("failed to sign JWT", err)
 		}
-		err = transport.Post("session", nil, jwtstr)
+		err = transport.Post("revocation", nil, jwtstr)
 	default:
 		die("Invalid authentication method (must be none, token, hmac or rsa)", nil)
 	}

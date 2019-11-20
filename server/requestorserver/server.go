@@ -204,7 +204,7 @@ func (s *Server) Handler() http.Handler {
 		}
 
 		// Server routes
-		r.Post("/session", s.handleCreate)
+		r.Post("/session", s.handleCreateSession)
 		r.Delete("/session/{token}", s.handleDelete)
 		r.Get("/session/{token}/status", s.handleStatus)
 		r.Get("/session/{token}/statusevents", s.handleStatusEvents)
@@ -215,6 +215,14 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/session/{token}/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
 
 		r.Get("/publickey", s.handlePublicKey)
+	})
+
+	router.Group(func(r chi.Router) {
+		r.Use(cors.New(corsOptions).Handler)
+		if s.conf.Verbose >= 2 {
+			r.Use(s.logHandler("revocation", true, true, true))
+		}
+		r.Post("/revocation", s.handleRevocation)
 	})
 
 	return router
@@ -281,7 +289,7 @@ func (s *Server) StaticFilesHandler() http.Handler {
 	)
 }
 
-func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		s.conf.Logger.Error("Could not read session request HTTP POST body")
@@ -295,7 +303,6 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// one of them is applicable and able to authenticate the request.
 	var (
 		rrequest  irma.RequestorRequest
-		revreq    *irma.RevocationRequest
 		requestor string
 		rerr      *irma.RemoteError
 		applies   bool
@@ -305,75 +312,12 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		if applies || rerr != nil {
 			break
 		}
-		applies, revreq, requestor, rerr = authenticator.AuthenticateRevocation(r.Header, body)
-		if applies || rerr != nil {
-			break
-		}
 	}
-	if rerr != nil {
-		_ = server.LogError(rerr)
-		server.WriteResponse(w, nil, rerr)
-		return
-	}
-	if !applies {
-		var ctype = r.Header.Get("Content-Type")
-		if ctype != "application/json" && ctype != "text/plain" {
-			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", ctype)
-			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
-			return
-		}
-		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
-		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authenticated")
+	if ok := s.checkAuth(w, r, rerr, applies, body); !ok {
 		return
 	}
 
-	if rrequest != nil {
-		s.handleCreateSession(w, requestor, rrequest)
-	} else {
-		s.handleRevoke(w, requestor, revreq)
-	}
-}
-
-func (s *Server) handleCreateSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
-	// Authorize request: check if the requestor is allowed to verify or issue
-	// the requested attributes or credentials
-	request := rrequest.SessionRequest()
-	if request.Action() == irma.ActionIssuing {
-		allowed, reason := s.conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
-		if !allowed {
-			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
-				Warn("Requestor not authorized to issue credential; full request: ", server.ToJson(request))
-			server.WriteError(w, server.ErrorUnauthorized, reason)
-			return
-		}
-	}
-	condiscon := request.Disclosure().Disclose
-	if len(condiscon) > 0 {
-		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), condiscon)
-		if !allowed {
-			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
-				Warn("Requestor not authorized to verify attribute; full request: ", server.ToJson(request))
-			server.WriteError(w, server.ErrorUnauthorized, reason)
-			return
-		}
-	}
-	if rrequest.Base().CallbackURL != "" && s.conf.jwtPrivateKey == nil {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
-		server.WriteError(w, server.ErrorUnsupported, "")
-		return
-	}
-
-	// Everything is authenticated and parsed, we're good to go!
-	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
-
-	server.WriteJson(w, server.SessionPackage{
-		SessionPtr: qr,
-		Token:      token,
-	})
+	s.createSession(w, requestor, rrequest)
 }
 
 func (s *Server) handleCreateStatic(w http.ResponseWriter, r *http.Request) {
@@ -391,18 +335,32 @@ func (s *Server) handleCreateStatic(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, qr)
 }
 
-func (s *Server) handleRevoke(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
-	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
-	if !allowed {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "message": reason}).
-			Warn("Requestor not authorized to revoke credential; full request: ", server.ToJson(request))
-		server.WriteError(w, server.ErrorUnauthorized, reason)
+func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.Error("Could not read revocation request HTTP POST body")
+		_ = server.LogError(err)
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	if err := s.irmaserv.Revoke(request.CredentialType, request.Key); err != nil {
-		server.WriteError(w, server.ErrorUnknown, err.Error())
+
+	var (
+		revreq    *irma.RevocationRequest
+		requestor string
+		rerr      *irma.RemoteError
+		applies   bool
+	)
+	for _, authenticator := range authenticators {
+		applies, revreq, requestor, rerr = authenticator.AuthenticateRevocation(r.Header, body)
+		if applies || rerr != nil {
+			break
+		}
 	}
-	server.WriteString(w, "OK")
+	if ok := s.checkAuth(w, r, rerr, applies, body); !ok {
+		return
+	}
+
+	s.revoke(w, requestor, revreq)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -612,4 +570,80 @@ func (s *Server) doResultCallback(result *server.SessionResult) {
 		// not our problem, log it and go on
 		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
 	}
+}
+
+func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
+	// Authorize request: check if the requestor is allowed to verify or issue
+	// the requested attributes or credentials
+	request := rrequest.SessionRequest()
+	if request.Action() == irma.ActionIssuing {
+		allowed, reason := s.conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
+		if !allowed {
+			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+				Warn("Requestor not authorized to issue credential; full request: ", server.ToJson(request))
+			server.WriteError(w, server.ErrorUnauthorized, reason)
+			return
+		}
+	}
+	condiscon := request.Disclosure().Disclose
+	if len(condiscon) > 0 {
+		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), condiscon)
+		if !allowed {
+			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+				Warn("Requestor not authorized to verify attribute; full request: ", server.ToJson(request))
+			server.WriteError(w, server.ErrorUnauthorized, reason)
+			return
+		}
+	}
+	if rrequest.Base().CallbackURL != "" && s.conf.jwtPrivateKey == nil {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
+		server.WriteError(w, server.ErrorUnsupported, "")
+		return
+	}
+
+	// Everything is authenticated and parsed, we're good to go!
+	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	server.WriteJson(w, server.SessionPackage{
+		SessionPtr: qr,
+		Token:      token,
+	})
+}
+
+func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
+	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
+	if !allowed {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "message": reason}).
+			Warn("Requestor not authorized to revoke credential; full request: ", server.ToJson(request))
+		server.WriteError(w, server.ErrorUnauthorized, reason)
+		return
+	}
+	if err := s.irmaserv.Revoke(request.CredentialType, request.Key); err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+	}
+	server.WriteString(w, "OK")
+}
+
+func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.RemoteError, applies bool, body []byte) bool {
+	if rerr != nil {
+		_ = server.LogError(rerr)
+		server.WriteResponse(w, nil, rerr)
+		return false
+	}
+	if !applies {
+		var ctype = r.Header.Get("Content-Type")
+		if ctype != "application/json" && ctype != "text/plain" {
+			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", ctype)
+			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
+			return false
+		}
+		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
+		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authenticated")
+		return false
+	}
+	return true
 }
