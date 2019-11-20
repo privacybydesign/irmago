@@ -65,13 +65,13 @@ func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.Ses
 	if err != nil {
 		return updated, err
 	}
-	if cred.NonRevocationWitness.Index >= revupdates[len(revupdates)-1].EndIndex {
+	if cred.NonRevocationWitness.Accumulator.Index >= revupdates[len(revupdates)-1].EndIndex {
 		return updated, nil
 	}
 
 	// nonrevocation witness is still out of date after applying the updates from the request:
 	// we were too far behind. Update from revocation server.
-	revupdates, err = irma.RevocationClient{Conf: conf}.FetchRevocationRecords(credtype, cred.NonRevocationWitness.Index+1)
+	revupdates, err = irma.RevocationClient{Conf: conf}.FetchRevocationRecords(credtype, cred.NonRevocationWitness.Accumulator.Index+1)
 	if err != nil {
 		return updated, err
 	}
@@ -81,7 +81,7 @@ func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.Ses
 // NonrevApplyUpdates updates the credential's nonrevocation witness using the specified messages,
 // if they all verify and if their indices are ahead and adjacent to that of our witness.
 func (cred *credential) NonrevApplyUpdates(messages []*irma.RevocationRecord, keys irma.RevocationKeys) (bool, error) {
-	oldindex := cred.NonRevocationWitness.Index
+	oldindex := cred.NonRevocationWitness.Accumulator.Index
 
 	var err error
 	var pk *revocation.PublicKey
@@ -97,5 +97,5 @@ func (cred *credential) NonrevApplyUpdates(messages []*irma.RevocationRecord, ke
 		}
 	}
 
-	return cred.NonRevocationWitness.Index != oldindex, nil
+	return cred.NonRevocationWitness.Accumulator.Index != oldindex, nil
 }

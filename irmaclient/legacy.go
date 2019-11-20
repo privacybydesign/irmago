@@ -2,11 +2,13 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"io/ioutil"
 	"path/filepath"
+
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/revocation"
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // This file contains the legacy storage based on files. These functions are needed

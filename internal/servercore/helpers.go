@@ -114,8 +114,6 @@ func (session *session) issuanceHandleRevocation(
 	}
 
 	witness.Record = &r.Record // attach previously selected reocation record to the witness for the client
-	witness.Nu = nil           // don't send to irmaclient, it will reconstruct it from witness.Record
-	witness.Index = 0          // same
 	nonrevAttr = witness.E
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
