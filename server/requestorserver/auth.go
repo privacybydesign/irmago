@@ -195,11 +195,11 @@ func jwtAuthenticate(
 	if err != nil {
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
-	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
-		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
-	}
 	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
+	}
+	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
+		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
 	}
 
 	// Read JWT contents
