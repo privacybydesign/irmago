@@ -143,3 +143,125 @@ func TestCanIssue(t *testing.T) {
 		require.Empty(t, message)
 	})
 }
+
+func createAttributesConDisCon(identifier string) irma.AttributeConDisCon {
+	return irma.AttributeConDisCon{
+		{{irma.NewAttributeRequest(identifier)}},
+	}
+}
+
+func TestCanVerifyOrSign(t *testing.T) {
+	confJSON := `{
+		"requestors": {
+			"myapp": {
+				"disclose_perms": [ "irma-demo.MijnOverheid.ageLower.over18" ],
+				"sign_perms": [ "irma-demo.MijnOverheid.ageLower.over18" ],
+				"issue_perms": [ "irma-demo.MijnOverheid.ageLower" ],
+				"auth_method": "token",
+				"key": "eGE2PSomOT84amVVdTU"
+			}
+		}
+	}`
+
+	var disclosingCases = []struct {
+		description        string
+		attributeConDisCon string
+		disclosePerm       string
+		requestorName      string
+		result             bool
+		message            string
+	}{
+		{
+			"allowed disclosing request",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"myapp",
+			true,
+			"",
+		},
+		{
+			"allowed disclosing request incorrect requestor",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"yourapp",
+			false,
+			"",
+		},
+		{
+			"allowed disclosing request incorrect attribute",
+			"irma-demo.MijnOverheid.ageLower.over16",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"myapp",
+			false,
+			"irma-demo.MijnOverheid.ageLower.over16",
+		},
+		{
+			"allowed disclosing single wildcard",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"*",
+			"myapp",
+			true,
+			"",
+		},
+		{
+			"allowed disclosing request correct issuer wildcard",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"irma-demo.*",
+			"myapp",
+			true,
+			"",
+		},
+		{
+			"allowed disclosing request correct attribute wildcard",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"irma-demo.MijnOverheid.*",
+			"myapp",
+			true,
+			"",
+		},
+		{
+			"allowed disclosing request correct attribute value wildcard",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"irma-demo.MijnOverheid.ageLower.*",
+			"myapp",
+			true,
+			"",
+		},
+		{
+			"allowed disclosing request incorrect attribute value wildcard",
+			"irma-demo.MijnOverheid.ageLower.over18",
+			"irma-demo.MijnOverheid.ageLower.**",
+			"myapp",
+			false,
+			"irma-demo.MijnOverheid.ageLower.over18",
+		},
+	}
+
+	for _, action := range []string{"disclosing"} {
+		for _, val := range disclosingCases {
+			t.Run(val.description, func(t *testing.T) {
+				var conf Configuration
+				require.NoError(t, json.Unmarshal([]byte(confJSON), &conf))
+				conf.Requestors["myapp"].Disclosing[0] = val.disclosePerm
+				requestedAttributes := createAttributesConDisCon(val.attributeConDisCon)
+				result, message := conf.CanVerifyOrSign(val.requestorName, irma.Action(action), requestedAttributes)
+
+				require.Equal(t, val.result, result)
+				require.Equal(t, val.message, message)
+			})
+		}
+	}
+
+	for _, val := range disclosingCases {
+		t.Run(val.description, func(t *testing.T) {
+			var conf Configuration
+			require.NoError(t, json.Unmarshal([]byte(confJSON), &conf))
+			conf.Requestors["myapp"].Signing[0] = val.disclosePerm
+			requestedAttributes := createAttributesConDisCon(val.attributeConDisCon)
+			result, message := conf.CanVerifyOrSign(val.requestorName, irma.Action("signing"), requestedAttributes)
+
+			require.Equal(t, val.result, result)
+			require.Equal(t, val.message, message)
+		})
+	}
+}
