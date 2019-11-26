@@ -262,13 +262,18 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		ctx := r.Context()
 		session.Lock()
 		session.locked = true
 		defer func() {
 			if session.prevStatus != session.status {
 				session.prevStatus = session.status
 				result := session.result
-				if result != nil && session.status.Finished() {
+				r := ctx.Value("sessionresult")
+				if r != nil {
+					*r.(*server.SessionResult) = *result
+				}
+				if session.status.Finished() {
 					if handler := s.handlers[result.Token]; handler != nil {
 						go handler(result)
 						delete(s.handlers, token)
@@ -281,8 +286,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			}
 		}()
 
-		ctx := context.WithValue(r.Context(), "session", session)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
 	})
 }
 
