@@ -4,10 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/bwesterb/go-atum"
@@ -15,7 +13,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 )
 
 // This file contains an implementation of the client side of the keyshare protocol,
@@ -89,31 +87,8 @@ type keysharePinStatus struct {
 	Message string `json:"message"`
 }
 
-type publicKeyIdentifier struct {
-	Issuer  string `json:"issuer"`
-	Counter uint   `json:"counter"`
-}
-
-func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
-	str := string(text)
-	index := strings.LastIndex(str, "-")
-	if index == -1 {
-		return errors.New("Invalid publicKeyIdentifier")
-	}
-	counter, err := strconv.Atoi(str[index+1:])
-	if err != nil {
-		return err
-	}
-	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
-	return nil
-}
-
-func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
-	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
-}
-
 type proofPCommitmentMap struct {
-	Commitments map[publicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
+	Commitments map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
 }
 
 const (
@@ -129,7 +104,7 @@ const (
 
 func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (ks *keyshareServer, err error) {
 	ks = &keyshareServer{
-		Nonce: make([]byte, 32),
+		Nonce:                   make([]byte, 32),
 		SchemeManagerIdentifier: schemeManagerIdentifier,
 	}
 	_, err = rand.Read(ks.Nonce)
@@ -343,8 +318,8 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 // of all keyshare servers of their part of the private key, and merges these commitments
 // in our own proof builders.
 func (ks *keyshareSession) GetCommitments() {
-	pkids := map[irma.SchemeManagerIdentifier][]*publicKeyIdentifier{}
-	commitments := map[publicKeyIdentifier]*gabi.ProofPCommitment{}
+	pkids := map[irma.SchemeManagerIdentifier][]*irma.PublicKeyIdentifier{}
+	commitments := map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment{}
 
 	// For each scheme manager, build a list of public keys under this manager
 	// that we will use in the keyshare protocol with the keyshare server of this manager
@@ -355,9 +330,9 @@ func (ks *keyshareSession) GetCommitments() {
 			continue
 		}
 		if _, contains := pkids[managerID]; !contains {
-			pkids[managerID] = []*publicKeyIdentifier{}
+			pkids[managerID] = []*irma.PublicKeyIdentifier{}
 		}
-		pkids[managerID] = append(pkids[managerID], &publicKeyIdentifier{Issuer: pk.Issuer, Counter: pk.Counter})
+		pkids[managerID] = append(pkids[managerID], &irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter})
 	}
 
 	// Now inform each keyshare server of with respect to which public keys
@@ -391,7 +366,7 @@ func (ks *keyshareSession) GetCommitments() {
 	// Merge in the commitments
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
-		pki := publicKeyIdentifier{Issuer: pk.Issuer, Counter: pk.Counter}
+		pki := irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter}
 		comm, distributed := commitments[pki]
 		if !distributed {
 			continue

@@ -3,6 +3,7 @@ package irma
 import (
 	"database/sql/driver" // only imported to refer to the driver.Value type
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/fxamacker/cbor"
@@ -33,6 +34,12 @@ type SchemeManagerIdentifier struct {
 // IssuerIdentifier identifies an issuer. For example "irma-demo.RU".
 type IssuerIdentifier struct {
 	metaObjectIdentifier
+}
+
+// PublicKeyIdentifier identifies a single key from an issuer. For example: "irma-demo.RU-1"
+type PublicKeyIdentifier struct {
+	Issuer  IssuerIdentifier `json:"issuer"`
+	Counter uint             `json:"counter"`
 }
 
 // CredentialTypeIdentifier identifies a credentialtype. For example "irma-demo.RU.studentCard".
@@ -196,6 +203,24 @@ func (id IssuerIdentifier) MarshalText() ([]byte, error) {
 func (id *IssuerIdentifier) UnmarshalText(text []byte) error {
 	*id = NewIssuerIdentifier(string(text))
 	return nil
+}
+
+func (pki *PublicKeyIdentifier) UnmarshalText(text []byte) error {
+	str := string(text)
+	index := strings.LastIndex(str, "-")
+	if index == -1 {
+		return errors.New("Invalid PublicKeyIdentifier")
+	}
+	counter, err := strconv.Atoi(str[index+1:])
+	if err != nil {
+		return err
+	}
+	*pki = PublicKeyIdentifier{Issuer: NewIssuerIdentifier(str[:index]), Counter: uint(counter)}
+	return nil
+}
+
+func (pki *PublicKeyIdentifier) MarshalText() (text []byte, err error) {
+	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
 }
 
 // MarshalText implements encoding.TextMarshaler.
