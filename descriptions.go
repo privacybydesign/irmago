@@ -71,6 +71,15 @@ type CredentialType struct {
 	IssueURL        TranslatedString `xml:"IssueURL"`
 	DeprecatedSince Timestamp
 
+	BackgroundColor string
+
+	IsInCredentialStore bool
+	Category            TranslatedString
+	FAQIntro            TranslatedString
+	FAQPurpose          TranslatedString
+	FAQContent          TranslatedString
+	FAQHowto            TranslatedString
+
 	Valid bool `xml:"-"`
 }
 
