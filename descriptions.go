@@ -74,6 +74,15 @@ type CredentialType struct {
 	XMLName               xml.Name         `xml:"IssueSpecification"`
 	IssueURL              TranslatedString `xml:"IssueURL"`
 
+	BackgroundColor string
+
+	IsInCredentialStore bool
+	Category            TranslatedString
+	FAQIntro            TranslatedString
+	FAQPurpose          TranslatedString
+	FAQContent          TranslatedString
+	FAQHowto            TranslatedString
+
 	Valid bool `xml:"-"`
 }
 
