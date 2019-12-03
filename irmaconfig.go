@@ -104,6 +104,10 @@ const (
 	privkeyPattern = "%s/%s/%s/PrivateKeys/*.xml"
 )
 
+var (
+	validLangs = []string{"en", "nl"} // Hardcode these for now, TODO make configurable
+)
+
 func (sme SchemeManagerError) Error() string {
 	return fmt.Sprintf("Error parsing scheme manager %s: %s", sme.Manager.Name(), sme.Err.Error())
 }
@@ -1313,6 +1317,15 @@ func (conf *Configuration) StopAutoUpdateSchemes() {
 }
 
 // Validation methods containing consistency checks on irma_configuration
+func validateDemoPrefix(ts TranslatedString) error {
+	prefix := "Demo "
+	for _, lang := range validLangs {
+		if !strings.HasPrefix(map[string]string(ts)[lang], prefix) {
+			return errors.Errorf("value in language %s is not prefixed with '%s'", lang, prefix)
+		}
+	}
+	return nil
+}
 
 func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer, dir string) error {
 	issuerid := issuer.Identifier()
@@ -1332,6 +1345,9 @@ func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer
 	}
 	if manager.ID != issuer.SchemeManagerID {
 		return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
+	}
+	if err = validateDemoPrefix(issuer.Name); manager.Demo && err != nil {
+		return errors.Errorf("Name of demo issuer %s invalid: %s", issuer.ID, err.Error())
 	}
 	if err = fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
@@ -1353,6 +1369,9 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 	}
 	if cred.SchemeManagerID != manager.ID {
 		return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
+	}
+	if err := validateDemoPrefix(cred.Name); manager.Demo && err != nil {
+		return errors.Errorf("Name of demo credential %s invalid: %s", cred.ID, err.Error())
 	}
 	if err := fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
@@ -1406,7 +1425,6 @@ func (conf *Configuration) validateScheme(scheme *SchemeManager, dir string) err
 // validateTranslations checks for each member of the interface o that is of type TranslatedString
 // that it contains all necessary translations.
 func (conf *Configuration) validateTranslations(file string, o interface{}) {
-	langs := []string{"en", "nl"} // Hardcode these for now, TODO make configurable
 	v := reflect.ValueOf(o)
 
 	// Dereference in case of pointer or interface
@@ -1421,7 +1439,7 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 			continue
 		}
 		val := field.Interface().(TranslatedString)
-		for _, lang := range langs {
+		for _, lang := range validLangs {
 			if _, exists := val[lang]; !exists {
 				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
 			}
