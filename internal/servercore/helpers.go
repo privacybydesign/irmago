@@ -95,25 +95,25 @@ func (session *session) issuanceHandleRevocation(
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
-	records, err := rs.LatestRevocationRecords(id, 1)
+	u, err := rs.UpdateLatest(id, 0)
 	if err != nil {
 		return
 	}
-	r := records[len(records)-1]
-	pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), r.PublicKeyIndex)
+	sig := u.SignedAccumulator
+	pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), sig.PKIndex)
 	if err != nil {
 		return nil, nil, err
 	}
-	msg, err := r.UnmarshalVerify(pk)
+	acc, err := sig.UnmarshalVerify(pk)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if witness, err = sk.RevocationGenerateWitness(&msg.Accumulator); err != nil {
+	if witness, err = sk.RevocationGenerateWitness(acc); err != nil {
 		return
 	}
 
-	witness.Record = &r.Record // attach previously selected reocation record to the witness for the client
+	witness.SignedAccumulator = sig // attach previously selected reocation record to the witness for the client
 	nonrevAttr = witness.E
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
@@ -122,7 +122,7 @@ func (session *session) issuanceHandleRevocation(
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
-	err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord)
+	err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 	return
 }
 

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -33,10 +34,10 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	session.markAlive()
 	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.token})
 
-	// we include the latest revocation records for the client here, as opposed to when the session
+	// we include the latest revocation updates for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
 	var err error
-	if err = session.conf.IrmaConfiguration.Revocation.SetRevocationRecords(session.request.Base()); err != nil {
+	if err = session.conf.IrmaConfiguration.Revocation.SetRevocationUpdates(session.request.Base()); err != nil {
 		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 
@@ -214,40 +215,42 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	return sigs, nil
 }
 
-// POST revocation/records
-func (s *Server) handlePostRevocationRecords(records []*irma.RevocationRecord) (interface{}, *irma.RemoteError) {
-	if err := s.conf.IrmaConfiguration.Revocation.AddRevocationRecords(records); err != nil {
+// POST revocation/update/{credtype}
+func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *revocation.Update) (interface{}, *irma.RemoteError) {
+	if err := s.conf.IrmaConfiguration.Revocation.AddUpdate(typ, update); err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
 	return nil, nil
 }
 
-// GET revocation/records/{credtype}/{index}
-func (s *Server) handleGetRevocationRecords(
+// GET revocation/updatefrom/{credtype}/{index}
+func (s *Server) handleGetUpdateFrom(
 	cred irma.CredentialTypeIdentifier, index uint64,
-) ([]*irma.RevocationRecord, *irma.RemoteError) {
-	if _, ok := s.conf.RevocationSettings[cred]; !ok {
+) (*revocation.Update, *irma.RemoteError) {
+	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
+		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	records, err := s.conf.IrmaConfiguration.Revocation.RevocationRecords(cred, index)
+	update, err := s.conf.IrmaConfiguration.Revocation.UpdateFrom(cred, index)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
-	return records, nil
+	return update, nil
 }
 
-// GET revocation/latestrecords/{credtype}/{count}
-func (s *Server) handleGetLatestRevocationRecords(
+// GET revocation/updatelatest/{credtype}/{count}
+func (s *Server) handleGetUpdateLatest(
 	cred irma.CredentialTypeIdentifier, count uint64,
-) ([]*irma.RevocationRecord, *irma.RemoteError) {
-	if _, ok := s.conf.RevocationSettings[cred]; !ok {
+) (*revocation.Update, *irma.RemoteError) {
+	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
+		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	records, err := s.conf.IrmaConfiguration.Revocation.LatestRevocationRecords(cred, count)
+	update, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
-	return records, nil
+	return update, nil
 }
 
 // POST revocation/issuancerecord/{credtype}/{keycounter}

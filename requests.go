@@ -13,6 +13,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/fs"
 )
 
@@ -38,7 +39,7 @@ type BaseRequest struct {
 	Revocation []CredentialTypeIdentifier `json:"revocation,omitempty"`
 	// RevocationUpdates contains revocation update messages for the client to update its
 	// revocation state.
-	RevocationUpdates map[CredentialTypeIdentifier][]*RevocationRecord `json:"revocationUpdates,omitempty"`
+	RevocationUpdates map[CredentialTypeIdentifier]*revocation.Update `json:"revocationUpdates,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
@@ -199,7 +200,7 @@ type AttributeRequest struct {
 type RevocationRequest struct {
 	LDContext      string                   `json:"@context,omitempty"`
 	CredentialType CredentialTypeIdentifier `json:"type"`
-	Key            string                   `json:"key,omitempty"`
+	Key            string                   `json:"revocationKey,omitempty"`
 	Enable         bool                     `json:"enable,omitempty"`
 }
 
@@ -236,7 +237,7 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 // RequestsRevocation indicates whether or not the requestor requires a nonrevocation proof for
 // the given credential type; that is, whether or not it included revocation update messages.
 func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
-	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id]) > 0
+	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id].Events) > 0
 }
 
 func (b *BaseRequest) RevocationConsistent() error {

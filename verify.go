@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 )
 
 // ProofStatus is the status of the complete proof
@@ -110,7 +111,7 @@ func (pl ProofList) VerifyProofs(
 	configuration *Configuration,
 	context *big.Int, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
-	revRecords map[CredentialTypeIdentifier][]*RevocationRecord,
+	revRecords map[CredentialTypeIdentifier]*revocation.Update,
 	isSig bool,
 ) (bool, map[int]*time.Time, error) {
 	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
@@ -149,7 +150,7 @@ func (pl ProofList) VerifyProofs(
 	// - verify that any singleton credential occurs at most once in the prooflist
 	// - verify that all required nonrevocation proofs are present
 	singletons := map[CredentialTypeIdentifier]bool{}
-	revocation := map[int]*time.Time{} // per proof, store up to what time it is known to be not revoked
+	revocationtime := map[int]*time.Time{} // per proof, stores up to what time it is known to be not revoked
 	for i, proof := range pl {
 		proofd, ok := proof.(*gabi.ProofD)
 		if !ok {
@@ -174,25 +175,36 @@ func (pl ProofList) VerifyProofs(
 		// the last one in the update message set we provided along with the session request,
 		// OR a newer one included in the proofs itself.
 		r := revRecords[id]
-		if len(r) == 0 { // no nonrevocation proof was requested for this credential
+		if r == nil { // no nonrevocation proof was requested for this credential
 			return true, nil, nil
 		}
 		if !proofd.HasNonRevocationProof() {
 			return false, nil, nil
 		}
-		ours, theirs := proofd.NonRevocationProof.Accumulator.Index, r[len(r)-1].EndIndex
-		if ours < theirs {
+
+		sig := proofd.NonRevocationProof.SignedAccumulator
+		pk, err := RevocationKeys{configuration}.PublicKey(typ.IssuerIdentifier(), sig.PKIndex)
+		if err != nil {
+			return false, nil, nil
+		}
+		acc, err := proofd.NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
+		if err != nil {
+			return false, nil, nil
+		}
+
+		ours, theirs := r.Events[len(r.Events)-1].Index, acc.Index
+		if ours > theirs {
 			return false, nil, errors.New("nonrevocation proof used wrong accumulator")
 		}
 		if ours == theirs {
 			settings := configuration.Revocation.getSettings(id)
 			if uint(time.Now().Sub(settings.updated).Seconds()) > settings.MaxNonrevocationDuration {
-				revocation[i] = &settings.updated
+				revocationtime[i] = &settings.updated
 			}
 		}
 	}
 
-	return true, revocation, nil
+	return true, revocationtime, nil
 }
 
 func (d *Disclosure) extraIndices(condiscon AttributeConDisCon) []*DisclosedAttributeIndex {
@@ -235,11 +247,11 @@ func (d *Disclosure) extraIndices(condiscon AttributeConDisCon) []*DisclosedAttr
 // is included, then the first attributes in the returned slice match with the disjunction list in
 // the disjunction list. The first return parameter of this function indicates whether or not all
 // disjunctions (if present) are satisfied.
-func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon AttributeConDisCon, revocation map[int]*time.Time) (bool, [][]*DisclosedAttribute, error) {
-	if revocation == nil {
-		revocation = map[int]*time.Time{}
+func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon AttributeConDisCon, revtimes map[int]*time.Time) (bool, [][]*DisclosedAttribute, error) {
+	if revtimes == nil {
+		revtimes = map[int]*time.Time{}
 	}
-	complete, list, err := condiscon.Satisfy(d, revocation, configuration)
+	complete, list, err := condiscon.Satisfy(d, revtimes, configuration)
 	if err != nil {
 		return false, nil, err
 	}
@@ -247,7 +259,7 @@ func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon
 	var extra []*DisclosedAttribute
 	indices := d.extraIndices(condiscon)
 	for _, index := range indices {
-		attr, _, err := extractAttribute(d.Proofs, index, revocation[index.CredentialIndex], configuration)
+		attr, _, err := extractAttribute(d.Proofs, index, revtimes[index.CredentialIndex], configuration)
 		if err != nil {
 			return false, nil, err
 		}
@@ -299,20 +311,20 @@ func (d *Disclosure) VerifyAgainstRequest(
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
 	var required AttributeConDisCon
-	var revRecords map[CredentialTypeIdentifier][]*RevocationRecord
+	var revupdates map[CredentialTypeIdentifier]*revocation.Update
 	if request != nil {
-		revRecords = request.Base().RevocationUpdates
+		revupdates = request.Base().RevocationUpdates
 		required = request.Disclosure().Disclose
 	}
 
 	// Cryptographically verify all included IRMA proofs
-	valid, revocation, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, revRecords, issig)
+	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, revupdates, issig)
 	if !valid || err != nil {
 		return nil, ProofStatusInvalid, err
 	}
 
 	// Next extract the contained attributes from the proofs, and match them to the signature request if present
-	allmatched, list, err := d.DisclosedAttributes(configuration, required, revocation)
+	allmatched, list, err := d.DisclosedAttributes(configuration, required, revtimes)
 	if err != nil {
 		return nil, ProofStatusInvalid, err
 	}

@@ -83,9 +83,11 @@ func StartRevocationServer(t *testing.T) {
 	// Connect to database and clear records from previous test runs
 	g, err := gorm.Open("postgres", conf.RevocationDB)
 	require.NoError(t, err)
-	require.NoError(t, g.DropTableIfExists((*irma.RevocationRecord)(nil)).Error)
+	require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
+	require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
 	require.NoError(t, g.DropTableIfExists((*irma.IssuanceRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.RevocationRecord)(nil)).Error)
+	require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)).Error)
+	require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)).Error)
 	require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
 	require.NoError(t, g.Close())
 

@@ -1,7 +1,7 @@
 package irma
 
 import (
-	"database/sql/driver"
+	"database/sql/driver" // only imported to refer to the driver.Value type
 	"fmt"
 	"strings"
 

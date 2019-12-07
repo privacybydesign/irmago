@@ -359,6 +359,7 @@ func (session *session) doSession(proceed bool) {
 	err := <-session.prepRevocation
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
+		return
 	}
 
 	if !session.Distributed() {
@@ -668,6 +669,7 @@ func (session *session) finish() bool {
 
 func (session *session) fail(err *irma.SessionError) {
 	if session.finish() && err.ErrorType != irma.ErrorKeyshareUnenrolled {
+		irma.Logger.Warn("client session error: ", err.Error())
 		err.Err = errors.Wrap(err.Err, 0)
 		session.Handler.Failure(err)
 	}

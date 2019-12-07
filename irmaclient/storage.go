@@ -254,7 +254,7 @@ func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *
 	if sig.Witness != nil {
 		pk, err := s.Configuration.Revocation.Keys.PublicKey(
 			attrs.CredentialType().IssuerIdentifier(),
-			sig.Witness.Record.PublicKeyIndex,
+			sig.Witness.SignedAccumulator.PKIndex,
 		)
 		if err != nil {
 			return nil, nil, err

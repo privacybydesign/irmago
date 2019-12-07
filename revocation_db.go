@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/jinzhu/gorm"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,6 +21,7 @@ type (
 		Insert(o interface{}) error
 		// Save an existing record.
 		Save(o interface{}) error
+		Upsert(o interface{}) error
 		// Last deserializes the last record into o.
 		Last(typ CredentialTypeIdentifier, o interface{}) error
 		// Exists checks whether records exist satisfying col = key.
@@ -40,63 +42,87 @@ type (
 		gorm *gorm.DB
 	}
 
-	// memRevStorage is a much simpler in-memory database, suitable only for storing the last
-	// few revocation records, for requestors.
+	// memRevStorage is a much simpler in-memory database, suitable only for storing update messages.
 	memRevStorage struct {
 		sync.Mutex
-		records map[CredentialTypeIdentifier]*memRevRecords
+		records map[CredentialTypeIdentifier]*memUpdateRecord
 	}
 
-	memRevRecords struct {
+	memUpdateRecord struct {
 		sync.Mutex
-		r []*RevocationRecord
+		r *revocation.Update
 	}
 )
 
 func newMemStorage() memRevStorage {
 	return memRevStorage{
-		records: make(map[CredentialTypeIdentifier]*memRevRecords),
+		records: make(map[CredentialTypeIdentifier]*memUpdateRecord),
 	}
 }
 
-func (m memRevStorage) get(typ CredentialTypeIdentifier) *memRevRecords {
+func (m memRevStorage) get(typ CredentialTypeIdentifier) *memUpdateRecord {
 	m.Lock()
 	defer m.Unlock()
-	if _, ok := m.records[typ]; !ok {
-		m.records[typ] = &memRevRecords{r: make([]*RevocationRecord, 0, revocationUpdateCount)}
-	}
 	return m.records[typ]
 }
 
-func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64, r *[]*RevocationRecord) {
-	records := m.get(typ)
-	records.Lock()
-	defer records.Unlock()
+func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64) *revocation.Update {
+	record := m.get(typ)
+	if record == nil {
+		return nil
+	}
+	record.Lock()
+	defer record.Unlock()
 
-	c := count
-	if c > uint64(len(records.r)) {
-		c = uint64(len(records.r))
+	offset := int64(len(record.r.Events)) - int64(count) - 1
+	if offset < 0 {
+		offset = 0
 	}
-	for _, rec := range records.r[:c] {
-		Logger.Trace("membdb: get ", rec.StartIndex)
-		*r = append(*r, rec)
+	response := &revocation.Update{SignedAccumulator: record.r.SignedAccumulator}
+	for _, rec := range record.r.Events[offset:] {
+		Logger.Trace("membdb: get ", rec.Index)
+		response.Events = append(response.Events, rec)
 	}
+	return response
 }
 
-func (m memRevStorage) Insert(record *RevocationRecord) {
-	r := m.get(record.CredType)
-	r.Lock()
-	defer r.Unlock()
+func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.Update) {
+	record := m.get(typ)
+	if record == nil {
+		record = &memUpdateRecord{r: &revocation.Update{}}
+		m.records[typ] = record
+	}
+	record.Lock()
+	defer record.Unlock()
 
-	Logger.Trace("membdb: insert ", record)
-	r.r = append(r.r, record)
+	ours := record.r.Events
+	if len(ours) == 0 {
+		record.r = update
+		return
+	}
+	theirs := update.Events
+	if len(theirs) == 0 {
+		return
+	}
+	theirStart, theirEnd, ourEnd := theirs[0].Index, theirs[len(theirs)-1].Index, ours[len(ours)-1].Index
+	offset := ourEnd - theirStart
+	if theirEnd <= ourEnd || offset < 0 {
+		return
+	}
+
+	Logger.Trace("membdb: inserting")
+	record.r.SignedAccumulator = update.SignedAccumulator
+	record.r.Events = append(record.r.Events, theirs[offset:]...)
 }
 
 func (m memRevStorage) HasRecords(typ CredentialTypeIdentifier) bool {
-	r := m.get(typ)
-	r.Lock()
-	defer r.Unlock()
-	return len(r.r) > 0
+	record := m.get(typ)
+	if record == nil {
+		return false
+	}
+	record.Lock()
+	defer record.Unlock()
+	return len(record.r.Events) > 0
 }
 
 func newSqlStorage(debug bool, db string) (revStorage, error) {
@@ -109,7 +135,10 @@ func newSqlStorage(debug bool, db string) (revStorage, error) {
 		g.LogMode(true)
 		g.SetLogger(gorm.Logger{LogWriter: log.New(Logger.WriterLevel(logrus.DebugLevel), "db: ", 0)})
 	}
-	if g.AutoMigrate((*RevocationRecord)(nil)); g.Error != nil {
+	if g.AutoMigrate((*EventRecord)(nil)); g.Error != nil {
+		return nil, g.Error
+	}
+	if g.AutoMigrate((*AccumulatorRecord)(nil)); g.Error != nil {
 		return nil, g.Error
 	}
 	if g.AutoMigrate((*IssuanceRecord)(nil)); g.Error != nil {
@@ -151,6 +180,16 @@ func (s sqlRevStorage) Insert(o interface{}) error {
 
 func (s sqlRevStorage) Save(o interface{}) error {
 	return s.gorm.Save(o).Error
+}
+
+func (s sqlRevStorage) Upsert(o interface{}) error {
+	var c int
+	s.gorm.Model(o).Count(&c)
+	if c == 0 {
+		return s.Insert(o)
+	} else {
+		return s.Save(o)
+	}
 }
 
 func (s sqlRevStorage) Last(typ CredentialTypeIdentifier, o interface{}) error {
