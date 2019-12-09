@@ -267,7 +267,7 @@ type DisclosedAttributeIndex struct {
 
 type IssueCommitmentMessage struct {
 	*gabi.IssueCommitmentMessage
-	Indices DisclosedAttributeIndices `json:"indices"`
+	Indices DisclosedAttributeIndices `json:"indices,omitempty"`
 }
 
 func (err ErrorType) Error() string {
