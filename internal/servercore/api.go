@@ -384,41 +384,41 @@ func (s *Server) handleRevocationMessage(
 ) (int, []byte) {
 	if (noun == "updatefrom" || noun == "updatelatest") && method == http.MethodGet {
 		if len(args) != 2 {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET "+noun+" expects 2 url arguments"))
+			return server.GobResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET "+noun+" expects 2 url arguments"))
 		}
 		i, err := strconv.ParseUint(args[1], 10, 64)
 		if err != nil {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.GobResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
 		if noun == "updatefrom" {
-			return server.JsonResponse(s.handleGetUpdateFrom(cred, i))
+			return server.GobResponse(s.handleGetUpdateFrom(cred, i))
 		} else {
-			return server.JsonResponse(s.handleGetUpdateLatest(cred, i))
+			return server.GobResponse(s.handleGetUpdateLatest(cred, i))
 		}
 	}
 	if noun == "update" && method == http.MethodPost {
 		if len(args) != 1 {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST update expects 1 url argument"))
+			return server.GobResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST update expects 1 url argument"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
 		var update *revocation.Update
-		if err := json.Unmarshal(message, &update); err != nil {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		if err := irma.UnmarshalBinary(message, update); err != nil {
+			return server.GobResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
-		return server.JsonResponse(s.handlePostUpdate(cred, update))
+		return server.GobResponse(s.handlePostUpdate(cred, update))
 	}
 	if noun == "issuancerecord" && method == http.MethodPost {
 		if len(args) != 2 {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"))
+			return server.GobResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
 		counter, err := strconv.ParseUint(args[1], 10, 64)
 		if err != nil {
-			return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.GobResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
-		return server.JsonResponse(s.handlePostIssuanceRecord(cred, counter, message))
+		return server.GobResponse(s.handlePostIssuanceRecord(cred, counter, message))
 	}
 
-	return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
+	return server.GobResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
 }

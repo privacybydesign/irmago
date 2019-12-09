@@ -1,8 +1,6 @@
 package server
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -104,15 +102,7 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 }
 
 func GobResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
-	return encodeValOrError(v, err, gobMarshal)
-}
-
-func gobMarshal(v interface{}) ([]byte, error) {
-	var b bytes.Buffer
-	if err := gob.NewEncoder(&b).Encode(v); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
+	return encodeValOrError(v, err, irma.MarshalBinary)
 }
 
 func encodeValOrError(v interface{}, err *irma.RemoteError, encoder func(interface{}) ([]byte, error)) (int, []byte) {

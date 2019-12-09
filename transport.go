@@ -26,6 +26,7 @@ import (
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
 	Server  string
+	Binary  bool
 	client  *retryablehttp.Client
 	headers map[string]string
 }
@@ -91,6 +92,49 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 	}
 }
 
+func (transport *HTTPTransport) marshal(o interface{}) ([]byte, error) {
+	if transport.Binary {
+		return MarshalBinary(o)
+	}
+	return json.Marshal(o)
+}
+
+func (transport *HTTPTransport) unmarshal(data []byte, dst interface{}) error {
+	if transport.Binary {
+		return UnmarshalBinary(data, dst)
+	}
+	return json.Unmarshal(data, dst)
+}
+
+func (transport *HTTPTransport) unmarshalValidate(data []byte, dst interface{}) error {
+	if transport.Binary {
+		return UnmarshalValidateBinary(data, dst)
+	}
+	return UnmarshalValidate(data, dst)
+}
+
+func (transport *HTTPTransport) log(prefix string, message interface{}, binary bool) {
+	if !Logger.IsLevelEnabled(logrus.TraceLevel) {
+		return // do nothing if nothing would be printed anyway
+	}
+	var str string
+	switch s := message.(type) {
+	case []byte:
+		str = string(s)
+	case string:
+		str = s
+	default:
+		tmp, _ := json.Marshal(message)
+		str = string(tmp)
+		binary = false
+	}
+	if !binary {
+		Logger.Tracef("transport: %s: %s", prefix, str)
+	} else {
+		Logger.Tracef("transport: %s (base64): %s", prefix, base64.RawStdEncoding.EncodeToString([]byte(str)))
+	}
+}
+
 // SetHeader sets a header to be sent in requests.
 func (transport *HTTPTransport) SetHeader(name, val string) {
 	transport.headers[name] = val
@@ -133,19 +177,19 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	if object != nil {
 		switch o := object.(type) {
 		case []byte:
-			Logger.Trace("transport: body (base64): ", base64.StdEncoding.EncodeToString(o))
+			transport.log("body", o, true)
 			contenttype = "application/octet-stream"
 			reader = bytes.NewBuffer(o)
 		case string:
-			Logger.Trace("transport: body: ", o)
+			transport.log("body", o, false)
 			contenttype = "text/plain; charset=UTF-8"
 			reader = bytes.NewBuffer([]byte(o))
 		default:
-			marshaled, err := json.Marshal(object)
+			marshaled, err := transport.marshal(object)
 			if err != nil {
 				return &SessionError{ErrorType: ErrorSerialization, Err: err}
 			}
-			Logger.Trace("transport: body: ", string(marshaled))
+			transport.log("body", string(marshaled), transport.Binary)
 			contenttype = "application/json; charset=UTF-8"
 			reader = bytes.NewBuffer(marshaled)
 		}
@@ -165,22 +209,22 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	}
 	if res.StatusCode != 200 {
 		apierr := &RemoteError{}
-		err = json.Unmarshal(body, apierr)
+		err = transport.unmarshal(body, apierr)
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
 			return &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
 		}
-		Logger.Tracef("transport: error: %+v", apierr)
+		transport.log("error", apierr, false)
 		return &SessionError{ErrorType: ErrorApi, RemoteStatus: res.StatusCode, RemoteError: apierr}
 	}
 
-	Logger.Tracef("transport: response: %s", string(body))
+	transport.log("response", body, transport.Binary)
 	if result == nil { // caller doesn't care about server response
 		return nil
 	}
 	if _, resultstr := result.(*string); resultstr {
 		*result.(*string) = string(body)
 	} else {
-		err = UnmarshalValidate(body, result)
+		err = transport.unmarshalValidate(body, result)
 		if err != nil {
 			return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 		}
@@ -202,6 +246,7 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
+	transport.log("response", b, true)
 	return b, nil
 }
 

@@ -2,6 +2,8 @@ package irma
 
 import (
 	"bytes"
+	"encoding"
+	"encoding/gob"
 	"encoding/json"
 	"net/url"
 	"strconv"
@@ -127,6 +129,44 @@ func UnmarshalValidate(data []byte, dest interface{}) error {
 	}
 	if v, ok := dest.(Validator); ok {
 		return v.Validate()
+	}
+	return nil
+}
+
+func UnmarshalValidateBinary(data []byte, dest interface{}) error {
+	if err := UnmarshalBinary(data, dest); err != nil {
+		return err
+	}
+	if v, ok := dest.(Validator); ok {
+		return v.Validate()
+	}
+	return nil
+}
+
+func MarshalBinary(message interface{}) ([]byte, error) {
+	var bts []byte
+	var err error
+	if m, ok := message.(encoding.BinaryMarshaler); ok {
+		bts, err = m.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var buf bytes.Buffer
+		if err = gob.NewEncoder(&buf).Encode(message); err != nil {
+			return nil, err
+		}
+		bts = buf.Bytes()
+	}
+	return bts, nil
+}
+
+func UnmarshalBinary(data []byte, dst interface{}) error {
+	if u, ok := dst.(encoding.BinaryUnmarshaler); ok {
+		return u.UnmarshalBinary(data)
+	}
+	if err := gob.NewDecoder(bytes.NewBuffer(data)).Decode(dst); err != nil {
+		return err
 	}
 	return nil
 }

@@ -509,6 +509,7 @@ func (rs *RevocationStorage) getSettings(typ CredentialTypeIdentifier) *Revocati
 
 func (client RevocationClient) PostUpdate(typ CredentialTypeIdentifier, urls []string, update *revocation.Update) {
 	transport := NewHTTPTransport("")
+	transport.Binary = true
 	for _, url := range urls {
 		err := transport.Post(fmt.Sprintf("%s/revocation/update/%s", url, typ.String()), nil, update)
 		if err != nil {
@@ -537,15 +538,18 @@ func (client RevocationClient) FetchUpdateLatest(typ CredentialTypeIdentifier, c
 }
 
 func (client RevocationClient) fetchUpdate(typ CredentialTypeIdentifier, u string, i uint64) (*revocation.Update, error) {
-	records := &revocation.Update{}
-	var err error
-	var errs multierror.Error
-	transport := NewHTTPTransport("")
+	var (
+		err       error
+		errs      multierror.Error
+		update    = &revocation.Update{}
+		transport = NewHTTPTransport("")
+	)
+	transport.Binary = true
 	for _, url := range client.Conf.CredentialTypes[typ].RevocationServers {
 		transport.Server = url
-		err = transport.Get(fmt.Sprintf("revocation/%s/%s/%d", u, typ, i), &records)
+		err = transport.Get(fmt.Sprintf("revocation/%s/%s/%d", u, typ, i), &update)
 		if err == nil {
-			return records, nil
+			return update, nil
 		} else {
 			errs.Errors = append(errs.Errors, err)
 		}
