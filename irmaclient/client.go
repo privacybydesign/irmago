@@ -563,7 +563,7 @@ func (client *Client) credCandidates(con irma.AttributeCon) credCandidateSet {
 		}
 		var c []*irma.CredentialIdentifier
 		for _, cred := range creds {
-			if !cred.IsValid() {
+			if !cred.IsValid() || cred.Revoked {
 				continue
 			}
 			c = append(c, &irma.CredentialIdentifier{Type: credtype, Hash: cred.Hash()})
@@ -784,15 +784,22 @@ func (client *Client) NonrevPreprare(request irma.SessionRequest) error {
 		if !typ.SupportsRevocation() {
 			continue
 		}
-		for i := 0; i < len(client.attrs(id)); i++ {
+		attrs := client.attrs(id)
+		for i := 0; i < len(attrs); i++ {
 			if cred, err = client.credential(id, i); err != nil {
 				return err
 			}
 			if updated, err = cred.NonrevPrepare(client.Configuration, request); err != nil {
 				if err == revocation.ErrorRevoked {
+					attrs[i].Revoked = true
+					cred.AttributeList().Revoked = true
+					if serr := client.storage.StoreAttributes(client.attributes); serr != nil {
+						client.reportError(serr)
+						return err
+					}
 					client.handler.Revoked(&irma.CredentialIdentifier{
 						Type: cred.CredentialType().Identifier(),
-						Hash: cred.attrs.Hash(),
+						Hash: cred.AttributeList().Hash(),
 					})
 				}
 				return err

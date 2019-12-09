@@ -13,13 +13,16 @@ import (
 )
 
 type TestClientHandler struct {
-	t *testing.T
-	c chan error
+	t       *testing.T
+	c       chan error
+	revoked *irma.CredentialIdentifier
 }
 
 func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
 func (i *TestClientHandler) UpdateAttributes()                               {}
-func (i *TestClientHandler) Revoked(cred *irma.CredentialIdentifier)         {}
+func (i *TestClientHandler) Revoked(cred *irma.CredentialIdentifier) {
+	i.revoked = cred
+}
 func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
 	select {
 	case i.c <- nil: // nop

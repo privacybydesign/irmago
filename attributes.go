@@ -42,6 +42,7 @@ type MetadataAttribute struct {
 type AttributeList struct {
 	*MetadataAttribute `json:"-"`
 	Ints               []*big.Int
+	Revoked            bool `json:",omitempty"`
 	strings            []TranslatedString
 	attrMap            map[AttributeTypeIdentifier]TranslatedString
 	info               *CredentialInfo
@@ -60,6 +61,7 @@ func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
 		al.info = NewCredentialInfo(al.Ints, al.Conf)
 	}
+	al.info.Revoked = al.Revoked
 	return al.info
 }
 

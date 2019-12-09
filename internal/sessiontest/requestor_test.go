@@ -349,15 +349,15 @@ func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessi
 }
 
 // revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
-func revocationSetup(t *testing.T) *irmaclient.Client {
+func revocationSetup(t *testing.T) (*irmaclient.Client, irmaclient.ClientHandler) {
 	StartRevocationServer(t)
 
 	// issue a MijnOverheid.root instance with revocation enabled
-	client, _ := parseStorage(t)
+	client, handler := parseStorage(t)
 	result := requestorSessionHelper(t, revocationIssuanceRequest, client)
 	require.Nil(t, result.Err)
 
-	return client
+	return client, handler
 }
 
 var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialRequest{{
@@ -370,7 +370,7 @@ var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialReques
 
 func TestRevocation(t *testing.T) {
 	defer test.ClearTestStorage(t)
-	client := revocationSetup(t)
+	client, handler := revocationSetup(t)
 
 	// issue second credential which overwrites the first one, as our credtype is a singleton
 	// this is ok, as we use cred0 only to revoke it, to see if cred1 keeps working
@@ -403,6 +403,17 @@ func TestRevocation(t *testing.T) {
 	// try to perform session with revoked credential
 	// client notices that is credential is revoked and aborts
 	logger.Info("step 5")
+	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	result = revocationSession(t, client, sessionOptionIgnoreClientError)
 	require.Equal(t, result.Status, server.StatusCancelled)
+	// client revocation callback was called
+	require.NotNil(t, handler.(*TestClientHandler).revoked)
+	require.Equal(t,
+		attr.CredentialTypeIdentifier(),
+		handler.(*TestClientHandler).revoked.Type,
+	)
+	// credential is no longer suggested as candidates
+	candidates, missing := client.Candidates(irma.AttributeDisCon{{{Type: attr}}})
+	require.Empty(t, candidates)
+	require.NotEmpty(t, missing)
 }
