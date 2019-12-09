@@ -135,7 +135,7 @@ func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *
 		return err
 	}
 
-	if err = rs.AddUpdate(typ, update); err != nil {
+	if err = rs.addUpdate(rs.db, typ, update, true); err != nil {
 		return err
 	}
 	return nil
@@ -212,10 +212,10 @@ func (*RevocationStorage) newUpdate(acc *revocation.SignedAccumulator, events []
 }
 
 func (rs *RevocationStorage) AddUpdate(typ CredentialTypeIdentifier, record *revocation.Update) error {
-	return rs.addUpdate(rs.db, typ, record)
+	return rs.addUpdate(rs.db, typ, record, false)
 }
 
-func (rs *RevocationStorage) addUpdate(tx revStorage, typ CredentialTypeIdentifier, update *revocation.Update) error {
+func (rs *RevocationStorage) addUpdate(tx revStorage, typ CredentialTypeIdentifier, update *revocation.Update, create bool) error {
 	// Unmarshal and verify the record against the appropriate public key
 	pk, err := rs.Keys.PublicKey(typ.IssuerIdentifier(), update.SignedAccumulator.PKIndex)
 	if err != nil {
@@ -227,7 +227,11 @@ func (rs *RevocationStorage) addUpdate(tx revStorage, typ CredentialTypeIdentifi
 
 	// Save record
 	if rs.sqlMode {
-		if err = tx.Upsert(&AccumulatorRecord{SignedAccumulator: update.SignedAccumulator, CredType: typ}); err != nil {
+		save := tx.Save
+		if create {
+			save = tx.Insert
+		}
+		if err = save(&AccumulatorRecord{SignedAccumulator: update.SignedAccumulator, CredType: typ}); err != nil {
 			return err
 		}
 		for _, event := range update.Events {
@@ -307,7 +311,7 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 	if err != nil {
 		return err
 	}
-	if err = rs.addUpdate(tx, typ, update); err != nil {
+	if err = rs.addUpdate(tx, typ, update, false); err != nil {
 		return err
 	}
 	return nil

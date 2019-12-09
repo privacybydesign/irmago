@@ -21,7 +21,6 @@ type (
 		Insert(o interface{}) error
 		// Save an existing record.
 		Save(o interface{}) error
-		Upsert(o interface{}) error
 		// Last deserializes the last record into o.
 		Last(typ CredentialTypeIdentifier, o interface{}) error
 		// Exists checks whether records exist satisfying col = key.
@@ -180,16 +179,6 @@ func (s sqlRevStorage) Insert(o interface{}) error {
 
 func (s sqlRevStorage) Save(o interface{}) error {
 	return s.gorm.Save(o).Error
-}
-
-func (s sqlRevStorage) Upsert(o interface{}) error {
-	var c int
-	s.gorm.Model(o).Count(&c)
-	if c == 0 {
-		return s.Insert(o)
-	} else {
-		return s.Save(o)
-	}
 }
 
 func (s sqlRevStorage) Last(typ CredentialTypeIdentifier, o interface{}) error {
