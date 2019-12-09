@@ -370,6 +370,8 @@ var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialReques
 
 func TestRevocation(t *testing.T) {
 	defer test.ClearTestStorage(t)
+	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	cred := attr.CredentialTypeIdentifier()
 	client, handler := revocationSetup(t)
 
 	// issue second credential which overwrites the first one, as our credtype is a singleton
@@ -386,7 +388,6 @@ func TestRevocation(t *testing.T) {
 
 	// revoke cred0
 	logger.Info("step 2")
-	cred := revocationIssuanceRequest.Credentials[0].CredentialTypeID
 	require.NoError(t, revocationServer.Revoke(cred, "cred0"))
 
 	// perform another disclosure session with nonrevocation proof to see that cred1 still works
@@ -401,18 +402,14 @@ func TestRevocation(t *testing.T) {
 	require.NoError(t, revocationServer.Revoke(cred, "cred1"))
 
 	// try to perform session with revoked credential
-	// client notices that is credential is revoked and aborts
+	// client notices that his credential is revoked and aborts
 	logger.Info("step 5")
-	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	result = revocationSession(t, client, sessionOptionIgnoreClientError)
 	require.Equal(t, result.Status, server.StatusCancelled)
 	// client revocation callback was called
 	require.NotNil(t, handler.(*TestClientHandler).revoked)
-	require.Equal(t,
-		attr.CredentialTypeIdentifier(),
-		handler.(*TestClientHandler).revoked.Type,
-	)
-	// credential is no longer suggested as candidates
+	require.Equal(t, cred, handler.(*TestClientHandler).revoked.Type)
+	// credential is no longer suggested as candidate
 	candidates, missing := client.Candidates(irma.AttributeDisCon{{{Type: attr}}})
 	require.Empty(t, candidates)
 	require.NotEmpty(t, missing)
