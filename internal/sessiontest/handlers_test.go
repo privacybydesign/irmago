@@ -19,6 +19,7 @@ type TestClientHandler struct {
 
 func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
 func (i *TestClientHandler) UpdateAttributes()                               {}
+func (i *TestClientHandler) Revoked(cred *irma.CredentialIdentifier)         {}
 func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
 	select {
 	case i.c <- nil: // nop

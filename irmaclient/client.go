@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/keyproof/common"
@@ -97,6 +98,7 @@ type ClientHandler interface {
 
 	UpdateConfiguration(new *irma.IrmaIdentifierSet)
 	UpdateAttributes()
+	Revoked(cred *irma.CredentialIdentifier)
 }
 
 // MissingAttributes contains all attribute requests that the client cannot satisfy with its
@@ -787,6 +789,12 @@ func (client *Client) NonrevPreprare(request irma.SessionRequest) error {
 				return err
 			}
 			if updated, err = cred.NonrevPrepare(client.Configuration, request); err != nil {
+				if err == revocation.ErrorRevoked {
+					client.handler.Revoked(&irma.CredentialIdentifier{
+						Type: cred.CredentialType().Identifier(),
+						Hash: cred.attrs.Hash(),
+					})
+				}
 				return err
 			}
 			if updated {
