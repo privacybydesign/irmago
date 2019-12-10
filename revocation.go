@@ -7,6 +7,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -73,7 +74,7 @@ type (
 	// IssuanceRecord contains information generated during issuance, needed for later revocation.
 	IssuanceRecord struct {
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
-		Key        string                   `gorm:"primary_key"`
+		Key        string                   `gorm:"primary_key;column:revocationkey"`
 		Attr       *big.Int
 		Issued     int64
 		ValidUntil int64
@@ -186,7 +187,7 @@ func (rs *RevocationStorage) UpdateLatest(typ CredentialTypeIdentifier, count ui
 				return err
 			}
 			var events []*EventRecord
-			if err := tx.Latest(typ, "index", count, &events); err != nil {
+			if err := tx.Latest(typ, "eventindex", count, &events); err != nil {
 				return err
 			}
 			update = rs.newUpdate(acc, events)
@@ -283,7 +284,7 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, sk
 	return rs.db.Transaction(func(tx revStorage) error {
 		var err error
 		issrecord := IssuanceRecord{}
-		if err = tx.Get(typ, "key", key, &issrecord); err != nil {
+		if err = tx.Get(typ, "revocationkey", key, &issrecord); err != nil {
 			return err
 		}
 		issrecord.RevokedAt = time.Now().UnixNano()
@@ -407,7 +408,7 @@ func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, re
 
 // Misscelaneous methods
 
-func (rs *RevocationStorage) Load(debug bool, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
+func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
 	var t *CredentialTypeIdentifier
 
 	for typ, s := range settings {
@@ -435,7 +436,7 @@ func (rs *RevocationStorage) Load(debug bool, connstr string, settings map[Crede
 		rs.sqlMode = false
 	} else {
 		Logger.Trace("Connecting to revocation SQL database")
-		db, err := newSqlStorage(debug, connstr)
+		db, err := newSqlStorage(debug, dbtype, connstr)
 		if err != nil {
 			return err
 		}

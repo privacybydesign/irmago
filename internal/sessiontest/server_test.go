@@ -60,12 +60,16 @@ func StartRevocationServer(t *testing.T) {
 
 	irma.Logger = logger
 	dbstr := "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
+	dbtype := "postgres"
+	//dbstr := "testuser:testpassword@tcp(127.0.0.1)/test"
+	//dbtype := "mysql"
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 	settings := map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
 		cred: {Mode: irma.RevocationModeServer},
 	}
 	irmaconf, err := irma.NewConfiguration(filepath.Join(testdata, "irma_configuration"), irma.ConfigurationOptions{
 		RevocationDB:       dbstr,
+		RevocationDBType:   dbtype,
 		RevocationSettings: settings,
 	})
 	require.NoError(t, err)
@@ -78,10 +82,11 @@ func StartRevocationServer(t *testing.T) {
 		RevocationSettings:   settings,
 		IrmaConfiguration:    irmaconf,
 		RevocationDB:         dbstr,
+		RevocationDBType:     dbtype,
 	}
 
 	// Connect to database and clear records from previous test runs
-	g, err := gorm.Open("postgres", conf.RevocationDB)
+	g, err := gorm.Open(dbtype, conf.RevocationDB)
 	require.NoError(t, err)
 	require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
 	require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)

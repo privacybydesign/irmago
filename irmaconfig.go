@@ -118,6 +118,7 @@ type ConfigurationOptions struct {
 	Assets             string
 	ReadOnly           bool
 	RevocationDB       string
+	RevocationDBType   string
 	RevocationSettings map[CredentialTypeIdentifier]*RevocationSetting
 }
 
@@ -130,7 +131,12 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 		readOnly: opts.ReadOnly,
 	}
 	conf.Revocation = &RevocationStorage{conf: conf}
-	if err = conf.Revocation.Load(Logger.IsLevelEnabled(logrus.DebugLevel), opts.RevocationDB, opts.RevocationSettings); err != nil {
+	if err = conf.Revocation.Load(
+		Logger.IsLevelEnabled(logrus.DebugLevel),
+		opts.RevocationDBType,
+		opts.RevocationDB,
+		opts.RevocationSettings,
+	); err != nil {
 		return nil, err
 	}
 

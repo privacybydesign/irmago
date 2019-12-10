@@ -124,8 +124,14 @@ func (m memRevStorage) HasRecords(typ CredentialTypeIdentifier) bool {
 	return len(record.r.Events) > 0
 }
 
-func newSqlStorage(debug bool, db string) (revStorage, error) {
-	g, err := gorm.Open("postgres", db)
+func newSqlStorage(debug bool, dbtype, connstr string) (revStorage, error) {
+	switch dbtype {
+	case "postgres", "mysql":
+	default:
+		return nil, errors.New("unsupported database type")
+	}
+
+	g, err := gorm.Open(dbtype, connstr)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +176,7 @@ func (s sqlRevStorage) Transaction(f func(tx revStorage) error) (err error) {
 }
 
 func (s sqlRevStorage) Get(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) error {
-	return s.gorm.First(o, fmt.Sprintf("cred_type = ? and %s = ?", col), typ, key).Error
+	return s.gorm.Where(map[string]interface{}{"cred_type": typ, col: key}).First(o).Error
 }
 
 func (s sqlRevStorage) Insert(o interface{}) error {
@@ -182,13 +188,13 @@ func (s sqlRevStorage) Save(o interface{}) error {
 }
 
 func (s sqlRevStorage) Last(typ CredentialTypeIdentifier, o interface{}) error {
-	return s.gorm.Last(o, "cred_type = ?", typ).Error
+	return s.gorm.Where(map[string]interface{}{"cred_type": typ}).Last(o).Error
 }
 
 func (s sqlRevStorage) Exists(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) (bool, error) {
 	var c int
 	s.gorm.Model(o).
-		Where(fmt.Sprintf("cred_type = ? and %s = ?", col), typ, key).
+		Where(map[string]interface{}{"cred_type": typ, col: key}).
 		Count(&c)
 	return c > 0, s.gorm.Error
 }
@@ -196,7 +202,7 @@ func (s sqlRevStorage) Exists(typ CredentialTypeIdentifier, col string, key inte
 func (s sqlRevStorage) HasRecords(typ CredentialTypeIdentifier, o interface{}) (bool, error) {
 	var c int
 	s.gorm.Model(o).
-		Where("cred_type = ?", typ).
+		Where(map[string]interface{}{"cred_type": typ}).
 		Count(&c)
 	return c > 0, s.gorm.Error
 }
@@ -206,5 +212,5 @@ func (s sqlRevStorage) From(typ CredentialTypeIdentifier, col string, key interf
 }
 
 func (s sqlRevStorage) Latest(typ CredentialTypeIdentifier, col string, count uint64, o interface{}) error {
-	return s.gorm.Where("cred_type = ?", typ).Order(col + " asc").Limit(count).Find(o).Error
+	return s.gorm.Where(map[string]interface{}{"cred_type": typ}).Order(col + " asc").Limit(count).Find(o).Error
 }

@@ -286,17 +286,24 @@ func (oi metaObjectIdentifier) Value() (driver.Value, error) {
 }
 
 func (oi *metaObjectIdentifier) Scan(src interface{}) error {
-	s, ok := src.(string)
-	if !ok {
-		return errors.New("cannot convert source: not a string")
+	switch s := src.(type) {
+	case string:
+		*oi = metaObjectIdentifier(s)
+		return nil
+	case []byte:
+		*oi = metaObjectIdentifier(s)
+		return nil
 	}
-	*oi = metaObjectIdentifier(s)
-	return nil
+	return errors.New("cannot convert source: not a string or []byte")
 }
 
 func (metaObjectIdentifier) GormDataType(dialect gorm.Dialect) string {
-	if dialect.GetName() == "postgres" {
+	switch dialect.GetName() {
+	case "postgres":
 		return "text"
+	case "mysql":
+		return "varchar(512)"
+	default:
+		return ""
 	}
-	return ""
 }
