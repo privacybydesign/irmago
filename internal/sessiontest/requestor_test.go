@@ -405,7 +405,7 @@ func TestRevocation(t *testing.T) {
 	// client notices that his credential is revoked and aborts
 	logger.Info("step 5")
 	result = revocationSession(t, client, sessionOptionIgnoreClientError)
-	require.Equal(t, result.Status, server.StatusCancelled)
+	require.Equal(t, server.StatusCancelled, result.Status)
 	// client revocation callback was called
 	require.NotNil(t, handler.(*TestClientHandler).revoked)
 	require.Equal(t, cred, handler.(*TestClientHandler).revoked.Type)

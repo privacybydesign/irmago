@@ -1,18 +1,20 @@
 package irma
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
-	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
+
+	_ "github.com/jinzhu/gorm/dialects/mysql"
+	_ "github.com/jinzhu/gorm/dialects/postgres"
 )
 
 type (
@@ -59,23 +61,33 @@ type (
 	RevocationMode string
 )
 
-// Structs corresponding to SQL table rows. All of them end in Record.
+// Structs corresponding to SQL table rows, ending in Record
 type (
+	// signedMessage is a signed.Message with DB (un)marshaling methods.
+	signedMessage signed.Message
+	// RevocationAttribute is a big.Int with DB (un)marshaling methods.
+	RevocationAttribute big.Int
+	// eventHash is a revocation.Hash with DB (un)marshaling methods.
+	eventHash revocation.Hash
+
 	AccumulatorRecord struct {
-		*revocation.SignedAccumulator `gorm:"embedded"`
-		CredType                      CredentialTypeIdentifier `gorm:"primary_key"`
+		CredType CredentialTypeIdentifier `gorm:"primary_key"`
+		Data     signedMessage
+		PKIndex  uint
 	}
 
 	EventRecord struct {
-		*revocation.Event `gorm:"embedded"`
-		CredType          CredentialTypeIdentifier `gorm:"primary_key"`
+		Index      uint64                   `gorm:"primary_key;column:eventindex"`
+		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
+		E          *RevocationAttribute
+		ParentHash eventHash
 	}
 
 	// IssuanceRecord contains information generated during issuance, needed for later revocation.
 	IssuanceRecord struct {
-		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
 		Key        string                   `gorm:"primary_key;column:revocationkey"`
-		Attr       *big.Int
+		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
+		Attr       *RevocationAttribute
 		Issued     int64
 		ValidUntil int64
 		RevokedAt  int64 // 0 if not currently revoked
@@ -204,7 +216,7 @@ func (rs *RevocationStorage) UpdateLatest(typ CredentialTypeIdentifier, count ui
 func (*RevocationStorage) newUpdate(acc *revocation.SignedAccumulator, events []*EventRecord) *revocation.Update {
 	updates := make([]*revocation.Event, len(events))
 	for i := range events {
-		updates[i] = events[i].Event
+		updates[i] = events[i].Event()
 	}
 	return &revocation.Update{
 		SignedAccumulator: acc,
@@ -232,11 +244,11 @@ func (rs *RevocationStorage) addUpdate(tx revStorage, typ CredentialTypeIdentifi
 		if create {
 			save = tx.Insert
 		}
-		if err = save(&AccumulatorRecord{SignedAccumulator: update.SignedAccumulator, CredType: typ}); err != nil {
+		if err = save(new(AccumulatorRecord).Convert(typ, update.SignedAccumulator)); err != nil {
 			return err
 		}
 		for _, event := range update.Events {
-			if err = tx.Insert(&EventRecord{Event: event, CredType: typ}); err != nil {
+			if err = tx.Insert(new(EventRecord).Convert(typ, event)); err != nil {
 				return err
 			}
 		}
@@ -295,7 +307,7 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, sk
 	})
 }
 
-func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentifier, sk *revocation.PrivateKey, e *big.Int) error {
+func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentifier, sk *revocation.PrivateKey, e *RevocationAttribute) error {
 	_, cur, err := rs.currentAccumulator(tx, typ)
 	if err != nil {
 		return err
@@ -308,7 +320,7 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 		return err
 	}
 
-	update, err := cur.Remove(sk, e, parent.Event)
+	update, err := cur.Remove(sk, (*big.Int)(e), parent.Event())
 	if err != nil {
 		return err
 	}
@@ -323,31 +335,33 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 func (rs *RevocationStorage) currentAccumulator(tx revStorage, typ CredentialTypeIdentifier) (
 	*revocation.SignedAccumulator, *revocation.Accumulator, error,
 ) {
-	record := &AccumulatorRecord{}
 	var err error
+	var sacc *revocation.SignedAccumulator
 	if rs.sqlMode {
+		record := &AccumulatorRecord{}
 		if err = tx.Last(typ, record); err != nil {
 			if gorm.IsRecordNotFoundError(err) {
 				return nil, nil, nil
 			}
 		}
+		sacc = record.SignedAccumulator()
 	} else {
 		u := rs.memdb.Latest(typ, 0)
 		if u == nil {
 			return nil, nil, nil
 		}
-		record.SignedAccumulator = u.SignedAccumulator
+		sacc = u.SignedAccumulator
 	}
 
-	pk, err := rs.Keys.PublicKey(typ.IssuerIdentifier(), record.PKIndex)
+	pk, err := rs.Keys.PublicKey(typ.IssuerIdentifier(), sacc.PKIndex)
 	if err != nil {
 		return nil, nil, err
 	}
-	acc, err := record.UnmarshalVerify(pk)
+	acc, err := sacc.UnmarshalVerify(pk)
 	if err != nil {
 		return nil, nil, err
 	}
-	return record.SignedAccumulator, acc, nil
+	return sacc, acc, nil
 }
 
 // Methods to update from remote revocation server
@@ -590,4 +604,109 @@ func (rs RevocationKeys) PublicKey(issid IssuerIdentifier, counter uint) (*revoc
 		return nil, err
 	}
 	return revpk, nil
+}
+
+// Conversion methods to/from database structs, SQL table rows, gob
+
+func (e *EventRecord) Event() *revocation.Event {
+	return &revocation.Event{
+		Index:      e.Index,
+		E:          (*big.Int)(e.E),
+		ParentHash: revocation.Hash(e.ParentHash),
+	}
+}
+
+func (e *EventRecord) Convert(typ CredentialTypeIdentifier, event *revocation.Event) *EventRecord {
+	*e = EventRecord{
+		Index:      event.Index,
+		E:          (*RevocationAttribute)(event.E),
+		ParentHash: eventHash(event.ParentHash),
+		CredType:   typ,
+	}
+	return e
+}
+
+func (a *AccumulatorRecord) SignedAccumulator() *revocation.SignedAccumulator {
+	return &revocation.SignedAccumulator{
+		PKIndex: a.PKIndex,
+		Data:    signed.Message(a.Data),
+	}
+}
+
+func (a *AccumulatorRecord) Convert(typ CredentialTypeIdentifier, sacc *revocation.SignedAccumulator) *AccumulatorRecord {
+	*a = AccumulatorRecord{
+		Data:     signedMessage(sacc.Data),
+		PKIndex:  sacc.PKIndex,
+		CredType: typ,
+	}
+	return a
+}
+
+func (signedMessage) GormDataType(dialect gorm.Dialect) string {
+	switch dialect.GetName() {
+	case "postgres":
+		return "bytea"
+	case "mysql":
+		return "blob"
+	default:
+		return ""
+	}
+}
+
+// Value implements driver.Valuer, for SQL marshaling (to []byte).
+func (i *RevocationAttribute) Value() (driver.Value, error) {
+	return (*big.Int)(i).Bytes(), nil
+}
+
+// Scan implements sql.Scanner, for SQL unmarshaling (from a []byte).
+func (i *RevocationAttribute) Scan(src interface{}) error {
+	b, ok := src.([]byte)
+	if !ok {
+		return errors.New("cannot convert source: not a byte slice")
+	}
+	(*big.Int)(i).SetBytes(b)
+	return nil
+}
+
+func (RevocationAttribute) GormDataType(dialect gorm.Dialect) string {
+	switch dialect.GetName() {
+	case "postgres":
+		return "bytea"
+	case "mysql":
+		return "blob"
+	default:
+		return ""
+	}
+}
+
+func (i *RevocationAttribute) GobEncode() ([]byte, error) {
+	return MarshalBinary((*big.Int)(i))
+}
+
+func (i *RevocationAttribute) GobDecode(data []byte) error {
+	return UnmarshalBinary(data, (*big.Int)(i))
+}
+
+func (hash eventHash) Value() (driver.Value, error) {
+	return hash[:], nil
+}
+
+func (hash *eventHash) Scan(src interface{}) error {
+	s, ok := src.([]byte)
+	if !ok {
+		return errors.New("cannot convert source: not a []byte")
+	}
+	copy((*hash)[:], s)
+	return nil
+}
+
+func (eventHash) GormDataType(dialect gorm.Dialect) string {
+	switch dialect.GetName() {
+	case "postgres":
+		return "bytea"
+	case "mysql":
+		return "blob"
+	default:
+		return ""
+	}
 }

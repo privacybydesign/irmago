@@ -118,7 +118,7 @@ func (session *session) issuanceHandleRevocation(
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
 		Key:        cred.RevocationKey,
-		Attr:       nonrevAttr,
+		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
