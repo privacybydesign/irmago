@@ -46,6 +46,10 @@ type Configuration struct {
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 
+	// Issuer private keys. If set (after calling ParseFolder()), will use these keys
+	// instead of keys in irma_configuration/$issuer/PrivateKeys.
+	PrivateKeys map[IssuerIdentifier]*gabi.PrivateKey
+
 	Revocation *RevocationStorage
 
 	// Path to the irma_configuration folder that this instance represents
@@ -59,7 +63,6 @@ type Configuration struct {
 
 	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
 	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
-	privateKeys   map[IssuerIdentifier]*gabi.PrivateKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
 	assets        string
@@ -163,7 +166,7 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
-	conf.privateKeys = make(map[IssuerIdentifier]*gabi.PrivateKey)
+	conf.PrivateKeys = make(map[IssuerIdentifier]*gabi.PrivateKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 }
 
@@ -319,7 +322,7 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 
 // PrivateKey returns the latest private key of the specified issuer, or nil if not present in the Configuration.
 func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, error) {
-	if sk := conf.privateKeys[id]; sk != nil {
+	if sk := conf.PrivateKeys[id]; sk != nil {
 		return sk, nil
 	}
 
@@ -355,7 +358,7 @@ func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, er
 	if int(sk.Counter) != counter {
 		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
 	}
-	conf.privateKeys[id] = sk
+	conf.PrivateKeys[id] = sk
 
 	return sk, nil
 }

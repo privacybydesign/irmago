@@ -189,7 +189,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	for i, cred := range request.Credentials {
 		id := cred.CredentialTypeID.IssuerIdentifier()
 		pk, _ := session.conf.IrmaConfiguration.PublicKey(id, cred.KeyCounter)
-		sk, _ := session.conf.PrivateKey(id)
+		sk, _ := session.conf.IrmaConfiguration.PrivateKey(id)
 		issuer := gabi.NewIssuer(sk, pk, one)
 		proof, ok := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
 		if !ok {

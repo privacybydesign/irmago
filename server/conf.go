@@ -89,21 +89,11 @@ func (conf *Configuration) Check() error {
 	return nil
 }
 
-func (conf *Configuration) PrivateKey(id irma.IssuerIdentifier) (sk *gabi.PrivateKey, err error) {
-	sk = conf.IssuerPrivateKeys[id]
-	if sk == nil {
-		if sk, err = conf.IrmaConfiguration.PrivateKey(id); err != nil {
-			return nil, err
-		}
-	}
-	return sk, nil
-}
-
 func (conf *Configuration) HavePrivateKeys() (bool, error) {
 	var err error
 	var sk *gabi.PrivateKey
 	for id := range conf.IrmaConfiguration.Issuers {
-		sk, err = conf.PrivateKey(id)
+		sk, err = conf.IrmaConfiguration.PrivateKey(id)
 		if err != nil {
 			return false, err
 		}
@@ -144,6 +134,11 @@ func (conf *Configuration) verifyIrmaConf() error {
 		if err = conf.IrmaConfiguration.ParseFolder(); err != nil {
 			return LogError(err)
 		}
+	}
+
+	// Put private keys into conf.IrmaConfiguration so we can use conf.IrmaConfiguration.PrivateKey()
+	if len(conf.IssuerPrivateKeys) > 0 {
+		conf.IrmaConfiguration.PrivateKeys = conf.IssuerPrivateKeys
 	}
 
 	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {

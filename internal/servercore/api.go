@@ -140,7 +140,7 @@ func (s *Server) CancelSession(token string) error {
 }
 
 func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
-	sk, err := s.conf.PrivateKey(credid.IssuerIdentifier())
+	sk, err := s.conf.IrmaConfiguration.PrivateKey(credid.IssuerIdentifier())
 	if err != nil {
 		return err
 	}

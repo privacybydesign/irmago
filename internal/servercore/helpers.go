@@ -130,7 +130,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	for _, cred := range request.Credentials {
 		// Check that we have the appropriate private key
 		iss := cred.CredentialTypeID.IssuerIdentifier()
-		privatekey, err := s.conf.PrivateKey(iss)
+		privatekey, err := s.conf.IrmaConfiguration.PrivateKey(iss)
 		if err != nil {
 			return err
 		}

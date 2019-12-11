@@ -356,7 +356,7 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 					continue
 				}
 				if typ == "issuing" || typ == "revoking" {
-					sk, err := conf.PrivateKey(credtype.IssuerIdentifier())
+					sk, err := conf.IrmaConfiguration.PrivateKey(credtype.IssuerIdentifier())
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s %s permission '%s': failed to load private key: %s", requestor, typ, permission, err))
 						continue
