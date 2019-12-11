@@ -54,7 +54,8 @@ type Configuration struct {
 	Logger *logrus.Logger `json:"-"`
 
 	// Connection string for revocation database
-	RevocationDB     string `json:"revocation_db" mapstructure:"revocation_db"`
+	RevocationDBConnStr string `json:"revocation_db_str" mapstructure:"revocation_db_str"`
+	// Database type for revocation database, supported: postgres, mysql
 	RevocationDBType string `json:"revocation_db_type" mapstructure:"revocation_db_type"`
 	// Credentials types for which revocation database should be hosted
 	RevocationSettings map[irma.CredentialTypeIdentifier]*irma.RevocationSetting `json:"revocation_settings" mapstructure:"revocation_settings"`
@@ -132,10 +133,10 @@ func (conf *Configuration) verifyIrmaConf() error {
 		}
 		conf.Logger.WithField("schemes_path", conf.SchemesPath).Info("Determined schemes path")
 		conf.IrmaConfiguration, err = irma.NewConfiguration(conf.SchemesPath, irma.ConfigurationOptions{
-			Assets:             conf.SchemesAssetsPath,
-			RevocationDBType:   conf.RevocationDBType,
-			RevocationDB:       conf.RevocationDB,
-			RevocationSettings: conf.RevocationSettings,
+			Assets:              conf.SchemesAssetsPath,
+			RevocationDBType:    conf.RevocationDBType,
+			RevocationDBConnStr: conf.RevocationDBConnStr,
+			RevocationSettings:  conf.RevocationSettings,
 		})
 		if err != nil {
 			return LogError(err)

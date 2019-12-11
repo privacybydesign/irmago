@@ -94,7 +94,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("static-prefix", "/", "Host static files under this URL prefix")
 	flags.StringP("url", "u", defaulturl, "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
 	flags.String("revocation-db-type", "", "database type for revocation database (supported: mysql, postgres)")
-	flags.String("revocation-db", "", "connection string for revocation database")
+	flags.String("revocation-db-str", "", "connection string for revocation database")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
@@ -202,7 +202,7 @@ func configureServer(cmd *cobra.Command) error {
 			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
 			RevocationDBType:      viper.GetString("revocation-db-type"),
-			RevocationDB:          viper.GetString("revocation-db"),
+			RevocationDBConnStr:   viper.GetString("revocation-db-str"),
 			URL:                   viper.GetString("url"),
 			DisableTLS:            viper.GetBool("no-tls"),
 			Email:                 viper.GetString("email"),

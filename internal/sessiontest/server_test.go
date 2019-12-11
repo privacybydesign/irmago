@@ -68,9 +68,9 @@ func StartRevocationServer(t *testing.T) {
 		cred: {Mode: irma.RevocationModeServer},
 	}
 	irmaconf, err := irma.NewConfiguration(filepath.Join(testdata, "irma_configuration"), irma.ConfigurationOptions{
-		RevocationDB:       dbstr,
-		RevocationDBType:   dbtype,
-		RevocationSettings: settings,
+		RevocationDBConnStr: dbstr,
+		RevocationDBType:    dbtype,
+		RevocationSettings:  settings,
 	})
 	require.NoError(t, err)
 	require.NoError(t, irmaconf.ParseFolder())
@@ -81,12 +81,12 @@ func StartRevocationServer(t *testing.T) {
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
 		RevocationSettings:   settings,
 		IrmaConfiguration:    irmaconf,
-		RevocationDB:         dbstr,
+		RevocationDBConnStr:  dbstr,
 		RevocationDBType:     dbtype,
 	}
 
 	// Connect to database and clear records from previous test runs
-	g, err := gorm.Open(dbtype, conf.RevocationDB)
+	g, err := gorm.Open(dbtype, conf.RevocationDBConnStr)
 	require.NoError(t, err)
 	require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
 	require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
