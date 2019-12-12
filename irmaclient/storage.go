@@ -161,6 +161,7 @@ func (s *storage) TxStoreSignature(tx *bbolt.Tx, credHash string, sig *gabi.CLSi
 	// This means that of the signatures of two credentials that have identical attributes
 	// only one gets stored, one overwriting the other - but that doesn't
 	// matter, because either one of the signatures is valid over both attribute lists,
+	// so keeping one of them suffices.
 	return s.txStore(tx, credHash, sig, signaturesBucket)
 }
 
