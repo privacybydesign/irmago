@@ -688,7 +688,7 @@ func (i *RevocationAttribute) GobDecode(data []byte) error {
 }
 
 func (hash eventHash) Value() (driver.Value, error) {
-	return hash[:], nil
+	return []byte(hash), nil
 }
 
 func (hash *eventHash) Scan(src interface{}) error {
@@ -696,7 +696,8 @@ func (hash *eventHash) Scan(src interface{}) error {
 	if !ok {
 		return errors.New("cannot convert source: not a []byte")
 	}
-	copy((*hash)[:], s)
+	*hash = make([]byte, len(s))
+	copy(*hash, s)
 	return nil
 }
 
