@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
@@ -90,7 +91,7 @@ type (
 		Attr       *RevocationAttribute
 		Issued     int64
 		ValidUntil int64
-		RevokedAt  int64 // 0 if not currently revoked
+		RevokedAt  int64 `json:",omitempty"` // 0 if not currently revoked
 	}
 
 	// TODO
@@ -679,12 +680,12 @@ func (RevocationAttribute) GormDataType(dialect gorm.Dialect) string {
 	}
 }
 
-func (i *RevocationAttribute) GobEncode() ([]byte, error) {
-	return MarshalBinary((*big.Int)(i))
+func (i *RevocationAttribute) MarshalCBOR() ([]byte, error) {
+	return cbor.Marshal((*big.Int)(i), cbor.EncOptions{})
 }
 
-func (i *RevocationAttribute) GobDecode(data []byte) error {
-	return UnmarshalBinary(data, (*big.Int)(i))
+func (i *RevocationAttribute) UnmarshalCBOR(data []byte) error {
+	return cbor.Unmarshal(data, (*big.Int)(i))
 }
 
 func (hash eventHash) Value() (driver.Value, error) {

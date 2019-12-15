@@ -101,7 +101,7 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 	return encodeValOrError(v, err, json.Marshal)
 }
 
-func GobResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+func BinaryResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 	return encodeValOrError(v, err, irma.MarshalBinary)
 }
 

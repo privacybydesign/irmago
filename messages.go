@@ -2,8 +2,6 @@ package irma
 
 import (
 	"bytes"
-	"encoding"
-	"encoding/gob"
 	"encoding/json"
 	"net/url"
 	"strconv"
@@ -12,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 )
@@ -144,31 +143,11 @@ func UnmarshalValidateBinary(data []byte, dest interface{}) error {
 }
 
 func MarshalBinary(message interface{}) ([]byte, error) {
-	var bts []byte
-	var err error
-	if m, ok := message.(encoding.BinaryMarshaler); ok {
-		bts, err = m.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		var buf bytes.Buffer
-		if err = gob.NewEncoder(&buf).Encode(message); err != nil {
-			return nil, err
-		}
-		bts = buf.Bytes()
-	}
-	return bts, nil
+	return cbor.Marshal(message, cbor.EncOptions{})
 }
 
 func UnmarshalBinary(data []byte, dst interface{}) error {
-	if u, ok := dst.(encoding.BinaryUnmarshaler); ok {
-		return u.UnmarshalBinary(data)
-	}
-	if err := gob.NewDecoder(bytes.NewBuffer(data)).Decode(dst); err != nil {
-		return err
-	}
-	return nil
+	return cbor.Unmarshal(data, dst)
 }
 
 func (err *RemoteError) Error() string {

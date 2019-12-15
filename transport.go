@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -131,7 +131,7 @@ func (transport *HTTPTransport) log(prefix string, message interface{}, binary b
 	if !binary {
 		Logger.Tracef("transport: %s: %s", prefix, str)
 	} else {
-		Logger.Tracef("transport: %s (base64): %s", prefix, base64.RawStdEncoding.EncodeToString([]byte(str)))
+		Logger.Tracef("transport: %s (hex): %s", prefix, hex.EncodeToString([]byte(str)))
 	}
 }
 

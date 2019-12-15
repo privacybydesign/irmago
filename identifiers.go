@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
 	"github.com/jinzhu/gorm"
 )
 
 type metaObjectIdentifier string
 
-func (oi *metaObjectIdentifier) UnmarshalBinary(data []byte) error {
-	*oi = metaObjectIdentifier(data)
-	return nil
+func (oi *metaObjectIdentifier) UnmarshalCBOR(data []byte) error {
+	return cbor.Unmarshal(data, (*string)(oi))
 }
 
-func (oi metaObjectIdentifier) MarshalBinary() (data []byte, err error) {
-	return []byte(oi), nil
+func (oi metaObjectIdentifier) MarshalCBOR() (data []byte, err error) {
+	return cbor.Marshal(string(oi), cbor.EncOptions{})
 }
 
 // SchemeManagerIdentifier identifies a scheme manager. Equal to its ID. For example "irma-demo".
