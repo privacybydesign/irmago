@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
@@ -57,20 +58,28 @@ func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.Ses
 	}
 
 	// first try to update witness by applying the revocation update messages attached to the session request
-	keys := irma.RevocationKeys{Conf: conf}
-	revupdates := base.RevocationUpdates[credtype]
-	count := len(revupdates.Events)
-	updated, err := cred.NonrevApplyUpdates(revupdates, keys)
+	var (
+		keys       = irma.RevocationKeys{Conf: conf}
+		revupdates = base.RevocationUpdates[credtype][cred.Pk.Counter]
+		updated    bool
+		err        error
+	)
+	if revupdates == nil {
+		return false, errors.Errorf("revocation updates for key %d not found in session request", cred.Pk.Counter)
+	}
+	updated, err = cred.NonrevApplyUpdates(revupdates, keys)
 	if err != nil {
 		return updated, err
 	}
+	count := len(revupdates.Events)
 	if cred.NonRevocationWitness.Accumulator.Index >= revupdates.Events[count-1].Index {
 		return updated, nil
 	}
 
 	// nonrevocation witness is still out of date after applying the updates from the request:
 	// we were too far behind. Update from revocation server.
-	revupdates, err = irma.RevocationClient{Conf: conf}.FetchUpdateFrom(credtype, cred.NonRevocationWitness.Accumulator.Index+1)
+	revupdates, err = irma.RevocationClient{Conf: conf}.
+		FetchUpdateFrom(credtype, cred.Pk.Counter, cred.NonRevocationWitness.Accumulator.Index+1)
 	if err != nil {
 		return updated, err
 	}

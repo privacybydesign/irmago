@@ -189,7 +189,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	for i, cred := range request.Credentials {
 		id := cred.CredentialTypeID.IssuerIdentifier()
 		pk, _ := session.conf.IrmaConfiguration.PublicKey(id, cred.KeyCounter)
-		sk, _ := session.conf.IrmaConfiguration.PrivateKey(id)
+		sk, _ := session.conf.IrmaConfiguration.PrivateKeyLatest(id)
 		issuer := gabi.NewIssuer(sk, pk, one)
 		proof, ok := commitments.Proofs[i+discloseCount].(*gabi.ProofU)
 		if !ok {
@@ -223,15 +223,15 @@ func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *rev
 	return nil, nil
 }
 
-// GET revocation/updatefrom/{credtype}/{index}
+// GET revocation/updatefrom/{credtype}/{pkindex}/{index}
 func (s *Server) handleGetUpdateFrom(
-	cred irma.CredentialTypeIdentifier, index uint64,
+	cred irma.CredentialTypeIdentifier, pkindex uint, index uint64,
 ) (*revocation.Update, *irma.RemoteError) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	update, err := s.conf.IrmaConfiguration.Revocation.UpdateFrom(cred, index)
+	update, err := s.conf.IrmaConfiguration.Revocation.UpdateFrom(cred, pkindex, index)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
@@ -241,7 +241,7 @@ func (s *Server) handleGetUpdateFrom(
 // GET revocation/updatelatest/{credtype}/{count}
 func (s *Server) handleGetUpdateLatest(
 	cred irma.CredentialTypeIdentifier, count uint64,
-) (*revocation.Update, *irma.RemoteError) {
+) (map[uint]*revocation.Update, *irma.RemoteError) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")

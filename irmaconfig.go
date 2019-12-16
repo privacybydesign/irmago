@@ -48,7 +48,7 @@ type Configuration struct {
 
 	// Issuer private keys. If set (after calling ParseFolder()), will use these keys
 	// instead of keys in irma_configuration/$issuer/PrivateKeys.
-	PrivateKeys map[IssuerIdentifier]*gabi.PrivateKey
+	PrivateKeys map[IssuerIdentifier]map[int]*gabi.PrivateKey
 
 	Revocation *RevocationStorage
 
@@ -166,7 +166,7 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
-	conf.PrivateKeys = make(map[IssuerIdentifier]*gabi.PrivateKey)
+	conf.PrivateKeys = make(map[IssuerIdentifier]map[int]*gabi.PrivateKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 }
 
@@ -320,36 +320,15 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-// PrivateKey returns the latest private key of the specified issuer, or nil if not present in the Configuration.
-func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, error) {
-	if sk := conf.PrivateKeys[id]; sk != nil {
-		return sk, nil
+// PrivateKey returns the specified private key of the specified issuer if present; an error otherwise.
+func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter int) (*gabi.PrivateKey, error) {
+	if _, haveIssuer := conf.PrivateKeys[id]; haveIssuer {
+		if sk := conf.PrivateKeys[id][counter]; sk != nil {
+			return sk, nil
+		}
 	}
 
 	path := fmt.Sprintf(privkeyPattern, conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
-	files, err := filepath.Glob(path)
-	if err != nil {
-		return nil, err
-	}
-	if len(files) == 0 {
-		return nil, nil
-	}
-
-	// List private keys and get highest counter
-	counters := make([]int, 0, len(files))
-	for _, file := range files {
-		filename := filepath.Base(file)
-		count := filename[:len(filename)-4]
-		i, err := strconv.Atoi(count)
-		if err != nil {
-			return nil, err
-		}
-		counters = append(counters, i)
-	}
-	sort.Ints(counters)
-	counter := counters[len(counters)-1]
-
-	// Read private key
 	file := strings.Replace(path, "*", strconv.Itoa(counter), 1)
 	sk, err := gabi.NewPrivateKeyFromFile(file)
 	if err != nil {
@@ -358,9 +337,25 @@ func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, er
 	if int(sk.Counter) != counter {
 		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
 	}
-	conf.PrivateKeys[id] = sk
+
+	if conf.PrivateKeys[id] == nil {
+		conf.PrivateKeys[id] = make(map[int]*gabi.PrivateKey)
+	}
+	conf.PrivateKeys[id][counter] = sk
 
 	return sk, nil
+}
+
+// PrivateKeyLatest returns the latest private key of the specified issuer, or nil if not present in the Configuration.
+func (conf *Configuration) PrivateKeyLatest(id IssuerIdentifier) (*gabi.PrivateKey, error) {
+	indices, err := conf.PrivateKeyIndices(id)
+	if err != nil {
+		return nil, err
+	}
+	if len(indices) == 0 {
+		return nil, errors.New("no private keys found")
+	}
+	return conf.PrivateKey(id, indices[len(indices)-1])
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
@@ -533,6 +528,10 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	}
 
 	return nil
+}
+
+func (conf *Configuration) PrivateKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {
+	return conf.matchKeyPattern(issuerid, privkeyPattern)
 }
 
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {

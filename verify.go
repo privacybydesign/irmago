@@ -111,7 +111,7 @@ func (pl ProofList) VerifyProofs(
 	configuration *Configuration,
 	context *big.Int, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
-	revRecords map[CredentialTypeIdentifier]*revocation.Update,
+	revRecords map[CredentialTypeIdentifier]map[uint]*revocation.Update,
 	isSig bool,
 ) (bool, map[int]*time.Time, error) {
 	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
@@ -174,15 +174,18 @@ func (pl ProofList) VerifyProofs(
 		// nonrevocation proofs are present, and against the expected accumulator value:
 		// the last one in the update message set we provided along with the session request,
 		// OR a newer one included in the proofs itself.
-		r := revRecords[id]
-		if r == nil { // no nonrevocation proof was requested for this credential
+		updates := revRecords[id]
+		if updates == nil { // no nonrevocation proof was requested for this credential
 			return true, nil, nil
 		}
 		if !proofd.HasNonRevocationProof() {
 			return false, nil, nil
 		}
-
 		sig := proofd.NonRevocationProof.SignedAccumulator
+		u := updates[sig.PKIndex]
+		if u == nil {
+			return false, nil, errors.Errorf("nonrevocation proof used unknown public key %d", sig.PKIndex)
+		}
 		pk, err := RevocationKeys{configuration}.PublicKey(typ.IssuerIdentifier(), sig.PKIndex)
 		if err != nil {
 			return false, nil, nil
@@ -192,7 +195,7 @@ func (pl ProofList) VerifyProofs(
 			return false, nil, nil
 		}
 
-		ours, theirs := r.Events[len(r.Events)-1].Index, acc.Index
+		ours, theirs := u.Events[len(u.Events)-1].Index, acc.Index
 		if ours > theirs {
 			return false, nil, errors.New("nonrevocation proof used wrong accumulator")
 		}
@@ -311,7 +314,7 @@ func (d *Disclosure) VerifyAgainstRequest(
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
 	var required AttributeConDisCon
-	var revupdates map[CredentialTypeIdentifier]*revocation.Update
+	var revupdates map[CredentialTypeIdentifier]map[uint]*revocation.Update
 	if request != nil {
 		revupdates = request.Base().RevocationUpdates
 		required = request.Disclosure().Disclose

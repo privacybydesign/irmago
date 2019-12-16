@@ -140,18 +140,7 @@ func (s *Server) CancelSession(token string) error {
 }
 
 func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
-	sk, err := s.conf.IrmaConfiguration.PrivateKey(credid.IssuerIdentifier())
-	if err != nil {
-		return err
-	}
-	if sk == nil {
-		return errors.Errorf("cannot revoke: private key of %s not found", credid.IssuerIdentifier())
-	}
-	rsk, err := sk.RevocationKey()
-	if err != nil {
-		return err
-	}
-	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key, rsk)
+	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key)
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {
@@ -382,20 +371,31 @@ func (s *Server) handleClientMessage(
 func (s *Server) handleRevocationMessage(
 	noun, method string, args []string, headers map[string][]string, message []byte,
 ) (int, []byte) {
-	if (noun == "updatefrom" || noun == "updatelatest") && method == http.MethodGet {
+	if (noun == "updatefrom") && method == http.MethodGet {
 		if len(args) != 2 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET "+noun+" expects 2 url arguments"))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET updatefrom expects 3 url arguments"))
+		}
+		i, err := strconv.ParseUint(args[1], 10, 64)
+		if err != nil {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		pkindex, err := strconv.ParseUint(args[2], 10, 32)
+		if err != nil {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		cred := irma.NewCredentialTypeIdentifier(args[0])
+		return server.BinaryResponse(s.handleGetUpdateFrom(cred, uint(pkindex), i))
+	}
+	if noun == "updatelatest" && method == http.MethodGet {
+		if len(args) != 2 {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET updatelatest expects 2 url arguments"))
 		}
 		i, err := strconv.ParseUint(args[1], 10, 64)
 		if err != nil {
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		if noun == "updatefrom" {
-			return server.BinaryResponse(s.handleGetUpdateFrom(cred, i))
-		} else {
-			return server.BinaryResponse(s.handleGetUpdateLatest(cred, i))
-		}
+		return server.BinaryResponse(s.handleGetUpdateLatest(cred, i))
 	}
 	if noun == "update" && method == http.MethodPost {
 		if len(args) != 1 {

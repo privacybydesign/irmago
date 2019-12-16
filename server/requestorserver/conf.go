@@ -152,7 +152,7 @@ func (conf *Configuration) CanRevoke(requestor string, cred irma.CredentialTypeI
 	if len(permissions) == 0 { // requestor is not present in the permissions
 		return false, ""
 	}
-	sk, err := conf.IrmaConfiguration.PrivateKey(cred.IssuerIdentifier())
+	sk, err := conf.IrmaConfiguration.PrivateKeyLatest(cred.IssuerIdentifier())
 	if err != nil {
 		return false, err.Error()
 	}
@@ -356,7 +356,7 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 					continue
 				}
 				if typ == "issuing" || typ == "revoking" {
-					sk, err := conf.IrmaConfiguration.PrivateKey(credtype.IssuerIdentifier())
+					sk, err := conf.IrmaConfiguration.PrivateKeyLatest(credtype.IssuerIdentifier())
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s %s permission '%s': failed to load private key: %s", requestor, typ, permission, err))
 						continue

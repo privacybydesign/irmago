@@ -1,7 +1,6 @@
 package irma
 
 import (
-	"fmt"
 	"log"
 	"sync"
 
@@ -15,22 +14,18 @@ type (
 	revStorage interface {
 		// Transaction executes the given closure within a transaction.
 		Transaction(f func(tx revStorage) error) (err error)
-		// Get deserializes into o the record satisfying col = key.
-		Get(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) error
 		// Insert a new record which must not yet exist.
 		Insert(o interface{}) error
 		// Save an existing record.
 		Save(o interface{}) error
 		// Last deserializes the last record into o.
-		Last(typ CredentialTypeIdentifier, o interface{}) error
+		Last(dest interface{}, query interface{}, args ...interface{}) error
 		// Exists checks whether records exist satisfying col = key.
-		Exists(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) (bool, error)
-		// HasRecords checks whether any records exist for the given type.
-		HasRecords(typ CredentialTypeIdentifier, o interface{}) (bool, error)
+		Exists(typ interface{}, query interface{}, args ...interface{}) (bool, error)
 		// From deserializes into o all records where col >= key.
-		From(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) error
+		From(dest interface{}, query interface{}, args ...interface{}) error
 		// Latest deserializes into o the last items; amount specified by count, ordered by col.
-		Latest(typ CredentialTypeIdentifier, col string, count uint64, o interface{}) error
+		Latest(dest interface{}, count uint64, query interface{}, args ...interface{}) error
 		// Close the database.
 		Close() error
 	}
@@ -49,80 +44,9 @@ type (
 
 	memUpdateRecord struct {
 		sync.Mutex
-		r *revocation.Update
+		r map[uint]*revocation.Update
 	}
 )
-
-func newMemStorage() memRevStorage {
-	return memRevStorage{
-		records: make(map[CredentialTypeIdentifier]*memUpdateRecord),
-	}
-}
-
-func (m memRevStorage) get(typ CredentialTypeIdentifier) *memUpdateRecord {
-	m.Lock()
-	defer m.Unlock()
-	return m.records[typ]
-}
-
-func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64) *revocation.Update {
-	record := m.get(typ)
-	if record == nil {
-		return nil
-	}
-	record.Lock()
-	defer record.Unlock()
-
-	offset := int64(len(record.r.Events)) - int64(count) - 1
-	if offset < 0 {
-		offset = 0
-	}
-	response := &revocation.Update{SignedAccumulator: record.r.SignedAccumulator}
-	for _, rec := range record.r.Events[offset:] {
-		Logger.Trace("membdb: get ", rec.Index)
-		response.Events = append(response.Events, rec)
-	}
-	return response
-}
-
-func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.Update) {
-	record := m.get(typ)
-	if record == nil {
-		record = &memUpdateRecord{r: &revocation.Update{}}
-		m.records[typ] = record
-	}
-	record.Lock()
-	defer record.Unlock()
-
-	ours := record.r.Events
-	if len(ours) == 0 {
-		record.r = update
-		return
-	}
-	theirs := update.Events
-	if len(theirs) == 0 {
-		return
-	}
-	theirStart, theirEnd, ourEnd := theirs[0].Index, theirs[len(theirs)-1].Index, ours[len(ours)-1].Index
-	offset := ourEnd - theirStart
-	if theirEnd <= ourEnd || offset < 0 {
-		return
-	}
-
-	Logger.Trace("membdb: inserting")
-	record.r.SignedAccumulator = update.SignedAccumulator
-	record.r.Events = append(record.r.Events, theirs[offset:]...)
-}
-
-func (m memRevStorage) HasRecords(typ CredentialTypeIdentifier) bool {
-	record := m.get(typ)
-	if record == nil {
-		return false
-	}
-	record.Lock()
-	defer record.Unlock()
-	return len(record.r.Events) > 0
-}
 
 func newSqlStorage(debug bool, dbtype, connstr string) (revStorage, error) {
 	switch dbtype {
@@ -160,7 +84,7 @@ func (s sqlRevStorage) Close() error {
 func (s sqlRevStorage) Transaction(f func(tx revStorage) error) (err error) {
 	tx := sqlRevStorage{gorm: s.gorm.Begin()}
 	defer func() {
-		if e := recover(); err != nil {
+		if e := recover(); e != nil {
 			err = errors.WrapPrefix(e, "panic in db transaction", 0)
 			tx.gorm.Rollback()
 		}
@@ -175,10 +99,6 @@ func (s sqlRevStorage) Transaction(f func(tx revStorage) error) (err error) {
 	return
 }
 
-func (s sqlRevStorage) Get(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) error {
-	return s.gorm.Where(map[string]interface{}{"cred_type": typ, col: key}).First(o).Error
-}
-
 func (s sqlRevStorage) Insert(o interface{}) error {
 	return s.gorm.Create(o).Error
 }
@@ -187,30 +107,128 @@ func (s sqlRevStorage) Save(o interface{}) error {
 	return s.gorm.Save(o).Error
 }
 
-func (s sqlRevStorage) Last(typ CredentialTypeIdentifier, o interface{}) error {
-	return s.gorm.Where(map[string]interface{}{"cred_type": typ}).Last(o).Error
+func (s sqlRevStorage) Last(dest interface{}, query interface{}, args ...interface{}) error {
+	return s.gorm.
+		Where(query, args...).
+		Last(dest).Error
 }
 
-func (s sqlRevStorage) Exists(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) (bool, error) {
+func (s sqlRevStorage) Exists(typ interface{}, query interface{}, args ...interface{}) (bool, error) {
 	var c int
-	s.gorm.Model(o).
-		Where(map[string]interface{}{"cred_type": typ, col: key}).
-		Count(&c)
+	db := s.gorm.Model(typ)
+	if query != nil {
+		db = db.Where(query, args...)
+	}
+	db.Count(&c)
 	return c > 0, s.gorm.Error
 }
 
-func (s sqlRevStorage) HasRecords(typ CredentialTypeIdentifier, o interface{}) (bool, error) {
-	var c int
-	s.gorm.Model(o).
-		Where(map[string]interface{}{"cred_type": typ}).
-		Count(&c)
-	return c > 0, s.gorm.Error
+func (s sqlRevStorage) From(dest interface{}, query interface{}, args ...interface{}) error {
+	return s.gorm.
+		Where(query, args...).
+		Set("gorm:order_by_primary_key", "ASC").
+		Find(dest).Error
 }
 
-func (s sqlRevStorage) From(typ CredentialTypeIdentifier, col string, key interface{}, o interface{}) error {
-	return s.gorm.Where(fmt.Sprintf("cred_type = ? and %s >= ?", col), typ, key).Order(col + " asc").Find(o).Error
+func (s sqlRevStorage) Latest(dest interface{}, count uint64, query interface{}, args ...interface{}) error {
+	return s.gorm.
+		Where(query, args...).
+		Limit(count).
+		Set("gorm:order_by_primary_key", "ASC").
+		Find(dest).Error
 }
 
-func (s sqlRevStorage) Latest(typ CredentialTypeIdentifier, col string, count uint64, o interface{}) error {
-	return s.gorm.Where(map[string]interface{}{"cred_type": typ}).Order(col + " asc").Limit(count).Find(o).Error
+func newMemStorage() memRevStorage {
+	return memRevStorage{
+		records: make(map[CredentialTypeIdentifier]*memUpdateRecord),
+	}
+}
+
+func (m memRevStorage) get(typ CredentialTypeIdentifier) *memUpdateRecord {
+	m.Lock()
+	defer m.Unlock()
+	return m.records[typ]
+}
+
+func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64) map[uint]*revocation.Update {
+	record := m.get(typ)
+	if record == nil {
+		return nil
+	}
+	record.Lock()
+	defer record.Unlock()
+
+	updates := map[uint]*revocation.Update{}
+	for _, r := range record.r {
+		offset := int64(len(r.Events)) - int64(count) - 1
+		if offset < 0 {
+			offset = 0
+		}
+		update := &revocation.Update{
+			SignedAccumulator: r.SignedAccumulator,
+			Events:            make([]*revocation.Event, int64(len(r.Events))-offset),
+		}
+		copy(update.Events, r.Events[offset:])
+		if len(update.Events) > 0 {
+			Logger.Tracef("membdb: get %d-%d", update.Events[0].Index, update.Events[len(update.Events)-1].Index)
+		}
+		updates[r.SignedAccumulator.PKIndex] = update
+	}
+
+	return updates
+}
+
+func (m memRevStorage) SignedAccumulator(typ CredentialTypeIdentifier, pkindex uint) *revocation.SignedAccumulator {
+	updates := m.Latest(typ, 0)
+	for _, u := range updates {
+		return u.SignedAccumulator
+	}
+	return nil
+}
+
+func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.Update) {
+	record := m.get(typ)
+	if record == nil {
+		record = &memUpdateRecord{r: map[uint]*revocation.Update{}}
+		m.records[typ] = record
+	}
+	record.Lock()
+	defer record.Unlock()
+
+	r := record.r[update.SignedAccumulator.PKIndex]
+	if r == nil || len(r.Events) == 0 {
+		record.r[update.SignedAccumulator.PKIndex] = update
+		return
+	}
+
+	ours := r.Events
+	theirs := update.Events
+	if len(theirs) == 0 {
+		return
+	}
+	theirStart, theirEnd, ourEnd := theirs[0].Index, theirs[len(theirs)-1].Index, ours[len(ours)-1].Index
+	offset := ourEnd - theirStart
+	if theirEnd <= ourEnd || offset < 0 {
+		return
+	}
+
+	Logger.Trace("membdb: inserting")
+	r.SignedAccumulator = update.SignedAccumulator
+	r.Events = append(r.Events, theirs[offset:]...)
+}
+
+func (m memRevStorage) HasRecords(typ CredentialTypeIdentifier) bool {
+	record := m.get(typ)
+	if record == nil {
+		return false
+	}
+	record.Lock()
+	defer record.Unlock()
+	if len(record.r) == 0 {
+		return false
+	}
+	for _, r := range record.r {
+		return len(r.Events) > 0
+	}
+	return false
 }

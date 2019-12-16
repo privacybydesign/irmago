@@ -74,12 +74,13 @@ type (
 	AccumulatorRecord struct {
 		CredType CredentialTypeIdentifier `gorm:"primary_key"`
 		Data     signedMessage
-		PKIndex  uint
+		PKIndex  uint `gorm:"primary_key;auto_increment:false"`
 	}
 
 	EventRecord struct {
 		Index      uint64                   `gorm:"primary_key;column:eventindex"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
+		PKIndex    uint                     `gorm:"primary_key;auto_increment:false"`
 		E          *RevocationAttribute
 		ParentHash eventHash
 	}
@@ -88,6 +89,7 @@ type (
 	IssuanceRecord struct {
 		Key        string                   `gorm:"primary_key;column:revocationkey"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
+		PKIndex    uint
 		Attr       *RevocationAttribute
 		Issued     int64
 		ValidUntil int64
@@ -136,12 +138,12 @@ const (
 // only way to create such an initial accumulator and it must be called before anyone can use
 // revocation for this credential type. Requires the issuer private key.
 func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *revocation.PrivateKey) error {
-	hasRecords, err := rs.db.HasRecords(typ, (*EventRecord)(nil))
+	enabled, err := rs.RevocationEnabled(typ)
 	if err != nil {
 		return err
 	}
-	if hasRecords {
-		return errors.New("revocation event record table not empty")
+	if enabled {
+		return errors.New("revocation already enabled")
 	}
 
 	update, err := revocation.NewAccumulator(sk)
@@ -159,7 +161,7 @@ func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *
 // by checking if any revocation record exists in the database.
 func (rs *RevocationStorage) RevocationEnabled(typ CredentialTypeIdentifier) (bool, error) {
 	if rs.sqlMode {
-		return rs.db.HasRecords(typ, (*EventRecord)(nil))
+		return rs.db.Exists((*EventRecord)(nil), nil)
 	} else {
 		return rs.memdb.HasRecords(typ), nil
 	}
@@ -170,16 +172,16 @@ func (rs *RevocationStorage) RevocationEnabled(typ CredentialTypeIdentifier) (bo
 // UpdateFrom returns all records that a client requires to update its revocation state if it is currently
 // at the specified index, that is, all records whose end index is greater than or equal to
 // the specified index.
-func (rs *RevocationStorage) UpdateFrom(typ CredentialTypeIdentifier, index uint64) (*revocation.Update, error) {
+func (rs *RevocationStorage) UpdateFrom(typ CredentialTypeIdentifier, pkindex uint, index uint64) (*revocation.Update, error) {
 	// Only requires SQL implementation
 	var update *revocation.Update
 	if err := rs.db.Transaction(func(tx revStorage) error {
-		acc, _, err := rs.currentAccumulator(tx, typ)
+		acc, _, err := rs.accumulator(tx, typ, pkindex)
 		if err != nil {
 			return err
 		}
 		var events []*EventRecord
-		if err := tx.From(typ, "index", index, &events); err != nil {
+		if err := tx.From(&events, "cred_type = ? and pk_index = ? and index >= ?", typ, pkindex, index); err != nil {
 			return err
 		}
 		update = rs.newUpdate(acc, events)
@@ -190,20 +192,22 @@ func (rs *RevocationStorage) UpdateFrom(typ CredentialTypeIdentifier, index uint
 	return update, nil
 }
 
-func (rs *RevocationStorage) UpdateLatest(typ CredentialTypeIdentifier, count uint64) (*revocation.Update, error) {
+func (rs *RevocationStorage) UpdateLatest(typ CredentialTypeIdentifier, count uint64) (map[uint]*revocation.Update, error) {
 	// TODO what should this function and UpdateFrom return when no records are found?
 	if rs.sqlMode {
-		var update *revocation.Update
+		var update map[uint]*revocation.Update
 		if err := rs.db.Transaction(func(tx revStorage) error {
-			acc, _, err := rs.currentAccumulator(tx, typ)
-			if err != nil {
+			var (
+				records []*AccumulatorRecord
+				events  []*EventRecord
+			)
+			if err := tx.Last(&records, map[string]interface{}{"cred_type": typ}); err != nil {
 				return err
 			}
-			var events []*EventRecord
-			if err := tx.Latest(typ, "eventindex", count, &events); err != nil {
+			if err := tx.Latest(&events, count, map[string]interface{}{"cred_type": typ}); err != nil {
 				return err
 			}
-			update = rs.newUpdate(acc, events)
+			update = rs.newUpdates(records, events)
 			return nil
 		}); err != nil {
 			return nil, err
@@ -214,7 +218,28 @@ func (rs *RevocationStorage) UpdateLatest(typ CredentialTypeIdentifier, count ui
 	}
 }
 
-func (*RevocationStorage) newUpdate(acc *revocation.SignedAccumulator, events []*EventRecord) *revocation.Update {
+func (*RevocationStorage) newUpdates(records []*AccumulatorRecord, events []*EventRecord) map[uint]*revocation.Update {
+	accs := map[uint]*revocation.SignedAccumulator{}
+	for _, r := range records {
+		accs[r.PKIndex] = r.SignedAccumulator()
+	}
+	updates := make(map[uint]*revocation.Update, len(accs))
+	for _, e := range events {
+		i := e.PKIndex
+		if accs[i] == nil {
+			continue
+		}
+		update, present := updates[i]
+		if !present {
+			update = &revocation.Update{SignedAccumulator: accs[i]}
+			updates[i] = update
+		}
+		update.Events = append(update.Events, e.Event())
+	}
+	return updates
+}
+
+func (rs *RevocationStorage) newUpdate(acc *revocation.SignedAccumulator, events []*EventRecord) *revocation.Update {
 	updates := make([]*revocation.Event, len(events))
 	for i := range events {
 		updates[i] = events[i].Event()
@@ -249,7 +274,7 @@ func (rs *RevocationStorage) addUpdate(tx revStorage, typ CredentialTypeIdentifi
 			return err
 		}
 		for _, event := range update.Events {
-			if err = tx.Insert(new(EventRecord).Convert(typ, event)); err != nil {
+			if err = tx.Insert(new(EventRecord).Convert(typ, update.SignedAccumulator.PKIndex, event)); err != nil {
 				return err
 			}
 		}
@@ -268,7 +293,7 @@ func (rs *RevocationStorage) addUpdate(tx revStorage, typ CredentialTypeIdentifi
 // Issuance records
 
 func (rs *RevocationStorage) IssuanceRecordExists(typ CredentialTypeIdentifier, key []byte) (bool, error) {
-	return rs.db.Exists(typ, "key", key, &IssuanceRecord{})
+	return rs.db.Exists(&IssuanceRecord{}, map[string]interface{}{"cred_type": typ, "revocationkey": key})
 }
 
 func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
@@ -277,7 +302,7 @@ func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
 
 func (rs *RevocationStorage) IssuanceRecord(typ CredentialTypeIdentifier, key []byte) (*IssuanceRecord, error) {
 	var r IssuanceRecord
-	err := rs.db.Get(typ, "key", key, &r)
+	err := rs.db.Last(&r, map[string]interface{}{"cred_type": typ, "revocationkey": key})
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +314,7 @@ func (rs *RevocationStorage) IssuanceRecord(typ CredentialTypeIdentifier, key []
 // Revoke revokes the credential specified by key if found within the current database,
 // by updating its revocation time to now, removing its revocation attribute from the current accumulator,
 // and updating the revocation database on disk.
-func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, sk *revocation.PrivateKey) error {
+func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) error {
 	if rs.getSettings(typ).Mode != RevocationModeServer {
 		return errors.Errorf("cannot revoke %s", typ)
 	}
@@ -297,11 +322,15 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, sk
 	return rs.db.Transaction(func(tx revStorage) error {
 		var err error
 		issrecord := IssuanceRecord{}
-		if err = tx.Get(typ, "revocationkey", key, &issrecord); err != nil {
+		if err = tx.Last(&issrecord, map[string]interface{}{"cred_type": typ, "revocationkey": key}); err != nil {
 			return err
 		}
 		issrecord.RevokedAt = time.Now().UnixNano()
 		if err = tx.Save(&issrecord); err != nil {
+			return err
+		}
+		sk, err := rs.Keys.PrivateKey(typ.IssuerIdentifier(), issrecord.PKIndex)
+		if err != nil {
 			return err
 		}
 		return rs.revokeAttr(tx, typ, sk, issrecord.Attr)
@@ -309,7 +338,7 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, sk
 }
 
 func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentifier, sk *revocation.PrivateKey, e *RevocationAttribute) error {
-	_, cur, err := rs.currentAccumulator(tx, typ)
+	_, cur, err := rs.accumulator(tx, typ, sk.Counter)
 	if err != nil {
 		return err
 	}
@@ -317,7 +346,7 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 		return errors.Errorf("cannot revoke for type %s, not enabled yet", typ)
 	}
 	var parent EventRecord
-	if err = rs.db.Last(typ, &parent); err != nil {
+	if err = rs.db.Last(&parent, map[string]interface{}{"cred_type": typ, "pk_index": sk.Counter}); err != nil {
 		return err
 	}
 
@@ -333,25 +362,25 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 
 // Accumulator methods
 
-func (rs *RevocationStorage) currentAccumulator(tx revStorage, typ CredentialTypeIdentifier) (
+// accumulator retrieves, verifies and deserializes the accumulator of the given type and key.
+func (rs *RevocationStorage) accumulator(tx revStorage, typ CredentialTypeIdentifier, pkindex uint) (
 	*revocation.SignedAccumulator, *revocation.Accumulator, error,
 ) {
 	var err error
 	var sacc *revocation.SignedAccumulator
 	if rs.sqlMode {
 		record := &AccumulatorRecord{}
-		if err = tx.Last(typ, record); err != nil {
+		if err = tx.Last(record, map[string]interface{}{"cred_type": typ, "pk_index": pkindex}); err != nil {
 			if gorm.IsRecordNotFoundError(err) {
 				return nil, nil, nil
 			}
 		}
 		sacc = record.SignedAccumulator()
 	} else {
-		u := rs.memdb.Latest(typ, 0)
-		if u == nil {
+		sacc = rs.memdb.SignedAccumulator(typ, pkindex)
+		if sacc == nil {
 			return nil, nil, nil
 		}
-		sacc = u.SignedAccumulator
 	}
 
 	pk, err := rs.Keys.PublicKey(typ.IssuerIdentifier(), sacc.PKIndex)
@@ -368,15 +397,15 @@ func (rs *RevocationStorage) currentAccumulator(tx revStorage, typ CredentialTyp
 // Methods to update from remote revocation server
 
 func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
-	update, err := rs.client.FetchUpdateLatest(typ, revocationUpdateCount)
+	updates, err := rs.client.FetchUpdateLatest(typ, revocationUpdateCount)
 	if err != nil {
 		return err
 	}
-
-	if err = rs.AddUpdate(typ, update); err != nil {
-		return err
+	for _, u := range updates {
+		if err = rs.AddUpdate(typ, u); err != nil {
+			return err
+		}
 	}
-
 	// bump updated even if no new records were added
 	rs.getSettings(typ).updated = time.Now()
 	return nil
@@ -489,7 +518,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 		return nil
 	}
 	var err error
-	b.RevocationUpdates = make(map[CredentialTypeIdentifier]*revocation.Update, len(b.Revocation))
+	b.RevocationUpdates = make(map[CredentialTypeIdentifier]map[uint]*revocation.Update, len(b.Revocation))
 	for _, credid := range b.Revocation {
 		if !rs.conf.CredentialTypes[credid].SupportsRevocation() {
 			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme")
@@ -549,36 +578,59 @@ func (client RevocationClient) PostIssuanceRecord(typ CredentialTypeIdentifier, 
 }
 
 // FetchRevocationRecords gets revocation update messages from the revocation server, of the specified index and greater.
-func (client RevocationClient) FetchUpdateFrom(typ CredentialTypeIdentifier, index uint64) (*revocation.Update, error) {
-	return client.fetchUpdate(typ, "updatefrom", index)
+func (client RevocationClient) FetchUpdateFrom(typ CredentialTypeIdentifier, pkindex uint, index uint64) (*revocation.Update, error) {
+	update := &revocation.Update{}
+	return update, client.getMultiple(
+		client.Conf.CredentialTypes[typ].RevocationServers,
+		fmt.Sprintf("revocation/updatefrom/%s/%d/%d", typ, pkindex, index),
+		&update,
+	)
 }
 
-func (client RevocationClient) FetchUpdateLatest(typ CredentialTypeIdentifier, count uint64) (*revocation.Update, error) {
-	return client.fetchUpdate(typ, "updatelatest", count)
+func (client RevocationClient) FetchUpdateLatest(typ CredentialTypeIdentifier, count uint64) (map[uint]*revocation.Update, error) {
+	update := map[uint]*revocation.Update{}
+	return update, client.getMultiple(
+		client.Conf.CredentialTypes[typ].RevocationServers,
+		fmt.Sprintf("revocation/updatelatest/%s/%d", typ, count),
+		&update,
+	)
 }
 
-func (client RevocationClient) fetchUpdate(typ CredentialTypeIdentifier, u string, i uint64) (*revocation.Update, error) {
+func (RevocationClient) getMultiple(urls []string, path string, dest interface{}) error {
 	var (
-		err       error
 		errs      multierror.Error
-		update    = &revocation.Update{}
 		transport = NewHTTPTransport("")
 	)
 	transport.Binary = true
-	for _, url := range client.Conf.CredentialTypes[typ].RevocationServers {
+	for _, url := range urls {
 		transport.Server = url
-		err = transport.Get(fmt.Sprintf("revocation/%s/%s/%d", u, typ, i), &update)
+		err := transport.Get(path, dest)
 		if err == nil {
-			return update, nil
+			return nil
 		} else {
 			errs.Errors = append(errs.Errors, err)
 		}
 	}
-	return nil, errors.WrapPrefix(errs, "failed to download revocation update", 0)
+	return &errs
 }
 
-func (rs RevocationKeys) PrivateKey(issid IssuerIdentifier) (*revocation.PrivateKey, error) {
-	sk, err := rs.Conf.PrivateKey(issid)
+func (rs RevocationKeys) PrivateKeyLatest(issid IssuerIdentifier) (*revocation.PrivateKey, error) {
+	sk, err := rs.Conf.PrivateKeyLatest(issid)
+	if err != nil {
+		return nil, err
+	}
+	if sk == nil {
+		return nil, errors.Errorf("unknown private key: %s", issid)
+	}
+	revsk, err := sk.RevocationKey()
+	if err != nil {
+		return nil, err
+	}
+	return revsk, nil
+}
+
+func (rs RevocationKeys) PrivateKey(issid IssuerIdentifier, counter uint) (*revocation.PrivateKey, error) {
+	sk, err := rs.Conf.PrivateKey(issid, int(counter))
 	if err != nil {
 		return nil, err
 	}
@@ -617,12 +669,13 @@ func (e *EventRecord) Event() *revocation.Event {
 	}
 }
 
-func (e *EventRecord) Convert(typ CredentialTypeIdentifier, event *revocation.Event) *EventRecord {
+func (e *EventRecord) Convert(typ CredentialTypeIdentifier, pkindex uint, event *revocation.Event) *EventRecord {
 	*e = EventRecord{
 		Index:      event.Index,
 		E:          (*RevocationAttribute)(event.E),
 		ParentHash: eventHash(event.ParentHash),
 		CredType:   typ,
+		PKIndex:    pkindex,
 	}
 	return e
 }

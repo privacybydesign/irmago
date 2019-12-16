@@ -95,9 +95,13 @@ func (session *session) issuanceHandleRevocation(
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
-	u, err := rs.UpdateLatest(id, 0)
+	updates, err := rs.UpdateLatest(id, 0)
 	if err != nil {
 		return
+	}
+	u := updates[uint(cred.KeyCounter)]
+	if u == nil {
+		return nil, nil, errors.Errorf("no revocation updates found for key %d", cred.KeyCounter)
 	}
 	sig := u.SignedAccumulator
 	pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), sig.PKIndex)
@@ -117,6 +121,7 @@ func (session *session) issuanceHandleRevocation(
 	nonrevAttr = witness.E
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
+		PKIndex:    sk.Counter,
 		Key:        cred.RevocationKey,
 		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
@@ -130,7 +135,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	for _, cred := range request.Credentials {
 		// Check that we have the appropriate private key
 		iss := cred.CredentialTypeID.IssuerIdentifier()
-		privatekey, err := s.conf.IrmaConfiguration.PrivateKey(iss)
+		privatekey, err := s.conf.IrmaConfiguration.PrivateKeyLatest(iss)
 		if err != nil {
 			return err
 		}

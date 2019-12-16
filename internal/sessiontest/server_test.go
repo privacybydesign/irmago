@@ -59,10 +59,9 @@ func StartRevocationServer(t *testing.T) {
 	var err error
 
 	irma.Logger = logger
-	dbstr := "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
-	dbtype := "postgres"
-	//dbstr := "testuser:testpassword@tcp(127.0.0.1)/test"
-	//dbtype := "mysql"
+
+	//dbtype, dbstr := "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
+	dbtype, dbstr := "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 	settings := map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
 		cred: {Mode: irma.RevocationModeServer},
@@ -97,7 +96,7 @@ func StartRevocationServer(t *testing.T) {
 	require.NoError(t, g.Close())
 
 	// Enable revocation for our credential type
-	sk, err := irmaconf.Revocation.Keys.PrivateKey(cred.IssuerIdentifier())
+	sk, err := irmaconf.Revocation.Keys.PrivateKeyLatest(cred.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NoError(t, irmaconf.Revocation.EnableRevocation(cred, sk))
 

@@ -39,7 +39,7 @@ type BaseRequest struct {
 	Revocation []CredentialTypeIdentifier `json:"revocation,omitempty"`
 	// RevocationUpdates contains revocation update messages for the client to update its
 	// revocation state.
-	RevocationUpdates map[CredentialTypeIdentifier]*revocation.Update `json:"revocationUpdates,omitempty"`
+	RevocationUpdates map[CredentialTypeIdentifier]map[uint]*revocation.Update `json:"revocationUpdates,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
@@ -237,7 +237,7 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 // RequestsRevocation indicates whether or not the requestor requires a nonrevocation proof for
 // the given credential type; that is, whether or not it included revocation update messages.
 func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
-	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id].Events) > 0
+	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id]) > 0
 }
 
 func (b *BaseRequest) RevocationConsistent() error {

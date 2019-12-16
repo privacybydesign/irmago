@@ -3,6 +3,7 @@ package server
 import (
 	"io/ioutil"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -30,7 +31,7 @@ type Configuration struct {
 	// Path to issuer private keys to parse
 	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
 	// Issuer private keys
-	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
+	IssuerPrivateKeys map[irma.IssuerIdentifier]map[int]*gabi.PrivateKey `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
@@ -93,7 +94,7 @@ func (conf *Configuration) HavePrivateKeys() (bool, error) {
 	var err error
 	var sk *gabi.PrivateKey
 	for id := range conf.IrmaConfiguration.Issuers {
-		sk, err = conf.IrmaConfiguration.PrivateKey(id)
+		sk, err = conf.IrmaConfiguration.PrivateKeyLatest(id)
 		if err != nil {
 			return false, err
 		}
@@ -159,7 +160,7 @@ func (conf *Configuration) verifyIrmaConf() error {
 
 func (conf *Configuration) verifyPrivateKeys() error {
 	if conf.IssuerPrivateKeys == nil {
-		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]*gabi.PrivateKey)
+		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]map[int]*gabi.PrivateKey)
 	}
 	if conf.IssuerPrivateKeysPath != "" {
 		files, err := ioutil.ReadDir(conf.IssuerPrivateKeysPath)
@@ -168,11 +169,24 @@ func (conf *Configuration) verifyPrivateKeys() error {
 		}
 		for _, file := range files {
 			filename := file.Name()
-			if filepath.Ext(filename) != ".xml" || filename[0] == '.' || strings.Count(filename, ".") != 2 {
+			dotcount := strings.Count(filename, ".")
+			if filepath.Ext(filename) != ".xml" || filename[0] == '.' || dotcount < 2 || dotcount > 3 {
 				conf.Logger.WithField("file", filename).Infof("Skipping non-private key file encountered in private keys path")
 				continue
 			}
-			issid := irma.NewIssuerIdentifier(strings.TrimSuffix(filename, filepath.Ext(filename))) // strip .xml
+			base := strings.TrimSuffix(filename, filepath.Ext(filename))
+			counter := -1
+			var err error
+			if dotcount == 3 {
+				index := strings.LastIndex(base, ".")
+				counter, err = strconv.Atoi(base[index+1:])
+				if err != nil {
+					return err
+				}
+				base = base[:index]
+			}
+
+			issid := irma.NewIssuerIdentifier(base) // strip .xml
 			if _, ok := conf.IrmaConfiguration.Issuers[issid]; !ok {
 				return LogError(errors.Errorf("Private key %s belongs to an unknown issuer", filename))
 			}
@@ -180,19 +194,27 @@ func (conf *Configuration) verifyPrivateKeys() error {
 			if err != nil {
 				return LogError(err)
 			}
-			conf.IssuerPrivateKeys[issid] = sk
+			if counter >= 0 && uint(counter) != sk.Counter {
+				return LogError(errors.Errorf("private key %s has wrong counter %d in filename, should be", filename, counter, sk.Counter))
+			}
+			if len(conf.IssuerPrivateKeys[issid]) == 0 {
+				conf.IssuerPrivateKeys[issid] = map[int]*gabi.PrivateKey{}
+			}
+			conf.IssuerPrivateKeys[issid][int(sk.Counter)] = sk
 		}
 	}
-	for issid, sk := range conf.IssuerPrivateKeys {
-		pk, err := conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
-		if err != nil {
-			return LogError(err)
-		}
-		if pk == nil {
-			return LogError(errors.Errorf("Missing public key belonging to private key %s-%d", issid.String(), sk.Counter))
-		}
-		if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-			return LogError(errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter))
+	for issid := range conf.IssuerPrivateKeys {
+		for _, sk := range conf.IssuerPrivateKeys[issid] {
+			pk, err := conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
+			if err != nil {
+				return LogError(err)
+			}
+			if pk == nil {
+				return LogError(errors.Errorf("Missing public key belonging to private key %s-%d", issid.String(), sk.Counter))
+			}
+			if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
+				return LogError(errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter))
+			}
 		}
 	}
 
@@ -213,7 +235,7 @@ func (conf *Configuration) verifyRevocation() error {
 			if !enabled {
 				return LogError(errors.Errorf("revocation not enabled for %s", credid.String()))
 			}
-			_, err = conf.IrmaConfiguration.Revocation.Keys.PrivateKey(credid.IssuerIdentifier())
+			_, err = conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
 			if err != nil {
 				return LogError(errors.WrapPrefix(err, "failed to load private key of "+credid.IssuerIdentifier().String()+" (required for revocation)", 0))
 			}
@@ -224,7 +246,7 @@ func (conf *Configuration) verifyRevocation() error {
 		if !credtype.SupportsRevocation() {
 			continue
 		}
-		_, err := conf.IrmaConfiguration.Revocation.Keys.PrivateKey(credid.IssuerIdentifier())
+		_, err := conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
 		haveSK := err == nil
 		settings, ok := conf.RevocationSettings[credid]
 		serverConfigured := ok && settings.ServerURL != ""
