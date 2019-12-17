@@ -175,27 +175,31 @@ func (s *storage) TxStoreSecretKey(tx *bbolt.Tx, sk *secretKey) error {
 	return s.txStore(tx, skKey, sk, userdataBucket)
 }
 
-func (s *storage) StoreAttribute(credTypeID irma.CredentialTypeIdentifier, attrlistlist []*irma.AttributeList) error {
+func (s *storage) StoreAttributes(credTypeID irma.CredentialTypeIdentifier, attrlistlist []*irma.AttributeList) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return s.TxStoreAttribute(tx, credTypeID, attrlistlist)
+		return s.TxStoreAttributes(tx, credTypeID, attrlistlist)
 	})
 }
 
-func (s *storage) TxStoreAttribute(tx *bbolt.Tx, credTypeID irma.CredentialTypeIdentifier,
+func (s *storage) TxStoreAttributes(tx *bbolt.Tx, credTypeID irma.CredentialTypeIdentifier,
 	attrlistlist []*irma.AttributeList) error {
 
 	return s.txStore(tx, credTypeID.String(), attrlistlist, attributesBucket)
 }
 
-func (s *storage) StoreAttributes(attributes map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
+func (s *storage) StoreAllAttributes(
+	attributes map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
+
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return s.TxStoreAttributes(tx, attributes)
+		return s.TxStoreAllAttributes(tx, attributes)
 	})
 }
 
-func (s *storage) TxStoreAttributes(tx *bbolt.Tx, attrs map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
+func (s *storage) TxStoreAllAttributes(tx *bbolt.Tx,
+	attrs map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
+
 	for credTypeID, attrlistlist := range attrs {
-		err := s.TxStoreAttribute(tx, credTypeID, attrlistlist)
+		err := s.TxStoreAttributes(tx, credTypeID, attrlistlist)
 		if err != nil {
 			return err
 		}
