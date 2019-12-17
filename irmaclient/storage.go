@@ -175,6 +175,18 @@ func (s *storage) TxStoreSecretKey(tx *bbolt.Tx, sk *secretKey) error {
 	return s.txStore(tx, skKey, sk, userdataBucket)
 }
 
+func (s *storage) StoreAttribute(credTypeID irma.CredentialTypeIdentifier, attrlistlist []*irma.AttributeList) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		return s.TxStoreAttribute(tx, credTypeID, attrlistlist)
+	})
+}
+
+func (s *storage) TxStoreAttribute(tx *bbolt.Tx, credTypeID irma.CredentialTypeIdentifier,
+	attrlistlist []*irma.AttributeList) error {
+
+	return s.txStore(tx, credTypeID.String(), attrlistlist, attributesBucket)
+}
+
 func (s *storage) StoreAttributes(attributes map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		return s.TxStoreAttributes(tx, attributes)
@@ -183,7 +195,7 @@ func (s *storage) StoreAttributes(attributes map[irma.CredentialTypeIdentifier][
 
 func (s *storage) TxStoreAttributes(tx *bbolt.Tx, attrs map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
 	for credTypeID, attrlistlist := range attrs {
-		err := s.txStore(tx, credTypeID.String(), attrlistlist, attributesBucket)
+		err := s.TxStoreAttribute(tx, credTypeID, attrlistlist)
 		if err != nil {
 			return err
 		}
