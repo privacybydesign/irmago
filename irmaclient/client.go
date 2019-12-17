@@ -246,7 +246,7 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 		return
 	}
 	if storeAttributes {
-		err = client.storage.StoreAttributes(client.attributes)
+		err = client.storage.StoreAttribute(id, client.attributes[id])
 	}
 	return
 }
@@ -270,7 +270,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	attrs := list[index]
 	client.attributes[id] = append(list[:index], list[index+1:]...)
 	if storenow {
-		if err := client.storage.StoreAttributes(client.attributes); err != nil {
+		if err := client.storage.StoreAttribute(id, client.attributes[id]); err != nil {
 			return err
 		}
 	}
