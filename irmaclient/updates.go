@@ -125,7 +125,7 @@ var clientUpdates = []func(client *Client) error{
 			if err != nil {
 				return err
 			}
-			err := client.storage.TxStoreAttributes(tx, attrs)
+			err := client.storage.TxStoreAllAttributes(tx, attrs)
 			if err != nil {
 				return err
 			}

@@ -246,7 +246,7 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 		return
 	}
 	if storeAttributes {
-		err = client.storage.StoreAttribute(id, client.attributes[id])
+		err = client.storage.StoreAttributes(id, client.attributes[id])
 	}
 	return
 }
@@ -270,7 +270,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	attrs := list[index]
 	client.attributes[id] = append(list[:index], list[index+1:]...)
 	if storenow {
-		if err := client.storage.StoreAttribute(id, client.attributes[id]); err != nil {
+		if err := client.storage.StoreAttributes(id, client.attributes[id]); err != nil {
 			return err
 		}
 	}
@@ -330,7 +330,7 @@ func (client *Client) RemoveAllCredentials() error {
 		}
 	}
 	client.attributes = map[irma.CredentialTypeIdentifier][]*irma.AttributeList{}
-	if err := client.storage.StoreAttributes(client.attributes); err != nil {
+	if err := client.storage.StoreAllAttributes(client.attributes); err != nil {
 		return err
 	}
 
@@ -1037,5 +1037,5 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 		}
 	}
 
-	return client.storage.StoreAttributes(client.attributes)
+	return client.storage.StoreAllAttributes(client.attributes)
 }
