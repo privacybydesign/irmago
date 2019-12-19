@@ -56,12 +56,8 @@ func (s *storage) EnsureStorageExists() error {
 	return err
 }
 
-func (s *storage) txStore(tx *bbolt.Tx, key interface{}, value interface{}, bucketName string) error {
+func (s *storage) txStore(tx *bbolt.Tx, key string, value interface{}, bucketName string) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
-	if err != nil {
-		return err
-	}
-	btsKey, err := json.Marshal(key)
 	if err != nil {
 		return err
 	}
@@ -70,26 +66,22 @@ func (s *storage) txStore(tx *bbolt.Tx, key interface{}, value interface{}, buck
 		return err
 	}
 
-	return b.Put(btsKey, btsValue)
+	return b.Put([]byte(key), btsValue)
 }
 
-func (s *storage) txLoad(tx *bbolt.Tx, key interface{}, dest interface{}, bucketName string) (found bool, err error) {
+func (s *storage) txLoad(tx *bbolt.Tx, key string, dest interface{}, bucketName string) (found bool, err error) {
 	b := tx.Bucket([]byte(bucketName))
 	if b == nil {
 		return false, nil
 	}
-	btsKey, err := json.Marshal(key)
-	if err != nil {
-		return false, err
-	}
-	bts := b.Get(btsKey)
+	bts := b.Get([]byte(key))
 	if bts == nil {
 		return false, nil
 	}
 	return true, json.Unmarshal(bts, dest)
 }
 
-func (s *storage) load(key interface{}, dest interface{}, bucketName string) (found bool, err error) {
+func (s *storage) load(key string, dest interface{}, bucketName string) (found bool, err error) {
 	err = s.db.View(func(tx *bbolt.Tx) error {
 		found, err = s.txLoad(tx, key, dest, bucketName)
 		return err
@@ -262,14 +254,9 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			return nil
 		}
 		return b.ForEach(func(key, value []byte) error {
-			var (
-				credTypeID   irma.CredentialTypeIdentifier
-				attrlistlist []*irma.AttributeList
-			)
-			err := json.Unmarshal(key, &credTypeID)
-			if err != nil {
-				return err
-			}
+			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
+
+			var attrlistlist []*irma.AttributeList
 			err = json.Unmarshal(value, &attrlistlist)
 			if err != nil {
 				return err
