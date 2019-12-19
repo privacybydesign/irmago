@@ -45,11 +45,11 @@ var clientUpdates = []func(client *Client) error{
 
 	// 7: Convert log entries to bbolt database
 	func(client *Client) error {
-		var logs []*LogEntry
-		var err error
-		if err = client.storage.loadFromFile(&logs, logsFile); err != nil {
+		logs, err := client.fileStorage.LoadLogs()
+		if err != nil {
 			return nil
 		}
+
 		// Open one bolt transaction to process all our log entries in
 		err = client.storage.db.Update(func(tx *bbolt.Tx) error {
 			for _, log := range logs {
@@ -75,7 +75,7 @@ var clientUpdates = []func(client *Client) error{
 
 	// 8: Move other user storage to bbolt database
 	func(client *Client) error {
-		sk, err := client.storage.LoadSecretKeyFile()
+		sk, err := client.fileStorage.LoadSecretKey()
 		if err != nil {
 			return err
 		}
@@ -85,7 +85,7 @@ var clientUpdates = []func(client *Client) error{
 			return nil
 		}
 
-		attrs, err := client.storage.LoadAttributesFile()
+		attrs, err := client.fileStorage.LoadAttributes()
 		if err != nil {
 			return err
 		}
@@ -93,7 +93,7 @@ var clientUpdates = []func(client *Client) error{
 		sigs := make(map[string]*gabi.CLSignature)
 		for _, attrlistlist := range attrs {
 			for _, attrlist := range attrlistlist {
-				sig, err := client.storage.LoadSignatureFile(attrlist)
+				sig, err := client.fileStorage.LoadSignature(attrlist)
 				if err != nil {
 					return err
 				}
@@ -101,12 +101,12 @@ var clientUpdates = []func(client *Client) error{
 			}
 		}
 
-		ksses, err := client.storage.LoadKeyshareServersFile()
+		ksses, err := client.fileStorage.LoadKeyshareServers()
 		if err != nil {
 			return err
 		}
 
-		prefs, err := client.storage.LoadPreferencesFile()
+		prefs, err := client.fileStorage.LoadPreferences()
 		if err != nil {
 			return err
 		}
@@ -115,7 +115,7 @@ var clientUpdates = []func(client *Client) error{
 		client.Preferences = prefs
 		client.applyPreferences()
 
-		updates, err := client.storage.LoadUpdatesFile()
+		updates, err := client.fileStorage.LoadUpdates()
 		if err != nil {
 			return err
 		}
@@ -160,7 +160,7 @@ func (client *Client) update() error {
 	// When no updates are found, it can either be a fresh storage or the storage has not been updated
 	// to bbolt yet. Therefore also check the updates file.
 	if len(client.updates) == 0 {
-		if client.updates, err = client.storage.LoadUpdatesFile(); err != nil {
+		if client.updates, err = client.fileStorage.LoadUpdates(); err != nil {
 			return err
 		}
 	}
