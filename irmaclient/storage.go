@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"github.com/go-errors/errors"
-	"io/ioutil"
 	"path/filepath"
 	"time"
 
@@ -24,29 +23,20 @@ type storage struct {
 	Configuration *irma.Configuration
 }
 
-// Filenames in which we store stuff
-const (
-	skFile          = "sk"
-	attributesFile  = "attrs"
-	kssFile         = "kss"
-	updatesFile     = "updates"
-	logsFile        = "logs"
-	preferencesFile = "preferences"
-	signaturesDir   = "sigs"
-
-	databaseFile = "db"
-)
+// Filenames
+const databaseFile = "db"
 
 // Bucketnames bbolt
 const (
-	userdataBucket   = "userdata"    // Key/value: specified below
-	skKey            = "sk"          // Value: *secretKey
-	preferencesKey   = "preferences" // Value: Preferences
-	updatesKey       = "updates"     // Value: []update
-	kssKey           = "kss"         // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
-	attributesBucket = "attrs"       // Key: irma.CredentialIdentifier, value: []*irma.AttributeList
-	logsBucket       = "logs"        // Key: (auto-increment index), value: *LogEntry
-	signaturesBucket = "sigs"        // Key: credential.attrs.Hash, value: *gabi.CLSignature
+	userdataBucket = "userdata"    // Key/value: specified below
+	skKey          = "sk"          // Value: *secretKey
+	preferencesKey = "preferences" // Value: Preferences
+	updatesKey     = "updates"     // Value: []update
+	kssKey         = "kss"         // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
+
+	attributesBucket = "attrs" // Key: irma.CredentialIdentifier, value: []*irma.AttributeList
+	logsBucket       = "logs"  // Key: (auto-increment index), value: *LogEntry
+	signaturesBucket = "sigs"  // Key: credential.attrs.Hash, value: *gabi.CLSignature
 )
 
 func (s *storage) path(p string) string {
@@ -55,7 +45,6 @@ func (s *storage) path(p string) string {
 
 // EnsureStorageExists initializes the credential storage folder,
 // ensuring that it is in a usable state.
-// NOTE: we do not create the folder if it does not exist!
 // Setting it up in a properly protected location (e.g., with automatic
 // backups to iCloud/Google disabled) is the responsibility of the user.
 func (s *storage) EnsureStorageExists() error {
@@ -63,31 +52,8 @@ func (s *storage) EnsureStorageExists() error {
 	if err = fs.AssertPathExists(s.storagePath); err != nil {
 		return err
 	}
-	if err = fs.EnsureDirectoryExists(s.path(signaturesDir)); err != nil {
-		return err
-	}
 	s.db, err = bbolt.Open(s.path(databaseFile), 0600, &bbolt.Options{Timeout: 1 * time.Second})
 	return err
-}
-
-func (s *storage) loadFromFile(dest interface{}, path string) (err error) {
-	exists, err := fs.PathExists(s.path(path))
-	if err != nil || !exists {
-		return
-	}
-	bytes, err := ioutil.ReadFile(s.path(path))
-	if err != nil {
-		return
-	}
-	return json.Unmarshal(bytes, dest)
-}
-
-func (s *storage) store(contents interface{}, file string) error {
-	bts, err := json.Marshal(contents)
-	if err != nil {
-		return err
-	}
-	return fs.SaveFile(s.path(file), bts)
 }
 
 func (s *storage) txStore(tx *bbolt.Tx, key interface{}, value interface{}, bucketName string) error {
@@ -129,15 +95,6 @@ func (s *storage) load(key interface{}, dest interface{}, bucketName string) (fo
 		return err
 	})
 	return
-}
-
-func (s *storage) signatureFilename(attrs *irma.AttributeList) string {
-	// We take the SHA256 hash over all attributes as the filename for the signature.
-	// This means that the signatures of two credentials that have identical attributes
-	// will be written to the same file, one overwriting the other - but that doesn't
-	// matter, because either one of the signatures is valid over both attribute lists,
-	// so keeping one of them suffices.
-	return filepath.Join(signaturesDir, attrs.Hash())
 }
 
 func (s *storage) DeleteSignature(attrs *irma.AttributeList) error {
@@ -265,18 +222,6 @@ func (s *storage) TxStoreUpdates(tx *bbolt.Tx, updates []update) error {
 	return s.txStore(tx, updatesKey, updates, userdataBucket)
 }
 
-func (s *storage) LoadSignatureFile(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
-	sigpath := s.signatureFilename(attrs)
-	if err := fs.AssertPathExists(s.path(sigpath)); err != nil {
-		return nil, err
-	}
-	signature = new(gabi.CLSignature)
-	if err := s.loadFromFile(signature, sigpath); err != nil {
-		return nil, err
-	}
-	return signature, nil
-}
-
 func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
 	signature = new(gabi.CLSignature)
 	found, err := s.load(attrs.Hash(), signature, signaturesBucket)
@@ -286,20 +231,6 @@ func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSi
 		return nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
 	}
 	return
-}
-
-// LoadSecretKeyFile retrieves and returns the secret key from file storage. When no secret key
-// file is found, nil is returned.
-func (s *storage) LoadSecretKeyFile() (*secretKey, error) {
-	var err error
-	sk := &secretKey{}
-	if err = s.loadFromFile(sk, skFile); err != nil {
-		return nil, err
-	}
-	if sk.Key != nil {
-		return sk, nil
-	}
-	return nil, nil
 }
 
 // LoadSecretKey retrieves and returns the secret key from bbolt storage, or if no secret key
@@ -321,30 +252,6 @@ func (s *storage) LoadSecretKey() (*secretKey, error) {
 		return nil, err
 	}
 	return sk, nil
-}
-
-func (s *storage) LoadAttributesFile() (list map[irma.CredentialTypeIdentifier][]*irma.AttributeList, err error) {
-	// The attributes are stored as a list of instances of AttributeList
-	temp := []*irma.AttributeList{}
-	if err = s.loadFromFile(&temp, attributesFile); err != nil {
-		return
-	}
-
-	list = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
-	for _, attrlist := range temp {
-		attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.Configuration)
-		id := attrlist.CredentialType()
-		var ct irma.CredentialTypeIdentifier
-		if id != nil {
-			ct = id.Identifier()
-		}
-		if _, contains := list[ct]; !contains {
-			list[ct] = []*irma.AttributeList{}
-		}
-		list[ct] = append(list[ct], attrlist)
-	}
-
-	return list, nil
 }
 
 func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*irma.AttributeList, err error) {
@@ -377,14 +284,6 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			return nil
 		})
 	})
-}
-
-func (s *storage) LoadKeyshareServersFile() (ksses map[irma.SchemeManagerIdentifier]*keyshareServer, err error) {
-	ksses = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
-	if err := s.loadFromFile(&ksses, kssFile); err != nil {
-		return nil, err
-	}
-	return ksses, nil
 }
 
 func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]*keyshareServer, err error) {
@@ -433,23 +332,10 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 	})
 }
 
-func (s *storage) LoadUpdatesFile() (updates []update, err error) {
-	updates = []update{}
-	if err := s.loadFromFile(&updates, updatesFile); err != nil {
-		return nil, err
-	}
-	return updates, nil
-}
-
 func (s *storage) LoadUpdates() (updates []update, err error) {
 	updates = []update{}
 	_, err = s.load(updatesKey, &updates, userdataBucket)
 	return
-}
-
-func (s *storage) LoadPreferencesFile() (Preferences, error) {
-	config := defaultPreferences
-	return config, s.loadFromFile(&config, preferencesFile)
 }
 
 func (s *storage) LoadPreferences() (Preferences, error) {

@@ -48,6 +48,8 @@ type Client struct {
 
 	// Where we store/load it to/from
 	storage storage
+	// Legacy storage needed when client has not updated to the new storage yet
+	fileStorage fileStorage
 
 	// Other state
 	Preferences           Preferences
@@ -153,6 +155,8 @@ func New(
 	if err = cm.storage.EnsureStorageExists(); err != nil {
 		return nil, err
 	}
+	// Legacy storage does not need ensuring existence
+	cm.fileStorage = fileStorage{storagePath: storagePath, Configuration: cm.Configuration}
 
 	if cm.Preferences, err = cm.storage.LoadPreferences(); err != nil {
 		return nil, err
