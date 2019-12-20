@@ -1436,12 +1436,15 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 	}
 
 	for i := 0; i < v.NumField(); i++ {
-		if v.Field(i).Type() == reflect.TypeOf(TranslatedString{}) {
-			val := v.Field(i).Interface().(TranslatedString)
-			for _, lang := range langs {
-				if _, exists := val[lang]; !exists {
-					conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, v.Type().Field(i).Name))
-				}
+		field := v.Field(i)
+		name := v.Type().Field(i).Name
+		if field.Type() != reflect.TypeOf(TranslatedString{}) || name == "IssueURL" {
+			continue
+		}
+		val := field.Interface().(TranslatedString)
+		for _, lang := range langs {
+			if _, exists := val[lang]; !exists {
+				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
 			}
 		}
 	}
