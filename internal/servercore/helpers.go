@@ -104,7 +104,7 @@ func (session *session) issuanceHandleRevocation(
 		return nil, nil, errors.Errorf("no revocation updates found for key %d", cred.KeyCounter)
 	}
 	sig := u.SignedAccumulator
-	pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), sig.PKIndex)
+	pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), sig.PKCounter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -121,7 +121,7 @@ func (session *session) issuanceHandleRevocation(
 	nonrevAttr = witness.E
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
-		PKIndex:    sk.Counter,
+		PKCounter:  sk.Counter,
 		Key:        cred.RevocationKey,
 		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
@@ -142,14 +142,14 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if privatekey == nil {
 			return errors.Errorf("missing private key of issuer %s", iss.String())
 		}
-		pubkey, err := s.conf.IrmaConfiguration.PublicKey(iss, int(privatekey.Counter))
+		pubkey, err := s.conf.IrmaConfiguration.PublicKey(iss, privatekey.Counter)
 		if err != nil {
 			return err
 		}
 		if pubkey == nil {
 			return errors.Errorf("missing public key of issuer %s", iss.String())
 		}
-		cred.KeyCounter = int(privatekey.Counter)
+		cred.KeyCounter = privatekey.Counter
 
 		// Check that the credential is consistent with irma_configuration
 		if err := cred.Validate(s.conf.IrmaConfiguration); err != nil {

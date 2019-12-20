@@ -223,15 +223,15 @@ func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *rev
 	return nil, nil
 }
 
-// GET revocation/updatefrom/{credtype}/{pkindex}/{index}
+// GET revocation/updatefrom/{credtype}/{pkcounter}/{index}
 func (s *Server) handleGetUpdateFrom(
-	cred irma.CredentialTypeIdentifier, pkindex uint, index uint64,
+	cred irma.CredentialTypeIdentifier, pkcounter uint, index uint64,
 ) (*revocation.Update, *irma.RemoteError) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	update, err := s.conf.IrmaConfiguration.Revocation.UpdateFrom(cred, pkindex, index)
+	update, err := s.conf.IrmaConfiguration.Revocation.UpdateFrom(cred, pkcounter, index)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
 	}
@@ -255,7 +255,7 @@ func (s *Server) handleGetUpdateLatest(
 
 // POST revocation/issuancerecord/{credtype}/{keycounter}
 func (s *Server) handlePostIssuanceRecord(
-	cred irma.CredentialTypeIdentifier, counter uint64, message []byte,
+	cred irma.CredentialTypeIdentifier, counter uint, message []byte,
 ) (string, *irma.RemoteError) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil || settings.Mode != irma.RevocationModeServer {
 		return "", server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
@@ -263,7 +263,7 @@ func (s *Server) handlePostIssuanceRecord(
 
 	// Grab the counter-th issuer public key, with which the message should be signed,
 	// and verify and unmarshal the issuance record
-	pk, err := s.conf.IrmaConfiguration.Revocation.Keys.PublicKey(cred.IssuerIdentifier(), uint(counter))
+	pk, err := s.conf.IrmaConfiguration.Revocation.Keys.PublicKey(cred.IssuerIdentifier(), counter)
 	if err != nil {
 		return "", server.RemoteError(server.ErrorUnknown, err.Error())
 	}

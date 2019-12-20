@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"github.com/privacybydesign/gabi"
@@ -235,15 +236,15 @@ func (attr *MetadataAttribute) SigningDate() time.Time {
 }
 
 func (attr *MetadataAttribute) setSigningDate() {
-	attr.setField(signingDateField, shortToByte(int(time.Now().Unix()/ExpiryFactor)))
+	attr.setField(signingDateField, shortToByte(uint(time.Now().Unix()/ExpiryFactor)))
 }
 
 // KeyCounter return the public key counter of the metadata attribute
-func (attr *MetadataAttribute) KeyCounter() int {
-	return int(binary.BigEndian.Uint16(attr.field(keyCounterField)))
+func (attr *MetadataAttribute) KeyCounter() uint {
+	return uint(binary.BigEndian.Uint16(attr.field(keyCounterField)))
 }
 
-func (attr *MetadataAttribute) setKeyCounter(i int) {
+func (attr *MetadataAttribute) setKeyCounter(i uint) {
 	attr.setField(keyCounterField, shortToByte(i))
 }
 
@@ -252,7 +253,7 @@ func (attr *MetadataAttribute) ValidityDuration() int {
 	return int(binary.BigEndian.Uint16(attr.field(validityField)))
 }
 
-func (attr *MetadataAttribute) setValidityDuration(weeks int) {
+func (attr *MetadataAttribute) setValidityDuration(weeks uint) {
 	attr.setField(validityField, shortToByte(weeks))
 }
 
@@ -268,7 +269,10 @@ func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
 		expiry = time.Time(*timestamp).Unix()
 	}
 	signing := attr.SigningDate().Unix()
-	attr.setValidityDuration(int((expiry - signing) / ExpiryFactor))
+	if expiry-signing < 0 {
+		return errors.New("cannot set expired date")
+	}
+	attr.setValidityDuration(uint((expiry - signing) / ExpiryFactor))
 	return nil
 }
 
@@ -339,8 +343,11 @@ func (attr *MetadataAttribute) setField(field metadataField, value []byte) {
 	attr.Int.SetBytes(bytes)
 }
 
-func shortToByte(x int) []byte {
+func shortToByte(x uint) []byte {
 	bytes := make([]byte, 2)
+	if x > 1<<16 {
+		panic("overflow uint16")
+	}
 	binary.BigEndian.PutUint16(bytes, uint16(x))
 	return bytes
 }

@@ -48,7 +48,7 @@ type Configuration struct {
 
 	// Issuer private keys. If set (after calling ParseFolder()), will use these keys
 	// instead of keys in irma_configuration/$issuer/PrivateKeys.
-	PrivateKeys map[IssuerIdentifier]map[int]*gabi.PrivateKey
+	PrivateKeys map[IssuerIdentifier]map[uint]*gabi.PrivateKey
 
 	Revocation *RevocationStorage
 
@@ -62,7 +62,7 @@ type Configuration struct {
 	Warnings []string
 
 	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
-	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
+	publicKeys    map[IssuerIdentifier]map[uint]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
 	assets        string
@@ -165,8 +165,8 @@ func (conf *Configuration) clear() {
 	conf.AttributeTypes = make(map[AttributeTypeIdentifier]*AttributeType)
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
-	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
-	conf.PrivateKeys = make(map[IssuerIdentifier]map[int]*gabi.PrivateKey)
+	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
+	conf.PrivateKeys = make(map[IssuerIdentifier]map[uint]*gabi.PrivateKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 }
 
@@ -321,7 +321,7 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 }
 
 // PrivateKey returns the specified private key of the specified issuer if present; an error otherwise.
-func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter int) (*gabi.PrivateKey, error) {
+func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
 	if _, haveIssuer := conf.PrivateKeys[id]; haveIssuer {
 		if sk := conf.PrivateKeys[id][counter]; sk != nil {
 			return sk, nil
@@ -329,17 +329,17 @@ func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter int) (*gabi.P
 	}
 
 	path := fmt.Sprintf(privkeyPattern, conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
-	file := strings.Replace(path, "*", strconv.Itoa(counter), 1)
+	file := strings.Replace(path, "*", strconv.FormatUint(uint64(counter), 10), 1)
 	sk, err := gabi.NewPrivateKeyFromFile(file)
 	if err != nil {
 		return nil, err
 	}
-	if int(sk.Counter) != counter {
+	if sk.Counter != counter {
 		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
 	}
 
 	if conf.PrivateKeys[id] == nil {
-		conf.PrivateKeys[id] = make(map[int]*gabi.PrivateKey)
+		conf.PrivateKeys[id] = make(map[uint]*gabi.PrivateKey)
 	}
 	conf.PrivateKeys[id][counter] = sk
 
@@ -359,7 +359,7 @@ func (conf *Configuration) PrivateKeyLatest(id IssuerIdentifier) (*gabi.PrivateK
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
-func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.PublicKey, error) {
+func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabi.PublicKey, error) {
 	var haveIssuer, haveKey bool
 	var err error
 	_, haveIssuer = conf.publicKeys[id]
@@ -494,7 +494,7 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	manager := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
-	conf.publicKeys[issuerid] = map[int]*gabi.PublicKey{}
+	conf.publicKeys[issuerid] = map[uint]*gabi.PublicKey{}
 	path := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(path)
 	if err != nil {
@@ -504,7 +504,7 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	for _, file := range files {
 		filename := filepath.Base(file)
 		count := filename[:len(filename)-4]
-		i, err := strconv.Atoi(count)
+		i, err := strconv.ParseUint(count, 10, 32)
 		if err != nil {
 			return err
 		}
@@ -520,39 +520,39 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil {
 			return err
 		}
-		if int(pk.Counter) != i {
+		if pk.Counter != uint(i) {
 			return errors.Errorf("Public key %s of issuer %s has wrong <Counter>", file, issuerid.String())
 		}
 		pk.Issuer = issuerid.String()
-		conf.publicKeys[issuerid][i] = pk
+		conf.publicKeys[issuerid][uint(i)] = pk
 	}
 
 	return nil
 }
 
-func (conf *Configuration) PrivateKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {
+func (conf *Configuration) PrivateKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
 	return conf.matchKeyPattern(issuerid, privkeyPattern)
 }
 
-func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {
+func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
 	return conf.matchKeyPattern(issuerid, pubkeyPattern)
 }
 
-func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (i []int, err error) {
+func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (ints []uint, err error) {
 	pkpath := fmt.Sprintf(pattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(pkpath)
 	if err != nil {
 		return
 	}
 	for _, file := range files {
-		var count int
+		var count uint64
 		base := filepath.Base(file)
-		if count, err = strconv.Atoi(base[:len(base)-4]); err != nil {
+		if count, err = strconv.ParseUint(base[:len(base)-4], 10, 32); err != nil {
 			return
 		}
-		i = append(i, count)
+		ints = append(ints, uint(count))
 	}
-	sort.Ints(i)
+	sort.Slice(ints, func(i, j int) bool { return ints[i] < ints[j] })
 	return
 }
 
@@ -1467,7 +1467,7 @@ func (conf *Configuration) ValidateKeys() error {
 		}
 		for _, privkey := range privkeys {
 			filename := filepath.Base(privkey)
-			count, err := strconv.Atoi(filename[:len(filename)-4])
+			count, err := strconv.ParseUint(filename[:len(filename)-4], 10, 32)
 			if err != nil {
 				return err
 			}
@@ -1475,10 +1475,10 @@ func (conf *Configuration) ValidateKeys() error {
 			if err != nil {
 				return err
 			}
-			if int(sk.Counter) != count {
+			if sk.Counter != uint(count) {
 				return errors.Errorf("Private key %s of issuer %s has wrong <Counter>", filename, issuerid.String())
 			}
-			pk, err := conf.PublicKey(issuerid, count)
+			pk, err := conf.PublicKey(issuerid, uint(count))
 			if err != nil {
 				return err
 			}

@@ -90,7 +90,7 @@ type IssuanceRequest struct {
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
 	Validity         *Timestamp               `json:"validity,omitempty"`
-	KeyCounter       int                      `json:"keyCounter,omitempty"`
+	KeyCounter       uint                     `json:"keyCounter,omitempty"`
 	CredentialTypeID CredentialTypeIdentifier `json:"credential"`
 	Attributes       map[string]string        `json:"attributes"`
 	RevocationKey    string                   `json:"revocationKey,omitempty"`
@@ -464,7 +464,7 @@ func (dr *DisclosureRequest) identifiers() *IrmaIdentifierSet {
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-		PublicKeys:      map[IssuerIdentifier][]int{},
+		PublicKeys:      map[IssuerIdentifier][]uint{},
 		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 	}
 
@@ -591,7 +591,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
 			AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
-			PublicKeys:      map[IssuerIdentifier][]int{},
+			PublicKeys:      map[IssuerIdentifier][]uint{},
 		}
 
 		for _, credreq := range ir.Credentials {
@@ -604,7 +604,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 				ir.ids.AttributeTypes[NewAttributeTypeIdentifier(credID.String()+"."+attr)] = struct{}{}
 			}
 			if ir.ids.PublicKeys[issuer] == nil {
-				ir.ids.PublicKeys[issuer] = []int{}
+				ir.ids.PublicKeys[issuer] = []uint{}
 			}
 			ir.ids.PublicKeys[issuer] = append(ir.ids.PublicKeys[issuer], credreq.KeyCounter)
 		}

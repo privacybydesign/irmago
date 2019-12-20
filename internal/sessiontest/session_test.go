@@ -387,7 +387,7 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 		ErrorType: irma.ErrorUnknownIdentifier,
 		Missing: &irma.IrmaIdentifierSet{
 			SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
-			PublicKeys:     map[irma.IssuerIdentifier][]int{},
+			PublicKeys:     map[irma.IssuerIdentifier][]uint{},
 			Issuers: map[irma.IssuerIdentifier]struct{}{
 				irma.NewIssuerIdentifier("irma-demo.baz"): struct{}{},
 			},

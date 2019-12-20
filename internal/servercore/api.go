@@ -379,12 +379,12 @@ func (s *Server) handleRevocationMessage(
 		if err != nil {
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
-		pkindex, err := strconv.ParseUint(args[2], 10, 32)
+		pkcounter, err := strconv.ParseUint(args[2], 10, 32)
 		if err != nil {
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		return server.BinaryResponse(s.handleGetUpdateFrom(cred, uint(pkindex), i))
+		return server.BinaryResponse(s.handleGetUpdateFrom(cred, uint(pkcounter), i))
 	}
 	if noun == "updatelatest" && method == http.MethodGet {
 		if len(args) != 2 {
@@ -413,11 +413,11 @@ func (s *Server) handleRevocationMessage(
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		counter, err := strconv.ParseUint(args[1], 10, 64)
+		counter, err := strconv.ParseUint(args[1], 10, 32)
 		if err != nil {
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
-		return server.BinaryResponse(s.handlePostIssuanceRecord(cred, counter, message))
+		return server.BinaryResponse(s.handlePostIssuanceRecord(cred, uint(counter), message))
 	}
 
 	return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))

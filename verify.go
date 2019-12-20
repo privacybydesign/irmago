@@ -182,11 +182,11 @@ func (pl ProofList) VerifyProofs(
 			return false, nil, nil
 		}
 		sig := proofd.NonRevocationProof.SignedAccumulator
-		u := updates[sig.PKIndex]
+		u := updates[sig.PKCounter]
 		if u == nil {
-			return false, nil, errors.Errorf("nonrevocation proof used unknown public key %d", sig.PKIndex)
+			return false, nil, errors.Errorf("nonrevocation proof used unknown public key %d", sig.PKCounter)
 		}
-		pk, err := RevocationKeys{configuration}.PublicKey(typ.IssuerIdentifier(), sig.PKIndex)
+		pk, err := RevocationKeys{configuration}.PublicKey(typ.IssuerIdentifier(), sig.PKCounter)
 		if err != nil {
 			return false, nil, nil
 		}

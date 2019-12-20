@@ -91,7 +91,7 @@ func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.Ses
 func (cred *credential) NonrevApplyUpdates(update *revocation.Update, keys irma.RevocationKeys) (bool, error) {
 	oldindex := cred.NonRevocationWitness.Accumulator.Index
 
-	pk, err := keys.PublicKey(cred.CredentialType().IssuerIdentifier(), update.SignedAccumulator.PKIndex)
+	pk, err := keys.PublicKey(cred.CredentialType().IssuerIdentifier(), update.SignedAccumulator.PKCounter)
 	if err != nil {
 		return false, err
 	}

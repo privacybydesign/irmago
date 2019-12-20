@@ -172,13 +172,13 @@ func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64) map[ui
 		if len(update.Events) > 0 {
 			Logger.Tracef("membdb: get %d-%d", update.Events[0].Index, update.Events[len(update.Events)-1].Index)
 		}
-		updates[r.SignedAccumulator.PKIndex] = update
+		updates[r.SignedAccumulator.PKCounter] = update
 	}
 
 	return updates
 }
 
-func (m memRevStorage) SignedAccumulator(typ CredentialTypeIdentifier, pkindex uint) *revocation.SignedAccumulator {
+func (m memRevStorage) SignedAccumulator(typ CredentialTypeIdentifier, pkcounter uint) *revocation.SignedAccumulator {
 	updates := m.Latest(typ, 0)
 	for _, u := range updates {
 		return u.SignedAccumulator
@@ -195,9 +195,9 @@ func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.U
 	record.Lock()
 	defer record.Unlock()
 
-	r := record.r[update.SignedAccumulator.PKIndex]
+	r := record.r[update.SignedAccumulator.PKCounter]
 	if r == nil || len(r.Events) == 0 {
-		record.r[update.SignedAccumulator.PKIndex] = update
+		record.r[update.SignedAccumulator.PKCounter] = update
 		return
 	}
 

@@ -58,7 +58,7 @@ type IrmaIdentifierSet struct {
 	SchemeManagers  map[SchemeManagerIdentifier]struct{}
 	Issuers         map[IssuerIdentifier]struct{}
 	CredentialTypes map[CredentialTypeIdentifier]struct{}
-	PublicKeys      map[IssuerIdentifier][]int
+	PublicKeys      map[IssuerIdentifier][]uint
 	AttributeTypes  map[AttributeTypeIdentifier]struct{}
 }
 
@@ -67,7 +67,7 @@ func newIrmaIdentifierSet() *IrmaIdentifierSet {
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-		PublicKeys:      map[IssuerIdentifier][]int{},
+		PublicKeys:      map[IssuerIdentifier][]uint{},
 		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 	}
 }
@@ -214,7 +214,7 @@ func (set *IrmaIdentifierSet) join(other *IrmaIdentifierSet) {
 	}
 	for issuer := range other.PublicKeys {
 		if len(set.PublicKeys[issuer]) == 0 {
-			set.PublicKeys[issuer] = make([]int, 0, len(other.PublicKeys[issuer]))
+			set.PublicKeys[issuer] = make([]uint, 0, len(other.PublicKeys[issuer]))
 		}
 		set.PublicKeys[issuer] = append(set.PublicKeys[issuer], other.PublicKeys[issuer]...)
 	}

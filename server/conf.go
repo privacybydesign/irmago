@@ -31,7 +31,7 @@ type Configuration struct {
 	// Path to issuer private keys to parse
 	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
 	// Issuer private keys
-	IssuerPrivateKeys map[irma.IssuerIdentifier]map[int]*gabi.PrivateKey `json:"-"`
+	IssuerPrivateKeys map[irma.IssuerIdentifier]map[uint]*gabi.PrivateKey `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
@@ -160,7 +160,7 @@ func (conf *Configuration) verifyIrmaConf() error {
 
 func (conf *Configuration) verifyPrivateKeys() error {
 	if conf.IssuerPrivateKeys == nil {
-		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]map[int]*gabi.PrivateKey)
+		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]map[uint]*gabi.PrivateKey)
 	}
 	if conf.IssuerPrivateKeysPath != "" {
 		files, err := ioutil.ReadDir(conf.IssuerPrivateKeysPath)
@@ -198,14 +198,14 @@ func (conf *Configuration) verifyPrivateKeys() error {
 				return LogError(errors.Errorf("private key %s has wrong counter %d in filename, should be", filename, counter, sk.Counter))
 			}
 			if len(conf.IssuerPrivateKeys[issid]) == 0 {
-				conf.IssuerPrivateKeys[issid] = map[int]*gabi.PrivateKey{}
+				conf.IssuerPrivateKeys[issid] = map[uint]*gabi.PrivateKey{}
 			}
-			conf.IssuerPrivateKeys[issid][int(sk.Counter)] = sk
+			conf.IssuerPrivateKeys[issid][sk.Counter] = sk
 		}
 	}
 	for issid := range conf.IssuerPrivateKeys {
 		for _, sk := range conf.IssuerPrivateKeys[issid] {
-			pk, err := conf.IrmaConfiguration.PublicKey(issid, int(sk.Counter))
+			pk, err := conf.IrmaConfiguration.PublicKey(issid, sk.Counter)
 			if err != nil {
 				return LogError(err)
 			}
