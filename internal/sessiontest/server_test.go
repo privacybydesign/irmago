@@ -62,6 +62,18 @@ func StartRevocationServer(t *testing.T) {
 
 	//dbtype, dbstr := "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
 	dbtype, dbstr := "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
+
+	// Connect to database and clear records from previous test runs
+	g, err := gorm.Open(dbtype, dbstr)
+	require.NoError(t, err)
+	require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
+	require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
+	require.NoError(t, g.DropTableIfExists((*irma.IssuanceRecord)(nil)).Error)
+	require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)).Error)
+	require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)).Error)
+	require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
+	require.NoError(t, g.Close())
+
 	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
 	settings := map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
 		cred: {Mode: irma.RevocationModeServer},
@@ -83,17 +95,6 @@ func StartRevocationServer(t *testing.T) {
 		RevocationDBConnStr:  dbstr,
 		RevocationDBType:     dbtype,
 	}
-
-	// Connect to database and clear records from previous test runs
-	g, err := gorm.Open(dbtype, conf.RevocationDBConnStr)
-	require.NoError(t, err)
-	require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
-	require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
-	require.NoError(t, g.DropTableIfExists((*irma.IssuanceRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
-	require.NoError(t, g.Close())
 
 	// Enable revocation for our credential type
 	sk, err := irmaconf.Revocation.Keys.PrivateKeyLatest(cred.IssuerIdentifier())

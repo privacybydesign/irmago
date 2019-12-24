@@ -108,9 +108,11 @@ func (s sqlRevStorage) Save(o interface{}) error {
 }
 
 func (s sqlRevStorage) Last(dest interface{}, query interface{}, args ...interface{}) error {
-	return s.gorm.
-		Where(query, args...).
-		Last(dest).Error
+	db := s.gorm
+	if query != nil {
+		db = db.Where(query, args...)
+	}
+	return db.Last(dest).Error
 }
 
 func (s sqlRevStorage) Exists(typ interface{}, query interface{}, args ...interface{}) (bool, error) {
@@ -119,8 +121,8 @@ func (s sqlRevStorage) Exists(typ interface{}, query interface{}, args ...interf
 	if query != nil {
 		db = db.Where(query, args...)
 	}
-	db.Count(&c)
-	return c > 0, s.gorm.Error
+	db = db.Count(&c)
+	return c > 0, db.Error
 }
 
 func (s sqlRevStorage) From(dest interface{}, query interface{}, args ...interface{}) error {
