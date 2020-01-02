@@ -121,13 +121,13 @@ var clientUpdates = []func(client *Client) error{
 		}
 
 		return client.storage.db.Update(func(tx *bbolt.Tx) error {
-			err = client.storage.TxStoreSecretKey(tx, sk)
-			if err != nil {
+			if err = client.storage.TxStoreSecretKey(tx, sk); err != nil {
 				return err
 			}
-			err := client.storage.TxStoreAllAttributes(tx, attrs)
-			if err != nil {
-				return err
+			for credTypeID, attrslistlist := range attrs {
+				if err = client.storage.TxStoreAttributes(tx, credTypeID, attrslistlist); err != nil {
+					return err
+				}
 			}
 			for hash, sig := range sigs {
 				err = client.storage.TxStoreSignature(tx, hash, sig)
@@ -135,12 +135,10 @@ var clientUpdates = []func(client *Client) error{
 					return err
 				}
 			}
-			err = client.storage.TxStoreKeyshareServers(tx, ksses)
-			if err != nil {
+			if err = client.storage.TxStoreKeyshareServers(tx, ksses); err != nil {
 				return err
 			}
-			err = client.storage.TxStorePreferences(tx, prefs)
-			if err != nil {
+			if err = client.storage.TxStorePreferences(tx, prefs); err != nil {
 				return err
 			}
 			return client.storage.TxStoreUpdates(tx, updates)
