@@ -330,11 +330,13 @@ func (client *Client) RemoveAllCredentials() error {
 			if attrs.CredentialType() != nil {
 				removed[attrs.CredentialType().Identifier()] = attrs.Strings()
 			}
-			_ = client.storage.DeleteSignature(attrs)
 		}
 	}
 	client.attributes = map[irma.CredentialTypeIdentifier][]*irma.AttributeList{}
-	if err := client.storage.StoreAllAttributes(client.attributes); err != nil {
+	if err := client.storage.DeleteAllAttributes(); err != nil {
+		return err
+	}
+	if err := client.storage.DeleteAllSignatures(); err != nil {
 		return err
 	}
 
@@ -1026,6 +1028,9 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 				attrs[j] = big.NewInt(0)
 			}
 			client.attributes[id][i].Ints = attrs
+			if err := client.storage.StoreAttributes(id, client.attributes[id]); err != nil {
+				return err
+			}
 
 			if _, contains = client.credentialsCache[id]; !contains {
 				continue
@@ -1041,5 +1046,5 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 		}
 	}
 
-	return client.storage.StoreAllAttributes(client.attributes)
+	return nil
 }

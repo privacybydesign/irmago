@@ -69,6 +69,15 @@ func (s *storage) txStore(tx *bbolt.Tx, key string, value interface{}, bucketNam
 	return b.Put([]byte(key), btsValue)
 }
 
+func (s *storage) txDelete(tx *bbolt.Tx, key string, bucketName string) error {
+	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
+	if err != nil {
+		return err
+	}
+
+	return b.Delete([]byte(key))
+}
+
 func (s *storage) txLoad(tx *bbolt.Tx, key string, dest interface{}, bucketName string) (found bool, err error) {
 	b := tx.Bucket([]byte(bucketName))
 	if b == nil {
@@ -91,11 +100,13 @@ func (s *storage) load(key string, dest interface{}, bucketName string) (found b
 
 func (s *storage) DeleteSignature(attrs *irma.AttributeList) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(signaturesBucket))
-		if err != nil {
-			return err
-		}
-		return b.Delete([]byte(attrs.Hash()))
+		return s.txDelete(tx, attrs.Hash(), signaturesBucket)
+	})
+}
+
+func (s *storage) DeleteAllSignatures() error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		return tx.DeleteBucket([]byte(signaturesBucket))
 	})
 }
 
@@ -133,27 +144,17 @@ func (s *storage) StoreAttributes(credTypeID irma.CredentialTypeIdentifier, attr
 func (s *storage) TxStoreAttributes(tx *bbolt.Tx, credTypeID irma.CredentialTypeIdentifier,
 	attrlistlist []*irma.AttributeList) error {
 
+	// If no credentials are left of a certain type, the full entry can be deleted.
+	if len(attrlistlist) == 0 {
+		return s.txDelete(tx, credTypeID.String(), attributesBucket)
+	}
 	return s.txStore(tx, credTypeID.String(), attrlistlist, attributesBucket)
 }
 
-func (s *storage) StoreAllAttributes(
-	attributes map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
-
+func (s *storage) DeleteAllAttributes() error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return s.TxStoreAllAttributes(tx, attributes)
+		return tx.DeleteBucket([]byte(attributesBucket))
 	})
-}
-
-func (s *storage) TxStoreAllAttributes(tx *bbolt.Tx,
-	attrs map[irma.CredentialTypeIdentifier][]*irma.AttributeList) error {
-
-	for credTypeID, attrlistlist := range attrs {
-		err := s.TxStoreAttributes(tx, credTypeID, attrlistlist)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
@@ -163,7 +164,7 @@ func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIde
 }
 
 func (s *storage) TxStoreKeyshareServers(tx *bbolt.Tx, keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
-	return s.txStore(tx, kssKey, &keyshareServers, userdataBucket)
+	return s.txStore(tx, kssKey, keyshareServers, userdataBucket)
 }
 
 func (s *storage) AddLogEntry(entry *LogEntry) error {
@@ -276,7 +277,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]*keyshareServer, err error) {
 	ksses = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	_, err = s.load(kssKey, &ksses, userdataBucket)
-	return ksses, err
+	return
 }
 
 // Returns all logs stored before log with ID 'index' sorted from new to old with
