@@ -31,8 +31,8 @@ require (
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
+	github.com/privacybydesign/gabi v0.0.0-20200925124646-4346d7fe377d
 	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
-	github.com/privacybydesign/gabi v0.0.0-20200823153621-467696543652
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819
 	github.com/sietseringers/viper v1.3.2-0.20200909194413-4120aa4ee8e8
