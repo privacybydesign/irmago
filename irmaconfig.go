@@ -52,6 +52,8 @@ type Configuration struct {
 
 	Revocation *RevocationStorage
 
+	Scheduler *gocron.Scheduler
+
 	// Path to the irma_configuration folder that this instance represents
 	Path string
 
@@ -67,8 +69,6 @@ type Configuration struct {
 	initialized   bool
 	assets        string
 	readOnly      bool
-	cronchan      chan bool
-	scheduler     *gocron.Scheduler
 }
 
 // ConfigurationFileHash encodes the SHA256 hash of an authenticated
@@ -154,6 +154,9 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 
 	// Init all maps
 	conf.clear()
+
+	conf.Scheduler = gocron.NewScheduler()
+	conf.Scheduler.Start()
 
 	return
 }
@@ -1269,9 +1272,7 @@ func (conf *Configuration) UpdateSchemes() error {
 
 func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 	Logger.Infof("Updating schemes every %d minutes", interval)
-
-	conf.scheduler = gocron.NewScheduler()
-	conf.scheduler.Every(uint64(interval)).Minutes().Do(func() {
+	update := func() {
 		if err := conf.UpdateSchemes(); err != nil {
 			Logger.Error("Scheme autoupdater failed: ")
 			if e, ok := err.(*errors.Error); ok {
@@ -1280,21 +1281,13 @@ func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 				Logger.Errorf("%s %s", reflect.TypeOf(err).String(), err.Error())
 			}
 		}
-	})
-
-	conf.cronchan = conf.scheduler.Start() // Schedule updates (first one in interval minutes from now)
-	go func() {                            // Run first update after a small delay
-		<-time.NewTimer(200 * time.Millisecond).C
-		conf.scheduler.RunAll()
-	}()
-
-}
-
-func (conf *Configuration) StopAutoUpdateSchemes() {
-	if conf.cronchan != nil {
-		Logger.Info("Stopped scheme autoupdater")
-		conf.cronchan <- true
 	}
+	conf.Scheduler.Every(uint64(interval)).Minutes().Do(update)
+	// Run first update after a small delay
+	go func() {
+		<-time.NewTimer(200 * time.Millisecond).C
+		update()
+	}()
 }
 
 // Validation methods containing consistency checks on irma_configuration

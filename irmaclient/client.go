@@ -10,11 +10,9 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/keyproof/common"
-	"github.com/sirupsen/logrus"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -194,20 +192,7 @@ func New(
 	}
 
 	client.jobs = make(chan func(), 100)
-	for credid, attrsets := range client.attributes {
-		for i, attrs := range attrsets {
-			if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
-				continue
-			}
-			credid := credid // make copy of same name to capture the value for closure below
-			i := i           // same, see https://golang.org/doc/faq#closures_and_goroutines
-			client.jobs <- func() {
-				if err := client.nonrevCredPrepareCache(credid, i); err != nil {
-					client.reportError(err)
-				}
-			}
-		}
-	}
+	client.startRevocation()
 	client.StartJobs()
 
 	return client, schemeMgrErr
@@ -249,9 +234,9 @@ func (client *Client) StartJobs() {
 				irma.Logger.Debug("jobs stopped")
 				return
 			case job := <-client.jobs:
-				irma.Logger.Debug("doing job ", job)
+				irma.Logger.Debug("doing job")
 				job()
-				irma.Logger.Debug("job done ", job)
+				irma.Logger.Debug("job done")
 			}
 		}
 	}()
@@ -770,71 +755,6 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (
 	}
 
 	return todisclose, attributeIndices, nil
-}
-
-// NonrevPrepare updates the revocation state for each credential in the request
-// requiring a nonrevocation proof, using the updates included in the request, or the remote
-// revocation server if those do not suffice.
-func (client *Client) NonrevPreprare(request irma.SessionRequest) error {
-	var err error
-	var cred *credential
-	var updated bool
-	for id := range request.Disclosure().Identifiers().CredentialTypes {
-		typ := client.Configuration.CredentialTypes[id]
-		if !typ.SupportsRevocation() {
-			continue
-		}
-		attrs := client.attrs(id)
-		for i := 0; i < len(attrs); i++ {
-			if cred, err = client.credential(id, i); err != nil {
-				return err
-			}
-			if updated, err = cred.NonrevPrepare(client.Configuration, request); err != nil {
-				if err == revocation.ErrorRevoked {
-					attrs[i].Revoked = true
-					cred.AttributeList().Revoked = true
-					if serr := client.storage.StoreAttributes(client.attributes); serr != nil {
-						client.reportError(serr)
-						return err
-					}
-					client.handler.Revoked(&irma.CredentialIdentifier{
-						Type: cred.CredentialType().Identifier(),
-						Hash: cred.AttributeList().Hash(),
-					})
-				}
-				return err
-			}
-			if updated {
-				if err = client.storage.StoreSignature(cred); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// nonrevRepopulateCaches repopulates the consumed nonrevocation caches of the credentials involved
-// in the request, in background jobs, after the request has finished.
-func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
-	for id := range request.Disclosure().Identifiers().CredentialTypes {
-		typ := client.Configuration.CredentialTypes[id]
-		if !typ.SupportsRevocation() {
-			continue
-		}
-		for i, attrs := range client.attrs(id) {
-			if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
-				continue
-			}
-			id := id
-			i := i
-			client.jobs <- func() {
-				if err := client.nonrevCredPrepareCache(id, i); err != nil {
-					client.reportError(err)
-				}
-			}
-		}
-	}
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
