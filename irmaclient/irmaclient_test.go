@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"errors"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -250,6 +251,19 @@ func TestCredentialRemoval(t *testing.T) {
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
+
+	// Also check whether credential is removed after reloading the storage
+	err = client.storage.db.Close()
+	require.NoError(t, err)
+	client, err = New(
+		filepath.Join("..", "testdata", "storage", "test"),
+		filepath.Join("..", "testdata", "irma_configuration"),
+		&TestClientHandler{t: t},
+	)
+	require.NoError(t, err)
+	cred, err = client.credential(id2, 0)
+	require.NoError(t, err)
+	require.Nil(t, cred)
 }
 
 func TestWrongSchemeManager(t *testing.T) {
@@ -293,6 +307,58 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 		}
 	}
 	require.Fail(t, "studentCard credential not found")
+}
+
+func TestFreshStorage(t *testing.T) {
+	test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t)
+
+	path := filepath.Join(test.FindTestdataFolder(t), "storage", "test")
+	err := fs.EnsureDirectoryExists(path)
+	require.NoError(t, err)
+	client, err := New(
+		filepath.Join("..", "testdata", "storage", "test"),
+		filepath.Join("..", "testdata", "irma_configuration"),
+		&TestClientHandler{t: t},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+}
+
+func TestKeyshareEnrollmentRemoval(t *testing.T) {
+	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
+	require.NoError(t, err)
+
+	err = client.storage.db.Close()
+	require.NoError(t, err)
+	client, err = New(
+		filepath.Join("..", "testdata", "storage", "test"),
+		filepath.Join("..", "testdata", "irma_configuration"),
+		&TestClientHandler{t: t},
+	)
+	require.NoError(t, err)
+	require.NotContains(t, client.keyshareServers, "test")
+}
+
+func TestUpdatePreferences(t *testing.T) {
+	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	client.SetCrashReportingPreference(!defaultPreferences.EnableCrashReporting)
+	client.applyPreferences()
+
+	err := client.storage.db.Close()
+	require.NoError(t, err)
+	client, err = New(
+		filepath.Join("..", "testdata", "storage", "test"),
+		filepath.Join("..", "testdata", "irma_configuration"),
+		&TestClientHandler{t: t},
+	)
+	require.NoError(t, err)
+	require.Equal(t, false, client.Preferences.EnableCrashReporting)
 }
 
 // ------

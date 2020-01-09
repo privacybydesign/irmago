@@ -30,6 +30,7 @@ func checkError(t *testing.T, err error) {
 var schemeServer *http.Server
 var badServer *http.Server
 var badServerCount int
+var testStorageDir = "teststorage"
 
 func StartSchemeManagerHttpServer() {
 	path := FindTestdataFolder(nil)
@@ -108,7 +109,7 @@ func CreateTestStorage(t *testing.T) {
 func SetupTestStorage(t *testing.T) {
 	CreateTestStorage(t)
 	path := FindTestdataFolder(t)
-	err := fs.CopyDirectory(filepath.Join(path, "teststorage"), filepath.Join(path, "storage", "test"))
+	err := fs.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(path, "storage", "test"))
 	checkError(t, err)
 }
 
@@ -116,4 +117,8 @@ func PrettyPrint(t *testing.T, ob interface{}) string {
 	b, err := json.MarshalIndent(ob, "", "  ")
 	require.NoError(t, err)
 	return string(b)
+}
+
+func SetTestStorageDir(dir string) {
+	testStorageDir = dir
 }
