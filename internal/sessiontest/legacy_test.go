@@ -9,6 +9,8 @@ import (
 
 func TestSessionUsingLegacyStorage(t *testing.T) {
 	test.SetTestStorageDir("legacy_teststorage")
+	defer test.SetTestStorageDir("teststorage")
+
 	client, _ := parseStorage(t)
 
 	// Issue new credential
@@ -22,6 +24,4 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	require.NoError(t, err)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	sessionHelper(t, getDisclosureRequest(id), "verification", client)
-
-	test.SetTestStorageDir("teststorage")
 }
