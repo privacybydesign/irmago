@@ -7,7 +7,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
@@ -15,17 +14,17 @@ import (
 
 const nonrevUpdateInterval = 10 // Once every 10 seconds
 
-func (client *Client) startRevocation() {
+func (client *Client) initRevocation() {
 	// For every credential supporting revocation, compute nonrevocation caches in async jobs
-	for credid, attrsets := range client.attributes {
+	for typ, attrsets := range client.attributes {
 		for i, attrs := range attrsets {
 			if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
 				continue
 			}
-			credid := credid // make copy of same name to capture the value for closure below
-			i := i           // see https://golang.org/doc/faq#closures_and_goroutines
+			typ := typ // make copy of same name to capture the value for closure below
+			i := i     // see https://golang.org/doc/faq#closures_and_goroutines
 			client.jobs <- func() {
-				if err := client.nonrevCredPrepareCache(credid, i); err != nil {
+				if err := client.nonrevPrepareCache(typ, i); err != nil {
 					client.reportError(err)
 				}
 			}
@@ -40,12 +39,12 @@ func (client *Client) startRevocation() {
 	// We do this by every 10 seconds updating the credential with a low probability, which
 	// increases over time since the last update.
 	client.Configuration.Scheduler.Every(nonrevUpdateInterval).Seconds().Do(func() {
-		for credid, attrsets := range client.attributes {
+		for typ, attrsets := range client.attributes {
 			for i, attrs := range attrsets {
-				if !attrs.CredentialType().SupportsRevocation() {
+				if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
 					continue
 				}
-				cred, err := client.credential(credid, i)
+				cred, err := client.credential(typ, i)
 				if err != nil {
 					client.reportError(err)
 					continue
@@ -59,24 +58,185 @@ func (client *Client) startRevocation() {
 					break
 				}
 				if r < probability(cred.NonRevocationWitness.Updated) {
-					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%d", credid, i)
+					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%d", typ, i)
 					client.jobs <- func() {
-						updated, err := cred.NonrevUpdateFromServer(client.Configuration)
-						if err != nil {
+						if err = client.nonrevUpdateFromServer(typ); err != nil {
 							client.reportError(err)
 							return
-						}
-						if updated {
-							if err = client.nonrevCredPrepareCache(credid, i); err != nil {
-								client.reportError(err)
-								return
-							}
 						}
 					}
 				}
 			}
 		}
 	})
+}
+
+// nonrevPrepare updates the revocation state for each credential in the request
+// requiring a nonrevocation proof, using the updates included in the request, or the remote
+// revocation server if those do not suffice.
+func (client *Client) nonrevPrepare(request irma.SessionRequest) error {
+	base := request.Base()
+	if err := base.RevocationConsistent(); err != nil {
+		return err
+	}
+
+	for typ := range request.Disclosure().Identifiers().CredentialTypes {
+		credtype := client.Configuration.CredentialTypes[typ]
+		if !credtype.SupportsRevocation() {
+			continue
+		}
+		if !base.RequestsRevocation(typ) {
+			continue
+		}
+		if err := client.nonrevUpdate(typ, base.RevocationUpdates[typ]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// nonrevUpdate updates all contained instances of the specified type, using the specified
+// updates if present and if they suffice, and contacting the issuer's server to download updates
+// otherwise.
+func (client *Client) nonrevUpdate(typ irma.CredentialTypeIdentifier, updates map[uint]*revocation.Update) error {
+	lowest := map[uint]uint64{}
+	attrs := client.attrs(typ)
+
+	// Per credential and issuer key counter we may posess multiple credential instances.
+	// Of the nonrevocation witnesses of these, take the lowest index.
+	for i := 0; i < len(attrs); i++ {
+		cred, err := client.credential(typ, i)
+		if err != nil {
+			return err
+		}
+		if cred.NonRevocationWitness == nil {
+			continue
+		}
+		pkid := cred.Pk.Counter
+		_, present := lowest[pkid]
+		if !present || cred.NonRevocationWitness.Accumulator.Index < lowest[pkid] {
+			lowest[pkid] = cred.NonRevocationWitness.Accumulator.Index
+		}
+	}
+
+	// For each key counter, get an update message starting at the lowest index computed above,
+	// that can update all of our credential instance of the given type and key counter,
+	// using the specified update messags if they suffice, or the issuer's server otherwise.
+	u := map[uint]*revocation.Update{}
+	for counter, l := range lowest {
+		update := updates[counter]
+		if update != nil && len(update.Events) > 0 && update.Events[0].Index <= l {
+			u[counter] = update
+		} else {
+			var err error
+			u[counter], err = irma.RevocationClient{Conf: client.Configuration}.
+				FetchUpdateFrom(typ, counter, l+1)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Apply the update messages to all instances of the given type and key counter
+	for counter, update := range u {
+		if err := client.nonrevApplyUpdates(typ, counter, update); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (client *Client) nonrevApplyUpdates(typ irma.CredentialTypeIdentifier, counter uint, update *revocation.Update) error {
+	attrs := client.attrs(typ)
+	var save bool
+	for i := 0; i < len(attrs); i++ {
+		cred, err := client.credential(typ, i)
+		if err != nil {
+			return err
+		}
+		if cred.NonRevocationWitness == nil || cred.Pk.Counter != counter {
+			continue
+		}
+		updated, err := cred.nonrevApplyUpdates(update, irma.RevocationKeys{Conf: client.Configuration})
+		if updated {
+			save = true
+		}
+		if err == revocation.ErrorRevoked {
+			attrs[i].Revoked = true
+			cred.attrs.Revoked = true
+			save = true
+			client.handler.Revoked(&irma.CredentialIdentifier{
+				Type: cred.CredentialType().Identifier(),
+				Hash: cred.attrs.Hash(),
+			})
+			// Even if this credential is revoked during a session, we may have
+			// other instances that can satisfy the request. So don't return an
+			// error which would halt the session.
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if save {
+		if err := client.storage.StoreAttributes(client.attributes); err != nil {
+			client.reportError(err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (client *Client) nonrevUpdateFromServer(typ irma.CredentialTypeIdentifier) error {
+	if err := client.nonrevUpdate(typ, map[uint]*revocation.Update{}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (client *Client) nonrevPrepareCache(typ irma.CredentialTypeIdentifier, index int) error {
+	irma.Logger.WithFields(logrus.Fields{"credtype": typ, "index": index}).Debug("Preparing cache")
+	cred, err := client.credential(typ, index)
+	if err != nil {
+		return err
+	}
+	return cred.NonrevPrepareCache()
+}
+
+// nonrevRepopulateCaches repopulates the consumed nonrevocation caches of the credentials involved
+// in the request, in background jobs, after the request has finished.
+func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
+	for typ := range request.Disclosure().Identifiers().CredentialTypes {
+		credtype := client.Configuration.CredentialTypes[typ]
+		if !credtype.SupportsRevocation() {
+			continue
+		}
+		for i := range client.attrs(typ) {
+			typ := typ
+			i := i
+			client.jobs <- func() {
+				if err := client.nonrevPrepareCache(typ, i); err != nil {
+					client.reportError(err)
+				}
+			}
+		}
+	}
+}
+
+// nonrevApplyUpdates updates the credential's nonrevocation witness using the specified messages,
+// if they all verify and if their indices are ahead and adjacent to that of our witness.
+func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.RevocationKeys) (bool, error) {
+	oldindex := cred.NonRevocationWitness.Accumulator.Index
+
+	pk, err := keys.PublicKey(cred.CredentialType().IssuerIdentifier(), update.SignedAccumulator.PKCounter)
+	if err != nil {
+		return false, err
+	}
+	if err = cred.NonRevocationWitness.Update(pk, update); err != nil {
+		return false, err
+	}
+
+	return cred.NonRevocationWitness.Accumulator.Index != oldindex, nil
 }
 
 // probability returns a float between 0 and asymptote, representing a probability
@@ -103,142 +263,4 @@ func randomfloat() (float64, error) {
 	}
 	c := float64(binary.BigEndian.Uint32(b)) / float64(^uint32(0)) // random int / max int
 	return c, nil
-}
-
-func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
-	irma.Logger.WithFields(logrus.Fields{"credid": credid, "index": index}).Debug("Preparing cache")
-	cred, err := client.credential(credid, index)
-	if err != nil {
-		return err
-	}
-	return cred.NonrevPrepareCache()
-}
-
-// NonrevPrepare updates the revocation state for each credential in the request
-// requiring a nonrevocation proof, using the updates included in the request, or the remote
-// revocation server if those do not suffice.
-func (client *Client) NonrevPreprare(request irma.SessionRequest) error {
-	var err error
-	var cred *credential
-	var updated bool
-	for id := range request.Disclosure().Identifiers().CredentialTypes {
-		typ := client.Configuration.CredentialTypes[id]
-		if !typ.SupportsRevocation() {
-			continue
-		}
-		attrs := client.attrs(id)
-		for i := 0; i < len(attrs); i++ {
-			if cred, err = client.credential(id, i); err != nil {
-				return err
-			}
-			if updated, err = cred.NonrevPrepare(client.Configuration, request); err != nil {
-				if err == revocation.ErrorRevoked {
-					attrs[i].Revoked = true
-					cred.AttributeList().Revoked = true
-					if serr := client.storage.StoreAttributes(client.attributes); serr != nil {
-						client.reportError(serr)
-						return err
-					}
-					client.handler.Revoked(&irma.CredentialIdentifier{
-						Type: cred.CredentialType().Identifier(),
-						Hash: cred.AttributeList().Hash(),
-					})
-				}
-				return err
-			}
-			if updated {
-				if err = client.storage.StoreSignature(cred); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// nonrevRepopulateCaches repopulates the consumed nonrevocation caches of the credentials involved
-// in the request, in background jobs, after the request has finished.
-func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
-	for id := range request.Disclosure().Identifiers().CredentialTypes {
-		typ := client.Configuration.CredentialTypes[id]
-		if !typ.SupportsRevocation() {
-			continue
-		}
-		for i, attrs := range client.attrs(id) {
-			if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
-				continue
-			}
-			id := id
-			i := i
-			client.jobs <- func() {
-				if err := client.nonrevCredPrepareCache(id, i); err != nil {
-					client.reportError(err)
-				}
-			}
-		}
-	}
-}
-
-// NonrevPrepare attempts to update the credential's nonrevocation witness from
-// 1) the session request, and then 2) the revocation server if our witness is too far out of date.
-// Returns whether or not the credential's nonrevocation state was updated. If so the caller should
-// persist the updated credential to storage.
-func (cred *credential) NonrevPrepare(conf *irma.Configuration, request irma.SessionRequest) (bool, error) {
-	credtype := cred.CredentialType().Identifier()
-	base := request.Base()
-	if !base.RequestsRevocation(credtype) {
-		return false, nil
-	}
-
-	if err := base.RevocationConsistent(); err != nil {
-		return false, err
-	}
-
-	// first try to update witness by applying the revocation update messages attached to the session request
-	var (
-		revupdates = base.RevocationUpdates[credtype][cred.Pk.Counter]
-		updated    bool
-		err        error
-	)
-	if revupdates == nil {
-		return false, errors.Errorf("revocation updates for key %d not found in session request", cred.Pk.Counter)
-	}
-	updated, err = cred.NonrevApplyUpdates(revupdates, irma.RevocationKeys{Conf: conf})
-	if err != nil {
-		return updated, err
-	}
-	count := len(revupdates.Events)
-	if cred.NonRevocationWitness.Accumulator.Index >= revupdates.Events[count-1].Index {
-		return updated, nil
-	}
-
-	// nonrevocation witness is still out of date after applying the updates from the request:
-	// we were too far behind. Update from revocation server.
-	return cred.NonrevUpdateFromServer(conf)
-}
-
-func (cred *credential) NonrevUpdateFromServer(conf *irma.Configuration) (bool, error) {
-	credtype := cred.CredentialType().Identifier()
-	revupdates, err := irma.RevocationClient{Conf: conf}.
-		FetchUpdateFrom(credtype, cred.Pk.Counter, cred.NonRevocationWitness.Accumulator.Index+1)
-	if err != nil {
-		return false, err
-	}
-	return cred.NonrevApplyUpdates(revupdates, irma.RevocationKeys{Conf: conf})
-}
-
-// NonrevApplyUpdates updates the credential's nonrevocation witness using the specified messages,
-// if they all verify and if their indices are ahead and adjacent to that of our witness.
-func (cred *credential) NonrevApplyUpdates(update *revocation.Update, keys irma.RevocationKeys) (bool, error) {
-	oldindex := cred.NonRevocationWitness.Accumulator.Index
-
-	pk, err := keys.PublicKey(cred.CredentialType().IssuerIdentifier(), update.SignedAccumulator.PKCounter)
-	if err != nil {
-		return false, err
-	}
-	if err = cred.NonRevocationWitness.Update(pk, update); err != nil {
-		return false, err
-	}
-
-	return cred.NonRevocationWitness.Accumulator.Index != oldindex, nil
 }

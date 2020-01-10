@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/keyproof/common"
@@ -192,7 +193,7 @@ func New(
 	}
 
 	client.jobs = make(chan func(), 100)
-	client.startRevocation()
+	client.initRevocation()
 	client.StartJobs()
 
 	return client, schemeMgrErr
@@ -283,7 +284,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 	index := -1
 	for _, attrlistlist := range client.attributes {
 		for i, attrs := range attrlistlist {
-			if attrs.Hash() == cred.AttributeList().Hash() {
+			if attrs.Hash() == cred.attrs.Hash() {
 				index = i
 				break
 			}
@@ -307,7 +308,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		}
 
 		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
-			if client.attrs(id)[i].EqualsExceptMetadata(cred.AttributeList()) {
+			if client.attrs(id)[i].EqualsExceptMetadata(cred.attrs) {
 				if err = client.remove(id, i, false); err != nil {
 					return
 				}
@@ -316,7 +317,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 	}
 
 	// Append the new cred to our attributes and credentials
-	client.attributes[id] = append(client.attrs(id), cred.AttributeList())
+	client.attributes[id] = append(client.attrs(id), cred.attrs)
 	if !id.Empty() {
 		if _, exists := client.credentialsCache[id]; !exists {
 			client.credentialsCache[id] = make(map[int]*credential)
@@ -523,7 +524,7 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 			Signature:            sig,
 			NonRevocationWitness: witness,
 			Pk:                   pk,
-		}, client.Configuration)
+		}, attrs, client.Configuration)
 		if err != nil {
 			return nil, err
 		}
@@ -772,6 +773,9 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		if cred.attrs.Revoked {
+			return nil, nil, nil, revocation.ErrorRevoked
+		}
 		nonrev := request.Base().RequestsRevocation(cred.CredentialType().Identifier())
 		builder, err = cred.CreateDisclosureProofBuilder(grp.attrs, nonrev)
 		if err != nil {
@@ -895,7 +899,8 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 	}
 
 	for _, gabicred := range gabicreds {
-		newcred, err := newCredential(gabicred, client.Configuration)
+		attrs := irma.NewAttributeListFromInts(gabicred.Attributes[1:], client.Configuration)
+		newcred, err := newCredential(gabicred, attrs, client.Configuration)
 		if err != nil {
 			return err
 		}

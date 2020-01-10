@@ -243,7 +243,7 @@ func TestCredentialRemoval(t *testing.T) {
 	cred, err := client.credential(id, 0)
 	require.NoError(t, err)
 	require.NotNil(t, cred)
-	err = client.RemoveCredentialByHash(cred.AttributeList().Hash())
+	err = client.RemoveCredentialByHash(cred.attrs.Hash())
 	require.NoError(t, err)
 	cred, err = client.credential(id, 0)
 	require.NoError(t, err)
