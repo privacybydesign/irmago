@@ -10,7 +10,6 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,8 +28,6 @@ func TestMain(m *testing.M) {
 
 func parseStorage(t *testing.T) *Client {
 	test.SetupTestStorage(t)
-	require.NoError(t, fs.CopyDirectory(filepath.Join("..", "testdata", "teststorage"),
-		filepath.Join("..", "testdata", "storage", "test")))
 	client, err := New(
 		filepath.Join("..", "testdata", "storage", "test"),
 		filepath.Join("..", "testdata", "irma_configuration"),
