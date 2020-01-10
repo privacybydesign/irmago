@@ -56,6 +56,10 @@ func (s *storage) EnsureStorageExists() error {
 	return err
 }
 
+func (s *storage) Close() error {
+	return s.db.Close()
+}
+
 func (s *storage) txStore(tx *bbolt.Tx, key string, value interface{}, bucketName string) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 	if err != nil {

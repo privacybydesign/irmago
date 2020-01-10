@@ -186,6 +186,10 @@ func New(
 	return cm, schemeMgrErr
 }
 
+func (client *Client) Close() error {
+	return client.storage.Close()
+}
+
 // CredentialInfoList returns a list of information of all contained credentials.
 func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	list := irma.CredentialInfoList([]*irma.CredentialInfo{})
