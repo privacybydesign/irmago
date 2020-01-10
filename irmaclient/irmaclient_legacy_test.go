@@ -7,6 +7,7 @@ import (
 
 func TestConvertingLegacyStorage(t *testing.T) {
 	test.SetTestStorageDir("legacy_teststorage")
+	defer test.SetTestStorageDir("teststorage")
 
 	// Test all tests in this file with legacy storage too
 	t.Run("TestVerify", TestVerify)
@@ -19,6 +20,4 @@ func TestConvertingLegacyStorage(t *testing.T) {
 	// TestFreshStorage is not needed, because this test does not use an existing storage
 	t.Run("TestKeyshareEnrollmentRemoval", TestKeyshareEnrollmentRemoval)
 	t.Run("TestUpdatePreferences", TestUpdatePreferences)
-
-	test.SetTestStorageDir("teststorage")
 }
