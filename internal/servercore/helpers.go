@@ -11,7 +11,6 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -78,16 +77,16 @@ func (session *session) checkCache(message []byte, expectedStatus server.Status)
 
 func (session *session) issuanceHandleRevocation(
 	cred *irma.CredentialRequest, attributes *irma.AttributeList, sk *gabi.PrivateKey,
-) (witness *revocation.Witness, nonrevAttr *big.Int, err error) {
+) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
 	if !session.conf.IrmaConfiguration.CredentialTypes[id].SupportsRevocation() {
-		return
+		return nil, nil
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
 	if settings, ok := session.conf.RevocationSettings[id]; !ok || settings.Mode != irma.RevocationModeServer {
-		if err = session.conf.IrmaConfiguration.Revocation.UpdateDB(id); err != nil {
-			return
+		if err := session.conf.IrmaConfiguration.Revocation.UpdateDB(id); err != nil {
+			return nil, err
 		}
 	}
 
@@ -97,38 +96,37 @@ func (session *session) issuanceHandleRevocation(
 	// from it to generate the witness from
 	updates, err := rs.UpdateLatest(id, 0)
 	if err != nil {
-		return
+		return nil, err
 	}
-	u := updates[uint(cred.KeyCounter)]
+	u := updates[cred.KeyCounter]
 	if u == nil {
-		return nil, nil, errors.Errorf("no revocation updates found for key %d", cred.KeyCounter)
+		return nil, errors.Errorf("no revocation updates found for key %d", cred.KeyCounter)
 	}
 	sig := u.SignedAccumulator
 	pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), sig.PKCounter)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	acc, err := sig.UnmarshalVerify(pk)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	if witness, err = sk.RevocationGenerateWitness(acc); err != nil {
-		return
+	witness, err := sk.RevocationGenerateWitness(acc)
+	if err != nil {
+		return nil, err
 	}
 
 	witness.SignedAccumulator = sig // attach previously selected reocation record to the witness for the client
-	nonrevAttr = witness.E
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
 		PKCounter:  sk.Counter,
 		Key:        cred.RevocationKey,
-		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
+		Attr:       (*irma.RevocationAttribute)(witness.E),
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
-	err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
-	return
+	return witness, session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 }
 
 func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {

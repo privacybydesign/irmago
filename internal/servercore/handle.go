@@ -199,11 +199,11 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-		witness, nonrevAttr, err := session.issuanceHandleRevocation(cred, attributes, sk)
+		witness, err := session.issuanceHandleRevocation(cred, attributes, sk)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error()) // TODO error type
 		}
-		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, nonrevAttr, commitments.Nonce2)
+		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, witness, commitments.Nonce2)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
