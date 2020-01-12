@@ -363,6 +363,22 @@ func revocationSetup(t *testing.T) (*irmaclient.Client, irmaclient.ClientHandler
 	return client, handler
 }
 
+func revoke(t *testing.T, key string, conf *irma.RevocationStorage, cred irma.CredentialTypeIdentifier, acc *revocation.Accumulator) {
+	sk, err := conf.Keys.PrivateKey(cred.IssuerIdentifier(), 2)
+	require.NoError(t, err)
+	witness, err := revocation.RandomWitness(sk, acc)
+	require.NoError(t, err)
+	require.NoError(t, conf.AddIssuanceRecord(&irma.IssuanceRecord{
+		Key:        key,
+		CredType:   cred,
+		PKCounter:  2,
+		Attr:       (*irma.RevocationAttribute)(witness.E),
+		Issued:     time.Now().UnixNano(),
+		ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
+	}))
+	require.NoError(t, conf.Revoke(cred, key))
+}
+
 var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 	RevocationKey:    "cred0", // once revocation is required for a credential type, this key is required
 	CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
@@ -370,6 +386,49 @@ var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialReques
 		"BSN": "299792458",
 	},
 }})
+
+func TestRevocationOutdatedAccumulator(t *testing.T) {
+	defer test.ClearTestStorage(t)
+	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	cred := attr.CredentialTypeIdentifier()
+	client, _ := revocationSetup(t)
+
+	// Prepare key material
+	conf := revocationConfiguration.IrmaConfiguration.Revocation
+	sk, err := conf.Keys.PrivateKey(cred.IssuerIdentifier(), 2)
+	require.NoError(t, err)
+	pk, err := conf.Keys.PublicKey(cred.IssuerIdentifier(), 2)
+	require.NoError(t, err)
+	update, err := revocation.NewAccumulator(sk)
+	require.NoError(t, err)
+	acc, err := update.SignedAccumulator.UnmarshalVerify(pk)
+	require.NoError(t, err)
+
+	// Prepare session request
+	request := revocationRequest().(*irma.DisclosureRequest)
+	require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
+	events := request.RevocationUpdates[cred][2].Events
+	i := events[len(events)-1].Index
+
+	// Construct disclosure proof with nonrevocation proof
+	candidates, missing := client.CheckSatisfiability(request.Disclosure().Disclose)
+	require.Empty(t, missing)
+	disclosure, _, err := client.Proofs(&irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{candidates[0][0]}}, request)
+	require.NoError(t, err)
+
+	// Revoke a bogus credential and update the session request,
+	// indicated that we expect a nonrevocation proof wrt the just-updated accumulator
+	revoke(t, "1", conf, cred, acc)
+	request.RevocationUpdates = nil
+	require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
+	events = request.RevocationUpdates[cred][2].Events
+	require.True(t, events[len(events)-1].Index > i)
+
+	// Try to verify against updated session request
+	_, status, err := disclosure.Verify(client.Configuration, request)
+	require.Error(t, err)
+	require.Equal(t, irma.ProofStatusInvalid, status)
+}
 
 func TestRevocationClientUpdate(t *testing.T) {
 	defer test.ClearTestStorage(t)
@@ -392,17 +451,7 @@ func TestRevocationClientUpdate(t *testing.T) {
 	// to contact the RA to update its witness
 	for i := 0; i < irma.RevocationDefaultEventCount+1; i++ {
 		key := strconv.Itoa(i)
-		witness, err := revocation.RandomWitness(sk, acc)
-		require.NoError(t, err)
-		require.NoError(t, conf.AddIssuanceRecord(&irma.IssuanceRecord{
-			Key:        key,
-			CredType:   cred,
-			PKCounter:  2,
-			Attr:       (*irma.RevocationAttribute)(witness.E),
-			Issued:     time.Now().UnixNano(),
-			ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
-		}))
-		require.NoError(t, conf.Revoke(cred, key))
+		revoke(t, key, conf, cred, acc)
 	}
 
 	result := revocationSession(t, client)
