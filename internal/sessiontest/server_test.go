@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinzhu/gorm"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
@@ -18,15 +17,12 @@ import (
 )
 
 var (
-	httpServer       *http.Server
-	irmaServer       *irmaserver.Server
-	revHttpServer    *http.Server
-	revocationServer *irmaserver.Server
-	requestorServer  *requestorserver.Server
+	httpServer      *http.Server
+	irmaServer      *irmaserver.Server
+	requestorServer *requestorserver.Server
 
-	revocationConfiguration *server.Configuration
-	logger                  = logrus.New()
-	testdata                = test.FindTestdataFolder(nil)
+	logger   = logrus.New()
+	testdata = test.FindTestdataFolder(nil)
 )
 
 func init() {
@@ -54,69 +50,6 @@ func StartRequestorServer(configuration *requestorserver.Configuration) {
 
 func StopRequestorServer() {
 	requestorServer.Stop()
-}
-
-func StartRevocationServer(t *testing.T) {
-	var err error
-
-	irma.Logger = logger
-
-	//dbtype, dbstr := "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
-	dbtype, dbstr := "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
-
-	// Connect to database and clear records from previous test runs
-	g, err := gorm.Open(dbtype, dbstr)
-	require.NoError(t, err)
-	require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
-	require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
-	require.NoError(t, g.DropTableIfExists((*irma.IssuanceRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
-	require.NoError(t, g.Close())
-
-	cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
-	settings := map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
-		cred: {Mode: irma.RevocationModeServer},
-	}
-	irmaconf, err := irma.NewConfiguration(filepath.Join(testdata, "irma_configuration"), irma.ConfigurationOptions{
-		RevocationDBConnStr: dbstr,
-		RevocationDBType:    dbtype,
-		RevocationSettings:  settings,
-	})
-	require.NoError(t, err)
-	require.NoError(t, irmaconf.ParseFolder())
-
-	conf := &server.Configuration{
-		Logger:               logger,
-		DisableSchemesUpdate: true,
-		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
-		RevocationSettings:   settings,
-		IrmaConfiguration:    irmaconf,
-		RevocationDBConnStr:  dbstr,
-		RevocationDBType:     dbtype,
-	}
-
-	// Enable revocation for our credential type
-	sk, err := irmaconf.Revocation.Keys.PrivateKeyLatest(cred.IssuerIdentifier())
-	require.NoError(t, err)
-	require.NoError(t, irmaconf.Revocation.EnableRevocation(cred, sk))
-
-	// Start revocation server
-	revocationServer, err = irmaserver.New(conf)
-	revocationConfiguration = conf
-	require.NoError(t, err)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", revocationServer.HandlerFunc())
-	revHttpServer = &http.Server{Addr: ":48683", Handler: mux}
-	go func() {
-		_ = revHttpServer.ListenAndServe()
-	}()
-}
-
-func StopRevocationServer() {
-	revocationServer.Stop()
-	_ = revHttpServer.Close()
 }
 
 func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
