@@ -313,7 +313,7 @@ func (session *session) processSessionInfo() {
 
 	// Prepare and update all revocation state asynchroniously while the user makes her choices
 	go func() {
-		session.prepRevocation <- session.client.nonrevPrepare(session.request)
+		session.prepRevocation <- session.client.NonrevPrepare(session.request)
 	}()
 
 	// Ask for permission to execute the session

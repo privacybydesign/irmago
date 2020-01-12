@@ -71,10 +71,10 @@ func (client *Client) initRevocation() {
 	})
 }
 
-// nonrevPrepare updates the revocation state for each credential in the request
+// NonrevPrepare updates the revocation state for each credential in the request
 // requiring a nonrevocation proof, using the updates included in the request, or the remote
 // revocation server if those do not suffice.
-func (client *Client) nonrevPrepare(request irma.SessionRequest) error {
+func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 	base := request.Base()
 	if err := base.RevocationConsistent(); err != nil {
 		return err

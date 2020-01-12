@@ -11,6 +11,7 @@ import (
 
 	"testing"
 
+	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -377,6 +378,9 @@ func revoke(t *testing.T, key string, conf *irma.RevocationStorage, cred irma.Cr
 		ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
 	}))
 	require.NoError(t, conf.Revoke(cred, key))
+	_, newacc, err := conf.Accumulator(cred, 2)
+	require.NoError(t, err)
+	*acc = *newacc
 }
 
 var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialRequest{{
@@ -387,7 +391,7 @@ var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialReques
 	},
 }})
 
-func TestRevocationOutdatedAccumulator(t *testing.T) {
+func TestRevocationOtherAccumulator(t *testing.T) {
 	defer test.ClearTestStorage(t)
 	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	cred := attr.CredentialTypeIdentifier()
@@ -408,26 +412,53 @@ func TestRevocationOutdatedAccumulator(t *testing.T) {
 	request := revocationRequest().(*irma.DisclosureRequest)
 	require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
 	events := request.RevocationUpdates[cred][2].Events
-	i := events[len(events)-1].Index
+	require.Equal(t, uint64(1), events[len(events)-1].Index)
 
-	// Construct disclosure proof with nonrevocation proof
+	// Construct disclosure proof with nonrevocation proof against accumulator with index 1
 	candidates, missing := client.CheckSatisfiability(request.Disclosure().Disclose)
 	require.Empty(t, missing)
-	disclosure, _, err := client.Proofs(&irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{candidates[0][0]}}, request)
+	choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{candidates[0][0]}}
+	disclosure, _, err := client.Proofs(choice, request)
 	require.NoError(t, err)
+	pacc, err := disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), pacc.Index)
 
-	// Revoke a bogus credential and update the session request,
-	// indicated that we expect a nonrevocation proof wrt the just-updated accumulator
-	revoke(t, "1", conf, cred, acc)
+	// Revoke a bogus credential, advancing accumulator index to 2, and update the session request,
+	// indicated that we expect a nonrevocation proof wrt accumulator with index 2
+	revoke(t, "2", conf, cred, acc)
 	request.RevocationUpdates = nil
-	require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
+	require.NoError(t, conf.SetRevocationUpdates(request.Base()))
 	events = request.RevocationUpdates[cred][2].Events
-	require.True(t, events[len(events)-1].Index > i)
+	require.Equal(t, uint64(2), events[len(events)-1].Index)
 
 	// Try to verify against updated session request
 	_, status, err := disclosure.Verify(client.Configuration, request)
 	require.Error(t, err)
 	require.Equal(t, irma.ProofStatusInvalid, status)
+
+	// Revoke another bogus credential, advancing index to 3, and make a new disclosure request
+	// requiring a nonrevocation proof against the accumulator with index 3
+	revoke(t, "3", conf, cred, acc)
+	newrequest := revocationRequest().(*irma.DisclosureRequest)
+	require.NoError(t, conf.SetRevocationUpdates(newrequest.Base()))
+	events = newrequest.RevocationUpdates[cred][2].Events
+	require.Equal(t, uint64(3), events[len(events)-1].Index)
+
+	// Use newrequest to update client to index 3 and contruct a disclosure proof
+	require.NoError(t, client.NonrevPrepare(newrequest))
+	disclosure, _, err = client.Proofs(choice, newrequest)
+	require.NoError(t, err)
+	pacc, err = disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), pacc.Index)
+
+	// Check that the nonrevocation proof which uses a newer accumulator than ours verifies
+	events = request.RevocationUpdates[cred][2].Events
+	require.Equal(t, uint64(2), events[len(events)-1].Index)
+	_, status, err = disclosure.Verify(client.Configuration, request)
+	require.NoError(t, err)
+	require.Equal(t, irma.ProofStatusValid, status)
 }
 
 func TestRevocationClientUpdate(t *testing.T) {

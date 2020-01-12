@@ -368,6 +368,12 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 
 // Accumulator methods
 
+func (rs *RevocationStorage) Accumulator(typ CredentialTypeIdentifier, pkcounter uint) (
+	*revocation.SignedAccumulator, *revocation.Accumulator, error,
+) {
+	return rs.accumulator(rs.db, typ, pkcounter)
+}
+
 // accumulator retrieves, verifies and deserializes the accumulator of the given type and key.
 func (rs *RevocationStorage) accumulator(tx revStorage, typ CredentialTypeIdentifier, pkcounter uint) (
 	*revocation.SignedAccumulator, *revocation.Accumulator, error,
