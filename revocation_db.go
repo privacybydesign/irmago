@@ -136,7 +136,7 @@ func (s sqlRevStorage) Latest(dest interface{}, count uint64, query interface{},
 	return s.gorm.
 		Where(query, args...).
 		Limit(count).
-		Set("gorm:order_by_primary_key", "ASC").
+		Set("gorm:order_by_primary_key", "DESC").
 		Find(dest).Error
 }
 

@@ -3,6 +3,7 @@ package irma
 import (
 	"database/sql/driver"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/fxamacker/cbor"
@@ -123,9 +124,9 @@ const (
 	// In addition this mode exposes the same endpoints as RevocationModeProxy.
 	RevocationModeServer RevocationMode = "server"
 
-	// revocationUpdateCount specifies how many revocation events are attached to session requests
+	// RevocationDefaultEventCount specifies how many revocation events are attached to session requests
 	// for the client to update its revocation state.
-	revocationUpdateCount = 5
+	RevocationDefaultEventCount = 5
 
 	// revocationMaxAccumulatorAge is the default maximum in seconds for the 'accumulator age',
 	// which we define to be the amount of time since the last confirmation from the RA that the
@@ -181,7 +182,7 @@ func (rs *RevocationStorage) UpdateFrom(typ CredentialTypeIdentifier, pkcounter 
 			return err
 		}
 		var events []*EventRecord
-		if err := tx.From(&events, "cred_type = ? and pk_counter = ? and index >= ?", typ, pkcounter, index); err != nil {
+		if err := tx.From(&events, "cred_type = ? and pk_counter = ? and eventindex >= ?", typ, pkcounter, index); err != nil {
 			return err
 		}
 		update = rs.newUpdate(acc, events)
@@ -235,6 +236,11 @@ func (*RevocationStorage) newUpdates(records []*AccumulatorRecord, events []*Eve
 			updates[i] = update
 		}
 		update.Events = append(update.Events, e.Event())
+	}
+	for _, update := range updates {
+		sort.Slice(update.Events, func(i, j int) bool {
+			return update.Events[i].Index < update.Events[j].Index
+		})
 	}
 	return updates
 }
@@ -397,7 +403,7 @@ func (rs *RevocationStorage) accumulator(tx revStorage, typ CredentialTypeIdenti
 // Methods to update from remote revocation server
 
 func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
-	updates, err := rs.client.FetchUpdateLatest(typ, revocationUpdateCount)
+	updates, err := rs.client.FetchUpdateLatest(typ, RevocationDefaultEventCount)
 	if err != nil {
 		return err
 	}
@@ -537,7 +543,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 				return err
 			}
 		}
-		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, revocationUpdateCount)
+		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, RevocationDefaultEventCount)
 		if err != nil {
 			return err
 		}

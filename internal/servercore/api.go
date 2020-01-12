@@ -372,7 +372,7 @@ func (s *Server) handleRevocationMessage(
 	noun, method string, args []string, headers map[string][]string, message []byte,
 ) (int, []byte) {
 	if (noun == "updatefrom") && method == http.MethodGet {
-		if len(args) != 2 {
+		if len(args) != 3 {
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET updatefrom expects 3 url arguments"))
 		}
 		i, err := strconv.ParseUint(args[1], 10, 64)

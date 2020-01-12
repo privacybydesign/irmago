@@ -125,7 +125,7 @@ func (client *Client) nonrevUpdate(typ irma.CredentialTypeIdentifier, updates ma
 	u := map[uint]*revocation.Update{}
 	for counter, l := range lowest {
 		update := updates[counter]
-		if update != nil && len(update.Events) > 0 && update.Events[0].Index <= l {
+		if update != nil && len(update.Events) > 0 && update.Events[0].Index <= l+1 {
 			u[counter] = update
 		} else {
 			var err error
