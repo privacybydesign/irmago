@@ -102,7 +102,7 @@ func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {
 	session := s.newSession(action, rrequest)
 	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.token}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request: ", server.ToJson(rrequest))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.token, "clienttoken": session.clientToken}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}

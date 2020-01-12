@@ -427,6 +427,7 @@ func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
 	settings := rs.getSettings(typ)
 	// update 10 seconds before the maximum, to stay below it
 	if settings.updated.Before(time.Now().Add(time.Duration(-settings.MaxNonrevocationDuration+10) * time.Second)) {
+		Logger.WithField("credtype", typ).Tracef("fetching revocation updates")
 		if err := rs.UpdateDB(typ); err != nil {
 			return err
 		}
