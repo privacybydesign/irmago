@@ -27,6 +27,7 @@ const (
 	sessionOptionUnsatisfiableRequest
 	sessionOptionRetryPost
 	sessionOptionIgnoreClientError
+	sessionOptionReuseServer
 )
 
 type requestorSessionResult struct {
@@ -40,8 +41,15 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		defer test.ClearTestStorage(t)
 	}
 
-	StartIrmaServer(t, len(options) == 1 && options[0] == sessionOptionUpdatedIrmaConfiguration)
-	defer StopIrmaServer()
+	var opts sessionOption = 0
+	for _, o := range options {
+		opts |= o
+	}
+
+	if opts&sessionOptionReuseServer == 0 {
+		StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0)
+		defer StopIrmaServer()
+	}
 
 	clientChan := make(chan *SessionResult)
 	serverChan := make(chan *server.SessionResult)
@@ -51,13 +59,8 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	})
 	require.NoError(t, err)
 
-	opts := 0
-	for _, o := range options {
-		opts |= int(o)
-	}
-
 	var h irmaclient.Handler
-	if opts&int(sessionOptionUnsatisfiableRequest) > 0 {
+	if opts&sessionOptionUnsatisfiableRequest > 0 {
 		h = &UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil, ""}}
 	} else {
 		h = &TestHandler{t, clientChan, client, nil, ""}
@@ -71,7 +74,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		require.NoError(t, clientResult.Err)
 	}
 
-	if opts&int(sessionOptionUnsatisfiableRequest) > 0 {
+	if opts&sessionOptionUnsatisfiableRequest > 0 {
 		require.NotNil(t, clientResult)
 		return &requestorSessionResult{nil, clientResult.Missing}
 	}
@@ -79,7 +82,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	serverResult := <-serverChan
 	require.Equal(t, token, serverResult.Token)
 
-	if opts&int(sessionOptionRetryPost) > 0 {
+	if opts&sessionOptionRetryPost > 0 {
 		req, err := http.NewRequest(http.MethodPost,
 			qr.URL+"/proofs",
 			bytes.NewBuffer([]byte(h.(*TestHandler).result)),
@@ -353,12 +356,12 @@ func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessi
 }
 
 // revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
-func revocationSetup(t *testing.T) (*irmaclient.Client, irmaclient.ClientHandler) {
+func revocationSetup(t *testing.T, options ...sessionOption) (*irmaclient.Client, irmaclient.ClientHandler) {
 	StartRevocationServer(t)
 
 	// issue a MijnOverheid.root instance with revocation enabled
 	client, handler := parseStorage(t)
-	result := requestorSessionHelper(t, revocationIssuanceRequest, client)
+	result := requestorSessionHelper(t, revocationIssuanceRequest, client, options...)
 	require.Nil(t, result.Err)
 
 	return client, handler
@@ -535,4 +538,21 @@ func TestRevocation(t *testing.T) {
 	candidates, missing := client.Candidates(irma.AttributeDisCon{{{Type: attr}}})
 	require.Empty(t, candidates)
 	require.NotEmpty(t, missing)
+}
+
+func TestRevocationSameIrmaServer(t *testing.T) {
+	StartIrmaServer(t, false)
+	defer StopIrmaServer()
+	defer test.ClearTestStorage(t)
+
+	// issue a credential, populating irmaServer's revocation memdb
+	client, _ := revocationSetup(t, sessionOptionReuseServer)
+
+	// disable serving revocation updates in revocation server
+	require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.Close())
+
+	// do disclosure session, using irmaServer's memdb
+	result := revocationSession(t, client, sessionOptionReuseServer)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+	require.NotEmpty(t, result.Disclosed)
 }
