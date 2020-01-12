@@ -24,8 +24,9 @@ var (
 	revocationServer *irmaserver.Server
 	requestorServer  *requestorserver.Server
 
-	logger   = logrus.New()
-	testdata = test.FindTestdataFolder(nil)
+	revocationConfiguration *server.Configuration
+	logger                  = logrus.New()
+	testdata                = test.FindTestdataFolder(nil)
 )
 
 func init() {
@@ -103,6 +104,7 @@ func StartRevocationServer(t *testing.T) {
 
 	// Start revocation server
 	revocationServer, err = irmaserver.New(conf)
+	revocationConfiguration = conf
 	require.NoError(t, err)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", revocationServer.HandlerFunc())

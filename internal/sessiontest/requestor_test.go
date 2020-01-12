@@ -6,9 +6,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strconv"
+	"time"
 
 	"testing"
 
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -367,6 +370,45 @@ var revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialReques
 		"BSN": "299792458",
 	},
 }})
+
+func TestRevocationClientUpdate(t *testing.T) {
+	defer test.ClearTestStorage(t)
+	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	cred := attr.CredentialTypeIdentifier()
+	client, _ := revocationSetup(t)
+
+	conf := revocationConfiguration.IrmaConfiguration.Revocation
+
+	sk, err := conf.Keys.PrivateKey(cred.IssuerIdentifier(), 2)
+	require.NoError(t, err)
+	pk, err := conf.Keys.PublicKey(cred.IssuerIdentifier(), 2)
+	require.NoError(t, err)
+	update, err := revocation.NewAccumulator(sk)
+	require.NoError(t, err)
+	acc, err := update.SignedAccumulator.UnmarshalVerify(pk)
+	require.NoError(t, err)
+
+	// Advance the accumulator by doing revocations so much that the client will need
+	// to contact the RA to update its witness
+	for i := 0; i < irma.RevocationDefaultEventCount+1; i++ {
+		key := strconv.Itoa(i)
+		witness, err := revocation.RandomWitness(sk, acc)
+		require.NoError(t, err)
+		require.NoError(t, conf.AddIssuanceRecord(&irma.IssuanceRecord{
+			Key:        key,
+			CredType:   cred,
+			PKCounter:  2,
+			Attr:       (*irma.RevocationAttribute)(witness.E),
+			Issued:     time.Now().UnixNano(),
+			ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
+		}))
+		require.NoError(t, conf.Revoke(cred, key))
+	}
+
+	result := revocationSession(t, client)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+	require.NotEmpty(t, result.Disclosed)
+}
 
 func TestRevocation(t *testing.T) {
 	defer test.ClearTestStorage(t)
