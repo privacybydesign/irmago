@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor"
+	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
@@ -96,12 +97,6 @@ type (
 		ValidUntil int64
 		RevokedAt  int64 `json:",omitempty"` // 0 if not currently revoked
 	}
-
-	// TODO
-	TimeRecord struct {
-		Index      uint64
-		Start, End int64
-	}
 )
 
 const (
@@ -133,6 +128,10 @@ const (
 	// latest accumulator that we know is still the latest one: clients should prove nonrevocation
 	// against a 'younger' accumulator.
 	revocationMaxAccumulatorAge uint = 5 * 60
+
+	// If server mode is enabled for a credential type, then once every so many seconds
+	// the timestamp in each accumulator is updated to now.
+	revocationAccumulatorUpdateInterval uint64 = 10
 )
 
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
@@ -182,7 +181,7 @@ func (rs *RevocationStorage) UpdateFrom(typ CredentialTypeIdentifier, pkcounter 
 			return err
 		}
 		var events []*EventRecord
-		if err := tx.From(&events, "cred_type = ? and pk_counter = ? and eventindex >= ?", typ, pkcounter, index); err != nil {
+		if err := tx.Find(&events, "cred_type = ? and pk_counter = ? and eventindex >= ?", typ, pkcounter, index); err != nil {
 			return err
 		}
 		update = rs.newUpdate(acc, events)
@@ -465,15 +464,51 @@ func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, re
 
 // Misscelaneous methods
 
+func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdentifier) error {
+	return rs.db.Transaction(func(tx revStorage) error {
+		var err error
+		var records []AccumulatorRecord
+		Logger.Tracef("updating accumulator times")
+		if err = tx.Find(&records, "cred_type in (?)", types); err != nil {
+			return err
+		}
+		for _, r := range records {
+			pk, err := rs.Keys.PublicKey(r.CredType.IssuerIdentifier(), r.PKCounter)
+			if err != nil {
+				return err
+			}
+			sk, err := rs.Keys.PrivateKey(r.CredType.IssuerIdentifier(), r.PKCounter)
+			if err != nil {
+				return err
+			}
+			acc, err := r.SignedAccumulator().UnmarshalVerify(pk)
+			if err != nil {
+				return err
+			}
+			acc.Time = time.Now().Unix()
+			sacc, err := acc.Sign(sk)
+			if err != nil {
+				return err
+			}
+			r.Data = signedMessage(sacc.Data)
+			if err = tx.Save(r); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
 	var t *CredentialTypeIdentifier
-
+	var ourtypes []CredentialTypeIdentifier
 	for typ, s := range settings {
 		switch s.Mode {
 		case RevocationModeServer:
 			if s.ServerURL != "" {
 				return errors.New("server_url cannot be combined with server mode")
 			}
+			ourtypes = append(ourtypes, typ)
 			t = &typ
 		case RevocationModeProxy:
 			t = &typ
@@ -485,6 +520,15 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 	}
 	if t != nil && connstr == "" {
 		return errors.Errorf("revocation mode for %s requires SQL database but no connection string given", *t)
+	}
+
+	if len(ourtypes) > 0 {
+		rs.conf.Scheduler.Every(revocationAccumulatorUpdateInterval).Seconds().Do(func() {
+			if err := rs.updateAccumulatorTimes(ourtypes); err != nil {
+				err = errors.WrapPrefix(err, "failed to write updated accumulator record", 0)
+				raven.CaptureError(err, nil)
+			}
+		})
 	}
 
 	if connstr == "" {

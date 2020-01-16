@@ -22,8 +22,8 @@ type (
 		Last(dest interface{}, query interface{}, args ...interface{}) error
 		// Exists checks whether records exist satisfying col = key.
 		Exists(typ interface{}, query interface{}, args ...interface{}) (bool, error)
-		// From deserializes into o all records where col >= key.
-		From(dest interface{}, query interface{}, args ...interface{}) error
+		// Find deserializes into o all records satisfying the specified query.
+		Find(dest interface{}, query interface{}, args ...interface{}) error
 		// Latest deserializes into o the last items; amount specified by count, ordered by col.
 		Latest(dest interface{}, count uint64, query interface{}, args ...interface{}) error
 		// Close the database.
@@ -125,7 +125,7 @@ func (s sqlRevStorage) Exists(typ interface{}, query interface{}, args ...interf
 	return c > 0, db.Error
 }
 
-func (s sqlRevStorage) From(dest interface{}, query interface{}, args ...interface{}) error {
+func (s sqlRevStorage) Find(dest interface{}, query interface{}, args ...interface{}) error {
 	return s.gorm.
 		Where(query, args...).
 		Set("gorm:order_by_primary_key", "ASC").

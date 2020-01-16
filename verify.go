@@ -112,6 +112,7 @@ func (pl ProofList) VerifyProofs(
 	context *big.Int, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
 	revRecords map[CredentialTypeIdentifier]map[uint]*revocation.Update,
+	validAt *time.Time,
 	isSig bool,
 ) (bool, map[int]*time.Time, error) {
 	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
@@ -175,17 +176,16 @@ func (pl ProofList) VerifyProofs(
 		// the last one in the update message set we provided along with the session request,
 		// OR a newer one included in the proofs itself.
 		updates := revRecords[id]
-		if updates == nil { // no nonrevocation proof was requested for this credential
-			return true, nil, nil
-		}
 		if !proofd.HasNonRevocationProof() {
-			return false, nil, nil
+			if updates != nil {
+				// no nonrevocation proof is included but one was required in the session request
+				return false, nil, nil
+			} else {
+				continue
+			}
 		}
+
 		sig := proofd.NonRevocationProof.SignedAccumulator
-		u := updates[sig.PKCounter]
-		if u == nil {
-			return false, nil, errors.Errorf("nonrevocation proof used unknown public key %d", sig.PKCounter)
-		}
 		pk, err := RevocationKeys{configuration}.PublicKey(typ.IssuerIdentifier(), sig.PKCounter)
 		if err != nil {
 			return false, nil, nil
@@ -195,15 +195,27 @@ func (pl ProofList) VerifyProofs(
 			return false, nil, nil
 		}
 
-		ours, theirs := u.Events[len(u.Events)-1].Index, acc.Index
+		theirs := acc.Index
+		acctime := time.Unix(acc.Time, 0)
+		settings := configuration.Revocation.getSettings(id)
+		var ours uint64
+		if u := updates[sig.PKCounter]; u != nil {
+			ours = u.Events[len(u.Events)-1].Index
+		}
 		if ours > theirs {
-			return false, nil, errors.New("nonrevocation proof used wrong accumulator")
+			return false, nil, nil
 		}
 		if ours == theirs {
-			settings := configuration.Revocation.getSettings(id)
-			if uint(time.Now().Sub(settings.updated).Seconds()) > settings.MaxNonrevocationDuration {
-				revocationtime[i] = &settings.updated
+			if settings.updated.After(acctime) {
+				acctime = settings.updated
 			}
+		}
+		if validAt == nil {
+			t := time.Now()
+			validAt = &t
+		}
+		if uint(validAt.Sub(acctime).Seconds()) > settings.MaxNonrevocationDuration {
+			revocationtime[i] = &acctime
 		}
 	}
 
@@ -321,7 +333,7 @@ func (d *Disclosure) VerifyAgainstRequest(
 	}
 
 	// Cryptographically verify all included IRMA proofs
-	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, revupdates, issig)
+	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, revupdates, validAt, issig)
 	if !valid || err != nil {
 		return nil, ProofStatusInvalid, err
 	}

@@ -133,6 +133,8 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 		assets:   opts.Assets,
 		readOnly: opts.ReadOnly,
 	}
+	conf.Scheduler = gocron.NewScheduler()
+	conf.Scheduler.Start()
 	conf.Revocation = &RevocationStorage{conf: conf}
 	if err = conf.Revocation.Load(
 		Logger.IsLevelEnabled(logrus.DebugLevel),
@@ -154,9 +156,6 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 
 	// Init all maps
 	conf.clear()
-
-	conf.Scheduler = gocron.NewScheduler()
-	conf.Scheduler.Start()
 
 	return
 }

@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -46,7 +47,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// perform disclosure session (of cred1) with nonrevocation proof
 		logger.Info("step 1")
-		result = revocationSession(t, client)
+		result = revocationSession(t, client, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 
@@ -57,7 +58,7 @@ func TestRevocationAll(t *testing.T) {
 		// perform another disclosure session with nonrevocation proof to see that cred1 still works
 		// client updates its witness to the new accumulator first
 		logger.Info("step 3")
-		result = revocationSession(t, client)
+		result = revocationSession(t, client, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 
@@ -68,7 +69,7 @@ func TestRevocationAll(t *testing.T) {
 		// try to perform session with revoked credential
 		// client notices that his credential is revoked and aborts
 		logger.Info("step 5")
-		result = revocationSession(t, client, sessionOptionIgnoreClientError)
+		result = revocationSession(t, client, nil, sessionOptionIgnoreClientError)
 		require.Equal(t, server.StatusCancelled, result.Status)
 		// client revocation callback was called
 		require.NotNil(t, handler.(*TestClientHandler).revoked)
@@ -77,6 +78,52 @@ func TestRevocationAll(t *testing.T) {
 		candidates, missing := client.Candidates(irma.AttributeDisCon{{{Type: attr}}})
 		require.Empty(t, candidates)
 		require.NotEmpty(t, missing)
+	})
+
+	t.Run("AttributeBasedSignature", func(t *testing.T) {
+		defer test.ClearTestStorage(t)
+		client, _ := revocationSetup(t)
+
+		request := revocationSigRequest()
+		result := revocationSession(t, client, request)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+		require.NotNil(t, result.Signature)
+
+		_, status, err := result.Signature.Verify(client.Configuration, request)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusValid, status)
+
+		_, status, err = result.Signature.Verify(client.Configuration, nil)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusValid, status)
+	})
+
+	t.Run("VerifyAttributeBasedSignature", func(t *testing.T) {
+		client, _ := parseStorage(t)
+		defer test.ClearTestStorage(t)
+
+		j := `{"@context":"https://irma.app/ld/signature/v2","signature":[{"c":"e2nKrqit2VU+dSMrgZeUzVTuf8NQ0MPWrjCSW9ZmJYk=","A":"b2/DBvaqnmd346EEvSKu8zDqSDukEHutZdE14HnmljLsVy8DI93gjH0Udsc+p4Sj2AO8x6vjtrXSVptncMsE4tz+7m8euDfH6tdggAd07p5wRxXJCOg/EQpC750QJU3Z30rNkjDv5ajA4stLaKtGs92TFJ0S676PlbYfUHS0QHg=","e_response":"Sfwy53PSeEmBiJJxMU3qqm/z+8klQoRhHYhRqs6gJeGlUUMeQFxzdNC/P9PmzK8wOvpGwTjw7MgY","v_response":"Dj36QVCjaZACzUGckLJWNSJibCGN6xtgt5gDrFQw2yuQmxNm+SFpfK9Pe/REozkHOV5raqynEZG+CX7zGmjEp2M8AoKdgoDc3hsDpyUfOmRVcszJikljWB+gd1HCiJYDruzif1Ar2XElP1Z0ehHjZl504wVabVR3VfuRawRel/jvuhHbnxEgmRrj7AseQdwgUU9t/Qnq1538Uaa0crjJbO8YpEE6zcs/UP1uRZJ93rBhlMo9ui2idPCtaiUYlELAsLEHK2Kjw19F2t2ffa2Iv0NRR5MlDXNjFOLJEbLovrylSs/kihC9eOzF+JopUh6qtcZ7NDgaVSDN2giZA8J+","a_responses":{"0":"JRsR9U7nyK6vjEJ1IbIc3tObCXVksaoqDbmLkTKXLMgysTw3CSQLWWiPLu6mK2/czfY2JtT/c09jhxsvWt4lqVs72WoPKpNhVMQ="},"nonrev_response":"B0M4FYrv3jergGlsiFQqXJ7VCfdM8gJG2q5bydFfs9Raw8FCuHDKjgFWaAn+OF7T7gdZ5tlBs6CgT6HdhLIucadOSbbQE+J87Q==","nonrev_proof":{"C_r":"G0A1Tz6jB1mEJJJp5/4Vk8B4JFWHztqspKa8Mn7IkzaJPBi6xKqIcvEj6JupoZOTgqrIOoZLKE2FzOt9zmgqWyEy+mZPchAEXDka5LB02o2Yals+zu4tDoINgOIjiSOXpByEJogGTkTUJxwv4Ug494nBf669QpeUKXiqFSD4hog=","C_u":"FknWq3GdaetxuMiC+hcgf/tb9MRy9lYR+ha4RwHdOOtzDwkGio4vSDV9WB4KcrRrdMfwMQ82doiAKlAKhMd4KCIx4g2S3lC8zuODx+SbgtbJKA+6UZ8n1jRqYFvGH9+BZWQbegVu8QZlbJUUsFciEszHjwkv0ac0QmkZajTybjU=","responses":{"beta":"ATdypWmAGl9U/JHtBupMcukq6J4641TDkUkGnLdphd/t5cVp6suEC7MXAoi+a+gZxKPuRyCqz/MB6rURmRR3l4oCuEbGVEcGqPxbCEWGx7vA3DTm1AVjohNEbLRu/xHGzW8kNEt/fzf0reU65eYneoEvFIYLxOd46hsK0ppfZn8hU5+umn8NiyMRr7GfH8/qmKrv7Ul62qVlvXJDKNhVbwBQToohT2xvPikLRVI4ZWWKuoUHqatenRzBfZyhyv14TG7ybVDA4X3+","delta":"ASQwxh5OZbSDunGm5HPVW8494idgYikMyC8400NT1Z+IIEWO3u8lS6rWO7rNF9SazLV9luP0Mw2qKmjP2eMHmdN5W9v5LnPAWHut0iAAnQhAymyYUFbQtka1Q2jAx3MnET9BqgE0AUZ3RmDmysv4BckkY8pyvY/rYD/rlG5KgtkZap5tniadWQu8w7ulsMJDbjc7YudlOw1hXaY64TZP34vX6EHSaa3vYy6+sA6RYD0OeshO6wQO9i87+Z1QIEiZBU2aeNdlEknK","epsilon":"Gmw3aqtwbEZrJ/ej9YdD1IE08DG8KjrIP7nmYZKVfwTexAb3mqrlrue7rXR3gfMeufIUmTZeIAkKTw4UcUBKaposc3NaOo8e+kmK0kZ9biLMC53bHZ36KZWrT5h20hwtcmMq4FG8NDh/o8lb2Ibbv8mf71opJyyVUUoEqIatZh1pVYvLVdi9Vxwc1P7tHrJQ8e9ppDqVHkVFYGNfVNGW3RXLKHr/tMsLbUIP9DjVY7M=","zeta":"BKdrESBubE/eKZ1m0eVY5VT5tYrbKA6ArB1o68PV1sMu8IhhOw745zv5KbIH56k/5+JJXv5Hyx3lY3qgI1w+h+w+/G+So7EzhXw4pqFkZy29Seq0xQM/Su6FMMC97auV3hRYX2VAaf+Qc2mb02cDMbKeX92p6+R6wj0KN/1Wel1IHb1GgMOvIURHddROJCpQI23MEU+uxJOb8TZQY/ICM2QFax/rd7FIawdGXnwYXY4="},"sacc":{"data":"omNNc2dYxaRiTnVYgFrKyTR/bZDCSwK1Kg9nNIdIkxX+/PkQAK6FaOT9YFAcEcG+rYqhdfVRWohl2KeBV8Fa1o8AfZ/MbvXcPiTh91p6PNX5OVBFHIGC5GDkLo9MMot6rJ/UZrtmhrhGHzX8c5Gf7xa01XB5MCZGjLKq6AbxTabyWedkhZpdnDN5Y5nSZUluZGV4AWRUaW1lGl4guwxpRXZlbnRIYXNoWCISIOeNpEe8g6DBBYWG1BJ4uA2tJGSt9etirxuxm+/R5W27Y1NpZ1hHMEUCIBNGB6X96tm/zyF9IaHiGt4WqISi+WK0DEEaq0iIEbRgAiEAxg/WLqsO8Aeis/B2embcwy5dBNNShLcMC2CKzIz9w6U=","pk":2}},"a_disclosed":{"1":"AwAKMwAaAAIIuOcAMwFiUVy4Y5PtnTFG","2":"ZHJybnJkaGpx"}}],"indices":[[{"cred":0,"attr":2}]],"nonce":"aXxcuAXX4c0qlD7rsgfsCw==","context":"AQ==","message":"message","timestamp":{"Time":1579203344,"ServerUrl":"https://keyshare.privacybydesign.foundation/atumd","Sig":{"Alg":"ed25519","Data":"6+RHBJ8SUjQu8UNVvVRntUnW7dPCWTbv5N5lC9lGsbcKj4NYMTiyKkD8Vp3c1170ZcWVDH4yIuabIaOJNDAFAw==","PublicKey":"MKdXxJxEWPRIwNP7SuvP0J/M/NV51VZvqCyO+7eDwJ8="}}}`
+
+		sig := &irma.SignedMessage{}
+		require.NoError(t, json.Unmarshal([]byte(j), sig))
+		_, status, err := sig.Verify(client.Configuration, nil)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusValid, status)
+	})
+
+	t.Run("UpdateAccumulatorTime", func(t *testing.T) {
+		startRevocationServer(t)
+		cred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+		_, acc, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(cred, 2)
+		require.NoError(t, err)
+		tme := acc.Time
+		time.Sleep(time.Second)
+
+		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
+		_, acc, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(cred, 2)
+		require.NoError(t, err)
+		require.NotEqual(t, tme, acc.Time)
 	})
 
 	t.Run("OtherAccumulator", func(t *testing.T) {
@@ -97,7 +144,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 
 		// Prepare session request
-		request := revocationRequest().(*irma.DisclosureRequest)
+		request := revocationRequest()
 		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
 		events := request.RevocationUpdates[cred][2].Events
 		require.Equal(t, uint64(1), events[len(events)-1].Index)
@@ -122,13 +169,13 @@ func TestRevocationAll(t *testing.T) {
 
 		// Try to verify against updated session request
 		_, status, err := disclosure.Verify(client.Configuration, request)
-		require.Error(t, err)
+		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusInvalid, status)
 
 		// Revoke another bogus credential, advancing index to 3, and make a new disclosure request
 		// requiring a nonrevocation proof against the accumulator with index 3
 		revoke(t, "3", conf, cred, acc)
-		newrequest := revocationRequest().(*irma.DisclosureRequest)
+		newrequest := revocationRequest()
 		require.NoError(t, conf.SetRevocationUpdates(newrequest.Base()))
 		events = newrequest.RevocationUpdates[cred][2].Events
 		require.Equal(t, uint64(3), events[len(events)-1].Index)
@@ -147,6 +194,17 @@ func TestRevocationAll(t *testing.T) {
 		_, status, err = disclosure.Verify(client.Configuration, request)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusValid, status)
+
+		// If the client does not send a nonrevocation proof the proof is invalid
+		// clear revocation data from newrequest and create a disclosure from it
+		newrequest.Revocation = nil
+		newrequest.RevocationUpdates = nil
+		disclosure, _, err = client.Proofs(choice, newrequest)
+		require.NoError(t, err)
+		// verify disclosure against request that still requests nonrevocation proofs
+		_, status, err = disclosure.Verify(client.Configuration, request)
+		require.NoError(t, err)
+		require.Equal(t, irma.ProofStatusInvalid, status)
 	})
 
 	t.Run("ClientUpdate", func(t *testing.T) {
@@ -173,7 +231,7 @@ func TestRevocationAll(t *testing.T) {
 			revoke(t, key, conf, cred, acc)
 		}
 
-		result := revocationSession(t, client)
+		result := revocationSession(t, client, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
@@ -190,7 +248,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.Close())
 
 		// do disclosure session, using irmaServer's memdb
-		result := revocationSession(t, client, sessionOptionReuseServer)
+		result := revocationSession(t, client, nil, sessionOptionReuseServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
@@ -198,15 +256,25 @@ func TestRevocationAll(t *testing.T) {
 
 // Helper functions
 
-func revocationRequest() irma.SessionRequest {
+func revocationSigRequest() *irma.SignatureRequest {
+	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	req := irma.NewSignatureRequest("message", attr)
+	req.Revocation = []irma.CredentialTypeIdentifier{attr.CredentialTypeIdentifier()}
+	return req
+}
+
+func revocationRequest() *irma.DisclosureRequest {
 	attr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	req := irma.NewDisclosureRequest(attr)
 	req.Revocation = []irma.CredentialTypeIdentifier{attr.CredentialTypeIdentifier()}
 	return req
 }
 
-func revocationSession(t *testing.T, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
-	result := requestorSessionHelper(t, revocationRequest(), client, options...)
+func revocationSession(t *testing.T, client *irmaclient.Client, request irma.SessionRequest, options ...sessionOption) *requestorSessionResult {
+	if request == nil {
+		request = revocationRequest()
+	}
+	result := requestorSessionHelper(t, request, client, options...)
 	require.Nil(t, result.Err)
 	return result
 }
