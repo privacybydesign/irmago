@@ -1,10 +1,11 @@
 package keyshareCore
 
 import (
-	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -111,7 +112,7 @@ func TestVerifyAccess(t *testing.T) {
 	hashedPin := sha256.Sum256(append(salt, paddedPin1[:]...))
 
 	// incorrect exp
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":        time.Now().Add(-6 * time.Minute).Unix(),
 		"exp":        time.Now().Add(-3 * time.Minute).Unix(),
 		"salt":       base64.StdEncoding.EncodeToString(salt),
@@ -123,7 +124,7 @@ func TestVerifyAccess(t *testing.T) {
 	assert.Error(t, err)
 
 	// missing exp
-	token = jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":        time.Now().Unix(),
 		"salt":       base64.StdEncoding.EncodeToString(salt),
 		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
@@ -134,7 +135,7 @@ func TestVerifyAccess(t *testing.T) {
 	assert.Error(t, err)
 
 	// Incorrectly typed exp
-	token = jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":        time.Now().Unix(),
 		"exp":        "test",
 		"salt":       base64.StdEncoding.EncodeToString(salt),
@@ -146,7 +147,7 @@ func TestVerifyAccess(t *testing.T) {
 	assert.Error(t, err)
 
 	// missing salt
-	token = jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":        time.Now().Unix(),
 		"exp":        time.Now().Add(3 * time.Minute).Unix(),
 		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
@@ -157,7 +158,7 @@ func TestVerifyAccess(t *testing.T) {
 	assert.Error(t, err)
 
 	// incorrectly typed salt
-	token = jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":        time.Now().Unix(),
 		"exp":        time.Now().Add(3 * time.Minute).Unix(),
 		"salt":       5,
@@ -169,7 +170,7 @@ func TestVerifyAccess(t *testing.T) {
 	assert.Error(t, err)
 
 	// missing hash
-	token = jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":  time.Now().Unix(),
 		"exp":  time.Now().Add(3 * time.Minute).Unix(),
 		"salt": base64.StdEncoding.EncodeToString(salt),
@@ -180,7 +181,7 @@ func TestVerifyAccess(t *testing.T) {
 	assert.Error(t, err)
 
 	// mistyped hash
-	token = jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":        time.Now().Unix(),
 		"exp":        time.Now().Add(3 * time.Minute).Unix(),
 		"salt":       base64.StdEncoding.EncodeToString(salt),
@@ -233,30 +234,35 @@ func TestProofFunctionality(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Get keyshare P
-	P, err := GetKeyshareP(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	// Get keyshare commitment
-	W, commitID, err := GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	W, commitID, err := GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Get keyshare response
-	R, err := GenerateResponse(ep, jwtt, commitID, big.NewInt(12345))
+	Rjwt, err := GenerateResponse(ep, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// Decode jwt
+	claims := &struct {
+		jwt.StandardClaims
+		ProofP *gabi.ProofP
+	}{}
+	fmt.Println(Rjwt)
+	_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (interface{}, error) {
+		return &signKey.PublicKey, nil
+	})
+	require.NoError(t, err)
+
 	// Validate protocol execution
-	if new(big.Int).Exp(testPubK1.R[0], R, testPubK1.N).Cmp(
+	if new(big.Int).Exp(testPubK1.R[0], claims.ProofP.SResponse, testPubK1.N).Cmp(
 		new(big.Int).Mod(
 			new(big.Int).Mul(
-				W[0],
-				new(big.Int).Exp(P[0], big.NewInt(12345), testPubK1.N)),
+				W[0].Pcommit,
+				new(big.Int).Exp(W[0].P, big.NewInt(12345), testPubK1.N)),
 			testPubK1.N)) != 0 {
 		t.Error("Crypto result off")
 	}
@@ -285,6 +291,12 @@ func TestCorruptedPacket(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	jwtt, err := ValidatePin(ep, pin, "testid")
+	require.NoError(t, err)
+
+	_, commitID, err := GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	require.NoError(t, err)
+
 	// Corrupt packet
 	ep[12] = ep[12] + 1
 
@@ -300,18 +312,12 @@ func TestCorruptedPacket(t *testing.T) {
 		t.Error("ChangePin accepts corrupted keyshare packet")
 	}
 
-	// GetKeyshareP
-	_, err = GetKeyshareP(ep, pin, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err == nil {
-		t.Error("GetKeyshareP accepts corrupted keyshare packet")
-	}
+	// GenerateCommitments
+	_, _, err = GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	assert.Error(t, err, "GenerateCommitments accepts corrupted keyshare packet")
 
 	// GetResponse
-	_, commitID, err := GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Error(err)
-	}
-	_, err = GenerateResponse(ep, pin, commitID, big.NewInt(12345))
+	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err == nil {
 		t.Error("GenerateResponse accepts corrupted keyshare packet")
 	}
@@ -340,6 +346,10 @@ func TestIncorrectPin(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// validate pin
+	jwtt, err := ValidatePin(ep, pin, "testid")
+	require.NoError(t, err)
+
 	// Corrupt pin
 	bpin[12] = bpin[12] + 1
 	pin = string(bpin[:])
@@ -350,18 +360,12 @@ func TestIncorrectPin(t *testing.T) {
 		t.Error("ChangePin accepts incorrect pin")
 	}
 
-	// GetKeyshareP
-	_, err = GetKeyshareP(ep, pin, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err == nil {
-		t.Error("GetKeyshareP accepts incorrect pin")
-	}
-
 	// GetResponse
-	_, commitID, err := GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	_, commitID, err := GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = GenerateResponse(ep, pin, commitID, big.NewInt(12345))
+	_, err = GenerateResponse(ep, "pin", commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err == nil {
 		t.Error("GenerateResponse accepts incorrect pin")
 	}
@@ -390,17 +394,21 @@ func TestMissingKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Generate jwt
+	jwtt, err := ValidatePin(ep, pin, "testid")
+	require.NoError(t, err)
+
 	// GenerateCommitments
-	_, _, err = GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})
+	_, _, err = GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})
 	if err == nil {
 		t.Error("Missing key not detected by generateCommitments")
 	}
 
-	// GetKeyshareP
-	_, err = GetKeyshareP(ep, pin, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})
-	if err == nil {
-		t.Error("Missing key not detected by GetKeyshareP")
-	}
+	// GenerateResponse
+	_, commitID, err := GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	require.NoError(t, err)
+	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1})
+	assert.Error(t, err, "Missing key not detected by generateresponse")
 }
 
 func TestInvalidChallenge(t *testing.T) {
@@ -431,31 +439,31 @@ func TestInvalidChallenge(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test negative challenge
-	_, commitID, err := GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	_, commitID, err := GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(-1))
+	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(-1), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err == nil {
 		t.Error("GenerateResponse incorrectly accepts negative challenge")
 	}
 
 	// Test too large challenge
-	_, commitID, err = GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	_, commitID, err = GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenerateResponse(ep, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 256))
+	_, err = GenerateResponse(ep, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 256), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err == nil {
 		t.Error("GenerateResponse accepts challenge that is too small")
 	}
 
 	// Test just-right challenge
-	_, commitID, err = GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	_, commitID, err = GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenerateResponse(ep, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 255))
+	_, err = GenerateResponse(ep, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 255), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err != nil {
 		t.Error("GenerateResponse does not accept challenge of 256 bits")
 	}
@@ -489,15 +497,15 @@ func TestDoubleCommitUse(t *testing.T) {
 	require.NoError(t, err)
 
 	// Use commit double
-	_, commitID, err := GenerateCommitments([]irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+	_, commitID, err := GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(12345))
+	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(12346))
+	_, err = GenerateResponse(ep, jwtt, commitID, big.NewInt(12346), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err == nil {
 		t.Error("GenerateResponse incorrectly allows double use of commit")
 	}
@@ -526,8 +534,12 @@ func TestNonExistingCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Generate jwt
+	jwtt, err := ValidatePin(ep, pin, "testid")
+	require.NoError(t, err)
+
 	// test
-	_, err = GenerateResponse(ep, pin, 2364, big.NewInt(12345))
+	_, err = GenerateResponse(ep, jwtt, 2364, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 	if err == nil {
 		t.Error("GenerateResponse failed to detect non-existing commit")
 	}
@@ -555,13 +567,35 @@ const xmlPubKey1 = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
       <Epoch length="432000"></Epoch>
    </Features>
 </IssuerPublicKey>`
-const jwtTestKeyPem = `-----BEGIN EC PRIVATE KEY-----
-MHcCAQEEIDn/6NIL1rT9jnZ176Yjy7I1ANphC034yaTviIbo4GoToAoGCCqGSM49
-AwEHoUQDQgAEcdDWu6mXTtobMuYWuLNtQHpg27qF7G+mNdgGsP6Ff5caCh8GGM63
-i6QFZGBa5D1tKJ0rN5Sh/18IzBdtFHpWhA==
------END EC PRIVATE KEY-----`
+const jwtTestKeyPem = `-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEAupnB9rJjQ15cWWPJdOagkcii6kB2w7ojAoPidWQLR4dxhd4z
+LeDAkPqgGiBAEL84bZwwv2pfLiTDd+ks20nS4gYC9UAVVKfP+mf99I3fyzCLmMvq
+toFqJkH7Xm0UYuko1HaUdXpZMCbqUa/snmwzYHtUgxu7SPqW7Ywuai4jPgmDW0pX
+Fqi4BRX8VNbmbd9Ck9OvnymA1VYsfTqublIvoQy7B70srKV8dl2w2pdL64dDSqwM
++wDuO/vnfzeGbtQ/VVfS8YoLHawtWV4Jwqa3CjjpuyFFoC/4pL/izpzEqNFK0Xs5
+opr9FezghpxK6uQ18JfXTeJqAioLUtWmAMABuQIDAQABAoIBAQC4kg3BLoHwyQ0f
+fgxujRCWIpbCjjDrONoYSstcwjBF+DrZ5wdIgd73iG+EaBH2fq4Z/TxamaS7x7Fw
+kjvETClDWB7k5xYyPisBzIrtsseB++qYoFrxWuDcJre0lsBrdaTlQsVlzjcZ4eQ0
+GIc7zFqlPFhDttJxRSy0msvuSuShHqdCpNFXyMvPCqesUt+sbdl6NXVQvb3I2IS3
+1rKdWR7ta1ZjZmMpMgMZ6ovsI2gN1TfKfHVky2cZ2b4lvNaCugVLdn+0rjTpowa5
+jupKiyruN1zbeqoYiZadxsnm+vvLarUWb18/DwomXLfWOhMxRZoFr+DtHB3Umasm
+WDsiIrGBAoGBAOA5Ts9ybNbHpbFCHAxxPqeRIGnZ58/QhKe1/P7muh2cQJLl8B0Z
+ak5R31sChRJMObWRGoBLQhV6lo9g7x3BXKeSIjopylRQaineK1VbCT6fR7khyL71
++jtr536HsDWpIsv3ziiaPBfGy8QyN37LV2G9b9Wq+PLVD/kSvRmEtKEtAoGBANUL
+gO6uNXvboc4QEOVMyghSqr6G6Tx6GWckdYhmuOkUZUYuo/7M/qmHvLV7YRjKwSGN
+AVvGdTgVRchW6vB3kSbTn3QGV+R0YuaWQE5iaYqD5EmkJw+DnroQs1WIJRFj7tE9
+rsAIqWtelTkRYH68+eAxOLmFWjXOk6y1rC2ZyEI9AoGAXckaocJmq9+N+nqAaOPl
+JQma2St/vnilQ9DnJWc0abY1fDwZFtLOmDu+hL6lEmY3rS4oO4k+9uTznL0axwNd
+0elZz6IzMtj/zstSrL0LPNo6kcEDynvwUnJrvYzbs1Yva8kWvfzlLbzE9ida9vnu
+br9hy6lbv5ZGvBOObOII+3ECgYEAwBWEJS87F7ZZ9+GyahvHGKP4QJqBFj78Qmuz
+8My1Malq+lE5GZYYkh/JPFPGosTERwzMScPwkiVT6qK7Zx5W6Avr+39wpZFuTnrv
+9fxzLilmniL7+NfyN86w8pAy47AXdd7IfWoR3rXDk1WgjAS0wrd+bn7WbCcaLKEM
+YX0C+v0CgYAzlSjQztVCaKu1fghDEPk6C0frcDlqzhKYCEDs19sA34Clb1wCefnA
+bZZZrudDjQx3an4epG7FCKkCcE4WMNOdhl0zDbcvbTV2pP21dcof3x4xmCjDCV6I
+ZAS54R1mcyP67iBPxixiKeFqajUS+C4GFBrNSXbQTWf+jTyWkgfNSg==
+-----END RSA PRIVATE KEY-----`
 
-var jwtTestKey *ecdsa.PrivateKey
+var jwtTestKey *rsa.PrivateKey
 var testPubK1 *gabi.PublicKey
 
 func setupParameters() error {
@@ -571,7 +605,7 @@ func setupParameters() error {
 		return err
 	}
 	DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
-	jwtTestKey, err := jwt.ParseECPrivateKeyFromPEM([]byte(jwtTestKeyPem))
+	jwtTestKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(jwtTestKeyPem))
 	if err != nil {
 		return err
 	}
