@@ -28,12 +28,13 @@ func TestPacketAccess(t *testing.T) {
 
 func TestPacketEncryptDecrypt(t *testing.T) {
 	// Setup keys for test
-	_, err := rand.Read(encryptionKey[:])
+	c := NewKeyshareCore()
+	var key AesKey
+	_, err := rand.Read(key[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	encryptionKeyID = 1
-	decryptionKeys[encryptionKeyID] = encryptionKey
+	c.DangerousSetAESEncryptionKey(1, key)
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
@@ -50,13 +51,13 @@ func TestPacketEncryptDecrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p_encypted, err := encryptPacket(p_before)
+	p_encypted, err := c.encryptPacket(p_before)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Decrypt and test values
-	p_after, err := decryptPacket(p_encypted)
+	p_after, err := c.decryptPacket(p_encypted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,12 +71,13 @@ func TestPacketEncryptDecrypt(t *testing.T) {
 
 func TestPacketAuthentication(t *testing.T) {
 	// Setup keys for test
-	_, err := rand.Read(encryptionKey[:])
+	c := NewKeyshareCore()
+	var key AesKey
+	_, err := rand.Read(key[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	encryptionKeyID = 1
-	decryptionKeys[encryptionKeyID] = encryptionKey
+	c.DangerousSetAESEncryptionKey(1, key)
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
@@ -92,7 +94,7 @@ func TestPacketAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p_encrypted, err := encryptPacket(p_before)
+	p_encrypted, err := c.encryptPacket(p_before)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +102,7 @@ func TestPacketAuthentication(t *testing.T) {
 	// Modify encrypted packet and check that it no longer decrypts
 	p_encrypted[33] = 0
 	p_encrypted[34] = 15
-	_, err = decryptPacket(p_encrypted)
+	_, err = c.decryptPacket(p_encrypted)
 	if err == nil {
 		t.Error("Tampering not detected")
 	}
@@ -108,19 +110,18 @@ func TestPacketAuthentication(t *testing.T) {
 
 func TestMultiKey(t *testing.T) {
 	// Setup keys for test
-	_, err := rand.Read(encryptionKey[:])
+	c := NewKeyshareCore()
+	var key AesKey
+	_, err := rand.Read(key[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	encryptionKeyID = 1
-	decryptionKeys[encryptionKeyID] = encryptionKey
-	// Setup keys for test (2)
-	_, err = rand.Read(encryptionKey[:])
+	c.DangerousSetAESEncryptionKey(1, key)
+	_, err = rand.Read(key[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	encryptionKeyID = 2
-	decryptionKeys[encryptionKeyID] = encryptionKey
+	c.DangerousAddAESKey(2, key)
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
@@ -139,23 +140,23 @@ func TestMultiKey(t *testing.T) {
 	}
 
 	// encrypt with key 1
-	encryptionKeyID = 1
-	encryptionKey = decryptionKeys[encryptionKeyID]
-	e1, err := encryptPacket(p_before)
+	c.encryptionKeyID = 1
+	c.encryptionKey = c.decryptionKeys[c.encryptionKeyID]
+	e1, err := c.encryptPacket(p_before)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// encrypt with key 2
-	encryptionKeyID = 2
-	encryptionKey = decryptionKeys[encryptionKeyID]
-	e2, err := encryptPacket(p_before)
+	c.encryptionKeyID = 2
+	c.encryptionKey = c.decryptionKeys[c.encryptionKeyID]
+	e2, err := c.encryptPacket(p_before)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Check e1
-	p_after, err := decryptPacket(e1)
+	p_after, err := c.decryptPacket(e1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -164,7 +165,7 @@ func TestMultiKey(t *testing.T) {
 	}
 
 	// Check e2
-	p_after, err = decryptPacket(e2)
+	p_after, err = c.decryptPacket(e2)
 	if err != nil {
 		t.Error(err)
 	}
@@ -173,8 +174,8 @@ func TestMultiKey(t *testing.T) {
 	}
 
 	// check that unknown key is detected correctly
-	delete(decryptionKeys, 1)
-	_, err = decryptPacket(e1)
+	delete(c.decryptionKeys, 1)
+	_, err = c.decryptPacket(e1)
 	if err == nil {
 		t.Error("Missing decryption key not detected.")
 	}

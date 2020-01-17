@@ -10,11 +10,13 @@ import (
 	"github.com/privacybydesign/gabi/big"
 )
 
-// Contains pin (bytes 0-63) and secret (bytes 64-127)
-type unencryptedKeysharePacket [64 + 64]byte
+type (
+	// Contains pin (bytes 0-63) and secret (bytes 64-127)
+	unencryptedKeysharePacket [64 + 64]byte
 
-// Size is that of unencrypted packet + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID
-type EncryptedKeysharePacket [64 + 64 + 12 + 16 + 4]byte
+	// Size is that of unencrypted packet + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID
+	EncryptedKeysharePacket [64 + 64 + 12 + 16 + 4]byte
+)
 
 var (
 	ErrKeyshareSecretTooBig   = errors.New("Keyshare secret too big to store")
@@ -55,11 +57,11 @@ func (p *unencryptedKeysharePacket) setKeyshareSecret(val *big.Int) error {
 	return nil
 }
 
-func encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePacket, error) {
+func (c *KeyshareCore) encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePacket, error) {
 	var result EncryptedKeysharePacket
 
 	// Store key id
-	binary.LittleEndian.PutUint32(result[0:], encryptionKeyID)
+	binary.LittleEndian.PutUint32(result[0:], c.encryptionKeyID)
 
 	// Generate and store nonce
 	_, err := rand.Read(result[4:16])
@@ -68,7 +70,7 @@ func encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePacket, error)
 	}
 
 	// Encrypt packet
-	keyedAes, err := aes.NewCipher(encryptionKey[:])
+	keyedAes, err := aes.NewCipher(c.encryptionKey[:])
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
@@ -81,12 +83,12 @@ func encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePacket, error)
 	return result, nil
 }
 
-func decryptPacket(p EncryptedKeysharePacket) (unencryptedKeysharePacket, error) {
+func (c *KeyshareCore) decryptPacket(p EncryptedKeysharePacket) (unencryptedKeysharePacket, error) {
 	// determine key id
 	id := binary.LittleEndian.Uint32(p[0:])
 
 	// Fetch key
-	key, ok := decryptionKeys[id]
+	key, ok := c.decryptionKeys[id]
 	if !ok {
 		return unencryptedKeysharePacket{}, NoSuchKey
 	}
