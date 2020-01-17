@@ -66,7 +66,7 @@ func (db *keyshareMemoryDB) UpdateUser(user KeyshareUser) error {
 
 	// Check and update user.
 	_, exists := db.users[user.Username]
-	if exists {
+	if !exists {
 		return ErrUserNotFound
 	}
 	db.users[user.Username] = user.Coredata

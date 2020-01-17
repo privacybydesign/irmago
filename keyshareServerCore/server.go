@@ -77,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	router.Post("/api/v1/client/register", s.handleRegister)
 	router.Post("/api/v1/users/isAuthorized", s.handleValidate)
 	router.Post("/api/v1/users/verify/pin", s.handleVerifyPin)
+	router.Post("/api/v1/users/change/pin", s.handleChangePin)
 	router.Post("/api/v1/prove/getCommitments", s.handleCommitments)
 	router.Post("/api/v1/prove/getResponse", s.handleResponse)
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
@@ -280,6 +281,49 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	} else {
 		server.WriteJson(w, keysharePinStatus{Status: "success", Message: jwtt})
 	}
+}
+
+func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
+	// Extract request
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
+		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
+		return
+	}
+	var msg keyshareChangepin
+	err = json.Unmarshal(body, &msg)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+		server.WriteError(w, server.ErrorInvalidRequest, "Invalid request")
+		return
+	}
+
+	// Fetch user
+	user, err := s.db.User(msg.Username)
+	if err != nil {
+		s.conf.Logger.WithFields(logrus.Fields{"username": msg.Username, "error": err}).Warn("Could not find user in db")
+		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		return
+	}
+
+	// And change pin (TODO: count and block on pin checks)
+	user.Coredata, err = s.core.ChangePin(user.Coredata, msg.OldPin, msg.NewPin)
+	if err != nil {
+		server.WriteJson(w, keysharePinStatus{Status: "failure", Message: err.Error()})
+		return
+	}
+
+	// Write user back
+	err = s.db.UpdateUser(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	// And return success
+	server.WriteJson(w, keysharePinStatus{Status: "success"})
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
