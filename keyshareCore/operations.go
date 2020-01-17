@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -26,7 +25,7 @@ var (
 )
 
 // Generate a new keyshare secret, secured with the given pin
-func GenerateKeyshareSecret(pinRaw string) (EncryptedKeysharePacket, error) {
+func (c *KeyshareCore) GenerateKeyshareSecret(pinRaw string) (EncryptedKeysharePacket, error) {
 	pin, err := padPin(pinRaw)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
@@ -46,19 +45,19 @@ func GenerateKeyshareSecret(pinRaw string) (EncryptedKeysharePacket, error) {
 	}
 
 	// And encrypt
-	return encryptPacket(p)
+	return c.encryptPacket(p)
 }
 
 // Check pin for validity, and generate jwt for future access
 //  userid is an extra field added to the jwt for
-func ValidatePin(ep EncryptedKeysharePacket, pin string, userid string) (string, error) {
+func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, userid string) (string, error) {
 	paddedPin, err := padPin(pin)
 	if err != nil {
 		return "", err
 	}
 
 	// decrypt
-	p, err := decryptPacket(ep)
+	p, err := c.decryptPacket(ep)
 	if err != nil {
 		return "", err
 	}
@@ -85,7 +84,7 @@ func ValidatePin(ep EncryptedKeysharePacket, pin string, userid string) (string,
 		"salt":       base64.StdEncoding.EncodeToString(salt),
 		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
 	})
-	jwtResult, err := token.SignedString(signKey)
+	jwtResult, err := token.SignedString(c.signKey)
 	if err != nil {
 		return "", err
 	}
@@ -93,13 +92,13 @@ func ValidatePin(ep EncryptedKeysharePacket, pin string, userid string) (string,
 	return jwtResult, nil
 }
 
-func ValidateJWT(ep EncryptedKeysharePacket, jwt string) error {
-	_, err := verifyAccess(ep, jwt)
+func (c *KeyshareCore) ValidateJWT(ep EncryptedKeysharePacket, jwt string) error {
+	_, err := c.verifyAccess(ep, jwt)
 	return err
 }
 
 // Change pin in an encrypted keyshare packet to a new value, after validating that the old value is known by caller.
-func ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRaw string) (EncryptedKeysharePacket, error) {
+func (c *KeyshareCore) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRaw string) (EncryptedKeysharePacket, error) {
 	oldpin, err := padPin(oldpinRaw)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
@@ -110,7 +109,7 @@ func ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRaw string) (Encrypt
 	}
 
 	// decrypt
-	p, err := decryptPacket(ep)
+	p, err := c.decryptPacket(ep)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
@@ -124,19 +123,19 @@ func ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRaw string) (Encrypt
 
 	// change and reencrypt
 	p.setPin(newpin)
-	return encryptPacket(p)
+	return c.encryptPacket(p)
 }
 
 // Verify that a given access jwt is valid, and if so, return decrypted keyshare packet
 //  Note: Although this is an internal function, it is tested directly
-func verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencryptedKeysharePacket, error) {
+func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencryptedKeysharePacket, error) {
 	// Verify token validity
 	token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != jwt.SigningMethodRS256 {
 			return nil, ErrInvalidJWT
 		}
 
-		return &signKey.PublicKey, nil
+		return &c.signKey.PublicKey, nil
 	})
 	if err != nil {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
@@ -172,7 +171,7 @@ func verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencryptedKeysh
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
 
-	p, err := decryptPacket(ep)
+	p, err := c.decryptPacket(ep)
 	if err != nil {
 		return unencryptedKeysharePacket{}, err
 	}
@@ -186,17 +185,12 @@ func verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencryptedKeysh
 	return p, nil
 }
 
-var commitmentData = map[uint64]*big.Int{}
-var commitmentMutex sync.Mutex
-
-var trustedKeys = map[irma.PublicKeyIdentifier]*gabi.PublicKey{}
-
 // Get keyshare commitment usign given idemix public key(s)
-func GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyids []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
+func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyids []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
 	var keylist []*gabi.PublicKey
 	for _, keyid := range keyids {
-		key, ok := trustedKeys[keyid]
+		key, ok := c.trustedKeys[keyid]
 		if !ok {
 			return nil, 0, ErrKeyNotFound
 		}
@@ -204,7 +198,7 @@ func GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyids 
 	}
 
 	// verify access and decrypt
-	p, err := verifyAccess(ep, accessToken)
+	p, err := c.verifyAccess(ep, accessToken)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -220,35 +214,35 @@ func GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyids 
 	binary.Read(rand.Reader, binary.LittleEndian, &commitId)
 
 	// Store commit in backing storage
-	commitmentMutex.Lock()
-	commitmentData[commitId] = commitSecret
-	commitmentMutex.Unlock()
+	c.commitmentMutex.Lock()
+	c.commitmentData[commitId] = commitSecret
+	c.commitmentMutex.Unlock()
 
 	return commitments, commitId, nil
 }
 
 // Generate response for zero-knowledge proof of keyshare secret, for a given previous commit and challenge
-func GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitId uint64, challenge *big.Int, keyid irma.PublicKeyIdentifier) (string, error) {
+func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitId uint64, challenge *big.Int, keyid irma.PublicKeyIdentifier) (string, error) {
 	// Validate request
 	if uint(challenge.BitLen()) > gabi.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
 		return "", ErrInvalidChallenge
 	}
-	key, ok := trustedKeys[keyid]
+	key, ok := c.trustedKeys[keyid]
 	if !ok {
 		return "", ErrKeyNotFound
 	}
 
 	// verify access and decrypt
-	p, err := verifyAccess(ep, accessToken)
+	p, err := c.verifyAccess(ep, accessToken)
 	if err != nil {
 		return "", err
 	}
 
 	// Fetch commit
-	commitmentMutex.Lock()
-	commit, ok := commitmentData[commitId]
-	delete(commitmentData, commitId)
-	commitmentMutex.Unlock()
+	c.commitmentMutex.Lock()
+	commit, ok := c.commitmentData[commitId]
+	delete(c.commitmentData, commitId)
+	c.commitmentMutex.Unlock()
 	if !ok {
 		return "", ErrUnknownCommit
 	}
@@ -260,12 +254,7 @@ func GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitId u
 		"sub":    "ProofP",
 		"iss":    "keyshare_server",
 	})
-	return token.SignedString(signKey)
-}
-
-// Add public key as trusted by keyshareCore. Calling this on incorrectly generated key material WILL compromise keyshare secrets!
-func DangerousAddTrustedPublicKey(keyid irma.PublicKeyIdentifier, key *gabi.PublicKey) {
-	trustedKeys[keyid] = key
+	return token.SignedString(c.signKey)
 }
 
 // Pad pin string into 64 bytes, extending it with 0s if neccessary
