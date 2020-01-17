@@ -24,55 +24,39 @@ func TestPinFunctionality(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 
 	// generate test pin
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// Generate package
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Test with correct pin
 	_, err = c.ValidatePin(ep, pin, "testid")
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 
 	// test change pin
 	var bnewpin [64]byte
 	_, err = rand.Read(bnewpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	newpin := string(bnewpin[:])
 	ep, err = c.ChangePin(ep, pin, newpin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// test correct pin
 	_, err = c.ValidatePin(ep, newpin, "testid")
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 
 	// Test incorrect pin
 	_, err = c.ValidatePin(ep, pin, "testid")
-	if err != ErrInvalidPin {
-		t.Error(err)
-	}
+	assert.Error(t, err)
 }
 
 func TestVerifyAccess(t *testing.T) {
@@ -80,9 +64,7 @@ func TestVerifyAccess(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 
@@ -214,9 +196,7 @@ func TestProofFunctionality(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
@@ -224,34 +204,24 @@ func TestProofFunctionality(t *testing.T) {
 	// generate test pin
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// generate keyshare secret
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Validate pin
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Get keyshare commitment
 	W, commitID, err := c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Get keyshare response
 	Rjwt, err := c.GenerateResponse(ep, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Decode jwt
 	claims := &struct {
@@ -265,14 +235,12 @@ func TestProofFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate protocol execution
-	if new(big.Int).Exp(testPubK1.R[0], claims.ProofP.SResponse, testPubK1.N).Cmp(
+	assert.Equal(t, 0, new(big.Int).Exp(testPubK1.R[0], claims.ProofP.SResponse, testPubK1.N).Cmp(
 		new(big.Int).Mod(
 			new(big.Int).Mul(
 				W[0].Pcommit,
 				new(big.Int).Exp(W[0].P, big.NewInt(12345), testPubK1.N)),
-			testPubK1.N)) != 0 {
-		t.Error("Crypto result off")
-	}
+			testPubK1.N)), "Crypto result off")
 }
 
 func TestCorruptedPacket(t *testing.T) {
@@ -280,9 +248,7 @@ func TestCorruptedPacket(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
@@ -290,16 +256,12 @@ func TestCorruptedPacket(t *testing.T) {
 	// Test parameters
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// Generate packet
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
 	require.NoError(t, err)
@@ -312,15 +274,11 @@ func TestCorruptedPacket(t *testing.T) {
 
 	// Verify pin
 	_, err = c.ValidatePin(ep, pin, "testid")
-	if err == nil {
-		t.Error("ValidatePin accepts corrupted keyshare packet")
-	}
+	assert.Error(t, err, "ValidatePin accepts corrupted keyshare packet")
 
 	// Change pin
 	_, err = c.ChangePin(ep, pin, pin)
-	if err == nil {
-		t.Error("ChangePin accepts corrupted keyshare packet")
-	}
+	assert.Error(t, err, "ChangePin accepts corrupted keyshare packet")
 
 	// GenerateCommitments
 	_, _, err = c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
@@ -328,9 +286,7 @@ func TestCorruptedPacket(t *testing.T) {
 
 	// GetResponse
 	_, err = c.GenerateResponse(ep, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err == nil {
-		t.Error("GenerateResponse accepts corrupted keyshare packet")
-	}
+	assert.Error(t, err, "GenerateResponse accepts corrupted keyshare packet")
 }
 
 func TestIncorrectPin(t *testing.T) {
@@ -338,9 +294,7 @@ func TestIncorrectPin(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
@@ -348,16 +302,12 @@ func TestIncorrectPin(t *testing.T) {
 	// Test parameters
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// Generate packet
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// validate pin
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
@@ -369,19 +319,13 @@ func TestIncorrectPin(t *testing.T) {
 
 	// Change pin
 	_, err = c.ChangePin(ep, pin, pin)
-	if err == nil {
-		t.Error("ChangePin accepts incorrect pin")
-	}
+	assert.Error(t, err, "ChangePin accepts incorrect pin")
 
 	// GetResponse
 	_, commitID, err := c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 	_, err = c.GenerateResponse(ep, "pin", commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err == nil {
-		t.Error("GenerateResponse accepts incorrect pin")
-	}
+	assert.Error(t, err, "GenerateResponse accepts incorrect pin")
 }
 
 func TestMissingKey(t *testing.T) {
@@ -389,9 +333,7 @@ func TestMissingKey(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
@@ -399,16 +341,12 @@ func TestMissingKey(t *testing.T) {
 	// Test parameters
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// Generate packet
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Generate jwt
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
@@ -416,9 +354,7 @@ func TestMissingKey(t *testing.T) {
 
 	// GenerateCommitments
 	_, _, err = c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})
-	if err == nil {
-		t.Error("Missing key not detected by generateCommitments")
-	}
+	assert.Error(t, err, "Missing key not detected by generateCommitments")
 
 	// GenerateResponse
 	_, commitID, err := c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
@@ -432,9 +368,7 @@ func TestInvalidChallenge(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
@@ -442,16 +376,12 @@ func TestInvalidChallenge(t *testing.T) {
 	// Test parameters
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// Generate packet
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Validate pin
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
@@ -459,33 +389,21 @@ func TestInvalidChallenge(t *testing.T) {
 
 	// Test negative challenge
 	_, commitID, err := c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.GenerateResponse(ep, jwtt, commitID, big.NewInt(-1), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err == nil {
-		t.Error("GenerateResponse incorrectly accepts negative challenge")
-	}
+	assert.Error(t, err, "GenerateResponse incorrectly accepts negative challenge")
 
 	// Test too large challenge
 	_, commitID, err = c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.GenerateResponse(ep, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 256), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err == nil {
-		t.Error("GenerateResponse accepts challenge that is too small")
-	}
+	assert.Error(t, err, "GenerateResponse accepts challenge that is too small")
 
 	// Test just-right challenge
 	_, commitID, err = c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.GenerateResponse(ep, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 255), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err != nil {
-		t.Error("GenerateResponse does not accept challenge of 256 bits")
-	}
+	assert.NoError(t, err, "GenerateResponse does not accept challenge of 256 bits")
 }
 
 func TestDoubleCommitUse(t *testing.T) {
@@ -493,9 +411,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
@@ -503,16 +419,12 @@ func TestDoubleCommitUse(t *testing.T) {
 	// Test parameters
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// Generate packet
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// validate pin
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
@@ -520,17 +432,11 @@ func TestDoubleCommitUse(t *testing.T) {
 
 	// Use commit double
 	_, commitID, err := c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.GenerateResponse(ep, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.GenerateResponse(ep, jwtt, commitID, big.NewInt(12346), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err == nil {
-		t.Error("GenerateResponse incorrectly allows double use of commit")
-	}
+	assert.Error(t, err, "GenerateResponse incorrectly allows double use of commit")
 }
 
 func TestNonExistingCommit(t *testing.T) {
@@ -538,9 +444,7 @@ func TestNonExistingCommit(t *testing.T) {
 	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
 	c.DangerousSetSignKey(jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
@@ -548,16 +452,12 @@ func TestNonExistingCommit(t *testing.T) {
 	// Test parameters
 	var bpin [64]byte
 	_, err = rand.Read(bpin[:])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pin := string(bpin[:])
 
 	// Generate packet
 	ep, err := c.GenerateKeyshareSecret(pin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Generate jwt
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
@@ -565,9 +465,7 @@ func TestNonExistingCommit(t *testing.T) {
 
 	// test
 	_, err = c.GenerateResponse(ep, jwtt, 2364, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	if err == nil {
-		t.Error("GenerateResponse failed to detect non-existing commit")
-	}
+	assert.Error(t, err, "GenerateResponse failed to detect non-existing commit")
 }
 
 // Test data
