@@ -18,7 +18,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
@@ -35,7 +35,7 @@ type SessionPackage struct {
 type SessionResult struct {
 	Token       string                       `json:"token"`
 	Status      Status                       `json:"status"`
-	Type        irma.Action                  `json:"type"'`
+	Type        irma.Action                  `json:"type"`
 	ProofStatus irma.ProofStatus             `json:"proofStatus,omitempty"`
 	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
 	Signature   *irma.SignedMessage          `json:"signature,omitempty"`
