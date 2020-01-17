@@ -1,0 +1,17 @@
+<SchemeManager version="7">
+	<Id>test</Id>
+	<Url>http://localhost:48681/irma_configuration/test</Url>
+	<Name>
+		<en>Test Scheme Manager</en>
+		<nl>Test scheme manager</nl>
+	</Name>
+	<Description>
+		<en>A test scheme manager with a scheme manager.</en>
+		<nl>Een test-scheme manager met een keyshare server.</nl>
+	</Description>
+	<KeyshareServer>http://10.0.2.2:8080/api/v1</KeyshareServer>
+	<KeyshareWebsite>http://localhost:8080/irma_keyshare_server/mijnirma/</KeyshareWebsite>
+	<KeyshareAttribute>test.test.mijnirma.email</KeyshareAttribute>
+	<TimestampServer>https://keyshare.privacybydesign.foundation/atumd/</TimestampServer>
+	<Contact>https://privacybydesign.foundation/</Contact>
+</SchemeManager>

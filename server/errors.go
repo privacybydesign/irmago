@@ -35,4 +35,11 @@ var (
 	ErrorUnsupported     Error = Error{Type: "UNSUPPORTED", Status: 501, Description: "Unsupported by this server"}
 	ErrorInvalidRequest  Error = Error{Type: "INVALID_REQUEST", Status: 400, Description: "Invalid HTTP request"}
 	ErrorProtocolVersion Error = Error{Type: "PROTOCOL_VERSION", Status: 400, Description: "Protocol version negotiation failed"}
+	ErrorInternal        Error = Error{Type: "INTERNAL_ERROR", Status: 500, Description: "Internal server error"}
+)
+
+// Keyshare errors (TODO: MOVE TO FINAL PLACE)
+var (
+	ErrorUserNotRegistered = Error{Type: "USER_NOT_REGISTERED", Status: 403, Description: "User is not yet fully registered"}
+	ErrorInvalidJWT        = Error{Type: "UNAUTHORIZED", Status: 403, Description: "Invalid or expired jwt provided"}
 )
