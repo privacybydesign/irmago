@@ -494,6 +494,11 @@ func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdenti
 			if err = tx.Save(r); err != nil {
 				return err
 			}
+
+			s := rs.getSettings(r.CredType)
+			s.updated = time.Now()
+			// POST record to listeners, if any, asynchroniously
+			go rs.client.PostUpdate(r.CredType, s.PostURLs, &revocation.Update{SignedAccumulator: sacc})
 		}
 		return nil
 	})
