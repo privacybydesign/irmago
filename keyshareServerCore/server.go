@@ -137,7 +137,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: block check
+	// Generate commitments
 	commitments, commitId, err := s.core.GenerateCommitments(user.Coredata, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
@@ -231,6 +231,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	username := r.Header.Get("X-IRMA-Keyshare-Username")
 	authorization := r.Header.Get("Authorization")
 
+	// Fetch user
 	user, err := s.db.User(username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
@@ -238,8 +239,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Block check
-
+	// Validate jwt
 	err = s.core.ValidateJWT(user.Coredata, authorization)
 	if err != nil {
 		server.WriteJson(w, &keyshareAuthorization{Status: "expired", Candidates: []string{"pin"}})
@@ -272,13 +272,33 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// And verify pin
-	// TODO: Count tries, deal with (temp) block
-	jwtt, err := s.core.ValidatePin(user.Coredata, msg.Pin, msg.Username)
+	// And verify pin (checking that we are allowed to do this)
+	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
-		fmt.Println(err)
-		server.WriteJson(w, keysharePinStatus{Status: "failure", Message: err.Error()})
+		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+	if !ok {
+		server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
+		return
+	}
+	jwtt, err := s.core.ValidatePin(user.Coredata, msg.Pin, msg.Username)
+	if err == keyshareCore.ErrInvalidPin {
+		if tries == 0 {
+			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
+		} else {
+			server.WriteJson(w, keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)})
+		}
+	} else if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
+		server.WriteError(w, server.ErrorInternal, err.Error())
 	} else {
+		err = s.db.ClearPincheck(user)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
+			// Do not send to user
+		}
 		server.WriteJson(w, keysharePinStatus{Status: "success", Message: jwtt})
 	}
 }
@@ -307,11 +327,34 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// And change pin (TODO: count and block on pin checks)
-	user.Coredata, err = s.core.ChangePin(user.Coredata, msg.OldPin, msg.NewPin)
+	// And change pin, checking that we are allowed to do this
+	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
-		server.WriteJson(w, keysharePinStatus{Status: "failure", Message: err.Error()})
+		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
+		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
+	}
+	if !ok {
+		server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
+		return
+	}
+	user.Coredata, err = s.core.ChangePin(user.Coredata, msg.OldPin, msg.NewPin)
+	if err == keyshareCore.ErrInvalidPin {
+		if tries == 0 {
+			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
+		} else {
+			server.WriteJson(w, keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)})
+		}
+		return
+	} else if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not change pin")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+	err = s.db.ClearPincheck(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
+		// Do not send to user
 	}
 
 	// Write user back
@@ -350,7 +393,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	err = s.db.NewUser(KeyshareUser{Username: username, Coredata: coredata})
+	err = s.db.NewUser(&KeyshareUser{Username: username, Coredata: coredata})
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
 		server.WriteError(w, server.ErrorInternal, err.Error())
