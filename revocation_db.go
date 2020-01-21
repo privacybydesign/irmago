@@ -213,12 +213,12 @@ func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.U
 		return
 	}
 	theirStart, theirEnd, ourEnd := theirs[0].Index, theirs[len(theirs)-1].Index, ours[len(ours)-1].Index
-	offset := ourEnd - theirStart
-	if theirEnd <= ourEnd || offset < 0 {
+	if theirEnd <= ourEnd || ourEnd+1 < theirStart {
 		return
 	}
 
 	Logger.Trace("memdb: inserting")
+	offset := ourEnd + 1 - theirStart
 	r.SignedAccumulator = update.SignedAccumulator
 	r.Events = append(r.Events, theirs[offset:]...)
 }
