@@ -117,16 +117,28 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("UpdateAccumulatorTime", func(t *testing.T) {
+		revocationConfiguration = revocationConf(t)
+		revocationConfiguration.RevocationSettings[revocationTestCred].PostURLs = []string{
+			"http://localhost:48680",
+		}
+		StartIrmaServer(t, false)
+
 		startRevocationServer(t)
 		_, acc, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
 		require.NoError(t, err)
-		tme := acc.Time
+		acctime := acc.Time
 		time.Sleep(time.Second)
 
+		// run scheduled update of accumulator, triggering POSTing it to our IRMA server
 		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
-		_, acc, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+
+		sacc1, acc, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
 		require.NoError(t, err)
-		require.NotEqual(t, tme, acc.Time)
+		require.True(t, acc.Time > acctime)
+
+		sacc2, acc2, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		require.Equal(t, acc, acc2)
+		require.Equal(t, sacc1, sacc2)
 	})
 
 	t.Run("OtherAccumulator", func(t *testing.T) {

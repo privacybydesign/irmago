@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	httpServer      *http.Server
-	irmaServer      *irmaserver.Server
-	requestorServer *requestorserver.Server
+	httpServer              *http.Server
+	irmaServer              *irmaserver.Server
+	irmaServerConfiguration *server.Configuration
+	requestorServer         *requestorserver.Server
 
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
@@ -60,7 +61,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 	}
 
 	var err error
-	irmaServer, err = irmaserver.New(&server.Configuration{
+	irmaServerConfiguration = &server.Configuration{
 		URL:                  "http://localhost:48680",
 		Logger:               logger,
 		DisableSchemesUpdate: true,
@@ -70,7 +71,8 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 				ServerURL: "http://localhost:48683/",
 			},
 		},
-	})
+	}
+	irmaServer, err = irmaserver.New(irmaServerConfiguration)
 
 	require.NoError(t, err)
 

@@ -202,6 +202,10 @@ func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.U
 		record.r[update.SignedAccumulator.PKCounter] = update
 		return
 	}
+	if len(update.Events) == 0 && r.SignedAccumulator.Accumulator.Index == update.SignedAccumulator.Accumulator.Index {
+		r.SignedAccumulator = update.SignedAccumulator
+		return
+	}
 
 	ours := r.Events
 	theirs := update.Events

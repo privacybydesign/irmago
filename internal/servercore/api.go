@@ -402,7 +402,7 @@ func (s *Server) handleRevocationMessage(
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST update expects 1 url argument"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		var update *revocation.Update
+		update := &revocation.Update{}
 		if err := irma.UnmarshalValidateBinary(message, update); err != nil {
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
