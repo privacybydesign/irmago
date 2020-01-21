@@ -124,20 +124,22 @@ func TestRevocationAll(t *testing.T) {
 		StartIrmaServer(t, false)
 
 		startRevocationServer(t)
-		_, acc, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
 		require.NoError(t, err)
-		acctime := acc.Time
+		acctime := sacc.Accumulator.Time
 		time.Sleep(time.Second)
 
-		// run scheduled update of accumulator, triggering POSTing it to our IRMA server
+		// run scheduled update of accumulator, triggering a POST to our IRMA server
 		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
+		// give request time to be processed
+		time.Sleep(100 * time.Millisecond)
 
-		sacc1, acc, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
 		require.NoError(t, err)
-		require.True(t, acc.Time > acctime)
+		require.True(t, sacc1.Accumulator.Time > acctime)
 
-		sacc2, acc2, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
-		require.Equal(t, acc, acc2)
+		sacc2, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		require.NoError(t, err)
 		require.Equal(t, sacc1, sacc2)
 	})
 
@@ -314,9 +316,9 @@ func revoke(t *testing.T, key string, conf *irma.RevocationStorage, cred irma.Cr
 		ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
 	}))
 	require.NoError(t, conf.Revoke(cred, key))
-	_, newacc, err := conf.Accumulator(cred, 2)
+	sacc, err := conf.Accumulator(cred, 2)
 	require.NoError(t, err)
-	*acc = *newacc
+	*acc = *sacc.Accumulator
 }
 
 func revocationConf(t *testing.T) *server.Configuration {

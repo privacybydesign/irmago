@@ -176,7 +176,7 @@ func (rs *RevocationStorage) UpdateFrom(typ CredentialTypeIdentifier, pkcounter 
 	// Only requires SQL implementation
 	var update *revocation.Update
 	if err := rs.db.Transaction(func(tx revStorage) error {
-		acc, _, err := rs.accumulator(tx, typ, pkcounter)
+		acc, err := rs.accumulator(tx, typ, pkcounter)
 		if err != nil {
 			return err
 		}
@@ -343,13 +343,14 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) er
 }
 
 func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentifier, sk *revocation.PrivateKey, e *RevocationAttribute) error {
-	_, cur, err := rs.accumulator(tx, typ, sk.Counter)
+	sacc, err := rs.accumulator(tx, typ, sk.Counter)
 	if err != nil {
 		return err
 	}
-	if cur == nil {
+	if sacc == nil {
 		return errors.Errorf("cannot revoke for type %s, not enabled yet", typ)
 	}
+	cur := sacc.Accumulator
 	var parent EventRecord
 	if err = rs.db.Last(&parent, map[string]interface{}{"cred_type": typ, "pk_counter": sk.Counter}); err != nil {
 		return err
@@ -368,14 +369,14 @@ func (rs *RevocationStorage) revokeAttr(tx revStorage, typ CredentialTypeIdentif
 // Accumulator methods
 
 func (rs *RevocationStorage) Accumulator(typ CredentialTypeIdentifier, pkcounter uint) (
-	*revocation.SignedAccumulator, *revocation.Accumulator, error,
+	*revocation.SignedAccumulator, error,
 ) {
 	return rs.accumulator(rs.db, typ, pkcounter)
 }
 
 // accumulator retrieves, verifies and deserializes the accumulator of the given type and key.
 func (rs *RevocationStorage) accumulator(tx revStorage, typ CredentialTypeIdentifier, pkcounter uint) (
-	*revocation.SignedAccumulator, *revocation.Accumulator, error,
+	*revocation.SignedAccumulator, error,
 ) {
 	var err error
 	var sacc *revocation.SignedAccumulator
@@ -383,26 +384,26 @@ func (rs *RevocationStorage) accumulator(tx revStorage, typ CredentialTypeIdenti
 		record := &AccumulatorRecord{}
 		if err = tx.Last(record, map[string]interface{}{"cred_type": typ, "pk_counter": pkcounter}); err != nil {
 			if gorm.IsRecordNotFoundError(err) {
-				return nil, nil, nil
+				return nil, nil
 			}
 		}
 		sacc = record.SignedAccumulator()
 	} else {
 		sacc = rs.memdb.SignedAccumulator(typ, pkcounter)
 		if sacc == nil {
-			return nil, nil, nil
+			return nil, nil
 		}
 	}
 
 	pk, err := rs.Keys.PublicKey(typ.IssuerIdentifier(), sacc.PKCounter)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	acc, err := sacc.UnmarshalVerify(pk)
+	_, err = sacc.UnmarshalVerify(pk)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return sacc, acc, nil
+	return sacc, nil
 }
 
 // Methods to update from remote revocation server
