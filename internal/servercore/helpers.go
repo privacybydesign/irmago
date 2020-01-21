@@ -154,16 +154,6 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 			return err
 		}
 
-		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].SupportsRevocation() {
-			enabled, err := s.conf.IrmaConfiguration.Revocation.RevocationEnabled(cred.CredentialTypeID)
-			if err != nil {
-				return err
-			}
-			if !enabled {
-				s.conf.Logger.WithFields(logrus.Fields{"cred": cred.CredentialTypeID}).Warn("revocation supported in scheme but not enabled")
-			}
-		}
-
 		// Ensure the credential has an expiry date
 		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
 		if cred.Validity == nil {

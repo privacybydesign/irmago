@@ -228,16 +228,22 @@ func (conf *Configuration) verifyRevocation() error {
 		}
 
 		if settings.Mode == irma.RevocationModeServer {
-			enabled, err := conf.IrmaConfiguration.Revocation.RevocationEnabled(credid)
-			if err != nil {
-				return LogError(errors.WrapPrefix(err, "failed to check if revocation is enabled for "+credid.String(), 0))
-			}
-			if !enabled {
-				return LogError(errors.Errorf("revocation not enabled for %s", credid.String()))
-			}
-			_, err = conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
+			sk, err := conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
 			if err != nil {
 				return LogError(errors.WrapPrefix(err, "failed to load private key of "+credid.IssuerIdentifier().String()+" (required for revocation)", 0))
+			}
+			rev := conf.IrmaConfiguration.Revocation
+			exists, err := rev.Exists(credid)
+			if err != nil {
+				return LogError(errors.WrapPrefix(err, "failed to check if accumulator exists for "+credid.String(), 0))
+			}
+			conf.Logger.Info("revocation server mode enabled for " + credid.String())
+			if !exists {
+				conf.Logger.Warn("Creating initial accumulator for " + credid.String())
+				conf.Logger.Warn("Being the revocation server for a credential type comes with special responsibilities, a.o. that this server is always reachable online for any IRMA participant, and that the contents of the database to which the initial accumulator was just written is never deleted. Please read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
+				if err = rev.EnableRevocation(credid, sk); err != nil {
+					return LogError(errors.WrapPrefix(err, "failed to create initial accumulator record for "+credid.String(), 0))
+				}
 			}
 		}
 	}

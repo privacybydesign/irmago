@@ -377,19 +377,11 @@ func startRevocationServer(t *testing.T) {
 	require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
 	require.NoError(t, g.Close())
 
+	// Start revocation server
 	if revocationConfiguration == nil {
 		revocationConfiguration = revocationConf(t)
 	}
-	irmaconf := revocationConfiguration.IrmaConfiguration
-
-	// Enable revocation for our credential type
-	sk, err := irmaconf.Revocation.Keys.PrivateKeyLatest(revocationTestCred.IssuerIdentifier())
-	require.NoError(t, err)
-	require.NoError(t, irmaconf.Revocation.EnableRevocation(revocationTestCred, sk))
-
-	// Start revocation server
 	revocationServer, err = irmaserver.New(revocationConfiguration)
-	revocationConfiguration = revocationConfiguration
 	require.NoError(t, err)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", revocationServer.HandlerFunc())
