@@ -27,9 +27,10 @@ var (
 	//revocationDbType, revocationDbStr = "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
 	revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
 
-	revocationTestAttr        = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
-	revocationTestCred        = revocationTestAttr.CredentialTypeIdentifier()
-	revocationIssuanceRequest = irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+	revocationPkCounter       uint = 2
+	revocationTestAttr             = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	revocationTestCred             = revocationTestAttr.CredentialTypeIdentifier()
+	revocationIssuanceRequest      = irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 		RevocationKey:    "cred0", // once revocation is required for a credential type, this key is required
 		CredentialTypeID: revocationTestCred,
 		Attributes: map[string]string{
@@ -128,7 +129,7 @@ func TestRevocationAll(t *testing.T) {
 		}()
 
 		startRevocationServer(t)
-		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		acctime := sacc1.Accumulator.Time
 		accindex := sacc1.Accumulator.Index
@@ -141,20 +142,20 @@ func TestRevocationAll(t *testing.T) {
 
 		// check that both the revocation server's and our IRMA server's configuration
 		// agree on the same accumulator which has the same index but updated time
-		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.True(t, sacc1.Accumulator.Time > acctime)
 		require.Equal(t, accindex, sacc1.Accumulator.Index)
-		sacc2, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc2, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.Equal(t, sacc1, sacc2)
 
 		// do a bogus revocation and see that the updated accumulator appears in both configurations
 		revoke(t, "1", revocationConfiguration.IrmaConfiguration.Revocation, sacc2.Accumulator)
 		time.Sleep(100 * time.Millisecond)
-		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
-		sacc2, err = irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc2, err = irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.Equal(t, sacc1, sacc2)
 		require.Equal(t, accindex+1, sacc1.Accumulator.Index)
@@ -166,9 +167,9 @@ func TestRevocationAll(t *testing.T) {
 
 		// Prepare key material
 		conf := revocationConfiguration.IrmaConfiguration.Revocation
-		sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), 2)
+		sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
-		pk, err := conf.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), 2)
+		pk, err := conf.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
 		update, err := revocation.NewAccumulator(sk)
 		require.NoError(t, err)
@@ -178,7 +179,7 @@ func TestRevocationAll(t *testing.T) {
 		// Prepare session request
 		request := revocationRequest()
 		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
-		events := request.RevocationUpdates[revocationTestCred][2].Events
+		events := request.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
 		require.Equal(t, uint64(1), events[len(events)-1].Index)
 
 		// Construct disclosure proof with nonrevocation proof against accumulator with index 1
@@ -196,7 +197,7 @@ func TestRevocationAll(t *testing.T) {
 		revoke(t, "2", conf, acc)
 		request.RevocationUpdates = nil
 		require.NoError(t, conf.SetRevocationUpdates(request.Base()))
-		events = request.RevocationUpdates[revocationTestCred][2].Events
+		events = request.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
 		require.Equal(t, uint64(2), events[len(events)-1].Index)
 
 		// Try to verify against updated session request
@@ -209,7 +210,7 @@ func TestRevocationAll(t *testing.T) {
 		revoke(t, "3", conf, acc)
 		newrequest := revocationRequest()
 		require.NoError(t, conf.SetRevocationUpdates(newrequest.Base()))
-		events = newrequest.RevocationUpdates[revocationTestCred][2].Events
+		events = newrequest.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
 		require.Equal(t, uint64(3), events[len(events)-1].Index)
 
 		// Use newrequest to update client to index 3 and contruct a disclosure proof
@@ -221,7 +222,7 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, uint64(3), pacc.Index)
 
 		// Check that the nonrevocation proof which uses a newer accumulator than ours verifies
-		events = request.RevocationUpdates[revocationTestCred][2].Events
+		events = request.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
 		require.Equal(t, uint64(2), events[len(events)-1].Index)
 		_, status, err = disclosure.Verify(client.Configuration, request)
 		require.NoError(t, err)
@@ -245,9 +246,9 @@ func TestRevocationAll(t *testing.T) {
 
 		conf := revocationConfiguration.IrmaConfiguration.Revocation
 
-		sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), 2)
+		sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
-		pk, err := conf.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), 2)
+		pk, err := conf.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
 		update, err := revocation.NewAccumulator(sk)
 		require.NoError(t, err)
@@ -320,20 +321,20 @@ func revocationSetup(t *testing.T, options ...sessionOption) (*irmaclient.Client
 }
 
 func revoke(t *testing.T, key string, conf *irma.RevocationStorage, acc *revocation.Accumulator) {
-	sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), 2)
+	sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 	require.NoError(t, err)
 	witness, err := revocation.RandomWitness(sk, acc)
 	require.NoError(t, err)
 	require.NoError(t, conf.AddIssuanceRecord(&irma.IssuanceRecord{
 		Key:        key,
 		CredType:   revocationTestCred,
-		PKCounter:  2,
+		PKCounter:  revocationPkCounter,
 		Attr:       (*irma.RevocationAttribute)(witness.E),
 		Issued:     time.Now().UnixNano(),
 		ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
 	}))
 	require.NoError(t, conf.Revoke(revocationTestCred, key))
-	sacc, err := conf.Accumulator(revocationTestCred, 2)
+	sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
 	require.NoError(t, err)
 	*acc = *sacc.Accumulator
 }
