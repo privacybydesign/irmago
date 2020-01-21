@@ -176,7 +176,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Revoke a bogus credential, advancing accumulator index to 2, and update the session request,
 		// indicated that we expect a nonrevocation proof wrt accumulator with index 2
-		revoke(t, "2", conf, revocationTestCred, acc)
+		revoke(t, "2", conf, acc)
 		request.RevocationUpdates = nil
 		require.NoError(t, conf.SetRevocationUpdates(request.Base()))
 		events = request.RevocationUpdates[revocationTestCred][2].Events
@@ -189,7 +189,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Revoke another bogus credential, advancing index to 3, and make a new disclosure request
 		// requiring a nonrevocation proof against the accumulator with index 3
-		revoke(t, "3", conf, revocationTestCred, acc)
+		revoke(t, "3", conf, acc)
 		newrequest := revocationRequest()
 		require.NoError(t, conf.SetRevocationUpdates(newrequest.Base()))
 		events = newrequest.RevocationUpdates[revocationTestCred][2].Events
@@ -241,7 +241,7 @@ func TestRevocationAll(t *testing.T) {
 		// to contact the RA to update its witness
 		for i := 0; i < irma.RevocationDefaultEventCount+1; i++ {
 			key := strconv.Itoa(i)
-			revoke(t, key, conf, revocationTestCred, acc)
+			revoke(t, key, conf, acc)
 		}
 
 		result := revocationSession(t, client, nil)
@@ -302,21 +302,21 @@ func revocationSetup(t *testing.T, options ...sessionOption) (*irmaclient.Client
 	return client, handler
 }
 
-func revoke(t *testing.T, key string, conf *irma.RevocationStorage, cred irma.CredentialTypeIdentifier, acc *revocation.Accumulator) {
-	sk, err := conf.Keys.PrivateKey(cred.IssuerIdentifier(), 2)
+func revoke(t *testing.T, key string, conf *irma.RevocationStorage, acc *revocation.Accumulator) {
+	sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), 2)
 	require.NoError(t, err)
 	witness, err := revocation.RandomWitness(sk, acc)
 	require.NoError(t, err)
 	require.NoError(t, conf.AddIssuanceRecord(&irma.IssuanceRecord{
 		Key:        key,
-		CredType:   cred,
+		CredType:   revocationTestCred,
 		PKCounter:  2,
 		Attr:       (*irma.RevocationAttribute)(witness.E),
 		Issued:     time.Now().UnixNano(),
 		ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
 	}))
-	require.NoError(t, conf.Revoke(cred, key))
-	sacc, err := conf.Accumulator(cred, 2)
+	require.NoError(t, conf.Revoke(revocationTestCred, key))
+	sacc, err := conf.Accumulator(revocationTestCred, 2)
 	require.NoError(t, err)
 	*acc = *sacc.Accumulator
 }
