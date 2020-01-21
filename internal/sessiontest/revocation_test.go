@@ -116,17 +116,22 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, irma.ProofStatusValid, status)
 	})
 
-	t.Run("UpdateAccumulatorTime", func(t *testing.T) {
+	t.Run("POSTUpdates", func(t *testing.T) {
 		revocationConfiguration = revocationConf(t)
 		revocationConfiguration.RevocationSettings[revocationTestCred].PostURLs = []string{
 			"http://localhost:48680",
 		}
 		StartIrmaServer(t, false)
+		defer func() {
+			StopIrmaServer()
+			revocationConfiguration = nil
+		}()
 
 		startRevocationServer(t)
-		sacc, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
 		require.NoError(t, err)
-		acctime := sacc.Accumulator.Time
+		acctime := sacc1.Accumulator.Time
+		accindex := sacc1.Accumulator.Index
 		time.Sleep(time.Second)
 
 		// run scheduled update of accumulator, triggering a POST to our IRMA server
@@ -134,13 +139,25 @@ func TestRevocationAll(t *testing.T) {
 		// give request time to be processed
 		time.Sleep(100 * time.Millisecond)
 
-		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		// check that both the revocation server's and our IRMA server's configuration
+		// agree on the same accumulator which has the same index but updated time
+		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
 		require.NoError(t, err)
 		require.True(t, sacc1.Accumulator.Time > acctime)
-
+		require.Equal(t, accindex, sacc1.Accumulator.Index)
 		sacc2, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
 		require.NoError(t, err)
 		require.Equal(t, sacc1, sacc2)
+
+		// do a bogus revocation and see that the updated accumulator appears in both configurations
+		revoke(t, "1", revocationConfiguration.IrmaConfiguration.Revocation, sacc2.Accumulator)
+		time.Sleep(100 * time.Millisecond)
+		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		require.NoError(t, err)
+		sacc2, err = irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, 2)
+		require.NoError(t, err)
+		require.Equal(t, sacc1, sacc2)
+		require.Equal(t, accindex+1, sacc1.Accumulator.Index)
 	})
 
 	t.Run("OtherAccumulator", func(t *testing.T) {
