@@ -65,8 +65,8 @@ func New(conf *Configuration) (*Server, error) {
 		return nil, err
 	}
 
-	// Setup DB (TODO: make configurable)
-	s.db = NewMemoryDatabase()
+	// Setup DB
+	s.db = conf.DB
 
 	return s, nil
 }
@@ -138,7 +138,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate commitments
-	commitments, commitId, err := s.core.GenerateCommitments(user.Coredata, authorization, keys)
+	commitments, commitId, err := s.core.GenerateCommitments(user.Data().Coredata, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -199,7 +199,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// verify access (avoids leaking information to unauthorized callers)
-	err = s.core.ValidateJWT(user.Coredata, authorization)
+	err = s.core.ValidateJWT(user.Data().Coredata, authorization)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate keyshare response")
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -216,7 +216,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.Coredata, authorization, sessionData.LastCommitID, challenge, sessionData.LastKeyid)
+	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, sessionData.LastCommitID, challenge, sessionData.LastKeyid)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -240,7 +240,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate jwt
-	err = s.core.ValidateJWT(user.Coredata, authorization)
+	err = s.core.ValidateJWT(user.Data().Coredata, authorization)
 	if err != nil {
 		server.WriteJson(w, &keyshareAuthorization{Status: "expired", Candidates: []string{"pin"}})
 	} else {
@@ -283,7 +283,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 		server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
 		return
 	}
-	jwtt, err := s.core.ValidatePin(user.Coredata, msg.Pin, msg.Username)
+	jwtt, err := s.core.ValidatePin(user.Data().Coredata, msg.Pin, msg.Username)
 	if err == keyshareCore.ErrInvalidPin {
 		if tries == 0 {
 			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
@@ -338,7 +338,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
 		return
 	}
-	user.Coredata, err = s.core.ChangePin(user.Coredata, msg.OldPin, msg.NewPin)
+	user.Data().Coredata, err = s.core.ChangePin(user.Data().Coredata, msg.OldPin, msg.NewPin)
 	if err == keyshareCore.ErrInvalidPin {
 		if tries == 0 {
 			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
@@ -393,7 +393,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	err = s.db.NewUser(&KeyshareUser{Username: username, Coredata: coredata})
+	err = s.db.NewUser(KeyshareUserData{Username: username, Coredata: coredata})
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
 		server.WriteError(w, server.ErrorInternal, err.Error())
