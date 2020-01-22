@@ -128,7 +128,7 @@ func TestRevocationAll(t *testing.T) {
 			revocationConfiguration = nil
 		}()
 
-		startRevocationServer(t)
+		startRevocationServer(t, true)
 		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		acctime := sacc1.Accumulator.Time
@@ -283,6 +283,41 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
+
+	t.Run("RestartRevocationServer", func(t *testing.T) {
+		revocationConfiguration = nil
+		startRevocationServer(t, true)
+		rev := revocationConfiguration.IrmaConfiguration.Revocation
+		sacc1, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
+		require.NotNil(t, sacc1)
+		require.NotNil(t, sacc1.Accumulator)
+		require.Equal(t, uint64(1), sacc1.Accumulator.Index)
+
+		revoke(t, "1", rev, sacc1.Accumulator)
+		sacc2, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
+		require.NotNil(t, sacc2)
+		require.NotNil(t, sacc2.Accumulator)
+		require.Equal(t, uint64(2), sacc2.Accumulator.Index)
+
+		stopRevocationServer()
+		revocationConfiguration = nil
+
+		startRevocationServer(t, false)
+		rev = revocationConfiguration.IrmaConfiguration.Revocation
+		sacc3, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
+		require.Equal(t, sacc2, sacc3)
+
+		update, err := rev.UpdateFrom(revocationTestCred, revocationPkCounter, 0)
+		require.NoError(t, err)
+		pk, err := rev.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
+		require.NoError(t, err)
+		_, _, err = update.Verify(pk, 0)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(update.Events))
+	})
 }
 
 // Helper functions
@@ -310,7 +345,7 @@ func revocationSession(t *testing.T, client *irmaclient.Client, request irma.Ses
 
 // revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
 func revocationSetup(t *testing.T, options ...sessionOption) (*irmaclient.Client, irmaclient.ClientHandler) {
-	startRevocationServer(t)
+	startRevocationServer(t, true)
 
 	// issue a MijnOverheid.root instance with revocation enabled
 	client, handler := parseStorage(t)
@@ -340,42 +375,35 @@ func revoke(t *testing.T, key string, conf *irma.RevocationStorage, acc *revocat
 }
 
 func revocationConf(t *testing.T) *server.Configuration {
-	settings := map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
-		revocationTestCred: {Mode: irma.RevocationModeServer},
-	}
-	irmaconf, err := irma.NewConfiguration(filepath.Join(testdata, "irma_configuration"), irma.ConfigurationOptions{
-		RevocationDBConnStr: revocationDbStr,
-		RevocationDBType:    revocationDbType,
-		RevocationSettings:  settings,
-	})
-	require.NoError(t, err)
-	require.NoError(t, irmaconf.ParseFolder())
 	return &server.Configuration{
 		Logger:               logger,
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
-		RevocationSettings:   settings,
-		IrmaConfiguration:    irmaconf,
-		RevocationDBConnStr:  revocationDbStr,
-		RevocationDBType:     revocationDbType,
+		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+			revocationTestCred: {Mode: irma.RevocationModeServer},
+		},
+		RevocationDBConnStr: revocationDbStr,
+		RevocationDBType:    revocationDbType,
 	}
 }
 
-func startRevocationServer(t *testing.T) {
+func startRevocationServer(t *testing.T, droptables bool) {
 	var err error
 
 	irma.Logger = logger
 
 	// Connect to database and clear records from previous test runs
-	g, err := gorm.Open(revocationDbType, revocationDbStr)
-	require.NoError(t, err)
-	require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
-	require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
-	require.NoError(t, g.DropTableIfExists((*irma.IssuanceRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)).Error)
-	require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
-	require.NoError(t, g.Close())
+	if droptables {
+		g, err := gorm.Open(revocationDbType, revocationDbStr)
+		require.NoError(t, err)
+		require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
+		require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
+		require.NoError(t, g.DropTableIfExists((*irma.IssuanceRecord)(nil)).Error)
+		require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)).Error)
+		require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)).Error)
+		require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
+		require.NoError(t, g.Close())
+	}
 
 	// Start revocation server
 	if revocationConfiguration == nil {
