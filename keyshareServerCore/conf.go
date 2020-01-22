@@ -17,6 +17,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type DatabaseType string
+
+var ErrUnknownDatabaseType = errors.New("Unknown database type")
+
+const (
+	DatabaseTypeMemory   = "memory"
+	DatabaseTypePostgres = "postgres"
+)
+
 // Configuration contains configuration for the irmaserver library and irmad.
 type Configuration struct {
 	// Irma server configuration. If not given, this will be populated using information here
@@ -42,6 +51,12 @@ type Configuration struct {
 	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
 	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
 	DisableTLS bool `json:"no_tls" mapstructure:"no_tls"`
+
+	// Database configuration (ignored when database is provided)
+	DbType       DatabaseType `json:"db_type" mapstructure:"db_type"`
+	DbConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
+	// Provide a prepared database (useful for testing)
+	DB KeyshareDB `json:"-"`
 
 	// Configuration of secure Core
 	// Private key used to sign JWTs with
@@ -144,6 +159,22 @@ func processConfiguration(conf *Configuration) (*keyshareCore.KeyshareCore, erro
 		}
 		if err = conf.ServerConfiguration.IrmaConfiguration.ParseFolder(); err != nil {
 			return nil, server.LogError(err)
+		}
+	}
+
+	// Setup database
+	if conf.DB == nil {
+		switch conf.DbType {
+		case DatabaseTypeMemory:
+			conf.DB = NewMemoryDatabase()
+		case DatabaseTypePostgres:
+			var err error
+			conf.DB, err = NewPostgresDatabase(conf.DbConnstring)
+			if err != nil {
+				return nil, server.LogError(err)
+			}
+		default:
+			return nil, server.LogError(ErrUnknownDatabaseType)
 		}
 	}
 

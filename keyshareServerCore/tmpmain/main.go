@@ -10,6 +10,8 @@ func main() {
 	s, err := keyshareServerCore.New(&keyshareServerCore.Configuration{
 		SchemesPath:           "schemes/",
 		URL:                   "http://10.0.2.2:8080/",
+		DbType:                keyshareServerCore.DatabaseTypePostgres,
+		DbConnstring:          "postgresql://localhost:5432/test",
 		JwtKeyId:              0,
 		JwtPrivateKeyFile:     "schemes/test/kss-0.private.pem",
 		StoragePrimaryKeyFile: "storagekey",
