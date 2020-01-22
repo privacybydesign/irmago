@@ -251,7 +251,7 @@ func (conf *Configuration) prepareRevocation(credid irma.CredentialTypeIdentifie
 		if !exists {
 			conf.Logger.Warnf("Creating initial accumulator for %s-%d", credid, skcounter)
 			if err := conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
-				return LogError(errors.WrapPrefix(err, "failed to create initial accumulator record for "+credid.String(), 0))
+				return LogError(errors.WrapPrefix(err, fmt.Sprintf("failed create initial accumulator for %s-%d", credid, skcounter), 0))
 			}
 		}
 	}

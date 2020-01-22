@@ -78,6 +78,7 @@ func newSqlStorage(debug bool, dbtype, connstr string) (revStorage, error) {
 }
 
 func (s sqlRevStorage) Close() error {
+	Logger.Debug("closing revocation sql database connection")
 	return s.gorm.Close()
 }
 

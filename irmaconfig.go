@@ -532,8 +532,36 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	return nil
 }
 
+func sorter(ints []uint) func(i, j int) bool {
+	return func(i, j int) bool { return ints[i] < ints[j] }
+}
+
+// unionset returns the concatenation of a and b, without duplicates, and sorted.
+func unionset(a, b []uint) []uint {
+	m := map[uint]struct{}{}
+	for _, c := range [][]uint{a, b} {
+		for _, i := range c {
+			m[i] = struct{}{}
+		}
+	}
+	var ints []uint
+	for i := range m {
+		ints = append(ints, i)
+	}
+	sort.Slice(ints, sorter(ints))
+	return ints
+}
+
 func (conf *Configuration) PrivateKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
-	return conf.matchKeyPattern(issuerid, privkeyPattern)
+	filekeys, err := conf.matchKeyPattern(issuerid, privkeyPattern)
+	if err != nil {
+		return nil, err
+	}
+	var mapkeys []uint
+	for _, sk := range conf.PrivateKeys[issuerid] {
+		mapkeys = append(mapkeys, sk.Counter)
+	}
+	return unionset(filekeys, mapkeys), nil
 }
 
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
@@ -554,7 +582,7 @@ func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern st
 		}
 		ints = append(ints, uint(count))
 	}
-	sort.Slice(ints, func(i, j int) bool { return ints[i] < ints[j] })
+	sort.Slice(ints, sorter(ints))
 	return
 }
 
