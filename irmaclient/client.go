@@ -209,7 +209,7 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 
 // addCredential adds the specified credential to the Client, saving its signature
 // imediately, and optionally cm.attributes as well.
-func (client *Client) addCredential(cred *credential, storeAttributes bool) (err error) {
+func (client *Client) addCredential(cred *credential) (err error) {
 	id := irma.NewCredentialTypeIdentifier("")
 	if cred.CredentialType() != nil {
 		id = cred.CredentialType().Identifier()
@@ -253,9 +253,7 @@ func (client *Client) addCredential(cred *credential, storeAttributes bool) (err
 	if err = client.storage.StoreSignature(cred); err != nil {
 		return
 	}
-	if storeAttributes {
-		err = client.storage.StoreAttributes(id, client.attributes[id])
-	}
+	err = client.storage.StoreAttributes(id, client.attributes[id])
 	return
 }
 
@@ -269,7 +267,7 @@ func generateSecretKey() (*secretKey, error) {
 
 // Removal methods
 
-func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storenow bool) error {
+func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeLog bool) error {
 	// Remove attributes
 	list, exists := client.attributes[id]
 	if !exists || index >= len(list) {
@@ -277,10 +275,9 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	}
 	attrs := list[index]
 	client.attributes[id] = append(list[:index], list[index+1:]...)
-	if storenow {
-		if err := client.storage.StoreAttributes(id, client.attributes[id]); err != nil {
-			return err
-		}
+
+	if err := client.storage.StoreAttributes(id, client.attributes[id]); err != nil {
+		return err
 	}
 
 	// Remove credential
@@ -299,7 +296,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storen
 	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
 	removed[id] = attrs.Strings()
 
-	if storenow {
+	if storeLog {
 		return client.storage.AddLogEntry(&LogEntry{
 			Type:    ActionRemoval,
 			Time:    irma.Timestamp(time.Now()),
@@ -814,7 +811,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 		if err != nil {
 			return err
 		}
-		if err = client.addCredential(newcred, true); err != nil {
+		if err = client.addCredential(newcred); err != nil {
 			return err
 		}
 	}

@@ -29,6 +29,10 @@ func TestMain(m *testing.M) {
 
 func parseStorage(t *testing.T) *Client {
 	test.SetupTestStorage(t)
+	return parseExistingStorage(t)
+}
+
+func parseExistingStorage(t *testing.T) *Client {
 	client, err := New(
 		filepath.Join("..", "testdata", "storage", "test"),
 		filepath.Join("..", "testdata", "irma_configuration"),
@@ -255,12 +259,7 @@ func TestCredentialRemoval(t *testing.T) {
 	// Also check whether credential is removed after reloading the storage
 	err = client.storage.db.Close()
 	require.NoError(t, err)
-	client, err = New(
-		filepath.Join("..", "testdata", "storage", "test"),
-		filepath.Join("..", "testdata", "irma_configuration"),
-		&TestClientHandler{t: t},
-	)
-	require.NoError(t, err)
+	client = parseExistingStorage(t)
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)

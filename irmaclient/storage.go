@@ -116,7 +116,7 @@ func (s *storage) DeleteAllSignatures() error {
 
 func (s *storage) StoreSignature(cred *credential) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return s.TxStoreSignature(tx, cred.attrs.Hash(), cred.Signature)
+		return s.TxStoreSignature(tx, cred.AttributeList().Hash(), cred.Signature)
 	})
 }
 

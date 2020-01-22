@@ -21,7 +21,6 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test whether credential is still there
-	require.NoError(t, err)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	sessionHelper(t, getDisclosureRequest(id), "verification", client)
 }
