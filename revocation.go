@@ -138,7 +138,7 @@ const (
 // only way to create such an initial accumulator and it must be called before anyone can use
 // revocation for this credential type. Requires the issuer private key.
 func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *revocation.PrivateKey) error {
-	enabled, err := rs.Exists(typ)
+	enabled, err := rs.Exists(typ, sk.Counter)
 	if err != nil {
 		return err
 	}
@@ -158,9 +158,9 @@ func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *
 }
 
 // Exists returns whether or not an accumulator exists in the database for the given credential type.
-func (rs *RevocationStorage) Exists(typ CredentialTypeIdentifier) (bool, error) {
+func (rs *RevocationStorage) Exists(typ CredentialTypeIdentifier, counter uint) (bool, error) {
 	if rs.sqlMode {
-		return rs.db.Exists((*EventRecord)(nil), nil)
+		return rs.db.Exists((*AccumulatorRecord)(nil), map[string]interface{}{"cred_type": typ, "pk_counter": counter})
 	} else {
 		return rs.memdb.HasRecords(typ), nil
 	}

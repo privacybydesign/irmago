@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"strconv"
@@ -221,29 +222,55 @@ func (conf *Configuration) verifyPrivateKeys() error {
 	return nil
 }
 
+func (conf *Configuration) prepareRevocation(credid irma.CredentialTypeIdentifier) error {
+	sks, err := conf.IrmaConfiguration.PrivateKeyIndices(credid.IssuerIdentifier())
+	if err != nil {
+		return LogError(errors.WrapPrefix(err, "failed to load private key indices for revocation", 0))
+	}
+	if len(sks) == 0 {
+		return LogError(errors.Errorf("revocation server mode enabled for %s but no private key installed", credid))
+	}
+
+	rev := conf.IrmaConfiguration.Revocation
+	for _, skcounter := range sks {
+		isk, err := conf.IrmaConfiguration.PrivateKey(credid.IssuerIdentifier(), skcounter)
+		if err != nil {
+			return LogError(errors.WrapPrefix(err, fmt.Sprintf("failed to load private key %s-%d for revocation", credid, skcounter), 0))
+		}
+		if !isk.RevocationSupported() {
+			continue
+		}
+		sk, err := isk.RevocationKey()
+		if err != nil {
+			return LogError(errors.WrapPrefix(err, fmt.Sprintf("failed to load revocation private key %s-%d", credid, skcounter), 0))
+		}
+		exists, err := rev.Exists(credid, skcounter)
+		if err != nil {
+			return LogError(errors.WrapPrefix(err, fmt.Sprintf("failed to check if accumulator exists for %s-%d", credid, skcounter), 0))
+		}
+		if !exists {
+			conf.Logger.Warnf("Creating initial accumulator for %s-%d", credid, skcounter)
+			if err := conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
+				return LogError(errors.WrapPrefix(err, "failed to create initial accumulator record for "+credid.String(), 0))
+			}
+		}
+	}
+
+	return nil
+}
+
 func (conf *Configuration) verifyRevocation() error {
+	rev := conf.IrmaConfiguration.Revocation
+
 	for credid, settings := range conf.RevocationSettings {
 		if _, known := conf.IrmaConfiguration.CredentialTypes[credid]; !known {
 			return LogError(errors.Errorf("unknown credential type %s in revocation settings", credid))
 		}
-
 		if settings.Mode == irma.RevocationModeServer {
-			sk, err := conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
-			if err != nil {
-				return LogError(errors.WrapPrefix(err, "failed to load private key of "+credid.IssuerIdentifier().String()+" (required for revocation)", 0))
-			}
-			rev := conf.IrmaConfiguration.Revocation
-			exists, err := rev.Exists(credid)
-			if err != nil {
-				return LogError(errors.WrapPrefix(err, "failed to check if accumulator exists for "+credid.String(), 0))
-			}
 			conf.Logger.Info("revocation server mode enabled for " + credid.String())
-			if !exists {
-				conf.Logger.Warn("Creating initial accumulator for " + credid.String())
-				conf.Logger.Warn("Being the revocation server for a credential type comes with special responsibilities, a.o. that this server is always reachable online for any IRMA participant, and that the contents of the database to which the initial accumulator was just written is never deleted. Please read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
-				if err = rev.EnableRevocation(credid, sk); err != nil {
-					return LogError(errors.WrapPrefix(err, "failed to create initial accumulator record for "+credid.String(), 0))
-				}
+			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities, a.o. that this server is always reachable online for any IRMA participant, and that the contents of the database is never deleted. Read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
+			if err := conf.prepareRevocation(credid); err != nil {
+				return err
 			}
 		}
 	}
@@ -252,12 +279,11 @@ func (conf *Configuration) verifyRevocation() error {
 		if !credtype.SupportsRevocation() {
 			continue
 		}
-		_, err := conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
+		_, err := rev.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
 		haveSK := err == nil
-		settings, ok := conf.RevocationSettings[credid]
-		serverConfigured := ok && settings.ServerURL != ""
-		if haveSK && !serverConfigured && settings.Mode != irma.RevocationModeServer {
-			return LogError(errors.Errorf("private key installed for %s, but no revocation server is configured", credid))
+		settings := conf.RevocationSettings[credid]
+		if haveSK && settings == nil || (settings.ServerURL == "" && settings.Mode != irma.RevocationModeServer) {
+			return LogError(errors.Errorf("private key installed for %s, but no revocation server is configured: revocation-enabled issuance sessions will always fail", credid))
 		}
 	}
 
