@@ -163,11 +163,8 @@ func (rs *RevocationStorage) EnableRevocation(typ CredentialTypeIdentifier, sk *
 
 // Exists returns whether or not an accumulator exists in the database for the given credential type.
 func (rs *RevocationStorage) Exists(typ CredentialTypeIdentifier, counter uint) (bool, error) {
-	if rs.sqlMode {
-		return rs.db.Exists((*AccumulatorRecord)(nil), map[string]interface{}{"cred_type": typ, "pk_counter": counter})
-	} else {
-		return rs.memdb.HasRecords(typ), nil
-	}
+	// only requires sql implementation
+	return rs.db.Exists((*AccumulatorRecord)(nil), map[string]interface{}{"cred_type": typ, "pk_counter": counter})
 }
 
 // Revocation update message methods
@@ -300,15 +297,11 @@ func (rs *RevocationStorage) addUpdate(tx revStorage, typ CredentialTypeIdentifi
 
 // Issuance records
 
-func (rs *RevocationStorage) IssuanceRecordExists(typ CredentialTypeIdentifier, key []byte) (bool, error) {
-	return rs.db.Exists(&IssuanceRecord{}, map[string]interface{}{"cred_type": typ, "revocationkey": key})
-}
-
 func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
 	return rs.db.Insert(r)
 }
 
-func (rs *RevocationStorage) IssuanceRecord(typ CredentialTypeIdentifier, key []byte) (*IssuanceRecord, error) {
+func (rs *RevocationStorage) IssuanceRecord(typ CredentialTypeIdentifier, key string) (*IssuanceRecord, error) {
 	var r IssuanceRecord
 	err := rs.db.Last(&r, map[string]interface{}{"cred_type": typ, "revocationkey": key})
 	if err != nil {
@@ -329,8 +322,8 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) er
 
 	return rs.db.Transaction(func(tx revStorage) error {
 		var err error
-		issrecord := IssuanceRecord{}
-		if err = tx.Last(&issrecord, map[string]interface{}{"cred_type": typ, "revocationkey": key}); err != nil {
+		issrecord, err := rs.IssuanceRecord(typ, key)
+		if err != nil {
 			return err
 		}
 		issrecord.RevokedAt = time.Now().UnixNano()

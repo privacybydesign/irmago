@@ -223,19 +223,3 @@ func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.U
 	r.SignedAccumulator = update.SignedAccumulator
 	r.Events = append(r.Events, theirs[offset:]...)
 }
-
-func (m memRevStorage) HasRecords(typ CredentialTypeIdentifier) bool {
-	record := m.get(typ)
-	if record == nil {
-		return false
-	}
-	record.Lock()
-	defer record.Unlock()
-	if len(record.r) == 0 {
-		return false
-	}
-	for _, r := range record.r {
-		return len(r.Events) > 0
-	}
-	return false
-}
