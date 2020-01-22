@@ -37,6 +37,10 @@ func TestMain(m *testing.M) {
 
 func parseStorage(t *testing.T) (*irmaclient.Client, *TestClientHandler) {
 	test.SetupTestStorage(t)
+	return parseExistingStorage(t)
+}
+
+func parseExistingStorage(t *testing.T) (*irmaclient.Client, *TestClientHandler) {
 	handler := &TestClientHandler{t: t, c: make(chan error)}
 	path := test.FindTestdataFolder(t)
 	client, err := irmaclient.New(

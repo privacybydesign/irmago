@@ -108,6 +108,11 @@ func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
 	req = getIssuanceRequest(false)
 	sessionHelper(t, req, "issue", client)
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
+
+	// Also check whether this is actually stored
+	require.NoError(t, client.Close())
+	client, _ = parseExistingStorage(t)
+	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
 func TestLargeAttribute(t *testing.T) {
@@ -137,6 +142,12 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 	require.Nil(t, client.Attributes(credid, 1))
 
 	sessionHelper(t, request, "issue", client)
+	require.NotNil(t, client.Attributes(credid, 0))
+	require.Nil(t, client.Attributes(credid, 1))
+
+	// Also check whether this is actually stored
+	require.NoError(t, client.Close())
+	client, _ = parseExistingStorage(t)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 }
@@ -442,4 +453,17 @@ func TestStaticQRSession(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	require.NoError(t, s.Shutdown(context.Background()))
 	require.True(t, received)
+}
+
+func TestIssuedCredentialIsStored(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	issuanceRequest := getNameIssuanceRequest()
+	sessionHelper(t, issuanceRequest, "issue", client)
+	require.NoError(t, client.Close())
+
+	client, _ = parseExistingStorage(t)
+	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
+	sessionHelper(t, getDisclosureRequest(id), "verification", client)
 }
