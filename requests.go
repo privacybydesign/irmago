@@ -487,7 +487,7 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 			}
 		}
 		if !found {
-			return errors.New("Credential request contaiins unknown attribute")
+			return errors.New("Credential request contains unknown attribute")
 		}
 	}
 
