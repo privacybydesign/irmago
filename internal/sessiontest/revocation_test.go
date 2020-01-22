@@ -10,6 +10,7 @@ import (
 
 	"github.com/jinzhu/gorm"
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -317,6 +318,32 @@ func TestRevocationAll(t *testing.T) {
 		_, _, err = update.Verify(pk, 0)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(update.Events))
+	})
+
+	t.Run("DeleteExpiredIssuanceRecords", func(t *testing.T) {
+		startRevocationServer(t, true)
+
+		// Insert expired issuance record
+		rev := revocationConfiguration.IrmaConfiguration.Revocation
+		require.NoError(t, rev.AddIssuanceRecord(&irma.IssuanceRecord{
+			Key:        "1",
+			CredType:   revocationTestCred,
+			PKCounter:  revocationPkCounter,
+			Attr:       (*irma.RevocationAttribute)(big.NewInt(42)),
+			Issued:     time.Now().Add(-2 * time.Hour).UnixNano(),
+			ValidUntil: time.Now().Add(-1 * time.Hour).UnixNano(),
+		}))
+		// Check existence of insterted record
+		rec, err := rev.IssuanceRecord(revocationTestCred, "1")
+		require.NoError(t, err)
+		require.NotNil(t, rec)
+
+		// Run jobs, triggering DELETE
+		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
+
+		// Check that issuance record is gone
+		rec, err = rev.IssuanceRecord(revocationTestCred, "1")
+		require.Equal(t, gorm.ErrRecordNotFound, err)
 	})
 }
 

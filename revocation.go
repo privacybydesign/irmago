@@ -136,6 +136,9 @@ const (
 	// If server mode is enabled for a credential type, then once every so many seconds
 	// the timestamp in each accumulator is updated to now.
 	revocationAccumulatorUpdateInterval uint64 = 60
+
+	// DELETE issuance records of expired credential every so many minutes
+	revocationDeleteIssuanceRecordsInterval uint64 = 300
 )
 
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
@@ -534,6 +537,15 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 			}
 		})
 	}
+	rs.conf.Scheduler.Every(revocationDeleteIssuanceRecordsInterval).Minutes().Do(func() {
+		if !rs.sqlMode {
+			return
+		}
+		if err := rs.db.Delete(IssuanceRecord{}, "valid_until < ?", time.Now().UnixNano()); err != nil {
+			err = errors.WrapPrefix(err, "failed to delete expired issuance records", 0)
+			raven.CaptureError(err, nil)
+		}
+	})
 
 	if connstr == "" {
 		Logger.Trace("Using memory revocation database")

@@ -22,6 +22,8 @@ type (
 		Last(dest interface{}, query interface{}, args ...interface{}) error
 		// Exists checks whether records exist satisfying col = key.
 		Exists(typ interface{}, query interface{}, args ...interface{}) (bool, error)
+		// Delete records of the given type satisfying the query.
+		Delete(typ interface{}, query interface{}, args ...interface{}) error
 		// Find deserializes into o all records satisfying the specified query.
 		Find(dest interface{}, query interface{}, args ...interface{}) error
 		// Latest deserializes into o the last items; amount specified by count, ordered by col.
@@ -124,6 +126,10 @@ func (s sqlRevStorage) Exists(typ interface{}, query interface{}, args ...interf
 	}
 	db = db.Count(&c)
 	return c > 0, db.Error
+}
+
+func (s sqlRevStorage) Delete(typ interface{}, query interface{}, args ...interface{}) error {
+	return s.gorm.Delete(typ, query, args).Error
 }
 
 func (s sqlRevStorage) Find(dest interface{}, query interface{}, args ...interface{}) error {
