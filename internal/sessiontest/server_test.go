@@ -68,7 +68,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 		SchemesPath:          filepath.Join(testdata, irmaconf),
 		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
 			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {
-				ServerURL: "http://localhost:48683/",
+				RevocationServerURL: "http://localhost:48683/",
 			},
 		},
 	}

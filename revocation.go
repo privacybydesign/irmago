@@ -48,10 +48,10 @@ type (
 
 	// RevocationSetting contains revocation settings for a given credential type.
 	RevocationSetting struct {
-		Mode                     RevocationMode `json:"mode" mapstructure:"mode"`
-		PostURLs                 []string       `json:"post_urls" mapstructure:"post_urls"`
-		ServerURL                string         `json:"server_url" mapstructure:"server_url"`
-		MaxNonrevocationDuration uint           `json:"max_nonrev_duration" mapstructure:"max_nonrev_duration"` // in seconds, min 30
+		Mode                RevocationMode `json:"mode" mapstructure:"mode"`
+		PostURLs            []string       `json:"post_urls" mapstructure:"post_urls"`
+		RevocationServerURL string         `json:"revocation_server_url" mapstructure:"revocation_server_url"`
+		Tolerance           uint           `json:"tolerance" mapstructure:"tolerance"` // in seconds, min 30
 
 		// set to now whenever a new update is received, or when the RA indicates
 		// there are no new updates. Thus it specifies up to what time our nonrevocation
@@ -103,6 +103,7 @@ const (
 	// RevocationModeRequestor is the default revocation mode in which only RevocationRecord instances
 	// are consumed for issuance or verification. Uses an in-memory store.
 	RevocationModeRequestor RevocationMode = ""
+	revocationModeRequestor RevocationMode = "requestor" // synonym for RevocationModeRequestor
 
 	// RevocationModeProxy indicates that this server
 	// (1) allows fetching of revocation update messages from its database,
@@ -119,19 +120,22 @@ const (
 	// In addition this mode exposes the same endpoints as RevocationModeProxy.
 	RevocationModeServer RevocationMode = "server"
 
-	// RevocationDefaultEventCount specifies how many revocation events are attached to session requests
+	// RevocationDefaultUpdateEventCount specifies how many revocation events are attached to session requests
 	// for the client to update its revocation state.
-	RevocationDefaultEventCount = 5
+	RevocationDefaultUpdateEventCount = 10
 
-	// revocationMaxAccumulatorAge is the default maximum in seconds for the 'accumulator age',
-	// which we define to be the amount of time since the last confirmation from the RA that the
-	// latest accumulator that we know is still the latest one: clients should prove nonrevocation
-	// against a 'younger' accumulator.
-	revocationMaxAccumulatorAge uint = 5 * 60
+	// RevocationRequestorUpdateInterval is the time period in minutes for requestor servers
+	// updating their revocation state at th RA.
+	RevocationRequestorUpdateInterval uint64 = 5
+
+	// revocationDefaultTolerance is the default tolerance in seconds: nonrevocation should be proved
+	// by clients up to maximally this amount of seconds ago at verification time. If not, the
+	// server will report the time up until nonrevocation of the attribute is guaranteed to the requestor.
+	revocationDefaultTolerance uint = 5 * 60
 
 	// If server mode is enabled for a credential type, then once every so many seconds
 	// the timestamp in each accumulator is updated to now.
-	revocationAccumulatorUpdateInterval uint64 = 10
+	revocationAccumulatorUpdateInterval uint64 = 60
 )
 
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
@@ -408,7 +412,7 @@ func (rs *RevocationStorage) accumulator(tx revStorage, typ CredentialTypeIdenti
 // Methods to update from remote revocation server
 
 func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
-	updates, err := rs.client.FetchUpdateLatest(typ, RevocationDefaultEventCount)
+	updates, err := rs.client.FetchUpdateLatest(typ, RevocationDefaultUpdateEventCount)
 	if err != nil {
 		return err
 	}
@@ -425,7 +429,7 @@ func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
 func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
 	settings := rs.getSettings(typ)
 	// update 10 seconds before the maximum, to stay below it
-	if settings.updated.Before(time.Now().Add(time.Duration(-settings.MaxNonrevocationDuration+10) * time.Second)) {
+	if settings.updated.Before(time.Now().Add(time.Duration(-settings.Tolerance+10) * time.Second)) {
 		Logger.WithField("credtype", typ).Tracef("fetching revocation updates")
 		if err := rs.UpdateDB(typ); err != nil {
 			return err
@@ -452,14 +456,14 @@ func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, re
 	}
 
 	// We have to send it, sign it first
-	if settings.ServerURL == "" {
+	if settings.RevocationServerURL == "" {
 		return errors.New("cannot send issuance record: no server_url configured")
 	}
 	rsk, err := sk.RevocationKey()
 	if err != nil {
 		return err
 	}
-	return rs.client.PostIssuanceRecord(typ, rsk, rec, settings.ServerURL)
+	return rs.client.PostIssuanceRecord(typ, rsk, rec, settings.RevocationServerURL)
 }
 
 // Misscelaneous methods
@@ -510,7 +514,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 	for typ, s := range settings {
 		switch s.Mode {
 		case RevocationModeServer:
-			if s.ServerURL != "" {
+			if s.RevocationServerURL != "" {
 				return errors.New("server_url cannot be combined with server mode")
 			}
 			ourtypes = append(ourtypes, typ)
@@ -518,9 +522,11 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 		case RevocationModeProxy:
 			t = &typ
 		case RevocationModeRequestor: // noop
+		case revocationModeRequestor:
+			s.Mode = RevocationModeRequestor
 		default:
-			return errors.Errorf(`invalid revocation mode "%s" for %s (supported: "%s", "%s", "%s")`,
-				s.Mode, typ, RevocationModeRequestor, RevocationModeServer, RevocationModeProxy)
+			return errors.Errorf(`invalid revocation mode "%s" for %s (supported: "%s" (or empty string), "%s", "%s")`,
+				s.Mode, typ, revocationModeRequestor, RevocationModeServer, RevocationModeProxy)
 		}
 	}
 	if t != nil && connstr == "" {
@@ -555,9 +561,9 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 		rs.settings = map[CredentialTypeIdentifier]*RevocationSetting{}
 	}
 	for id, settings := range rs.settings {
-		if settings.MaxNonrevocationDuration != 0 && settings.MaxNonrevocationDuration < 30 {
+		if settings.Tolerance != 0 && settings.Tolerance < 30 {
 			return errors.Errorf("max_nonrev_duration setting for %s must be at least 30 seconds, was %d",
-				id, settings.MaxNonrevocationDuration)
+				id, settings.Tolerance)
 		}
 	}
 	rs.client = RevocationClient{Conf: rs.conf}
@@ -599,7 +605,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 				return err
 			}
 		}
-		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, RevocationDefaultEventCount)
+		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, RevocationDefaultUpdateEventCount)
 		if err != nil {
 			return err
 		}
@@ -612,8 +618,8 @@ func (rs *RevocationStorage) getSettings(typ CredentialTypeIdentifier) *Revocati
 		rs.settings[typ] = &RevocationSetting{}
 	}
 	s := rs.settings[typ]
-	if s.MaxNonrevocationDuration == 0 {
-		s.MaxNonrevocationDuration = revocationMaxAccumulatorAge
+	if s.Tolerance == 0 {
+		s.Tolerance = revocationDefaultTolerance
 	}
 	return s
 }

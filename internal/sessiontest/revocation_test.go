@@ -257,7 +257,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Advance the accumulator by doing revocations so much that the client will need
 		// to contact the RA to update its witness
-		for i := 0; i < irma.RevocationDefaultEventCount+1; i++ {
+		for i := 0; i < irma.RevocationDefaultUpdateEventCount+1; i++ {
 			key := strconv.Itoa(i)
 			revoke(t, key, conf, acc)
 		}

@@ -45,7 +45,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		s.sessions.deleteExpired()
 	})
 
-	s.scheduler.Every(5).Minutes().Do(func() {
+	s.scheduler.Every(irma.RevocationRequestorUpdateInterval).Minutes().Do(func() {
 		for credid, credtype := range s.conf.IrmaConfiguration.CredentialTypes {
 			if !credtype.SupportsRevocation() {
 				continue
