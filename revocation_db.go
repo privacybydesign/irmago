@@ -11,28 +11,7 @@ import (
 )
 
 type (
-	revStorage interface {
-		// Transaction executes the given closure within a transaction.
-		Transaction(f func(tx revStorage) error) (err error)
-		// Insert a new record which must not yet exist.
-		Insert(o interface{}) error
-		// Save an existing record.
-		Save(o interface{}) error
-		// Last deserializes the last record into o.
-		Last(dest interface{}, query interface{}, args ...interface{}) error
-		// Exists checks whether records exist satisfying col = key.
-		Exists(typ interface{}, query interface{}, args ...interface{}) (bool, error)
-		// Delete records of the given type satisfying the query.
-		Delete(typ interface{}, query interface{}, args ...interface{}) error
-		// Find deserializes into o all records satisfying the specified query.
-		Find(dest interface{}, query interface{}, args ...interface{}) error
-		// Latest deserializes into o the last items; amount specified by count, ordered by col.
-		Latest(dest interface{}, count uint64, query interface{}, args ...interface{}) error
-		// Close the database.
-		Close() error
-	}
-
-	// sqlRevStorage implements the revStorage interface, storing any record type in a SQL database,
+	// sqlRevStorage is a wrapper around gorm, storing any record type in a SQL database,
 	// for use by revocation servers.
 	sqlRevStorage struct {
 		gorm *gorm.DB
@@ -50,16 +29,16 @@ type (
 	}
 )
 
-func newSqlStorage(debug bool, dbtype, connstr string) (revStorage, error) {
+func newSqlStorage(debug bool, dbtype, connstr string) (sqlRevStorage, error) {
 	switch dbtype {
 	case "postgres", "mysql":
 	default:
-		return nil, errors.New("unsupported database type")
+		return sqlRevStorage{}, errors.New("unsupported database type")
 	}
 
 	g, err := gorm.Open(dbtype, connstr)
 	if err != nil {
-		return nil, err
+		return sqlRevStorage{}, err
 	}
 
 	if debug {
@@ -67,24 +46,27 @@ func newSqlStorage(debug bool, dbtype, connstr string) (revStorage, error) {
 		g.SetLogger(gorm.Logger{LogWriter: log.New(Logger.WriterLevel(logrus.DebugLevel), "db: ", 0)})
 	}
 	if g.AutoMigrate((*EventRecord)(nil)); g.Error != nil {
-		return nil, g.Error
+		return sqlRevStorage{}, g.Error
 	}
 	if g.AutoMigrate((*AccumulatorRecord)(nil)); g.Error != nil {
-		return nil, g.Error
+		return sqlRevStorage{}, g.Error
 	}
 	if g.AutoMigrate((*IssuanceRecord)(nil)); g.Error != nil {
-		return nil, g.Error
+		return sqlRevStorage{}, g.Error
 	}
 
 	return sqlRevStorage{gorm: g}, nil
 }
 
 func (s sqlRevStorage) Close() error {
+	if s.gorm == nil {
+		return nil
+	}
 	Logger.Debug("closing revocation sql database connection")
 	return s.gorm.Close()
 }
 
-func (s sqlRevStorage) Transaction(f func(tx revStorage) error) (err error) {
+func (s sqlRevStorage) Transaction(f func(tx sqlRevStorage) error) (err error) {
 	tx := sqlRevStorage{gorm: s.gorm.Begin()}
 	defer func() {
 		if e := recover(); e != nil {
