@@ -441,7 +441,7 @@ func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, re
 	if credtype == nil {
 		return errors.New("unknown credential type")
 	}
-	if !credtype.SupportsRevocation() {
+	if !credtype.RevocationSupported() {
 		return errors.New("cannot save issuance record: credential type does not support revocation")
 	}
 
@@ -590,7 +590,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 	var err error
 	b.RevocationUpdates = make(map[CredentialTypeIdentifier]map[uint]*revocation.Update, len(b.Revocation))
 	for _, credid := range b.Revocation {
-		if !rs.conf.CredentialTypes[credid].SupportsRevocation() {
+		if !rs.conf.CredentialTypes[credid].RevocationSupported() {
 			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme")
 		}
 		if err = rs.UpdateIfOld(credid); err != nil {

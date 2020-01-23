@@ -98,7 +98,7 @@ func (ad AttributeType) IsOptional() bool {
 	return ad.Optional == "true"
 }
 
-func (ct *CredentialType) SupportsRevocation() bool {
+func (ct *CredentialType) RevocationSupported() bool {
 	return len(ct.RevocationServers) > 0
 }
 

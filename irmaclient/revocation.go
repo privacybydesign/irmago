@@ -18,7 +18,7 @@ func (client *Client) initRevocation() {
 	// For every credential supporting revocation, compute nonrevocation caches in async jobs
 	for typ, attrsets := range client.attributes {
 		for i, attrs := range attrsets {
-			if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
+			if attrs.CredentialType() == nil || !attrs.CredentialType().RevocationSupported() {
 				continue
 			}
 			typ := typ // make copy of same name to capture the value for closure below
@@ -41,7 +41,7 @@ func (client *Client) initRevocation() {
 	client.Configuration.Scheduler.Every(nonrevUpdateInterval).Seconds().Do(func() {
 		for typ, attrsets := range client.attributes {
 			for i, attrs := range attrsets {
-				if attrs.CredentialType() == nil || !attrs.CredentialType().SupportsRevocation() {
+				if attrs.CredentialType() == nil || !attrs.CredentialType().RevocationSupported() {
 					continue
 				}
 				cred, err := client.credential(typ, i)
@@ -82,7 +82,7 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 
 	for typ := range request.Disclosure().Identifiers().CredentialTypes {
 		credtype := client.Configuration.CredentialTypes[typ]
-		if !credtype.SupportsRevocation() {
+		if !credtype.RevocationSupported() {
 			continue
 		}
 		if !base.RequestsRevocation(typ) {
@@ -208,7 +208,7 @@ func (client *Client) nonrevPrepareCache(typ irma.CredentialTypeIdentifier, inde
 func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
 	for typ := range request.Disclosure().Identifiers().CredentialTypes {
 		credtype := client.Configuration.CredentialTypes[typ]
-		if !credtype.SupportsRevocation() {
+		if !credtype.RevocationSupported() {
 			continue
 		}
 		for i := range client.attrs(typ) {

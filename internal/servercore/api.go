@@ -47,7 +47,7 @@ func New(conf *server.Configuration) (*Server, error) {
 
 	s.scheduler.Every(irma.RevocationRequestorUpdateInterval).Minutes().Do(func() {
 		for credid, credtype := range s.conf.IrmaConfiguration.CredentialTypes {
-			if !credtype.SupportsRevocation() {
+			if !credtype.RevocationSupported() {
 				continue
 			}
 			if s := conf.RevocationSettings[credid]; s != nil && s.Mode != irma.RevocationModeRequestor {

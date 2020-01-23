@@ -79,7 +79,7 @@ func (session *session) issuanceHandleRevocation(
 	cred *irma.CredentialRequest, attributes *irma.AttributeList, sk *gabi.PrivateKey,
 ) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
-	if !session.conf.IrmaConfiguration.CredentialTypes[id].SupportsRevocation() {
+	if !session.conf.IrmaConfiguration.CredentialTypes[id].RevocationSupported() {
 		return nil, nil
 	}
 

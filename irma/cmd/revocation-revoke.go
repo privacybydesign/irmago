@@ -47,7 +47,7 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 	if !known {
 		die("unknown credential type", nil)
 	}
-	if !credtype.SupportsRevocation() {
+	if !credtype.RevocationSupported() {
 		die("credential type does not support revocation", nil)
 	}
 

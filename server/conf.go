@@ -276,7 +276,7 @@ func (conf *Configuration) verifyRevocation() error {
 	}
 
 	for credid, credtype := range conf.IrmaConfiguration.CredentialTypes {
-		if !credtype.SupportsRevocation() {
+		if !credtype.RevocationSupported() {
 			continue
 		}
 		_, err := rev.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
