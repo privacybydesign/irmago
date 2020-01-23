@@ -94,11 +94,6 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 		cred.KeyCounter = int(privatekey.Counter)
 
-		// Check that the credential is consistent with irma_configuration
-		if err := cred.Validate(s.conf.IrmaConfiguration); err != nil {
-			return err
-		}
-
 		// Ensure the credential has an expiry date
 		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
 		if cred.Validity == nil {
