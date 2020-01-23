@@ -348,7 +348,7 @@ func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter uint) (*gabi.
 	return sk, nil
 }
 
-// PrivateKeyLatest returns the latest private key of the specified issuer, or nil if not present in the Configuration.
+// PrivateKeyLatest returns the latest private key of the specified issuer.
 func (conf *Configuration) PrivateKeyLatest(id IssuerIdentifier) (*gabi.PrivateKey, error) {
 	indices, err := conf.PrivateKeyIndices(id)
 	if err != nil {
@@ -377,6 +377,18 @@ func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabi.P
 		}
 	}
 	return conf.publicKeys[id][counter], nil
+}
+
+// PublicKeyLatest returns the latest private key of the specified issuer.
+func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabi.PublicKey, error) {
+	indices, err := conf.PublicKeyIndices(id)
+	if err != nil {
+		return nil, err
+	}
+	if len(indices) == 0 {
+		return nil, errors.New("no public keys found")
+	}
+	return conf.PublicKey(id, indices[len(indices)-1])
 }
 
 // KeyshareServerKeyFunc returns a function that returns the public key with which to verify a keyshare server JWT,
@@ -1480,33 +1492,30 @@ func (conf *Configuration) ValidateKeys() error {
 		}
 
 		// Check private keys if any
-		privkeypath := fmt.Sprintf(privkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
-		privkeys, err := filepath.Glob(privkeypath)
+		indices, err = conf.PrivateKeyIndices(issuerid)
 		if err != nil {
 			return err
 		}
-		for _, privkey := range privkeys {
-			filename := filepath.Base(privkey)
-			count, err := strconv.ParseUint(filename[:len(filename)-4], 10, 32)
+		for _, i := range indices {
+			sk, err := conf.PrivateKey(issuerid, i)
 			if err != nil {
 				return err
 			}
-			sk, err := gabi.NewPrivateKeyFromFile(privkey)
-			if err != nil {
-				return err
+			if sk.Counter != i {
+				return errors.Errorf("Private key %d of issuer %s has wrong <Counter>", i, issuerid.String())
 			}
-			if sk.Counter != uint(count) {
-				return errors.Errorf("Private key %s of issuer %s has wrong <Counter>", filename, issuerid.String())
-			}
-			pk, err := conf.PublicKey(issuerid, uint(count))
+			pk, err := conf.PublicKey(issuerid, i)
 			if err != nil {
 				return err
 			}
 			if pk == nil {
-				return errors.Errorf("Private key %s of issuer %s has no corresponding public key", filename, issuerid.String())
+				return errors.Errorf("Private key %d of issuer %s has no corresponding public key", i, issuerid.String())
 			}
 			if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-				return errors.Errorf("Private key %s of issuer %s does not belong to public key %s", filename, issuerid.String(), filename)
+				return errors.Errorf("Private key %d of issuer %s does not belong to corresponding public key", i, issuerid.String())
+			}
+			if sk.RevocationSupported() != pk.RevocationSupported() {
+				return errors.Errorf("revocation support of private key %d of issuer %s is not consistent with corresponding public key", i, issuerid.String())
 			}
 		}
 
@@ -1518,6 +1527,13 @@ func (conf *Configuration) ValidateKeys() error {
 			}
 			if len(typ.AttributeTypes)+2 > len(latest.R) {
 				return errors.Errorf("Latest public key of issuer %s does not support the amount of attributes that credential type %s requires (%d, required: %d)", issuerid.String(), id.String(), len(latest.R), len(typ.AttributeTypes)+2)
+			}
+			pk, err := conf.PublicKeyLatest(typ.IssuerIdentifier())
+			if err != nil {
+				return err
+			}
+			if typ.SupportsRevocation() && !pk.RevocationSupported() {
+				return errors.Errorf("credential type %s supports revocation but latest private key of issuer %s does not", typ, issuerid)
 			}
 		}
 	}
