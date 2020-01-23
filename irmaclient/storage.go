@@ -77,7 +77,7 @@ func (s *storage) txStore(tx *transaction, bucketName string, key string, value 
 	return b.Put([]byte(key), btsValue)
 }
 
-func (s *storage) txDelete(tx *transaction, key string, bucketName string) error {
+func (s *storage) txDelete(tx *transaction, bucketName string, key string) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 	if err != nil {
 		return err
@@ -86,7 +86,7 @@ func (s *storage) txDelete(tx *transaction, key string, bucketName string) error
 	return b.Delete([]byte(key))
 }
 
-func (s *storage) txLoad(tx *transaction, key string, dest interface{}, bucketName string) (found bool, err error) {
+func (s *storage) txLoad(tx *transaction, bucketName string, key string, dest interface{}) (found bool, err error) {
 	b := tx.Bucket([]byte(bucketName))
 	if b == nil {
 		return false, nil
@@ -99,9 +99,9 @@ func (s *storage) txLoad(tx *transaction, key string, dest interface{}, bucketNa
 	return true, json.Unmarshal(bts, dest)
 }
 
-func (s *storage) load(key string, dest interface{}, bucketName string) (found bool, err error) {
+func (s *storage) load(bucketName string, key string, dest interface{}) (found bool, err error) {
 	err = s.db.View(func(tx *bbolt.Tx) error {
-		found, err = s.txLoad(&transaction{tx}, key, dest, bucketName)
+		found, err = s.txLoad(&transaction{tx}, bucketName, key, dest)
 		return err
 	})
 	return
@@ -114,7 +114,7 @@ func (s *storage) DoStoreTransaction(f func(*transaction) error) error {
 }
 
 func (s *storage) TxDeleteSignature(tx *transaction, attrs *irma.AttributeList) error {
-	return s.txDelete(tx, attrs.Hash(), signaturesBucket)
+	return s.txDelete(tx, signaturesBucket, attrs.Hash())
 }
 
 func (s *storage) TxDeleteAllSignatures(tx *transaction) error {
@@ -155,7 +155,7 @@ func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialT
 
 	// If no credentials are left of a certain type, the full entry can be deleted.
 	if len(attrlistlist) == 0 {
-		return s.txDelete(tx, credTypeID.String(), attributesBucket)
+		return s.txDelete(tx, attributesBucket, credTypeID.String())
 	}
 	return s.txStore(tx, attributesBucket, credTypeID.String(), attrlistlist)
 }
@@ -224,7 +224,7 @@ func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
 
 func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
 	signature = new(gabi.CLSignature)
-	found, err := s.load(attrs.Hash(), signature, signaturesBucket)
+	found, err := s.load(signaturesBucket, attrs.Hash(), signature)
 	if err != nil {
 		return nil, err
 	} else if !found {
@@ -237,7 +237,7 @@ func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSi
 // was found in storage, it generates, saves, and returns a new secret key.
 func (s *storage) LoadSecretKey() (*secretKey, error) {
 	sk := &secretKey{}
-	found, err := s.load(skKey, sk, userdataBucket)
+	found, err := s.load(userdataBucket, skKey, sk)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +283,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 
 func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]*keyshareServer, err error) {
 	ksses = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
-	_, err = s.load(kssKey, &ksses, userdataBucket)
+	_, err = s.load(userdataBucket, kssKey, &ksses)
 	return
 }
 
@@ -329,12 +329,12 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 
 func (s *storage) LoadUpdates() (updates []update, err error) {
 	updates = []update{}
-	_, err = s.load(updatesKey, &updates, userdataBucket)
+	_, err = s.load(userdataBucket, updatesKey, &updates)
 	return
 }
 
 func (s *storage) LoadPreferences() (Preferences, error) {
 	config := defaultPreferences
-	_, err := s.load(preferencesKey, &config, userdataBucket)
+	_, err := s.load(userdataBucket, preferencesKey, &config)
 	return config, err
 }
