@@ -190,14 +190,14 @@ func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {
 	request := rrequest.SessionRequest()
 	action := request.Action()
 
+	if err := s.validateRequest(request); err != nil {
+		return nil, "", err
+	}
+
 	if action == irma.ActionIssuing {
 		if err := s.validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
 			return nil, "", err
 		}
-	}
-
-	if err := s.validateRequest(request); err != nil {
-		return nil, "", err
 	}
 
 	session := s.newSession(action, rrequest)
