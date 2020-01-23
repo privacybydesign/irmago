@@ -23,6 +23,10 @@ type storage struct {
 	Configuration *irma.Configuration
 }
 
+type transaction struct {
+	*bbolt.Tx
+}
+
 // Filenames
 const databaseFile = "db"
 
@@ -60,7 +64,7 @@ func (s *storage) Close() error {
 	return s.db.Close()
 }
 
-func (s *storage) txStore(tx *bbolt.Tx, key string, value interface{}, bucketName string) error {
+func (s *storage) txStore(tx *transaction, bucketName string, key string, value interface{}) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 	if err != nil {
 		return err
@@ -73,7 +77,7 @@ func (s *storage) txStore(tx *bbolt.Tx, key string, value interface{}, bucketNam
 	return b.Put([]byte(key), btsValue)
 }
 
-func (s *storage) txDelete(tx *bbolt.Tx, key string, bucketName string) error {
+func (s *storage) txDelete(tx *transaction, key string, bucketName string) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 	if err != nil {
 		return err
@@ -82,12 +86,13 @@ func (s *storage) txDelete(tx *bbolt.Tx, key string, bucketName string) error {
 	return b.Delete([]byte(key))
 }
 
-func (s *storage) txLoad(tx *bbolt.Tx, key string, dest interface{}, bucketName string) (found bool, err error) {
+func (s *storage) txLoad(tx *transaction, key string, dest interface{}, bucketName string) (found bool, err error) {
 	b := tx.Bucket([]byte(bucketName))
 	if b == nil {
 		return false, nil
 	}
 	bts := b.Get([]byte(key))
+	b.Sequence()
 	if bts == nil {
 		return false, nil
 	}
@@ -96,88 +101,86 @@ func (s *storage) txLoad(tx *bbolt.Tx, key string, dest interface{}, bucketName 
 
 func (s *storage) load(key string, dest interface{}, bucketName string) (found bool, err error) {
 	err = s.db.View(func(tx *bbolt.Tx) error {
-		found, err = s.txLoad(tx, key, dest, bucketName)
+		found, err = s.txLoad(&transaction{tx}, key, dest, bucketName)
 		return err
 	})
 	return
 }
 
-func (s *storage) DeleteSignature(attrs *irma.AttributeList) error {
+func (s *storage) DoStoreTransaction(f func(*transaction) error) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return s.txDelete(tx, attrs.Hash(), signaturesBucket)
+		return f(&transaction{tx})
 	})
 }
 
-func (s *storage) DeleteAllSignatures() error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		return tx.DeleteBucket([]byte(signaturesBucket))
-	})
+func (s *storage) TxDeleteSignature(tx *transaction, attrs *irma.AttributeList) error {
+	return s.txDelete(tx, attrs.Hash(), signaturesBucket)
 }
 
-func (s *storage) StoreSignature(cred *credential) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		return s.TxStoreSignature(tx, cred.AttributeList().Hash(), cred.Signature)
-	})
+func (s *storage) TxDeleteAllSignatures(tx *transaction) error {
+	return tx.DeleteBucket([]byte(signaturesBucket))
 }
 
-func (s *storage) TxStoreSignature(tx *bbolt.Tx, credHash string, sig *gabi.CLSignature) error {
+func (s *storage) TxStoreSignature(tx *transaction, cred *credential) error {
+	return s.TxStoreCLSignature(tx, cred.AttributeList().Hash(), cred.Signature)
+}
+
+func (s *storage) TxStoreCLSignature(tx *transaction, credHash string, sig *gabi.CLSignature) error {
 	// We take the SHA256 hash over all attributes as the bucket key for the signature.
 	// This means that of the signatures of two credentials that have identical attributes
 	// only one gets stored, one overwriting the other - but that doesn't
 	// matter, because either one of the signatures is valid over both attribute lists,
 	// so keeping one of them suffices.
-	return s.txStore(tx, credHash, sig, signaturesBucket)
+	return s.txStore(tx, signaturesBucket, credHash, sig)
 }
 
 func (s *storage) StoreSecretKey(sk *secretKey) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
+	return s.DoStoreTransaction(func(tx *transaction) error {
 		return s.TxStoreSecretKey(tx, sk)
 	})
 }
 
-func (s *storage) TxStoreSecretKey(tx *bbolt.Tx, sk *secretKey) error {
-	return s.txStore(tx, skKey, sk, userdataBucket)
+func (s *storage) TxStoreSecretKey(tx *transaction, sk *secretKey) error {
+	return s.txStore(tx, userdataBucket, skKey, sk)
 }
 
 func (s *storage) StoreAttributes(credTypeID irma.CredentialTypeIdentifier, attrlistlist []*irma.AttributeList) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
+	return s.DoStoreTransaction(func(tx *transaction) error {
 		return s.TxStoreAttributes(tx, credTypeID, attrlistlist)
 	})
 }
 
-func (s *storage) TxStoreAttributes(tx *bbolt.Tx, credTypeID irma.CredentialTypeIdentifier,
+func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialTypeIdentifier,
 	attrlistlist []*irma.AttributeList) error {
 
 	// If no credentials are left of a certain type, the full entry can be deleted.
 	if len(attrlistlist) == 0 {
 		return s.txDelete(tx, credTypeID.String(), attributesBucket)
 	}
-	return s.txStore(tx, credTypeID.String(), attrlistlist, attributesBucket)
+	return s.txStore(tx, attributesBucket, credTypeID.String(), attrlistlist)
 }
 
-func (s *storage) DeleteAllAttributes() error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		return tx.DeleteBucket([]byte(attributesBucket))
-	})
+func (s *storage) TxDeleteAllAttributes(tx *transaction) error {
+	return tx.DeleteBucket([]byte(attributesBucket))
 }
 
 func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
+	return s.DoStoreTransaction(func(tx *transaction) error {
 		return s.TxStoreKeyshareServers(tx, keyshareServers)
 	})
 }
 
-func (s *storage) TxStoreKeyshareServers(tx *bbolt.Tx, keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
-	return s.txStore(tx, kssKey, keyshareServers, userdataBucket)
+func (s *storage) TxStoreKeyshareServers(tx *transaction, keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
+	return s.txStore(tx, userdataBucket, kssKey, keyshareServers)
 }
 
 func (s *storage) AddLogEntry(entry *LogEntry) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return s.TxAddLogEntry(tx, entry)
+		return s.TxAddLogEntry(&transaction{tx}, entry)
 	})
 }
 
-func (s *storage) TxAddLogEntry(tx *bbolt.Tx, entry *LogEntry) error {
+func (s *storage) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(logsBucket))
 	if err != nil {
 		return err
@@ -200,23 +203,23 @@ func (s *storage) logEntryKeyToBytes(id uint64) []byte {
 }
 
 func (s *storage) StorePreferences(prefs Preferences) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
+	return s.DoStoreTransaction(func(tx *transaction) error {
 		return s.TxStorePreferences(tx, prefs)
 	})
 }
 
-func (s *storage) TxStorePreferences(tx *bbolt.Tx, prefs Preferences) error {
-	return s.txStore(tx, preferencesKey, prefs, userdataBucket)
+func (s *storage) TxStorePreferences(tx *transaction, prefs Preferences) error {
+	return s.txStore(tx, userdataBucket, preferencesKey, prefs)
 }
 
 func (s *storage) StoreUpdates(updates []update) (err error) {
-	return s.db.Update(func(tx *bbolt.Tx) error {
+	return s.DoStoreTransaction(func(tx *transaction) error {
 		return s.TxStoreUpdates(tx, updates)
 	})
 }
 
-func (s *storage) TxStoreUpdates(tx *bbolt.Tx, updates []update) error {
-	return s.txStore(tx, updatesKey, updates, userdataBucket)
+func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
+	return s.txStore(tx, userdataBucket, updatesKey, updates)
 }
 
 func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {

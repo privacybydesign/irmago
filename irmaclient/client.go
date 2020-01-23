@@ -229,13 +229,17 @@ func (client *Client) addCredential(cred *credential) (err error) {
 	if !id.Empty() {
 		if cred.CredentialType().IsSingleton {
 			for len(client.attrs(id)) != 0 {
-				_ = client.remove(id, 0, false)
+				if err = client.remove(id, 0, false); err != nil {
+					return
+				}
 			}
 		}
 
 		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
 			if client.attrs(id)[i].EqualsExceptMetadata(cred.AttributeList()) {
-				_ = client.remove(id, i, false)
+				if err = client.remove(id, i, false); err != nil {
+					return
+				}
 			}
 		}
 	}
@@ -250,11 +254,12 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		client.credentialsCache[id][counter] = cred
 	}
 
-	if err = client.storage.StoreSignature(cred); err != nil {
-		return
-	}
-	err = client.storage.StoreAttributes(id, client.attributes[id])
-	return
+	return client.storage.DoStoreTransaction(func(tx *transaction) error {
+		if err = client.storage.TxStoreSignature(tx, cred); err != nil {
+			return err
+		}
+		return client.storage.TxStoreAttributes(tx, id, client.attributes[id])
+	})
 }
 
 func generateSecretKey() (*secretKey, error) {
@@ -276,32 +281,35 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeL
 	attrs := list[index]
 	client.attributes[id] = append(list[:index], list[index+1:]...)
 
-	if err := client.storage.StoreAttributes(id, client.attributes[id]); err != nil {
+	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
+	removed[id] = attrs.Strings()
+
+	err := client.storage.DoStoreTransaction(func(tx *transaction) error {
+		if err := client.storage.TxDeleteSignature(tx, attrs); err != nil {
+			return err
+		}
+		if err := client.storage.TxStoreAttributes(tx, id, client.attributes[id]); err != nil {
+			return err
+		}
+		if storeLog {
+			return client.storage.TxAddLogEntry(tx, &LogEntry{
+				Type:    ActionRemoval,
+				Time:    irma.Timestamp(time.Now()),
+				Removed: removed,
+			})
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
-	// Remove credential
+	// Remove credential from cache
 	if creds, exists := client.credentialsCache[id]; exists {
 		if _, exists := creds[index]; exists {
 			delete(creds, index)
 			client.credentialsCache[id] = creds
 		}
-	}
-
-	// Remove signature from storage
-	if err := client.storage.DeleteSignature(attrs); err != nil {
-		return err
-	}
-
-	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
-	removed[id] = attrs.Strings()
-
-	if storeLog {
-		return client.storage.AddLogEntry(&LogEntry{
-			Type:    ActionRemoval,
-			Time:    irma.Timestamp(time.Now()),
-			Removed: removed,
-		})
 	}
 	return nil
 }
@@ -334,19 +342,22 @@ func (client *Client) RemoveAllCredentials() error {
 		}
 	}
 	client.attributes = map[irma.CredentialTypeIdentifier][]*irma.AttributeList{}
-	if err := client.storage.DeleteAllAttributes(); err != nil {
-		return err
-	}
-	if err := client.storage.DeleteAllSignatures(); err != nil {
-		return err
-	}
 
 	logentry := &LogEntry{
 		Type:    ActionRemoval,
 		Time:    irma.Timestamp(time.Now()),
 		Removed: removed,
 	}
-	return client.storage.AddLogEntry(logentry)
+
+	return client.storage.DoStoreTransaction(func(tx *transaction) error {
+		if err := client.storage.TxDeleteAllAttributes(tx); err != nil {
+			return err
+		}
+		if err := client.storage.TxDeleteAllSignatures(tx); err != nil {
+			return err
+		}
+		return client.storage.TxAddLogEntry(tx, logentry)
+	})
 }
 
 // Attribute and credential getter methods
