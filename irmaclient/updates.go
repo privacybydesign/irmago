@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago"
-	"go.etcd.io/bbolt"
 )
 
 // This file contains the update mechanism for Client
@@ -51,7 +50,7 @@ var clientUpdates = []func(client *Client) error{
 		}
 
 		// Open one bolt transaction to process all our log entries in
-		err = client.storage.db.Update(func(tx *bbolt.Tx) error {
+		err = client.storage.DoStoreTransaction(func(tx *transaction) error {
 			for _, log := range logs {
 				// As log.Request is a json.RawMessage it would not get updated to the new session request
 				// format by re-marshaling the containing struct, as normal struct members would,
@@ -120,7 +119,7 @@ var clientUpdates = []func(client *Client) error{
 			return err
 		}
 
-		return client.storage.db.Update(func(tx *bbolt.Tx) error {
+		return client.storage.DoStoreTransaction(func(tx *transaction) error {
 			if err = client.storage.TxStoreSecretKey(tx, sk); err != nil {
 				return err
 			}
@@ -130,7 +129,7 @@ var clientUpdates = []func(client *Client) error{
 				}
 			}
 			for hash, sig := range sigs {
-				err = client.storage.TxStoreSignature(tx, hash, sig)
+				err = client.storage.TxStoreCLSignature(tx, hash, sig)
 				if err != nil {
 					return err
 				}
