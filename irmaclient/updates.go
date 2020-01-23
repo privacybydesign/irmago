@@ -162,6 +162,11 @@ func (client *Client) update() error {
 		}
 	}
 
+	// Early exit if all updates are already performed to prevent superfluously storing the updates array
+	if len(client.updates) == len(clientUpdates) {
+		return nil
+	}
+
 	// Perform all new updates
 	for i := len(client.updates); i < len(clientUpdates); i++ {
 		err = nil
