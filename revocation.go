@@ -91,9 +91,9 @@ type (
 	IssuanceRecord struct {
 		Key        string                   `gorm:"primary_key;column:revocationkey"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
+		Issued     int64                    `gorm:"primary_key;auto_increment:false"`
 		PKCounter  uint
 		Attr       *RevocationAttribute
-		Issued     int64
 		ValidUntil int64
 		RevokedAt  int64 `json:",omitempty"` // 0 if not currently revoked
 	}
@@ -304,13 +304,16 @@ func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
 	return rs.sqldb.Insert(r)
 }
 
-func (rs *RevocationStorage) IssuanceRecord(typ CredentialTypeIdentifier, key string) (*IssuanceRecord, error) {
-	var r IssuanceRecord
-	err := rs.sqldb.Last(&r, map[string]interface{}{"cred_type": typ, "revocationkey": key})
+func (rs *RevocationStorage) IssuanceRecords(typ CredentialTypeIdentifier, key string) ([]*IssuanceRecord, error) {
+	var r []*IssuanceRecord
+	err := rs.sqldb.Find(&r, map[string]interface{}{"cred_type": typ, "revocationkey": key})
 	if err != nil {
 		return nil, err
 	}
-	return &r, nil
+	if len(r) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return r, nil
 }
 
 // Revocation methods
@@ -322,47 +325,118 @@ func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) er
 	if rs.getSettings(typ).Mode != RevocationModeServer {
 		return errors.Errorf("cannot revoke %s", typ)
 	}
-
 	return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
-		var err error
-		issrecord, err := rs.IssuanceRecord(typ, key)
-		if err != nil {
-			return err
-		}
-		issrecord.RevokedAt = time.Now().UnixNano()
-		if err = tx.Save(&issrecord); err != nil {
-			return err
-		}
-		sk, err := rs.Keys.PrivateKey(typ.IssuerIdentifier(), issrecord.PKCounter)
-		if err != nil {
-			return err
-		}
-		return rs.revokeAttr(tx, typ, sk, issrecord.Attr)
+		return rs.revoke(tx, typ, key)
 	})
 }
 
-func (rs *RevocationStorage) revokeAttr(tx sqlRevStorage, typ CredentialTypeIdentifier, sk *revocation.PrivateKey, e *RevocationAttribute) error {
-	sacc, err := rs.accumulator(tx, typ, sk.Counter)
+func (rs *RevocationStorage) revoke(tx sqlRevStorage, typ CredentialTypeIdentifier, key string) error {
+	var err error
+	issrecords, err := rs.IssuanceRecords(typ, key)
 	if err != nil {
-		return err
-	}
-	if sacc == nil {
-		return errors.Errorf("cannot revoke for type %s, not enabled yet", typ)
-	}
-	cur := sacc.Accumulator
-	var parent EventRecord
-	if err = rs.sqldb.Last(&parent, map[string]interface{}{"cred_type": typ, "pk_counter": sk.Counter}); err != nil {
 		return err
 	}
 
-	update, err := cur.Remove(sk, (*big.Int)(e), parent.Event())
-	if err != nil {
-		return err
+	// get all relevant accumulators and events from the database
+	accs, events, err := rs.revokeReadRecords(tx, typ, issrecords)
+
+	// For each issuance record, perform revocation, adding an Event and advancing the accumulator
+	for _, issrecord := range issrecords {
+		e := events[issrecord.PKCounter]
+		newacc, event, err := rs.revokeCredential(tx, issrecord, accs[issrecord.PKCounter], e[len(e)-1])
+		accs[issrecord.PKCounter] = newacc
+		if err != nil {
+			return err
+		}
+		events[issrecord.PKCounter] = append(e, event)
 	}
-	if err = rs.addUpdate(tx, typ, update, false); err != nil {
-		return err
+
+	// Gather accumulators and update events per key counter into revocation updates,
+	// and add them to the database
+	for counter := range accs {
+		sk, err := rs.Keys.PrivateKey(typ.IssuerIdentifier(), counter)
+		if err != nil {
+			return err
+		}
+		// exclude parent event from the events
+		update, err := revocation.NewUpdate(sk, accs[counter], events[counter][1:])
+		if err != nil {
+			return err
+		}
+		if err = rs.addUpdate(tx, typ, update, false); err != nil {
+			return err
+		}
 	}
+
 	return nil
+}
+
+func (rs *RevocationStorage) revokeReadRecords(
+	tx sqlRevStorage,
+	typ CredentialTypeIdentifier,
+	issrecords []*IssuanceRecord,
+) (map[uint]*revocation.Accumulator, map[uint][]*revocation.Event, error) {
+	// gather all keys used in the issuance requests
+	var keycounters []uint
+	for _, issrecord := range issrecords {
+		keycounters = append(keycounters, issrecord.PKCounter)
+	}
+
+	// get all relevant accumulators from the database
+	var records []AccumulatorRecord
+	if err := tx.Find(&records, "cred_type = ? and pk_counter in (?)", typ, keycounters); err != nil {
+		return nil, nil, err
+	}
+	var eventrecords []EventRecord
+	err := rs.sqldb.gorm.Table("event_records e").Find(&eventrecords,
+		"e.eventindex = (?)", rs.sqldb.gorm.
+			Table("event_records e2").
+			Select("max(e2.eventindex)").
+			Where("e2.cred_type = e.cred_type and e2.pk_counter = e.pk_counter").
+			QueryExpr(),
+	).Error
+	if err != nil {
+		return nil, nil, err
+	}
+
+	accs := map[uint]*revocation.Accumulator{}
+	events := map[uint][]*revocation.Event{}
+	for _, r := range records {
+		sacc := r.SignedAccumulator()
+		pk, err := rs.Keys.PublicKey(typ.IssuerIdentifier(), sacc.PKCounter)
+		if err != nil {
+			return nil, nil, err
+		}
+		accs[r.PKCounter], err = sacc.UnmarshalVerify(pk)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, e := range eventrecords {
+		events[e.PKCounter] = append(events[e.PKCounter], e.Event())
+	}
+	return accs, events, nil
+}
+
+func (rs *RevocationStorage) revokeCredential(
+	tx sqlRevStorage,
+	issrecord *IssuanceRecord,
+	acc *revocation.Accumulator,
+	parent *revocation.Event,
+) (*revocation.Accumulator, *revocation.Event, error) {
+	issrecord.RevokedAt = time.Now().UnixNano()
+	if err := tx.Save(&issrecord); err != nil {
+		return nil, nil, err
+	}
+	sk, err := rs.Keys.PrivateKey(issrecord.CredType.IssuerIdentifier(), issrecord.PKCounter)
+	if err != nil {
+		return nil, nil, err
+	}
+	newacc, event, err := acc.Remove(sk, (*big.Int)(issrecord.Attr), parent)
+	if err != nil {
+		return nil, nil, err
+	}
+	return newacc, event, nil
 }
 
 // Accumulator methods

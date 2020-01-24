@@ -334,15 +334,15 @@ func TestRevocationAll(t *testing.T) {
 			ValidUntil: time.Now().Add(-1 * time.Hour).UnixNano(),
 		}))
 		// Check existence of insterted record
-		rec, err := rev.IssuanceRecord(revocationTestCred, "1")
+		rec, err := rev.IssuanceRecords(revocationTestCred, "1")
 		require.NoError(t, err)
-		require.NotNil(t, rec)
+		require.NotEmpty(t, rec)
 
 		// Run jobs, triggering DELETE
 		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
 
 		// Check that issuance record is gone
-		rec, err = rev.IssuanceRecord(revocationTestCred, "1")
+		rec, err = rev.IssuanceRecords(revocationTestCred, "1")
 		require.Equal(t, gorm.ErrRecordNotFound, err)
 	})
 }
