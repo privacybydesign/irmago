@@ -7,6 +7,7 @@ package irmaserver
 import (
 	"io/ioutil"
 	"net/http"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
@@ -99,11 +100,11 @@ func (s *Server) CancelSession(token string) error {
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server
 // is the revocation server for the specified credential type and if the corresponding
 // issuer private key is present in the server configuration.)
-func Revoke(credid irma.CredentialTypeIdentifier, key string) error {
-	return s.Revoke(credid, key)
+func Revoke(credid irma.CredentialTypeIdentifier, key string, issued time.Time) error {
+	return s.Revoke(credid, key, issued)
 }
-func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
-	return s.Server.Revoke(credid, key)
+func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued time.Time) error {
+	return s.Server.Revoke(credid, key, issued)
 }
 
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates

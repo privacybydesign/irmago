@@ -59,7 +59,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// revoke cred0
 		logger.Info("step 2")
-		require.NoError(t, revocationServer.Revoke(revocationTestCred, "cred0"))
+		require.NoError(t, revocationServer.Revoke(revocationTestCred, "cred0", time.Time{}))
 
 		// perform another disclosure session with nonrevocation proof to see that cred1 still works
 		// client updates its witness to the new accumulator first
@@ -70,7 +70,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// revoke cred1
 		logger.Info("step 4")
-		require.NoError(t, revocationServer.Revoke(revocationTestCred, "cred1"))
+		require.NoError(t, revocationServer.Revoke(revocationTestCred, "cred1", time.Time{}))
 
 		// try to perform session with revoked credential
 		// client notices that his credential is revoked and aborts
@@ -334,7 +334,7 @@ func TestRevocationAll(t *testing.T) {
 			ValidUntil: time.Now().Add(-1 * time.Hour).UnixNano(),
 		}))
 		// Check existence of insterted record
-		rec, err := rev.IssuanceRecords(revocationTestCred, "1")
+		rec, err := rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
 		require.NoError(t, err)
 		require.NotEmpty(t, rec)
 
@@ -342,7 +342,7 @@ func TestRevocationAll(t *testing.T) {
 		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
 
 		// Check that issuance record is gone
-		rec, err = rev.IssuanceRecords(revocationTestCred, "1")
+		rec, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
 		require.Equal(t, gorm.ErrRecordNotFound, err)
 	})
 }
@@ -395,7 +395,7 @@ func revoke(t *testing.T, key string, conf *irma.RevocationStorage, acc *revocat
 		Issued:     time.Now().UnixNano(),
 		ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),
 	}))
-	require.NoError(t, conf.Revoke(revocationTestCred, key))
+	require.NoError(t, conf.Revoke(revocationTestCred, key, time.Time{}))
 	sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
 	require.NoError(t, err)
 	*acc = *sacc.Accumulator

@@ -304,9 +304,13 @@ func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
 	return rs.sqldb.Insert(r)
 }
 
-func (rs *RevocationStorage) IssuanceRecords(typ CredentialTypeIdentifier, key string) ([]*IssuanceRecord, error) {
+func (rs *RevocationStorage) IssuanceRecords(typ CredentialTypeIdentifier, key string, issued time.Time) ([]*IssuanceRecord, error) {
+	where := map[string]interface{}{"cred_type": typ, "revocationkey": key}
+	if !issued.IsZero() {
+		where["Issued"] = issued.UnixNano()
+	}
 	var r []*IssuanceRecord
-	err := rs.sqldb.Find(&r, map[string]interface{}{"cred_type": typ, "revocationkey": key})
+	err := rs.sqldb.Find(&r, where)
 	if err != nil {
 		return nil, err
 	}
@@ -321,18 +325,18 @@ func (rs *RevocationStorage) IssuanceRecords(typ CredentialTypeIdentifier, key s
 // Revoke revokes the credential specified by key if found within the current database,
 // by updating its revocation time to now, removing its revocation attribute from the current accumulator,
 // and updating the revocation database on disk.
-func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string) error {
+func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, issued time.Time) error {
 	if rs.getSettings(typ).Mode != RevocationModeServer {
 		return errors.Errorf("cannot revoke %s", typ)
 	}
 	return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
-		return rs.revoke(tx, typ, key)
+		return rs.revoke(tx, typ, key, issued)
 	})
 }
 
-func (rs *RevocationStorage) revoke(tx sqlRevStorage, typ CredentialTypeIdentifier, key string) error {
+func (rs *RevocationStorage) revoke(tx sqlRevStorage, typ CredentialTypeIdentifier, key string, issued time.Time) error {
 	var err error
-	issrecords, err := rs.IssuanceRecords(typ, key)
+	issrecords, err := rs.IssuanceRecords(typ, key, issued)
 	if err != nil {
 		return err
 	}

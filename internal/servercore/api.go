@@ -139,8 +139,8 @@ func (s *Server) CancelSession(token string) error {
 	return nil
 }
 
-func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string) error {
-	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key)
+func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued time.Time) error {
+	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key, issued)
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {

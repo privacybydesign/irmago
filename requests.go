@@ -201,6 +201,7 @@ type RevocationRequest struct {
 	LDContext      string                   `json:"@context,omitempty"`
 	CredentialType CredentialTypeIdentifier `json:"type"`
 	Key            string                   `json:"revocationKey,omitempty"`
+	Issued         int64                    `json:"issued,omitempty"`
 }
 
 func (r *RevocationRequest) Validate() error {

@@ -622,7 +622,11 @@ func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.R
 		server.WriteError(w, server.ErrorUnauthorized, reason)
 		return
 	}
-	if err := s.irmaserv.Revoke(request.CredentialType, request.Key); err != nil {
+	var issued time.Time
+	if request.Issued != 0 {
+		issued = time.Unix(0, request.Issued)
+	}
+	if err := s.irmaserv.Revoke(request.CredentialType, request.Key, issued); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 	}
 	server.WriteString(w, "OK")
