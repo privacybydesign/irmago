@@ -99,6 +99,7 @@ type (
 	}
 )
 
+// server modes
 const (
 	// RevocationModeRequestor is the default revocation mode in which only RevocationRecord instances
 	// are consumed for issuance or verification. Uses an in-memory store.
@@ -119,26 +120,38 @@ const (
 	// private key to be accessible, in order to revoke and to sign new revocation update messages.
 	// In addition this mode exposes the same endpoints as RevocationModeProxy.
 	RevocationModeServer RevocationMode = "server"
+)
 
+// global revocation constants and default values
+const (
 	// RevocationDefaultUpdateEventCount specifies how many revocation events are attached to session requests
 	// for the client to update its revocation state.
 	RevocationDefaultUpdateEventCount = 10
 
 	// RevocationRequestorUpdateInterval is the time period in minutes for requestor servers
 	// updating their revocation state at th RA.
-	RevocationRequestorUpdateInterval uint64 = 5
+	RevocationRequestorUpdateInterval = 10
 
 	// revocationDefaultTolerance is the default tolerance in seconds: nonrevocation should be proved
 	// by clients up to maximally this amount of seconds ago at verification time. If not, the
 	// server will report the time up until nonrevocation of the attribute is guaranteed to the requestor.
-	revocationDefaultTolerance uint = 5 * 60
+	revocationDefaultTolerance = 10 * 60
 
 	// If server mode is enabled for a credential type, then once every so many seconds
 	// the timestamp in each accumulator is updated to now.
-	revocationAccumulatorUpdateInterval uint64 = 60
+	revocationAccumulatorUpdateInterval = 60
 
 	// DELETE issuance records of expired credential every so many minutes
-	revocationDeleteIssuanceRecordsInterval uint64 = 300
+	revocationDeleteIssuanceRecordsInterval = 5 * 60
+
+	// RevocationClientUpdateInterval is the time interval with which the irmaclient periodically
+	// retrieves a revocation update from the RA and updates its revocation state with a small but
+	// increasing probability.
+	RevocationClientUpdateInterval = 10
+
+	// RevocationClientUpdateSpeed is the amount of time in hours after which it becomes very likely
+	// that the app will update its witness, quickly after it has been opened.
+	RevocationClientUpdateSpeed = 7 * 24
 )
 
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
@@ -502,8 +515,8 @@ func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
 
 func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
 	settings := rs.getSettings(typ)
-	// update 10 seconds before the maximum, to stay below it
-	if settings.updated.Before(time.Now().Add(time.Duration(-settings.Tolerance+10) * time.Second)) {
+	// divide tolerance by two, to give user time to decide
+	if settings.updated.Before(time.Now().Add(time.Duration(-settings.Tolerance/2) * time.Second)) {
 		Logger.WithField("credtype", typ).Tracef("fetching revocation updates")
 		if err := rs.UpdateDB(typ); err != nil {
 			return err

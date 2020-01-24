@@ -45,7 +45,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		s.sessions.deleteExpired()
 	})
 
-	s.scheduler.Every(irma.RevocationRequestorUpdateInterval).Minutes().Do(func() {
+	s.scheduler.Every(irma.RevocationRequestorUpdateInterval).Seconds().Do(func() {
 		for credid, credtype := range s.conf.IrmaConfiguration.CredentialTypes {
 			if !credtype.RevocationSupported() {
 				continue
@@ -53,7 +53,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			if s := conf.RevocationSettings[credid]; s != nil && s.Mode != irma.RevocationModeRequestor {
 				continue
 			}
-			if err := s.conf.IrmaConfiguration.Revocation.UpdateDB(credid); err != nil {
+			if err := s.conf.IrmaConfiguration.Revocation.UpdateIfOld(credid); err != nil {
 				s.conf.Logger.Error("failed to update revocation database for %s:", credid.String())
 				_ = server.LogError(err)
 			}
