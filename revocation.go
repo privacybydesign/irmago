@@ -51,7 +51,7 @@ type (
 		Mode                RevocationMode `json:"mode" mapstructure:"mode"`
 		PostURLs            []string       `json:"post_urls" mapstructure:"post_urls"`
 		RevocationServerURL string         `json:"revocation_server_url" mapstructure:"revocation_server_url"`
-		Tolerance           uint           `json:"tolerance" mapstructure:"tolerance"` // in seconds, min 30
+		Tolerance           uint64         `json:"tolerance" mapstructure:"tolerance"` // in seconds, min 30
 
 		// set to now whenever a new update is received, or when the RA indicates
 		// there are no new updates. Thus it specifies up to what time our nonrevocation
@@ -122,37 +122,45 @@ const (
 	RevocationModeServer RevocationMode = "server"
 )
 
-// global revocation constants and default values
-const (
-	// RevocationDefaultUpdateEventCount specifies how many revocation events are attached to session requests
+// RevocationParameters contains global revocation constants and default values.
+var RevocationParameters = struct {
+	// DefaultUpdateEventCount specifies how many revocation events are attached to session requests
 	// for the client to update its revocation state.
-	RevocationDefaultUpdateEventCount = 10
+	DefaultUpdateEventCount uint64
 
-	// RevocationRequestorUpdateInterval is the time period in minutes for requestor servers
+	// RequestorUpdateInterval is the time period in minutes for requestor servers
 	// updating their revocation state at th RA.
-	RevocationRequestorUpdateInterval = 10
+	RequestorUpdateInterval uint64
 
-	// revocationDefaultTolerance is the default tolerance in seconds: nonrevocation should be proved
+	// DefaultTolerance is the default tolerance in seconds: nonrevocation should be proved
 	// by clients up to maximally this amount of seconds ago at verification time. If not, the
 	// server will report the time up until nonrevocation of the attribute is guaranteed to the requestor.
-	revocationDefaultTolerance = 10 * 60
+	DefaultTolerance uint64
 
 	// If server mode is enabled for a credential type, then once every so many seconds
 	// the timestamp in each accumulator is updated to now.
-	revocationAccumulatorUpdateInterval = 60
+	AccumulatorUpdateInterval uint64
 
 	// DELETE issuance records of expired credential every so many minutes
-	revocationDeleteIssuanceRecordsInterval = 5 * 60
+	DeleteIssuanceRecordsInterval uint64
 
-	// RevocationClientUpdateInterval is the time interval with which the irmaclient periodically
+	// ClientUpdateInterval is the time interval with which the irmaclient periodically
 	// retrieves a revocation update from the RA and updates its revocation state with a small but
 	// increasing probability.
-	RevocationClientUpdateInterval = 10
+	ClientUpdateInterval uint64
 
-	// RevocationClientUpdateSpeed is the amount of time in hours after which it becomes very likely
+	// ClientDefaultUpdateSpeed is the amount of time in hours after which it becomes very likely
 	// that the app will update its witness, quickly after it has been opened.
-	RevocationClientUpdateSpeed = 7 * 24
-)
+	ClientDefaultUpdateSpeed uint64
+}{
+	DefaultUpdateEventCount:       10,
+	RequestorUpdateInterval:       10,
+	DefaultTolerance:              10 * 60,
+	AccumulatorUpdateInterval:     60,
+	DeleteIssuanceRecordsInterval: 5 * 60,
+	ClientUpdateInterval:          10,
+	ClientDefaultUpdateSpeed:      7 * 24,
+}
 
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
 // only way to create such an initial accumulator and it must be called before anyone can use
@@ -499,7 +507,7 @@ func (rs *RevocationStorage) accumulator(tx sqlRevStorage, typ CredentialTypeIde
 // Methods to update from remote revocation server
 
 func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
-	updates, err := rs.client.FetchUpdateLatest(typ, RevocationDefaultUpdateEventCount)
+	updates, err := rs.client.FetchUpdateLatest(typ, RevocationParameters.DefaultUpdateEventCount)
 	if err != nil {
 		return err
 	}
@@ -621,14 +629,14 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 	}
 
 	if len(ourtypes) > 0 {
-		rs.conf.Scheduler.Every(revocationAccumulatorUpdateInterval).Seconds().Do(func() {
+		rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().Do(func() {
 			if err := rs.updateAccumulatorTimes(ourtypes); err != nil {
 				err = errors.WrapPrefix(err, "failed to write updated accumulator record", 0)
 				raven.CaptureError(err, nil)
 			}
 		})
 	}
-	rs.conf.Scheduler.Every(revocationDeleteIssuanceRecordsInterval).Minutes().Do(func() {
+	rs.conf.Scheduler.Every(RevocationParameters.DeleteIssuanceRecordsInterval).Minutes().Do(func() {
 		if !rs.sqlMode {
 			return
 		}
@@ -698,7 +706,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 				return err
 			}
 		}
-		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, RevocationDefaultUpdateEventCount)
+		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, RevocationParameters.DefaultUpdateEventCount)
 		if err != nil {
 			return err
 		}
@@ -712,7 +720,7 @@ func (rs *RevocationStorage) getSettings(typ CredentialTypeIdentifier) *Revocati
 	}
 	s := rs.settings[typ]
 	if s.Tolerance == 0 {
-		s.Tolerance = revocationDefaultTolerance
+		s.Tolerance = RevocationParameters.DefaultTolerance
 	}
 	return s
 }

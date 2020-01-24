@@ -214,7 +214,7 @@ func (pl ProofList) VerifyProofs(
 			t := time.Now()
 			validAt = &t
 		}
-		if uint(validAt.Sub(acctime).Seconds()) > settings.Tolerance {
+		if uint64(validAt.Sub(acctime).Seconds()) > settings.Tolerance {
 			revocationtime[i] = &acctime
 		}
 	}

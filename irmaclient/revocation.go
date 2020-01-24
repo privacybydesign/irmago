@@ -36,7 +36,7 @@ func (client *Client) initRevocation() {
 	// - Updating happens regularly even if the app is rarely used.
 	// We do this by every 10 seconds updating the credential with a low probability, which
 	// increases over time since the last update.
-	client.Configuration.Scheduler.Every(irma.RevocationClientUpdateInterval).Seconds().Do(func() {
+	client.Configuration.Scheduler.Every(irma.RevocationParameters.ClientUpdateInterval).Seconds().Do(func() {
 		for typ, attrsets := range client.attributes {
 			for i, attrs := range attrsets {
 				if attrs.CredentialType() == nil || !attrs.CredentialType().RevocationSupported() {
@@ -242,13 +242,13 @@ func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.
 // a reference probability at a reference index.
 func probability(lastUpdate time.Time) float64 {
 	const (
-		asymptote      = 1.0 / 3                                    // max probability
-		refindex       = irma.RevocationClientUpdateSpeed * 60 * 60 // Week
-		refprobability = 0.75 * asymptote                           // probability after one week
+		asymptote      = 1.0 / 3          // max probability
+		refprobability = 0.75 * asymptote // probability after one week
 	)
+	refindex := irma.RevocationParameters.ClientDefaultUpdateSpeed * 60 * 60 // Week
 	f := math.Tan(math.Pi * refprobability / (2 * asymptote))
 	i := time.Now().Sub(lastUpdate).Seconds()
-	return 2 * asymptote / math.Pi * math.Atan(i/refindex*f)
+	return 2 * asymptote / math.Pi * math.Atan(i/float64(refindex)*f)
 }
 
 // randomfloat between 0 and 1
