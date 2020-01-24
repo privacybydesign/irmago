@@ -507,7 +507,12 @@ func (rs *RevocationStorage) accumulator(tx sqlRevStorage, typ CredentialTypeIde
 // Methods to update from remote revocation server
 
 func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
-	updates, err := rs.client.FetchUpdateLatest(typ, RevocationParameters.DefaultUpdateEventCount)
+	ct := rs.conf.CredentialTypes[typ]
+	if ct == nil {
+		return errors.New("unknown credential type")
+	}
+
+	updates, err := rs.client.FetchUpdateLatest(typ, ct.RevocationUpdateCount)
 	if err != nil {
 		return err
 	}
@@ -706,7 +711,11 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 				return err
 			}
 		}
-		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, RevocationParameters.DefaultUpdateEventCount)
+		ct := rs.conf.CredentialTypes[credid]
+		if ct == nil {
+			return errors.New("unknown credential type")
+		}
+		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, ct.RevocationUpdateCount)
 		if err != nil {
 			return err
 		}

@@ -258,7 +258,8 @@ func TestRevocationAll(t *testing.T) {
 
 		// Advance the accumulator by doing revocations so much that the client will need
 		// to contact the RA to update its witness
-		for i := 0; i < int(irma.RevocationParameters.DefaultUpdateEventCount)+1; i++ {
+		c := int(revocationConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationUpdateCount)
+		for i := 0; i < c+1; i++ {
 			key := strconv.Itoa(i)
 			fakeRevocation(t, key, conf, acc)
 		}

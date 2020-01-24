@@ -614,6 +614,12 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 			return err
 		}
 		foundcred = true
+		if cred.RevocationUpdateCount == 0 {
+			cred.RevocationUpdateCount = RevocationParameters.DefaultUpdateEventCount
+		}
+		if cred.RevocationUpdateSpeed == 0 {
+			cred.RevocationUpdateSpeed = RevocationParameters.ClientDefaultUpdateSpeed
+		}
 		cred.Valid = conf.SchemeManagers[cred.SchemeManagerIdentifier()].Valid
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred

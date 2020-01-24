@@ -55,7 +55,8 @@ func (client *Client) initRevocation() {
 					client.reportError(err)
 					break
 				}
-				if r < probability(cred.NonRevocationWitness.Updated) {
+				speed := attrs.CredentialType().RevocationUpdateSpeed * 60 * 60
+				if r < probability(cred.NonRevocationWitness.Updated, speed) {
 					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%d", typ, i)
 					client.jobs <- func() {
 						if err = client.nonrevUpdateFromServer(typ); err != nil {
@@ -240,12 +241,11 @@ func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.
 // probability returns a float between 0 and asymptote, representing a probability
 // that asymptotically increases to the asymptote, reaching
 // a reference probability at a reference index.
-func probability(lastUpdate time.Time) float64 {
+func probability(lastUpdate time.Time, refindex uint64) float64 {
 	const (
 		asymptote      = 1.0 / 3          // max probability
 		refprobability = 0.75 * asymptote // probability after one week
 	)
-	refindex := irma.RevocationParameters.ClientDefaultUpdateSpeed * 60 * 60 // Week
 	f := math.Tan(math.Pi * refprobability / (2 * asymptote))
 	i := time.Now().Sub(lastUpdate).Seconds()
 	return 2 * asymptote / math.Pi * math.Atan(i/float64(refindex)*f)
