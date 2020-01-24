@@ -305,7 +305,7 @@ func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
 }
 
 func (rs *RevocationStorage) IssuanceRecords(typ CredentialTypeIdentifier, key string, issued time.Time) ([]*IssuanceRecord, error) {
-	where := map[string]interface{}{"cred_type": typ, "revocationkey": key}
+	where := map[string]interface{}{"cred_type": typ, "revocationkey": key, "revoked_at": 0}
 	if !issued.IsZero() {
 		where["Issued"] = issued.UnixNano()
 	}
@@ -322,9 +322,10 @@ func (rs *RevocationStorage) IssuanceRecords(typ CredentialTypeIdentifier, key s
 
 // Revocation methods
 
-// Revoke revokes the credential specified by key if found within the current database,
-// by updating its revocation time to now, removing its revocation attribute from the current accumulator,
+// Revoke revokes the credential(s) specified by key and issued, if found within the current database,
+// by updating their revocation time to now, removing their revocation attribute from the current accumulator,
 // and updating the revocation database on disk.
+// If issued is not specified, i.e. passed the zero value, all credentials specified by key are revoked.
 func (rs *RevocationStorage) Revoke(typ CredentialTypeIdentifier, key string, issued time.Time) error {
 	if rs.getSettings(typ).Mode != RevocationModeServer {
 		return errors.Errorf("cannot revoke %s", typ)
@@ -392,13 +393,12 @@ func (rs *RevocationStorage) revokeReadRecords(
 		return nil, nil, err
 	}
 	var eventrecords []EventRecord
-	err := rs.sqldb.gorm.Table("event_records e").Find(&eventrecords,
-		"e.eventindex = (?)", rs.sqldb.gorm.
-			Table("event_records e2").
-			Select("max(e2.eventindex)").
-			Where("e2.cred_type = e.cred_type and e2.pk_counter = e.pk_counter").
-			QueryExpr(),
-	).Error
+	err := tx.Find(&eventrecords, "eventindex = (?)", tx.gorm.
+		Table("event_records e2").
+		Select("max(e2.eventindex)").
+		Where("e2.cred_type = event_records.cred_type and e2.pk_counter = event_records.pk_counter").
+		QueryExpr(),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
