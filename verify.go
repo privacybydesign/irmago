@@ -109,9 +109,9 @@ func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, notrevo
 // VerifyProofs verifies the proofs cryptographically.
 func (pl ProofList) VerifyProofs(
 	configuration *Configuration,
+	request SessionRequest,
 	context *big.Int, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
-	revRecords map[CredentialTypeIdentifier]map[uint]*revocation.Update,
 	validAt *time.Time,
 	isSig bool,
 ) (bool, map[int]*time.Time, error) {
@@ -145,6 +145,13 @@ func (pl ProofList) VerifyProofs(
 
 	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers) {
 		return false, nil, nil
+	}
+
+	var revRecords map[CredentialTypeIdentifier]map[uint]*revocation.Update
+	var revParams NonRevocationParameters
+	if request != nil {
+		revRecords = request.Base().RevocationUpdates
+		revParams = request.Base().Revocation
 	}
 
 	// Perform per-proof verifications for each proof:
@@ -214,7 +221,11 @@ func (pl ProofList) VerifyProofs(
 			t := time.Now()
 			validAt = &t
 		}
-		if uint64(validAt.Sub(acctime).Seconds()) > settings.Tolerance {
+		tolerance := settings.Tolerance
+		if s := revParams[id]; s != nil && s.Tolerance != 0 {
+			tolerance = s.Tolerance
+		}
+		if uint64(validAt.Sub(acctime).Seconds()) > tolerance {
 			revocationtime[i] = &acctime
 		}
 	}
@@ -325,20 +336,17 @@ func (d *Disclosure) VerifyAgainstRequest(
 	validAt *time.Time,
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
-	var required AttributeConDisCon
-	var revupdates map[CredentialTypeIdentifier]map[uint]*revocation.Update
-	if request != nil {
-		revupdates = request.Base().RevocationUpdates
-		required = request.Disclosure().Disclose
-	}
-
 	// Cryptographically verify all included IRMA proofs
-	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, revupdates, validAt, issig)
+	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(configuration, request, context, nonce, publickeys, validAt, issig)
 	if !valid || err != nil {
 		return nil, ProofStatusInvalid, err
 	}
 
 	// Next extract the contained attributes from the proofs, and match them to the signature request if present
+	var required AttributeConDisCon
+	if request != nil {
+		required = request.Disclosure().Disclose
+	}
 	allmatched, list, err := d.DisclosedAttributes(configuration, required, revtimes)
 	if err != nil {
 		return nil, ProofStatusInvalid, err

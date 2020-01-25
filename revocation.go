@@ -526,10 +526,8 @@ func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
 	return nil
 }
 
-func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier) error {
-	settings := rs.getSettings(typ)
-	// divide tolerance by two, to give user time to decide
-	if settings.updated.Before(time.Now().Add(time.Duration(-settings.Tolerance/2) * time.Second)) {
+func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier, maxage uint64) error {
+	if rs.getSettings(typ).updated.Before(time.Now().Add(time.Duration(-maxage) * time.Second)) {
 		Logger.WithField("credtype", typ).Tracef("fetching revocation updates")
 		if err := rs.UpdateDB(typ); err != nil {
 			return err
@@ -693,12 +691,17 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 	}
 	var err error
 	b.RevocationUpdates = make(map[CredentialTypeIdentifier]map[uint]*revocation.Update, len(b.Revocation))
-	for _, credid := range b.Revocation {
+	for credid, params := range b.Revocation {
 		if !rs.conf.CredentialTypes[credid].RevocationSupported() {
 			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme")
 		}
-		if err = rs.UpdateIfOld(credid); err != nil {
-			updated := rs.getSettings(credid).updated
+		settings := rs.getSettings(credid)
+		tolerance := settings.Tolerance
+		if params.Tolerance != 0 {
+			tolerance = params.Tolerance
+		}
+		if err = rs.UpdateIfOld(credid, tolerance/2); err != nil {
+			updated := settings.updated
 			if !updated.IsZero() {
 				Logger.Warnf("failed to fetch revocation updates for %s, nonrevocation is guaranteed only until %s ago:",
 					credid, time.Now().Sub(updated).String())

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -23,6 +24,7 @@ const (
 	sessionOptionRetryPost
 	sessionOptionIgnoreClientError
 	sessionOptionReuseServer
+	sessionOptionClientWait
 )
 
 type requestorSessionResult struct {
@@ -56,9 +58,13 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 
 	var h irmaclient.Handler
 	if opts&sessionOptionUnsatisfiableRequest > 0 {
-		h = &UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil, ""}}
+		h = &UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil, 0, ""}}
 	} else {
-		h = &TestHandler{t, clientChan, client, nil, ""}
+		var wait time.Duration = 0
+		if opts&sessionOptionClientWait > 0 {
+			wait = 2 * time.Second
+		}
+		h = &TestHandler{t, clientChan, client, nil, wait, ""}
 	}
 
 	j, err := json.Marshal(qr)

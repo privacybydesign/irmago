@@ -71,6 +71,7 @@ type TestHandler struct {
 	c                  chan *SessionResult
 	client             *irmaclient.Client
 	expectedServerName irma.TranslatedString
+	wait               time.Duration
 	result             string
 }
 
@@ -114,6 +115,9 @@ func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequ
 	}
 	if len(th.expectedServerName) != 0 {
 		require.Equal(th.t, th.expectedServerName, ServerName)
+	}
+	if th.wait != 0 {
+		time.Sleep(th.wait)
 	}
 	callback(true, &choice)
 }

@@ -36,7 +36,7 @@ type BaseRequest struct {
 
 	// Revocation is set by the requestor to indicate that it requires nonrevocation proofs for the
 	// specified credential types.
-	Revocation []CredentialTypeIdentifier `json:"revocation,omitempty"`
+	Revocation NonRevocationParameters `json:"revocation,omitempty"`
 	// RevocationUpdates contains revocation update messages for the client to update its
 	// revocation state.
 	RevocationUpdates map[CredentialTypeIdentifier]map[uint]*revocation.Update `json:"revocationUpdates,omitempty"`
@@ -204,6 +204,26 @@ type RevocationRequest struct {
 	Issued         int64                    `json:"issued,omitempty"`
 }
 
+type NonRevocationRequest struct {
+	Tolerance uint64 `json:"tolerance,omitempty"`
+}
+
+type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
+
+func (n *NonRevocationParameters) UnmarshalJSON(bts []byte) error {
+	var slice []CredentialTypeIdentifier
+	if err := json.Unmarshal(bts, &slice); err == nil {
+		for _, s := range slice {
+			(*n)[s] = &NonRevocationRequest{}
+		}
+	}
+	return json.Unmarshal(bts, (*map[CredentialTypeIdentifier]*NonRevocationRequest)(n))
+}
+
+func (n *NonRevocationParameters) MarshalJSON() ([]byte, error) {
+	return json.Marshal((*map[CredentialTypeIdentifier]*NonRevocationRequest)(n))
+}
+
 func (r *RevocationRequest) Validate() error {
 	if r.LDContext == LDContextRevocationRequest {
 		return errors.New("not a revocation request")
@@ -244,7 +264,7 @@ func (b *BaseRequest) RevocationConsistent() error {
 	if len(b.Revocation) != len(b.RevocationUpdates) {
 		return errors.New("revocation and revocationUpdates do not have the same length")
 	}
-	for _, typ := range b.Revocation {
+	for typ := range b.Revocation {
 		if _, present := b.RevocationUpdates[typ]; !present {
 			return errors.Errorf("type %s not present in revocationUpdates", typ)
 		}

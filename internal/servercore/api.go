@@ -50,10 +50,11 @@ func New(conf *server.Configuration) (*Server, error) {
 			if !credtype.RevocationSupported() {
 				continue
 			}
-			if s := conf.RevocationSettings[credid]; s != nil && s.Mode != irma.RevocationModeRequestor {
+			settings := conf.RevocationSettings[credid]
+			if settings == nil || settings.Mode != irma.RevocationModeRequestor {
 				continue
 			}
-			if err := s.conf.IrmaConfiguration.Revocation.UpdateIfOld(credid); err != nil {
+			if err := s.conf.IrmaConfiguration.Revocation.UpdateIfOld(credid, settings.Tolerance/2); err != nil {
 				s.conf.Logger.Error("failed to update revocation database for %s:", credid.String())
 				_ = server.LogError(err)
 			}

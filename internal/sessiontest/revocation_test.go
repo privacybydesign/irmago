@@ -56,6 +56,10 @@ func TestRevocationAll(t *testing.T) {
 		result = revocationSession(t, client, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
+		require.NotEmpty(t, result.Disclosed[0])
+		require.NotNil(t, result.Disclosed[0][0])
+		// not included: window within which nonrevocation is not guaranteed, as it is within tolerance
+		require.Nil(t, result.Disclosed[0][0].NotRevokedBefore)
 
 		// revoke cred0
 		logger.Info("step 2")
@@ -389,19 +393,44 @@ func TestRevocationAll(t *testing.T) {
 			require.Equal(t, 0, update.Events[i+1].E.Cmp((*big.Int)(r[i].Attr)))
 		}
 	})
+
+	t.Run("RevocationTolerance", func(t *testing.T) {
+		defer test.ClearTestStorage(t)
+		client, _ := revocationSetup(t)
+		start := time.Now()
+
+		result := revocationSession(t, client, nil)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+		require.NotEmpty(t, result.Disclosed[0])
+		require.NotNil(t, result.Disclosed[0][0])
+		// not included: window within which nonrevocation is not guaranteed, as it is within tolerance
+		require.Nil(t, result.Disclosed[0][0].NotRevokedBefore)
+
+		request := revocationRequest()
+		request.Revocation[revocationTestCred].Tolerance = 1
+		result = revocationSession(t, client, request, sessionOptionClientWait)
+
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+		require.NotEmpty(t, result.Disclosed[0])
+		require.NotNil(t, result.Disclosed[0][0])
+		require.NotNil(t, result.Disclosed[0][0].NotRevokedBefore)
+		require.True(t, result.Disclosed[0][0].NotRevokedBefore.After(irma.Timestamp(start)))
+	})
 }
 
 // Helper functions
 
 func revocationSigRequest() *irma.SignatureRequest {
 	req := irma.NewSignatureRequest("message", revocationTestAttr)
-	req.Revocation = []irma.CredentialTypeIdentifier{revocationTestAttr.CredentialTypeIdentifier()}
+	req.Revocation = irma.NonRevocationParameters{revocationTestCred: {}}
 	return req
 }
 
 func revocationRequest() *irma.DisclosureRequest {
 	req := irma.NewDisclosureRequest(revocationTestAttr)
-	req.Revocation = []irma.CredentialTypeIdentifier{revocationTestAttr.CredentialTypeIdentifier()}
+	req.Revocation = irma.NonRevocationParameters{revocationTestCred: {}}
 	return req
 }
 

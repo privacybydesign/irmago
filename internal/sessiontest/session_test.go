@@ -476,7 +476,7 @@ func TestStaticQRSession(t *testing.T) {
 	c := make(chan *SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), &TestHandler{t, c, client, host, ""})
+	client.NewSession(string(bts), &TestHandler{t, c, client, host, 0, ""})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
