@@ -504,68 +504,6 @@ func (rs *RevocationStorage) accumulator(tx sqlRevStorage, typ CredentialTypeIde
 	return sacc, nil
 }
 
-// Methods to update from remote revocation server
-
-func (rs *RevocationStorage) UpdateDB(typ CredentialTypeIdentifier) error {
-	ct := rs.conf.CredentialTypes[typ]
-	if ct == nil {
-		return errors.New("unknown credential type")
-	}
-
-	updates, err := rs.client.FetchUpdateLatest(typ, ct.RevocationUpdateCount)
-	if err != nil {
-		return err
-	}
-	for _, u := range updates {
-		if err = rs.AddUpdate(typ, u); err != nil {
-			return err
-		}
-	}
-	// bump updated even if no new records were added
-	rs.getSettings(typ).updated = time.Now()
-	return nil
-}
-
-func (rs *RevocationStorage) UpdateIfOld(typ CredentialTypeIdentifier, maxage uint64) error {
-	if rs.getSettings(typ).updated.Before(time.Now().Add(time.Duration(-maxage) * time.Second)) {
-		Logger.WithField("credtype", typ).Tracef("fetching revocation updates")
-		if err := rs.UpdateDB(typ); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// SaveIssuanceRecord either stores the issuance record locally, if we are the revocation server of
-// the crecential type, or it signs and sends it to the remote revocation server.
-func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, rec *IssuanceRecord, sk *gabi.PrivateKey) error {
-	credtype := rs.conf.CredentialTypes[typ]
-	if credtype == nil {
-		return errors.New("unknown credential type")
-	}
-	if !credtype.RevocationSupported() {
-		return errors.New("cannot save issuance record: credential type does not support revocation")
-	}
-
-	// Just store it if we are the revocation server for this credential type
-	settings := rs.getSettings(typ)
-	if settings.Mode == RevocationModeServer {
-		return rs.AddIssuanceRecord(rec)
-	}
-
-	// We have to send it, sign it first
-	if settings.RevocationServerURL == "" {
-		return errors.New("cannot send issuance record: no server_url configured")
-	}
-	rsk, err := sk.RevocationKey()
-	if err != nil {
-		return err
-	}
-	return rs.client.PostIssuanceRecord(typ, rsk, rec, settings.RevocationServerURL)
-}
-
-// Misscelaneous methods
-
 func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdentifier) error {
 	return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
 		var err error
@@ -605,6 +543,68 @@ func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdenti
 		return nil
 	})
 }
+
+// Methods to update from remote revocation server
+
+func (rs *RevocationStorage) SyncDB(typ CredentialTypeIdentifier) error {
+	ct := rs.conf.CredentialTypes[typ]
+	if ct == nil {
+		return errors.New("unknown credential type")
+	}
+
+	updates, err := rs.client.FetchUpdateLatest(typ, ct.RevocationUpdateCount)
+	if err != nil {
+		return err
+	}
+	for _, u := range updates {
+		if err = rs.AddUpdate(typ, u); err != nil {
+			return err
+		}
+	}
+	// bump updated even if no new records were added
+	rs.getSettings(typ).updated = time.Now()
+	return nil
+}
+
+func (rs *RevocationStorage) SyncIfOld(typ CredentialTypeIdentifier, maxage uint64) error {
+	if rs.getSettings(typ).updated.Before(time.Now().Add(time.Duration(-maxage) * time.Second)) {
+		Logger.WithField("credtype", typ).Tracef("fetching revocation updates")
+		if err := rs.SyncDB(typ); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SaveIssuanceRecord either stores the issuance record locally, if we are the revocation server of
+// the crecential type, or it signs and sends it to the remote revocation server.
+func (rs *RevocationStorage) SaveIssuanceRecord(typ CredentialTypeIdentifier, rec *IssuanceRecord, sk *gabi.PrivateKey) error {
+	credtype := rs.conf.CredentialTypes[typ]
+	if credtype == nil {
+		return errors.New("unknown credential type")
+	}
+	if !credtype.RevocationSupported() {
+		return errors.New("cannot save issuance record: credential type does not support revocation")
+	}
+
+	// Just store it if we are the revocation server for this credential type
+	settings := rs.getSettings(typ)
+	if settings.Mode == RevocationModeServer {
+		return rs.AddIssuanceRecord(rec)
+	}
+
+	// We have to send it, sign it first
+	if settings.RevocationServerURL == "" {
+		return errors.New("cannot send issuance record: no server_url configured")
+	}
+	rsk, err := sk.RevocationKey()
+	if err != nil {
+		return err
+	}
+	return rs.client.PostIssuanceRecord(typ, rsk, rec, settings.RevocationServerURL)
+}
+
+// Misscelaneous methods
 
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
 	var t *CredentialTypeIdentifier
@@ -699,7 +699,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 		if params.Tolerance != 0 {
 			tolerance = params.Tolerance
 		}
-		if err = rs.UpdateIfOld(credid, tolerance/2); err != nil {
+		if err = rs.SyncIfOld(credid, tolerance/2); err != nil {
 			updated := settings.updated
 			if !updated.IsZero() {
 				Logger.Warnf("failed to fetch revocation updates for %s, nonrevocation is guaranteed only until %s ago:",

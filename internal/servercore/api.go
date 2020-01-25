@@ -54,7 +54,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			if settings == nil || settings.Mode != irma.RevocationModeRequestor {
 				continue
 			}
-			if err := s.conf.IrmaConfiguration.Revocation.UpdateIfOld(credid, settings.Tolerance/2); err != nil {
+			if err := s.conf.IrmaConfiguration.Revocation.SyncIfOld(credid, settings.Tolerance/2); err != nil {
 				s.conf.Logger.Error("failed to update revocation database for %s:", credid.String())
 				_ = server.LogError(err)
 			}
