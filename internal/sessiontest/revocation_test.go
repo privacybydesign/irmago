@@ -184,7 +184,7 @@ func TestRevocationAll(t *testing.T) {
 		// Prepare session request
 		request := revocationRequest()
 		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
-		events := request.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
+		events := request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(1), events[len(events)-1].Index)
 
 		// Construct disclosure proof with nonrevocation proof against accumulator with index 1
@@ -200,9 +200,9 @@ func TestRevocationAll(t *testing.T) {
 		// Revoke a bogus credential, advancing accumulator index to 2, and update the session request,
 		// indicated that we expect a nonrevocation proof wrt accumulator with index 2
 		fakeRevocation(t, "2", conf, acc)
-		request.RevocationUpdates = nil
+		request.Revocation = irma.NonRevocationParameters{revocationTestCred: {}}
 		require.NoError(t, conf.SetRevocationUpdates(request.Base()))
-		events = request.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
+		events = request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(2), events[len(events)-1].Index)
 
 		// Try to verify against updated session request
@@ -215,7 +215,7 @@ func TestRevocationAll(t *testing.T) {
 		fakeRevocation(t, "3", conf, acc)
 		newrequest := revocationRequest()
 		require.NoError(t, conf.SetRevocationUpdates(newrequest.Base()))
-		events = newrequest.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
+		events = newrequest.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(3), events[len(events)-1].Index)
 
 		// Use newrequest to update client to index 3 and contruct a disclosure proof
@@ -227,7 +227,7 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, uint64(3), pacc.Index)
 
 		// Check that the nonrevocation proof which uses a newer accumulator than ours verifies
-		events = request.RevocationUpdates[revocationTestCred][revocationPkCounter].Events
+		events = request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(2), events[len(events)-1].Index)
 		_, status, err = disclosure.Verify(client.Configuration, request)
 		require.NoError(t, err)
@@ -236,7 +236,6 @@ func TestRevocationAll(t *testing.T) {
 		// If the client does not send a nonrevocation proof the proof is invalid
 		// clear revocation data from newrequest and create a disclosure from it
 		newrequest.Revocation = nil
-		newrequest.RevocationUpdates = nil
 		disclosure, _, err = client.Proofs(choice, newrequest)
 		require.NoError(t, err)
 		// verify disclosure against request that still requests nonrevocation proofs

@@ -75,10 +75,6 @@ func (client *Client) initRevocation() {
 // revocation server if those do not suffice.
 func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 	base := request.Base()
-	if err := base.RevocationConsistent(); err != nil {
-		return err
-	}
-
 	for typ := range request.Disclosure().Identifiers().CredentialTypes {
 		credtype := client.Configuration.CredentialTypes[typ]
 		if !credtype.RevocationSupported() {
@@ -87,7 +83,7 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 		if !base.RequestsRevocation(typ) {
 			continue
 		}
-		if err := client.nonrevUpdate(typ, base.RevocationUpdates[typ]); err != nil {
+		if err := client.nonrevUpdate(typ, base.Revocation[typ].Updates); err != nil {
 			return err
 		}
 	}

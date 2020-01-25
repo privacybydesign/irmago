@@ -37,9 +37,6 @@ type BaseRequest struct {
 	// Revocation is set by the requestor to indicate that it requires nonrevocation proofs for the
 	// specified credential types.
 	Revocation NonRevocationParameters `json:"revocation,omitempty"`
-	// RevocationUpdates contains revocation update messages for the client to update its
-	// revocation state.
-	RevocationUpdates map[CredentialTypeIdentifier]map[uint]*revocation.Update `json:"revocationUpdates,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
@@ -205,7 +202,8 @@ type RevocationRequest struct {
 }
 
 type NonRevocationRequest struct {
-	Tolerance uint64 `json:"tolerance,omitempty"`
+	Tolerance uint64                      `json:"tolerance,omitempty"`
+	Updates   map[uint]*revocation.Update `json:"updates,omitempty"`
 }
 
 type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
@@ -257,19 +255,7 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 // RequestsRevocation indicates whether or not the requestor requires a nonrevocation proof for
 // the given credential type; that is, whether or not it included revocation update messages.
 func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
-	return len(b.RevocationUpdates) > 0 && len(b.RevocationUpdates[id]) > 0
-}
-
-func (b *BaseRequest) RevocationConsistent() error {
-	if len(b.Revocation) != len(b.RevocationUpdates) {
-		return errors.New("revocation and revocationUpdates do not have the same length")
-	}
-	for typ := range b.Revocation {
-		if _, present := b.RevocationUpdates[typ]; !present {
-			return errors.Errorf("type %s not present in revocationUpdates", typ)
-		}
-	}
-	return nil
+	return len(b.Revocation) > 0 && b.Revocation[id] != nil && len(b.Revocation[id].Updates) > 0
 }
 
 // CredentialTypes returns an array of all credential types occuring in this conjunction.

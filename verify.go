@@ -147,18 +147,15 @@ func (pl ProofList) VerifyProofs(
 		return false, nil, nil
 	}
 
-	var revRecords map[CredentialTypeIdentifier]map[uint]*revocation.Update
-	var revParams NonRevocationParameters
-	if request != nil {
-		revRecords = request.Base().RevocationUpdates
-		revParams = request.Base().Revocation
-	}
-
 	// Perform per-proof verifications for each proof:
 	// - verify that any singleton credential occurs at most once in the prooflist
 	// - verify that all required nonrevocation proofs are present
 	singletons := map[CredentialTypeIdentifier]bool{}
 	revocationtime := map[int]*time.Time{} // per proof, stores up to what time it is known to be not revoked
+	var revParams NonRevocationParameters
+	if request != nil {
+		revParams = request.Base().Revocation
+	}
 	for i, proof := range pl {
 		proofd, ok := proof.(*gabi.ProofD)
 		if !ok {
@@ -182,9 +179,8 @@ func (pl ProofList) VerifyProofs(
 		// nonrevocation proofs are present, and against the expected accumulator value:
 		// the last one in the update message set we provided along with the session request,
 		// OR a newer one included in the proofs itself.
-		updates := revRecords[id]
 		if !proofd.HasNonRevocationProof() {
-			if updates != nil {
+			if revParams[id] != nil {
 				// no nonrevocation proof is included but one was required in the session request
 				return false, nil, nil
 			} else {
@@ -206,6 +202,10 @@ func (pl ProofList) VerifyProofs(
 		acctime := time.Unix(acc.Time, 0)
 		settings := configuration.Revocation.getSettings(id)
 		var ours uint64
+		var updates map[uint]*revocation.Update
+		if revParams[id] != nil {
+			updates = revParams[id].Updates
+		}
 		if u := updates[sig.PKCounter]; u != nil {
 			ours = u.Events[len(u.Events)-1].Index
 		}

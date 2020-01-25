@@ -690,7 +690,6 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 		return nil
 	}
 	var err error
-	b.RevocationUpdates = make(map[CredentialTypeIdentifier]map[uint]*revocation.Update, len(b.Revocation))
 	for credid, params := range b.Revocation {
 		if !rs.conf.CredentialTypes[credid].RevocationSupported() {
 			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme")
@@ -718,7 +717,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 		if ct == nil {
 			return errors.New("unknown credential type")
 		}
-		b.RevocationUpdates[credid], err = rs.UpdateLatest(credid, ct.RevocationUpdateCount)
+		params.Updates, err = rs.UpdateLatest(credid, ct.RevocationUpdateCount)
 		if err != nil {
 			return err
 		}
