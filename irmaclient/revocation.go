@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/privacybydesign/gabi/revocation"
@@ -75,6 +76,8 @@ func (client *Client) initRevocation() {
 // revocation server if those do not suffice.
 func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 	base := request.Base()
+	var err error
+	var wg sync.WaitGroup
 	for typ := range request.Disclosure().Identifiers().CredentialTypes {
 		credtype := client.Configuration.CredentialTypes[typ]
 		if !credtype.RevocationSupported() {
@@ -83,11 +86,18 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 		if !base.RequestsRevocation(typ) {
 			continue
 		}
-		if err := client.nonrevUpdate(typ, base.Revocation[typ].Updates); err != nil {
-			return err
-		}
+		irma.Logger.WithField("credtype", typ).Debug("updating witnesses")
+		wg.Add(1)
+		go func() {
+			if e := client.nonrevUpdate(typ, base.Revocation[typ].Updates); e != nil {
+				err = e // overwrites err from previously finished call, if any
+			}
+			wg.Done()
+		}()
 	}
-	return nil
+	wg.Wait()
+	irma.Logger.Debug("done updating witnesses")
+	return err
 }
 
 // nonrevUpdate updates all contained instances of the specified type, using the specified
