@@ -59,6 +59,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, result.Disclosed[0])
 		require.NotNil(t, result.Disclosed[0][0])
 		// not included: window within which nonrevocation is not guaranteed, as it is within tolerance
+		require.True(t, result.Disclosed[0][0].NotRevoked)
 		require.Nil(t, result.Disclosed[0][0].NotRevokedBefore)
 
 		// revoke cred0
@@ -416,6 +417,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, result.Disclosed)
 		require.NotEmpty(t, result.Disclosed[0])
 		require.NotNil(t, result.Disclosed[0][0])
+		require.True(t, result.Disclosed[0][0].NotRevoked)
 		require.NotNil(t, result.Disclosed[0][0].NotRevokedBefore)
 		require.True(t, result.Disclosed[0][0].NotRevokedBefore.After(irma.Timestamp(start)))
 	})

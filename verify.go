@@ -37,6 +37,7 @@ type DisclosedAttribute struct {
 	Identifier       AttributeTypeIdentifier `json:"id"`
 	Status           AttributeProofStatus    `json:"status"`
 	IssuanceTime     Timestamp               `json:"issuancetime"`
+	NotRevoked       bool                    `json:"notrevoked,omitempty"`
 	NotRevokedBefore *Timestamp              `json:"notrevokedbefore,omitempty"`
 }
 
@@ -103,7 +104,13 @@ func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, notrevo
 	}
 
 	metadata := MetadataFromInt(proofd.ADisclosed[1], conf) // index 1 is metadata attribute
-	return parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex], notrevoked)
+	attr, str, err := parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
+	if err != nil {
+		return nil, nil, err
+	}
+	attr.NotRevokedBefore = (*Timestamp)(notrevoked)
+	attr.NotRevoked = proofd.NonRevocationProof != nil
+	return attr, str, nil
 }
 
 // VerifyProofs verifies the proofs cryptographically.
@@ -299,7 +306,7 @@ func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon
 	return complete, list, nil
 }
 
-func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int, notrevoked *time.Time) (*DisclosedAttribute, *string, error) {
+func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*DisclosedAttribute, *string, error) {
 	var attrid AttributeTypeIdentifier
 	var attrval *string
 	credtype := metadata.CredentialType()
@@ -319,12 +326,11 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int, notre
 		status = AttributeProofStatusNull
 	}
 	return &DisclosedAttribute{
-		Identifier:       attrid,
-		RawValue:         attrval,
-		Value:            NewTranslatedString(attrval),
-		Status:           status,
-		IssuanceTime:     Timestamp(metadata.SigningDate()),
-		NotRevokedBefore: (*Timestamp)(notrevoked),
+		Identifier:   attrid,
+		RawValue:     attrval,
+		Value:        NewTranslatedString(attrval),
+		Status:       status,
+		IssuanceTime: Timestamp(metadata.SigningDate()),
 	}, attrval, nil
 }
 
