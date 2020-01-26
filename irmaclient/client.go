@@ -686,7 +686,7 @@ func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]map
 				continue
 			}
 			for _, cred := range creds {
-				if cred.IsValid() && req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
+				if cred.IsValid() && !cred.Revoked && req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
 					continue conloop
 				}
 			}
@@ -709,12 +709,13 @@ func (client *Client) CheckSatisfiability(request irma.SessionRequest) (
 	missing = MissingAttributes{}
 
 	for i, discon := range condiscon {
-		var m map[int]map[int]MissingAttribute
-		candidates[i], m, err = client.Candidates(discon, supportsRevocation)
-		if err == nil {
-			return
+		cands, m, err := client.Candidates(discon, supportsRevocation)
+		if err != nil {
+			return nil, nil, err
 		}
-		if len(candidates[i]) == 0 {
+		if len(cands) != 0 {
+			candidates[i] = cands
+		} else {
 			missing[i] = m
 		}
 	}
