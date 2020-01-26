@@ -100,6 +100,7 @@ var supportedVersions = map[int][]int{
 	2: {
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
+		6, // introduces nonrevocation proofs
 	},
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
@@ -305,7 +306,11 @@ func (session *session) processSessionInfo() {
 		}
 	}
 
-	candidates, missing := session.client.CheckSatisfiability(session.request.Disclosure().Disclose)
+	candidates, missing, err := session.client.CheckSatisfiability(session.request)
+	if err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
+		return
+	}
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.request, session.ServerName, missing)
 		return

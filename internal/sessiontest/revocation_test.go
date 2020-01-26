@@ -85,7 +85,8 @@ func TestRevocationAll(t *testing.T) {
 		require.NotNil(t, handler.(*TestClientHandler).revoked)
 		require.Equal(t, revocationTestCred, handler.(*TestClientHandler).revoked.Type)
 		// credential is no longer suggested as candidate
-		candidates, missing := client.Candidates(irma.AttributeDisCon{{{Type: revocationTestAttr}}})
+		candidates, missing, err := client.Candidates(irma.AttributeDisCon{{{Type: revocationTestAttr}}}, true)
+		require.NoError(t, err)
 		require.Empty(t, candidates)
 		require.NotEmpty(t, missing)
 	})
@@ -188,7 +189,8 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, uint64(1), events[len(events)-1].Index)
 
 		// Construct disclosure proof with nonrevocation proof against accumulator with index 1
-		candidates, missing := client.CheckSatisfiability(request.Disclosure().Disclose)
+		candidates, missing, err := client.CheckSatisfiability(request)
+		require.NoError(t, err)
 		require.Empty(t, missing)
 		choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{candidates[0][0]}}
 		disclosure, _, err := client.Proofs(choice, request)
@@ -423,12 +425,14 @@ func TestRevocationAll(t *testing.T) {
 
 func revocationSigRequest() *irma.SignatureRequest {
 	req := irma.NewSignatureRequest("message", revocationTestAttr)
+	req.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
 	req.Revocation = irma.NonRevocationParameters{revocationTestCred: {}}
 	return req
 }
 
 func revocationRequest() *irma.DisclosureRequest {
 	req := irma.NewDisclosureRequest(revocationTestAttr)
+	req.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
 	req.Revocation = irma.NonRevocationParameters{revocationTestCred: {}}
 	return req
 }

@@ -540,23 +540,33 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 // in the conjunction. (A credential instance from the client is a candidate it it contains
 // attributes required in this conjunction). If one credential type occurs multiple times in the
 // conjunction it is not added twice.
-func (client *Client) credCandidates(con irma.AttributeCon) credCandidateSet {
+func (client *Client) credCandidates(con irma.AttributeCon, supportsRevocation bool) (credCandidateSet, error) {
 	var candidates [][]*irma.CredentialIdentifier
 	for _, credtype := range con.CredentialTypes() {
-		creds := client.attributes[credtype]
-		if len(creds) == 0 {
-			return nil // we'll need at least one instance of each credtype in this conjunction
+		attrlistlist := client.attributes[credtype]
+		if len(attrlistlist) == 0 {
+			return nil, nil // we'll need at least one instance of each credtype in this conjunction
 		}
 		var c []*irma.CredentialIdentifier
-		for _, cred := range creds {
-			if !cred.IsValid() || cred.Revoked {
+		for i, attrlist := range attrlistlist {
+			if !attrlist.IsValid() || attrlist.Revoked {
+				// if the credential is revoked, it is not a candidate for disclosure even if
+				// the requestor did not ask for a nonrevocation proof
 				continue
 			}
-			c = append(c, &irma.CredentialIdentifier{Type: credtype, Hash: cred.Hash()})
+			cred, err := client.credential(credtype, i)
+			if err != nil {
+				return nil, err
+			}
+			if !supportsRevocation && cred.NonRevocationWitness != nil {
+				// can't disclose revocation-aware credentials to not-revocation-aware requestors
+				continue
+			}
+			c = append(c, &irma.CredentialIdentifier{Type: credtype, Hash: attrlist.Hash()})
 		}
 		candidates = append(candidates, c)
 	}
-	return candidates
+	return candidates, nil
 }
 
 type credCandidateSet [][]*irma.CredentialIdentifier
@@ -614,8 +624,8 @@ func cartesianProduct(candidates [][]*irma.CredentialIdentifier) credCandidateSe
 // specified disjunction. If the disjunction cannot be satisfied by the attributes that the client
 // currently posesses (ie. len(candidates) == 0), then the second return parameter lists the missing
 // attributes that would be necessary to satisfy the disjunction.
-func (client *Client) Candidates(discon irma.AttributeDisCon) (
-	candidates [][]*irma.AttributeIdentifier, missing map[int]map[int]MissingAttribute,
+func (client *Client) Candidates(discon irma.AttributeDisCon, supportsRevocation bool) (
+	candidates [][]*irma.AttributeIdentifier, missing map[int]map[int]MissingAttribute, err error,
 ) {
 	candidates = [][]*irma.AttributeIdentifier{}
 
@@ -632,7 +642,10 @@ func (client *Client) Candidates(discon irma.AttributeDisCon) (
 		// attribute types as [ a.a.a.a, a.a.a.b, a.a.b.x ], we map this to:
 		// [ [ a.a.a #1, a.a.a #2] , [ a.a.b #1 ] ]
 		// assuming the client has 2 instances of a.a.a and 1 instance of a.a.b.
-		c := client.credCandidates(con)
+		c, err := client.credCandidates(con, supportsRevocation)
+		if err != nil {
+			return nil, nil, err
+		}
 		if len(c) == 0 {
 			continue
 		}
@@ -687,15 +700,20 @@ func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]map
 // CheckSatisfiability checks if this client has the required attributes
 // to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
 // are returned.
-func (client *Client) CheckSatisfiability(condiscon irma.AttributeConDisCon) (
-	candidates [][][]*irma.AttributeIdentifier, missing MissingAttributes,
+func (client *Client) CheckSatisfiability(request irma.SessionRequest) (
+	candidates [][][]*irma.AttributeIdentifier, missing MissingAttributes, err error,
 ) {
+	condiscon := request.Disclosure().Disclose
+	supportsRevocation := !request.Base().ProtocolVersion.Below(2, 6)
 	candidates = make([][][]*irma.AttributeIdentifier, len(condiscon))
 	missing = MissingAttributes{}
 
 	for i, discon := range condiscon {
 		var m map[int]map[int]MissingAttribute
-		candidates[i], m = client.Candidates(discon)
+		candidates[i], m, err = client.Candidates(discon, supportsRevocation)
+		if err == nil {
+			return
+		}
 		if len(candidates[i]) == 0 {
 			missing[i] = m
 		}

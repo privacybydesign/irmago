@@ -164,7 +164,8 @@ func TestCandidates(t *testing.T) {
 	disjunction := irma.AttributeDisCon{
 		irma.AttributeCon{irma.AttributeRequest{Type: attrtype}},
 	}
-	attrs, missing := client.Candidates(disjunction)
+	attrs, missing, err := client.Candidates(disjunction, true)
+	require.NoError(t, err)
 	require.Empty(t, missing)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
@@ -175,7 +176,8 @@ func TestCandidates(t *testing.T) {
 	// then our attribute is a candidate
 	reqval := "456"
 	disjunction[0][0].Value = &reqval
-	attrs, missing = client.Candidates(disjunction)
+	attrs, missing, err = client.Candidates(disjunction, true)
+	require.NoError(t, err)
 	require.Empty(t, missing)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
@@ -186,14 +188,16 @@ func TestCandidates(t *testing.T) {
 	// then it is NOT a match.
 	reqval = "foobarbaz"
 	disjunction[0][0].Value = &reqval
-	attrs, missing = client.Candidates(disjunction)
+	attrs, missing, err = client.Candidates(disjunction, true)
+	require.NoError(t, err)
 	require.NotEmpty(t, missing)
 	require.NotNil(t, attrs)
 	require.Empty(t, attrs)
 
 	// A required value of nil counts as no requirement on the value, so our attribute is a candidate
 	disjunction[0][0].Value = nil
-	attrs, missing = client.Candidates(disjunction)
+	attrs, missing, err = client.Candidates(disjunction, true)
+	require.NoError(t, err)
 	require.Empty(t, missing)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
@@ -202,7 +206,8 @@ func TestCandidates(t *testing.T) {
 
 	// Require an attribute we do not have
 	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.ageLower.over12")
-	attrs, missing = client.Candidates(disjunction)
+	attrs, missing, err = client.Candidates(disjunction, true)
+	require.NoError(t, err)
 	require.NotEmpty(t, missing)
 	require.Empty(t, attrs)
 }
@@ -226,8 +231,14 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 		cdc[0][0][0].Type.String(),
 	)
 
+	req := &irma.DisclosureRequest{
+		BaseRequest: irma.BaseRequest{ProtocolVersion: maxVersion},
+		Disclose:    cdc,
+	}
+
 	for i := 1; i < 20; i++ {
-		candidates, missing := client.CheckSatisfiability(cdc)
+		candidates, missing, err := client.CheckSatisfiability(req)
+		require.NoError(t, err)
 		require.Empty(t, missing)
 		require.Equal(t, "irma-demo.RU.studentCard.level", candidates[0][0][0].Type.String())
 	}
