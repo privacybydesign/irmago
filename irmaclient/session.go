@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/bwesterb/go-atum"
 	raven "github.com/getsentry/raven-go"
@@ -306,6 +307,31 @@ func (session *session) processSessionInfo() {
 		}
 	}
 
+	// Prepare and update all revocation state asynchroniously.
+	// At this point, the user is waiting on us to present her with candidate attributes to choose from.
+	// We don't want to take too long, but we also preferably want to update our nonrevocation witnesses
+	// before we start calculating candidate attributes, as the update process may revoke some of
+	// our credentials: if updating finishes after the candidate computation, it could happen that
+	// options corresponding to revoked credentials are presented to the user. If she chooses those
+	// then the session would fail.
+	// So we wait a small amount of time for the update process to finish, so that
+	// if it finishes in time, then credentials that have been revoked can be excluded from the
+	// candidate calculation.
+	go func() {
+		session.prepRevocation <- session.client.NonrevPrepare(session.request)
+	}()
+	select {
+	case err := <-session.prepRevocation:
+		irma.Logger.Debug("revocation witnesses updated")
+		close(session.prepRevocation)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
+			return
+		}
+	case <-time.After(time.Duration(irma.RevocationParameters.ClientUpdateTimeout) * time.Millisecond):
+		irma.Logger.Debug("not waiting for revocation witnesses updates")
+	}
+
 	candidates, missing, err := session.client.CheckSatisfiability(session.request)
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
@@ -315,11 +341,6 @@ func (session *session) processSessionInfo() {
 		session.Handler.UnsatisfiableRequest(session.request, session.ServerName, missing)
 		return
 	}
-
-	// Prepare and update all revocation state asynchroniously while the user makes her choices
-	go func() {
-		session.prepRevocation <- session.client.NonrevPrepare(session.request)
-	}()
 
 	// Ask for permission to execute the session
 	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {

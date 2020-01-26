@@ -80,8 +80,8 @@ func TestRevocationAll(t *testing.T) {
 		// try to perform session with revoked credential
 		// client notices that his credential is revoked and aborts
 		logger.Info("step 5")
-		result = revocationSession(t, client, nil, sessionOptionIgnoreClientError)
-		require.Equal(t, server.StatusCancelled, result.Status)
+		result = revocationSession(t, client, nil, sessionOptionUnsatisfiableRequest)
+		require.NotEmpty(t, result.Missing)
 		// client revocation callback was called
 		require.NotNil(t, handler.(*TestClientHandler).revoked)
 		require.Equal(t, revocationTestCred, handler.(*TestClientHandler).revoked.Type)
@@ -444,7 +444,9 @@ func revocationSession(t *testing.T, client *irmaclient.Client, request irma.Ses
 		request = revocationRequest()
 	}
 	result := requestorSessionHelper(t, request, client, options...)
-	require.Nil(t, result.Err)
+	if result.SessionResult != nil {
+		require.Nil(t, result.Err)
+	}
 	return result
 }
 

@@ -152,6 +152,12 @@ var RevocationParameters = struct {
 	// ClientDefaultUpdateSpeed is the amount of time in hours after which it becomes very likely
 	// that the app will update its witness, quickly after it has been opened.
 	ClientDefaultUpdateSpeed uint64
+
+	// ClientUpdateTimeout is the amount of time in milliseconds that the irmaclient waits
+	// for nonrevocation witness updating to complete, before it continues with the session even
+	// if updating is not yet done (in which case the candidate set computed by the client
+	// may contain credentials that were revoked by one of the requestor's update messages).
+	ClientUpdateTimeout uint64
 }{
 	DefaultUpdateEventCount:       10,
 	RequestorUpdateInterval:       10,
@@ -160,6 +166,7 @@ var RevocationParameters = struct {
 	DeleteIssuanceRecordsInterval: 5 * 60,
 	ClientUpdateInterval:          10,
 	ClientDefaultUpdateSpeed:      7 * 24,
+	ClientUpdateTimeout:           1000,
 }
 
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
