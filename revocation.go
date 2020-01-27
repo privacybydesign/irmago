@@ -169,6 +169,8 @@ var RevocationParameters = struct {
 	ClientUpdateTimeout:           1000,
 }
 
+var ErrRevocationStateNotFound = errors.New("revocation state not found")
+
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
 // only way to create such an initial accumulator and it must be called before anyone can use
 // revocation for this credential type. Requires the issuer private key.
@@ -216,7 +218,7 @@ func (rs *RevocationStorage) UpdateFrom(id CredentialTypeIdentifier, pkcounter u
 			return err
 		}
 		if acc == nil || len(events) == 0 {
-			return gorm.ErrRecordNotFound
+			return ErrRevocationStateNotFound
 		}
 		update = rs.newUpdate(acc, events)
 		return nil
@@ -251,7 +253,7 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 	} else {
 		update := rs.memdb.Latest(id, count)
 		if len(update) == 0 {
-			return nil, gorm.ErrRecordNotFound
+			return nil, ErrRevocationStateNotFound
 		}
 		return rs.memdb.Latest(id, count), nil
 	}
@@ -345,7 +347,7 @@ func (rs *RevocationStorage) IssuanceRecords(id CredentialTypeIdentifier, key st
 		return nil, err
 	}
 	if len(r) == 0 {
-		return nil, gorm.ErrRecordNotFound
+		return nil, ErrRevocationStateNotFound
 	}
 	return r, nil
 }
@@ -496,7 +498,7 @@ func (rs *RevocationStorage) accumulator(tx sqlRevStorage, id CredentialTypeIden
 	} else {
 		sacc = rs.memdb.SignedAccumulator(id, pkcounter)
 		if sacc == nil {
-			return nil, gorm.ErrRecordNotFound
+			return nil, ErrRevocationStateNotFound
 		}
 	}
 

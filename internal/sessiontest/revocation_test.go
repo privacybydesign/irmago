@@ -350,7 +350,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Check that issuance record is gone
 		rec, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
-		require.Equal(t, gorm.ErrRecordNotFound, err)
+		require.Equal(t, irma.ErrRevocationStateNotFound, err)
 	})
 
 	t.Run("RevokeMany", func(t *testing.T) {
@@ -378,7 +378,7 @@ func TestRevocationAll(t *testing.T) {
 		// revoke all remaining records, should be none left afterwards
 		require.NoError(t, rev.Revoke(revocationTestCred, "1", time.Time{}))
 		r2, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
-		require.Equal(t, gorm.ErrRecordNotFound, err)
+		require.Equal(t, irma.ErrRevocationStateNotFound, err)
 
 		// fetch and verify update message
 		update, err := rev.UpdateFrom(revocationTestCred, revocationPkCounter, 0)
