@@ -215,6 +215,9 @@ func (rs *RevocationStorage) UpdateFrom(id CredentialTypeIdentifier, pkcounter u
 		if err := tx.Find(&events, "cred_type = ? and pk_counter = ? and eventindex >= ?", id, pkcounter, index); err != nil {
 			return err
 		}
+		if acc == nil || len(events) == 0 {
+			return gorm.ErrRecordNotFound
+		}
 		update = rs.newUpdate(acc, events)
 		return nil
 	}); err != nil {
@@ -224,7 +227,6 @@ func (rs *RevocationStorage) UpdateFrom(id CredentialTypeIdentifier, pkcounter u
 }
 
 func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uint64) (map[uint]*revocation.Update, error) {
-	// TODO what should this function and UpdateFrom return when no records are found?
 	if rs.sqlMode {
 		var update map[uint]*revocation.Update
 		if err := rs.sqldb.Transaction(func(tx sqlRevStorage) error {
@@ -235,8 +237,10 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 			if err := tx.Last(&records, map[string]interface{}{"cred_type": id}); err != nil {
 				return err
 			}
-			if err := tx.Latest(&events, count, map[string]interface{}{"cred_type": id}); err != nil {
-				return err
+			if count > 0 {
+				if err := tx.Latest(&events, count, map[string]interface{}{"cred_type": id}); err != nil {
+					return err
+				}
 			}
 			update = rs.newUpdates(records, events)
 			return nil
@@ -245,25 +249,23 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 		}
 		return update, nil
 	} else {
+		update := rs.memdb.Latest(id, count)
+		if len(update) == 0 {
+			return nil, gorm.ErrRecordNotFound
+		}
 		return rs.memdb.Latest(id, count), nil
 	}
 }
 
 func (*RevocationStorage) newUpdates(records []*AccumulatorRecord, events []*EventRecord) map[uint]*revocation.Update {
-	accs := map[uint]*revocation.SignedAccumulator{}
+	updates := make(map[uint]*revocation.Update, len(records))
 	for _, r := range records {
-		accs[r.PKCounter] = r.SignedAccumulator()
+		updates[r.PKCounter] = &revocation.Update{SignedAccumulator: r.SignedAccumulator()}
 	}
-	updates := make(map[uint]*revocation.Update, len(accs))
 	for _, e := range events {
-		i := e.PKCounter
-		if accs[i] == nil {
+		update := updates[e.PKCounter]
+		if update == nil {
 			continue
-		}
-		update, present := updates[i]
-		if !present {
-			update = &revocation.Update{SignedAccumulator: accs[i]}
-			updates[i] = update
 		}
 		update.Events = append(update.Events, e.Event())
 	}
@@ -488,15 +490,13 @@ func (rs *RevocationStorage) accumulator(tx sqlRevStorage, id CredentialTypeIden
 	if rs.sqlMode {
 		record := &AccumulatorRecord{}
 		if err = tx.Last(record, map[string]interface{}{"cred_type": id, "pk_counter": pkcounter}); err != nil {
-			if gorm.IsRecordNotFoundError(err) {
-				return nil, nil
-			}
+			return nil, err
 		}
 		sacc = record.SignedAccumulator()
 	} else {
 		sacc = rs.memdb.SignedAccumulator(id, pkcounter)
 		if sacc == nil {
-			return nil, nil
+			return nil, gorm.ErrRecordNotFound
 		}
 	}
 
