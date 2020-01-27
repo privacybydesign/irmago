@@ -16,15 +16,15 @@ import (
 
 func (client *Client) initRevocation() {
 	// For every credential supporting revocation, compute nonrevocation caches in async jobs
-	for typ, attrsets := range client.attributes {
+	for id, attrsets := range client.attributes {
 		for i, attrs := range attrsets {
 			if attrs.CredentialType() == nil || !attrs.CredentialType().RevocationSupported() {
 				continue
 			}
-			typ := typ // make copy of same name to capture the value for closure below
-			i := i     // see https://golang.org/doc/faq#closures_and_goroutines
+			id := id // make copy of same name to capture the value for closure below
+			i := i   // see https://golang.org/doc/faq#closures_and_goroutines
 			client.jobs <- func() {
-				if err := client.nonrevPrepareCache(typ, i); err != nil {
+				if err := client.nonrevPrepareCache(id, i); err != nil {
 					client.reportError(err)
 				}
 			}
@@ -39,12 +39,12 @@ func (client *Client) initRevocation() {
 	// We do this by every 10 seconds updating the credential with a low probability, which
 	// increases over time since the last update.
 	client.Configuration.Scheduler.Every(irma.RevocationParameters.ClientUpdateInterval).Seconds().Do(func() {
-		for typ, attrsets := range client.attributes {
+		for id, attrsets := range client.attributes {
 			for i, attrs := range attrsets {
 				if attrs.CredentialType() == nil || !attrs.CredentialType().RevocationSupported() {
 					continue
 				}
-				cred, err := client.credential(typ, i)
+				cred, err := client.credential(id, i)
 				if err != nil {
 					client.reportError(err)
 					continue
@@ -59,9 +59,9 @@ func (client *Client) initRevocation() {
 				}
 				speed := attrs.CredentialType().RevocationUpdateSpeed * 60 * 60
 				if r < probability(cred.NonRevocationWitness.Updated, speed) {
-					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%d", typ, i)
+					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%d", id, i)
 					client.jobs <- func() {
-						if err = client.nonrevUpdateFromServer(typ); err != nil {
+						if err = client.nonrevUpdateFromServer(id); err != nil {
 							client.reportError(err)
 							return
 						}
@@ -79,18 +79,18 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 	base := request.Base()
 	var err error
 	var wg sync.WaitGroup
-	for typ := range request.Disclosure().Identifiers().CredentialTypes {
-		credtype := client.Configuration.CredentialTypes[typ]
+	for id := range request.Disclosure().Identifiers().CredentialTypes {
+		credtype := client.Configuration.CredentialTypes[id]
 		if !credtype.RevocationSupported() {
 			continue
 		}
-		if !base.RequestsRevocation(typ) {
+		if !base.RequestsRevocation(id) {
 			continue
 		}
-		irma.Logger.WithField("credtype", typ).Debug("updating witnesses")
+		irma.Logger.WithField("credtype", id).Debug("updating witnesses")
 		wg.Add(1)
 		go func() {
-			if e := client.nonrevUpdate(typ, base.Revocation[typ].Updates); e != nil {
+			if e := client.nonrevUpdate(id, base.Revocation[id].Updates); e != nil {
 				err = e // overwrites err from previously finished call, if any
 			}
 			wg.Done()
@@ -103,14 +103,14 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 // nonrevUpdate updates all contained instances of the specified type, using the specified
 // updates if present and if they suffice, and contacting the issuer's server to download updates
 // otherwise.
-func (client *Client) nonrevUpdate(typ irma.CredentialTypeIdentifier, updates map[uint]*revocation.Update) error {
+func (client *Client) nonrevUpdate(id irma.CredentialTypeIdentifier, updates map[uint]*revocation.Update) error {
 	lowest := map[uint]uint64{}
-	attrs := client.attrs(typ)
+	attrs := client.attrs(id)
 
 	// Per credential and issuer key counter we may posess multiple credential instances.
 	// Of the nonrevocation witnesses of these, take the lowest index.
 	for i := 0; i < len(attrs); i++ {
-		cred, err := client.credential(typ, i)
+		cred, err := client.credential(id, i)
 		if err != nil {
 			return err
 		}
@@ -135,7 +135,7 @@ func (client *Client) nonrevUpdate(typ irma.CredentialTypeIdentifier, updates ma
 		} else {
 			var err error
 			u[counter], err = irma.RevocationClient{Conf: client.Configuration}.
-				FetchUpdateFrom(typ, counter, l+1)
+				FetchUpdateFrom(id, counter, l+1)
 			if err != nil {
 				return err
 			}
@@ -144,21 +144,21 @@ func (client *Client) nonrevUpdate(typ irma.CredentialTypeIdentifier, updates ma
 
 	// Apply the update messages to all instances of the given type and key counter
 	for counter, update := range u {
-		if err := client.nonrevApplyUpdates(typ, counter, update); err != nil {
+		if err := client.nonrevApplyUpdates(id, counter, update); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (client *Client) nonrevApplyUpdates(typ irma.CredentialTypeIdentifier, counter uint, update *revocation.Update) error {
+func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, counter uint, update *revocation.Update) error {
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
-	attrs := client.attrs(typ)
+	attrs := client.attrs(id)
 	var save bool
 	for i := 0; i < len(attrs); i++ {
-		cred, err := client.credential(typ, i)
+		cred, err := client.credential(id, i)
 		if err != nil {
 			return err
 		}
@@ -186,7 +186,7 @@ func (client *Client) nonrevApplyUpdates(typ irma.CredentialTypeIdentifier, coun
 			return err
 		}
 		// Asynchroniously update nonrevocation proof cache from updated witness
-		irma.Logger.WithField("credtype", typ).Debug("scheduling nonrevocation cache update")
+		irma.Logger.WithField("credtype", id).Debug("scheduling nonrevocation cache update")
 		go func(cred *credential) {
 			if err := cred.NonrevPrepareCache(); err != nil {
 				raven.CaptureError(err, nil)
@@ -202,16 +202,16 @@ func (client *Client) nonrevApplyUpdates(typ irma.CredentialTypeIdentifier, coun
 	return nil
 }
 
-func (client *Client) nonrevUpdateFromServer(typ irma.CredentialTypeIdentifier) error {
-	if err := client.nonrevUpdate(typ, map[uint]*revocation.Update{}); err != nil {
+func (client *Client) nonrevUpdateFromServer(id irma.CredentialTypeIdentifier) error {
+	if err := client.nonrevUpdate(id, map[uint]*revocation.Update{}); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (client *Client) nonrevPrepareCache(typ irma.CredentialTypeIdentifier, index int) error {
-	irma.Logger.WithFields(logrus.Fields{"credtype": typ, "index": index}).Debug("Preparing cache")
-	cred, err := client.credential(typ, index)
+func (client *Client) nonrevPrepareCache(id irma.CredentialTypeIdentifier, index int) error {
+	irma.Logger.WithFields(logrus.Fields{"credtype": id, "index": index}).Debug("Preparing cache")
+	cred, err := client.credential(id, index)
 	if err != nil {
 		return err
 	}
@@ -221,16 +221,16 @@ func (client *Client) nonrevPrepareCache(typ irma.CredentialTypeIdentifier, inde
 // nonrevRepopulateCaches repopulates the consumed nonrevocation caches of the credentials involved
 // in the request, in background jobs, after the request has finished.
 func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
-	for typ := range request.Disclosure().Identifiers().CredentialTypes {
-		credtype := client.Configuration.CredentialTypes[typ]
+	for id := range request.Disclosure().Identifiers().CredentialTypes {
+		credtype := client.Configuration.CredentialTypes[id]
 		if !credtype.RevocationSupported() {
 			continue
 		}
-		for i := range client.attrs(typ) {
-			typ := typ
+		for i := range client.attrs(id) {
+			id := id
 			i := i
 			client.jobs <- func() {
-				if err := client.nonrevPrepareCache(typ, i); err != nil {
+				if err := client.nonrevPrepareCache(id, i); err != nil {
 					client.reportError(err)
 				}
 			}

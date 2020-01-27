@@ -100,9 +100,9 @@ func (s sqlRevStorage) Last(dest interface{}, query interface{}, args ...interfa
 	return db.Last(dest).Error
 }
 
-func (s sqlRevStorage) Exists(typ interface{}, query interface{}, args ...interface{}) (bool, error) {
+func (s sqlRevStorage) Exists(id interface{}, query interface{}, args ...interface{}) (bool, error) {
 	var c int
-	db := s.gorm.Model(typ)
+	db := s.gorm.Model(id)
 	if query != nil {
 		db = db.Where(query, args...)
 	}
@@ -110,8 +110,8 @@ func (s sqlRevStorage) Exists(typ interface{}, query interface{}, args ...interf
 	return c > 0, db.Error
 }
 
-func (s sqlRevStorage) Delete(typ interface{}, query interface{}, args ...interface{}) error {
-	return s.gorm.Delete(typ, query, args).Error
+func (s sqlRevStorage) Delete(id interface{}, query interface{}, args ...interface{}) error {
+	return s.gorm.Delete(id, query, args).Error
 }
 
 func (s sqlRevStorage) Find(dest interface{}, query interface{}, args ...interface{}) error {
@@ -135,14 +135,14 @@ func newMemStorage() memRevStorage {
 	}
 }
 
-func (m memRevStorage) get(typ CredentialTypeIdentifier) *memUpdateRecord {
+func (m memRevStorage) get(id CredentialTypeIdentifier) *memUpdateRecord {
 	m.Lock()
 	defer m.Unlock()
-	return m.records[typ]
+	return m.records[id]
 }
 
-func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64) map[uint]*revocation.Update {
-	record := m.get(typ)
+func (m memRevStorage) Latest(id CredentialTypeIdentifier, count uint64) map[uint]*revocation.Update {
+	record := m.get(id)
 	if record == nil {
 		return nil
 	}
@@ -169,19 +169,19 @@ func (m memRevStorage) Latest(typ CredentialTypeIdentifier, count uint64) map[ui
 	return updates
 }
 
-func (m memRevStorage) SignedAccumulator(typ CredentialTypeIdentifier, pkcounter uint) *revocation.SignedAccumulator {
-	updates := m.Latest(typ, 0)
+func (m memRevStorage) SignedAccumulator(id CredentialTypeIdentifier, pkcounter uint) *revocation.SignedAccumulator {
+	updates := m.Latest(id, 0)
 	for _, u := range updates {
 		return u.SignedAccumulator
 	}
 	return nil
 }
 
-func (m memRevStorage) Insert(typ CredentialTypeIdentifier, update *revocation.Update) {
-	record := m.get(typ)
+func (m memRevStorage) Insert(id CredentialTypeIdentifier, update *revocation.Update) {
+	record := m.get(id)
 	if record == nil {
 		record = &memUpdateRecord{r: map[uint]*revocation.Update{}}
-		m.records[typ] = record
+		m.records[id] = record
 	}
 	record.Lock()
 	defer record.Unlock()
