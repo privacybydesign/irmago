@@ -417,6 +417,7 @@ func (dr *DisclosureRequest) identifiers() *IrmaIdentifierSet {
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
 		PublicKeys:      map[IssuerIdentifier][]int{},
+		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 	}
 
 	_ = dr.Disclose.Iterate(func(a *AttributeRequest) error {
@@ -424,6 +425,7 @@ func (dr *DisclosureRequest) identifiers() *IrmaIdentifierSet {
 		ids.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
 		ids.Issuers[attr.CredentialTypeIdentifier().IssuerIdentifier()] = struct{}{}
 		ids.CredentialTypes[attr.CredentialTypeIdentifier()] = struct{}{}
+		ids.AttributeTypes[attr] = struct{}{}
 		return nil
 	})
 
@@ -540,6 +542,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+			AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 			PublicKeys:      map[IssuerIdentifier][]int{},
 		}
 
@@ -547,7 +550,11 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			issuer := credreq.CredentialTypeID.IssuerIdentifier()
 			ir.ids.SchemeManagers[issuer.SchemeManagerIdentifier()] = struct{}{}
 			ir.ids.Issuers[issuer] = struct{}{}
-			ir.ids.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
+			credID := credreq.CredentialTypeID
+			ir.ids.CredentialTypes[credID] = struct{}{}
+			for attr, _ := range credreq.Attributes { // this is kind of ugly
+				ir.ids.AttributeTypes[NewAttributeTypeIdentifier(credID.String()+"."+attr)] = struct{}{}
+			}
 			if ir.ids.PublicKeys[issuer] == nil {
 				ir.ids.PublicKeys[issuer] = []int{}
 			}

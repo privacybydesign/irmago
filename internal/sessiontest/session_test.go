@@ -355,6 +355,7 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 				irma.NewCredentialTypeIdentifier("irma-demo.RU.foo"):  struct{}{},
 				irma.NewCredentialTypeIdentifier("irma-demo.baz.qux"): struct{}{},
 			},
+			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{},
 		},
 	}
 	require.True(t, reflect.DeepEqual(expectedErr, err), "Download() returned incorrect missing identifier set")
