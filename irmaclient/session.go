@@ -322,14 +322,14 @@ func (session *session) processSessionInfo() {
 	}()
 	select {
 	case err := <-session.prepRevocation:
-		irma.Logger.Debug("revocation witnesses updated")
+		irma.Logger.Debug("revocation witnesses updated before candidate computation")
 		close(session.prepRevocation)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
 			return
 		}
 	case <-time.After(time.Duration(irma.RevocationParameters.ClientUpdateTimeout) * time.Millisecond):
-		irma.Logger.Debug("not waiting for revocation witnesses updates")
+		irma.Logger.Debug("starting candidate computation before revocation witnesses updating finished")
 	}
 
 	candidates, missing, err := session.client.CheckSatisfiability(session.request)

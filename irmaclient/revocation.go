@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getsentry/raven-go"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
@@ -96,7 +97,6 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 		}()
 	}
 	wg.Wait()
-	irma.Logger.Debug("done updating witnesses")
 	return err
 }
 
@@ -182,6 +182,13 @@ func (client *Client) nonrevApplyUpdates(typ irma.CredentialTypeIdentifier, coun
 		if err != nil {
 			return err
 		}
+		// Asynchroniously update nonrevocation proof cache from updated witness
+		irma.Logger.WithField("credtype", typ).Debug("scheduling nonrevocation cache update")
+		go func(cred *credential) {
+			if err := cred.NonrevPrepareCache(); err != nil {
+				raven.CaptureError(err, nil)
+			}
+		}(cred)
 	}
 	if save {
 		if err := client.storage.StoreAttributes(client.attributes); err != nil {
