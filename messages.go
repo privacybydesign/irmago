@@ -199,6 +199,8 @@ const (
 	ErrorUnknownAction = ErrorType("unknownAction")
 	// Crypto error during calculation of our response (second IRMA message)
 	ErrorCrypto = ErrorType("crypto")
+	// Error involving revocation or nonrevocation proofs
+	ErrorRevocation = ErrorType("revocation")
 	// Server rejected our response (second IRMA message)
 	ErrorRejected = ErrorType("rejected")
 	// (De)serializing of a message failed

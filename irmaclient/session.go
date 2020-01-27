@@ -325,7 +325,7 @@ func (session *session) processSessionInfo() {
 		irma.Logger.Debug("revocation witnesses updated before candidate computation")
 		close(session.prepRevocation)
 		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorRevocation, Err: err})
 			return
 		}
 	case <-time.After(time.Duration(irma.RevocationParameters.ClientUpdateTimeout) * time.Millisecond):
@@ -334,7 +334,7 @@ func (session *session) processSessionInfo() {
 
 	candidates, missing, err := session.client.CheckSatisfiability(session.request)
 	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 		return
 	}
 	if len(missing) > 0 {
@@ -384,7 +384,7 @@ func (session *session) doSession(proceed bool) {
 	// wait for revocation preparation to finish
 	err := <-session.prepRevocation
 	if err != nil {
-		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err}) // TODO error type
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorRevocation, Err: err})
 		return
 	}
 

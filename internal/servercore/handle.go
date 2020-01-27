@@ -38,7 +38,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	// was started, so that the client always gets the very latest revocation records
 	var err error
 	if err = session.conf.IrmaConfiguration.Revocation.SetRevocationUpdates(session.request.Base()); err != nil {
-		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
+		return nil, session.fail(server.ErrorRevocation, err.Error())
 	}
 
 	// Handle legacy clients that do not support condiscon, by attempting to convert the condiscon
@@ -70,7 +70,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	}
 	cpy, err := copyObject(isreq)
 	if err != nil {
-		return nil, session.fail(server.ErrorUnknown, err.Error()) // TODO error type
+		return nil, session.fail(server.ErrorRevocation, err.Error())
 	}
 	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
 		cred.RevocationKey = ""
@@ -201,7 +201,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		}
 		witness, err := session.issuanceHandleRevocation(cred, attributes, sk)
 		if err != nil {
-			return nil, session.fail(server.ErrorIssuanceFailed, err.Error()) // TODO error type
+			return nil, session.fail(server.ErrorRevocation, err.Error())
 		}
 		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, witness, commitments.Nonce2)
 		if err != nil {
@@ -218,7 +218,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 // POST revocation/update/{credtype}
 func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *revocation.Update) (interface{}, *irma.RemoteError) {
 	if err := s.conf.IrmaConfiguration.Revocation.AddUpdate(typ, update); err != nil {
-		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
 	}
 	return nil, nil
 }
@@ -233,7 +233,7 @@ func (s *Server) handleGetUpdateFrom(
 	}
 	update, err := s.conf.IrmaConfiguration.Revocation.UpdateFrom(cred, pkcounter, index)
 	if err != nil {
-		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
 	}
 	return update, nil
 }
@@ -248,7 +248,7 @@ func (s *Server) handleGetUpdateLatest(
 	}
 	update, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count)
 	if err != nil {
-		return nil, server.RemoteError(server.ErrorUnknown, err.Error()) // TODO error type
+		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
 	}
 	return update, nil
 }
@@ -265,7 +265,7 @@ func (s *Server) handlePostIssuanceRecord(
 	// and verify and unmarshal the issuance record
 	pk, err := s.conf.IrmaConfiguration.Revocation.Keys.PublicKey(cred.IssuerIdentifier(), counter)
 	if err != nil {
-		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+		return "", server.RemoteError(server.ErrorRevocation, err.Error())
 	}
 	var rec irma.IssuanceRecord
 	if err := signed.UnmarshalVerify(pk.ECDSA, message, &rec); err != nil {
@@ -276,7 +276,7 @@ func (s *Server) handlePostIssuanceRecord(
 	}
 
 	if err = s.conf.IrmaConfiguration.Revocation.AddIssuanceRecord(&rec); err != nil {
-		return "", server.RemoteError(server.ErrorUnknown, err.Error())
+		return "", server.RemoteError(server.ErrorRevocation, err.Error())
 	}
 	return "OK", nil
 }
