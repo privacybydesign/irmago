@@ -193,6 +193,8 @@ const (
 	ErrorServerResponse = ErrorType("serverResponse")
 	// Credential type not present in our Configuration
 	ErrorUnknownIdentifier = ErrorType("unknownIdentifier")
+	// Non-optional attribute not present in credential
+	ErrorRequiredAttributeMissing = ErrorType("requiredAttributeMissing")
 	// Error during downloading of credential type, issuer, or public keys
 	ErrorConfigurationDownload = ErrorType("configurationDownload")
 	// IRMA requests refers to unknown scheme manager

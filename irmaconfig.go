@@ -87,6 +87,11 @@ type UnknownIdentifierError struct {
 	Missing *IrmaIdentifierSet
 }
 
+type RequiredAttributeMissingError struct {
+	ErrorType
+	Missing *IrmaIdentifierSet
+}
+
 const (
 	SchemeManagerStatusValid               = SchemeManagerStatus("Valid")
 	SchemeManagerStatusUnprocessed         = SchemeManagerStatus("Unprocessed")
@@ -831,18 +836,22 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 }
 
 func (e *UnknownIdentifierError) Error() string {
-	return "unknown identifiers: " + e.Missing.String()
+	return "Unknown identifiers: " + e.Missing.String()
+}
+
+func (e *RequiredAttributeMissingError) Error() string {
+	return "Required attributes are missing: " + e.Missing.String()
 }
 
 // Download downloads the issuers, credential types and public keys specified in set
-// if the current Configuration does not already have them,  and checks their authenticity
+// if the current Configuration does not already have them, and checks their authenticity
 // using the scheme manager index.
 func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIdentifierSet, err error) {
 	if conf.readOnly {
-		return nil, errors.New("cannot download into a read-only configuration")
+		return nil, errors.New("Cannot download into a read-only configuration")
 	}
 
-	missing, err := conf.checkIdentifiers(session)
+	missing, requiredMissing, err := conf.checkIdentifiers(session)
 	if err != nil {
 		return nil, err
 	}
@@ -850,61 +859,76 @@ func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIde
 		return nil, &UnknownIdentifierError{ErrorUnknownSchemeManager, missing}
 	}
 
-	// Update the scheme  found above and parse them, if necessary
+	// Update the scheme found above and parse, if necessary
 	downloaded = newIrmaIdentifierSet()
-	for id := range missing.allSchemes() {
+
+	// Combine to find all identifiers that possibly require updating, i.e.,
+	// ones that are not found in the configuration or,
+	// ones that were tagged non-optional, but were tagged optional in a more recent configuration
+	allMissing := newIrmaIdentifierSet()
+	allMissing.join(missing)
+	allMissing.join(requiredMissing)
+
+	// Try updating them
+	for id := range allMissing.allSchemes() {
 		if err = conf.UpdateSchemeManager(id, downloaded); err != nil {
 			return
 		}
 	}
-
 	if !downloaded.Empty() {
 		if err = conf.ParseFolder(); err != nil {
 			return nil, err
 		}
 	}
 
-	// Check again if all identifiers are known in the Configuration
-	if missing, err = conf.checkIdentifiers(session); err != nil {
+	// Check again if all session identifiers are known now and required attributes are present
+	missing, requiredMissing, err = conf.checkIdentifiers(session)
+	if err != nil {
 		return nil, err
 	}
+
+	// Required in the request, but not found in the configuration
 	if !missing.Empty() {
 		return nil, &UnknownIdentifierError{ErrorUnknownIdentifier, missing}
+	}
+
+	// (Still) required in the configuration, but not in the request
+	if !requiredMissing.Empty() {
+		return nil, &RequiredAttributeMissingError{ErrorRequiredAttributeMissing, requiredMissing}
 	}
 
 	return
 }
 
-func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing *IrmaIdentifierSet) {
+func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing *IrmaIdentifierSet, requiredMissing *IrmaIdentifierSet) {
 	var typ *CredentialType
 	var contains bool
 
 	switch s := session.(type) {
 	case *IssuanceRequest:
 		for _, credreq := range s.Credentials {
+
 			// First check if we have this credential type
 			typ, contains = conf.CredentialTypes[credreq.CredentialTypeID]
 			if !contains {
 				missing.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
 				continue
 			}
-			newAttrs := make(map[string]string)
-			for k, v := range credreq.Attributes {
-				newAttrs[k] = v
-			}
-			// For each of the attributes in the credentialtype, see if it is present; if so remove it from newAttrs
-			// If not, check that it is optional; if not the credentialtype must be updated
-			for _, attrtyp := range typ.AttributeTypes {
-				_, contains = newAttrs[attrtyp.ID]
-				if !contains && !attrtyp.IsOptional() {
-					missing.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
-					break
+
+			// Check for attributes in the request that are not in the credential configuration
+			for reqAttr, _ := range credreq.Attributes {
+				attrID := NewAttributeTypeIdentifier(credreq.CredentialTypeID.String() + "." + reqAttr)
+				if !typ.ContainsAttribute(attrID) {
+					missing.AttributeTypes[attrID] = struct{}{}
 				}
-				delete(newAttrs, attrtyp.ID)
 			}
-			// If there is anything left in newAttrs, then these are attributes that are not in the credentialtype
-			if len(newAttrs) > 0 {
-				missing.CredentialTypes[credreq.CredentialTypeID] = struct{}{}
+
+			// Check if all attributes from the configuration are present, unless they are marked as optional
+			for _, attrtype := range typ.AttributeTypes {
+				_, present := credreq.Attributes[attrtype.ID]
+				if !present && !attrtype.IsOptional() {
+					requiredMissing.AttributeTypes[attrtype.GetAttributeTypeIdentifier()] = struct{}{}
+				}
 			}
 		}
 	}
@@ -916,7 +940,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 			return nil
 		}
 		if !attr.Type.IsCredential() && !typ.ContainsAttribute(attr.Type) {
-			missing.CredentialTypes[credid] = struct{}{}
+			missing.AttributeTypes[attr.Type] = struct{}{}
 		}
 		return nil
 	})
@@ -924,14 +948,15 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 	return
 }
 
-func (conf *Configuration) checkIdentifiers(session SessionRequest) (*IrmaIdentifierSet, error) {
+func (conf *Configuration) checkIdentifiers(session SessionRequest) (*IrmaIdentifierSet, *IrmaIdentifierSet, error) {
 	missing := newIrmaIdentifierSet()
+	requiredMissing := newIrmaIdentifierSet()
 	conf.checkSchemes(session, missing)
 	if err := conf.checkIssuers(session.Identifiers(), missing); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	conf.checkCredentialTypes(session, missing)
-	return missing, nil
+	conf.checkCredentialTypes(session, missing, requiredMissing)
+	return missing, requiredMissing, nil
 }
 
 // CheckSchemes verifies that all schemes occuring in the specified session request occur in this
@@ -1290,6 +1315,7 @@ func (conf *Configuration) UpdateSchemes() error {
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
+		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 	}
 	for id := range conf.SchemeManagers {
 		Logger.WithField("scheme", id).Info("Auto-updating scheme")

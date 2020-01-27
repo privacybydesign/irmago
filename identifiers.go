@@ -40,12 +40,13 @@ type AttributeIdentifier struct {
 }
 
 // IrmaIdentifierSet contains a set (ensured by using map[...]struct{}) of all scheme managers,
-// all issuers, all credential types and all public keys that are involved in an IRMA session.
+// all issuers, all credential types, all public keys and all attribute types that are involved in an IRMA session.
 type IrmaIdentifierSet struct {
 	SchemeManagers  map[SchemeManagerIdentifier]struct{}
 	Issuers         map[IssuerIdentifier]struct{}
 	CredentialTypes map[CredentialTypeIdentifier]struct{}
 	PublicKeys      map[IssuerIdentifier][]int
+	AttributeTypes  map[AttributeTypeIdentifier]struct{}
 }
 
 func newIrmaIdentifierSet() *IrmaIdentifierSet {
@@ -54,6 +55,7 @@ func newIrmaIdentifierSet() *IrmaIdentifierSet {
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
 		PublicKeys:      map[IssuerIdentifier][]int{},
+		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 	}
 }
 
@@ -194,6 +196,9 @@ func (set *IrmaIdentifierSet) join(other *IrmaIdentifierSet) {
 	for ct := range other.CredentialTypes {
 		set.CredentialTypes[ct] = struct{}{}
 	}
+	for at := range other.AttributeTypes {
+		set.AttributeTypes[at] = struct{}{}
+	}
 	for issuer := range other.PublicKeys {
 		if len(set.PublicKeys[issuer]) == 0 {
 			set.PublicKeys[issuer] = make([]int, 0, len(other.PublicKeys[issuer]))
@@ -227,6 +232,9 @@ func (set *IrmaIdentifierSet) allSchemes() map[SchemeManagerIdentifier]struct{} 
 	for c := range set.CredentialTypes {
 		schemes[c.IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
 	}
+	for a := range set.AttributeTypes {
+		schemes[a.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
+	}
 	return schemes
 }
 
@@ -246,6 +254,9 @@ func (set *IrmaIdentifierSet) String() string {
 	for c := range set.CredentialTypes {
 		builder.WriteString(c.String() + ", ")
 	}
+	for a := range set.AttributeTypes {
+		builder.WriteString(a.String() + ", ")
+	}
 	s := builder.String()
 	if len(s) > 0 { // strip trailing comma
 		s = s[:len(s)-2]
@@ -254,5 +265,5 @@ func (set *IrmaIdentifierSet) String() string {
 }
 
 func (set *IrmaIdentifierSet) Empty() bool {
-	return len(set.SchemeManagers) == 0 && len(set.Issuers) == 0 && len(set.CredentialTypes) == 0 && len(set.PublicKeys) == 0
+	return len(set.SchemeManagers) == 0 && len(set.Issuers) == 0 && len(set.CredentialTypes) == 0 && len(set.PublicKeys) == 0 && len(set.AttributeTypes) == 0
 }
