@@ -184,7 +184,7 @@ func TestMetadataCompatibility(t *testing.T) {
 	require.Equal(t, byte(0x02), attr.Version(), "Unexpected metadata version")
 	require.Equal(t, time.Unix(1499904000, 0), attr.SigningDate(), "Unexpected signing date")
 	require.Equal(t, time.Unix(1516233600, 0), attr.Expiry(), "Unexpected expiry date")
-	require.Equal(t, 2, attr.KeyCounter(), "Unexpected key counter")
+	require.Equal(t, uint(2), attr.KeyCounter(), "Unexpected key counter")
 }
 
 func TestTimestamp(t *testing.T) {

@@ -1160,7 +1160,6 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 				client.credentialsCache[id][i].Attributes[:1],
 				attrs...,
 			)
-			client.credentialsCache[id][i].attrs = nil
 		}
 	}
 

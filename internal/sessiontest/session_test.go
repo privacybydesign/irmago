@@ -133,8 +133,15 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
-	request := getMultipleIssuanceRequest()
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton")
+	request := getIssuanceRequest(false)
+	request.Credentials = append(request.Credentials, &irma.CredentialRequest{
+		Validity:         request.Credentials[0].Validity,
+		CredentialTypeID: credid,
+		Attributes: map[string]string{
+			"BSN": "299792458",
+		},
+	})
 
 	require.Nil(t, client.Attributes(credid, 0))
 

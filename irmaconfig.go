@@ -1539,7 +1539,7 @@ func (conf *Configuration) ValidateKeys() error {
 				return err
 			}
 			if typ.RevocationSupported() && !pk.RevocationSupported() {
-				return errors.Errorf("credential type %s supports revocation but latest private key of issuer %s does not", typ, issuerid)
+				return errors.Errorf("credential type %s supports revocation but latest private key of issuer %s does not", typ.Identifier(), issuerid)
 			}
 		}
 	}

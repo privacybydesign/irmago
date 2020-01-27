@@ -119,7 +119,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 	// Request to sign with both BSN and StudentID
 	request := irma.NewSignatureRequest("I owe you everything",
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
-		irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN"))
+		irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname"))
 
 	ms := createManualSessionHandler(t, client)
 

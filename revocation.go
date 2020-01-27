@@ -701,7 +701,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 	var err error
 	for credid, params := range b.Revocation {
 		if !rs.conf.CredentialTypes[credid].RevocationSupported() {
-			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme")
+			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme", credid)
 		}
 		settings := rs.getSettings(credid)
 		tolerance := settings.Tolerance

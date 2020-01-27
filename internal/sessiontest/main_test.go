@@ -112,9 +112,11 @@ func getMultipleIssuanceRequest() *irma.IssuanceRequest {
 	request := getIssuanceRequest(false)
 	request.Credentials = append(request.Credentials, &irma.CredentialRequest{
 		Validity:         request.Credentials[0].Validity,
-		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 		Attributes: map[string]string{
-			"BSN": "299792458",
+			"firstnames": "Johan Pieter",
+			"firstname":  "Johan",
+			"familyname": "Stuivezand",
 		},
 	})
 	return request

@@ -193,7 +193,7 @@ func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
 		"type":"issuing",
 		"credentials": [
 			{
-				"credential":"irma-demo.MijnOverheid.root",
+				"credential":"irma-demo.MijnOverheid.singleton",
 				"attributes" : {
 					"BSN":"12345"
 				}
@@ -229,9 +229,11 @@ func testRequestorIssuance(t *testing.T, keyshare bool, client *irmaclient.Clien
 			"level":             "42",
 		},
 	}, {
-		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 		Attributes: map[string]string{
-			"BSN": "299792458",
+			"firstnames": "Johan Pieter",
+			"firstname":  "Johan",
+			"familyname": "Stuivezand",
 		},
 	}}, attrid)
 	if keyshare {

@@ -27,7 +27,7 @@ var (
 )
 
 func init() {
-	logger.Level = logrus.TraceLevel
+	logger.Level = logrus.ErrorLevel
 	logger.Formatter = &prefixed.TextFormatter{
 		ForceFormatting: true,
 		ForceColors:     true,
@@ -95,6 +95,11 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {
+				RevocationServerURL: "http://localhost:48683/",
+			},
+		},
 	},
 	DisableRequestorAuthentication: true,
 	Port: 48682,
@@ -106,6 +111,11 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {
+				RevocationServerURL: "http://localhost:48683/",
+			},
+		},
 	},
 	Port: 48682,
 	DisableRequestorAuthentication: false,

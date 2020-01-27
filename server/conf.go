@@ -196,7 +196,7 @@ func (conf *Configuration) verifyPrivateKeys() error {
 				return LogError(err)
 			}
 			if counter >= 0 && uint(counter) != sk.Counter {
-				return LogError(errors.Errorf("private key %s has wrong counter %d in filename, should be", filename, counter, sk.Counter))
+				return LogError(errors.Errorf("private key %s has wrong counter %d in filename, should be %d", filename, counter, sk.Counter))
 			}
 			if len(conf.IssuerPrivateKeys[issid]) == 0 {
 				conf.IssuerPrivateKeys[issid] = map[uint]*gabi.PrivateKey{}
