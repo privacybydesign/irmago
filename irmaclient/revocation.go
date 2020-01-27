@@ -152,6 +152,9 @@ func (client *Client) nonrevUpdate(typ irma.CredentialTypeIdentifier, updates ma
 }
 
 func (client *Client) nonrevApplyUpdates(typ irma.CredentialTypeIdentifier, counter uint, update *revocation.Update) error {
+	client.credMutex.Lock()
+	defer client.credMutex.Unlock()
+
 	attrs := client.attrs(typ)
 	var save bool
 	for i := 0; i < len(attrs); i++ {

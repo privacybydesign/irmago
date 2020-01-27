@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bwesterb/go-atum"
@@ -61,6 +62,8 @@ type Client struct {
 
 	jobs      chan func()   // queue of jobs to run
 	jobsPause chan struct{} // sending pauses background jobs
+
+	credMutex sync.Mutex
 }
 
 // SentryDSN should be set in the init() function
@@ -708,6 +711,8 @@ func (client *Client) CheckSatisfiability(request irma.SessionRequest) (
 	candidates = make([][][]*irma.AttributeIdentifier, len(condiscon))
 	missing = MissingAttributes{}
 
+	client.credMutex.Lock()
+	defer client.credMutex.Unlock()
 	for i, discon := range condiscon {
 		cands, m, err := client.Candidates(discon, supportsRevocation)
 		if err != nil {
