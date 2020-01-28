@@ -25,6 +25,13 @@ func TestLogging(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
 
+	// Check whether newly issued credential is actually stored
+	require.Nil(t, client.Close())
+	client, _ = parseExistingStorage(t)
+	logs, err = client.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.True(t, len(logs) == oldLogLength+1)
+
 	entry := logs[0]
 	require.NotNil(t, entry)
 	require.NoError(t, err)
@@ -38,6 +45,13 @@ func TestLogging(t *testing.T) {
 	// Do disclosure session
 	request = getDisclosureRequest(attrid)
 	sessionHelper(t, request, "verification", client)
+	logs, err = client.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.True(t, len(logs) == oldLogLength+2)
+
+	// Check whether log entry for disclosing session is actually stored
+	require.Nil(t, client.Close())
+	client, _ = parseExistingStorage(t)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
@@ -66,6 +80,14 @@ func TestLogging(t *testing.T) {
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)
+
+	// Check whether log entry for signature session is actually stored
+	require.Nil(t, client.Close())
+	client, _ = parseExistingStorage(t)
+	logs, err = client.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.True(t, len(logs) == oldLogLength+3)
+
 	entry = logs[0]
 	require.NotNil(t, entry)
 	require.NoError(t, err)
