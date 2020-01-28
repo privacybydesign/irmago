@@ -85,7 +85,6 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
-	fmt.Println("load called")
 	for _, issuer := range conf.Issuers {
 		keyIds, err := conf.PublicKeyIndices(issuer.Identifier())
 		if err != nil {
@@ -111,7 +110,6 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	fmt.Println(string(body))
 	var keys []irma.PublicKeyIdentifier
 	err = json.Unmarshal(body, &keys)
 	if err != nil {
