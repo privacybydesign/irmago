@@ -2,7 +2,6 @@ package keyshareServerCore
 
 import (
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ var (
 	ErrUserAlreadyExists = errors.New("Cannot create user, username already taken")
 	ErrUserNotFound      = errors.New("Could not find specified user")
 	ErrInvalidData       = errors.New("Invalid user datastructure passed")
+	ErrInvalidRecord     = errors.New("Invalid record in database")
 )
 
 type KeyshareDB interface {
@@ -137,8 +137,7 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 }
 
 func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) error {
-	ep := base64.StdEncoding.EncodeToString(user.Coredata[:])
-	res, err := db.db.Exec("INSERT INTO irma.users (username, coredata) VALUES (?, ?)", user.Username, ep)
+	res, err := db.db.Exec("INSERT INTO irma.users (username, coredata, pinCounter, pinBlockDate) VALUES ($1, $2, 0, 0);", user.Username, user.Coredata[:])
 	if err != nil {
 		return err
 	}
@@ -153,7 +152,7 @@ func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) error {
 }
 
 func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) {
-	rows, err := db.db.Query("SELECT id, username, coredata FROM irma.users WHERE username = ?", username)
+	rows, err := db.db.Query("SELECT id, username, coredata FROM irma.users WHERE username = $1", username)
 	if err != nil {
 		return nil, err
 	}
@@ -162,17 +161,13 @@ func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) 
 		return nil, ErrUserNotFound
 	}
 	var result keysharePostgresUser
-	var epEnc string
-	err = rows.Scan(&result.id, &result.Username, epEnc)
-	if err != nil {
-		return nil, err
-	}
-	ep, err := base64.StdEncoding.DecodeString(epEnc)
+	var ep []byte
+	err = rows.Scan(&result.id, &result.Username, &ep)
 	if err != nil {
 		return nil, err
 	}
 	if len(ep) != len(result.Coredata[:]) {
-		return nil, ErrInvalidData
+		return nil, ErrInvalidRecord
 	}
 	copy(result.Coredata[:], ep)
 	return &result, nil
@@ -183,8 +178,7 @@ func (db *keysharePostgresDatabase) UpdateUser(user KeyshareUser) error {
 	if !ok {
 		return ErrInvalidData
 	}
-	ep := base64.StdEncoding.EncodeToString(userdata.Coredata[:])
-	res, err := db.db.Exec("UPDATE irma.users SET username=?, coredata=? WHERE id=?", userdata.Username, ep, userdata.id)
+	res, err := db.db.Exec("UPDATE irma.users SET username=$1, coredata=$2 WHERE id=$3", userdata.Username, userdata.Coredata, userdata.id)
 	if err != nil {
 		return err
 	}
@@ -210,14 +204,14 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	uprows, err := db.db.Query(`
 		UPDATE irma.users
 		SET pinCounter = pinCounter+1,
-			pinBlockDate = ?+?*2^MIN(0, pinCounter-?)
-		WHERE id=?, pinBlockDate<=?
+			pinBlockDate = $1+$2*2^GREATEST(0, pinCounter-$3)
+		WHERE id=$4 AND pinBlockDate<=$5
 		RETURNING pinCounter, pinBlockDate`,
-		time.Now().Unix()/1000000000-1-BACKOFF_START, // Grace time of 2 seconds on pinBlockDate set
+		time.Now().Unix()-1-BACKOFF_START, // Grace time of 2 seconds on pinBlockDate set
 		BACKOFF_START,
 		MAX_PIN_TRIES-2,
 		userdata.id,
-		time.Now().Unix()/1000000000)
+		time.Now().Unix())
 	if err != nil {
 		return false, 0, 0, err
 	}
@@ -227,7 +221,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	if !uprows.Next() {
 		// if no, then account either does not exist (which would be weird here) or is blocked
 		// so request wait timeout
-		pinrows, err := db.db.Query("SELECT pinBlockDate FROM irma.users WHERE id=?", userdata.id)
+		pinrows, err := db.db.Query("SELECT pinBlockDate FROM irma.users WHERE id=$1", userdata.id)
 		if err != nil {
 			return false, 0, 0, err
 		}
@@ -240,7 +234,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 		if err != nil {
 			return false, 0, 0, err
 		}
-		return false, 0, wait - time.Now().Unix()/1000000000, nil
+		return false, 0, wait - time.Now().Unix(), nil
 	}
 
 	// Pin check is allowed (implied since there is a result, so pinBlockDate <= now)
@@ -255,7 +249,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	if tries < 0 {
 		tries = 0
 	}
-	return true, tries, wait - time.Now().Unix()/1000000000, nil
+	return true, tries, wait - time.Now().Unix(), nil
 }
 
 func (db *keysharePostgresDatabase) ClearPincheck(user KeyshareUser) error {
@@ -263,7 +257,7 @@ func (db *keysharePostgresDatabase) ClearPincheck(user KeyshareUser) error {
 	if !ok {
 		return ErrInvalidData
 	}
-	res, err := db.db.Exec("UPDATE irma.users SET pinCounter=0, pinBlockDate=0 WHERE id=?", userdata.id)
+	res, err := db.db.Exec("UPDATE irma.users SET pinCounter=0, pinBlockDate=0 WHERE id=$1", userdata.id)
 	if err != nil {
 		return err
 	}
