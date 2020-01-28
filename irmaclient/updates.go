@@ -2,8 +2,9 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"github.com/privacybydesign/gabi"
 	"time"
+
+	"github.com/privacybydesign/gabi"
 
 	"github.com/privacybydesign/irmago"
 )
@@ -50,7 +51,7 @@ var clientUpdates = []func(client *Client) error{
 		}
 
 		// Open one bolt transaction to process all our log entries in
-		err = client.storage.DoStoreTransaction(func(tx *transaction) error {
+		err = client.storage.Transaction(func(tx *transaction) error {
 			for _, log := range logs {
 				// As log.Request is a json.RawMessage it would not get updated to the new session request
 				// format by re-marshaling the containing struct, as normal struct members would,
@@ -119,7 +120,7 @@ var clientUpdates = []func(client *Client) error{
 			return err
 		}
 
-		return client.storage.DoStoreTransaction(func(tx *transaction) error {
+		return client.storage.Transaction(func(tx *transaction) error {
 			if err = client.storage.TxStoreSecretKey(tx, sk); err != nil {
 				return err
 			}

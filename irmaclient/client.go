@@ -254,7 +254,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		client.credentialsCache[id][counter] = cred
 	}
 
-	return client.storage.DoStoreTransaction(func(tx *transaction) error {
+	return client.storage.Transaction(func(tx *transaction) error {
 		if err = client.storage.TxStoreSignature(tx, cred); err != nil {
 			return err
 		}
@@ -284,7 +284,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeL
 	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
 	removed[id] = attrs.Strings()
 
-	err := client.storage.DoStoreTransaction(func(tx *transaction) error {
+	err := client.storage.Transaction(func(tx *transaction) error {
 		if err := client.storage.TxDeleteSignature(tx, attrs); err != nil {
 			return err
 		}
@@ -349,7 +349,7 @@ func (client *Client) RemoveAllCredentials() error {
 		Removed: removed,
 	}
 
-	return client.storage.DoStoreTransaction(func(tx *transaction) error {
+	return client.storage.Transaction(func(tx *transaction) error {
 		if err := client.storage.TxDeleteAllAttributes(tx); err != nil {
 			return err
 		}
