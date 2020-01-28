@@ -3,9 +3,10 @@ package irmaclient
 import (
 	"encoding/binary"
 	"encoding/json"
-	"github.com/go-errors/errors"
 	"path/filepath"
 	"time"
+
+	"github.com/go-errors/errors"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
@@ -107,7 +108,7 @@ func (s *storage) load(bucketName string, key string, dest interface{}) (found b
 	return
 }
 
-func (s *storage) DoStoreTransaction(f func(*transaction) error) error {
+func (s *storage) Transaction(f func(*transaction) error) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		return f(&transaction{tx})
 	})
@@ -135,7 +136,7 @@ func (s *storage) TxStoreCLSignature(tx *transaction, credHash string, sig *gabi
 }
 
 func (s *storage) StoreSecretKey(sk *secretKey) error {
-	return s.DoStoreTransaction(func(tx *transaction) error {
+	return s.Transaction(func(tx *transaction) error {
 		return s.TxStoreSecretKey(tx, sk)
 	})
 }
@@ -145,7 +146,7 @@ func (s *storage) TxStoreSecretKey(tx *transaction, sk *secretKey) error {
 }
 
 func (s *storage) StoreAttributes(credTypeID irma.CredentialTypeIdentifier, attrlistlist []*irma.AttributeList) error {
-	return s.DoStoreTransaction(func(tx *transaction) error {
+	return s.Transaction(func(tx *transaction) error {
 		return s.TxStoreAttributes(tx, credTypeID, attrlistlist)
 	})
 }
@@ -165,7 +166,7 @@ func (s *storage) TxDeleteAllAttributes(tx *transaction) error {
 }
 
 func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
-	return s.DoStoreTransaction(func(tx *transaction) error {
+	return s.Transaction(func(tx *transaction) error {
 		return s.TxStoreKeyshareServers(tx, keyshareServers)
 	})
 }
@@ -203,7 +204,7 @@ func (s *storage) logEntryKeyToBytes(id uint64) []byte {
 }
 
 func (s *storage) StorePreferences(prefs Preferences) error {
-	return s.DoStoreTransaction(func(tx *transaction) error {
+	return s.Transaction(func(tx *transaction) error {
 		return s.TxStorePreferences(tx, prefs)
 	})
 }
@@ -213,7 +214,7 @@ func (s *storage) TxStorePreferences(tx *transaction, prefs Preferences) error {
 }
 
 func (s *storage) StoreUpdates(updates []update) (err error) {
-	return s.DoStoreTransaction(func(tx *transaction) error {
+	return s.Transaction(func(tx *transaction) error {
 		return s.TxStoreUpdates(tx, updates)
 	})
 }
