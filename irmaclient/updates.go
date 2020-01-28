@@ -46,8 +46,11 @@ var clientUpdates = []func(client *Client) error{
 	func(client *Client) error {
 		var logs []*LogEntry
 		var err error
+
+		// If loading logs fails, the logs file is likely empty and then there are no log entries to update
+		// Therefore throw away the error and mark the update as successful.
 		if err = client.storage.load(&logs, logsFile); err != nil {
-			return err
+			return nil
 		}
 		// Open one bolt transaction to process all our log entries in
 		err = client.storage.db.Update(func(tx *bbolt.Tx) error {
