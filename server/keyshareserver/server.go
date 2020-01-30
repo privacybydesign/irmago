@@ -1,4 +1,4 @@
-package keyshareServerCore
+package keyshareserver
 
 import (
 	"crypto/rand"
@@ -15,7 +15,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
 
-	"github.com/privacybydesign/irmago/keyshareCore"
+	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 
@@ -31,7 +31,7 @@ type SessionData struct {
 type Server struct {
 	conf *Configuration
 
-	core          *keyshareCore.KeyshareCore
+	core          *keysharecore.KeyshareCore
 	sessionserver *irmaserver.Server
 	db            KeyshareDB
 
@@ -289,7 +289,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jwtt, err := s.core.ValidatePin(user.Data().Coredata, msg.Pin, msg.Username)
-	if err == keyshareCore.ErrInvalidPin {
+	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
 		} else {
@@ -352,7 +352,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user.Data().Coredata, err = s.core.ChangePin(user.Data().Coredata, msg.OldPin, msg.NewPin)
-	if err == keyshareCore.ErrInvalidPin {
+	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
 		} else {

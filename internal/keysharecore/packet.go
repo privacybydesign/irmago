@@ -1,4 +1,4 @@
-package keyshareCore
+package keysharecore
 
 import (
 	"crypto/aes"

@@ -1,4 +1,4 @@
-package keyshareServerCore
+package keyshareserver
 
 import (
 	"database/sql"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/privacybydesign/irmago/keyshareCore"
+	"github.com/privacybydesign/irmago/internal/keysharecore"
 
 	_ "github.com/jackc/pgx/stdlib"
 )
@@ -36,12 +36,12 @@ type KeyshareUser interface {
 
 type KeyshareUserData struct {
 	Username string
-	Coredata keyshareCore.EncryptedKeysharePacket
+	Coredata keysharecore.EncryptedKeysharePacket
 }
 
 type keyshareMemoryDB struct {
 	lock  sync.Mutex
-	users map[string]keyshareCore.EncryptedKeysharePacket
+	users map[string]keysharecore.EncryptedKeysharePacket
 }
 
 type keyshareMemoryUser struct {
@@ -53,7 +53,7 @@ func (m *keyshareMemoryUser) Data() *KeyshareUserData {
 }
 
 func NewMemoryDatabase() KeyshareDB {
-	return &keyshareMemoryDB{users: map[string]keyshareCore.EncryptedKeysharePacket{}}
+	return &keyshareMemoryDB{users: map[string]keysharecore.EncryptedKeysharePacket{}}
 }
 
 func (db *keyshareMemoryDB) User(username string) (KeyshareUser, error) {
