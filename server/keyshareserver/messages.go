@@ -1,4 +1,4 @@
-package keyshareServerCore
+package keyshareserver
 
 import (
 	"github.com/privacybydesign/gabi"
