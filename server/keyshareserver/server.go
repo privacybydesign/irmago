@@ -127,6 +127,9 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	// Extract username and authorization from request
 	username := r.Header.Get("X-IRMA-Keyshare-Username")
 	authorization := r.Header.Get("Authorization")
+	if strings.HasPrefix(authorization, "Bearer ") {
+		authorization = authorization[7:]
+	}
 
 	user, err := s.db.User(username)
 	if err != nil {
@@ -187,6 +190,9 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	// Extract username and authorization from request
 	username := r.Header.Get("X-IRMA-Keyshare-Username")
 	authorization := r.Header.Get("Authorization")
+	if strings.HasPrefix(authorization, "Bearer ") {
+		authorization = authorization[7:]
+	}
 
 	// Fetch user
 	user, err := s.db.User(username)
@@ -235,6 +241,9 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	// Extract username and authorization from request
 	username := r.Header.Get("X-IRMA-Keyshare-Username")
 	authorization := r.Header.Get("Authorization")
+	if strings.HasPrefix(authorization, "Bearer ") {
+		authorization = authorization[7:]
+	}
 
 	// Fetch user
 	user, err := s.db.User(username)
