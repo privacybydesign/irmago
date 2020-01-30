@@ -618,6 +618,31 @@ func TestRevocationAll(t *testing.T) {
 	})
 }
 
+func TestKeyshareRevocation(t *testing.T) {
+	t.Run("Keyshare", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		startKeyshareServer(t)
+		defer stopKeyshareServer(t)
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+	})
+
+	t.Run("Both", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		startKeyshareServer(t)
+		defer stopKeyshareServer(t)
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+		testRevocation(t, revocationTestAttr, client, handler)
+	})
+}
+
 // Helper functions
 
 func revocationSigRequest() *irma.SignatureRequest {
