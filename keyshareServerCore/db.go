@@ -26,6 +26,8 @@ type KeyshareDB interface {
 	// Reserve returns (allow, tries, wait, error)
 	ReservePincheck(user KeyshareUser) (bool, int, int64, error)
 	ClearPincheck(user KeyshareUser) error
+
+	SetSeen(user KeyshareUser) error
 }
 
 type KeyshareUser interface {
@@ -107,6 +109,10 @@ func (db *keyshareMemoryDB) ReservePincheck(user KeyshareUser) (bool, int, int64
 
 func (db *keyshareMemoryDB) ClearPincheck(user KeyshareUser) error {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
+	return nil
+}
+
+func (db *keyshareMemoryDB) SetSeen(user KeyshareUser) error {
 	return nil
 }
 
@@ -258,6 +264,25 @@ func (db *keysharePostgresDatabase) ClearPincheck(user KeyshareUser) error {
 		return ErrInvalidData
 	}
 	res, err := db.db.Exec("UPDATE irma.users SET pinCounter=0, pinBlockDate=0 WHERE id=$1", userdata.id)
+	if err != nil {
+		return err
+	}
+	c, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if c == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+func (db *keysharePostgresDatabase) SetSeen(user KeyshareUser) error {
+	userdata, ok := user.(*keysharePostgresUser)
+	if !ok {
+		return ErrInvalidData
+	}
+	res, err := db.db.Exec("UPDATE irma.users SET lastSeen = $1 WHERE id = $2", time.Now().Unix(), userdata.id)
 	if err != nil {
 		return err
 	}

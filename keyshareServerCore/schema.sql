@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS irma.users
     id serial PRIMARY KEY,
     username varchar(128),
     coredata bytea,
+    lastSeen bigint,
     pinCounter int,
     pinBlockDate bigint
 );
