@@ -1,4 +1,4 @@
-package keyshareServerCore
+package keyshareserver
 
 import (
 	"encoding/binary"
@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/keyshareCore"
+	"github.com/privacybydesign/irmago/internal/keysharecore"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
@@ -81,18 +81,18 @@ type Configuration struct {
 	Production bool `json:"production" mapstructure:"production"`
 }
 
-func readAESKey(filename string) (uint32, keyshareCore.AesKey, error) {
+func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {
 	keyFile, err := os.Open(filename)
 	if err != nil {
-		return 0, keyshareCore.AesKey{}, err
+		return 0, keysharecore.AesKey{}, err
 	}
 	defer keyFile.Close()
 	keyData, err := ioutil.ReadAll(keyFile)
 	if err != nil {
-		return 0, keyshareCore.AesKey{}, err
+		return 0, keysharecore.AesKey{}, err
 	}
 	if len(keyData) != 32+4 {
-		return 0, keyshareCore.AesKey{}, errors.New("Invalid aes key")
+		return 0, keysharecore.AesKey{}, errors.New("Invalid aes key")
 	}
 	var key [32]byte
 	copy(key[:], keyData[4:36])
@@ -101,7 +101,7 @@ func readAESKey(filename string) (uint32, keyshareCore.AesKey, error) {
 
 // Process a passed configuration to ensure all field values are valid and initialized
 // as required by the rest of this keyshare server component.
-func processConfiguration(conf *Configuration) (*keyshareCore.KeyshareCore, error) {
+func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, error) {
 	// Setup log
 	if conf.Logger == nil {
 		conf.Logger = server.NewLogger(conf.Verbose, conf.Quiet, conf.LogJSON)
@@ -190,8 +190,8 @@ func processConfiguration(conf *Configuration) (*keyshareCore.KeyshareCore, erro
 		conf.ServerConfiguration.DisableTLS = conf.DisableTLS // ensure matching checks
 	}
 
-	// Parse keyshareCore private keys and create a valid keyshare core
-	core := keyshareCore.NewKeyshareCore()
+	// Parse keysharecore private keys and create a valid keyshare core
+	core := keysharecore.NewKeyshareCore()
 	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
 		return nil, server.LogError(errors.Errorf("Missing keyshare server jwt key"))
 	}
