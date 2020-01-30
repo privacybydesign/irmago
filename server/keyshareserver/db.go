@@ -104,7 +104,7 @@ func (db *keyshareMemoryDB) UpdateUser(user KeyshareUser) error {
 
 func (db *keyshareMemoryDB) ReservePincheck(user KeyshareUser) (bool, int, int64, error) {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
-	return false, 1, 0, nil
+	return true, 1, 0, nil
 }
 
 func (db *keyshareMemoryDB) ClearPincheck(user KeyshareUser) error {
