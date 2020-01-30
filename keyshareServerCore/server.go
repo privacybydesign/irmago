@@ -204,6 +204,13 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Indicate activity on user account
+	err = s.db.SetSeen(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not mark user as seen recently")
+		// Do not send to user
+	}
+
 	// Get data from session
 	s.sessionLock.Lock()
 	sessionData, ok := s.sessions[username]
@@ -297,6 +304,14 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 			s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
 			// Do not send to user
 		}
+
+		// Indicate activity on user account
+		err = s.db.SetSeen(user)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not indicate user activity")
+			// Do not send to user
+		}
+
 		server.WriteJson(w, keysharePinStatus{Status: "success", Message: jwtt})
 	}
 }
