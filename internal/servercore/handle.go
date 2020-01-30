@@ -223,30 +223,30 @@ func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *rev
 	return nil, nil
 }
 
-// GET revocation/updatefrom/{credtype}/{pkcounter}/{index}
-func (s *Server) handleGetUpdateFrom(
-	cred irma.CredentialTypeIdentifier, pkcounter uint, index uint64,
-) (*revocation.Update, *irma.RemoteError) {
+// GET revocation/events/{credtype}/{pkcounter}/{from}/{to}
+func (s *Server) handleGetEvents(
+	cred irma.CredentialTypeIdentifier, pkcounter uint, from, to uint64,
+) ([]*revocation.Event, *irma.RemoteError) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	update, err := s.conf.IrmaConfiguration.Revocation.UpdateFrom(cred, pkcounter, index)
+	update, err := s.conf.IrmaConfiguration.Revocation.Events(cred, pkcounter, from, to)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
 	}
 	return update, nil
 }
 
-// GET revocation/updatelatest/{credtype}/{count}
+// GET revocation/update/{credtype}/{count}[/{pkcounter}]
 func (s *Server) handleGetUpdateLatest(
-	cred irma.CredentialTypeIdentifier, count uint64,
+	cred irma.CredentialTypeIdentifier, count uint64, counter *uint,
 ) (map[uint]*revocation.Update, *irma.RemoteError) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	update, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count)
+	update, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count, counter)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
 	}

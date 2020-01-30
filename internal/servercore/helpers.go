@@ -94,7 +94,7 @@ func (session *session) issuanceHandleRevocation(
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
-	updates, err := rs.UpdateLatest(id, 0)
+	updates, err := rs.UpdateLatest(id, 0, &cred.KeyCounter)
 	if err != nil {
 		return nil, err
 	}

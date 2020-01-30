@@ -3,12 +3,14 @@ package irmaclient
 import (
 	"crypto/rand"
 	"encoding/binary"
+
 	"fmt"
 	"math"
 	"sync"
 	"time"
 
 	"github.com/getsentry/raven-go"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
@@ -130,7 +132,10 @@ func (client *Client) nonrevUpdate(id irma.CredentialTypeIdentifier, updates map
 	u := map[uint]*revocation.Update{}
 	for counter, l := range lowest {
 		update := updates[counter]
-		if update != nil && len(update.Events) > 0 && update.Events[0].Index <= l+1 {
+		if updates != nil && (update == nil || len(update.Events) == 0) {
+			return errors.Errorf("missing revocation update for %s-%d", id, counter)
+		}
+		if update != nil && update.Events[0].Index <= l+1 {
 			u[counter] = update
 		} else {
 			var err error
@@ -203,10 +208,7 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 }
 
 func (client *Client) nonrevUpdateFromServer(id irma.CredentialTypeIdentifier) error {
-	if err := client.nonrevUpdate(id, map[uint]*revocation.Update{}); err != nil {
-		return err
-	}
-	return nil
+	return client.nonrevUpdate(id, nil)
 }
 
 func (client *Client) nonrevPrepareCache(id irma.CredentialTypeIdentifier, index int) error {

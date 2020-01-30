@@ -27,7 +27,7 @@ var (
 )
 
 func init() {
-	logger.Level = logrus.ErrorLevel
+	logger.Level = logrus.TraceLevel
 	logger.Formatter = &prefixed.TextFormatter{
 		ForceFormatting: true,
 		ForceColors:     true,

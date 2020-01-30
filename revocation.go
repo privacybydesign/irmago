@@ -3,7 +3,9 @@ package irma
 import (
 	"database/sql/driver"
 	"fmt"
+	"math/bits"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/fxamacker/cbor"
@@ -122,6 +124,8 @@ const (
 	RevocationModeServer RevocationMode = "server"
 )
 
+var ErrRevocationStateNotFound = errors.New("revocation state not found")
+
 // RevocationParameters contains global revocation constants and default values.
 var RevocationParameters = struct {
 	// DefaultUpdateEventCount specifies how many revocation events are attached to session requests
@@ -158,8 +162,12 @@ var RevocationParameters = struct {
 	// if updating is not yet done (in which case the candidate set computed by the client
 	// may contain credentials that were revoked by one of the requestor's update messages).
 	ClientUpdateTimeout uint64
+
+	UpdateMinCount      uint64
+	UpdateMaxCount      uint64
+	UpdateMinCountPower int
+	UpdateMaxCountPower int
 }{
-	DefaultUpdateEventCount:       10,
 	RequestorUpdateInterval:       10,
 	DefaultTolerance:              10 * 60,
 	AccumulatorUpdateInterval:     60,
@@ -167,9 +175,16 @@ var RevocationParameters = struct {
 	ClientUpdateInterval:          10,
 	ClientDefaultUpdateSpeed:      7 * 24,
 	ClientUpdateTimeout:           1000,
+	UpdateMinCountPower:           4,
+	UpdateMaxCountPower:           9,
 }
 
-var ErrRevocationStateNotFound = errors.New("revocation state not found")
+func init() {
+	// compute derived revocation parameters
+	RevocationParameters.UpdateMinCount = 1 << RevocationParameters.UpdateMinCountPower
+	RevocationParameters.UpdateMaxCount = 1 << RevocationParameters.UpdateMaxCountPower
+	RevocationParameters.DefaultUpdateEventCount = RevocationParameters.UpdateMinCount
+}
 
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
 // only way to create such an initial accumulator and it must be called before anyone can use
@@ -202,33 +217,35 @@ func (rs *RevocationStorage) Exists(id CredentialTypeIdentifier, counter uint) (
 
 // Revocation update message methods
 
-// UpdateFrom returns all records that a client requires to update its revocation state if it is currently
-// at the specified index, that is, all records whose end index is greater than or equal to
-// the specified index.
-func (rs *RevocationStorage) UpdateFrom(id CredentialTypeIdentifier, pkcounter uint, index uint64) (*revocation.Update, error) {
+func (rs *RevocationStorage) Events(id CredentialTypeIdentifier, pkcounter uint, from, to uint64) ([]*revocation.Event, error) {
+	if from >= to || from%RevocationParameters.UpdateMinCount != 0 || to%RevocationParameters.UpdateMinCount != 0 {
+		return nil, errors.New("illegal update interval")
+	}
+
 	// Only requires SQL implementation
-	var update *revocation.Update
+	var events []*revocation.Event
 	if err := rs.sqldb.Transaction(func(tx sqlRevStorage) error {
-		acc, err := rs.accumulator(tx, id, pkcounter)
-		if err != nil {
+		var records []*EventRecord
+		if err := tx.Find(&records,
+			"cred_type = ? and pk_counter = ? and eventindex >= ? and eventindex < ?",
+			id, pkcounter, from, to,
+		); err != nil {
 			return err
 		}
-		var events []*EventRecord
-		if err := tx.Find(&events, "cred_type = ? and pk_counter = ? and eventindex >= ?", id, pkcounter, index); err != nil {
-			return err
-		}
-		if acc == nil || len(events) == 0 {
+		if len(records) == 0 {
 			return ErrRevocationStateNotFound
 		}
-		update = rs.newUpdate(acc, events)
+		for _, r := range records {
+			events = append(events, r.Event())
+		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	return update, nil
+	return events, nil
 }
 
-func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uint64) (map[uint]*revocation.Update, error) {
+func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uint64, counter *uint) (map[uint]*revocation.Update, error) {
 	if rs.sqlMode {
 		var update map[uint]*revocation.Update
 		if err := rs.sqldb.Transaction(func(tx sqlRevStorage) error {
@@ -236,11 +253,15 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 				records []*AccumulatorRecord
 				events  []*EventRecord
 			)
-			if err := tx.Last(&records, map[string]interface{}{"cred_type": id}); err != nil {
+			where := map[string]interface{}{"cred_type": id}
+			if counter != nil {
+				where["pk_counter"] = *counter
+			}
+			if err := tx.Last(&records, where); err != nil {
 				return err
 			}
 			if count > 0 {
-				if err := tx.Latest(&events, count, map[string]interface{}{"cred_type": id}); err != nil {
+				if err := tx.Latest(&events, count, where); err != nil {
 					return err
 				}
 			}
@@ -277,17 +298,6 @@ func (*RevocationStorage) newUpdates(records []*AccumulatorRecord, events []*Eve
 		})
 	}
 	return updates
-}
-
-func (rs *RevocationStorage) newUpdate(acc *revocation.SignedAccumulator, events []*EventRecord) *revocation.Update {
-	updates := make([]*revocation.Event, len(events))
-	for i := range events {
-		updates[i] = events[i].Event()
-	}
-	return &revocation.Update{
-		SignedAccumulator: acc,
-		Events:            updates,
-	}
 }
 
 func (rs *RevocationStorage) AddUpdate(id CredentialTypeIdentifier, record *revocation.Update) error {
@@ -561,7 +571,7 @@ func (rs *RevocationStorage) SyncDB(id CredentialTypeIdentifier) error {
 		return errors.New("unknown credential type")
 	}
 
-	updates, err := rs.client.FetchUpdateLatest(id, ct.RevocationUpdateCount)
+	updates, err := rs.client.FetchUpdatesLatest(id, ct.RevocationUpdateCount)
 	if err != nil {
 		return err
 	}
@@ -726,7 +736,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 		if ct == nil {
 			return errors.New("unknown credential type")
 		}
-		params.Updates, err = rs.UpdateLatest(credid, ct.RevocationUpdateCount)
+		params.Updates, err = rs.UpdateLatest(credid, ct.RevocationUpdateCount, nil)
 		if err != nil {
 			return err
 		}
@@ -766,21 +776,74 @@ func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, s
 	)
 }
 
-// FetchRevocationRecords gets revocation update messages from the revocation server, of the specified index and greater.
-func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkcounter uint, index uint64) (*revocation.Update, error) {
+func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkcounter uint, from uint64) (*revocation.Update, error) {
+	// First fetch accumulator + latest few events
+	count := client.Conf.CredentialTypes[id].RevocationUpdateCount
+	update, err := client.FetchUpdateLatest(id, pkcounter, count)
+	if err != nil {
+		return nil, err
+	}
+	pk, err := RevocationKeys{client.Conf}.PublicKey(id.IssuerIdentifier(), pkcounter)
+	if err != nil {
+		return nil, err
+	}
+	acc, err := update.SignedAccumulator.UnmarshalVerify(pk)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch events not included in the response above
+	indices := binaryPartition(from, acc.Index-uint64(len(update.Events)))
+	eventsChan := make(chan []*revocation.Event)
+	var wg sync.WaitGroup
+	var eventsList [][]*revocation.Event
+	for _, i := range indices {
+		wg.Add(1)
+		go func() {
+			var events []*revocation.Event
+			if e := client.getMultiple(
+				client.Conf.CredentialTypes[id].RevocationServers,
+				fmt.Sprintf("revocation/events/%s/%d/%d/%d", id, pkcounter, i[0], i[1]),
+				&events,
+			); e != nil {
+				err = e
+			}
+			eventsChan <- events
+			wg.Done()
+		}()
+	}
+
+	// Gather responses from async GETs above
+	wg.Add(1)
+	go func() {
+		for i := 0; i < len(indices); i++ {
+			e := <-eventsChan
+			eventsList = append(eventsList, e)
+		}
+		wg.Done()
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	wg.Wait()
+	return update, update.Prepend(sortAndFlatten(eventsList))
+}
+
+func (client RevocationClient) FetchUpdateLatest(id CredentialTypeIdentifier, pkcounter uint, count uint64) (*revocation.Update, error) {
 	update := &revocation.Update{}
 	return update, client.getMultiple(
 		client.Conf.CredentialTypes[id].RevocationServers,
-		fmt.Sprintf("revocation/updatefrom/%s/%d/%d", id, pkcounter, index),
+		fmt.Sprintf("revocation/update/%s/%d/%d", id, count, pkcounter),
 		&update,
 	)
 }
 
-func (client RevocationClient) FetchUpdateLatest(id CredentialTypeIdentifier, count uint64) (map[uint]*revocation.Update, error) {
+func (client RevocationClient) FetchUpdatesLatest(id CredentialTypeIdentifier, count uint64) (map[uint]*revocation.Update, error) {
 	update := map[uint]*revocation.Update{}
 	return update, client.getMultiple(
 		client.Conf.CredentialTypes[id].RevocationServers,
-		fmt.Sprintf("revocation/updatelatest/%s/%d", id, count),
+		fmt.Sprintf("revocation/update/%s/%d", id, count),
 		&update,
 	)
 }
@@ -953,4 +1016,36 @@ func (eventHash) GormDataType(dialect gorm.Dialect) string {
 	default:
 		return ""
 	}
+}
+
+func sortAndFlatten(eventslist [][]*revocation.Event) []*revocation.Event {
+	sort.Slice(eventslist, func(i, j int) bool {
+		return eventslist[i][0].Index < eventslist[j][0].Index
+	})
+	var events []*revocation.Event
+	for _, e := range eventslist {
+		events = append(events, e...)
+	}
+	return events
+}
+
+func binaryPartition(from, to uint64) [][2]uint64 {
+	min, max := RevocationParameters.UpdateMinCount, RevocationParameters.UpdateMaxCount
+	start := from / max * max     // round down to nearest multiple of max
+	end := (to + min) / min * min // round up to nearest multiple of min
+
+	pow := bits.Len64(end) - 1
+	if pow > RevocationParameters.UpdateMaxCountPower {
+		pow = RevocationParameters.UpdateMaxCountPower
+	}
+
+	var intervals [][2]uint64
+	for i := start; i < end; {
+		for i+1<<pow > end {
+			pow--
+		}
+		intervals = append(intervals, [2]uint64{i, i + 1<<pow})
+		i += 1 << pow
+	}
+	return intervals
 }

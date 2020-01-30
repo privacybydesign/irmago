@@ -145,7 +145,7 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 }
 
 func ParsePath(path string) (token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile("revocation/(updatefrom|updatelatest|update|issuancerecord)/?(.*)$")
+	rev := regexp.MustCompile("revocation/(events|update|issuancerecord)/?(.*)$")
 	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")
@@ -372,31 +372,52 @@ func (s *Server) handleClientMessage(
 func (s *Server) handleRevocationMessage(
 	noun, method string, args []string, headers map[string][]string, message []byte,
 ) (int, []byte) {
-	if (noun == "updatefrom") && method == http.MethodGet {
-		if len(args) != 3 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET updatefrom expects 3 url arguments"))
-		}
-		i, err := strconv.ParseUint(args[1], 10, 64)
-		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
-		}
-		pkcounter, err := strconv.ParseUint(args[2], 10, 32)
-		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+	if (noun == "events") && method == http.MethodGet {
+		if len(args) != 4 {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET events expects 4 url arguments"))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		return server.BinaryResponse(s.handleGetUpdateFrom(cred, uint(pkcounter), i))
+		pkcounter, err := strconv.ParseUint(args[1], 10, 32)
+		if err != nil {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		i, err := strconv.ParseUint(args[2], 10, 64)
+		if err != nil {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		j, err := strconv.ParseUint(args[3], 10, 64)
+		if err != nil {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		}
+		return server.BinaryResponse(s.handleGetEvents(cred, uint(pkcounter), i, j))
 	}
-	if noun == "updatelatest" && method == http.MethodGet {
-		if len(args) != 2 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET updatelatest expects 2 url arguments"))
+	if noun == "update" && method == http.MethodGet {
+		if len(args) != 2 && len(args) != 3 {
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET update expects 2 or 3 url arguments"))
 		}
 		i, err := strconv.ParseUint(args[1], 10, 64)
 		if err != nil {
 			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
-		return server.BinaryResponse(s.handleGetUpdateLatest(cred, i))
+		var counter *uint
+		if len(args) == 3 {
+			i, err := strconv.ParseUint(args[2], 10, 32)
+			if err != nil {
+				return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			}
+			j := uint(i)
+			counter = &j
+		}
+		updates, rerr := s.handleGetUpdateLatest(cred, i, counter)
+		if rerr != nil {
+			return server.BinaryResponse(nil, rerr)
+		}
+		if counter == nil {
+			return server.BinaryResponse(updates, rerr)
+		} else {
+			return server.BinaryResponse(updates[*counter], rerr)
+		}
 	}
 	if noun == "update" && method == http.MethodPost {
 		if len(args) != 1 {

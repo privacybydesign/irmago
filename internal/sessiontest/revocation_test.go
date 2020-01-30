@@ -318,13 +318,14 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, sacc2, sacc3)
 
-		update, err := rev.UpdateFrom(revocationTestCred, revocationPkCounter, 0)
+		update, err := rev.UpdateLatest(revocationTestCred, 10, &revocationPkCounter)
 		require.NoError(t, err)
 		pk, err := rev.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
-		_, _, err = update.Verify(pk, 0)
+		require.Contains(t, update, revocationPkCounter)
+		_, _, err = update[revocationPkCounter].Verify(pk, 0)
 		require.NoError(t, err)
-		require.Equal(t, 2, len(update.Events))
+		require.Equal(t, 2, len(update[revocationPkCounter].Events))
 	})
 
 	t.Run("DeleteExpiredIssuanceRecords", func(t *testing.T) {
@@ -381,18 +382,19 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, irma.ErrRevocationStateNotFound, err)
 
 		// fetch and verify update message
-		update, err := rev.UpdateFrom(revocationTestCred, revocationPkCounter, 0)
+		update, err := rev.UpdateLatest(revocationTestCred, 10, &revocationPkCounter)
 		require.NoError(t, err)
+		require.Contains(t, update, revocationPkCounter)
 		pk, err := rev.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
-		_, _, err = update.Verify(pk, 0)
+		_, _, err = update[revocationPkCounter].Verify(pk, 0)
 		require.NoError(t, err)
 
 		// check that the events of the update message match our issuance records
-		require.Len(t, update.Events, 4)
-		require.Equal(t, 0, update.Events[0].E.Cmp(big.NewInt(0)))
+		require.Len(t, update[revocationPkCounter].Events, 4)
+		require.Equal(t, 0, update[revocationPkCounter].Events[0].E.Cmp(big.NewInt(0)))
 		for i := 0; i < 3; i++ {
-			require.Equal(t, 0, update.Events[i+1].E.Cmp((*big.Int)(r[i].Attr)))
+			require.Equal(t, 0, update[revocationPkCounter].Events[i+1].E.Cmp((*big.Int)(r[i].Attr)))
 		}
 	})
 
