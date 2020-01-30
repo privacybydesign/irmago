@@ -175,7 +175,7 @@ func startKeyshareSession(
 		ks.keyshareServer = ks.keyshareServers[managerID]
 		transport := irma.NewHTTPTransport(scheme.KeyshareServer, !ks.preferences.DeveloperMode)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
-		transport.SetHeader(kssAuthHeader, "Bearer "+ks.keyshareServer.token)
+		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
 		transport.SetHeader(kssVersionHeader, "2")
 		ks.transports[managerID] = transport
 
