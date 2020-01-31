@@ -20,4 +20,5 @@ func TestConvertingLegacyStorage(t *testing.T) {
 	// TestFreshStorage is not needed, because this test does not use an existing storage
 	t.Run("TestKeyshareEnrollmentRemoval", TestKeyshareEnrollmentRemoval)
 	t.Run("TestUpdatePreferences", TestUpdatePreferences)
+	t.Run("TestUpdatingStorage", TestUpdatingStorage)
 }
