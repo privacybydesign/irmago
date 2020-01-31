@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/stretchr/testify/require"
 )
 
@@ -289,13 +290,40 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
 	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-
 	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
-	_, err := client.Configuration.Download(issuanceRequest)
+
+	serverChan := make(chan *server.SessionResult)
+
+	StartIrmaServer(t, false) // Run a server with old configuration (level is non-optional)
+	_, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+		serverChan <- result
+	})
+	expectedError := &irma.RequiredAttributeMissingError{
+		ErrorType: irma.ErrorRequiredAttributeMissing,
+		Missing: &irma.IrmaIdentifierSet{
+			SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{},
+			Issuers:         map[irma.IssuerIdentifier]struct{}{},
+			CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
+			PublicKeys:      map[irma.IssuerIdentifier][]int{},
+			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
+				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"): struct{}{},
+			},
+		},
+	}
+	require.True(t, reflect.DeepEqual(err, expectedError), "Incorrect missing identifierset")
+	StopIrmaServer()
+
+	StartIrmaServer(t, true) // Run a server with updated configuration (level is optional)
+	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
+	_, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+		serverChan <- result
+	})
+	require.NoError(t, err)
+	StopIrmaServer()
 }
 
 func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
@@ -337,8 +365,9 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 	client, _ := parseStorage(t)
 	request := irma.NewDisclosureRequest(
-		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
-		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
+		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),        // non-existing issuer
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),         // non-existing credential
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"), // non-existing attribute
 	)
 	_, err := client.Configuration.Download(request)
 	require.Error(t, err)
@@ -355,7 +384,9 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 				irma.NewCredentialTypeIdentifier("irma-demo.RU.foo"):  struct{}{},
 				irma.NewCredentialTypeIdentifier("irma-demo.baz.qux"): struct{}{},
 			},
-			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{},
+			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
+				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"): struct{}{},
+			},
 		},
 	}
 	require.True(t, reflect.DeepEqual(expectedErr, err), "Download() returned incorrect missing identifier set")
