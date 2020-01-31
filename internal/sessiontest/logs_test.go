@@ -26,7 +26,7 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+1)
 
 	// Check whether newly issued credential is actually stored
-	require.Nil(t, client.Close())
+	require.NoError(t, client.Close())
 	client, _ = parseExistingStorage(t)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+2)
 
 	// Check whether log entry for disclosing session is actually stored
-	require.Nil(t, client.Close())
+	require.NoError(t, client.Close())
 	client, _ = parseExistingStorage(t)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+3)
 
 	// Check whether log entry for signature session is actually stored
-	require.Nil(t, client.Close())
+	require.NoError(t, client.Close())
 	client, _ = parseExistingStorage(t)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
