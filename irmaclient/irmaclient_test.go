@@ -350,6 +350,17 @@ func TestUpdatePreferences(t *testing.T) {
 	require.Equal(t, false, client.Preferences.EnableCrashReporting)
 }
 
+func TestUpdatingStorage(t *testing.T) {
+	client := parseStorage(t)
+	defer test.ClearTestStorage(t)
+	require.NotNil(t, client)
+
+	// Check whether all update functions succeeded
+	for _, u := range client.updates {
+		require.Equal(t, true, u.Success)
+	}
+}
+
 // ------
 
 type TestClientHandler struct {
