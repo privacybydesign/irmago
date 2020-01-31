@@ -315,11 +315,8 @@ func TestFreshStorage(t *testing.T) {
 	path := filepath.Join(test.FindTestdataFolder(t), "storage", "test")
 	err := fs.EnsureDirectoryExists(path)
 	require.NoError(t, err)
-	client, err := New(
-		filepath.Join("..", "testdata", "storage", "test"),
-		filepath.Join("..", "testdata", "irma_configuration"),
-		&TestClientHandler{t: t},
-	)
+	client := parseExistingStorage(t)
+
 	require.NoError(t, err)
 	require.NotNil(t, client)
 }
@@ -333,12 +330,8 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 
 	err = client.storage.db.Close()
 	require.NoError(t, err)
-	client, err = New(
-		filepath.Join("..", "testdata", "storage", "test"),
-		filepath.Join("..", "testdata", "irma_configuration"),
-		&TestClientHandler{t: t},
-	)
-	require.NoError(t, err)
+	client = parseExistingStorage(t)
+
 	require.NotContains(t, client.keyshareServers, "test")
 }
 
@@ -351,11 +344,8 @@ func TestUpdatePreferences(t *testing.T) {
 
 	err := client.storage.db.Close()
 	require.NoError(t, err)
-	client, err = New(
-		filepath.Join("..", "testdata", "storage", "test"),
-		filepath.Join("..", "testdata", "irma_configuration"),
-		&TestClientHandler{t: t},
-	)
+	client = parseExistingStorage(t)
+
 	require.NoError(t, err)
 	require.Equal(t, false, client.Preferences.EnableCrashReporting)
 }
