@@ -392,7 +392,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// check that the events of the update message match our issuance records
 		require.Len(t, update[revocationPkCounter].Events, 4)
-		require.Equal(t, 0, update[revocationPkCounter].Events[0].E.Cmp(big.NewInt(0)))
+		require.Equal(t, 0, update[revocationPkCounter].Events[0].E.Cmp(big.NewInt(1)))
 		for i := 0; i < 3; i++ {
 			require.Equal(t, 0, update[revocationPkCounter].Events[i+1].E.Cmp((*big.Int)(r[i].Attr)))
 		}
