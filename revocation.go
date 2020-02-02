@@ -217,7 +217,7 @@ func (rs *RevocationStorage) Exists(id CredentialTypeIdentifier, counter uint) (
 
 // Revocation update message methods
 
-func (rs *RevocationStorage) Events(id CredentialTypeIdentifier, pkcounter uint, from, to uint64) ([]*revocation.Event, error) {
+func (rs *RevocationStorage) Events(id CredentialTypeIdentifier, pkcounter uint, from, to uint64) (*revocation.EventList, error) {
 	if from >= to || from%RevocationParameters.UpdateMinCount != 0 || to%RevocationParameters.UpdateMinCount != 0 {
 		return nil, errors.New("illegal update interval")
 	}
@@ -242,7 +242,7 @@ func (rs *RevocationStorage) Events(id CredentialTypeIdentifier, pkcounter uint,
 	}); err != nil {
 		return nil, err
 	}
-	return events, nil
+	return revocation.NewEventList(events...), nil
 }
 
 func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uint64, counter *uint) (map[uint]*revocation.Update, error) {
@@ -310,7 +310,7 @@ func (rs *RevocationStorage) addUpdate(tx sqlRevStorage, id CredentialTypeIdenti
 	if err != nil {
 		return err
 	}
-	if _, _, err = update.Verify(pk, 0); err != nil {
+	if _, err = update.Verify(pk); err != nil {
 		return err
 	}
 
@@ -794,17 +794,17 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 
 	// Fetch events not included in the response above
 	indices := binaryPartition(from, acc.Index-uint64(len(update.Events)))
-	eventsChan := make(chan []*revocation.Event)
+	eventsChan := make(chan *revocation.EventList)
 	var wg sync.WaitGroup
-	var eventsList [][]*revocation.Event
+	var eventsList []*revocation.EventList
 	for _, i := range indices {
 		wg.Add(1)
 		go func() {
-			var events []*revocation.Event
+			events := &revocation.EventList{ComputeProduct: true}
 			if e := client.getMultiple(
 				client.Conf.CredentialTypes[id].RevocationServers,
 				fmt.Sprintf("revocation/events/%s/%d/%d/%d", id, pkcounter, i[0], i[1]),
-				&events,
+				events,
 			); e != nil {
 				err = e
 			}
@@ -826,8 +826,14 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 		return nil, err
 	}
 
+	// Wait for everything to be done
 	wg.Wait()
-	return update, update.Prepend(sortAndFlatten(eventsList))
+
+	el, err := revocation.FlattenEventLists(eventsList)
+	if err != nil {
+		return nil, err
+	}
+	return update, update.Prepend(el)
 }
 
 func (client RevocationClient) FetchUpdateLatest(id CredentialTypeIdentifier, pkcounter uint, count uint64) (*revocation.Update, error) {
@@ -1016,17 +1022,6 @@ func (eventHash) GormDataType(dialect gorm.Dialect) string {
 	default:
 		return ""
 	}
-}
-
-func sortAndFlatten(eventslist [][]*revocation.Event) []*revocation.Event {
-	sort.Slice(eventslist, func(i, j int) bool {
-		return eventslist[i][0].Index < eventslist[j][0].Index
-	})
-	var events []*revocation.Event
-	for _, e := range eventslist {
-		events = append(events, e...)
-	}
-	return events
 }
 
 func binaryPartition(from, to uint64) [][2]uint64 {

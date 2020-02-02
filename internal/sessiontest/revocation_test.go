@@ -323,7 +323,7 @@ func TestRevocationAll(t *testing.T) {
 		pk, err := rev.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
 		require.Contains(t, update, revocationPkCounter)
-		_, _, err = update[revocationPkCounter].Verify(pk, 0)
+		_, err = update[revocationPkCounter].Verify(pk)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(update[revocationPkCounter].Events))
 	})
@@ -387,7 +387,7 @@ func TestRevocationAll(t *testing.T) {
 		require.Contains(t, update, revocationPkCounter)
 		pk, err := rev.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
-		_, _, err = update[revocationPkCounter].Verify(pk, 0)
+		_, err = update[revocationPkCounter].Verify(pk)
 		require.NoError(t, err)
 
 		// check that the events of the update message match our issuance records

@@ -226,16 +226,16 @@ func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *rev
 // GET revocation/events/{credtype}/{pkcounter}/{from}/{to}
 func (s *Server) handleGetEvents(
 	cred irma.CredentialTypeIdentifier, pkcounter uint, from, to uint64,
-) ([]*revocation.Event, *irma.RemoteError) {
+) (*revocation.EventList, *irma.RemoteError) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
-	update, err := s.conf.IrmaConfiguration.Revocation.Events(cred, pkcounter, from, to)
+	events, err := s.conf.IrmaConfiguration.Revocation.Events(cred, pkcounter, from, to)
 	if err != nil {
 		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
 	}
-	return update, nil
+	return events, nil
 }
 
 // GET revocation/update/{credtype}/{count}[/{pkcounter}]
