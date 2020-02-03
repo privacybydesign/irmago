@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -410,6 +411,40 @@ func TestRevocationAll(t *testing.T) {
 		require.True(t, result.Disclosed[0][0].NotRevoked)
 		require.NotNil(t, result.Disclosed[0][0].NotRevokedBefore)
 		require.True(t, result.Disclosed[0][0].NotRevokedBefore.After(irma.Timestamp(start)))
+	})
+
+	t.Run("Cache", func(t *testing.T) {
+		startRevocationServer(t, true)
+		rev := revocationConfiguration.IrmaConfiguration.Revocation
+		sacc, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
+
+		// ensure enough events esists for /events endpoint
+		fakeMultipleRevocations(t, 17, rev, sacc.Accumulator)
+
+		// check /events endpoint
+		url := revocationConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationServers[0] +
+			"/revocation/events/irma-demo.MijnOverheid.root/2/0/16"
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		require.NoError(t, err)
+		res, err := (&http.Client{}).Do(req)
+		require.NoError(t, err)
+		require.Equal(t,
+			fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge),
+			res.Header.Get("Cache-Control"),
+		)
+
+		// check /update endpoint
+		url = revocationConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationServers[0] +
+			"revocation/update/irma-demo.MijnOverheid.root/16"
+		req, err = http.NewRequest(http.MethodGet, url, nil)
+		require.NoError(t, err)
+		res, err = (&http.Client{}).Do(req)
+		require.NoError(t, err)
+		require.Equal(t,
+			fmt.Sprintf("max-age=%d", irma.RevocationParameters.AccumulatorUpdateInterval),
+			res.Header.Get("Cache-Control"),
+		)
 	})
 }
 

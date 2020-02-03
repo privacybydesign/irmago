@@ -1,6 +1,7 @@
 package servercore
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/privacybydesign/gabi"
@@ -226,31 +227,38 @@ func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *rev
 // GET revocation/events/{credtype}/{pkcounter}/{from}/{to}
 func (s *Server) handleGetEvents(
 	cred irma.CredentialTypeIdentifier, pkcounter uint, from, to uint64,
-) (*revocation.EventList, *irma.RemoteError) {
+) (*revocation.EventList, *irma.RemoteError, map[string][]string) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
-		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"), nil
 	}
 	events, err := s.conf.IrmaConfiguration.Revocation.Events(cred, pkcounter, from, to)
 	if err != nil {
-		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
+		return nil, server.RemoteError(server.ErrorRevocation, err.Error()), nil
 	}
-	return events, nil
+	return events, nil, map[string][]string{"Cache-Control": {fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge)}}
 }
 
 // GET revocation/update/{credtype}/{count}[/{pkcounter}]
 func (s *Server) handleGetUpdateLatest(
 	cred irma.CredentialTypeIdentifier, count uint64, counter *uint,
-) (map[uint]*revocation.Update, *irma.RemoteError) {
+) (map[uint]*revocation.Update, *irma.RemoteError, map[string][]string) {
 	if settings := s.conf.RevocationSettings[cred]; settings == nil ||
 		!(settings.Mode == irma.RevocationModeProxy || settings.Mode == irma.RevocationModeServer) {
-		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"), nil
 	}
-	update, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count, counter)
+	updates, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count, counter)
 	if err != nil {
-		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
+		return nil, server.RemoteError(server.ErrorRevocation, err.Error()), nil
 	}
-	return update, nil
+	var mintime int64
+	for _, u := range updates {
+		if u.SignedAccumulator.Accumulator.Time < mintime || mintime == 0 {
+			mintime = u.SignedAccumulator.Accumulator.Time
+		}
+	}
+	maxage := mintime + int64(irma.RevocationParameters.AccumulatorUpdateInterval) - time.Now().Unix()
+	return updates, nil, map[string][]string{"Cache-Control": {fmt.Sprintf("max-age=%d", maxage)}}
 }
 
 // POST revocation/issuancerecord/{credtype}/{keycounter}

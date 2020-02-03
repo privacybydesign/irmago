@@ -164,6 +164,9 @@ var RevocationParameters = struct {
 	// may contain credentials that were revoked by one of the requestor's update messages).
 	ClientUpdateTimeout uint64
 
+	// Cache-control: max-age HTTP return header (in seconds)
+	EventsCacheMaxAge uint64
+
 	UpdateMinCount      uint64
 	UpdateMaxCount      uint64
 	UpdateMinCountPower int
@@ -178,6 +181,7 @@ var RevocationParameters = struct {
 	ClientUpdateTimeout:           1000,
 	UpdateMinCountPower:           4,
 	UpdateMaxCountPower:           9,
+	EventsCacheMaxAge:             60 * 60,
 }
 
 func init() {
@@ -243,12 +247,15 @@ func (rs *RevocationStorage) Events(id CredentialTypeIdentifier, pkcounter uint,
 	}); err != nil {
 		return nil, err
 	}
+	if events[len(events)-1].Index < to-1 {
+		return nil, errors.New("interval end too small")
+	}
 	return revocation.NewEventList(events...), nil
 }
 
 func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uint64, counter *uint) (map[uint]*revocation.Update, error) {
+	var updates map[uint]*revocation.Update
 	if rs.sqlMode {
-		var update map[uint]*revocation.Update
 		if err := rs.sqldb.Transaction(func(tx sqlRevStorage) error {
 			var (
 				records []*AccumulatorRecord
@@ -266,19 +273,29 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 					return err
 				}
 			}
-			update = rs.newUpdates(records, events)
+			updates = rs.newUpdates(records, events)
 			return nil
 		}); err != nil {
 			return nil, err
 		}
-		return update, nil
 	} else {
 		update := rs.memdb.Latest(id, count)
 		if len(update) == 0 {
 			return nil, ErrRevocationStateNotFound
 		}
-		return rs.memdb.Latest(id, count), nil
+		updates = rs.memdb.Latest(id, count)
 	}
+	for k, u := range updates {
+		pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), k)
+		if err != nil {
+			return nil, err
+		}
+		_, err = u.Verify(pk)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return updates, nil
 }
 
 func (*RevocationStorage) newUpdates(records []*AccumulatorRecord, events []*EventRecord) map[uint]*revocation.Update {
@@ -822,12 +839,12 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 		}
 		wg.Done()
 	}()
-	if err != nil {
-		return nil, err
-	}
 
 	// Wait for everything to be done
 	wg.Wait()
+	if err != nil {
+		return nil, err
+	}
 
 	el, err := revocation.FlattenEventLists(eventsList)
 	if err != nil {

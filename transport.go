@@ -161,6 +161,7 @@ func (transport *HTTPTransport) request(
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
+	Logger.Trace("headers: ", res.Header)
 	return res, nil
 }
 

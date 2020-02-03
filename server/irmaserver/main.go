@@ -149,7 +149,12 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			return
 		}
 
-		status, response, result := s.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
+		status, response, headers, result := s.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
+		for key, h := range headers {
+			for _, header := range h {
+				w.Header().Add(key, header)
+			}
+		}
 		w.WriteHeader(status)
 		_, err = w.Write(response)
 		if err != nil {

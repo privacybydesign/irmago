@@ -202,20 +202,20 @@ func (s *Server) HandleProtocolMessage(
 	method string,
 	headers map[string][]string,
 	message []byte,
-) (int, []byte, *server.SessionResult) {
+) (int, []byte, map[string][]string, *server.SessionResult) {
 	var start time.Time
 	if s.conf.Verbose >= 2 {
 		start = time.Now()
-		server.LogRequest("client", method, path, "", http.Header(headers), message)
+		server.LogRequest("client", method, path, "", headers, message)
 	}
 
-	status, output, result := s.handleProtocolMessage(path, method, headers, message)
+	status, output, headers, result := s.handleProtocolMessage(path, method, headers, message)
 
 	if s.conf.Verbose >= 2 {
 		server.LogResponse(status, time.Now().Sub(start), output)
 	}
 
-	return status, output, result
+	return status, output, headers, result
 }
 
 func (s *Server) handleProtocolMessage(
@@ -223,7 +223,7 @@ func (s *Server) handleProtocolMessage(
 	method string,
 	headers map[string][]string,
 	message []byte,
-) (status int, output []byte, result *server.SessionResult) {
+) (status int, output []byte, retheaders map[string][]string, result *server.SessionResult) {
 	// Parse path into session and action
 	if len(path) > 0 { // Remove any starting and trailing slash
 		if path[0] == '/' {
@@ -242,7 +242,7 @@ func (s *Server) handleProtocolMessage(
 	if token != "" {
 		status, output, result = s.handleClientMessage(token, noun, method, headers, message)
 	} else {
-		status, output = s.handleRevocationMessage(noun, method, args, headers, message)
+		status, output, retheaders = s.handleRevocationMessage(noun, method, args, headers, message)
 	}
 	return
 }
@@ -371,76 +371,78 @@ func (s *Server) handleClientMessage(
 
 func (s *Server) handleRevocationMessage(
 	noun, method string, args []string, headers map[string][]string, message []byte,
-) (int, []byte) {
+) (int, []byte, map[string][]string) {
 	if (noun == "events") && method == http.MethodGet {
 		if len(args) != 4 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET events expects 4 url arguments"))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET events expects 4 url arguments"), nil)
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
 		pkcounter, err := strconv.ParseUint(args[1], 10, 32)
 		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
 		}
 		i, err := strconv.ParseUint(args[2], 10, 64)
 		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
 		}
 		j, err := strconv.ParseUint(args[3], 10, 64)
 		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
 		}
 		return server.BinaryResponse(s.handleGetEvents(cred, uint(pkcounter), i, j))
 	}
 	if noun == "update" && method == http.MethodGet {
 		if len(args) != 2 && len(args) != 3 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET update expects 2 or 3 url arguments"))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET update expects 2 or 3 url arguments"), nil)
 		}
 		i, err := strconv.ParseUint(args[1], 10, 64)
 		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
 		var counter *uint
 		if len(args) == 3 {
 			i, err := strconv.ParseUint(args[2], 10, 32)
 			if err != nil {
-				return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+				return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
 			}
 			j := uint(i)
 			counter = &j
 		}
-		updates, rerr := s.handleGetUpdateLatest(cred, i, counter)
+		updates, rerr, headers := s.handleGetUpdateLatest(cred, i, counter)
 		if rerr != nil {
-			return server.BinaryResponse(nil, rerr)
+			return server.BinaryResponse(nil, rerr, nil)
 		}
 		if counter == nil {
-			return server.BinaryResponse(updates, rerr)
+			return server.BinaryResponse(updates, rerr, headers)
 		} else {
-			return server.BinaryResponse(updates[*counter], rerr)
+			return server.BinaryResponse(updates[*counter], rerr, headers)
 		}
 	}
 	if noun == "update" && method == http.MethodPost {
 		if len(args) != 1 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST update expects 1 url argument"))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST update expects 1 url argument"), nil)
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
 		update := &revocation.Update{}
 		if err := irma.UnmarshalValidateBinary(message, update); err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
 		}
-		return server.BinaryResponse(s.handlePostUpdate(cred, update))
+		status, bts := s.handlePostUpdate(cred, update)
+		return server.BinaryResponse(status, bts, nil)
 	}
 	if noun == "issuancerecord" && method == http.MethodPost {
 		if len(args) != 2 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"), nil)
 		}
 		cred := irma.NewCredentialTypeIdentifier(args[0])
 		counter, err := strconv.ParseUint(args[1], 10, 32)
 		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
 		}
-		return server.BinaryResponse(s.handlePostIssuanceRecord(cred, uint(counter), message))
+		status, bts := s.handlePostIssuanceRecord(cred, uint(counter), message)
+		return server.BinaryResponse(status, bts, nil)
 	}
 
-	return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
+	return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""), nil)
 }
