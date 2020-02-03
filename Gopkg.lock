@@ -18,6 +18,14 @@
   version = "v1.0.0"
 
 [[projects]]
+  digest = "1:fc31cd6fc2f965a819bc4e132c2d79bc23faa52cf15886c86cf22a45e46fd599"
+  name = "github.com/bwesterb/go-exptable"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "dd5d262925640ee5ec74905aef1111d3328493a2"
+  version = "v1.0.0"
+
+[[projects]]
   branch = "master"
   digest = "1:e2c5caf65b79d6a5b246690148a6ae89c4bd2cf1af0d8dd2370c5bb4315ef155"
   name = "github.com/bwesterb/go-pow"
@@ -82,6 +90,14 @@
   version = "v1.4.7"
 
 [[projects]]
+  digest = "1:0886f4871903067916897c67caeb787f81c9a155391da901aa25f26802953ec6"
+  name = "github.com/fxamacker/cbor"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6faee5e1f8b6270f9bdcfefbc9bdfa8c026de629"
+  version = "v1.5.0"
+
+[[projects]]
   branch = "master"
   digest = "1:9c6a4ebc26a2b26c5c8d6989296e05713b600e43de296b4dec42d0b464f5d823"
   name = "github.com/getsentry/raven-go"
@@ -115,6 +131,14 @@
   pruneopts = "UT"
   revision = "3afebba5a48dbc89b574d890b6b34d9ee10b4785"
   version = "v1.0.0"
+
+[[projects]]
+  digest = "1:a3af33fd30536d9c5a7b6ad542390919e57c1125097a194c7b3d9904109a0611"
+  name = "github.com/go-sql-driver/mysql"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "17ef3dd9d98b69acec3e85878995ada9533a9370"
+  version = "v1.5.0"
 
 [[projects]]
   branch = "master"
@@ -191,12 +215,45 @@
   revision = "54194c9749d48b073c9aeb2c787b6882e95dd0cd"
 
 [[projects]]
+  digest = "1:860544fe1253cf0f7b9acdf763a0662fd0180a0d30635536efa126544831cd54"
+  name = "github.com/jinzhu/gorm"
+  packages = [
+    ".",
+    "dialects/mysql",
+    "dialects/postgres",
+  ]
+  pruneopts = "UT"
+  revision = "79a77d771dee4e4b60e9c543e8663bbc80466670"
+  version = "v1.9.12"
+
+[[projects]]
+  digest = "1:01ed62f8f4f574d8aff1d88caee113700a2b44c42351943fa73cc1808f736a50"
+  name = "github.com/jinzhu/inflection"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "f5c5f50e6090ae76a29240b61ae2a90dd810112e"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:0a69a1c0db3591fcefb47f115b224592c8dfa4368b7ba9fae509d5e16cdc95c8"
   name = "github.com/konsorten/go-windows-terminal-sequences"
   packages = ["."]
   pruneopts = "UT"
   revision = "5c8c8bd35d3832f5d134ae1e1e375b69a4d25242"
   version = "v1.0.1"
+
+[[projects]]
+  digest = "1:707178a91d4d0a2382ac044a49cdea18959d6f3453a7ed0f8940ac2e48bfb26f"
+  name = "github.com/lib/pq"
+  packages = [
+    ".",
+    "hstore",
+    "oid",
+    "scram",
+  ]
+  pruneopts = "UT"
+  revision = "99274577be97ac9b1d95a2d61d566dc9b7cc6a54"
+  version = "v1.3.0"
 
 [[projects]]
   digest = "1:c568d7727aa262c32bdf8a3f7db83614f7af0ed661474b24588de635c20024c7"
@@ -239,12 +296,44 @@
   revision = "9520e82c474b0a04dd04f8a40959027271bab992"
 
 [[projects]]
+  branch = "master"
+  digest = "1:130cefe87d7eeefc824978dcb78e35672d4c49a11f25c153fbf0cfd952756fa3"
+  name = "github.com/minio/blake2b-simd"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "3f5f724cb5b182a5c278d6d3d55b40e7f8c2efb4"
+
+[[projects]]
+  digest = "1:0d8b29788bd5eef02a1d7cff49bc557d66dccbfe5c386b6422d8a4e4752a5e14"
+  name = "github.com/minio/sha256-simd"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6de4475307716de15b286880ff321c9547086fdd"
+  version = "v0.1.1"
+
+[[projects]]
   digest = "1:53bc4cd4914cd7cd52139990d5170d6dc99067ae31c56530621b18b35fc30318"
   name = "github.com/mitchellh/mapstructure"
   packages = ["."]
   pruneopts = "UT"
   revision = "3536a929edddb9a5b34bd6861dc4a9647cb459fe"
   version = "v1.1.2"
+
+[[projects]]
+  digest = "1:b6299badabd66eaede0651e2eaede106d8298b25564e4a7f23e335471d3e5a35"
+  name = "github.com/mr-tron/base58"
+  packages = ["base58"]
+  pruneopts = "UT"
+  revision = "b1dd383fd2c02d7933db93f157e339f1899b5163"
+  version = "v1.1.3"
+
+[[projects]]
+  digest = "1:d3b9a1b230d8b285202ef8880b9cabe006036c73670b2ba8b8adb0a4c0d75f0c"
+  name = "github.com/multiformats/go-multihash"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "e600087a13c1c46470edc405b00297a2685fe2de"
+  version = "v0.0.11"
 
 [[projects]]
   branch = "master"
@@ -279,16 +368,20 @@
   version = "v1.0.0"
 
 [[projects]]
-  branch = "master"
-  digest = "1:efc4c33449984cda3f7880142fbf35fdc16c7e9c4c27c50a8e77bd055400cceb"
+  branch = "revocation"
+  digest = "1:a9725d11df3f69b1b78aa6b0ba40056a4366639832b87bb4220e09073b484f30"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
     "big",
+    "internal/common",
+    "keyproof",
+    "revocation",
     "safeprime",
+    "signed",
   ]
   pruneopts = "UT"
-  revision = "ce779395f4c98898f21f8c49f71f4b3353995127"
+  revision = "94e593066a2d0aa25732e3242e80e5c78909d111"
 
 [[projects]]
   digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
@@ -297,6 +390,14 @@
   pruneopts = "UT"
   revision = "bcd833dfe83d3cebad139e4a29ed79cb2318bf95"
   version = "v1.2.0"
+
+[[projects]]
+  digest = "1:919bb3aa6d9d0b67648c219fa4925312bc3c2872da19e818fa769e9c97a2b643"
+  name = "github.com/spaolacci/murmur3"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "9f5d223c60793748f04a9d5b4b4eacddfc1f755d"
+  version = "v1.1"
 
 [[projects]]
   digest = "1:d707dbc1330c0ed177d4642d6ae102d5e2c847ebd0eb84562d0dc4f024531cfc"
@@ -395,6 +496,14 @@
   version = "v0.5.2"
 
 [[projects]]
+  digest = "1:93f4c18679de6a3e34b9a3de10c5436e9888b5879ed7de0520749e1eac546bd8"
+  name = "github.com/x448/float16"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "cb9afec31f2649663ebb64da5c6c32c3d365c3ca"
+  version = "v0.8.4"
+
+[[projects]]
   digest = "1:5f7414cf41466d4b4dd7ec52b2cd3e481e08cfd11e7e24fef730c0e483e88bb1"
   name = "go.etcd.io/bbolt"
   packages = ["."]
@@ -404,9 +513,10 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f1bc26f108b7694625d4388dc0bf5c10f5d06ad11e92abff90bfe8b2175b4ee8"
+  digest = "1:2f97a065a2a86843f612b3cdc66c1c1a346867ae998d34959474e71cf2c0ae1c"
   name = "golang.org/x/crypto"
   packages = [
+    "blake2s",
     "ed25519",
     "ed25519/internal/edwards25519",
     "sha3",
@@ -417,9 +527,10 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:3364d01296ce7eeca363e3d530ae63a2092d6f8efb85fb3d101e8f6d7de83452"
+  digest = "1:1da9d2022068957b5a7080b0f94d3d81bdba624a5ce7467912bd6d4330ba2c3f"
   name = "golang.org/x/sys"
   packages = [
+    "cpu",
     "unix",
     "windows",
   ]
@@ -475,18 +586,25 @@
   input-imports = [
     "github.com/bwesterb/go-atum",
     "github.com/dgrijalva/jwt-go",
+    "github.com/fxamacker/cbor",
     "github.com/getsentry/raven-go",
     "github.com/go-chi/chi",
     "github.com/go-chi/chi/middleware",
     "github.com/go-chi/cors",
     "github.com/go-errors/errors",
+    "github.com/hashicorp/go-multierror",
     "github.com/hashicorp/go-retryablehttp",
     "github.com/jasonlvhit/gocron",
+    "github.com/jinzhu/gorm",
+    "github.com/jinzhu/gorm/dialects/mysql",
+    "github.com/jinzhu/gorm/dialects/postgres",
     "github.com/mdp/qrterminal",
     "github.com/mitchellh/mapstructure",
     "github.com/pkg/errors",
     "github.com/privacybydesign/gabi",
     "github.com/privacybydesign/gabi/big",
+    "github.com/privacybydesign/gabi/revocation",
+    "github.com/privacybydesign/gabi/signed",
     "github.com/sirupsen/logrus",
     "github.com/spf13/cast",
     "github.com/spf13/cobra",

@@ -8,8 +8,8 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/keyproof/common"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/antage/eventsource.v1"
 )
@@ -172,7 +172,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.token}).Debug("New session started")
-	nonce := common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabi.DefaultSystemParameters[2048].Lstatzk))
+	nonce := fs.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabi.DefaultSystemParameters[2048].Lstatzk))
 	ses.request.Base().Nonce = nonce
 	ses.request.Base().Context = one
 	s.sessions.add(ses)

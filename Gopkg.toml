@@ -33,7 +33,7 @@
   version = "1.0.0"
 
 [[constraint]]
-  branch = "master"
+  branch = "revocation"
   name = "github.com/privacybydesign/gabi"
 
 [[constraint]]
@@ -61,6 +61,10 @@
 [[constraint]]
   branch = "master"
   name = "github.com/timshannon/bolthold"
+
+[[constraint]]
+  version = "1.3.3"
+  name = "github.com/fxamacker/cbor"
 
 [prune]
   go-tests = true

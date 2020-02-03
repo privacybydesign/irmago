@@ -4,12 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 
 	"github.com/pkg/errors"
+	"github.com/privacybydesign/gabi/big"
 )
 
 // AssertPathExists returns nil only if it has been successfully
@@ -231,4 +233,12 @@ func WalkDir(path string, handler func(string, os.FileInfo) error) error {
 		}
 		return handler(p, info)
 	})
+}
+
+func RandomBigInt(limit *big.Int) *big.Int {
+	res, err := big.RandInt(rand.Reader, limit)
+	if err != nil {
+		panic(fmt.Sprintf("big.RandInt failed: %v", err))
+	}
+	return res
 }

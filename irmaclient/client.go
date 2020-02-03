@@ -14,7 +14,6 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/privacybydesign/keyproof/common"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -339,7 +338,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 
 func generateSecretKey() (*secretKey, error) {
 	return &secretKey{
-		Key: common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[1024].Lm))),
+		Key: fs.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[1024].Lm))),
 	}, nil
 }
 
@@ -844,7 +843,7 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.Session
 
 // generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
 func generateIssuerProofNonce() (*big.Int, error) {
-	return common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[4096].Lstatzk))), nil
+	return fs.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[4096].Lstatzk))), nil
 }
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
