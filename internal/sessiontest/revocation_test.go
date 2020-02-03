@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -252,23 +251,12 @@ func TestRevocationAll(t *testing.T) {
 		client, _ := revocationSetup(t)
 
 		conf := revocationConfiguration.IrmaConfiguration.Revocation
-
-		sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
-		require.NoError(t, err)
-		pk, err := conf.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
-		require.NoError(t, err)
-		update, err := revocation.NewAccumulator(sk)
-		require.NoError(t, err)
-		acc, err := update.SignedAccumulator.UnmarshalVerify(pk)
+		sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 
-		// Advance the accumulator by doing revocations so much that the client will need
-		// to contact the RA to update its witness
-		c := int(revocationConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationUpdateCount)
-		for i := 0; i < c+1; i++ {
-			key := strconv.Itoa(i)
-			fakeRevocation(t, key, conf, acc)
-		}
+		// Advance the accumulator by doing fake revocations so much that the client will need
+		// to contact the RA to update its witness, concurrently fetching a number of event intervals
+		fakeMultipleRevocations(t, 116, conf, sacc.Accumulator)
 
 		result := revocationSession(t, client, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
@@ -485,6 +473,29 @@ func fakeRevocation(t *testing.T, key string, conf *irma.RevocationStorage, acc 
 	sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
 	require.NoError(t, err)
 	*acc = *sacc.Accumulator
+}
+
+func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationStorage, acc *revocation.Accumulator) {
+	sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
+	require.NoError(t, err)
+	events := make([]*revocation.Event, count)
+
+	u, err := conf.UpdateLatest(revocationTestCred, 1, &revocationPkCounter)
+	require.NoError(t, err)
+	require.NotEmpty(t, u[revocationPkCounter].Events)
+	event := u[revocationPkCounter].Events[len(u[revocationPkCounter].Events)-1]
+
+	for i := uint64(0); i < count; i++ {
+		witness, err := revocation.RandomWitness(sk, acc)
+		require.NoError(t, err)
+		acc, event, err = acc.Remove(sk, witness.E, event)
+		require.NoError(t, err)
+		events[i] = event
+	}
+
+	update, err := revocation.NewUpdate(sk, acc, events)
+	require.NoError(t, err)
+	require.NoError(t, conf.AddUpdate(revocationTestCred, update))
 }
 
 func revocationConf(t *testing.T) *server.Configuration {

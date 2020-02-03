@@ -799,7 +799,7 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 	var eventsList []*revocation.EventList
 	for _, i := range indices {
 		wg.Add(1)
-		go func() {
+		go func(i [2]uint64) {
 			events := &revocation.EventList{ComputeProduct: true}
 			if e := client.getMultiple(
 				client.Conf.CredentialTypes[id].RevocationServers,
@@ -810,7 +810,7 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 			}
 			eventsChan <- events
 			wg.Done()
-		}()
+		}(i)
 	}
 
 	// Gather responses from async GETs above
