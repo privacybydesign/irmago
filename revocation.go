@@ -40,6 +40,7 @@ type (
 	// RevocationClient offers an HTTP client to the revocation server endpoints.
 	RevocationClient struct {
 		Conf *Configuration
+		http *HTTPTransport
 	}
 
 	// RevocationKeys contains helper functions for retrieving revocation private and public keys
@@ -756,8 +757,7 @@ func (rs *RevocationStorage) getSettings(id CredentialTypeIdentifier) *Revocatio
 }
 
 func (client RevocationClient) PostUpdate(id CredentialTypeIdentifier, urls []string, update *revocation.Update) {
-	transport := NewHTTPTransport("")
-	transport.Binary = true
+	transport := client.transport()
 	for _, url := range urls {
 		err := transport.Post(fmt.Sprintf("%s/revocation/update/%s", url, id.String()), nil, update)
 		if err != nil {
@@ -771,8 +771,8 @@ func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, s
 	if err != nil {
 		return err
 	}
-	return NewHTTPTransport(url).Post(
-		fmt.Sprintf("revocation/issuancerecord/%s/%d", id, sk.Counter), nil, []byte(message),
+	return client.transport().Post(
+		fmt.Sprintf("%srevocation/issuancerecord/%s/%d", url, id, sk.Counter), nil, []byte(message),
 	)
 }
 
@@ -854,10 +854,10 @@ func (client RevocationClient) FetchUpdatesLatest(id CredentialTypeIdentifier, c
 	)
 }
 
-func (RevocationClient) getMultiple(urls []string, path string, dest interface{}) error {
+func (client RevocationClient) getMultiple(urls []string, path string, dest interface{}) error {
 	var (
 		errs      multierror.Error
-		transport = NewHTTPTransport("")
+		transport = client.transport()
 	)
 	transport.Binary = true
 	for _, url := range urls {
@@ -870,6 +870,14 @@ func (RevocationClient) getMultiple(urls []string, path string, dest interface{}
 		}
 	}
 	return &errs
+}
+
+func (client RevocationClient) transport() *HTTPTransport {
+	if client.http == nil {
+		client.http = NewHTTPTransport("")
+		client.http.Binary = true
+	}
+	return client.http
 }
 
 func (rs RevocationKeys) PrivateKeyLatest(issid IssuerIdentifier) (*revocation.PrivateKey, error) {
