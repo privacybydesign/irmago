@@ -312,9 +312,12 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !applies {
-		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s",
-			server.ToJson(r.Header), string(body))
-		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authorized")
+		if r.Header.Get("Content-Type") != "application/json" {
+			server.WriteError(w, server.ErrorInvalidRequest, "Content-Type is not \"application/json\"")
+			return
+		}
+		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
+		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authenticated")
 		return
 	}
 
