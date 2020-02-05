@@ -5,6 +5,7 @@
 package servercore
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -212,7 +213,11 @@ func (s *Server) HandleProtocolMessage(
 	status, output, headers, result := s.handleProtocolMessage(path, method, headers, message)
 
 	if s.conf.Verbose >= 2 {
-		server.LogResponse(status, time.Now().Sub(start), output)
+		l := output
+		if http.Header(headers).Get("Content-Type") == "application/octet-stream" {
+			l = []byte(hex.EncodeToString(output))
+		}
+		server.LogResponse(status, time.Now().Sub(start), l)
 	}
 
 	return status, output, headers, result

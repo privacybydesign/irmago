@@ -103,6 +103,10 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 
 func BinaryResponse(v interface{}, err *irma.RemoteError, headers map[string][]string) (int, []byte, map[string][]string) {
 	i, b := encodeValOrError(v, err, irma.MarshalBinary)
+	if headers == nil {
+		headers = map[string][]string{}
+	}
+	http.Header(headers).Add("Content-Type", "application/octet-stream")
 	return i, b, headers
 }
 

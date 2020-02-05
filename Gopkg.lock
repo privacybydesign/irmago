@@ -369,7 +369,7 @@
 
 [[projects]]
   branch = "revocation"
-  digest = "1:a9725d11df3f69b1b78aa6b0ba40056a4366639832b87bb4220e09073b484f30"
+  digest = "1:a2b244ff3968b45764b166f666655c2b4b86e2baeccf532869ce658b496b0098"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
@@ -513,7 +513,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:2f97a065a2a86843f612b3cdc66c1c1a346867ae998d34959474e71cf2c0ae1c"
+  digest = "1:1b663e27a14109b9443608321c6630c2b3a6af107362a6add773010cf2c34c36"
   name = "golang.org/x/crypto"
   packages = [
     "blake2s",
@@ -523,7 +523,7 @@
     "ssh/terminal",
   ]
   pruneopts = "UT"
-  revision = "159ae71589f303f9fbfd7528413e0fe944b9c1cb"
+  revision = "c9f3fb736b729628ec1e9c1a6b4313e883f452f9"
 
 [[projects]]
   branch = "master"
