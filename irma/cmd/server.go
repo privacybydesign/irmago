@@ -218,6 +218,7 @@ func configureServer(cmd *cobra.Command) error {
 			Disclosing: handlePermission("disclose-perms"),
 			Signing:    handlePermission("sign-perms"),
 			Issuing:    handlePermission("issue-perms"),
+			Revoking:   handlePermission("revoke_perms"),
 		},
 		ListenAddress:                  viper.GetString("listen-addr"),
 		Port:                           viper.GetInt("port"),

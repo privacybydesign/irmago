@@ -210,10 +210,14 @@ type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
 
 func (n *NonRevocationParameters) UnmarshalJSON(bts []byte) error {
 	var slice []CredentialTypeIdentifier
+	if *n == nil {
+		*n = NonRevocationParameters{}
+	}
 	if err := json.Unmarshal(bts, &slice); err == nil {
 		for _, s := range slice {
 			(*n)[s] = &NonRevocationRequest{}
 		}
+		return nil
 	}
 	return json.Unmarshal(bts, (*map[CredentialTypeIdentifier]*NonRevocationRequest)(n))
 }
@@ -223,7 +227,7 @@ func (n *NonRevocationParameters) MarshalJSON() ([]byte, error) {
 }
 
 func (r *RevocationRequest) Validate() error {
-	if r.LDContext == LDContextRevocationRequest {
+	if r.LDContext != LDContextRevocationRequest {
 		return errors.New("not a revocation request")
 	}
 	return nil

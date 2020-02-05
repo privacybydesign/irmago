@@ -152,12 +152,9 @@ func (conf *Configuration) CanRevoke(requestor string, cred irma.CredentialTypeI
 	if len(permissions) == 0 { // requestor is not present in the permissions
 		return false, ""
 	}
-	sk, err := conf.IrmaConfiguration.PrivateKeyLatest(cred.IssuerIdentifier())
+	_, err := conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(cred.IssuerIdentifier())
 	if err != nil {
 		return false, err.Error()
-	}
-	if sk != nil {
-		return false, "private key not found"
 	}
 	if !contains(permissions, cred.String()) {
 		return false, cred.String()
