@@ -203,6 +203,7 @@ func configureServer(cmd *cobra.Command) error {
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
 			RevocationDBType:      viper.GetString("revocation-db-type"),
 			RevocationDBConnStr:   viper.GetString("revocation-db-str"),
+			RevocationSettings:    map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{},
 			URL:                   viper.GetString("url"),
 			DisableTLS:            viper.GetBool("no-tls"),
 			Email:                 viper.GetString("email"),
@@ -253,6 +254,13 @@ func configureServer(cmd *cobra.Command) error {
 	// Handle requestors
 	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
 		return err
+	}
+	var m map[string]*irma.RevocationSetting
+	if err = handleMapOrString("revocation_settings", &m); err != nil {
+		return err
+	}
+	for i, s := range m {
+		conf.RevocationSettings[irma.NewCredentialTypeIdentifier(i)] = s
 	}
 
 	logger.Debug("Done configuring")

@@ -445,11 +445,11 @@
 
 [[projects]]
   branch = "add-file-key-replacer"
-  digest = "1:27bd3e1223a9cb2b08955a6e9b279b9711c2fa3515d9b97bf03318b222fc1d52"
+  digest = "1:01a78613f3da534357bfd0b1669f1426d5dcf0069c6fa586623de2c43f94836c"
   name = "github.com/spf13/viper"
   packages = ["."]
   pruneopts = "UT"
-  revision = "554683669b21cf5dc84d6ee1a81de1f605a28ff8"
+  revision = "d996804203c71db3e0bf6609bf5a32aa614d1669"
   source = "github.com/sietseringers/viper"
 
 [[projects]]
