@@ -104,32 +104,6 @@ func TestCanIssue(t *testing.T) {
 		require.Empty(t, message)
 	})
 
-	t.Run("allowed credential request issuer wildcard with attribute name", func(t *testing.T) {
-		var conf Configuration
-		require.NoError(t, json.Unmarshal([]byte(confJSON), &conf))
-
-		conf.Requestors["myapp"].Issuing[0] = "irma-demo.*.ageLower"
-
-		credentialRequest := createCredentialRequest("irma-demo.MijnOverheid.ageLower", map[string]string{"over12": "yes"})
-		result, message := conf.CanIssue("myapp", credentialRequest)
-
-		require.False(t, result)
-		require.Equal(t, "irma-demo.MijnOverheid.ageLower", message)
-	})
-
-	t.Run("allowed credential request wrong issuer wildcard", func(t *testing.T) {
-		var conf Configuration
-		require.NoError(t, json.Unmarshal([]byte(confJSON), &conf))
-
-		conf.Requestors["myapp"].Issuing[0] = "irma-demo.**"
-
-		credentialRequest := createCredentialRequest("irma-demo.MijnOverheid.ageLower", map[string]string{"over12": "yes"})
-		result, message := conf.CanIssue("myapp", credentialRequest)
-
-		require.False(t, result)
-		require.Equal(t, "irma-demo.MijnOverheid.ageLower", message)
-	})
-
 	t.Run("allowed credential request single wildcard", func(t *testing.T) {
 		var conf Configuration
 		require.NoError(t, json.Unmarshal([]byte(confJSON), &conf))
@@ -226,14 +200,6 @@ func TestCanVerifyOrSign(t *testing.T) {
 			"myapp",
 			true,
 			"",
-		},
-		{
-			"allowed disclosing request incorrect attribute value wildcard",
-			"irma-demo.MijnOverheid.ageLower.over18",
-			"irma-demo.MijnOverheid.ageLower.**",
-			"myapp",
-			false,
-			"irma-demo.MijnOverheid.ageLower.over18",
 		},
 	}
 
