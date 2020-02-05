@@ -1,15 +1,16 @@
 package sessiontest
 
 import (
+	"testing"
+
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestSessionUsingLegacyStorage(t *testing.T) {
-	test.SetTestStorageDir("legacy_teststorage")
-	defer test.SetTestStorageDir("teststorage")
+	test.SetTestStorageDir("client_legacy")
+	defer test.SetTestStorageDir("client")
 
 	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
@@ -23,7 +24,7 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	sessionHelper(t, getMultipleIssuanceRequest(), "issue", client)
 
 	// Test whether credential is still there
-	idRoot := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	idRoot := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
 	sessionHelper(t, getDisclosureRequest(idRoot), "verification", client)
 
 	// Re-open client

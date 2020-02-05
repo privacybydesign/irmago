@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-errors/errors"
-
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
@@ -140,7 +138,7 @@ type clSignatureWitness struct {
 }
 
 func (s *storage) TxStoreSignature(tx *transaction, cred *credential) error {
-	return s.TxStoreCLSignature(tx, cred.AttributeList().Hash(), &clSignatureWitness{
+	return s.TxStoreCLSignature(tx, cred.attrs.Hash(), &clSignatureWitness{
 		CLSignature: cred.Signature,
 		Witness:     cred.NonRevocationWitness,
 	})

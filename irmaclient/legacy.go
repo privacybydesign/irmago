@@ -57,12 +57,12 @@ func (f *fileStorage) signatureFilename(attrs *irma.AttributeList) string {
 }
 
 func (f *fileStorage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, witness *revocation.Witness, err error) {
-	sigpath := s.signatureFilename(attrs)
-	if err := fs.AssertPathExists(s.path(sigpath)); err != nil {
+	sigpath := f.signatureFilename(attrs)
+	if err := fs.AssertPathExists(f.path(sigpath)); err != nil {
 		return nil, nil, err
 	}
 	sig := &clSignatureWitness{}
-	if err := s.loadFromFile(sig, sigpath); err != nil {
+	if err := f.load(sig, sigpath); err != nil {
 		return nil, nil, err
 	}
 	return sig.CLSignature, sig.Witness, nil

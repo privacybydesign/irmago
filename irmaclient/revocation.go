@@ -199,7 +199,7 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		}(cred)
 	}
 	if save {
-		if err := client.storage.StoreAttributes(client.attributes); err != nil {
+		if err := client.storage.StoreAttributes(id, client.attributes[id]); err != nil {
 			client.reportError(err)
 			return err
 		}

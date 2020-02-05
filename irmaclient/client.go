@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/sirupsen/logrus"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -167,7 +168,7 @@ func New(
 		return nil, err
 	}
 	// Legacy storage does not need ensuring existence
-	cm.fileStorage = fileStorage{storagePath: storagePath, Configuration: cm.Configuration}
+	client.fileStorage = fileStorage{storagePath: storagePath, Configuration: client.Configuration}
 
 	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
 		return nil, err

@@ -324,7 +324,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 			SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{},
 			Issuers:         map[irma.IssuerIdentifier]struct{}{},
 			CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
-			PublicKeys:      map[irma.IssuerIdentifier][]int{},
+			PublicKeys:      map[irma.IssuerIdentifier][]uint{},
 			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
 				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"): struct{}{},
 			},
