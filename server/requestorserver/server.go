@@ -312,8 +312,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !applies {
-		if r.Header.Get("Content-Type") != "application/json" {
-			server.WriteError(w, server.ErrorInvalidRequest, "Content-Type is not \"application/json\"")
+		var ctype = r.Header.Get("Content-Type")
+		if ctype != "application/json" && ctype != "text/plain" {
+			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", ctype)
+			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
 			return
 		}
 		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
