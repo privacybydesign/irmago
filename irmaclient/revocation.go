@@ -175,13 +175,13 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 			save = true
 		}
 		if err == revocation.ErrorRevoked {
+			id := cred.CredentialType().Identifier()
+			hash := cred.attrs.Hash()
+			irma.Logger.Warn("credential %s %s revoked", id, hash)
 			attrs[i].Revoked = true
 			cred.attrs.Revoked = true
 			save = true
-			client.handler.Revoked(&irma.CredentialIdentifier{
-				Type: cred.CredentialType().Identifier(),
-				Hash: cred.attrs.Hash(),
-			})
+			client.handler.Revoked(&irma.CredentialIdentifier{Type: id, Hash: hash})
 			// Even if this credential is revoked during a session, we may have
 			// other instances that can satisfy the request. So don't return an
 			// error which would halt the session.
