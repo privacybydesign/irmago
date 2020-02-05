@@ -203,12 +203,13 @@ func TestCanVerifyOrSign(t *testing.T) {
 		},
 	}
 
-	for _, action := range []string{"disclosing"} {
+	for _, action := range []string{"disclosing", "signing"} {
 		for _, val := range disclosingCases {
 			t.Run(val.description, func(t *testing.T) {
 				var conf Configuration
 				require.NoError(t, json.Unmarshal([]byte(confJSON), &conf))
 				conf.Requestors["myapp"].Disclosing[0] = val.disclosePerm
+				conf.Requestors["myapp"].Signing[0] = val.disclosePerm
 				requestedAttributes := createAttributesConDisCon(val.attributeConDisCon)
 				result, message := conf.CanVerifyOrSign(val.requestorName, irma.Action(action), requestedAttributes)
 
@@ -216,18 +217,5 @@ func TestCanVerifyOrSign(t *testing.T) {
 				require.Equal(t, val.message, message)
 			})
 		}
-	}
-
-	for _, val := range disclosingCases {
-		t.Run(val.description, func(t *testing.T) {
-			var conf Configuration
-			require.NoError(t, json.Unmarshal([]byte(confJSON), &conf))
-			conf.Requestors["myapp"].Signing[0] = val.disclosePerm
-			requestedAttributes := createAttributesConDisCon(val.attributeConDisCon)
-			result, message := conf.CanVerifyOrSign(val.requestorName, irma.Action("signing"), requestedAttributes)
-
-			require.Equal(t, val.result, result)
-			require.Equal(t, val.message, message)
-		})
 	}
 }
