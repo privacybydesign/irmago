@@ -50,7 +50,7 @@ type Configuration struct {
 	// instead of keys in irma_configuration/$issuer/PrivateKeys.
 	PrivateKeys map[IssuerIdentifier]map[uint]*gabi.PrivateKey
 
-	Revocation *RevocationStorage
+	Revocation *RevocationStorage `json:"-"`
 
 	Scheduler *gocron.Scheduler
 
