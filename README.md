@@ -13,16 +13,14 @@ Technical documentation of all components of `irmago` and more can be found at h
 
 ## Installing
 
-    go get -d -u github.com/privacybydesign/irmago
+    git clone https://github.com/privacybydesign/irmago
 
+`irmago` and its subpackages use the official Go modules for their dependencies.
+The `go` command will transparently download dependencies when needed. Make sure
+to place your repository outside your `GOPATH` so Go module support will be
+enabled.
 
-`irmago` and its subpackages uses [`dep`](https://github.com/golang/dep) for its dependencies. After [Installing `dep`](https://golang.github.io/dep/docs/installation.html) if necesssary, run
-
-    cd $GOPATH/src/github.com/privacybydesign/irmago
-    dep ensure
-
-to download and [`vendor`](https://golang.org/cmd/go/#hdr-Vendor_Directories) the correct version of
-each dependency. To install the `irma` command line tool:
+To install the `irma` command line tool:
 
     go install ./irma
 
