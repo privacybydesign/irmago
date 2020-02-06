@@ -876,7 +876,6 @@ func (client RevocationClient) getMultiple(urls []string, path string, dest inte
 		errs      multierror.Error
 		transport = client.transport()
 	)
-	transport.Binary = true
 	for _, url := range urls {
 		transport.Server = url
 		err := transport.Get(path, dest)

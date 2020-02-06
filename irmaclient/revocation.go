@@ -60,8 +60,11 @@ func (client *Client) initRevocation() {
 					break
 				}
 				speed := attrs.CredentialType().RevocationUpdateSpeed * 60 * 60
-				if r < probability(cred.NonRevocationWitness.Updated, speed) {
-					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%d", id, i)
+				p := probability(cred.NonRevocationWitness.Updated, speed)
+				irma.Logger.Tracef("random update: updated, speed, r, p = %s, %d, %.6f, %.6f",
+					cred.NonRevocationWitness.Updated.String(), speed, r, p)
+				if r < p {
+					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%s", id, attrs.Hash())
 					client.jobs <- func() {
 						if err = client.nonrevUpdateFromServer(id); err != nil {
 							client.reportError(err)
@@ -177,7 +180,7 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		if err == revocation.ErrorRevoked {
 			id := cred.CredentialType().Identifier()
 			hash := cred.attrs.Hash()
-			irma.Logger.Warn("credential %s %s revoked", id, hash)
+			irma.Logger.Warnf("credential %s %s revoked", id, hash)
 			attrs[i].Revoked = true
 			cred.attrs.Revoked = true
 			save = true
@@ -212,7 +215,9 @@ func (client *Client) nonrevUpdateFromServer(id irma.CredentialTypeIdentifier) e
 }
 
 func (client *Client) nonrevPrepareCache(id irma.CredentialTypeIdentifier, index int) error {
-	irma.Logger.WithFields(logrus.Fields{"credtype": id, "index": index}).Debug("Preparing cache")
+	logger := irma.Logger.WithFields(logrus.Fields{"credtype": id, "index": index})
+	logger.Debug("preparing cache")
+	defer logger.Debug("Preparing cache done")
 	cred, err := client.credential(id, index)
 	if err != nil {
 		return err
@@ -249,6 +254,9 @@ func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.
 	if err != nil {
 		return false, err
 	}
+	logger := irma.Logger.WithFields(logrus.Fields{"credtype": cred.CredentialType().Identifier(), "hash": cred.attrs.Hash()})
+	logger.Debugf("updating witness")
+	defer logger.Debug("updating witness done")
 	if err = cred.NonRevocationWitness.Update(pk, update); err != nil {
 		return false, err
 	}

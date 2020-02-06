@@ -17,7 +17,10 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/sirupsen/logrus"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 	"github.com/privacybydesign/irmago/internal/fs"
@@ -37,9 +40,14 @@ var Logger *logrus.Logger
 var transportlogger *log.Logger
 
 func init() {
-	if Logger == nil {
-		Logger = logrus.StandardLogger()
-	}
+	Logger = logrus.New()
+	Logger.SetFormatter(&prefixed.TextFormatter{
+		DisableColors:   true,
+		FullTimestamp:   true,
+		TimestampFormat: "15:04:05.000000",
+	})
+	gabi.Logger = Logger
+	revocation.Logger = Logger
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
