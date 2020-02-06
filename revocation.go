@@ -83,7 +83,7 @@ type (
 	}
 
 	EventRecord struct {
-		Index      uint64                   `gorm:"primary_key;column:eventindex"`
+		Index      *uint64                  `gorm:"primary_key;column:eventindex;auto_increment:false"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
 		PKCounter  *uint                    `gorm:"primary_key;auto_increment:false"`
 		E          *RevocationAttribute
@@ -944,7 +944,7 @@ func (rs RevocationKeys) PublicKey(issid IssuerIdentifier, counter uint) (*revoc
 
 func (e *EventRecord) Event() *revocation.Event {
 	return &revocation.Event{
-		Index:      e.Index,
+		Index:      *e.Index,
 		E:          (*big.Int)(e.E),
 		ParentHash: revocation.Hash(e.ParentHash),
 	}
@@ -952,7 +952,7 @@ func (e *EventRecord) Event() *revocation.Event {
 
 func (e *EventRecord) Convert(id CredentialTypeIdentifier, pkcounter uint, event *revocation.Event) *EventRecord {
 	*e = EventRecord{
-		Index:      event.Index,
+		Index:      &event.Index,
 		E:          (*RevocationAttribute)(event.E),
 		ParentHash: eventHash(event.ParentHash),
 		CredType:   id,

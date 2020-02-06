@@ -187,7 +187,7 @@ func TestRevocationAll(t *testing.T) {
 		request := revocationRequest()
 		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
 		events := request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
-		require.Equal(t, uint64(1), events[len(events)-1].Index)
+		require.Equal(t, uint64(0), events[len(events)-1].Index)
 
 		// Construct disclosure proof with nonrevocation proof against accumulator with index 1
 		candidates, missing, err := client.CheckSatisfiability(request)
@@ -198,7 +198,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		pacc, err := disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
 		require.NoError(t, err)
-		require.Equal(t, uint64(1), pacc.Index)
+		require.Equal(t, uint64(0), pacc.Index)
 
 		// Revoke a bogus credential, advancing accumulator index to 2, and update the session request,
 		// indicated that we expect a nonrevocation proof wrt accumulator with index 2
@@ -206,7 +206,7 @@ func TestRevocationAll(t *testing.T) {
 		request.Revocation = irma.NonRevocationParameters{revocationTestCred: {}}
 		require.NoError(t, conf.SetRevocationUpdates(request.Base()))
 		events = request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
-		require.Equal(t, uint64(2), events[len(events)-1].Index)
+		require.Equal(t, uint64(1), events[len(events)-1].Index)
 
 		// Try to verify against updated session request
 		_, status, err := disclosure.Verify(client.Configuration, request)
@@ -219,7 +219,7 @@ func TestRevocationAll(t *testing.T) {
 		newrequest := revocationRequest()
 		require.NoError(t, conf.SetRevocationUpdates(newrequest.Base()))
 		events = newrequest.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
-		require.Equal(t, uint64(3), events[len(events)-1].Index)
+		require.Equal(t, uint64(2), events[len(events)-1].Index)
 
 		// Use newrequest to update client to index 3 and contruct a disclosure proof
 		require.NoError(t, client.NonrevPrepare(newrequest))
@@ -227,11 +227,11 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		pacc, err = disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
 		require.NoError(t, err)
-		require.Equal(t, uint64(3), pacc.Index)
+		require.Equal(t, uint64(2), pacc.Index)
 
 		// Check that the nonrevocation proof which uses a newer accumulator than ours verifies
 		events = request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
-		require.Equal(t, uint64(2), events[len(events)-1].Index)
+		require.Equal(t, uint64(1), events[len(events)-1].Index)
 		_, status, err = disclosure.Verify(client.Configuration, request)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusValid, status)
@@ -289,14 +289,14 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sacc1)
 		require.NotNil(t, sacc1.Accumulator)
-		require.Equal(t, uint64(1), sacc1.Accumulator.Index)
+		require.Equal(t, uint64(0), sacc1.Accumulator.Index)
 
 		fakeRevocation(t, "1", rev, sacc1.Accumulator)
 		sacc2, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.NotNil(t, sacc2)
 		require.NotNil(t, sacc2.Accumulator)
-		require.Equal(t, uint64(2), sacc2.Accumulator.Index)
+		require.Equal(t, uint64(1), sacc2.Accumulator.Index)
 
 		stopRevocationServer()
 		revocationConfiguration = nil
