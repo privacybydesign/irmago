@@ -120,7 +120,7 @@ func (session *session) issuanceHandleRevocation(
 	witness.SignedAccumulator = sig // attach previously selected reocation record to the witness for the client
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
-		PKCounter:  sk.Counter,
+		PKCounter:  &sk.Counter,
 		Key:        cred.RevocationKey,
 		Attr:       (*irma.RevocationAttribute)(witness.E),
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?

@@ -51,10 +51,10 @@ type (
 
 	// RevocationSetting contains revocation settings for a given credential type.
 	RevocationSetting struct {
-		Mode                RevocationMode `json:"mode" mapstructure:"mode"`
-		PostURLs            []string       `json:"post_urls" mapstructure:"post_urls"`
-		RevocationServerURL string         `json:"revocation_server_url" mapstructure:"revocation_server_url"`
-		Tolerance           uint64         `json:"tolerance" mapstructure:"tolerance"` // in seconds, min 30
+		Mode                RevocationMode `json:"mode,omitempty" mapstructure:"mode"`
+		PostURLs            []string       `json:"post_urls,omitempty" mapstructure:"post_urls"`
+		RevocationServerURL string         `json:"revocation_server_url,omitempty" mapstructure:"revocation_server_url"`
+		Tolerance           uint64         `json:"tolerance,omitempty" mapstructure:"tolerance"` // in seconds, min 30
 
 		// set to now whenever a new update is received, or when the RA indicates
 		// there are no new updates. Thus it specifies up to what time our nonrevocation
@@ -79,13 +79,13 @@ type (
 	AccumulatorRecord struct {
 		CredType  CredentialTypeIdentifier `gorm:"primary_key"`
 		Data      signedMessage
-		PKCounter uint `gorm:"primary_key;auto_increment:false"`
+		PKCounter *uint `gorm:"primary_key;auto_increment:false"`
 	}
 
 	EventRecord struct {
 		Index      uint64                   `gorm:"primary_key;column:eventindex"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
-		PKCounter  uint                     `gorm:"primary_key;auto_increment:false"`
+		PKCounter  *uint                    `gorm:"primary_key;auto_increment:false"`
 		E          *RevocationAttribute
 		ParentHash eventHash
 	}
@@ -95,7 +95,7 @@ type (
 		Key        string                   `gorm:"primary_key;column:revocationkey"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
 		Issued     int64                    `gorm:"primary_key;auto_increment:false"`
-		PKCounter  uint
+		PKCounter  *uint
 		Attr       *RevocationAttribute
 		ValidUntil int64
 		RevokedAt  int64 `json:",omitempty"` // 0 if not currently revoked
@@ -300,10 +300,10 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 func (*RevocationStorage) newUpdates(records []*AccumulatorRecord, events []*EventRecord) map[uint]*revocation.Update {
 	updates := make(map[uint]*revocation.Update, len(records))
 	for _, r := range records {
-		updates[r.PKCounter] = &revocation.Update{SignedAccumulator: r.SignedAccumulator()}
+		updates[*r.PKCounter] = &revocation.Update{SignedAccumulator: r.SignedAccumulator()}
 	}
 	for _, e := range events {
-		update := updates[e.PKCounter]
+		update := updates[*e.PKCounter]
 		if update == nil {
 			continue
 		}
@@ -406,13 +406,13 @@ func (rs *RevocationStorage) revoke(tx sqlRevStorage, id CredentialTypeIdentifie
 
 	// For each issuance record, perform revocation, adding an Event and advancing the accumulator
 	for _, issrecord := range issrecords {
-		e := events[issrecord.PKCounter]
-		newacc, event, err := rs.revokeCredential(tx, issrecord, accs[issrecord.PKCounter], e[len(e)-1])
-		accs[issrecord.PKCounter] = newacc
+		e := events[*issrecord.PKCounter]
+		newacc, event, err := rs.revokeCredential(tx, issrecord, accs[*issrecord.PKCounter], e[len(e)-1])
+		accs[*issrecord.PKCounter] = newacc
 		if err != nil {
 			return err
 		}
-		events[issrecord.PKCounter] = append(e, event)
+		events[*issrecord.PKCounter] = append(e, event)
 	}
 
 	// Gather accumulators and update events per key counter into revocation updates,
@@ -443,7 +443,7 @@ func (rs *RevocationStorage) revokeReadRecords(
 	// gather all keys used in the issuance requests
 	var keycounters []uint
 	for _, issrecord := range issrecords {
-		keycounters = append(keycounters, issrecord.PKCounter)
+		keycounters = append(keycounters, *issrecord.PKCounter)
 	}
 
 	// get all relevant accumulators from the database
@@ -470,13 +470,13 @@ func (rs *RevocationStorage) revokeReadRecords(
 		if err != nil {
 			return nil, nil, err
 		}
-		accs[r.PKCounter], err = sacc.UnmarshalVerify(pk)
+		accs[*r.PKCounter], err = sacc.UnmarshalVerify(pk)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 	for _, e := range eventrecords {
-		events[e.PKCounter] = append(events[e.PKCounter], e.Event())
+		events[*e.PKCounter] = append(events[*e.PKCounter], e.Event())
 	}
 	return accs, events, nil
 }
@@ -491,7 +491,7 @@ func (rs *RevocationStorage) revokeCredential(
 	if err := tx.Save(&issrecord); err != nil {
 		return nil, nil, err
 	}
-	sk, err := rs.Keys.PrivateKey(issrecord.CredType.IssuerIdentifier(), issrecord.PKCounter)
+	sk, err := rs.Keys.PrivateKey(issrecord.CredType.IssuerIdentifier(), *issrecord.PKCounter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -549,11 +549,11 @@ func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdenti
 			return err
 		}
 		for _, r := range records {
-			pk, err := rs.Keys.PublicKey(r.CredType.IssuerIdentifier(), r.PKCounter)
+			pk, err := rs.Keys.PublicKey(r.CredType.IssuerIdentifier(), *r.PKCounter)
 			if err != nil {
 				return err
 			}
-			sk, err := rs.Keys.PrivateKey(r.CredType.IssuerIdentifier(), r.PKCounter)
+			sk, err := rs.Keys.PrivateKey(r.CredType.IssuerIdentifier(), *r.PKCounter)
 			if err != nil {
 				return err
 			}
@@ -956,14 +956,14 @@ func (e *EventRecord) Convert(id CredentialTypeIdentifier, pkcounter uint, event
 		E:          (*RevocationAttribute)(event.E),
 		ParentHash: eventHash(event.ParentHash),
 		CredType:   id,
-		PKCounter:  pkcounter,
+		PKCounter:  &pkcounter,
 	}
 	return e
 }
 
 func (a *AccumulatorRecord) SignedAccumulator() *revocation.SignedAccumulator {
 	return &revocation.SignedAccumulator{
-		PKCounter: a.PKCounter,
+		PKCounter: *a.PKCounter,
 		Data:      signed.Message(a.Data),
 	}
 }
@@ -971,7 +971,7 @@ func (a *AccumulatorRecord) SignedAccumulator() *revocation.SignedAccumulator {
 func (a *AccumulatorRecord) Convert(id CredentialTypeIdentifier, sacc *revocation.SignedAccumulator) *AccumulatorRecord {
 	*a = AccumulatorRecord{
 		Data:      signedMessage(sacc.Data),
-		PKCounter: sacc.PKCounter,
+		PKCounter: &sacc.PKCounter,
 		CredType:  id,
 	}
 	return a
