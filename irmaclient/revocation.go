@@ -248,7 +248,7 @@ func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
 // nonrevApplyUpdates updates the credential's nonrevocation witness using the specified messages,
 // if they all verify and if their indices are ahead and adjacent to that of our witness.
 func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.RevocationKeys) (bool, error) {
-	oldindex := cred.NonRevocationWitness.SignedAccumulator.Accumulator.Index
+	t := cred.NonRevocationWitness.SignedAccumulator.Accumulator.Time
 
 	pk, err := keys.PublicKey(cred.CredentialType().IssuerIdentifier(), update.SignedAccumulator.PKCounter)
 	if err != nil {
@@ -261,7 +261,7 @@ func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.
 		return false, err
 	}
 
-	return cred.NonRevocationWitness.SignedAccumulator.Accumulator.Index != oldindex, nil
+	return cred.NonRevocationWitness.SignedAccumulator.Accumulator.Time != t, nil
 }
 
 // probability returns a float between 0 and asymptote, representing a probability
