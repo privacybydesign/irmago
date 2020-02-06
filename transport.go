@@ -199,7 +199,11 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 				return &SessionError{ErrorType: ErrorSerialization, Err: err}
 			}
 			transport.log("body", string(marshaled), transport.Binary)
-			contenttype = "application/json; charset=UTF-8"
+			if transport.Binary {
+				contenttype = "application/octet-stream"
+			} else {
+				contenttype = "application/json; charset=UTF-8"
+			}
 			reader = bytes.NewBuffer(marshaled)
 		}
 	}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -294,7 +295,11 @@ func LogRequest(typ, method, url, from string, headers http.Header, message []by
 		fields["headers"] = headers
 	}
 	if len(message) > 0 {
-		fields["message"] = string(message)
+		if headers.Get("Content-Type") == "application/octet-stream" {
+			fields["message"] = hex.EncodeToString(message)
+		} else {
+			fields["message"] = string(message)
+		}
 	}
 	if from != "" {
 		fields["from"] = from
