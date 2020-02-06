@@ -170,10 +170,7 @@ func (conf *Configuration) initialize() error {
 	if conf.DisableRequestorAuthentication {
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
 		conf.Logger.Warn("Authentication of incoming session requests disabled: anyone who can reach this server can use it")
-		havekeys, err := conf.HavePrivateKeys()
-		if err != nil {
-			return err
-		}
+		havekeys := conf.HavePrivateKeys()
 		if len(conf.Permissions.Issuing) > 0 && havekeys {
 			if conf.separateClientServer() || !conf.Production {
 				conf.Logger.Warn("Issuance enabled and private keys installed: anyone who can reach this server can use it to issue attributes")

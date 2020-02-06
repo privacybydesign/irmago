@@ -91,19 +91,14 @@ func (conf *Configuration) Check() error {
 	return nil
 }
 
-func (conf *Configuration) HavePrivateKeys() (bool, error) {
+func (conf *Configuration) HavePrivateKeys() bool {
 	var err error
-	var sk *gabi.PrivateKey
 	for id := range conf.IrmaConfiguration.Issuers {
-		sk, err = conf.IrmaConfiguration.PrivateKeyLatest(id)
-		if err != nil {
-			return false, err
-		}
-		if sk != nil {
-			return true, nil
+		if _, err = conf.IrmaConfiguration.PrivateKeyLatest(id); err == nil {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // helpers
