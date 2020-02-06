@@ -37,8 +37,6 @@ require (
 	github.com/pkg/errors v0.8.0
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/privacybydesign/gabi v0.0.0-20190503104928-ce779395f4c9
-	github.com/sietseringers/pflag v1.0.4-0.20190111213756-a45bfec10d59
-	github.com/sietseringers/viper v1.0.1-0.20190113114857-554683669b21
 	github.com/sirupsen/logrus v1.2.0
 	github.com/spf13/afero v1.2.0
 	github.com/spf13/cast v1.3.0
@@ -58,6 +56,6 @@ require (
 	rsc.io/qr v0.2.0
 )
 
-replace github.com/spf13/pflag a45bfec10d5967283b482dc135e35e339406c5f9 => github.com/sietseringers/pflag v1.0.4-0.20190111213756-a45bfec10d59
+replace github.com/spf13/pflag => github.com/sietseringers/pflag v1.0.4-0.20190111213756-a45bfec10d59
 
-replace github.com/spf13/viper 554683669b21cf5dc84d6ee1a81de1f605a28ff8 => github.com/sietseringers/viper v1.0.1-0.20190113114857-554683669b21
+replace github.com/spf13/viper => github.com/sietseringers/viper v1.0.1-0.20190113114857-554683669b21
