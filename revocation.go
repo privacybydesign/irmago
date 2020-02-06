@@ -279,11 +279,10 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 			return nil, err
 		}
 	} else {
-		update := rs.memdb.Latest(id, count)
-		if len(update) == 0 {
+		updates = rs.memdb.Latest(id, count)
+		if len(updates) == 0 {
 			return nil, ErrRevocationStateNotFound
 		}
-		updates = rs.memdb.Latest(id, count)
 	}
 	for k, u := range updates {
 		pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), k)

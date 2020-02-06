@@ -187,8 +187,10 @@ func (m memRevStorage) Insert(id CredentialTypeIdentifier, update *revocation.Up
 	defer record.Unlock()
 
 	r := record.r[update.SignedAccumulator.PKCounter]
-	if r == nil || len(r.Events) == 0 {
-		record.r[update.SignedAccumulator.PKCounter] = update
+	if r == nil {
+		if len(update.Events) > 0 {
+			record.r[update.SignedAccumulator.PKCounter] = update
+		}
 		return
 	}
 	if len(update.Events) == 0 && r.SignedAccumulator.Accumulator.Index == update.SignedAccumulator.Accumulator.Index {
