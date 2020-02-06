@@ -325,7 +325,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, rev.AddIssuanceRecord(&irma.IssuanceRecord{
 			Key:        "1",
 			CredType:   revocationTestCred,
-			PKCounter:  revocationPkCounter,
+			PKCounter:  &revocationPkCounter,
 			Attr:       (*irma.RevocationAttribute)(big.NewInt(42)),
 			Issued:     time.Now().Add(-2 * time.Hour).UnixNano(),
 			ValidUntil: time.Now().Add(-1 * time.Hour).UnixNano(),
@@ -495,7 +495,7 @@ func insertIssuanceRecord(t *testing.T, key string, conf *irma.RevocationStorage
 	require.NoError(t, conf.AddIssuanceRecord(&irma.IssuanceRecord{
 		Key:        key,
 		CredType:   revocationTestCred,
-		PKCounter:  revocationPkCounter,
+		PKCounter:  &revocationPkCounter,
 		Attr:       (*irma.RevocationAttribute)(witness.E),
 		Issued:     time.Now().UnixNano(),
 		ValidUntil: time.Now().Add(1 * time.Hour).UnixNano(),

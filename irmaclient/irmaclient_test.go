@@ -14,6 +14,8 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,6 +27,8 @@ func TestMain(m *testing.M) {
 
 	test.CreateTestStorage(nil)
 	defer test.ClearTestStorage(nil)
+
+	irma.Logger.SetLevel(logrus.ErrorLevel)
 
 	os.Exit(m.Run())
 }
