@@ -61,8 +61,6 @@ func (client *Client) initRevocation() {
 				}
 				speed := attrs.CredentialType().RevocationUpdateSpeed * 60 * 60
 				p := probability(cred.NonRevocationWitness.Updated, speed)
-				irma.Logger.Tracef("random update: updated, speed, r, p = %s, %d, %.6f, %.6f",
-					cred.NonRevocationWitness.Updated.String(), speed, r, p)
 				if r < p {
 					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%s", id, attrs.Hash())
 					client.jobs <- func() {
