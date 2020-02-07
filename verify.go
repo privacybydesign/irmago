@@ -44,7 +44,7 @@ type DisclosedAttribute struct {
 // ProofList is a gabi.ProofList with some extra methods.
 type ProofList gabi.ProofList
 
-var ErrorMissingPublicKey = errors.New("Missing public key")
+var ErrMissingPublicKey = errors.New("Missing public key")
 
 // ExtractPublicKeys returns the public keys of each proof in the proofList, in the same order,
 // for later use in verification of the proofList. If one of the proofs is not a ProofD
@@ -62,7 +62,7 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 				return nil, err
 			}
 			if publicKey == nil {
-				return nil, ErrorMissingPublicKey
+				return nil, ErrMissingPublicKey
 			}
 			publicKeys = append(publicKeys, publicKey)
 		default:
