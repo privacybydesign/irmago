@@ -84,7 +84,7 @@ func (session *session) issuanceHandleRevocation(
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
-	if settings, ok := session.conf.RevocationSettings[id]; !ok || settings.Mode != irma.RevocationModeServer {
+	if settings, ok := session.conf.RevocationSettings[id]; !ok || !settings.ServerMode {
 		if err := session.conf.IrmaConfiguration.Revocation.SyncDB(id); err != nil {
 			return nil, err
 		}

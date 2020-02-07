@@ -52,7 +52,7 @@ func New(conf *server.Configuration) (*Server, error) {
 				continue
 			}
 			settings := conf.RevocationSettings[credid]
-			if settings == nil || settings.Mode != irma.RevocationModeRequestor {
+			if settings == nil || settings.ServerMode {
 				continue
 			}
 			if err := s.conf.IrmaConfiguration.Revocation.SyncIfOld(credid, settings.Tolerance/2); err != nil {

@@ -51,20 +51,16 @@ type (
 
 	// RevocationSetting contains revocation settings for a given credential type.
 	RevocationSetting struct {
-		Mode                RevocationMode `json:"mode,omitempty" mapstructure:"mode"`
-		PostURLs            []string       `json:"post_urls,omitempty" mapstructure:"post_urls"`
-		RevocationServerURL string         `json:"revocation_server_url,omitempty" mapstructure:"revocation_server_url"`
-		Tolerance           uint64         `json:"tolerance,omitempty" mapstructure:"tolerance"` // in seconds, min 30
+		ServerMode          bool     `json:"server,omitempty" mapstructure:"server"`
+		PostURLs            []string `json:"post_urls,omitempty" mapstructure:"post_urls"`
+		RevocationServerURL string   `json:"revocation_server_url,omitempty" mapstructure:"revocation_server_url"`
+		Tolerance           uint64   `json:"tolerance,omitempty" mapstructure:"tolerance"` // in seconds, min 30
 
 		// set to now whenever a new update is received, or when the RA indicates
 		// there are no new updates. Thus it specifies up to what time our nonrevocation
 		// guarantees lasts.
 		updated time.Time
 	}
-
-	// RevocationMode specifies for a given credential type what revocation operations are
-	// supported, and how the associated data is stored (SQL or memory).
-	RevocationMode string
 )
 
 // Structs corresponding to SQL table rows, ending in Record
@@ -100,22 +96,6 @@ type (
 		ValidUntil int64
 		RevokedAt  int64 `json:",omitempty"` // 0 if not currently revoked
 	}
-)
-
-// server modes
-const (
-	// RevocationModeRequestor is the default revocation mode in which only RevocationRecord instances
-	// are consumed for issuance or verification. Uses an in-memory store.
-	RevocationModeRequestor RevocationMode = ""
-	revocationModeRequestor RevocationMode = "requestor" // synonym for RevocationModeRequestor
-
-	// RevocationModeServer indicates that this is a revocation server for a credential type.
-	// IssuanceRecord instances are sent to this server, as well as revocation commands, through
-	// revocation sessions or through the RevocationStorage.Revoke() method.
-	// Requires a SQL server to store and retrieve all records from and requires the issuer's
-	// private key to be accessible, in order to revoke and to sign new revocation update messages.
-	// In addition this mode exposes the same endpoints as RevocationModeProxy.
-	RevocationModeServer RevocationMode = "server"
 )
 
 var ErrRevocationStateNotFound = errors.New("revocation state not found")
@@ -381,7 +361,7 @@ func (rs *RevocationStorage) IssuanceRecords(id CredentialTypeIdentifier, key st
 // and updating the revocation database on disk.
 // If issued is not specified, i.e. passed the zero value, all credentials specified by key are revoked.
 func (rs *RevocationStorage) Revoke(id CredentialTypeIdentifier, key string, issued time.Time) error {
-	if rs.getSettings(id).Mode != RevocationModeServer {
+	if !rs.getSettings(id).ServerMode {
 		return errors.Errorf("cannot revoke %s", id)
 	}
 	return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
@@ -620,7 +600,7 @@ func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec
 
 	// Just store it if we are the revocation server for this credential type
 	settings := rs.getSettings(id)
-	if settings.Mode == RevocationModeServer {
+	if settings.ServerMode {
 		return rs.AddIssuanceRecord(rec)
 	}
 
@@ -641,19 +621,12 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 	var t *CredentialTypeIdentifier
 	var ourtypes []CredentialTypeIdentifier
 	for id, s := range settings {
-		switch s.Mode {
-		case RevocationModeServer:
+		if s.ServerMode {
 			if s.RevocationServerURL != "" {
 				return errors.New("server_url cannot be combined with server mode")
 			}
 			ourtypes = append(ourtypes, id)
 			t = &id
-		case RevocationModeRequestor: // noop
-		case revocationModeRequestor:
-			s.Mode = RevocationModeRequestor
-		default:
-			return errors.Errorf(`invalid revocation mode "%s" for %s (supported: "%s" (or empty string), "%s")`,
-				s.Mode, id, revocationModeRequestor, RevocationModeServer)
 		}
 	}
 	if t != nil && connstr == "" {
