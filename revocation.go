@@ -109,13 +109,6 @@ const (
 	RevocationModeRequestor RevocationMode = ""
 	revocationModeRequestor RevocationMode = "requestor" // synonym for RevocationModeRequestor
 
-	// RevocationModeProxy indicates that this server
-	// (1) allows fetching of revocation update messages from its database,
-	// (2) relays all revocation updates it receives to the URLs configured in the containing
-	// RevocationSetting struct.
-	// Requires a SQL server to store and retrieve update messages from.
-	RevocationModeProxy RevocationMode = "proxy"
-
 	// RevocationModeServer indicates that this is a revocation server for a credential type.
 	// IssuanceRecord instances are sent to this server, as well as revocation commands, through
 	// revocation sessions or through the RevocationStorage.Revoke() method.
@@ -655,14 +648,12 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 			}
 			ourtypes = append(ourtypes, id)
 			t = &id
-		case RevocationModeProxy:
-			t = &id
 		case RevocationModeRequestor: // noop
 		case revocationModeRequestor:
 			s.Mode = RevocationModeRequestor
 		default:
-			return errors.Errorf(`invalid revocation mode "%s" for %s (supported: "%s" (or empty string), "%s", "%s")`,
-				s.Mode, id, revocationModeRequestor, RevocationModeServer, RevocationModeProxy)
+			return errors.Errorf(`invalid revocation mode "%s" for %s (supported: "%s" (or empty string), "%s")`,
+				s.Mode, id, revocationModeRequestor, RevocationModeServer)
 		}
 	}
 	if t != nil && connstr == "" {
