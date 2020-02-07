@@ -22,7 +22,7 @@ const (
 	sessionOptionUpdatedIrmaConfiguration sessionOption = 1 << iota
 	sessionOptionUnsatisfiableRequest
 	sessionOptionRetryPost
-	sessionOptionIgnoreClientError
+	sessionOptionIgnoreError
 	sessionOptionReuseServer
 	sessionOptionClientWait
 )
@@ -32,17 +32,21 @@ type requestorSessionResult struct {
 	Missing irmaclient.MissingAttributes
 }
 
+func processOptions(options ...sessionOption) sessionOption {
+	var opts sessionOption = 0
+	for _, o := range options {
+		opts |= o
+	}
+	return opts
+}
+
 func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
 	if client == nil {
 		client, _ = parseStorage(t)
 		defer test.ClearTestStorage(t)
 	}
 
-	var opts sessionOption = 0
-	for _, o := range options {
-		opts |= o
-	}
-
+	opts := processOptions(options...)
 	if opts&sessionOptionReuseServer == 0 {
 		StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0)
 		defer StopIrmaServer()
@@ -71,7 +75,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	require.NoError(t, err)
 	client.NewSession(string(j), h)
 	clientResult := <-clientChan
-	if (len(options) == 0 || options[0] != sessionOptionIgnoreClientError) && clientResult != nil {
+	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
 		require.NoError(t, clientResult.Err)
 	}
 

@@ -168,6 +168,19 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, accindex+1, sacc1.Accumulator.Index)
 	})
 
+	t.Run("NoKnownAccumulator", func(t *testing.T) {
+		defer test.ClearTestStorage(t)
+		client, _ := revocationSetup(t)
+
+		// stop revocation server so the verifier cannot fetch revocation state
+		stopRevocationServer()
+
+		result := revocationSession(t, client, nil, sessionOptionIgnoreError)
+		require.Equal(t, server.StatusCancelled, result.Status)
+		require.NotNil(t, result.Err)
+		require.Equal(t, result.Err.ErrorName, string(server.ErrorRevocation.Type))
+	})
+
 	t.Run("OtherAccumulator", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, _ := revocationSetup(t)
@@ -469,7 +482,7 @@ func revocationSession(t *testing.T, client *irmaclient.Client, request irma.Ses
 		request = revocationRequest()
 	}
 	result := requestorSessionHelper(t, request, client, options...)
-	if result.SessionResult != nil {
+	if processOptions(options...)&sessionOptionIgnoreError == 0 && result.SessionResult != nil {
 		require.Nil(t, result.Err)
 	}
 	return result
