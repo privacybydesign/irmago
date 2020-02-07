@@ -149,6 +149,16 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 		cred.KeyCounter = privatekey.Counter
 
+		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RevocationSupported() {
+			settings := s.conf.RevocationSettings[cred.CredentialTypeID]
+			if settings == nil || settings.RevocationServerURL == "" {
+				return errors.Errorf("revocation enabled for %s but no revocation server configured", cred.CredentialTypeID)
+			}
+			if cred.RevocationKey == "" {
+				return errors.Errorf("revocation enabled for %s but no revocationKey specified", cred.CredentialTypeID)
+			}
+		}
+
 		// Check that the credential is consistent with irma_configuration
 		if err := cred.Validate(s.conf.IrmaConfiguration); err != nil {
 			return err
