@@ -127,6 +127,8 @@ const (
 
 var ErrRevocationStateNotFound = errors.New("revocation state not found")
 
+var ErrUnknownRevocationKey = errors.New("unknown revocationKey")
+
 // RevocationParameters contains global revocation constants and default values.
 var RevocationParameters = struct {
 	// DefaultUpdateEventCount specifies how many revocation events are attached to session requests
@@ -374,7 +376,7 @@ func (rs *RevocationStorage) IssuanceRecords(id CredentialTypeIdentifier, key st
 		return nil, err
 	}
 	if len(r) == 0 {
-		return nil, ErrRevocationStateNotFound
+		return nil, ErrUnknownRevocationKey
 	}
 	return r, nil
 }

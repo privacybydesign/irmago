@@ -30,6 +30,7 @@ var (
 	ErrorMalformedInput       Error = Error{Type: "MALFORMED_INPUT", Status: 400, Description: "Input could not be parsed"}
 	ErrorUnknown              Error = Error{Type: "EXCEPTION", Status: 500, Description: "Encountered unexpected problem"}
 	ErrorRevocation           Error = Error{Type: "REVOCATION", Status: 500, Description: "Revocation error"}
+	ErrorUnknownRevocationKey Error = Error{Type: "UNKNOWN_REVOCATION_KEY", Status: 404, Description: "No issuance records correspond to the given revocationKey"}
 
 	ErrorUnsupported     Error = Error{Type: "UNSUPPORTED", Status: 501, Description: "Unsupported by this server"}
 	ErrorInvalidRequest  Error = Error{Type: "INVALID_REQUEST", Status: 400, Description: "Invalid HTTP request"}
