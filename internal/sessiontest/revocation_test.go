@@ -44,6 +44,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("Revocation", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, handler := revocationSetup(t)
+		defer stopRevocationServer()
 
 		// issue second credential which overwrites the first one, as our credtype is a singleton
 		// this is ok, as we use cred0 only to revoke it, to see if cred1 keeps working
@@ -116,7 +117,11 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 
 		// revoke
-		require.NoError(t, revocationServer.Revoke(revocationTestCred, "cred0", time.Time{}))
+		require.NoError(t, revocationServer.Revoke(
+			revocationTestCred,
+			revocationIssuanceRequest.Credentials[0].RevocationKey,
+			time.Time{}),
+		)
 
 		// try another disclosure
 		result = revocationSession(t, client, nil, sessionOptionUnsatisfiableRequest, sessionOptionReuseServer)
@@ -126,6 +131,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("AttributeBasedSignature", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, _ := revocationSetup(t)
+		defer stopRevocationServer()
 
 		request := revocationSigRequest()
 		result := revocationSession(t, client, request)
@@ -167,6 +173,7 @@ func TestRevocationAll(t *testing.T) {
 		}()
 
 		startRevocationServer(t, true)
+		defer stopRevocationServer()
 		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		acctime := sacc1.Accumulator.Time
@@ -215,6 +222,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("OtherAccumulator", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, _ := revocationSetup(t)
+		defer stopRevocationServer()
 
 		// Prepare key material
 		conf := revocationConfiguration.IrmaConfiguration.Revocation
@@ -294,6 +302,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("ClientUpdate", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, _ := revocationSetup(t)
+		defer stopRevocationServer()
 
 		conf := revocationConfiguration.IrmaConfiguration.Revocation
 		sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
@@ -315,6 +324,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// issue a credential, populating irmaServer's revocation memdb
 		client, _ := revocationSetup(t, sessionOptionReuseServer)
+		defer stopRevocationServer()
 
 		// disable serving revocation updates in revocation server
 		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.Close())
@@ -346,6 +356,7 @@ func TestRevocationAll(t *testing.T) {
 		revocationConfiguration = nil
 
 		startRevocationServer(t, false)
+		defer stopRevocationServer()
 		rev = revocationConfiguration.IrmaConfiguration.Revocation
 		sacc3, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
@@ -363,6 +374,7 @@ func TestRevocationAll(t *testing.T) {
 
 	t.Run("DeleteExpiredIssuanceRecords", func(t *testing.T) {
 		startRevocationServer(t, true)
+		defer stopRevocationServer()
 
 		// Insert expired issuance record
 		rev := revocationConfiguration.IrmaConfiguration.Revocation
@@ -384,11 +396,12 @@ func TestRevocationAll(t *testing.T) {
 
 		// Check that issuance record is gone
 		rec, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
-		require.Equal(t, irma.ErrRevocationStateNotFound, err)
+		require.Equal(t, irma.ErrUnknownRevocationKey, err)
 	})
 
 	t.Run("RevokeMany", func(t *testing.T) {
 		startRevocationServer(t, true)
+		defer stopRevocationServer()
 		rev := revocationConfiguration.IrmaConfiguration.Revocation
 		sacc, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
@@ -412,7 +425,7 @@ func TestRevocationAll(t *testing.T) {
 		// revoke all remaining records, should be none left afterwards
 		require.NoError(t, rev.Revoke(revocationTestCred, "1", time.Time{}))
 		r2, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
-		require.Equal(t, irma.ErrRevocationStateNotFound, err)
+		require.Equal(t, irma.ErrUnknownRevocationKey, err)
 
 		// fetch and verify update message
 		update, err := rev.UpdateLatest(revocationTestCred, 10, &revocationPkCounter)
@@ -434,6 +447,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("RevocationTolerance", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, _ := revocationSetup(t)
+		defer stopRevocationServer()
 		start := time.Now()
 
 		result := revocationSession(t, client, nil)
@@ -459,6 +473,7 @@ func TestRevocationAll(t *testing.T) {
 
 	t.Run("Cache", func(t *testing.T) {
 		startRevocationServer(t, true)
+		defer stopRevocationServer()
 		rev := revocationConfiguration.IrmaConfiguration.Revocation
 		sacc, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
@@ -626,4 +641,5 @@ func startRevocationServer(t *testing.T, droptables bool) {
 func stopRevocationServer() {
 	revocationServer.Stop()
 	_ = revocationHttpServer.Close()
+	revocationConfiguration = nil
 }
