@@ -92,6 +92,37 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, missing)
 	})
 
+	t.Run("RevocationServerSessions", func(t *testing.T) {
+		revocationConfiguration = revocationConf(t)
+		startRevocationServer(t, true)
+		defer func() {
+			stopRevocationServer()
+			revocationConfiguration = nil
+		}()
+
+		// Make the session functions use our revocation server
+		irmaServer = revocationServer
+
+		// issue a MijnOverheid.root instance with revocation enabled
+		client, _ := parseStorage(t)
+		result := requestorSessionHelper(t, revocationIssuanceRequest, client, sessionOptionReuseServer)
+		require.Nil(t, result.Err)
+
+		// do disclosure and signature sessions
+		result = revocationSession(t, client, nil, sessionOptionReuseServer)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+		result = revocationSession(t, client, revocationSigRequest(), sessionOptionReuseServer)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+
+		// revoke
+		require.NoError(t, revocationServer.Revoke(revocationTestCred, "cred0", time.Time{}))
+
+		// try another disclosure
+		result = revocationSession(t, client, nil, sessionOptionUnsatisfiableRequest, sessionOptionReuseServer)
+		require.NotEmpty(t, result.Missing)
+	})
+
 	t.Run("AttributeBasedSignature", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, _ := revocationSetup(t)
@@ -548,6 +579,7 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 
 func revocationConf(t *testing.T) *server.Configuration {
 	return &server.Configuration{
+		URL:                  "http://localhost:48683",
 		Logger:               logger,
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
