@@ -156,10 +156,13 @@ func (conf *Configuration) CanRevoke(requestor string, cred irma.CredentialTypeI
 	if err != nil {
 		return false, err.Error()
 	}
-	if !contains(permissions, cred.String()) {
-		return false, cred.String()
+	if contains(permissions, "*") ||
+		contains(permissions, cred.Root()+".*") ||
+		contains(permissions, cred.IssuerIdentifier().String()+".*") ||
+		contains(permissions, cred.String()) {
+		return true, ""
 	}
-	return true, ""
+	return false, cred.String()
 }
 
 func (conf *Configuration) initialize() error {
