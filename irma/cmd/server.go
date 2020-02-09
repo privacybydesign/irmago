@@ -112,7 +112,10 @@ func setFlags(cmd *cobra.Command, production bool) error {
 		issHelp += " (default *)"
 	}
 	flags.StringSlice("issue-perms", nil, issHelp)
+	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
+
+	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
@@ -218,7 +221,7 @@ func configureServer(cmd *cobra.Command) error {
 			Disclosing: handlePermission("disclose-perms"),
 			Signing:    handlePermission("sign-perms"),
 			Issuing:    handlePermission("issue-perms"),
-			Revoking:   handlePermission("revoke_perms"),
+			Revoking:   handlePermission("revoke-perms"),
 		},
 		ListenAddress:                  viper.GetString("listen-addr"),
 		Port:                           viper.GetInt("port"),
@@ -257,7 +260,7 @@ func configureServer(cmd *cobra.Command) error {
 		return err
 	}
 	var m map[string]*irma.RevocationSetting
-	if err = handleMapOrString("revocation_settings", &m); err != nil {
+	if err = handleMapOrString("revocation-settings", &m); err != nil {
 		return err
 	}
 	for i, s := range m {
