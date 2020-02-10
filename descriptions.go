@@ -74,7 +74,9 @@ type CredentialType struct {
 	XMLName               xml.Name         `xml:"IssueSpecification"`
 	IssueURL              TranslatedString `xml:"IssueURL"`
 
-	BackgroundColor string
+	ForegroundColor         string
+	BackgroundGradientStart string
+	BackgroundGradientEnd   string
 
 	IsInCredentialStore bool
 	Category            TranslatedString
@@ -93,8 +95,9 @@ type AttributeType struct {
 	Name        TranslatedString
 	Description TranslatedString
 
-	Index        int  `xml:"-"`
-	DisplayIndex *int `xml:"displayIndex,attr" json:",omitempty"`
+	Index        int    `xml:"-"`
+	DisplayIndex *int   `xml:"displayIndex,attr" json:",omitempty"`
+	DisplayHint  string `xml:"displayHint,attr"  json:",omitempty"`
 
 	RevocationAttribute bool `xml:"revocation,attr" json:",omitempty"`
 
