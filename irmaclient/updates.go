@@ -145,6 +145,8 @@ var clientUpdates = []func(client *Client) error{
 			return client.storage.TxStoreUpdates(tx, updates)
 		})
 	},
+
+	// TODO: Maybe delete preferences file to start afresh
 }
 
 // update performs any function from clientUpdates that has not

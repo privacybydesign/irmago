@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/bwesterb/go-atum"
-	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -67,17 +66,12 @@ type Client struct {
 	credMutex sync.Mutex
 }
 
-// SentryDSN should be set in the init() function
-// Setting it to an empty string means no crash reports
-var SentryDSN = ""
+// TODO: Decide if we want to remove this functionality, or keep it for future preferences
+// Also consider if we should save irmamobile preferences here, because they would automatically
+// be part of any backup and syncing solution we implement at a later time
+type Preferences struct{}
 
-type Preferences struct {
-	EnableCrashReporting bool
-}
-
-var defaultPreferences = Preferences{
-	EnableCrashReporting: true,
-}
+var defaultPreferences = Preferences{}
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
 // for enrolling at a keyshare server.
@@ -1118,20 +1112,9 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, 
 	return client.storage.LoadLogsBefore(beforeIndex, max)
 }
 
-// SetCrashReportingPreference toggles whether or not crash reports should be sent to Sentry.
-// Has effect only after restarting.
-func (client *Client) SetCrashReportingPreference(enable bool) {
-	client.Preferences.EnableCrashReporting = enable
-	_ = client.storage.StorePreferences(client.Preferences)
-	client.applyPreferences()
-}
-
+// TODO: See comment at Preferences struct definition (client.go)
 func (client *Client) applyPreferences() {
-	if client.Preferences.EnableCrashReporting {
-		raven.SetDSN(SentryDSN)
-	} else {
-		raven.SetDSN("")
-	}
+
 }
 
 // ConfigurationUpdated should be run after Configuration.Download().
