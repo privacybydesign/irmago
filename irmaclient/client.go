@@ -543,7 +543,7 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 // in the conjunction. (A credential instance from the client is a candidate it it contains
 // attributes required in this conjunction). If one credential type occurs multiple times in the
 // conjunction it is not added twice.
-func (client *Client) credCandidates(con irma.AttributeCon, supportsRevocation bool) (credCandidateSet, error) {
+func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeCon) (credCandidateSet, error) {
 	var candidates [][]*irma.CredentialIdentifier
 	for _, credtype := range con.CredentialTypes() {
 		attrlistlist := client.attributes[credtype]
@@ -561,8 +561,12 @@ func (client *Client) credCandidates(con irma.AttributeCon, supportsRevocation b
 			if err != nil {
 				return nil, err
 			}
-			if !supportsRevocation && cred.NonRevocationWitness != nil {
-				// can't disclose revocation-aware credentials to not-revocation-aware requestors
+			if !base.SupportsRevocation() && cred.NonRevocationWitness != nil {
+				// can't disclose from revocation-aware credentials to not-revocation-aware requestors
+				continue
+			}
+			if base.RequestsRevocation(credtype) && cred.NonRevocationWitness == nil {
+				// can't disclose from non-revocation aware credentials if nonrevocation proof is required
 				continue
 			}
 			c = append(c, &irma.CredentialIdentifier{Type: credtype, Hash: attrlist.Hash()})
@@ -627,7 +631,7 @@ func cartesianProduct(candidates [][]*irma.CredentialIdentifier) credCandidateSe
 // specified disjunction. If the disjunction cannot be satisfied by the attributes that the client
 // currently posesses (ie. len(candidates) == 0), then the second return parameter lists the missing
 // attributes that would be necessary to satisfy the disjunction.
-func (client *Client) Candidates(discon irma.AttributeDisCon, supportsRevocation bool) (
+func (client *Client) Candidates(base *irma.BaseRequest, discon irma.AttributeDisCon) (
 	candidates [][]*irma.AttributeIdentifier, missing map[int]map[int]MissingAttribute, err error,
 ) {
 	candidates = [][]*irma.AttributeIdentifier{}
@@ -645,7 +649,7 @@ func (client *Client) Candidates(discon irma.AttributeDisCon, supportsRevocation
 		// attribute types as [ a.a.a.a, a.a.a.b, a.a.b.x ], we map this to:
 		// [ [ a.a.a #1, a.a.a #2] , [ a.a.b #1 ] ]
 		// assuming the client has 2 instances of a.a.a and 1 instance of a.a.b.
-		c, err := client.credCandidates(con, supportsRevocation)
+		c, err := client.credCandidates(base, con)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -707,14 +711,14 @@ func (client *Client) CheckSatisfiability(request irma.SessionRequest) (
 	candidates [][][]*irma.AttributeIdentifier, missing MissingAttributes, err error,
 ) {
 	condiscon := request.Disclosure().Disclose
-	supportsRevocation := !request.Base().ProtocolVersion.Below(2, 6)
+	base := request.Base()
 	candidates = make([][][]*irma.AttributeIdentifier, len(condiscon))
 	missing = MissingAttributes{}
 
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 	for i, discon := range condiscon {
-		cands, m, err := client.Candidates(discon, supportsRevocation)
+		cands, m, err := client.Candidates(base, discon)
 		if err != nil {
 			return nil, nil, err
 		}

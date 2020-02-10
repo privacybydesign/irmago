@@ -262,6 +262,10 @@ func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
 	return len(b.Revocation) > 0 && b.Revocation[id] != nil && len(b.Revocation[id].Updates) > 0
 }
 
+func (b *BaseRequest) SupportsRevocation() bool {
+	return !b.ProtocolVersion.Below(2, 6)
+}
+
 // CredentialTypes returns an array of all credential types occuring in this conjunction.
 func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
 	var result []CredentialTypeIdentifier

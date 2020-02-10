@@ -87,7 +87,10 @@ func TestRevocationAll(t *testing.T) {
 		require.NotNil(t, handler.(*TestClientHandler).revoked)
 		require.Equal(t, revocationTestCred, handler.(*TestClientHandler).revoked.Type)
 		// credential is no longer suggested as candidate
-		candidates, missing, err := client.Candidates(irma.AttributeDisCon{{{Type: revocationTestAttr}}}, true)
+		candidates, missing, err := client.Candidates(
+			revocationRequest().Base(),
+			irma.AttributeDisCon{{{Type: revocationTestAttr}}},
+		)
 		require.NoError(t, err)
 		require.Empty(t, candidates)
 		require.NotEmpty(t, missing)
@@ -504,6 +507,37 @@ func TestRevocationAll(t *testing.T) {
 			fmt.Sprintf("max-age=%d", irma.RevocationParameters.AccumulatorUpdateInterval),
 			res.Header.Get("Cache-Control"),
 		)
+	})
+
+	t.Run("NonRevocationAwareCredential", func(t *testing.T) {
+		client, _ := parseStorage(t)
+
+		// Start irma server and hackily temporarily disable revocation for our credtype
+		// by editing its irma.Configuration instance
+		StartIrmaServer(t, false)
+		defer StopIrmaServer()
+		credtyp := irmaServerConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred]
+		servers := credtyp.RevocationServers // save it for re-enabling revocation below
+		credtyp.RevocationServers = nil
+
+		// Issue non-revocation-aware credential instance
+		result := requestorSessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+			CredentialTypeID: revocationTestCred,
+			Attributes: map[string]string{
+				"BSN": "299792458",
+			},
+		}}), client, sessionOptionReuseServer)
+		require.Nil(t, result.Err)
+
+		// Restore revocation setup
+		credtyp.RevocationServers = servers
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+
+		// Try disclosure session requiring nonrevocation proof
+		// client notices it has no revocation-aware credential instance and aborts
+		result = revocationSession(t, client, nil, sessionOptionReuseServer, sessionOptionUnsatisfiableRequest)
+		require.NotEmpty(t, result.Missing)
 	})
 }
 
