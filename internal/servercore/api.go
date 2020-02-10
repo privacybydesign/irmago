@@ -164,21 +164,26 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key, issued)
 }
 
-func ParsePath(path string) (token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile("revocation/(events|update|issuancerecord)/?(.*)$")
+const (
+	ComponentRevocation = "revocation"
+	ComponentSession    = "session"
+)
+
+func ParsePath(path string) (component, token, noun string, arg []string, err error) {
+	rev := regexp.MustCompile(ComponentRevocation + "/(events|update|issuancerecord)/?(.*)$")
 	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")
-		return "", matches[1], args, nil
+		return ComponentRevocation, "", matches[1], args, nil
 	}
 
-	client := regexp.MustCompile("session/(\\w+)/?(|commitments|proofs|status|statusevents)$")
+	client := regexp.MustCompile(ComponentSession + "/(\\w+)/?(|commitments|proofs|status|statusevents)$")
 	matches = client.FindStringSubmatch(path)
 	if len(matches) == 3 {
-		return matches[1], matches[2], nil, nil
+		return ComponentSession, matches[1], matches[2], nil, nil
 	}
 
-	return "", "", nil, server.LogWarning(errors.Errorf("Invalid URL: %s", path))
+	return "", "", "", nil, server.LogWarning(errors.Errorf("Invalid URL: %s", path))
 }
 
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
@@ -254,15 +259,18 @@ func (s *Server) handleProtocolMessage(
 		}
 	}
 
-	token, noun, args, err := ParsePath(path)
+	component, token, noun, args, err := ParsePath(path)
 	if err != nil {
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))
 	}
 
-	if token != "" {
+	switch component {
+	case ComponentSession:
 		status, output, result = s.handleClientMessage(token, noun, method, headers, message)
-	} else {
+	case ComponentRevocation:
 		status, output, retheaders = s.handleRevocationMessage(noun, method, args, headers, message)
+	default:
+		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, component))
 	}
 	return
 }
