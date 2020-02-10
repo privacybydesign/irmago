@@ -43,7 +43,7 @@ func newSqlStorage(debug bool, dbtype, connstr string) (sqlRevStorage, error) {
 
 	if debug {
 		g.LogMode(true)
-		g.SetLogger(gorm.Logger{LogWriter: log.New(Logger.WriterLevel(logrus.DebugLevel), "db: ", 0)})
+		g.SetLogger(gorm.Logger{LogWriter: log.New(Logger.WriterLevel(logrus.TraceLevel), "db: ", 0)})
 	}
 	if g.AutoMigrate((*EventRecord)(nil)); g.Error != nil {
 		return sqlRevStorage{}, g.Error
