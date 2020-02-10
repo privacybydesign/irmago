@@ -1,0 +1,19 @@
+# Assumes 1) $PWD = irmago and 2) irma_mobile exists next to irmago. Overwrite e.g. with -s if necessary
+schemes_path: ../irma_mobile/irma_configuration
+
+schemes_update: 0
+port: 8090
+
+revoke_perms:
+  - "*" # Let anyone revoke anything
+
+revocation_settings:
+  irma-demo.MijnOverheid.root:
+    server: true
+#    post_urls:
+#      - http://localhost:8088/irma
+
+#revocation_db_type: mysql
+#revocation_db_str: testuser:testpassword@tcp(127.0.0.1)/test
+revocation_db_type: postgres
+revocation_db_str: host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable
