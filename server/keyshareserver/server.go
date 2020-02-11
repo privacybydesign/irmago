@@ -227,6 +227,14 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Make log entry
+	err = s.db.AddLog(user, IrmaSession, nil)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
 	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, sessionData.LastCommitID, challenge, sessionData.LastKeyid)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
@@ -294,12 +302,30 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
+		err = s.db.AddLog(user, PinCheckRefused, nil)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
 		server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
 		return
 	}
 	jwtt, err := s.core.ValidatePin(user.Data().Coredata, msg.Pin, msg.Username)
 	if err == keysharecore.ErrInvalidPin {
+		err = s.db.AddLog(user, PinCheckFailed, tries)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
 		if tries == 0 {
+			err = s.db.AddLog(user, PinCheckBlocked, wait)
+			if err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+				server.WriteError(w, server.ErrorInternal, err.Error())
+				return
+			}
 			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
 		} else {
 			server.WriteJson(w, keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)})
@@ -319,6 +345,13 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not indicate user activity")
 			// Do not send to user
+		}
+
+		err = s.db.AddLog(user, PinCheckSucces, nil)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
 		}
 
 		server.WriteJson(w, keysharePinStatus{Status: "success", Message: jwtt})
