@@ -562,7 +562,11 @@ func (rs *RevocationStorage) SyncDB(id CredentialTypeIdentifier) error {
 	if ct == nil {
 		return errors.New("unknown credential type")
 	}
+	if settings, ok := rs.settings[id]; ok && settings.ServerMode {
+		return nil
+	}
 
+	Logger.WithField("credtype", id).Tracef("fetching revocation updates")
 	updates, err := rs.client.FetchUpdatesLatest(id, ct.RevocationUpdateCount)
 	if err != nil {
 		return err
@@ -579,7 +583,6 @@ func (rs *RevocationStorage) SyncDB(id CredentialTypeIdentifier) error {
 
 func (rs *RevocationStorage) SyncIfOld(id CredentialTypeIdentifier, maxage uint64) error {
 	if rs.getSettings(id).updated.Before(time.Now().Add(time.Duration(-maxage) * time.Second)) {
-		Logger.WithField("credtype", id).Tracef("fetching revocation updates")
 		if err := rs.SyncDB(id); err != nil {
 			return err
 		}
