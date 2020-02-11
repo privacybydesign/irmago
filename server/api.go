@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
@@ -39,6 +42,10 @@ type SessionResult struct {
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
 }
 
+// SessionHandler is a function that can handle a session result
+// once an IRMA session has completed.
+type SessionHandler func(*SessionResult)
+
 // Status is the status of an IRMA session.
 type Status string
 
@@ -48,6 +55,12 @@ const (
 	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
 	StatusDone        Status = "DONE"        // The session has completed successfully
 	StatusTimeout     Status = "TIMEOUT"     // Session timed out
+)
+
+const (
+	ComponentRevocation = "revocation"
+	ComponentSession    = "session"
+	ComponentStatic     = "static"
 )
 
 // Remove this when dropping support for legacy pre-condiscon session requests
@@ -254,6 +267,64 @@ func Verbosity(level int) logrus.Level {
 
 func TypeString(x interface{}) string {
 	return reflect.TypeOf(x).String()
+}
+
+func ResultJwt(sessionresult *SessionResult, issuer string, validity int, privatekey *rsa.PrivateKey) (string, error) {
+	standardclaims := jwt.StandardClaims{
+		Issuer:   issuer,
+		IssuedAt: time.Now().Unix(),
+		Subject:  string(sessionresult.Type) + "_result",
+	}
+	standardclaims.ExpiresAt = time.Now().Unix() + int64(validity)
+
+	var claims jwt.Claims
+	if sessionresult.LegacySession {
+		claims = struct {
+			jwt.StandardClaims
+			*LegacySessionResult
+		}{standardclaims, sessionresult.Legacy()}
+	} else {
+		claims = struct {
+			jwt.StandardClaims
+			*SessionResult
+		}{standardclaims, sessionresult}
+	}
+
+	// Sign the jwt and return it
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	return token.SignedString(privatekey)
+}
+
+func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, validity int, privatekey *rsa.PrivateKey) {
+	logger := Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
+	if !strings.HasPrefix(callbackUrl, "https") {
+		logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
+	} else {
+		logger.Debug("POSTing session result")
+	}
+
+	var res string
+	if privatekey != nil {
+		var err error
+		res, err = ResultJwt(result, issuer, validity, privatekey)
+		if err != nil {
+			_ = LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
+			return
+		}
+	} else {
+		bts, err := json.Marshal(result)
+		if err != nil {
+			_ = LogError(errors.WrapPrefix(err, "Failed to marshal session result for result callback", 0))
+			return
+		}
+		res = string(bts)
+	}
+
+	var x string // dummy for the server's return value that we don't care about
+	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, res); err != nil {
+		// not our problem, log it and go on
+		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
+	}
 }
 
 func log(level logrus.Level, err error) error {

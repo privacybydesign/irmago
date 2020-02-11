@@ -1,12 +1,16 @@
 package server
 
 import (
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -46,6 +50,19 @@ type Configuration struct {
 	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
 	EnableSSE bool `json:"enable_sse" mapstructure:"enable_sse"`
 
+	// Static session requests that can be created by POST /session/{name}
+	StaticSessions map[string]interface{} `json:"static_sessions"`
+	// Static session requests after parsing
+	StaticSessionRequests map[string]irma.RequestorRequest `json:"-"`
+
+	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
+	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
+	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
+	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
+	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
+	// Parsed JWT private key
+	JwtRSAPrivateKey *rsa.PrivateKey `json:"-"`
+
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
 	// Don't log anything at all
@@ -76,7 +93,13 @@ func (conf *Configuration) Check() error {
 
 	// loop to avoid repetetive err != nil line triplets
 	for _, f := range []func() error{
-		conf.verifyIrmaConf, conf.verifyPrivateKeys, conf.verifyURL, conf.verifyEmail, conf.verifyRevocation,
+		conf.verifyIrmaConf,
+		conf.verifyPrivateKeys,
+		conf.verifyURL,
+		conf.verifyEmail,
+		conf.verifyRevocation,
+		conf.verifyStaticSessions,
+		conf.verifyJwtPrivateKey,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
@@ -103,6 +126,32 @@ func (conf *Configuration) HavePrivateKeys() bool {
 }
 
 // helpers
+
+func (conf *Configuration) verifyStaticSessions() error {
+	conf.StaticSessionRequests = make(map[string]irma.RequestorRequest)
+	for name, r := range conf.StaticSessions {
+		if !regexp.MustCompile("^[a-zA-Z0-9_]+$").MatchString(name) {
+			return errors.Errorf("static session name %s not allowed, must be alphanumeric", name)
+		}
+		j, err := json.Marshal(r)
+		if err != nil {
+			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
+		}
+		rrequest, err := ParseSessionRequest(j)
+		if err != nil {
+			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
+		}
+		action := rrequest.SessionRequest().Action()
+		if action != irma.ActionDisclosing && action != irma.ActionSigning {
+			return errors.Errorf("static session %s must be either a disclosing or signing session", name)
+		}
+		if rrequest.Base().CallbackURL == "" {
+			return errors.Errorf("static session %s has no callback URL", name)
+		}
+		conf.StaticSessionRequests[name] = rrequest
+	}
+	return nil
+}
 
 func (conf *Configuration) verifyIrmaConf() error {
 	if conf.IrmaConfiguration == nil {
@@ -324,4 +373,19 @@ func (conf *Configuration) verifyEmail() error {
 		_ = t.Post("email", &x, conf.Email)
 	}
 	return nil
+}
+
+func (conf *Configuration) verifyJwtPrivateKey() error {
+	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
+		return nil
+	}
+
+	keybytes, err := fs.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to read private key", 0)
+	}
+
+	conf.JwtRSAPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
+	conf.Logger.Info("Private key parsed, JWT endpoints enabled")
+	return err
 }

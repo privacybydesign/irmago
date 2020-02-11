@@ -29,6 +29,7 @@ type Server struct {
 	sessions         sessionStore
 	scheduler        *gocron.Scheduler
 	stopScheduler    chan bool
+	handlers         map[string]server.SessionHandler
 }
 
 func New(conf *server.Configuration) (*Server, error) {
@@ -46,8 +47,8 @@ func New(conf *server.Configuration) (*Server, error) {
 		},
 		ServerSentEvents: sse.NewServer(&sse.Options{
 			ChannelNameFunc: func(r *http.Request) string {
-				token, noun, _, err := ParsePath(r.URL.Path)
-				if err == nil && token != "" && noun == "statusevents" {
+				component, token, noun, _, err := Route(r.URL.Path, r.Method)
+				if err == nil && component == server.ComponentSession && noun == "statusevents" {
 					return "session/" + token
 				}
 				return ""
@@ -59,6 +60,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			},
 			Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
 		}),
+		handlers: make(map[string]server.SessionHandler),
 	}
 
 	s.scheduler.Every(10).Seconds().Do(func() {
@@ -101,7 +103,7 @@ func (s *Server) validateRequest(request irma.SessionRequest) error {
 	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
 }
 
-func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {
+func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", err
@@ -126,6 +128,9 @@ func (s *Server) StartSession(req interface{}) (*irma.Qr, string, error) {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.token, "clienttoken": session.clientToken}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+	}
+	if handler != nil {
+		s.handlers[session.token] = handler
 	}
 	return &irma.Qr{
 		Type: action,
@@ -164,23 +169,24 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key, issued)
 }
 
-const (
-	ComponentRevocation = "revocation"
-	ComponentSession    = "session"
-)
-
-func ParsePath(path string) (component, token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile(ComponentRevocation + "/(events|update|issuancerecord)/?(.*)$")
+func Route(path, method string) (component, token, noun string, arg []string, err error) {
+	rev := regexp.MustCompile(server.ComponentRevocation + "/(events|update|issuancerecord)/?(.*)$")
 	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")
-		return ComponentRevocation, "", matches[1], args, nil
+		return server.ComponentRevocation, "", matches[1], args, nil
 	}
 
-	client := regexp.MustCompile(ComponentSession + "/(\\w+)/?(|commitments|proofs|status|statusevents)$")
+	static := regexp.MustCompile(server.ComponentSession + "/(\\w+)$")
+	matches = static.FindStringSubmatch(path)
+	if len(matches) == 2 && method == http.MethodPost {
+		return server.ComponentStatic, matches[1], "", nil, nil
+	}
+
+	client := regexp.MustCompile(server.ComponentSession + "/(\\w+)/?(|commitments|proofs|status|statusevents)$")
 	matches = client.FindStringSubmatch(path)
 	if len(matches) == 3 {
-		return ComponentSession, matches[1], matches[2], nil, nil
+		return server.ComponentSession, matches[1], matches[2], nil, nil
 	}
 
 	return "", "", "", nil, server.LogWarning(errors.Errorf("Invalid URL: %s", path))
@@ -259,16 +265,18 @@ func (s *Server) handleProtocolMessage(
 		}
 	}
 
-	component, token, noun, args, err := ParsePath(path)
+	component, token, noun, args, err := Route(path, method)
 	if err != nil {
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))
 	}
 
 	switch component {
-	case ComponentSession:
+	case server.ComponentSession:
 		status, output, result = s.handleClientMessage(token, noun, method, headers, message)
-	case ComponentRevocation:
+	case server.ComponentRevocation:
 		status, output, retheaders = s.handleRevocationMessage(noun, method, args, headers, message)
+	case server.ComponentStatic:
+		status, output = s.handleStaticMessage(token, method, message)
 	default:
 		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, component))
 	}
@@ -294,6 +302,12 @@ func (s *Server) handleClientMessage(
 		if session.status != session.prevStatus {
 			session.prevStatus = session.status
 			result = session.result
+			if result != nil && result.Status.Finished() {
+				if handler := s.handlers[result.Token]; handler != nil {
+					go handler(result)
+					delete(s.handlers, token)
+				}
+			}
 		}
 	}()
 
@@ -473,4 +487,34 @@ func (s *Server) handleRevocationMessage(
 	}
 
 	return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""), nil)
+}
+
+func (s *Server) handleStaticMessage(
+	id, method string, message []byte,
+) (int, []byte) {
+	if method != http.MethodPost {
+		return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
+	}
+	rrequest := s.conf.StaticSessionRequests[id]
+	if rrequest == nil {
+		return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "unknown static session"))
+	}
+	qr, _, err := s.StartSession(rrequest, s.doResultCallback)
+	if err != nil {
+		return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+	}
+	return server.JsonResponse(qr, nil)
+}
+
+func (s *Server) doResultCallback(result *server.SessionResult) {
+	url := s.GetRequest(result.Token).Base().CallbackURL
+	if url == "" {
+		return
+	}
+	server.DoResultCallback(url,
+		result,
+		s.conf.JwtIssuer,
+		s.GetRequest(result.Token).Base().ResultJwtValidity,
+		s.conf.JwtRSAPrivateKey,
+	)
 }

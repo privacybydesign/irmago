@@ -18,12 +18,7 @@ import (
 // Server is an irmaserver instance.
 type Server struct {
 	*servercore.Server
-	handlers map[string]SessionHandler
 }
-
-// SessionHandler is a function that can handle a session result
-// once an IRMA session has completed.
-type SessionHandler func(*server.SessionResult)
 
 // Default server instance
 var s *Server
@@ -41,8 +36,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		return nil, err
 	}
 	return &Server{
-		Server:   s,
-		handlers: make(map[string]SessionHandler),
+		Server: s,
 	}, nil
 }
 
@@ -59,18 +53,11 @@ func (s *Server) Stop() {
 // and CancelSession().
 // The request parameter can be an irma.RequestorRequest, or an irma.SessionRequest, or a
 // ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
-func StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
+func StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
 	return s.StartSession(request, handler)
 }
-func (s *Server) StartSession(request interface{}, handler SessionHandler) (*irma.Qr, string, error) {
-	qr, token, err := s.Server.StartSession(request)
-	if err != nil {
-		return nil, "", err
-	}
-	if handler != nil {
-		s.handlers[token] = handler
-	}
-	return qr, token, nil
+func (s *Server) StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
+	return s.Server.StartSession(request, handler)
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
@@ -137,8 +124,8 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			}
 		}
 
-		component, token, noun, _, err := servercore.ParsePath(r.URL.Path)
-		if err == nil && component == servercore.ComponentSession && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
+		component, token, noun, _, err := servercore.Route(r.URL.Path, r.Method)
+		if err == nil && component == server.ComponentSession && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
 			if err = s.SubscribeServerSentEvents(w, r, token, false); err != nil {
 				server.WriteResponse(w, nil, &irma.RemoteError{
 					Status:      server.ErrorUnsupported.Status,
@@ -149,7 +136,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			return
 		}
 
-		status, response, headers, result := s.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
+		status, response, headers, _ := s.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
 		for key, h := range headers {
 			for _, header := range h {
 				w.Header().Add(key, header)
@@ -159,11 +146,6 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		_, err = w.Write(response)
 		if err != nil {
 			_ = server.LogError(errors.WrapPrefix(err, "http.ResponseWriter.Write() returned error", 0))
-		}
-		if result != nil && result.Status.Finished() {
-			if handler := s.handlers[result.Token]; handler != nil {
-				go handler(result)
-			}
 		}
 	}
 }

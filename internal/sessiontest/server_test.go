@@ -114,6 +114,20 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 				RevocationServerURL: "http://localhost:48683/",
 			},
 		},
+		JwtPrivateKeyFile: filepath.Join(testdata, "jwtkeys", "sk.pem"),
+		StaticSessions: map[string]interface{}{
+			"staticsession": irma.ServiceProviderRequest{
+				RequestorBaseRequest: irma.RequestorBaseRequest{
+					CallbackURL: "http://localhost:48685",
+				},
+				Request: &irma.DisclosureRequest{
+					BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
+					Disclose: irma.AttributeConDisCon{
+						{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
+					},
+				},
+			},
+		},
 	},
 	Port: 48682,
 	DisableRequestorAuthentication: false,
@@ -137,18 +151,4 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 			AuthenticationKey:    "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg==",
 		},
 	},
-	StaticSessions: map[string]interface{}{
-		"staticsession": irma.ServiceProviderRequest{
-			RequestorBaseRequest: irma.RequestorBaseRequest{
-				CallbackURL: "http://localhost:48685",
-			},
-			Request: &irma.DisclosureRequest{
-				BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
-				Disclose: irma.AttributeConDisCon{
-					{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
-				},
-			},
-		},
-	},
-	JwtPrivateKeyFile: filepath.Join(testdata, "jwtkeys", "sk.pem"),
 }

@@ -14,14 +14,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -173,12 +171,6 @@ func (s *Server) attachClientEndpoints(router *chi.Mux) {
 	if s.conf.StaticPath != "" {
 		router.Mount(s.conf.StaticPrefix, s.StaticFilesHandler())
 	}
-	router.Group(func(r chi.Router) {
-		if s.conf.Verbose >= 2 {
-			r.Use(s.logHandler("staticsession", true, true, true))
-		}
-		r.Post("/irma/session/{name}", s.handleCreateStatic)
-	})
 }
 
 // Handler returns a http.Handler that handles all IRMA requestor messages
@@ -320,21 +312,6 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	s.createSession(w, requestor, rrequest)
 }
 
-func (s *Server) handleCreateStatic(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	rrequest := s.conf.staticSessions[name]
-	if rrequest == nil {
-		server.WriteError(w, server.ErrorInvalidRequest, "unknown static session")
-		return
-	}
-	qr, _, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
-	server.WriteJson(w, qr)
-}
-
 func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -405,7 +382,7 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
-	if s.conf.jwtPrivateKey == nil {
+	if s.conf.JwtRSAPrivateKey == nil {
 		s.conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
@@ -418,7 +395,11 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	j, err := s.resultJwt(res)
+	j, err := server.ResultJwt(res,
+		s.conf.JwtIssuer,
+		s.irmaserv.GetRequest(res.Token).Base().ResultJwtValidity,
+		s.conf.JwtRSAPrivateKey,
+	)
 	if err != nil {
 		s.conf.Logger.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)
@@ -429,7 +410,7 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
-	if s.conf.jwtPrivateKey == nil {
+	if s.conf.JwtRSAPrivateKey == nil {
 		s.conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
@@ -480,7 +461,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 
 	// Sign the jwt and return it
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	resultJwt, err := token.SignedString(s.conf.jwtPrivateKey)
+	resultJwt, err := token.SignedString(s.conf.JwtRSAPrivateKey)
 	if err != nil {
 		s.conf.Logger.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)
@@ -491,12 +472,12 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
-	if s.conf.jwtPrivateKey == nil {
+	if s.conf.JwtRSAPrivateKey == nil {
 		server.WriteError(w, server.ErrorUnsupported, "")
 		return
 	}
 
-	bts, err := x509.MarshalPKIXPublicKey(&s.conf.jwtPrivateKey.PublicKey)
+	bts, err := x509.MarshalPKIXPublicKey(&s.conf.JwtRSAPrivateKey.PublicKey)
 	if err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
@@ -508,68 +489,17 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(pubBytes)
 }
 
-func (s *Server) resultJwt(sessionresult *server.SessionResult) (string, error) {
-	standardclaims := jwt.StandardClaims{
-		Issuer:   s.conf.JwtIssuer,
-		IssuedAt: time.Now().Unix(),
-		Subject:  string(sessionresult.Type) + "_result",
-	}
-	validity := s.irmaserv.GetRequest(sessionresult.Token).Base().ResultJwtValidity
-	standardclaims.ExpiresAt = time.Now().Unix() + int64(validity)
-
-	var claims jwt.Claims
-	if sessionresult.LegacySession {
-		claims = struct {
-			jwt.StandardClaims
-			*server.LegacySessionResult
-		}{standardclaims, sessionresult.Legacy()}
-	} else {
-		claims = struct {
-			jwt.StandardClaims
-			*server.SessionResult
-		}{standardclaims, sessionresult}
-	}
-
-	// Sign the jwt and return it
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(s.conf.jwtPrivateKey)
-}
-
 func (s *Server) doResultCallback(result *server.SessionResult) {
-	callbackUrl := s.irmaserv.GetRequest(result.Token).Base().CallbackURL
-	if callbackUrl == "" {
+	url := s.irmaserv.GetRequest(result.Token).Base().CallbackURL
+	if url == "" {
 		return
 	}
-
-	logger := s.conf.Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
-	if !strings.HasPrefix(callbackUrl, "https") {
-		logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
-	} else {
-		logger.Debug("POSTing session result")
-	}
-
-	var res string
-	if s.conf.jwtPrivateKey != nil {
-		var err error
-		res, err = s.resultJwt(result)
-		if err != nil {
-			_ = server.LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
-			return
-		}
-	} else {
-		bts, err := json.Marshal(result)
-		if err != nil {
-			_ = server.LogError(errors.WrapPrefix(err, "Failed to marshal session result for result callback", 0))
-			return
-		}
-		res = string(bts)
-	}
-
-	var x string // dummy for the server's return value that we don't care about
-	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, res); err != nil {
-		// not our problem, log it and go on
-		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
-	}
+	server.DoResultCallback(url,
+		result,
+		s.conf.JwtIssuer,
+		s.irmaserv.GetRequest(result.Token).Base().ResultJwtValidity,
+		s.conf.JwtRSAPrivateKey,
+	)
 }
 
 func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
@@ -595,7 +525,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 			return
 		}
 	}
-	if rrequest.Base().CallbackURL != "" && s.conf.jwtPrivateKey == nil {
+	if rrequest.Base().CallbackURL != "" && s.conf.JwtRSAPrivateKey == nil {
 		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
 		server.WriteError(w, server.ErrorUnsupported, "")
 		return
