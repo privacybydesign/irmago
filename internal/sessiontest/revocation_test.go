@@ -240,24 +240,24 @@ func TestRevocationAll(t *testing.T) {
 
 		// Prepare session request
 		request := revocationRequest()
-		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(request.Base()))
+		require.NoError(t, conf.SetRevocationUpdates(request.Base()))
 		events := request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(0), events[len(events)-1].Index)
 
-		// Construct disclosure proof with nonrevocation proof against accumulator with index 1
+		// Construct disclosure proof with nonrevocation proof against accumulator with index 0
 		candidates, missing, err := client.CheckSatisfiability(request)
 		require.NoError(t, err)
 		require.Empty(t, missing)
 		choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{candidates[0][0]}}
 		disclosure, _, err := client.Proofs(choice, request)
 		require.NoError(t, err)
-		pacc, err := disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
+		proofAcc, err := disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
 		require.NoError(t, err)
-		require.Equal(t, uint64(0), pacc.Index)
+		require.Equal(t, uint64(0), proofAcc.Index)
 
-		// Revoke a bogus credential, advancing accumulator index to 2, and update the session request,
-		// indicated that we expect a nonrevocation proof wrt accumulator with index 2
-		fakeRevocation(t, "2", conf, acc)
+		// Revoke a bogus credential, advancing accumulator index to 1, and update the session request,
+		// indicated that we expect a nonrevocation proof wrt accumulator with index 1
+		fakeRevocation(t, "1", conf, acc)
 		request.Revocation = irma.NonRevocationParameters{revocationTestCred: {}}
 		require.NoError(t, conf.SetRevocationUpdates(request.Base()))
 		events = request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
@@ -268,21 +268,21 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusInvalid, status)
 
-		// Revoke another bogus credential, advancing index to 3, and make a new disclosure request
-		// requiring a nonrevocation proof against the accumulator with index 3
-		fakeRevocation(t, "3", conf, acc)
+		// Revoke another bogus credential, advancing index to 2, and make a new disclosure request
+		// requiring a nonrevocation proof against the accumulator with index 2
+		fakeRevocation(t, "2", conf, acc)
 		newrequest := revocationRequest()
 		require.NoError(t, conf.SetRevocationUpdates(newrequest.Base()))
 		events = newrequest.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(2), events[len(events)-1].Index)
 
-		// Use newrequest to update client to index 3 and contruct a disclosure proof
+		// Use newrequest to update client to index 2 and contruct a disclosure proof
 		require.NoError(t, client.NonrevPrepare(newrequest))
 		disclosure, _, err = client.Proofs(choice, newrequest)
 		require.NoError(t, err)
-		pacc, err = disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
+		proofAcc, err = disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
 		require.NoError(t, err)
-		require.Equal(t, uint64(2), pacc.Index)
+		require.Equal(t, uint64(2), proofAcc.Index)
 
 		// Check that the nonrevocation proof which uses a newer accumulator than ours verifies
 		events = request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events

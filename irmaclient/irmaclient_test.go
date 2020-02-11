@@ -165,10 +165,10 @@ func TestCandidates(t *testing.T) {
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	// If the disjunction contains no required values at all, then our attribute is a candidate
-	disjunction := irma.AttributeDisCon{
-		irma.AttributeCon{irma.AttributeRequest{Type: attrtype}},
-	}
-	attrs, missing, err := client.Candidates(disjunction, true)
+	request := irma.NewDisclosureRequest(attrtype)
+	disjunction := request.Disclose[0]
+	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
+	attrs, missing, err := client.Candidates(request.Base(), disjunction)
 	require.NoError(t, err)
 	require.Empty(t, missing)
 	require.NotNil(t, attrs)
@@ -180,7 +180,7 @@ func TestCandidates(t *testing.T) {
 	// then our attribute is a candidate
 	reqval := "456"
 	disjunction[0][0].Value = &reqval
-	attrs, missing, err = client.Candidates(disjunction, true)
+	attrs, missing, err = client.Candidates(request.Base(), disjunction)
 	require.NoError(t, err)
 	require.Empty(t, missing)
 	require.NotNil(t, attrs)
@@ -192,7 +192,7 @@ func TestCandidates(t *testing.T) {
 	// then it is NOT a match.
 	reqval = "foobarbaz"
 	disjunction[0][0].Value = &reqval
-	attrs, missing, err = client.Candidates(disjunction, true)
+	attrs, missing, err = client.Candidates(request.Base(), disjunction)
 	require.NoError(t, err)
 	require.NotEmpty(t, missing)
 	require.NotNil(t, attrs)
@@ -200,7 +200,7 @@ func TestCandidates(t *testing.T) {
 
 	// A required value of nil counts as no requirement on the value, so our attribute is a candidate
 	disjunction[0][0].Value = nil
-	attrs, missing, err = client.Candidates(disjunction, true)
+	attrs, missing, err = client.Candidates(request.Base(), disjunction)
 	require.NoError(t, err)
 	require.Empty(t, missing)
 	require.NotNil(t, attrs)
@@ -210,7 +210,7 @@ func TestCandidates(t *testing.T) {
 
 	// Require an attribute we do not have
 	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.ageLower.over12")
-	attrs, missing, err = client.Candidates(disjunction, true)
+	attrs, missing, err = client.Candidates(request.Base(), disjunction)
 	require.NoError(t, err)
 	require.NotEmpty(t, missing)
 	require.Empty(t, attrs)
