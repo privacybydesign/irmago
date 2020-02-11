@@ -2,6 +2,7 @@ package keyshareserver
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -18,6 +19,16 @@ var (
 	ErrInvalidRecord     = errors.New("Invalid record in database")
 )
 
+type LogEntryType string
+
+const (
+	PinCheckRefused = "PIN_CHECK_REFUSED"
+	PinCheckSucces  = "PIN_CHECK_SUCCES"
+	PinCheckFailed  = "PIN_CHECK_FAILED"
+	PinCheckBlocked = "PIN_CHECK_BLOCKED"
+	IrmaSession     = "IRMA_SESSION"
+)
+
 type KeyshareDB interface {
 	NewUser(user KeyshareUserData) error
 	User(username string) (KeyshareUser, error)
@@ -28,6 +39,7 @@ type KeyshareDB interface {
 	ClearPincheck(user KeyshareUser) error
 
 	SetSeen(user KeyshareUser) error
+	AddLog(user KeyshareUser, eventType LogEntryType, param interface{}) error
 }
 
 type KeyshareUser interface {
@@ -113,6 +125,10 @@ func (db *keyshareMemoryDB) ClearPincheck(user KeyshareUser) error {
 }
 
 func (db *keyshareMemoryDB) SetSeen(user KeyshareUser) error {
+	return nil
+}
+
+func (db *keyshareMemoryDB) AddLog(user KeyshareUser, eventType LogEntryType, param interface{}) error {
 	return nil
 }
 
@@ -294,4 +310,28 @@ func (db *keysharePostgresDatabase) SetSeen(user KeyshareUser) error {
 		return ErrUserNotFound
 	}
 	return nil
+}
+
+func (db *keysharePostgresDatabase) AddLog(user KeyshareUser, eventType LogEntryType, param interface{}) error {
+	userdata, ok := user.(*keysharePostgresUser)
+	if !ok {
+		return ErrInvalidData
+	}
+
+	var encodedParamString *string
+	if param != nil {
+		encodedParam, err := json.Marshal(param)
+		if err != nil {
+			return err
+		}
+		encodedParams := string(encodedParam)
+		encodedParamString = &encodedParams
+	}
+
+	_, err := db.db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES ($1, $2, $3, $4)",
+		time.Now().Unix(),
+		eventType,
+		encodedParamString,
+		userdata.id)
+	return err
 }
