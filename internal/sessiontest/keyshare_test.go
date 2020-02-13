@@ -88,7 +88,22 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 }
 
 func TestKeyshareRevocation(t *testing.T) {
-	t.Run("RevocationKeyshare", func(t *testing.T) {
-		testRevocation(t, revKeyshareTestAttr)
+	t.Run("Keyshare", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+	})
+
+	t.Run("Both", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+		testRevocation(t, revocationTestAttr, client, handler)
 	})
 }

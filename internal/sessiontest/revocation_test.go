@@ -35,20 +35,22 @@ var (
 	revKeyshareTestCred      = revKeyshareTestAttr.CredentialTypeIdentifier()
 )
 
-func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier) {
-	defer test.ClearTestStorage(t)
-	client, handler := revocationSetup(t)
-	defer stopRevocationServer()
+func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler) {
+	// issue first credential
 	credid := attr.CredentialTypeIdentifier()
-
-	// issue second credential which overwrites the first one, as our credtype is a singleton
-	// this is ok, as we use cred0 only to revoke it, to see if cred1 keeps working
-	issrequest := revocationIssuanceRequest(t, credid)
-	issrequest.Credentials[0].RevocationKey = "cred1"
-	result := requestorSessionHelper(t, issrequest, client)
+	result := requestorSessionHelper(t, revocationIssuanceRequest(t, credid), client)
 	require.Nil(t, result.Err)
 
-	// perform disclosure session (of cred1) with nonrevocation proof
+	// Issue second credential, which may overwrite the first one in case of singleton credtypes.
+	// This is ok, as we use the first credential only to revoke it, to see if the second credential
+	// keeps working.
+	issrequest := revocationIssuanceRequest(t, credid)
+	key := issrequest.Credentials[0].RevocationKey
+	issrequest.Credentials[0].RevocationKey = key + "2"
+	result = requestorSessionHelper(t, issrequest, client)
+	require.Nil(t, result.Err)
+
+	// perform disclosure session (of key2) with nonrevocation proof
 	logger.Info("step 1")
 	request := revocationRequest(attr)
 	result = revocationSession(t, client, request)
@@ -60,20 +62,20 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier) {
 	require.True(t, result.Disclosed[0][0].NotRevoked)
 	require.Nil(t, result.Disclosed[0][0].NotRevokedBefore)
 
-	// revoke cred0
+	// revoke key
 	logger.Info("step 2")
-	require.NoError(t, revocationServer.Revoke(revocationTestCred, "cred0", time.Time{}))
+	require.NoError(t, revocationServer.Revoke(credid, key, time.Time{}))
 
-	// perform another disclosure session with nonrevocation proof to see that cred1 still works
+	// perform another disclosure session with nonrevocation proof to see that key2 still works
 	// client updates its witness to the new accumulator first
 	logger.Info("step 3")
 	result = revocationSession(t, client, request)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
-	// revoke cred1
+	// revoke key2
 	logger.Info("step 4")
-	require.NoError(t, revocationServer.Revoke(credid, "cred1", time.Time{}))
+	require.NoError(t, revocationServer.Revoke(credid, key+"2", time.Time{}))
 
 	// try to perform session with revoked credential
 	// client notices that his credential is revoked and aborts
@@ -95,7 +97,11 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier) {
 
 func TestRevocationAll(t *testing.T) {
 	t.Run("Revocation", func(t *testing.T) {
-		testRevocation(t, revocationTestAttr)
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t)
+		testRevocation(t, revocationTestAttr, client, handler)
 	})
 
 	t.Run("RevocationServerSessions", func(t *testing.T) {
@@ -593,7 +599,7 @@ func revocationIssuanceRequest(t *testing.T, credid irma.CredentialTypeIdentifie
 	switch credid {
 	case revocationTestCred:
 		return irma.NewIssuanceRequest([]*irma.CredentialRequest{{
-			RevocationKey:    "cred0",
+			RevocationKey:    "key",
 			CredentialTypeID: credid,
 			Attributes: map[string]string{
 				"BSN": "299792458",
@@ -601,7 +607,7 @@ func revocationIssuanceRequest(t *testing.T, credid irma.CredentialTypeIdentifie
 		}})
 	case revKeyshareTestCred:
 		return irma.NewIssuanceRequest([]*irma.CredentialRequest{{
-			RevocationKey:    "cred0",
+			RevocationKey:    "keysharekey",
 			CredentialTypeID: credid,
 			Attributes: map[string]string{
 				"email": "irma@example.com",
