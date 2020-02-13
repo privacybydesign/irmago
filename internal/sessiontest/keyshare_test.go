@@ -86,3 +86,9 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 		},
 	}, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")), "issue", nil)
 }
+
+func TestKeyshareRevocation(t *testing.T) {
+	t.Run("RevocationKeyshare", func(t *testing.T) {
+		testRevocation(t, revKeyshareTestAttr)
+	})
+}
