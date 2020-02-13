@@ -536,9 +536,9 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		res, err := (&http.Client{}).Do(req)
 		require.NoError(t, err)
-		require.Equal(t,
-			fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge),
-			res.Header.Get("Cache-Control"),
+		cacheheader := res.Header.Get("Cache-Control")
+		require.True(t, cacheheader == fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge) ||
+			cacheheader == fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge-1),
 		)
 
 		// check /update endpoint

@@ -278,7 +278,7 @@ func (conf *Configuration) verifyRevocation() error {
 		_, err := rev.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
 		haveSK := err == nil
 		settings := conf.RevocationSettings[credid]
-		if haveSK && settings == nil || (settings.RevocationServerURL == "" && !settings.ServerMode) {
+		if haveSK && (settings == nil || (settings.RevocationServerURL == "" && !settings.ServerMode)) {
 			message := "Revocation-supporting private key installed for %s, but no revocation server is configured: issuance sessions will always fail"
 			if conf.IrmaConfiguration.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].Demo {
 				conf.Logger.Warnf(message, credid)

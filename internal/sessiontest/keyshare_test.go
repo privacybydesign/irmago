@@ -79,7 +79,7 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 
 	sessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
-			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.email"),
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
 			Attributes: map[string]string{
 				"email": "example@example.com",
 			},
