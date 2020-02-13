@@ -151,7 +151,7 @@ func (m memRevStorage) Latest(id CredentialTypeIdentifier, count uint64) map[uin
 
 	updates := map[uint]*revocation.Update{}
 	for _, r := range record.r {
-		offset := int64(len(r.Events)) - int64(count) - 1
+		offset := int64(len(r.Events)) - int64(count)
 		if offset < 0 {
 			offset = 0
 		}
@@ -171,8 +171,8 @@ func (m memRevStorage) Latest(id CredentialTypeIdentifier, count uint64) map[uin
 
 func (m memRevStorage) SignedAccumulator(id CredentialTypeIdentifier, pkcounter uint) *revocation.SignedAccumulator {
 	updates := m.Latest(id, 0)
-	for _, u := range updates {
-		return u.SignedAccumulator
+	if update := updates[pkcounter]; update != nil {
+		return update.SignedAccumulator
 	}
 	return nil
 }
