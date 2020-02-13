@@ -69,10 +69,14 @@ type CredentialType struct {
 	RevocationServers     []string         `xml:"RevocationServers>RevocationServer"`
 	RevocationUpdateCount uint64
 	RevocationUpdateSpeed uint64
-	RevocationIndex       int              `xml:"-"`
-	XMLVersion            int              `xml:"version,attr"`
-	XMLName               xml.Name         `xml:"IssueSpecification"`
-	IssueURL              TranslatedString `xml:"IssueURL"`
+	RevocationIndex       int      `xml:"-"`
+	XMLVersion            int      `xml:"version,attr"`
+	XMLName               xml.Name `xml:"IssueSpecification"`
+
+	IssueURL     TranslatedString `xml:"IssueURL"`
+	IsULIssueURL bool             `xml:"IsULIssueURL"`
+
+	DeprecatedSince Timestamp
 
 	ForegroundColor         string
 	BackgroundGradientStart string
