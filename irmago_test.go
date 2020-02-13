@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"path/filepath"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
@@ -570,4 +572,93 @@ func TestVerify(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, ProofStatusInvalid, status)
 	})
+}
+
+var (
+	revocationTestCred  = NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	revocationPkCounter = uint(2)
+)
+
+func TestRevocationMemoryStore(t *testing.T) {
+	conf := parseConfiguration(t)
+	db := conf.Revocation.memdb
+	require.NotNil(t, db)
+
+	// prepare key material
+	sk, err := conf.Revocation.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
+	require.NoError(t, err)
+	pk, err := conf.Revocation.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
+	require.NoError(t, err)
+
+	// construct initial update
+	update, err := revocation.NewAccumulator(sk)
+	require.NoError(t, err)
+
+	// insert and retrieve it and check its validity
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 0, 0)
+
+	// construct new update message with a few revocation events
+	update = revokeMultiple(t, sk, update)
+	oldupdate := *update // save a copy for below
+
+	// insert it, retrieve it with a varying amount of events, verify
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 4, 3)
+
+	// construct and test against a new update whose events have no overlap with that of our db
+	update = revokeMultiple(t, sk, update)
+	update.Events = update.Events[4:]
+	require.Equal(t, uint64(4), update.Events[0].Index)
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 4, 6)
+
+	// attempt to insert an update that is too new
+	update = revokeMultiple(t, sk, update)
+	update.Events = update.Events[5:]
+	require.Equal(t, uint64(9), update.Events[0].Index)
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 4, 6)
+
+	// attempt to insert an update that is too old
+	db.Insert(revocationTestCred, &oldupdate)
+	retrieve(t, pk, db, 4, 6)
+}
+
+func revokeMultiple(t *testing.T, sk *revocation.PrivateKey, update *revocation.Update) *revocation.Update {
+	acc := update.SignedAccumulator.Accumulator
+	event := update.Events[len(update.Events)-1]
+	events := update.Events
+	for i := 0; i < 3; i++ {
+		acc, event = revoke(t, acc, event, sk)
+		events = append(events, event)
+	}
+	update, err := revocation.NewUpdate(sk, acc, events)
+	require.NoError(t, err)
+	return update
+}
+
+func retrieve(t *testing.T, pk *revocation.PublicKey, db memRevStorage, count uint64, expectedIndex uint64) {
+	var updates map[uint]*revocation.Update
+	var err error
+	for i := uint64(0); i <= count; i++ {
+		updates = db.Latest(revocationTestCred, i)
+		require.Len(t, updates, 1)
+		require.NotNil(t, updates[revocationPkCounter])
+		require.Len(t, updates[revocationPkCounter].Events, int(i))
+		_, err = updates[revocationPkCounter].Verify(pk)
+		require.NoError(t, err)
+	}
+	sacc := db.SignedAccumulator(revocationTestCred, revocationPkCounter)
+	acc, err := sacc.UnmarshalVerify(pk)
+	require.NoError(t, err)
+	require.Equal(t, expectedIndex, acc.Index)
+}
+
+func revoke(t *testing.T, acc *revocation.Accumulator, parent *revocation.Event, sk *revocation.PrivateKey) (*revocation.Accumulator, *revocation.Event) {
+	e, err := rand.Prime(rand.Reader, 100)
+	require.NoError(t, err)
+	acc, event, err := acc.Remove(sk, big.Convert(e), parent)
+	require.NoError(t, err)
+	return acc, event
 }
