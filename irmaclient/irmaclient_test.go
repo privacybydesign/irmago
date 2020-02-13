@@ -11,7 +11,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/fs"
 
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 
@@ -46,54 +45,6 @@ func parseExistingStorage(t *testing.T) *Client {
 	)
 	require.NoError(t, err)
 	return client
-}
-
-func parseDisclosure(t *testing.T) (*Client, *irma.DisclosureRequest, *irma.Disclosure) {
-	client := parseStorage(t)
-
-	requestJson := `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"zVQJMG6TKZwfcv5TExFVSQ==","protocolVersion":"2.5","disclose":[[["irma-demo.RU.studentCard.studentID"]]],"labels":{"0":null}}`
-	dislosureJson := `{"proofs":[{"c":"o21UPItMKWXmXNhBKsCBHDWjfRoy+uDdbDB1yhhpg3k=","A":"Bl68Ut2nu2nwhIweU9QGoNd6TkjUIRbQ6SDg22m8PzMEgca0KA4/Oy1gaJCUHM3FFJ0Gdj0+6/VpcF85JyuQZou93UXXwzN/Y7ohUw+YxVTQ7WcJmZ/VGDh3SME5KJ9aWjGmq61J2LQiiDSq+XrcWFfKPwad6BkDhV2reo4yo68=","e_response":"VD0pWdeDkd3V+R3734xyRcGeWMMTzpB0ZiJhKMzv37DmHN6RpRzTF/0HroAsMIMz8mBWxYPVRBiw","v_response":"3OWsmIDM7v0ByEXax2YZGp3BnJ5nkCLMcT6/ENU0EcpjrOz+rT+NayQSLgMshxAATpgkgAluFQ3owOoQEL8ZAkZTWUDW5j+qy7GDFd22ZOKEZLWf8Q1XRK3x6exV9CIMkcBQrv5W6EI9XB5OKKNB3Z/VTALY3UW8cQQ0DPHj83YBEL3LJQDxwaxvQeHx4nysJjsEoLJE1KPBynXlfxpk17O3HTg+NuX5gj7+ckiHrmXgthJHvqCTnNpEORtXDJTmKJUccUiyWuftA36cIXIxW4N6I88T4BYctwN+T9NY+hcjYESITtxB+r2elB98bzlWgHF8ohpOkkJGuNjTFjw=","a_responses":{"0":"eDQA3Lrh2WC3o/VP6KD/uaMSRy/em3gEfuqXD9tVT+yJFYb7GT91lle5dB6lg235pUSHzYIOET7FYOHwb4/YSAGQiix0IzqFkLo=","2":"kT3kfcIaPy3UBYPX78X10w/R1Cb5rHqoW5OUd06xqC1V9MqVw3zhtc/nBgWmvVwTgJrl2CyuBjjoF10RJz/FEjYZ0JAF57uUXW8=","3":"4oSBcyUT6mOBhk/Szk/5G5QrgaAADW6wSl91hGwTTNDTIUiK01GE11JozbwDeZsLPoFikzikwkPu9ZsOAtOtb/+IcadB6NP0KXA=","5":"OwUSSCBb9NOMOYYSGSYCrdFUNLKJ/b2YP5LlElFG5r4GPR71zTQsZ4QuJiMIt9iFPRP6PQUvMvjWA59UTQ9AlwKc9JcQzbScYBM="},"a_disclosed":{"1":"AwAKOQIBAALWy2qU9p3l52l9LU1rVT4M","4":"aGpt"}}],"indices":[[{"cred":0,"attr":4}]]}`
-	request := &irma.DisclosureRequest{}
-	require.NoError(t, json.Unmarshal([]byte(requestJson), request))
-	disclosure := &irma.Disclosure{}
-	require.NoError(t, json.Unmarshal([]byte(dislosureJson), disclosure))
-
-	return client, request, disclosure
-}
-
-func TestVerify(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		client, request, disclosure := parseDisclosure(t)
-		attr, status, err := disclosure.Verify(client.Configuration, request)
-		require.NoError(t, err)
-		require.Equal(t, irma.ProofStatusValid, status)
-		require.Equal(t, "456", *attr[0][0].RawValue)
-	})
-
-	t.Run("invalid", func(t *testing.T) {
-		client, request, disclosure := parseDisclosure(t)
-		disclosure.Proofs[0].(*gabi.ProofD).AResponses[0] = big.NewInt(100)
-		_, status, err := disclosure.Verify(client.Configuration, request)
-		require.NoError(t, err)
-		require.Equal(t, irma.ProofStatusInvalid, status)
-	})
-
-	t.Run("wrong attribute", func(t *testing.T) {
-		client, request, disclosure := parseDisclosure(t)
-		request.Disclose[0][0][0].Type = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
-		_, status, err := disclosure.Verify(client.Configuration, request)
-		require.NoError(t, err)
-		require.Equal(t, irma.ProofStatusMissingAttributes, status)
-	})
-
-	t.Run("wrong nonce", func(t *testing.T) {
-		client, request, disclosure := parseDisclosure(t)
-		request.Nonce = big.NewInt(100)
-		_, status, err := disclosure.Verify(client.Configuration, request)
-		require.NoError(t, err)
-		require.Equal(t, irma.ProofStatusInvalid, status)
-	})
-
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {

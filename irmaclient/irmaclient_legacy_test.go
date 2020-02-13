@@ -11,7 +11,6 @@ func TestConvertingLegacyStorage(t *testing.T) {
 	defer test.SetTestStorageDir("client")
 
 	// Test all tests in this file with legacy storage too
-	t.Run("TestVerify", TestVerify)
 	t.Run("TestStorageDeserialization", TestStorageDeserialization)
 	t.Run("TestCandidates", TestCandidates)
 	t.Run("TestCandidateConjunctionOrder", TestCandidateConjunctionOrder)
