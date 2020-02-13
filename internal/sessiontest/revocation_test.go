@@ -302,7 +302,7 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, irma.ProofStatusInvalid, status)
 	})
 
-	t.Run("ClientUpdate", func(t *testing.T) {
+	t.Run("ClientSessionServerUpdate", func(t *testing.T) {
 		defer test.ClearTestStorage(t)
 		client, _ := revocationSetup(t)
 		defer stopRevocationServer()
@@ -316,6 +316,42 @@ func TestRevocationAll(t *testing.T) {
 		fakeMultipleRevocations(t, 116, conf, sacc.Accumulator)
 
 		result := revocationSession(t, client, nil)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+	})
+
+	t.Run("ClientAutoServerUpdate", func(t *testing.T) {
+		defer test.ClearTestStorage(t)
+		client, _ := revocationSetup(t) // revocation server is stopped manually below
+
+		// Advance the accumulator by performing a few revocations
+		conf := revocationConfiguration.IrmaConfiguration.Revocation
+		sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
+		fakeMultipleRevocations(t, irma.RevocationParameters.DefaultUpdateEventCount+3, conf, sacc.Accumulator)
+
+		// Client updates at revocation server
+		require.NoError(t, client.NonrevUpdateFromServer(revocationTestCred))
+
+		// Start an IRMA server and let it update at revocation server
+		StartIrmaServer(t, false)
+		defer StopIrmaServer()
+		conf = irmaServerConfiguration.IrmaConfiguration.Revocation
+		require.NoError(t, conf.SyncDB(revocationTestCred))
+
+		// IRMA server's accumulator is now at the same index as that of the revocation server
+		sacc, err = conf.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
+		pk, err := conf.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
+		require.NoError(t, err)
+		acc, err := sacc.UnmarshalVerify(pk)
+		require.NoError(t, err)
+		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+3, acc.Index)
+
+		// Stop revocation server and do session
+		// IRMA server is at index 3, so if the client would not be it would need to update, which would fail
+		stopRevocationServer()
+		result := revocationSession(t, client, nil, sessionOptionReuseServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})

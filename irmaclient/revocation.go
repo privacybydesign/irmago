@@ -64,7 +64,7 @@ func (client *Client) initRevocation() {
 				if r < p {
 					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%s", id, attrs.Hash())
 					client.jobs <- func() {
-						if err = client.nonrevUpdateFromServer(id); err != nil {
+						if err = client.NonrevUpdateFromServer(id); err != nil {
 							client.reportError(err)
 							return
 						}
@@ -208,7 +208,7 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 	return nil
 }
 
-func (client *Client) nonrevUpdateFromServer(id irma.CredentialTypeIdentifier) error {
+func (client *Client) NonrevUpdateFromServer(id irma.CredentialTypeIdentifier) error {
 	return client.nonrevUpdate(id, nil)
 }
 
