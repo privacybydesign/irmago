@@ -1,22 +1,40 @@
+CREATE SCHEMA irma;
+
 CREATE TABLE IF NOT EXISTS irma.users
 (
     id serial PRIMARY KEY,
-    username varchar(128),
-    coredata bytea,
-    lastSeen bigint,
-    pinCounter int,
-    pinBlockDate bigint
+    username text NOT NULL,
+    coredata bytea NOT NULL,
+    lastSeen bigint NOT NULL,
+    pinCounter int NOT NULL,
+    pinBlockDate bigint NOT NULL
 );
 CREATE UNIQUE INDEX username_index ON irma.users (username);
-GRANT ALL PRIVILEGES ON TABLE irma.users TO irma;
 
 CREATE TABLE IF NOT EXISTS irma.log_entry_records
 (
     id serial PRIMARY KEY,
-    time bigint,
-    event varchar(256),
+    time bigint NOT NULL,
+    event text NOT NULL,
     param text,
-    user_id int
+    user_id int NOT NULL
 );
-CREATE INDEX log_entry_records_user_id_index ON irma.log_entry_records (user_id);
-GRANT ALL PRIVILEGES ON TABLE irma.log_entry_records TO irma;
+CREATE INDEX log_entry_records_user_id_index ON irma.log_entry_records (user_id, time);
+
+CREATE TABLE IF NOT EXISTS irma.email_verification_tokens
+(
+    id serial PRIMARY KEY,
+    token text NOT NULL,
+    email text NOT NULL,
+    user_id int NOT NULL
+);
+CREATE UNIQUE INDEX email_verification_token_index ON irma.email_verification_tokens (token);
+
+CREATE TABLE IF NOT EXISTS irma.email_addresses
+(
+    id serial PRIMARY KEY,
+    user_id int NOT NULL,
+    emailAddress text NOT NULL
+);
+CREATE INDEX emailAddress_index ON irma.email_addresses (emailAddress);
+CREATE INDEX emailAddress_userid_index ON irma.email_addresses (user_id);
