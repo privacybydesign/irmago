@@ -120,7 +120,7 @@ func TestLargeAttribute(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
-	require.NoError(t, client.RemoveAllCredentials())
+	require.NoError(t, client.RemoveStorage())
 
 	issuanceRequest := getSpecialIssuanceRequest(false, "1234567890123456789012345678901234567890") // 40 chars
 	sessionHelper(t, issuanceRequest, "issue", client)
@@ -204,7 +204,7 @@ that they have been fixed. */
 func TestAttributeByteEncoding(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer test.ClearTestStorage(t)
-	require.NoError(t, client.RemoveAllCredentials())
+	require.NoError(t, client.RemoveStorage())
 
 	/* After bitshifting the presence bit into the large attribute below, the most significant
 	bit is 1. In the bigint->[]byte conversion that happens before hashing this attribute, in
@@ -229,7 +229,7 @@ func TestOutdatedClientIrmaConfiguration(t *testing.T) {
 	defer test.ClearTestStorage(t)
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
-	require.NoError(t, client.RemoveAllCredentials())
+	require.NoError(t, client.RemoveStorage())
 	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client).Err)
 
 	// client does not have updated irma_configuration with new attribute irma-demo.RU.studentCard.newAttribute,
@@ -249,7 +249,7 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
-	require.NoError(t, client.RemoveAllCredentials())
+	require.NoError(t, client.RemoveStorage())
 	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client).Err)
 
 	// Trigger downloading the updated irma_configuration using a disclosure request containing the
