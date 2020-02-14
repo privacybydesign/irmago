@@ -1,7 +1,9 @@
 package keyshareserver
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -448,11 +450,64 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	err = s.db.NewUser(KeyshareUserData{Username: username, Coredata: coredata})
+	user, err := s.db.NewUser(KeyshareUserData{Username: username, Coredata: coredata})
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
+	}
+
+	// Send email if user specified email address
+	if msg.Email != nil && s.conf.EmailServer != "" {
+		// Fetch template and configuration data for users language, falling back if needed
+		template, ok := s.conf.RegistrationEmailTemplates[msg.Language]
+		if !ok {
+			template = s.conf.RegistrationEmailTemplates[s.conf.DefaultLanguage]
+		}
+		verificationBaseURL, ok := s.conf.VerificationURL[msg.Language]
+		if !ok {
+			verificationBaseURL = s.conf.VerificationURL[s.conf.DefaultLanguage]
+		}
+		subject, ok := s.conf.RegistrationEmailSubject[msg.Language]
+		if !ok {
+			subject = s.conf.RegistrationEmailSubject[s.conf.DefaultLanguage]
+		}
+
+		// Generate token
+		tokenData := make([]byte, 35)
+		_, err = rand.Read(tokenData)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not generate email verification token")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+		token := base32.StdEncoding.EncodeToString(tokenData)
+
+		// Add it to the database
+		err = s.db.AddEmailVerification(user, *msg.Email, token)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not add email verification record to user")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+
+		// Build message
+		var emsg bytes.Buffer
+		err = template.Execute(&emsg, map[string]string{"VerificationURL": verificationBaseURL + token})
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not generate email verifcation mail")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+
+		// And send it
+		err = server.SendHTMLMail(
+			s.conf.EmailServer,
+			s.conf.EmailAuth,
+			s.conf.EmailFrom,
+			*msg.Email,
+			subject,
+			emsg.Bytes())
 	}
 
 	// Setup and return issuance session for keyshare credential.

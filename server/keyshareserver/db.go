@@ -30,7 +30,7 @@ const (
 )
 
 type KeyshareDB interface {
-	NewUser(user KeyshareUserData) error
+	NewUser(user KeyshareUserData) (KeyshareUser, error)
 	User(username string) (KeyshareUser, error)
 	UpdateUser(user KeyshareUser) error
 
@@ -40,6 +40,8 @@ type KeyshareDB interface {
 
 	SetSeen(user KeyshareUser) error
 	AddLog(user KeyshareUser, eventType LogEntryType, param interface{}) error
+
+	AddEmailVerification(user KeyshareUser, emailAddress, token string) error
 }
 
 type KeyshareUser interface {
@@ -81,7 +83,7 @@ func (db *keyshareMemoryDB) User(username string) (KeyshareUser, error) {
 	return &keyshareMemoryUser{KeyshareUserData{Username: username, Coredata: data}}, nil
 }
 
-func (db *keyshareMemoryDB) NewUser(user KeyshareUserData) error {
+func (db *keyshareMemoryDB) NewUser(user KeyshareUserData) (KeyshareUser, error) {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -89,10 +91,10 @@ func (db *keyshareMemoryDB) NewUser(user KeyshareUserData) error {
 	// Check and insert user
 	_, exists := db.users[user.Username]
 	if exists {
-		return ErrUserAlreadyExists
+		return nil, ErrUserAlreadyExists
 	}
 	db.users[user.Username] = user.Coredata
-	return nil
+	return &keyshareMemoryUser{KeyshareUserData: user}, nil
 }
 
 func (db *keyshareMemoryDB) UpdateUser(user KeyshareUser) error {
@@ -132,13 +134,17 @@ func (db *keyshareMemoryDB) AddLog(user KeyshareUser, eventType LogEntryType, pa
 	return nil
 }
 
+func (db *keyshareMemoryDB) AddEmailVerification(user KeyshareUser, emailAddress, token string) error {
+	return nil
+}
+
 type keysharePostgresDatabase struct {
 	db *sql.DB
 }
 
 type keysharePostgresUser struct {
 	KeyshareUserData
-	id int
+	id int64
 }
 
 func (m *keysharePostgresUser) Data() *KeyshareUserData {
@@ -158,19 +164,24 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 	}, nil
 }
 
-func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) error {
-	res, err := db.db.Exec("INSERT INTO irma.users (username, coredata, pinCounter, pinBlockDate) VALUES ($1, $2, 0, 0);", user.Username, user.Coredata[:])
+func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) (KeyshareUser, error) {
+	res, err := db.db.Query("INSERT INTO irma.users (username, coredata, lastSeen, pinCounter, pinBlockDate) VALUES ($1, $2, $3, 0, 0) RETURNING id",
+		user.Username,
+		user.Coredata[:],
+		time.Now().Unix())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	c, err := res.RowsAffected()
+	defer res.Close()
+	if !res.Next() {
+		return nil, ErrUserAlreadyExists
+	}
+	var id int64
+	err = res.Scan(&id)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if c == 0 {
-		return ErrUserAlreadyExists
-	}
-	return nil
+	return &keysharePostgresUser{KeyshareUserData: user, id: id}, nil
 }
 
 func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) {
@@ -332,6 +343,19 @@ func (db *keysharePostgresDatabase) AddLog(user KeyshareUser, eventType LogEntry
 		time.Now().Unix(),
 		eventType,
 		encodedParamString,
+		userdata.id)
+	return err
+}
+
+func (db *keysharePostgresDatabase) AddEmailVerification(user KeyshareUser, emailAddress, token string) error {
+	userdata, ok := user.(*keysharePostgresUser)
+	if !ok {
+		return ErrInvalidData
+	}
+
+	_, err := db.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, user_id) VALUES ($1, $2, $3)",
+		token,
+		emailAddress,
 		userdata.id)
 	return err
 }

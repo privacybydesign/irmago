@@ -17,6 +17,18 @@ func main() {
 		StoragePrimaryKeyFile: "storagekey",
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+		RegistrationEmailSubject: map[string]string{
+			"en": "Test",
+		},
+		RegistrationEmailFiles: map[string]string{
+			"en": "registration.html",
+		},
+		DefaultLanguage: "en",
+		VerificationURL: map[string]string{
+			"en": "http://example.com/verify/",
+		},
+		EmailServer: "localhost:1025",
+		EmailFrom:   "test@example.com",
 	})
 
 	if err != nil {
