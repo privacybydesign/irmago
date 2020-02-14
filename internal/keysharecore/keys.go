@@ -18,6 +18,7 @@ type (
 		encryptionKeyID uint32
 
 		signKey *rsa.PrivateKey
+		signKeyId int
 
 		commitmentData  map[uint64]*big.Int
 		commitmentMutex sync.Mutex
@@ -44,8 +45,9 @@ func (c *KeyshareCore) DangerousSetAESEncryptionKey(keyid uint32, key AesKey) {
 	c.encryptionKeyID = keyid
 }
 
-func (c *KeyshareCore) DangerousSetSignKey(key *rsa.PrivateKey) {
+func (c *KeyshareCore) DangerousSetSignKey(key *rsa.PrivateKey, id int) {
 	c.signKey = key
+	c.signKeyId = id
 }
 
 // Add public key as trusted by keyshareCore. Calling this on incorrectly generated key material WILL compromise keyshare secrets!
