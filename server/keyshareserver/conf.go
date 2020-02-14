@@ -2,7 +2,9 @@ package keyshareserver
 
 import (
 	"encoding/binary"
+	"html/template"
 	"io/ioutil"
+	"net/smtp"
 	"os"
 	"strings"
 
@@ -68,6 +70,16 @@ type Configuration struct {
 	KeyshareCredential string
 	KeyshareAttribute  string
 
+	// Configuration for email sending during registration (email address use will be disabled if not present)
+	EmailServer                string
+	EmailAuth                  smtp.Auth
+	EmailFrom                  string
+	RegistrationEmailFiles     map[string]string
+	RegistrationEmailTemplates map[string]*template.Template
+	RegistrationEmailSubject   map[string]string
+	VerificationURL            map[string]string
+	DefaultLanguage            string
+
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
 	// Don't log anything at all
@@ -127,6 +139,31 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 
 	// Force production status to match
 	conf.ServerConfiguration.Production = conf.Production
+
+	// Setup email templates
+	if conf.EmailServer != "" && conf.RegistrationEmailTemplates == nil {
+		conf.RegistrationEmailTemplates = map[string]*template.Template{}
+		for lang, templateFile := range conf.RegistrationEmailFiles {
+			var err error
+			conf.RegistrationEmailTemplates[lang], err = template.ParseFiles(templateFile)
+			if err != nil {
+				return nil, server.LogError(err)
+			}
+		}
+	}
+
+	// Verify email configuration
+	if conf.EmailServer != "" {
+		if _, ok := conf.RegistrationEmailTemplates[conf.DefaultLanguage]; !ok {
+			return nil, server.LogError(errors.Errorf("Missing registration email template for default language"))
+		}
+		if _, ok := conf.RegistrationEmailSubject[conf.DefaultLanguage]; !ok {
+			return nil, server.LogError(errors.Errorf("Missing registration email subject for default language"))
+		}
+		if _, ok := conf.VerificationURL[conf.DefaultLanguage]; !ok {
+			return nil, server.LogError(errors.Errorf("Missing verification base url for default lanaguage"))
+		}
+	}
 
 	// Load configuration (because server setup needs this to be in place)
 	if conf.ServerConfiguration.IrmaConfiguration == nil {
