@@ -369,7 +369,7 @@
 
 [[projects]]
   branch = "revocation"
-  digest = "1:a2b244ff3968b45764b166f666655c2b4b86e2baeccf532869ce658b496b0098"
+  digest = "1:a3883ba896759f107dd2babd175d094be3d198f05b0b9d801fd8a118401c981a"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
@@ -381,7 +381,7 @@
     "signed",
   ]
   pruneopts = "UT"
-  revision = "94e593066a2d0aa25732e3242e80e5c78909d111"
+  revision = "c911b99eab0054e017dc9b4611d331e69a67cb6a"
 
 [[projects]]
   digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
