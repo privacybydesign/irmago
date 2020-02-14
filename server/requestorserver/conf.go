@@ -183,7 +183,15 @@ func (conf *Configuration) initialize() error {
 		}
 	} else {
 		if len(conf.Requestors) == 0 {
-			return errors.New("No requestors configured; either configure one or more requestors or disable requestor authentication")
+			revServer := false
+			for _, s := range conf.RevocationSettings {
+				if s.ServerMode {
+					revServer = true
+				}
+			}
+			if !revServer {
+				return errors.New("No requestors configured; either configure one or more requestors or disable requestor authentication")
+			}
 		}
 		authenticators = map[AuthenticationMethod]Authenticator{
 			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},

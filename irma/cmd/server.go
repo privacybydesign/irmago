@@ -290,8 +290,12 @@ func handleMapOrString(key string, dest interface{}) error {
 }
 
 func handlePermission(typ string) []string {
-	if !viper.IsSet(typ) && (!viper.GetBool("production") || typ != "issue-perms") {
-		return []string{"*"}
+	if !viper.IsSet(typ) {
+		if typ == "revoke-perms" || (viper.GetBool("production") && typ == "issue-perms") {
+			return []string{}
+		} else {
+			return []string{"*"}
+		}
 	}
 	perms := viper.GetStringSlice(typ)
 	if perms == nil {
