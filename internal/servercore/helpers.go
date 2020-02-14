@@ -4,10 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"reflect"
 	"time"
 
+	"github.com/alexandrevicenzi/go-sse"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -15,7 +15,6 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/antage/eventsource.v1"
 )
 
 // Session helpers
@@ -34,12 +33,12 @@ func (session *session) setStatus(status server.Status) {
 }
 
 func (session *session) onUpdate() {
-	if session.evtSource != nil {
-		session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "status": session.status}).
-			Debug("Sending status to SSE listeners")
-		// We send JSON like the other APIs, so quote
-		session.evtSource.SendEventMessage(fmt.Sprintf(`"%s"`, session.status), "", "")
-	}
+	session.sse.SendMessage("session/"+session.clientToken,
+		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
+	)
+	session.sse.SendMessage("session/"+session.token,
+		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
+	)
 }
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
@@ -203,18 +202,6 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	}
 
 	return session.kssProofs[scheme], nil
-}
-
-var eventHeaders = [][]byte{[]byte("Access-Control-Allow-Origin: *")}
-
-func (session *session) eventSource() eventsource.EventSource {
-	if session.evtSource != nil {
-		return session.evtSource
-	}
-
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debug("Making server sent event source")
-	session.evtSource = eventsource.New(nil, func(_ *http.Request) [][]byte { return eventHeaders })
-	return session.evtSource
 }
 
 // Other

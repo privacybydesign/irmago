@@ -5,13 +5,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexandrevicenzi/go-sse"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
+
 	"github.com/sirupsen/logrus"
-	"gopkg.in/antage/eventsource.v1"
 )
 
 type session struct {
@@ -27,7 +28,7 @@ type session struct {
 
 	status        server.Status
 	prevStatus    server.Status
-	evtSource     eventsource.EventSource
+	sse           *sse.Server
 	responseCache responseCache
 
 	lastActive time.Time
@@ -100,9 +101,8 @@ func (s *memorySessionStore) stop() {
 	s.Lock()
 	defer s.Unlock()
 	for _, session := range s.requestor {
-		if session.evtSource != nil {
-			session.evtSource.Close()
-		}
+		session.sse.CloseChannel("session/" + session.token)
+		session.sse.CloseChannel("session/" + session.clientToken)
 	}
 }
 
@@ -137,9 +137,8 @@ func (s *memorySessionStore) deleteExpired() {
 	s.Lock()
 	for _, token := range expired {
 		session := s.requestor[token]
-		if session.evtSource != nil {
-			session.evtSource.Close()
-		}
+		session.sse.CloseChannel("session/" + session.token)
+		session.sse.CloseChannel("session/" + session.clientToken)
 		delete(s.client, session.clientToken)
 		delete(s.requestor, token)
 	}
@@ -163,6 +162,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		prevStatus:  server.StatusInitialized,
 		conf:        s.conf,
 		sessions:    s.sessions,
+		sse:         s.ServerSentEvents,
 		result: &server.SessionResult{
 			LegacySession: request.SessionRequest().Base().Legacy(),
 			Token:         token,

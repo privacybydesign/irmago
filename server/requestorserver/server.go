@@ -207,7 +207,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/session", s.handleCreateSession)
 		r.Delete("/session/{token}", s.handleDelete)
 		r.Get("/session/{token}/status", s.handleStatus)
-		r.Get("/session/{token}/statusevents", s.handleStatusEvents)
+		r.HandleFunc("/session/{token}/statusevents", s.handleStatusEvents)
 		r.Get("/session/{token}/result", s.handleResult)
 
 		// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key

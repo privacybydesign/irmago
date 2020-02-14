@@ -3,6 +3,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:24b7325ed858ab22648d01abb40f1b5f96af67ae20c0bee6807f49600688dc9e"
+  name = "github.com/alexandrevicenzi/go-sse"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "7b23d5ff7420ab4f1a3e45a584a56bfc9e4ba49e"
+
+[[projects]]
+  branch = "master"
   digest = "1:e730c8372514c662e9ed97228c2e2023f1ec99eb68f7bb56a44c1084733d85f5"
   name = "github.com/bwesterb/byteswriter"
   packages = ["."]
@@ -553,14 +561,6 @@
   version = "v0.3.0"
 
 [[projects]]
-  branch = "v1"
-  digest = "1:08eeb29b91cc584a7227b52e8865638091ee6f399689d8e16e63eb9f91d9cda8"
-  name = "gopkg.in/antage/eventsource.v1"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "803f4c5af2259daa9225c72732b23e1e65ee794e"
-
-[[projects]]
   digest = "1:4d2e5a73dc1500038e504a8d78b986630e3626dc027bc030ba5c75da257cdb96"
   name = "gopkg.in/yaml.v2"
   packages = ["."]
@@ -584,6 +584,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/alexandrevicenzi/go-sse",
     "github.com/bwesterb/go-atum",
     "github.com/dgrijalva/jwt-go",
     "github.com/fxamacker/cbor",
@@ -615,7 +616,6 @@
     "github.com/timshannon/bolthold",
     "github.com/x-cray/logrus-prefixed-formatter",
     "go.etcd.io/bbolt",
-    "gopkg.in/antage/eventsource.v1",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

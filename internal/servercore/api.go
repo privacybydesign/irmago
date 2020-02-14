@@ -7,12 +7,14 @@ package servercore
 import (
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/alexandrevicenzi/go-sse"
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi/revocation"
@@ -22,10 +24,11 @@ import (
 )
 
 type Server struct {
-	conf          *server.Configuration
-	sessions      sessionStore
-	scheduler     *gocron.Scheduler
-	stopScheduler chan bool
+	ServerSentEvents *sse.Server
+	conf             *server.Configuration
+	sessions         sessionStore
+	scheduler        *gocron.Scheduler
+	stopScheduler    chan bool
 }
 
 func New(conf *server.Configuration) (*Server, error) {
@@ -41,7 +44,23 @@ func New(conf *server.Configuration) (*Server, error) {
 			client:    make(map[string]*session),
 			conf:      conf,
 		},
+		ServerSentEvents: sse.NewServer(&sse.Options{
+			ChannelNameFunc: func(r *http.Request) string {
+				token, noun, _, err := ParsePath(r.URL.Path)
+				if err == nil && token != "" && noun == "statusevents" {
+					return "session/" + token
+				}
+				return ""
+			},
+			Headers: map[string]string{
+				"Access-Control-Allow-Origin":  "*",
+				"Access-Control-Allow-Methods": "GET, OPTIONS",
+				"Access-Control-Allow-Headers": "Keep-Alive,X-Requested-With,Cache-Control,Content-Type,Last-Event-ID",
+			},
+			Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
+		}),
 	}
+
 	s.scheduler.Every(10).Seconds().Do(func() {
 		s.sessions.deleteExpired()
 	})
@@ -180,21 +199,17 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
 	}
 
-	session.Lock()
-	defer session.Unlock()
-
 	// The EventSource.onopen Javascript callback is not consistently called across browsers (Chrome yes, Firefox+Safari no).
 	// However, when the SSE connection has been opened the webclient needs some signal so that it can early detect SSE failures.
 	// So we manually send an "open" event. Unfortunately:
 	// - we need to give the webclient that connected just now some time, otherwise it will miss the "open" event
 	// - the "open" event also goes to all other webclients currently listening, as we have no way to send this
 	//   event to just the webclient currently listening. (Thus the handler of this "open" event must be idempotent.)
-	evtSource := session.eventSource()
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		evtSource.SendEventMessage("", "open", "")
+		s.ServerSentEvents.SendMessage("session/"+token, sse.NewMessage("", "", "open"))
 	}()
-	evtSource.ServeHTTP(w, r)
+	s.ServerSentEvents.ServeHTTP(w, r)
 	return nil
 }
 
