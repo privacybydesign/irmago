@@ -369,23 +369,17 @@ func TestRemoveStorage(t *testing.T) {
 	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": false}  // Test storage has no logs
 	bucketsAfter := map[string]bool{"attrs": false, "sigs": false, "userdata": true, "logs": false} // Userdata should hold a new secret key
 
-	old_sk := *(client.secretkey)
+	old_sk := *client.secretkey
 
 	// Check that buckets exist
-	for name, before := range bucketsBefore {
-		if before {
-			require.True(t, client.storage.BucketExists([]byte(name)))
-		}
+	for name, exists := range bucketsBefore {
+		require.Equal(t, exists, client.storage.BucketExists([]byte(name)))
 	}
 
 	require.NoError(t, client.RemoveStorage())
 
-	for name, shouldExist := range bucketsAfter {
-		if shouldExist {
-			require.True(t, client.storage.BucketExists([]byte(name)))
-		} else {
-			require.False(t, client.storage.BucketExists([]byte(name)))
-		}
+	for name, exists := range bucketsAfter {
+		require.Equal(t, exists, client.storage.BucketExists([]byte(name)))
 	}
 
 	// Check that the client has a new secret key
