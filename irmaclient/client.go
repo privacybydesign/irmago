@@ -331,33 +331,35 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
-// RemoveAllCredentials removes all credentials.
-func (client *Client) RemoveAllCredentials() error {
-	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
-	for _, attrlistlist := range client.attributes {
-		for _, attrs := range attrlistlist {
-			if attrs.CredentialType() != nil {
-				removed[attrs.CredentialType().Identifier()] = attrs.Strings()
-			}
-		}
-	}
-	client.attributes = map[irma.CredentialTypeIdentifier][]*irma.AttributeList{}
+// Removes all attributes, signatures, logs and userdata
+// Includes the user's secret key, keyshare servers and preferences/updates
+// A fresh secret key is installed.
+func (client *Client) RemoveStorage() error {
 
-	logentry := &LogEntry{
-		Type:    ActionRemoval,
-		Time:    irma.Timestamp(time.Now()),
-		Removed: removed,
-	}
+	// Remove data from memory
+	client.attributes = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
+	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
+	client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
 
-	return client.storage.Transaction(func(tx *transaction) error {
-		if err := client.storage.TxDeleteAllAttributes(tx); err != nil {
+	err := client.storage.Transaction(func(tx *transaction) error {
+		if err := client.storage.TxDeleteAll(tx); err != nil {
 			return err
 		}
-		if err := client.storage.TxDeleteAllSignatures(tx); err != nil {
-			return err
-		}
-		return client.storage.TxAddLogEntry(tx, logentry)
+		return nil
 	})
+
+	// Client assumes there is always a secret key, so we have to load a new one
+	client.secretkey, err = client.storage.LoadSecretKey()
+	if err != nil {
+		return err
+	}
+
+	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
+		return err
+	}
+	client.applyPreferences()
+
+	return nil
 }
 
 // Attribute and credential getter methods

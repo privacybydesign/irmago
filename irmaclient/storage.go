@@ -65,6 +65,15 @@ func (s *storage) Close() error {
 	return s.db.Close()
 }
 
+func (s *storage) BucketExists(name []byte) bool {
+	return s.Transaction(func(tx *transaction) error {
+		if tx.Bucket(name) == nil {
+			return bbolt.ErrBucketNotFound
+		}
+		return nil
+	}) == nil
+}
+
 func (s *storage) txStore(tx *transaction, bucketName string, key string, value interface{}) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 	if err != nil {
@@ -338,4 +347,28 @@ func (s *storage) LoadPreferences() (Preferences, error) {
 	config := defaultPreferences
 	_, err := s.load(userdataBucket, preferencesKey, &config)
 	return config, err
+}
+
+func (s *storage) TxDeleteUserdata(tx *transaction) error {
+	return tx.DeleteBucket([]byte(userdataBucket))
+}
+
+func (s *storage) TxDeleteLogs(tx *transaction) error {
+	return tx.DeleteBucket([]byte(logsBucket))
+}
+
+func (s *storage) TxDeleteAll(tx *transaction) error {
+	if err := s.TxDeleteAllAttributes(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	if err := s.TxDeleteAllSignatures(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	if err := s.TxDeleteUserdata(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	if err := s.TxDeleteLogs(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	return nil
 }
