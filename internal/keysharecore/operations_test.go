@@ -26,7 +26,7 @@ func TestPinFunctionality(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 
 	// generate test pin
 	var bpin [64]byte
@@ -66,7 +66,7 @@ func TestVerifyAccess(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 
 	// Generate test pins
 	var bpin [64]byte
@@ -198,7 +198,7 @@ func TestProofFunctionality(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// generate test pin
@@ -250,7 +250,7 @@ func TestCorruptedPacket(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -296,7 +296,7 @@ func TestIncorrectPin(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -335,7 +335,7 @@ func TestMissingKey(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -370,7 +370,7 @@ func TestInvalidChallenge(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -413,7 +413,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -446,7 +446,7 @@ func TestNonExistingCommit(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey)
+	c.DangerousSetSignKey(jwtTestKey,1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters

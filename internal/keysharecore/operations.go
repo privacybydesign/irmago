@@ -84,12 +84,8 @@ func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, useri
 		"salt":       base64.StdEncoding.EncodeToString(salt),
 		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
 	})
-	jwtResult, err := token.SignedString(c.signKey)
-	if err != nil {
-		return "", err
-	}
-
-	return jwtResult, nil
+	token.Header["kid"]=c.signKeyId
+	return token.SignedString(c.signKey)
 }
 
 func (c *KeyshareCore) ValidateJWT(ep EncryptedKeysharePacket, jwt string) error {
@@ -254,6 +250,7 @@ func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken 
 		"sub":    "ProofP",
 		"iss":    "keyshare_server",
 	})
+	token.Header["kid"]=c.signKeyId
 	return token.SignedString(c.signKey)
 }
 
