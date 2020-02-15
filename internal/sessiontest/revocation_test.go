@@ -174,18 +174,13 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("POSTUpdates", func(t *testing.T) {
-		revocationConfiguration = revocationConf(t)
-		revocationConfiguration.RevocationSettings[revocationTestCred].PostURLs = []string{
-			"http://localhost:48680",
-		}
-		StartIrmaServer(t, false)
-		defer func() {
-			StopIrmaServer()
-			revocationConfiguration = nil
-		}()
-
 		startRevocationServer(t, true)
 		defer stopRevocationServer()
+		StartIrmaServer(t, false)
+		defer StopIrmaServer()
+
+		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SyncDB(revocationTestCred))
+
 		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		acctime := sacc1.Accumulator.Time
@@ -695,10 +690,11 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 	require.NoError(t, conf.AddUpdate(revocationTestCred, update))
 }
 
-func revocationConf(t *testing.T) *server.Configuration {
+func revocationConf(_ *testing.T) *server.Configuration {
 	return &server.Configuration{
 		URL:                  "http://localhost:48683",
 		Logger:               logger,
+		EnableSSE:            true,
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
 		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{

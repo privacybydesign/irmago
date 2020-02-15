@@ -27,7 +27,7 @@ var (
 )
 
 func init() {
-	logger.Level = logrus.FatalLevel
+	logger.Level = logrus.TraceLevel
 	logger.Formatter = &prefixed.TextFormatter{
 		ForceFormatting: true,
 		ForceColors:     true,
@@ -67,7 +67,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, irmaconf),
 		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
-			revocationTestCred:  {RevocationServerURL: "http://localhost:48683/"},
+			revocationTestCred:  {RevocationServerURL: "http://localhost:48683/", SSE: true},
 			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683/"},
 		},
 	}

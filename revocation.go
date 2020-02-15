@@ -1,13 +1,18 @@
 package irma
 
 import (
+	"context"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"math/bits"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	sseclient "astuart.co/go-sse"
+	"github.com/alexandrevicenzi/go-sse"
 	"github.com/fxamacker/cbor"
 	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
@@ -35,6 +40,11 @@ type (
 
 		Keys   RevocationKeys
 		client RevocationClient
+
+		ServerSentEvents *sse.Server
+
+		close  chan struct{}
+		events chan *sseclient.Event
 	}
 
 	// RevocationClient offers an HTTP client to the revocation server endpoints.
@@ -54,6 +64,7 @@ type (
 		ServerMode          bool   `json:"server,omitempty" mapstructure:"server"`
 		RevocationServerURL string `json:"revocation_server_url,omitempty" mapstructure:"revocation_server_url"`
 		Tolerance           uint64 `json:"tolerance,omitempty" mapstructure:"tolerance"` // in seconds, min 30
+		SSE                 bool   `json:"sse,omitempty" mapstructure:"sse"`
 
 		// set to now whenever a new update is received, or when the RA indicates
 		// there are no new updates. Thus it specifies up to what time our nonrevocation
@@ -292,6 +303,11 @@ func (*RevocationStorage) newUpdates(records []*AccumulatorRecord, events []*Eve
 }
 
 func (rs *RevocationStorage) AddUpdate(id CredentialTypeIdentifier, record *revocation.Update) error {
+	if rs.sqlMode {
+		return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
+			return rs.addUpdate(tx, id, record, false)
+		})
+	}
 	return rs.addUpdate(rs.sqldb, id, record, false)
 }
 
@@ -325,6 +341,8 @@ func (rs *RevocationStorage) addUpdate(tx sqlRevStorage, id CredentialTypeIdenti
 
 	s := rs.getSettings(id)
 	s.updated = time.Now()
+	// POST record to listeners, if any, asynchroniously
+	rs.PostUpdate(id, update)
 
 	return nil
 }
@@ -545,6 +563,8 @@ func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdenti
 
 			s := rs.getSettings(r.CredType)
 			s.updated = time.Now()
+			// POST record to listeners, if any, asynchroniously
+			rs.PostUpdate(r.CredType, &revocation.Update{SignedAccumulator: sacc})
 		}
 		return nil
 	})
@@ -615,6 +635,49 @@ func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec
 
 // Misscelaneous methods
 
+func (rs *RevocationStorage) receiveUpdates() {
+	for {
+		select {
+		case event := <-rs.events:
+			var (
+				segments = strings.Split(event.URI, "/")
+				id       = NewCredentialTypeIdentifier(segments[len(segments)-1])
+				update   revocation.Update
+				err      error
+			)
+			if err = json.Unmarshal(event.Data, &update); err != nil {
+				Logger.Warn("failed to unmarshal pushed update: ", err)
+			} else {
+				Logger.WithField("credtype", id).Trace("received SSE update event")
+				if err = rs.AddUpdate(id, &update); err != nil {
+					Logger.Warn("failed to add pushed update: ", err)
+				}
+			}
+		case <-rs.close:
+			return
+		}
+	}
+}
+
+func (rs *RevocationStorage) listenUpdates(id CredentialTypeIdentifier, url string) {
+	logger := Logger.WithField("credtype", id)
+	logger.Trace("listening for SSE update events")
+
+	// make a context that closes when rs.close closes
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-rs.close:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	err := sseclient.Notify(ctx, url, true, rs.events)
+	if err != nil {
+		logger.Warn("SSE connection closed: ", err)
+	}
+}
+
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
 	var t *CredentialTypeIdentifier
 	var ourtypes []CredentialTypeIdentifier
@@ -625,6 +688,26 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 			}
 			ourtypes = append(ourtypes, id)
 			t = &id
+		}
+		if s.SSE {
+			url := s.RevocationServerURL
+			if url == "" {
+				if credtype := rs.conf.CredentialTypes[id]; credtype != nil {
+					if len(credtype.RevocationServers) > 0 {
+						url = credtype.RevocationServers[0]
+					}
+				}
+			}
+			if url == "" {
+				return errors.Errorf("revocation server of %s unknown", id.String())
+			}
+			if rs.close == nil {
+				rs.close = make(chan struct{})
+				rs.events = make(chan *sseclient.Event)
+				go rs.receiveUpdates()
+			}
+			url = fmt.Sprintf("%srevocation/updateevents/%s", url, id.String())
+			go rs.listenUpdates(id, url)
 		}
 	}
 	if t != nil && connstr == "" {
@@ -679,6 +762,9 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 }
 
 func (rs *RevocationStorage) Close() error {
+	if rs.close != nil {
+		close(rs.close)
+	}
 	return rs.sqldb.Close()
 }
 
@@ -734,6 +820,15 @@ func (rs *RevocationStorage) getSettings(id CredentialTypeIdentifier) *Revocatio
 		s.Tolerance = RevocationParameters.DefaultTolerance
 	}
 	return s
+}
+
+func (rs *RevocationStorage) PostUpdate(id CredentialTypeIdentifier, update *revocation.Update) {
+	if rs.ServerSentEvents == nil || !rs.getSettings(id).ServerMode {
+		return
+	}
+	Logger.WithField("credtype", id).Tracef("sending SSE update event")
+	bts, _ := json.Marshal(update)
+	rs.ServerSentEvents.SendMessage("revocation/"+id.String(), sse.SimpleMessage(string(bts)))
 }
 
 func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, sk *revocation.PrivateKey, rec *IssuanceRecord, url string) error {

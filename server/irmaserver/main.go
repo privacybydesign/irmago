@@ -103,7 +103,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			}
 		}
 
-		component, token, noun, _, err := servercore.Route(r.URL.Path, r.Method)
+		component, token, noun, args, err := servercore.Route(r.URL.Path, r.Method)
 		if err == nil && component == server.ComponentSession && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
 			if err = s.SubscribeServerSentEvents(w, r, token, false); err != nil {
 				server.WriteResponse(w, nil, &irma.RemoteError{
@@ -111,6 +111,17 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 					ErrorName:   string(server.ErrorUnsupported.Type),
 					Description: server.ErrorUnsupported.Description,
 				})
+			}
+			return
+		}
+		if err == nil && component == server.ComponentRevocation && noun == "updateevents" {
+			id := irma.NewCredentialTypeIdentifier(args[0])
+			if settings := s.Conf.RevocationSettings[id]; settings != nil &&
+				settings.ServerMode &&
+				s.ServerSentEvents != nil {
+				s.ServerSentEvents.ServeHTTP(w, r)
+			} else {
+				server.WriteError(w, server.ErrorUnsupported, "")
 			}
 			return
 		}

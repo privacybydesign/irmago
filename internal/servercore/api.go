@@ -44,11 +44,22 @@ func New(conf *server.Configuration) (*Server, error) {
 			client:    make(map[string]*session),
 			conf:      conf,
 		},
-		ServerSentEvents: sse.NewServer(&sse.Options{
+		handlers: make(map[string]server.SessionHandler),
+	}
+
+	if conf.EnableSSE {
+		s.ServerSentEvents = sse.NewServer(&sse.Options{
 			ChannelNameFunc: func(r *http.Request) string {
-				component, token, noun, _, err := Route(r.URL.Path, r.Method)
-				if err == nil && component == server.ComponentSession && noun == "statusevents" {
+				component, token, noun, args, err := Route(r.URL.Path, r.Method)
+				if err != nil {
+					_ = server.LogWarning(err)
+					return ""
+				}
+				if component == server.ComponentSession && noun == "statusevents" {
 					return "session/" + token
+				}
+				if component == server.ComponentRevocation && noun == "updateevents" {
+					return "revocation/" + args[0]
 				}
 				return ""
 			},
@@ -58,8 +69,8 @@ func New(conf *server.Configuration) (*Server, error) {
 				"Access-Control-Allow-Headers": "Keep-Alive,X-Requested-With,Cache-Control,Content-Type,Last-Event-ID",
 			},
 			Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
-		}),
-		handlers: make(map[string]server.SessionHandler),
+		})
+		s.Conf.IrmaConfiguration.Revocation.ServerSentEvents = s.ServerSentEvents
 	}
 
 	s.scheduler.Every(10).Seconds().Do(func() {
@@ -169,7 +180,7 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 }
 
 func Route(path, method string) (component, token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile(server.ComponentRevocation + "/(events|update|issuancerecord)/?(.*)$")
+	rev := regexp.MustCompile(server.ComponentRevocation + "/(events|updateevents|update|issuancerecord)/?(.*)$")
 	matches := rev.FindStringSubmatch(path)
 	if len(matches) == 3 {
 		args := strings.Split(matches[2], "/")
