@@ -51,10 +51,9 @@ type (
 
 	// RevocationSetting contains revocation settings for a given credential type.
 	RevocationSetting struct {
-		ServerMode          bool     `json:"server,omitempty" mapstructure:"server"`
-		PostURLs            []string `json:"post_urls,omitempty" mapstructure:"post_urls"`
-		RevocationServerURL string   `json:"revocation_server_url,omitempty" mapstructure:"revocation_server_url"`
-		Tolerance           uint64   `json:"tolerance,omitempty" mapstructure:"tolerance"` // in seconds, min 30
+		ServerMode          bool   `json:"server,omitempty" mapstructure:"server"`
+		RevocationServerURL string `json:"revocation_server_url,omitempty" mapstructure:"revocation_server_url"`
+		Tolerance           uint64 `json:"tolerance,omitempty" mapstructure:"tolerance"` // in seconds, min 30
 
 		// set to now whenever a new update is received, or when the RA indicates
 		// there are no new updates. Thus it specifies up to what time our nonrevocation
@@ -326,8 +325,6 @@ func (rs *RevocationStorage) addUpdate(tx sqlRevStorage, id CredentialTypeIdenti
 
 	s := rs.getSettings(id)
 	s.updated = time.Now()
-	// POST record to listeners, if any, asynchroniously
-	go rs.client.PostUpdate(id, s.PostURLs, update)
 
 	return nil
 }
@@ -548,8 +545,6 @@ func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdenti
 
 			s := rs.getSettings(r.CredType)
 			s.updated = time.Now()
-			// POST record to listeners, if any, asynchroniously
-			go rs.client.PostUpdate(r.CredType, s.PostURLs, &revocation.Update{SignedAccumulator: sacc})
 		}
 		return nil
 	})
@@ -739,16 +734,6 @@ func (rs *RevocationStorage) getSettings(id CredentialTypeIdentifier) *Revocatio
 		s.Tolerance = RevocationParameters.DefaultTolerance
 	}
 	return s
-}
-
-func (client RevocationClient) PostUpdate(id CredentialTypeIdentifier, urls []string, update *revocation.Update) {
-	transport := client.transport()
-	for _, url := range urls {
-		err := transport.Post(fmt.Sprintf("%s/revocation/update/%s", url, id.String()), nil, update)
-		if err != nil {
-			Logger.Warn("error sending revocation update", err)
-		}
-	}
 }
 
 func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, sk *revocation.PrivateKey, rec *IssuanceRecord, url string) error {

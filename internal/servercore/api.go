@@ -17,7 +17,6 @@ import (
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -460,18 +459,6 @@ func (s *Server) handleRevocationMessage(
 		} else {
 			return server.BinaryResponse(updates[*counter], rerr, headers)
 		}
-	}
-	if noun == "update" && method == http.MethodPost {
-		if len(args) != 1 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST update expects 1 url argument"), nil)
-		}
-		cred := irma.NewCredentialTypeIdentifier(args[0])
-		update := &revocation.Update{}
-		if err := irma.UnmarshalValidateBinary(message, update); err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
-		}
-		status, bts := s.handlePostUpdate(cred, update)
-		return server.BinaryResponse(status, bts, nil)
 	}
 	if noun == "issuancerecord" && method == http.MethodPost {
 		if len(args) != 2 {

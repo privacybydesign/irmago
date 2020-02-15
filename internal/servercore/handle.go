@@ -216,14 +216,6 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	return sigs, nil
 }
 
-// POST revocation/update/{credtype}
-func (s *Server) handlePostUpdate(typ irma.CredentialTypeIdentifier, update *revocation.Update) (interface{}, *irma.RemoteError) {
-	if err := s.conf.IrmaConfiguration.Revocation.AddUpdate(typ, update); err != nil {
-		return nil, server.RemoteError(server.ErrorRevocation, err.Error())
-	}
-	return nil, nil
-}
-
 // GET revocation/events/{credtype}/{pkcounter}/{from}/{to}
 func (s *Server) handleGetEvents(
 	cred irma.CredentialTypeIdentifier, pkcounter uint, from, to uint64,
