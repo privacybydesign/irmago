@@ -5,13 +5,14 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
 func TestManualKeyshareSession(t *testing.T) {
-	test.StartKeyshareServer(t)
-	defer test.StopKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t)
+	defer testkeyshare.StopKeyshareServer(t)
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
 
@@ -22,14 +23,14 @@ func TestManualKeyshareSession(t *testing.T) {
 }
 
 func TestRequestorIssuanceKeyshareSession(t *testing.T) {
-	test.startKeyshareServer(t)
-	defer test.stopKeyshareServer(t)
+	testkeyshare.startKeyshareServer(t)
+	defer testkeyshare.stopKeyshareServer(t)
 	testRequestorIssuance(t, true, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {
-	test.StartKeyshareServer(t)
-	defer test.StopKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t)
+	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
@@ -50,8 +51,8 @@ func TestKeyshareRegister(t *testing.T) {
 // in a keyshare session of each session type.
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
-	test.startKeyshareServer(t)
-	defer test.stopKeyshareServer(t)
+	testkeyshare.startKeyshareServer(t)
+	defer testkeyshare.stopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 	keyshareSessions(t, client)
@@ -80,8 +81,8 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
-	test.StartKeyshareServer(t)
-	defer test.StopKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t)
+	defer testkeyshare.StopKeyshareServer(t)
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
 	sessionHelper(t, request, "issue", nil)
