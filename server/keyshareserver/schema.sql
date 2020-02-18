@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS irma.users
 (
     id serial PRIMARY KEY,
     username text NOT NULL,
+    language text NOT NULL,
     coredata bytea NOT NULL,
     lastSeen bigint NOT NULL,
     pinCounter int NOT NULL,
