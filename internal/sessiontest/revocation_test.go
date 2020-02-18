@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -633,8 +634,8 @@ func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Both", func(t *testing.T) {
 		startRevocationServer(t, true)
 		defer stopRevocationServer()
-		test.StartKeyshareServer(t)
-		defer test.StopKeyshareServer(t)
+		testkeyshare.StartKeyshareServer(t)
+		defer testkeyshare.StopKeyshareServer(t)
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
 
