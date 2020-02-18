@@ -5,13 +5,14 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/stretchr/testify/require"
 )
 
 // Test pinchange interaction
 func TestKeyshareChangePin(t *testing.T) {
-	test.StartKeyshareServer(t)
-	defer test.StopKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t)
+	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
