@@ -450,7 +450,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	user, err := s.db.NewUser(KeyshareUserData{Username: username, Coredata: coredata})
+	user, err := s.db.NewUser(KeyshareUserData{Username: username, Language: msg.Language, Coredata: coredata})
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
 		server.WriteError(w, server.ErrorInternal, err.Error())

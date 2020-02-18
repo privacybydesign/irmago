@@ -50,6 +50,7 @@ type KeyshareUser interface {
 
 type KeyshareUserData struct {
 	Username string
+	Language string
 	Coredata keysharecore.EncryptedKeysharePacket
 }
 
@@ -165,8 +166,9 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 }
 
 func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) (KeyshareUser, error) {
-	res, err := db.db.Query("INSERT INTO irma.users (username, coredata, lastSeen, pinCounter, pinBlockDate) VALUES ($1, $2, $3, 0, 0) RETURNING id",
+	res, err := db.db.Query("INSERT INTO irma.users (username, language, coredata, lastSeen, pinCounter, pinBlockDate) VALUES ($1, $2, $3, $4, 0, 0) RETURNING id",
 		user.Username,
+		user.Language,
 		user.Coredata[:],
 		time.Now().Unix())
 	if err != nil {
@@ -185,7 +187,7 @@ func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) (KeyshareUser
 }
 
 func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) {
-	rows, err := db.db.Query("SELECT id, username, coredata FROM irma.users WHERE username = $1", username)
+	rows, err := db.db.Query("SELECT id, username, language, coredata FROM irma.users WHERE username = $1", username)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +197,7 @@ func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) 
 	}
 	var result keysharePostgresUser
 	var ep []byte
-	err = rows.Scan(&result.id, &result.Username, &ep)
+	err = rows.Scan(&result.id, &result.Username, &result.Language, &ep)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +213,11 @@ func (db *keysharePostgresDatabase) UpdateUser(user KeyshareUser) error {
 	if !ok {
 		return ErrInvalidData
 	}
-	res, err := db.db.Exec("UPDATE irma.users SET username=$1, coredata=$2 WHERE id=$3", userdata.Username, userdata.Coredata, userdata.id)
+	res, err := db.db.Exec("UPDATE irma.users SET username=$1, language=$2, coredata=$3 WHERE id=$4",
+		userdata.Username,
+		userdata.Language,
+		userdata.Coredata,
+		userdata.id)
 	if err != nil {
 		return err
 	}
