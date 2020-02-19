@@ -335,18 +335,16 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 // Includes the user's secret key, keyshare servers and preferences/updates
 // A fresh secret key is installed.
 func (client *Client) RemoveStorage() error {
+	var err error
 
 	// Remove data from memory
 	client.attributes = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
 	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
 
-	err := client.storage.Transaction(func(tx *transaction) error {
-		if err := client.storage.TxDeleteAll(tx); err != nil {
-			return err
-		}
-		return nil
-	})
+	if err = client.storage.DeleteAll(); err != nil {
+		return err
+	}
 
 	// Client assumes there is always a secret key, so we have to load a new one
 	client.secretkey, err = client.storage.LoadSecretKey()
@@ -354,6 +352,7 @@ func (client *Client) RemoveStorage() error {
 		return err
 	}
 
+	// TODO: do we consider this setting as user data?
 	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
 		return err
 	}

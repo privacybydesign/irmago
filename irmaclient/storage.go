@@ -66,7 +66,7 @@ func (s *storage) Close() error {
 }
 
 func (s *storage) BucketExists(name []byte) bool {
-	return s.Transaction(func(tx *transaction) error {
+	return s.db.View(func(tx *bbolt.Tx) error {
 		if tx.Bucket(name) == nil {
 			return bbolt.ErrBucketNotFound
 		}
@@ -371,4 +371,10 @@ func (s *storage) TxDeleteAll(tx *transaction) error {
 		return err
 	}
 	return nil
+}
+
+func (s *storage) DeleteAll() error {
+	return s.Transaction(func(tx *transaction) error {
+		return s.TxDeleteAll(tx)
+	})
 }
