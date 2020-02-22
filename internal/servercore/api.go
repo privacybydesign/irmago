@@ -7,7 +7,6 @@ package servercore
 import (
 	"encoding/hex"
 	"encoding/json"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -23,15 +22,15 @@ import (
 )
 
 type Server struct {
-	ServerSentEvents *sse.Server
 	conf             *server.Configuration
 	sessions         sessionStore
 	scheduler        *gocron.Scheduler
 	stopScheduler    chan bool
 	handlers         map[string]server.SessionHandler
+	serverSentEvents *sse.Server
 }
 
-func New(conf *server.Configuration) (*Server, error) {
+func New(conf *server.Configuration, eventServer *sse.Server) (*Server, error) {
 	if err := conf.Check(); err != nil {
 		return nil, err
 	}
@@ -44,33 +43,8 @@ func New(conf *server.Configuration) (*Server, error) {
 			client:    make(map[string]*session),
 			conf:      conf,
 		},
-		handlers: make(map[string]server.SessionHandler),
-	}
-
-	if conf.EnableSSE {
-		s.ServerSentEvents = sse.NewServer(&sse.Options{
-			ChannelNameFunc: func(r *http.Request) string {
-				component, token, noun, args, err := Route(r.URL.Path, r.Method)
-				if err != nil {
-					_ = server.LogWarning(err)
-					return ""
-				}
-				if component == server.ComponentSession && noun == "statusevents" {
-					return "session/" + token
-				}
-				if component == server.ComponentRevocation && noun == "updateevents" {
-					return "revocation/" + args[0]
-				}
-				return ""
-			},
-			Headers: map[string]string{
-				"Access-Control-Allow-Origin":  "*",
-				"Access-Control-Allow-Methods": "GET, OPTIONS",
-				"Access-Control-Allow-Headers": "Keep-Alive,X-Requested-With,Cache-Control,Content-Type,Last-Event-ID",
-			},
-			Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
-		})
-		s.Conf.IrmaConfiguration.Revocation.ServerSentEvents = s.ServerSentEvents
+		handlers:         make(map[string]server.SessionHandler),
+		serverSentEvents: eventServer,
 	}
 
 	s.scheduler.Every(10).Seconds().Do(func() {
@@ -228,9 +202,9 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	//   event to just the webclient currently listening. (Thus the handler of this "open" event must be idempotent.)
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		s.ServerSentEvents.SendMessage("session/"+token, sse.NewMessage("", "", "open"))
+		s.serverSentEvents.SendMessage("session/"+token, sse.NewMessage("", "", "open"))
 	}()
-	s.ServerSentEvents.ServeHTTP(w, r)
+	s.serverSentEvents.ServeHTTP(w, r)
 	return nil
 }
 

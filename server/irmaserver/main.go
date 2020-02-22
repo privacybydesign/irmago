@@ -6,18 +6,23 @@ package irmaserver
 
 import (
 	"io/ioutil"
+	"log"
 	"net/http"
 	"time"
 
+	"github.com/alexandrevicenzi/go-sse"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/servercore"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/sirupsen/logrus"
 )
 
 // Server is an irmaserver instance.
 type Server struct {
 	*servercore.Server
+	conf             *server.Configuration
+	serverSentEvents *sse.Server
 }
 
 // Default server instance
@@ -31,12 +36,21 @@ func Initialize(conf *server.Configuration) (err error) {
 
 // New creates a new Server instance with the specified configuration.
 func New(conf *server.Configuration) (*Server, error) {
-	s, err := servercore.New(conf)
+	var e *sse.Server
+	if conf.EnableSSE {
+		e = eventServer(conf)
+	}
+
+	s, err := servercore.New(conf, e)
 	if err != nil {
 		return nil, err
 	}
+
+	conf.IrmaConfiguration.Revocation.ServerSentEvents = e
 	return &Server{
-		Server: s,
+		Server:           s,
+		conf:             conf,
+		serverSentEvents: e,
 	}, nil
 }
 
@@ -116,10 +130,10 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		}
 		if err == nil && component == server.ComponentRevocation && noun == "updateevents" {
 			id := irma.NewCredentialTypeIdentifier(args[0])
-			if settings := s.Conf.RevocationSettings[id]; settings != nil &&
+			if settings := s.conf.RevocationSettings[id]; settings != nil &&
 				settings.ServerMode &&
-				s.ServerSentEvents != nil {
-				s.ServerSentEvents.ServeHTTP(w, r)
+				s.serverSentEvents != nil {
+				s.serverSentEvents.ServeHTTP(w, r)
 			} else {
 				server.WriteError(w, server.ErrorUnsupported, "")
 			}
@@ -138,4 +152,29 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			_ = server.LogError(errors.WrapPrefix(err, "http.ResponseWriter.Write() returned error", 0))
 		}
 	}
+}
+
+func eventServer(conf *server.Configuration) *sse.Server {
+	return sse.NewServer(&sse.Options{
+		ChannelNameFunc: func(r *http.Request) string {
+			component, token, noun, args, err := servercore.Route(r.URL.Path, r.Method)
+			if err != nil {
+				conf.Logger.Warn(err)
+				return ""
+			}
+			if component == server.ComponentSession && noun == "statusevents" {
+				return "session/" + token
+			}
+			if component == server.ComponentRevocation && noun == "updateevents" {
+				return "revocation/" + args[0]
+			}
+			return ""
+		},
+		Headers: map[string]string{
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Methods": "GET, OPTIONS",
+			"Access-Control-Allow-Headers": "Keep-Alive,X-Requested-With,Cache-Control,Content-Type,Last-Event-ID",
+		},
+		Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
+	})
 }

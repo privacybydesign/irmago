@@ -162,7 +162,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		prevStatus:  server.StatusInitialized,
 		conf:        s.conf,
 		sessions:    s.sessions,
-		sse:         s.ServerSentEvents,
+		sse:         s.serverSentEvents,
 		result: &server.SessionResult{
 			LegacySession: request.SessionRequest().Base().Legacy(),
 			Token:         token,
