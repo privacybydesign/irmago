@@ -44,9 +44,6 @@ func New(conf *server.Configuration) (*Server, error) {
 func Stop() {
 	s.Stop()
 }
-func (s *Server) Stop() {
-	s.Server.Stop()
-}
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session token (the second return parameter) can be used in GetSessionResult()
@@ -56,32 +53,20 @@ func (s *Server) Stop() {
 func StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
 	return s.StartSession(request, handler)
 }
-func (s *Server) StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
-	return s.Server.StartSession(request, handler)
-}
 
 // GetSessionResult retrieves the result of the specified IRMA session.
 func GetSessionResult(token string) *server.SessionResult {
 	return s.GetSessionResult(token)
-}
-func (s *Server) GetSessionResult(token string) *server.SessionResult {
-	return s.Server.GetSessionResult(token)
 }
 
 // GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
 func GetRequest(token string) irma.RequestorRequest {
 	return s.GetRequest(token)
 }
-func (s *Server) GetRequest(token string) irma.RequestorRequest {
-	return s.Server.GetRequest(token)
-}
 
 // CancelSession cancels the specified IRMA session.
 func CancelSession(token string) error {
 	return s.CancelSession(token)
-}
-func (s *Server) CancelSession(token string) error {
-	return s.Server.CancelSession(token)
 }
 
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server
@@ -90,17 +75,11 @@ func (s *Server) CancelSession(token string) error {
 func Revoke(credid irma.CredentialTypeIdentifier, key string, issued time.Time) error {
 	return s.Revoke(credid, key, issued)
 }
-func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued time.Time) error {
-	return s.Server.Revoke(credid, key, issued)
-}
 
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
 // of the specified IRMA session.
 func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
 	return s.SubscribeServerSentEvents(w, r, token, requestor)
-}
-func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
-	return s.Server.SubscribeServerSentEvents(w, r, token, requestor)
 }
 
 // HandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
