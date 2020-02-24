@@ -206,7 +206,7 @@ func configureServer(cmd *cobra.Command) error {
 			IssuerPrivateKeysPath: viper.GetString("privkeys"),
 			RevocationDBType:      viper.GetString("revocation-db-type"),
 			RevocationDBConnStr:   viper.GetString("revocation-db-str"),
-			RevocationSettings:    map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{},
+			RevocationSettings:    irma.RevocationSettings{},
 			URL:                   viper.GetString("url"),
 			DisableTLS:            viper.GetBool("no-tls"),
 			Email:                 viper.GetString("email"),

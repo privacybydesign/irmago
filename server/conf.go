@@ -77,7 +77,7 @@ type Configuration struct {
 	// Database type for revocation database, supported: postgres, mysql
 	RevocationDBType string `json:"revocation_db_type" mapstructure:"revocation_db_type"`
 	// Credentials types for which revocation database should be hosted
-	RevocationSettings map[irma.CredentialTypeIdentifier]*irma.RevocationSetting `json:"revocation_settings" mapstructure:"revocation_settings"`
+	RevocationSettings irma.RevocationSettings `json:"revocation_settings" mapstructure:"revocation_settings"`
 
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`

@@ -697,7 +697,7 @@ func revocationConf(_ *testing.T) *server.Configuration {
 		EnableSSE:            true,
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
-		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:  {ServerMode: true},
 			revKeyshareTestCred: {ServerMode: true},
 		},

@@ -66,7 +66,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 		Logger:               logger,
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, irmaconf),
-		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:  {RevocationServerURL: "http://localhost:48683/", SSE: true},
 			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683/"},
 		},
@@ -94,7 +94,7 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:  {RevocationServerURL: "http://localhost:48683/"},
 			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683/"},
 		},
@@ -109,7 +109,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 		Logger:                logger,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-		RevocationSettings: map[irma.CredentialTypeIdentifier]*irma.RevocationSetting{
+		RevocationSettings: irma.RevocationSettings{
 			irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"): {
 				RevocationServerURL: "http://localhost:48683/",
 			},

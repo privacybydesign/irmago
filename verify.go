@@ -207,7 +207,7 @@ func (pl ProofList) VerifyProofs(
 
 		theirs := acc.Index
 		acctime := time.Unix(acc.Time, 0)
-		settings := configuration.Revocation.getSettings(id)
+		settings := configuration.Revocation.settings.Get(id)
 		var ours uint64
 		var updates map[uint]*revocation.Update
 		if revParams[id] != nil {

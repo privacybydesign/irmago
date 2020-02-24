@@ -36,7 +36,7 @@ type (
 		sqldb    sqlRevStorage
 		memdb    memRevStorage
 		sqlMode  bool
-		settings map[CredentialTypeIdentifier]*RevocationSetting
+		settings RevocationSettings
 
 		Keys   RevocationKeys
 		client RevocationClient
@@ -72,6 +72,8 @@ type (
 		// guarantees lasts.
 		updated time.Time
 	}
+
+	RevocationSettings map[CredentialTypeIdentifier]*RevocationSetting
 )
 
 // Structs corresponding to SQL table rows, ending in Record
@@ -340,7 +342,7 @@ func (rs *RevocationStorage) addUpdate(tx sqlRevStorage, id CredentialTypeIdenti
 		rs.memdb.Insert(id, update)
 	}
 
-	s := rs.getSettings(id)
+	s := rs.settings.Get(id)
 	s.updated = time.Now()
 	// POST record to listeners, if any, asynchroniously
 	rs.PostUpdate(id, update)
@@ -377,7 +379,7 @@ func (rs *RevocationStorage) IssuanceRecords(id CredentialTypeIdentifier, key st
 // and updating the revocation database on disk.
 // If issued is not specified, i.e. passed the zero value, all credentials specified by key are revoked.
 func (rs *RevocationStorage) Revoke(id CredentialTypeIdentifier, key string, issued time.Time) error {
-	if !rs.getSettings(id).Authoritative() {
+	if !rs.settings.Get(id).Authoritative() {
 		return errors.Errorf("cannot revoke %s", id)
 	}
 	return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
@@ -562,7 +564,7 @@ func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdenti
 				return err
 			}
 
-			s := rs.getSettings(r.CredType)
+			s := rs.settings.Get(r.CredType)
 			s.updated = time.Now()
 			// POST record to listeners, if any, asynchroniously
 			rs.PostUpdate(r.CredType, &revocation.Update{SignedAccumulator: sacc})
@@ -593,12 +595,12 @@ func (rs *RevocationStorage) SyncDB(id CredentialTypeIdentifier) error {
 		}
 	}
 	// bump updated even if no new records were added
-	rs.getSettings(id).updated = time.Now()
+	rs.settings.Get(id).updated = time.Now()
 	return nil
 }
 
 func (rs *RevocationStorage) SyncIfOld(id CredentialTypeIdentifier, maxage uint64) error {
-	if rs.getSettings(id).updated.Before(time.Now().Add(time.Duration(-maxage) * time.Second)) {
+	if rs.settings.Get(id).updated.Before(time.Now().Add(time.Duration(-maxage) * time.Second)) {
 		if err := rs.SyncDB(id); err != nil {
 			return err
 		}
@@ -618,7 +620,7 @@ func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec
 	}
 
 	// Just store it if we are the revocation server for this credential type
-	settings := rs.getSettings(id)
+	settings := rs.settings.Get(id)
 	if settings.Authoritative() {
 		return rs.AddIssuanceRecord(rec)
 	}
@@ -695,7 +697,7 @@ func updateURL(id CredentialTypeIdentifier, conf *Configuration, rs RevocationSe
 	}
 }
 
-func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings map[CredentialTypeIdentifier]*RevocationSetting) error {
+func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings RevocationSettings) error {
 	var t *CredentialTypeIdentifier
 	var ourtypes []CredentialTypeIdentifier
 	for id, s := range settings {
@@ -757,7 +759,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings m
 	if settings != nil {
 		rs.settings = settings
 	} else {
-		rs.settings = map[CredentialTypeIdentifier]*RevocationSetting{}
+		rs.settings = RevocationSettings{}
 	}
 	for id, settings := range rs.settings {
 		if settings.Tolerance != 0 && settings.Tolerance < 30 {
@@ -789,7 +791,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 		if !rs.conf.CredentialTypes[credid].RevocationSupported() {
 			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme", credid)
 		}
-		settings := rs.getSettings(credid)
+		settings := rs.settings.Get(credid)
 		tolerance := settings.Tolerance
 		if params.Tolerance != 0 {
 			tolerance = params.Tolerance
@@ -820,19 +822,8 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 	return nil
 }
 
-func (rs *RevocationStorage) getSettings(id CredentialTypeIdentifier) *RevocationSetting {
-	if rs.settings[id] == nil {
-		rs.settings[id] = &RevocationSetting{}
-	}
-	s := rs.settings[id]
-	if s.Tolerance == 0 {
-		s.Tolerance = RevocationParameters.DefaultTolerance
-	}
-	return s
-}
-
 func (rs *RevocationStorage) PostUpdate(id CredentialTypeIdentifier, update *revocation.Update) {
-	if rs.ServerSentEvents == nil || !rs.getSettings(id).Authoritative() {
+	if rs.ServerSentEvents == nil || !rs.settings.Get(id).Authoritative() {
 		return
 	}
 	Logger.WithField("credtype", id).Tracef("sending SSE update event")
@@ -1086,6 +1077,17 @@ func (i *RevocationAttribute) MarshalCBOR() ([]byte, error) {
 
 func (i *RevocationAttribute) UnmarshalCBOR(data []byte) error {
 	return cbor.Unmarshal(data, (*big.Int)(i))
+}
+
+func (rs RevocationSettings) Get(id CredentialTypeIdentifier) *RevocationSetting {
+	if rs[id] == nil {
+		rs[id] = &RevocationSetting{}
+	}
+	s := rs[id]
+	if s.Tolerance == 0 {
+		s.Tolerance = RevocationParameters.DefaultTolerance
+	}
+	return s
 }
 
 func (s *RevocationSetting) Authoritative() bool {

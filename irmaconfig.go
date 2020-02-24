@@ -124,7 +124,7 @@ type ConfigurationOptions struct {
 	ReadOnly            bool
 	RevocationDBConnStr string
 	RevocationDBType    string
-	RevocationSettings  map[CredentialTypeIdentifier]*RevocationSetting
+	RevocationSettings  RevocationSettings
 }
 
 // NewConfiguration returns a new configuration. After this
