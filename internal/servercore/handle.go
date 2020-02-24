@@ -255,7 +255,7 @@ func (s *Server) handleGetUpdateLatest(
 func (s *Server) handlePostIssuanceRecord(
 	cred irma.CredentialTypeIdentifier, counter uint, message []byte,
 ) (string, *irma.RemoteError) {
-	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.ServerMode {
+	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Authoritative() {
 		return "", server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
 

@@ -69,6 +69,8 @@ type Configuration struct {
 	initialized   bool
 	assets        string
 	readOnly      bool
+
+	options ConfigurationOptions
 }
 
 // ConfigurationFileHash encodes the SHA256 hash of an authenticated
@@ -132,17 +134,7 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 		Path:     path,
 		assets:   opts.Assets,
 		readOnly: opts.ReadOnly,
-	}
-	conf.Scheduler = gocron.NewScheduler()
-	conf.Scheduler.Start()
-	conf.Revocation = &RevocationStorage{conf: conf}
-	if err = conf.Revocation.Load(
-		Logger.IsLevelEnabled(logrus.DebugLevel),
-		opts.RevocationDBType,
-		opts.RevocationDBConnStr,
-		opts.RevocationSettings,
-	); err != nil {
-		return nil, err
+		options:  opts,
 	}
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
@@ -216,6 +208,21 @@ func (conf *Configuration) ParseFolder() (err error) {
 	if err != nil {
 		return
 	}
+
+	if conf.Revocation == nil {
+		conf.Scheduler = gocron.NewScheduler()
+		conf.Scheduler.Start()
+		conf.Revocation = &RevocationStorage{conf: conf}
+		if err = conf.Revocation.Load(
+			Logger.IsLevelEnabled(logrus.DebugLevel),
+			conf.options.RevocationDBType,
+			conf.options.RevocationDBConnStr,
+			conf.options.RevocationSettings,
+		); err != nil {
+			return err
+		}
+	}
+
 	conf.initialized = true
 	if mgrerr != nil {
 		return mgrerr

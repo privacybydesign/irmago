@@ -33,6 +33,9 @@ func (session *session) setStatus(status server.Status) {
 }
 
 func (session *session) onUpdate() {
+	if session.sse == nil {
+		return
+	}
 	session.sse.SendMessage("session/"+session.clientToken,
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
@@ -83,10 +86,8 @@ func (session *session) issuanceHandleRevocation(
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
-	if settings, ok := session.conf.RevocationSettings[id]; !ok || !settings.ServerMode {
-		if err := session.conf.IrmaConfiguration.Revocation.SyncDB(id); err != nil {
-			return nil, err
-		}
+	if err := session.conf.IrmaConfiguration.Revocation.SyncDB(id); err != nil {
+		return nil, err
 	}
 
 	rs := session.conf.IrmaConfiguration.Revocation

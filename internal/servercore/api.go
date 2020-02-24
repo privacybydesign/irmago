@@ -52,12 +52,8 @@ func New(conf *server.Configuration, eventServer *sse.Server) (*Server, error) {
 	})
 
 	s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
-		for credid, credtype := range s.conf.IrmaConfiguration.CredentialTypes {
-			if !credtype.RevocationSupported() {
-				continue
-			}
-			settings := conf.RevocationSettings[credid]
-			if settings == nil || settings.ServerMode {
+		for credid, settings := range s.conf.RevocationSettings {
+			if settings.Authoritative() {
 				continue
 			}
 			if err := s.conf.IrmaConfiguration.Revocation.SyncIfOld(credid, settings.Tolerance/2); err != nil {

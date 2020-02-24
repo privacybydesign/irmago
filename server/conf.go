@@ -313,6 +313,8 @@ func (conf *Configuration) verifyRevocation() error {
 		}
 		if settings.ServerMode {
 			conf.Logger.Info("revocation server mode enabled for " + credid.String())
+		}
+		if settings.Authoritative() {
 			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities, a.o. that this server is always reachable online for any IRMA participant, and that the contents of the database is never deleted. Failure will lead to all IRMA apps being unable to disclose credentials of this type. Read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
 			if err := conf.prepareRevocation(credid); err != nil {
 				return err

@@ -101,8 +101,10 @@ func (s *memorySessionStore) stop() {
 	s.Lock()
 	defer s.Unlock()
 	for _, session := range s.requestor {
-		session.sse.CloseChannel("session/" + session.token)
-		session.sse.CloseChannel("session/" + session.clientToken)
+		if session.sse != nil {
+			session.sse.CloseChannel("session/" + session.token)
+			session.sse.CloseChannel("session/" + session.clientToken)
+		}
 	}
 }
 
@@ -137,8 +139,10 @@ func (s *memorySessionStore) deleteExpired() {
 	s.Lock()
 	for _, token := range expired {
 		session := s.requestor[token]
-		session.sse.CloseChannel("session/" + session.token)
-		session.sse.CloseChannel("session/" + session.clientToken)
+		if session.sse != nil {
+			session.sse.CloseChannel("session/" + session.token)
+			session.sse.CloseChannel("session/" + session.clientToken)
+		}
 		delete(s.client, session.clientToken)
 		delete(s.requestor, token)
 	}
