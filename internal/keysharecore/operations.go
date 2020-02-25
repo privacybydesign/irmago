@@ -3,7 +3,6 @@ package keysharecore
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -36,6 +35,12 @@ func (c *KeyshareCore) GenerateKeyshareSecret(pinRaw string) (EncryptedKeyshareP
 		return EncryptedKeysharePacket{}, err
 	}
 
+	var id [32]byte
+	_, err = rand.Read(id[:])
+	if err != nil {
+		return EncryptedKeysharePacket{}, err
+	}
+
 	// Build unencrypted packet
 	var p unencryptedKeysharePacket
 	p.setPin(pin)
@@ -43,6 +48,7 @@ func (c *KeyshareCore) GenerateKeyshareSecret(pinRaw string) (EncryptedKeyshareP
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
+	p.setId(id)
 
 	// And encrypt
 	return c.encryptPacket(p)
@@ -69,22 +75,16 @@ func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, useri
 	}
 
 	// Generate jwt token
-	salt := make([]byte, 12)
-	_, err = rand.Read(salt)
-	if err != nil {
-		return "", err
-	}
-	hashedPin := sha256.Sum256(append(salt, refPin[:]...))
+	id := p.getId()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss":        "keyshare_server",
-		"sub":        "auth_tok",
-		"iat":        time.Now().Unix(),
-		"exp":        time.Now().Add(3 * time.Minute).Unix(),
-		"user_id":    userid,
-		"salt":       base64.StdEncoding.EncodeToString(salt),
-		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
+		"iss":      "keyshare_server",
+		"sub":      "auth_tok",
+		"iat":      time.Now().Unix(),
+		"exp":      time.Now().Add(3 * time.Minute).Unix(),
+		"user_id":  userid,
+		"token_id": base64.StdEncoding.EncodeToString(id[:]),
 	})
-	token.Header["kid"]=c.signKeyId
+	token.Header["kid"] = c.signKeyId
 	return token.SignedString(c.signKey)
 }
 
@@ -118,7 +118,13 @@ func (c *KeyshareCore) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRa
 	}
 
 	// change and reencrypt
+	var id [32]byte
+	_, err = rand.Read(id[:])
+	if err != nil {
+		return EncryptedKeysharePacket{}, err
+	}
 	p.setPin(newpin)
+	p.setId(id)
 	return c.encryptPacket(p)
 }
 
@@ -144,25 +150,14 @@ func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string)
 	if !claims.VerifyExpiresAt(time.Now().Unix(), true) {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
-	if _, present := claims["salt"]; !present {
+	if _, present := claims["token_id"]; !present {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
-	if _, present := claims["hashed_pin"]; !present {
-		return unencryptedKeysharePacket{}, ErrInvalidJWT
-	}
-	saltB64, ok := claims["salt"].(string)
+	tokenIdB64, ok := claims["token_id"].(string)
 	if !ok {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
-	hashB64, ok := claims["hashed_pin"].(string)
-	if !ok {
-		return unencryptedKeysharePacket{}, ErrInvalidJWT
-	}
-	salt, err := base64.StdEncoding.DecodeString(saltB64)
-	if err != nil {
-		return unencryptedKeysharePacket{}, ErrInvalidJWT
-	}
-	hash, err := base64.StdEncoding.DecodeString(hashB64)
+	tokenId, err := base64.StdEncoding.DecodeString(tokenIdB64)
 	if err != nil {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
@@ -171,10 +166,9 @@ func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string)
 	if err != nil {
 		return unencryptedKeysharePacket{}, err
 	}
-	refpin := p.getPin()
-	refhash := sha256.Sum256(append(salt, refpin[:]...))
+	refId := p.getId()
 
-	if !hmac.Equal(refhash[:], hash) {
+	if !hmac.Equal(refId[:], tokenId) {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
 
@@ -250,7 +244,7 @@ func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken 
 		"sub":    "ProofP",
 		"iss":    "keyshare_server",
 	})
-	token.Header["kid"]=c.signKeyId
+	token.Header["kid"] = c.signKeyId
 	return token.SignedString(c.signKey)
 }
 
