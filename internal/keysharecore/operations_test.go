@@ -3,7 +3,6 @@ package keysharecore
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -26,7 +25,7 @@ func TestPinFunctionality(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 
 	// generate test pin
 	var bpin [64]byte
@@ -66,7 +65,7 @@ func TestVerifyAccess(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 
 	// Generate test pins
 	var bpin [64]byte
@@ -90,19 +89,16 @@ func TestVerifyAccess(t *testing.T) {
 	assert.Error(t, err)
 
 	// Test incorrectly constructed jwts
-	salt := make([]byte, 12)
-	_, err = rand.Read(salt)
+	p, err := c.verifyAccess(ep1, jwtt)
 	require.NoError(t, err)
-	paddedPin1, err := padPin(pin1)
-	require.NoError(t, err)
-	hashedPin := sha256.Sum256(append(salt, paddedPin1[:]...))
+	id := p.getId()
+	tokenId := base64.StdEncoding.EncodeToString(id[:])
 
 	// incorrect exp
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":        time.Now().Add(-6 * time.Minute).Unix(),
-		"exp":        time.Now().Add(-3 * time.Minute).Unix(),
-		"salt":       base64.StdEncoding.EncodeToString(salt),
-		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
+		"iat":      time.Now().Add(-6 * time.Minute).Unix(),
+		"exp":      time.Now().Add(-3 * time.Minute).Unix(),
+		"token_id": tokenId,
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
@@ -111,9 +107,8 @@ func TestVerifyAccess(t *testing.T) {
 
 	// missing exp
 	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":        time.Now().Unix(),
-		"salt":       base64.StdEncoding.EncodeToString(salt),
-		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
+		"iat":      time.Now().Unix(),
+		"token_id": tokenId,
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
@@ -122,56 +117,30 @@ func TestVerifyAccess(t *testing.T) {
 
 	// Incorrectly typed exp
 	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":        time.Now().Unix(),
-		"exp":        "test",
-		"salt":       base64.StdEncoding.EncodeToString(salt),
-		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
+		"iat":      time.Now().Unix(),
+		"exp":      "test",
+		"token_id": tokenId,
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep1, jwtt)
 	assert.Error(t, err)
 
-	// missing salt
+	// missing token_id
 	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":        time.Now().Unix(),
-		"exp":        time.Now().Add(3 * time.Minute).Unix(),
-		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
+		"iat": time.Now().Unix(),
+		"exp": time.Now().Add(3 * time.Minute).Unix(),
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep1, jwtt)
 	assert.Error(t, err)
 
-	// incorrectly typed salt
+	// mistyped token_id
 	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":        time.Now().Unix(),
-		"exp":        time.Now().Add(3 * time.Minute).Unix(),
-		"salt":       5,
-		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
-	})
-	jwtt, err = token.SignedString(c.signKey)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(ep1, jwtt)
-	assert.Error(t, err)
-
-	// missing hash
-	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":  time.Now().Unix(),
-		"exp":  time.Now().Add(3 * time.Minute).Unix(),
-		"salt": base64.StdEncoding.EncodeToString(salt),
-	})
-	jwtt, err = token.SignedString(c.signKey)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(ep1, jwtt)
-	assert.Error(t, err)
-
-	// mistyped hash
-	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":        time.Now().Unix(),
-		"exp":        time.Now().Add(3 * time.Minute).Unix(),
-		"salt":       base64.StdEncoding.EncodeToString(salt),
-		"hashed_pin": 7,
+		"iat":      time.Now().Unix(),
+		"exp":      time.Now().Add(3 * time.Minute).Unix(),
+		"token_id": 7,
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
@@ -180,10 +149,9 @@ func TestVerifyAccess(t *testing.T) {
 
 	// Incorrect signing method
 	token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"iat":        time.Now().Unix(),
-		"exp":        time.Now().Add(3 * time.Minute).Unix(),
-		"salt":       base64.StdEncoding.EncodeToString(salt),
-		"hashed_pin": base64.StdEncoding.EncodeToString(hashedPin[:]),
+		"iat":      time.Now().Unix(),
+		"exp":      time.Now().Add(3 * time.Minute).Unix(),
+		"token_id": tokenId,
 	})
 	jwtt, err = token.SignedString([]byte("bla"))
 	require.NoError(t, err)
@@ -198,7 +166,7 @@ func TestProofFunctionality(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// generate test pin
@@ -250,7 +218,7 @@ func TestCorruptedPacket(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -296,7 +264,7 @@ func TestIncorrectPin(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -335,7 +303,7 @@ func TestMissingKey(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -370,7 +338,7 @@ func TestInvalidChallenge(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -413,7 +381,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -446,7 +414,7 @@ func TestNonExistingCommit(t *testing.T) {
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousSetAESEncryptionKey(1, key)
-	c.DangerousSetSignKey(jwtTestKey,1)
+	c.DangerousSetSignKey(jwtTestKey, 1)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
