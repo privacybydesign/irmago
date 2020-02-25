@@ -11,11 +11,11 @@ import (
 )
 
 type (
-	// Contains pin (bytes 0-63) and secret (bytes 64-127)
-	unencryptedKeysharePacket [64 + 64]byte
+	// Contains pin (bytes 0-63), secret (bytes 64-127), and identifier (bytes 128-159)
+	unencryptedKeysharePacket [64 + 64 + 32]byte
 
 	// Size is that of unencrypted packet + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID
-	EncryptedKeysharePacket [64 + 64 + 12 + 16 + 4]byte
+	EncryptedKeysharePacket [64 + 64 + 32 + 12 + 16 + 4]byte
 )
 
 var (
@@ -55,6 +55,16 @@ func (p *unencryptedKeysharePacket) setKeyshareSecret(val *big.Int) error {
 	copy(p[64+zerolen:], data)
 
 	return nil
+}
+
+func (p *unencryptedKeysharePacket) getId() [32]byte {
+	var result [32]byte
+	copy(result[:], p[128:160])
+	return result
+}
+
+func (p *unencryptedKeysharePacket) setId(id [32]byte) {
+	copy(p[128:160], id[:])
 }
 
 func (c *KeyshareCore) encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePacket, error) {
