@@ -259,7 +259,6 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
-	transport.log("response", b, true)
 	return b, nil
 }
 
