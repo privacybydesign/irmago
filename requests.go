@@ -266,6 +266,19 @@ func (b *BaseRequest) SupportsRevocation() bool {
 	return !b.ProtocolVersion.Below(2, 6)
 }
 
+func (b *BaseRequest) Validate(conf *Configuration) error {
+	for credid := range b.Revocation {
+		credtyp, ok := conf.CredentialTypes[credid]
+		if !ok {
+			return errors.Errorf("cannot requet nonrevocation proof for %s: unknown credential type", credid)
+		}
+		if !credtyp.RevocationSupported() {
+			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme", credid)
+		}
+	}
+	return nil
+}
+
 // CredentialTypes returns an array of all credential types occuring in this conjunction.
 func (c AttributeCon) CredentialTypes() []CredentialTypeIdentifier {
 	var result []CredentialTypeIdentifier

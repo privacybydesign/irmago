@@ -80,6 +80,9 @@ func (s *Server) validateRequest(request irma.SessionRequest) error {
 	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
 		return err
 	}
+	if err := request.Base().Validate(s.conf.IrmaConfiguration); err != nil {
+		return err
+	}
 	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
 }
 
