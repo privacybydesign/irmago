@@ -72,7 +72,7 @@ func TestLogging(t *testing.T) {
 	// Test max parameter
 	logs, err = client.LoadNewestLogs(1)
 	require.NoError(t, err)
-	require.True(t, len(logs) == oldLogLength+1)
+	require.True(t, len(logs) == 1)
 
 	// Do signature session
 	request = getSigningRequest(attrid)

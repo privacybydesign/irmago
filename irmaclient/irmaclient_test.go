@@ -3,14 +3,15 @@ package irmaclient
 import (
 	"encoding/json"
 	"errors"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/privacybydesign/irmago/internal/fs"
+
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,8 +46,8 @@ func parseExistingStorage(t *testing.T) *Client {
 func parseDisclosure(t *testing.T) (*Client, *irma.DisclosureRequest, *irma.Disclosure) {
 	client := parseStorage(t)
 
-	requestJson := `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"M3LYmTr3CZDYZkMNK2uCCg==","protocolVersion":"2.5","disclose":[[["irma-demo.RU.studentCard.studentID"]]],"labels":{"0":null}}`
-	dislosureJson := `{"proofs":[{"c":"l1WDHGtsbEO+rVhVoGBDpzluiU5riCKtgMu6Mn4zxDg=","A":"XRyyZFL5xcvQDrCEoIchQdd1qyGpMIafNoak/8aSZisQ5U7JEa54Yu8nW4L9/4fXqLDK1SyX/CvFXrELbFBX1qf1lJ19jTViU9jIpSOw3D8w/DeY7Kg0evwVKUQrcrJnT3ss8J5gM5eRF1E1AuRHgKywWYvtxFvHQs2ODN2qsWY=","e_response":"m41dWZjTVYN6RqnojdHwgfixZwBJKW189b/ehnG3YTt0dMKDUnrLBYhGyKtmstnLzYTuJaBDX4r8","v_response":"DajHvzCDcmxXvd4sucgnrOkaOyFaF0EcOf23ySy56SAiFzWBW1BkcMQ8AwjwnVzYS5vpHnkUDkgqovOsl74RJQMSdnjzu0URAvGZm7/3pXgBjR5Q0154oMC3+n19pQrX68xgEOK7Am6jflfNufyINIVOAm7SfObsjKRDMQcuHOLgoj5XIHPJ3EBJcFJzizmaaGuGHKEJ0+b4Zi8JCBMaP9mdDhsUJAtm190hYxcMb2CtIIiJqGRk+JcNmusRuJYcT9OLx/Xklj+qm6/5C0+jRQPdYNycVzwKel+HDWZyYymCSpjbR5mUw1IpK1QvszN5NIJXVCeDrMMRZcySfOUA","a_responses":{"0":"xxlDTyJ1xq6TuMYgiyisNJ82tiJsnFdBinGP5ZQtw7rxXcLrO6k7nE88wPDuejzEnF7+LgIes32BMC+Qr/C/qh//x7SuMxDujoY=","2":"8HEFx5JJ24Z/D6MRtE6m7Pyk9T61S7lnxdTaych7wEK3ZO+4qyFYVZwx4NLtTp1MRfTiUq6KhNd7Is2cEBAdZYaL3XBnNRQMNvw=","3":"2BleNpicu21GFR1kYJ6kpFct6pyFSYz8hw5tBHtGz7O54KgHySwZ6lI/J4hp1b5l3RWq6gZzlz/PzOLKxk3E3YOwS7e4hsQ7BFo=","5":"977MbEQ95ieN/lVJSUS5Y80nY5KigNtrId2RW87CIsCZQ892rPljuZ0s/UG16b3oEYFEx+WZPxKvGiQN0dJiB8BK3P8qPZlGIu4="},"a_disclosed":{"1":"AgAJuwB+AALWy2qU9p3l52l9LU1rVT4M","4":"NDU2"}}],"indices":[[{"cred":0,"attr":4}]]}`
+	requestJson := `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"zVQJMG6TKZwfcv5TExFVSQ==","protocolVersion":"2.5","disclose":[[["irma-demo.RU.studentCard.studentID"]]],"labels":{"0":null}}`
+	dislosureJson := `{"proofs":[{"c":"o21UPItMKWXmXNhBKsCBHDWjfRoy+uDdbDB1yhhpg3k=","A":"Bl68Ut2nu2nwhIweU9QGoNd6TkjUIRbQ6SDg22m8PzMEgca0KA4/Oy1gaJCUHM3FFJ0Gdj0+6/VpcF85JyuQZou93UXXwzN/Y7ohUw+YxVTQ7WcJmZ/VGDh3SME5KJ9aWjGmq61J2LQiiDSq+XrcWFfKPwad6BkDhV2reo4yo68=","e_response":"VD0pWdeDkd3V+R3734xyRcGeWMMTzpB0ZiJhKMzv37DmHN6RpRzTF/0HroAsMIMz8mBWxYPVRBiw","v_response":"3OWsmIDM7v0ByEXax2YZGp3BnJ5nkCLMcT6/ENU0EcpjrOz+rT+NayQSLgMshxAATpgkgAluFQ3owOoQEL8ZAkZTWUDW5j+qy7GDFd22ZOKEZLWf8Q1XRK3x6exV9CIMkcBQrv5W6EI9XB5OKKNB3Z/VTALY3UW8cQQ0DPHj83YBEL3LJQDxwaxvQeHx4nysJjsEoLJE1KPBynXlfxpk17O3HTg+NuX5gj7+ckiHrmXgthJHvqCTnNpEORtXDJTmKJUccUiyWuftA36cIXIxW4N6I88T4BYctwN+T9NY+hcjYESITtxB+r2elB98bzlWgHF8ohpOkkJGuNjTFjw=","a_responses":{"0":"eDQA3Lrh2WC3o/VP6KD/uaMSRy/em3gEfuqXD9tVT+yJFYb7GT91lle5dB6lg235pUSHzYIOET7FYOHwb4/YSAGQiix0IzqFkLo=","2":"kT3kfcIaPy3UBYPX78X10w/R1Cb5rHqoW5OUd06xqC1V9MqVw3zhtc/nBgWmvVwTgJrl2CyuBjjoF10RJz/FEjYZ0JAF57uUXW8=","3":"4oSBcyUT6mOBhk/Szk/5G5QrgaAADW6wSl91hGwTTNDTIUiK01GE11JozbwDeZsLPoFikzikwkPu9ZsOAtOtb/+IcadB6NP0KXA=","5":"OwUSSCBb9NOMOYYSGSYCrdFUNLKJ/b2YP5LlElFG5r4GPR71zTQsZ4QuJiMIt9iFPRP6PQUvMvjWA59UTQ9AlwKc9JcQzbScYBM="},"a_disclosed":{"1":"AwAKOQIBAALWy2qU9p3l52l9LU1rVT4M","4":"aGpt"}}],"indices":[[{"cred":0,"attr":4}]]}`
 	request := &irma.DisclosureRequest{}
 	require.NoError(t, json.Unmarshal([]byte(requestJson), request))
 	disclosure := &irma.Disclosure{}
