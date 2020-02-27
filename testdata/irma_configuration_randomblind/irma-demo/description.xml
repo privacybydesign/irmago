@@ -1,0 +1,15 @@
+<SchemeManager version="7">
+	<Id>irma-demo</Id>
+	<Url>https://privacybydesign.foundation/schememanager/irma-demo</Url>
+	<Demo>true</Demo>
+	<Name>
+		<en>IRMA Demo</en>
+		<nl>IRMA Demo</nl>
+	</Name>
+	<Description>
+		<en>Demo credentials within the IRMA domain</en>
+		<nl>Demo IRMA-credentials</nl>
+	</Description>
+	<TimestampServer>https://keyshare.privacybydesign.foundation/atumd/</TimestampServer>
+	<Contact>https://privacybydesign.foundation/</Contact>
+</SchemeManager>
