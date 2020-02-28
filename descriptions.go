@@ -81,6 +81,8 @@ type AttributeType struct {
 	Name        TranslatedString
 	Description TranslatedString
 
+	RandomBlind bool `xml:"randomblind,attr,optional" json:",omitempty"`
+
 	Index        int  `xml:"-"`
 	DisplayIndex *int `xml:"displayIndex,attr" json:",omitempty"`
 
@@ -96,6 +98,18 @@ func (ad AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {
 
 func (ad AttributeType) IsOptional() bool {
 	return ad.Optional == "true"
+}
+
+// Returns indices of random blind attributes within this credentialtype
+// The indices coincide with indices of an AttributeList (metadataAttribute at index 0)
+func (ct *CredentialType) RandomBlinds() []int {
+	indices := []int{}
+	for i, at := range ct.AttributeTypes {
+		if at.RandomBlind {
+			indices = append(indices, i+2)
+		}
+	}
+	return indices
 }
 
 // ContainsAttribute tests whether the specified attribute is contained in this

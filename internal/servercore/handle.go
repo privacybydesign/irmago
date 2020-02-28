@@ -105,6 +105,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 }
 
 func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
+
 	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
@@ -174,7 +175,8 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, commitments.Nonce2)
+		rb := session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RandomBlinds()
+		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, commitments.Nonce2, rb)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}

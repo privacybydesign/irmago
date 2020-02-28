@@ -758,8 +758,10 @@ func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest, choic
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		credBuilder := gabi.NewCredentialBuilder(
-			pk, request.GetContext(), client.secretkey.Key, issuerProofNonce)
+		credID := futurecred.CredentialTypeID
+		credInfo := client.Configuration.CredentialTypes[credID]
+		credBuilder := gabi.NewCredentialBuilder(pk, request.GetContext(),
+			client.secretkey.Key, issuerProofNonce, credInfo.RandomBlinds())
 		builders = append(builders, credBuilder)
 	}
 
