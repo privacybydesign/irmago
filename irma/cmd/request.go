@@ -12,7 +12,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/mdp/qrterminal"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/spf13/cobra"
@@ -211,14 +211,23 @@ func parseCredentials(credentialsStr []string, conf *irma.Configuration) ([]*irm
 			return nil, errors.New("unknown credential type: " + credIdStr)
 		}
 
+		randomblinds := credtype.RandomBlinds()
+		// we dont need values for the random blind attributes, since they are randomly generated during issuance
+		required := len(credtype.AttributeTypes) - len(randomblinds)
 		attrsSlice := strings.Split(attrsStr, ",")
-		if len(attrsSlice) != len(credtype.AttributeTypes) {
-			return nil, errors.Errorf("%d attributes required but %d provided for %s", len(credtype.AttributeTypes), len(attrsSlice), credIdStr)
+		if len(attrsSlice) != required {
+			return nil, errors.Errorf("%d attributes required but %d provided for %s", required, len(attrsSlice), credIdStr)
 		}
 
+		// Construct the attribute -> value map for in he CredentialRequest
 		attrs := make(map[string]string, len(attrsSlice))
 		for i, typ := range credtype.AttributeTypes {
-			attrs[typ.ID] = attrsSlice[i]
+			if !typ.RandomBlind {
+				attrs[typ.ID] = attrsSlice[i]
+			} else {
+				// for now throw in an empty string
+				attrs[typ.ID] = ""
+			}
 		}
 		list = append(list, &irma.CredentialRequest{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(credIdStr),
