@@ -31,5 +31,6 @@
 				<nl>Uw geverifiëerde e-mailadres</nl>
 			</Description>
 		</Attribute>
+		<Attribute id="revocation" revocation="true" />
 	</Attributes>
 </IssueSpecification>

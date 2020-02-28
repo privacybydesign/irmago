@@ -81,7 +81,8 @@ func (session *session) issuanceHandleRevocation(
 	cred *irma.CredentialRequest, attributes *irma.AttributeList, sk *gabi.PrivateKey,
 ) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
-	if !session.conf.IrmaConfiguration.CredentialTypes[id].RevocationSupported() {
+	credtyp := session.conf.IrmaConfiguration.CredentialTypes[id]
+	if !credtyp.RevocationSupported() || !session.request.Base().RevocationSupported() {
 		return nil, nil
 	}
 
@@ -118,6 +119,8 @@ func (session *session) issuanceHandleRevocation(
 	}
 
 	witness.SignedAccumulator = sig // attach previously selected reocation record to the witness for the client
+	attributes.Ints[credtyp.RevocationIndex+1] = witness.E
+
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
 		PKCounter:  &sk.Counter,
@@ -208,10 +211,14 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 // Other
 
 func (session *session) chooseProtocolVersion(minClient, maxClient *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
-	// Set our minimum supported version to 2.5 if condiscon compatibility is required
+	// Set minimum supported version to 2.5 if condiscon compatibility is required
 	minServer := minProtocolVersion
 	if !session.legacyCompatible {
 		minServer = &irma.ProtocolVersion{2, 5}
+	}
+	// Set minimum to 2.6 if nonrevocation is required
+	if len(session.request.Base().Revocation) > 0 {
+		minServer = &irma.ProtocolVersion{2, 6}
 	}
 
 	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {

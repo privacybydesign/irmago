@@ -62,7 +62,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 			if err != nil {
 				return nil, "", err
 			}
-			r, err := gabi.RepresentToPublicKey(pk, disclosed[i], nil)
+			r, err := gabi.RepresentToPublicKey(pk, disclosed[i])
 			if err != nil {
 				return nil, "", err
 			}

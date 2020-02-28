@@ -69,6 +69,7 @@ type CredentialType struct {
 	RevocationServers     []string         `xml:"RevocationServers>RevocationServer"`
 	RevocationUpdateCount uint64
 	RevocationUpdateSpeed uint64
+	RevocationIndex       int              `xml:"-"`
 	XMLVersion            int              `xml:"version,attr"`
 	XMLName               xml.Name         `xml:"IssueSpecification"`
 	IssueURL              TranslatedString `xml:"IssueURL"`
@@ -85,6 +86,8 @@ type AttributeType struct {
 
 	Index        int  `xml:"-"`
 	DisplayIndex *int `xml:"displayIndex,attr" json:",omitempty"`
+
+	RevocationAttribute bool `xml:"revocation,attr" json:",omitempty"`
 
 	// Taken from containing CredentialType
 	CredentialTypeID string `xml:"-"`

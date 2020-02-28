@@ -63,7 +63,7 @@ func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 	pk, err := cred.PublicKey()
 	require.NoError(t, err)
 	require.True(t,
-		cred.Signature.Verify(pk, cred.Attributes, nil),
+		cred.Signature.Verify(pk, cred.Attributes),
 		"Credential should be valid",
 	)
 }
@@ -77,7 +77,7 @@ func verifyCredentials(t *testing.T, client *Client) {
 			pk, err = cred.PublicKey()
 			require.NoError(t, err)
 			require.True(t,
-				cred.Credential.Signature.Verify(pk, cred.Attributes, nil),
+				cred.Credential.Signature.Verify(pk, cred.Attributes),
 				"Credential %s-%d was invalid", credtype.String(), index,
 			)
 			require.Equal(t, cred.Attributes[0], client.secretkey.Key,

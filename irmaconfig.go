@@ -939,7 +939,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 			// Check if all attributes from the configuration are present, unless they are marked as optional
 			for _, attrtype := range typ.AttributeTypes {
 				_, present := credreq.Attributes[attrtype.ID]
-				if !present && !attrtype.IsOptional() {
+				if !present && !attrtype.RevocationAttribute && !attrtype.IsOptional() {
 					requiredMissing.AttributeTypes[attrtype.GetAttributeTypeIdentifier()] = struct{}{}
 				}
 			}
@@ -1408,12 +1408,15 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 	name := cred.Identifier().String()
 	indices := make(map[int]struct{})
+	revocation := false
 	count := len(cred.AttributeTypes)
 	if count == 0 {
 		return errors.Errorf("Credenial type %s has no attributes", name)
 	}
 	for i, attr := range cred.AttributeTypes {
-		conf.validateTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
+		if !attr.RevocationAttribute {
+			conf.validateTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
+		}
 		index := i
 		if attr.DisplayIndex != nil {
 			index = *attr.DisplayIndex
@@ -1422,9 +1425,19 @@ func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute displayIndex at attribute %d", name, i))
 		}
 		indices[index] = struct{}{}
+		if attr.RevocationAttribute {
+			cred.RevocationIndex = i
+			revocation = true
+		}
 	}
 	if len(indices) != count {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the displayIndex tags", name))
+	}
+	if revocation && !cred.RevocationSupported() {
+		return errors.New("revocation attribute found but no RevocationServers configured")
+	}
+	if !revocation && cred.RevocationSupported() {
+		return errors.New("RevocationServers configured but no revocation attribute found")
 	}
 	return nil
 }

@@ -262,7 +262,7 @@ func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
 	return len(b.Revocation) > 0 && b.Revocation[id] != nil && len(b.Revocation[id].Updates) > 0
 }
 
-func (b *BaseRequest) SupportsRevocation() bool {
+func (b *BaseRequest) RevocationSupported() bool {
 	return !b.ProtocolVersion.Below(2, 6)
 }
 
@@ -569,8 +569,12 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 	}
 
 	for _, attrtype := range credtype.AttributeTypes {
-		if _, present := cr.Attributes[attrtype.ID]; !present && attrtype.Optional != "true" {
+		_, present := cr.Attributes[attrtype.ID]
+		if !present && !attrtype.RevocationAttribute && attrtype.Optional != "true" {
 			return errors.New("Required attribute not present in credential request")
+		}
+		if present && attrtype.RevocationAttribute {
+			return errors.New("revocation attribute cannot be set in credential request")
 		}
 	}
 

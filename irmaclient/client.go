@@ -561,10 +561,6 @@ func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeC
 			if err != nil {
 				return nil, err
 			}
-			if !base.SupportsRevocation() && cred.NonRevocationWitness != nil {
-				// can't disclose from revocation-aware credentials to not-revocation-aware requestors
-				continue
-			}
 			if base.RequestsRevocation(credtype) && cred.NonRevocationWitness == nil {
 				// can't disclose from non-revocation aware credentials if nonrevocation proof is required
 				continue
@@ -919,7 +915,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 		if err != nil {
 			return err
 		}
-		cred, err := credbuilder.ConstructCredential(sig, attrs.Ints)
+		cred, err := credbuilder.ConstructCredential(sig, attrs.Ints, attrs.RevocationIndex+2)
 		if err != nil {
 			return err
 		}
