@@ -5,3 +5,4 @@ schemes_update: 0
 revocation_settings:
   irma-demo.MijnOverheid.root:
     revocation_server_url: http://localhost:8090/irma/
+    sse: true
