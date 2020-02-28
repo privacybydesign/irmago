@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -498,4 +498,36 @@ func TestIssuedCredentialIsStored(t *testing.T) {
 	client, _ = parseExistingStorage(t)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
 	sessionHelper(t, getDisclosureRequest(id), "verification", client)
+}
+
+func TestBlindIssuanceSession(t *testing.T) {
+	credID := irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas")
+	attrID1 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.election")
+	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
+
+	client, _ := parseStorage(t)
+	defer test.ClearTestStorage(t)
+
+	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
+	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
+
+	require.True(t, client.Configuration.AttributeTypes[attrID2].RandomBlind, "AttributeType votingnumber is not of type random blind")
+	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
+	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			Validity:         &expiry,
+			CredentialTypeID: credID,
+			Attributes: map[string]string{
+				"election":     "plantsoen",
+				"votingnumber": "",
+			},
+		},
+	})
+
+	sessionHelper(t, request, "issue", client)
+	attrList := client.Attributes(credID, 0)
+
+	// Metadata attribute + election + votingnumber
+	require.Equal(t, 3, len(attrList.Ints), "Number of attributes in credential should be 3")
+	require.NoError(t, client.Close())
 }
