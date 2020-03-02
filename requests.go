@@ -519,23 +519,18 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 
 	// Compute other attributes
 	credtype := conf.CredentialTypes[cr.CredentialTypeID]
-	attrs := []*big.Int{meta.Int}
-	for _, attrtype := range credtype.AttributeTypes {
-		if str, present := cr.Attributes[attrtype.ID]; present {
+	attrs := make([]*big.Int, len(credtype.AttributeTypes)+1)
+	attrs[0] = meta.Int
+	for i, attrtype := range credtype.AttributeTypes {
+		attrs[i+1] = new(big.Int)
+		if str, present := cr.Attributes[attrtype.ID]; present && !attrtype.RandomBlind {
 			// Set attribute to str << 1 + 1
-			attr := new(big.Int).SetBytes([]byte(str))
+			attrs[i+1].SetBytes([]byte(str))
 			if meta.Version() >= 0x03 {
-				attr.Lsh(attr, 1)             // attr <<= 1
-				attr.Add(attr, big.NewInt(1)) // attr += 1
-			}
-			// Do not include attributes of the random blind type
-			if !attrtype.RandomBlind {
-				attrs = append(attrs, attr)
+				attrs[i+1].Lsh(attrs[i+1], 1)             // attr <<= 1
+				attrs[i+1].Add(attrs[i+1], big.NewInt(1)) // attr += 1
 			}
 		}
-	}
-	if len(attrs) != len(credtype.AttributeTypes)-len(credtype.RandomBlinds())+1 {
-		return nil, errors.New("Wrong length of attributes")
 	}
 
 	return NewAttributeListFromInts(attrs, conf), nil
