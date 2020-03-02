@@ -1,10 +1,10 @@
 <IssueSpecification version="4">
   <Name>
-    <en>Demo Votingcard</en>
+    <en>Demo Voting Card</en>
     <nl>Demo Stempas</nl>
   </Name>
   <ShortName>
-    <en>Demo Votingcard</en>
+    <en>Demo Voting Card</en>
     <nl>Demo Stempas</nl>
   </ShortName>
   <SchemeManager>irma-demo</SchemeManager>
