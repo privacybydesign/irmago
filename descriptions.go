@@ -106,7 +106,7 @@ func (ct *CredentialType) RandomBlinds() []int {
 	indices := []int{}
 	for i, at := range ct.AttributeTypes {
 		if at.RandomBlind {
-			indices = append(indices, i+2)
+			indices = append(indices, i+1)
 		}
 	}
 	return indices
