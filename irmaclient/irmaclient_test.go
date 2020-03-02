@@ -8,43 +8,44 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/privacybydesign/irmago/internal/fs"
-
 	"github.com/privacybydesign/gabi"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
-
 	"github.com/sirupsen/logrus"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
+	irma.Logger.SetLevel(logrus.FatalLevel)
+
 	// Create HTTP server for scheme managers
 	test.StartSchemeManagerHttpServer()
-	defer test.StopSchemeManagerHttpServer()
 
-	test.CreateTestStorage(nil)
-	defer test.ClearTestStorage(nil)
+	retval := m.Run()
 
-	irma.Logger.SetLevel(logrus.ErrorLevel)
+	test.StopSchemeManagerHttpServer()
+	test.ClearAllTestStorage()
 
-	os.Exit(m.Run())
+	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T) *Client {
-	test.SetupTestStorage(t)
-	return parseExistingStorage(t)
+func parseStorage(t *testing.T) (*Client, *TestClientHandler) {
+	storage := test.SetupTestStorage(t)
+	return parseExistingStorage(t, storage)
 }
 
-func parseExistingStorage(t *testing.T) *Client {
+func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
+	path := test.FindTestdataFolder(t)
 	client, err := New(
-		filepath.Join("..", "testdata", "tmp", "client"),
-		filepath.Join("..", "testdata", "irma_configuration"),
-		&TestClientHandler{t: t},
+		filepath.Join(storage, "client"),
+		filepath.Join(path, "irma_configuration"),
+		handler,
 	)
 	require.NoError(t, err)
-	return client
+	return client, handler
 }
 
 func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
@@ -97,8 +98,8 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 }
 
 func TestStorageDeserialization(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
@@ -109,8 +110,8 @@ func TestStorageDeserialization(t *testing.T) {
 // requested by the verifier, calculates a list of candidate attributes contained by the client that would
 // satisfy the attribute disjunction.
 func TestCandidates(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	// client contains one instance of the studentCard credential, whose studentID attribute is 456.
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -168,7 +169,8 @@ func TestCandidates(t *testing.T) {
 }
 
 func TestCandidateConjunctionOrder(t *testing.T) {
-	client := parseStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	j := `[
 	  [
@@ -200,8 +202,8 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 }
 
 func TestCredentialRemoval(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -227,19 +229,19 @@ func TestCredentialRemoval(t *testing.T) {
 	// Also check whether credential is removed after reloading the storage
 	err = client.storage.db.Close()
 	require.NoError(t, err)
-	client = parseExistingStorage(t)
+	client, handler = parseExistingStorage(t, handler.storage)
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
 }
 
 func TestWrongSchemeManager(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove(filepath.Join("..", "testdata", "tmp", "client", "irma_configuration", "irma-demo", "index")))
+	require.NoError(t, os.Remove(filepath.Join(handler.storage, "client", "irma_configuration", "irma-demo", "index")))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)
@@ -253,8 +255,8 @@ func TestWrongSchemeManager(t *testing.T) {
 }
 
 func TestCredentialInfoListNewAttribute(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -277,50 +279,44 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 }
 
 func TestFreshStorage(t *testing.T) {
-	test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t)
-
-	path := filepath.Join(test.FindTestdataFolder(t), "storage", "test")
-	err := fs.EnsureDirectoryExists(path)
-	require.NoError(t, err)
-	client := parseExistingStorage(t)
-
-	require.NoError(t, err)
+	storage := test.CreateTestStorage(t)
+	client, handler := parseExistingStorage(t, storage)
+	defer test.ClearTestStorage(t, handler.storage)
 	require.NotNil(t, client)
 }
 
 func TestKeyshareEnrollmentRemoval(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 
 	err = client.storage.db.Close()
 	require.NoError(t, err)
-	client = parseExistingStorage(t)
+	client, handler = parseExistingStorage(t, handler.storage)
 
 	require.NotContains(t, client.keyshareServers, "test")
 }
 
 func TestUpdatePreferences(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	client.SetCrashReportingPreference(!defaultPreferences.EnableCrashReporting)
 	client.applyPreferences()
 
 	err := client.storage.db.Close()
 	require.NoError(t, err)
-	client = parseExistingStorage(t)
+	client, handler = parseExistingStorage(t, handler.storage)
 
 	require.NoError(t, err)
 	require.Equal(t, false, client.Preferences.EnableCrashReporting)
 }
 
 func TestUpdatingStorage(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	require.NotNil(t, client)
 
 	// Check whether all update functions succeeded
@@ -330,8 +326,8 @@ func TestUpdatingStorage(t *testing.T) {
 }
 
 func TestRemoveStorage(t *testing.T) {
-	client := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": true}   // Test storage has 1 log
 	bucketsAfter := map[string]bool{"attrs": false, "sigs": false, "userdata": true, "logs": false} // Userdata should hold a new secret key
@@ -357,8 +353,9 @@ func TestRemoveStorage(t *testing.T) {
 // ------
 
 type TestClientHandler struct {
-	t *testing.T
-	c chan error
+	t       *testing.T
+	c       chan error
+	storage string
 }
 
 func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}

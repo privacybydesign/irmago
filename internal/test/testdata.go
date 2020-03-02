@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -85,27 +86,33 @@ func FindTestdataFolder(t *testing.T) string {
 	return ""
 }
 
-// ClearTestStorage removes any output from previously run tests to ensure a clean state;
-// some of the tests don't like it when there is existing state in storage.
-func ClearTestStorage(t *testing.T) {
-	tmp := filepath.Join(FindTestdataFolder(t), "tmp")
-	checkError(t, os.RemoveAll(tmp))
-	checkError(t, fs.EnsureDirectoryExists(tmp))
+// ClearTestStorage removes any output from previously run tests.
+func ClearTestStorage(t *testing.T, storage string) {
+	checkError(t, os.RemoveAll(storage))
 }
 
-func CreateTestStorage(t *testing.T) {
-	ClearTestStorage(t)
-	tmp := filepath.Join(FindTestdataFolder(t), "tmp")
+func ClearAllTestStorage() {
+	dir := filepath.Join(os.TempDir(), "irmatest*")
+	matches, err := filepath.Glob(dir)
+	checkError(nil, err)
+	for _, match := range matches {
+		checkError(nil, os.RemoveAll(match))
+	}
+}
+
+func CreateTestStorage(t *testing.T) string {
+	tmp, err := ioutil.TempDir("", "irmatest")
+	require.NoError(t, err)
 	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "client")))
-	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "revocation")))
-	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "issuer")))
+	return tmp
 }
 
-func SetupTestStorage(t *testing.T) {
-	CreateTestStorage(t)
+func SetupTestStorage(t *testing.T) string {
+	storage := CreateTestStorage(t)
 	path := FindTestdataFolder(t)
-	err := fs.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(path, "tmp", "client"))
+	err := fs.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(storage, "client"))
 	checkError(t, err)
+	return storage
 }
 
 func PrettyPrint(t *testing.T, ob interface{}) string {

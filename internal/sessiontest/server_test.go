@@ -92,6 +92,7 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 	Configuration: &server.Configuration{
 		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
+		DisableSchemesUpdate:  true,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
@@ -107,6 +108,7 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 	Configuration: &server.Configuration{
 		URL:                   "http://localhost:48682/irma",
 		Logger:                logger,
+		DisableSchemesUpdate:  true,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{

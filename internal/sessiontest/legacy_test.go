@@ -12,8 +12,8 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	test.SetTestStorageDir("client_legacy")
 	defer test.SetTestStorageDir("client")
 
-	client, _ := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	// Test whether credential from legacy storage is still usable
 	idStudentCard := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -29,7 +29,7 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 
 	// Re-open client
 	require.NoError(t, client.Close())
-	client, _ = parseExistingStorage(t)
+	client, handler = parseExistingStorage(t, handler.storage)
 
 	// Test whether credential is still there after the storage has been reloaded
 	sessionHelper(t, getDisclosureRequest(idRoot), "verification", client)

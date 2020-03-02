@@ -42,8 +42,9 @@ func processOptions(options ...sessionOption) sessionOption {
 
 func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
 	if client == nil {
-		client, _ = parseStorage(t)
-		defer test.ClearTestStorage(t)
+		var handler *TestClientHandler
+		client, handler = parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
 	}
 
 	opts := processOptions(options...)
@@ -133,7 +134,8 @@ func TestRequestorDoubleGET(t *testing.T) {
 }
 
 func TestRequestorSignatureSession(t *testing.T) {
-	client, _ := parseStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	var serverResult *requestorSessionResult
@@ -256,7 +258,8 @@ func testRequestorIssuance(t *testing.T, keyshare bool, client *irmaclient.Clien
 }
 
 func TestConDisCon(t *testing.T) {
-	client, _ := parseStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	ir := getMultipleIssuanceRequest()
 	ir.Credentials = append(ir.Credentials, &irma.CredentialRequest{
 		Validity:         ir.Credentials[0].Validity,
@@ -295,7 +298,8 @@ func TestConDisCon(t *testing.T) {
 }
 
 func TestOptionalDisclosure(t *testing.T) {
-	client, _ := parseStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	university := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university")
 	studentid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 

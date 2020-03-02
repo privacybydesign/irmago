@@ -31,8 +31,8 @@ func s2big(s string) (r *big.Int) {
 }
 
 func TestConfigurationAutocopy(t *testing.T) {
-	test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t)
+	storage := test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t, storage)
 
 	path := filepath.Join("testdata", "tmp", "client", "irma_configuration")
 	require.NoError(t, fs.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
@@ -80,8 +80,8 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
 
-	test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t)
+	storage := test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t, storage)
 
 	conf, err := NewConfiguration(filepath.Join("testdata", "tmp", "client", "irma_configuration"), ConfigurationOptions{
 		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
@@ -96,10 +96,10 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 }
 
 func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
-	test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t)
+	storage := test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t, storage)
 
-	conf, err := NewConfiguration(filepath.Join("testdata", "tmp", "client", "irma_configuration"), ConfigurationOptions{
+	conf, err := NewConfiguration(filepath.Join(storage, "client", "irma_configuration"), ConfigurationOptions{
 		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
 	})
 	require.NoError(t, err)

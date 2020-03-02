@@ -16,6 +16,7 @@ type TestClientHandler struct {
 	t       *testing.T
 	c       chan error
 	revoked *irma.CredentialIdentifier
+	storage string
 }
 
 func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
