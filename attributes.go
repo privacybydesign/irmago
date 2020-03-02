@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/privacybydesign/gabi"
@@ -134,6 +135,11 @@ func NewTranslatedString(attr *string) TranslatedString {
 func (al *AttributeList) decode(i int) *string {
 	attr := al.Ints[i+1]
 	metadataVersion := al.MetadataAttribute.Version()
+	// TODO: how to decode random blind attributes?
+	if al.CredentialType().AttributeTypes[i].RandomBlind {
+		str := fmt.Sprintf("%s (random blind attribute)", al.Ints[i+1].String())
+		return &str
+	}
 	return decodeAttribute(attr, metadataVersion)
 }
 
