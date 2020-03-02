@@ -556,9 +556,12 @@ func TestRevocationAll(t *testing.T) {
 		// by editing its irma.Configuration instance
 		StartIrmaServer(t, false)
 		defer StopIrmaServer()
-		credtyp := irmaServerConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred]
+		conf := irmaServerConfiguration.IrmaConfiguration
+		credtyp := conf.CredentialTypes[revocationTestCred]
 		servers := credtyp.RevocationServers // save it for re-enabling revocation below
 		credtyp.RevocationServers = nil
+		revAttr := credtyp.AttributeTypes[len(credtyp.AttributeTypes)-1]
+		credtyp.AttributeTypes = credtyp.AttributeTypes[:len(credtyp.AttributeTypes)-1]
 
 		// Issue non-revocation-aware credential instance
 		result := requestorSessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{{
@@ -571,6 +574,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Restore revocation setup
 		credtyp.RevocationServers = servers
+		credtyp.AttributeTypes = append(credtyp.AttributeTypes, revAttr)
 		startRevocationServer(t, true)
 		defer stopRevocationServer()
 

@@ -196,19 +196,14 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		if !ok {
 			return nil, session.fail(server.ErrorMalformedInput, "Received invalid issuance commitment")
 		}
-		attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03)
+		attrs, witness, err := session.computeAttributes(sk, cred)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-		witness, err := session.issuanceHandleRevocation(cred, attributes, sk)
-		if err != nil {
-			return nil, session.fail(server.ErrorRevocation, err.Error())
-		}
-		sig, err := issuer.IssueSignature(proof.U, attributes.Ints, witness, commitments.Nonce2)
+		sig, err := issuer.IssueSignature(proof.U, attrs, witness, commitments.Nonce2)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-		sig.NonRevocationWitness = witness
 		sigs = append(sigs, sig)
 	}
 

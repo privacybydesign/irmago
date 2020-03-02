@@ -911,11 +911,20 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 			continue
 		}
 		sig := msg[i-offset]
-		attrs, err := request.Credentials[i-offset].AttributeList(client.Configuration, irma.GetMetadataVersion(request.Base().ProtocolVersion))
+
+		var nonrevAttr *big.Int
+		if sig.NonRevocationWitness != nil {
+			nonrevAttr = sig.NonRevocationWitness.E
+		}
+		attrs, err := request.Credentials[i-offset].AttributeList(
+			client.Configuration,
+			irma.GetMetadataVersion(request.Base().ProtocolVersion),
+			nonrevAttr,
+		)
 		if err != nil {
 			return err
 		}
-		cred, err := credbuilder.ConstructCredential(sig, attrs.Ints, attrs.RevocationIndex+2)
+		cred, err := credbuilder.ConstructCredential(sig, attrs.Ints)
 		if err != nil {
 			return err
 		}

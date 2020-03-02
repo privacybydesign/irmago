@@ -537,7 +537,7 @@ func (dr *DisclosureRequest) Validate() error {
 }
 
 func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*CredentialInfo, error) {
-	list, err := cr.AttributeList(conf, metadataVersion)
+	list, err := cr.AttributeList(conf, metadataVersion, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -582,9 +582,18 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 }
 
 // AttributeList returns the list of attributes from this credential request.
-func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion byte) (*AttributeList, error) {
+func (cr *CredentialRequest) AttributeList(
+	conf *Configuration,
+	metadataVersion byte,
+	revocationAttr *big.Int,
+) (*AttributeList, error) {
 	if err := cr.Validate(conf); err != nil {
 		return nil, err
+	}
+
+	credtype := conf.CredentialTypes[cr.CredentialTypeID]
+	if !credtype.RevocationSupported() && revocationAttr != nil {
+		return nil, errors.Errorf("cannot specify revocationAttr: credtype %s does not support revocation", cr.CredentialTypeID.String())
 	}
 
 	// Compute metadata attribute
@@ -597,10 +606,19 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 	}
 
 	// Compute other attributes
-	credtype := conf.CredentialTypes[cr.CredentialTypeID]
 	attrs := make([]*big.Int, len(credtype.AttributeTypes)+1)
 	attrs[0] = meta.Int
+	if credtype.RevocationSupported() {
+		if revocationAttr != nil {
+			attrs[credtype.RevocationIndex+1] = revocationAttr
+		} else {
+			attrs[credtype.RevocationIndex+1] = bigZero
+		}
+	}
 	for i, attrtype := range credtype.AttributeTypes {
+		if attrtype.RevocationAttribute {
+			continue
+		}
 		attrs[i+1] = new(big.Int)
 		if str, present := cr.Attributes[attrtype.ID]; present {
 			// Set attribute to str << 1 + 1

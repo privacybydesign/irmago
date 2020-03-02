@@ -48,7 +48,6 @@ type AttributeList struct {
 	attrMap            map[AttributeTypeIdentifier]TranslatedString
 	info               *CredentialInfo
 	h                  string
-	RevocationIndex    int `json:"-"`
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
@@ -56,9 +55,6 @@ func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeLi
 	al := &AttributeList{
 		Ints:              ints,
 		MetadataAttribute: MetadataFromInt(ints[0], conf),
-	}
-	if al.CredentialType().RevocationSupported() {
-		al.RevocationIndex = al.CredentialType().RevocationIndex
 	}
 	return al
 }

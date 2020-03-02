@@ -11,6 +11,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -77,9 +78,7 @@ func (session *session) checkCache(message []byte, expectedStatus server.Status)
 
 // Issuance helpers
 
-func (session *session) issuanceHandleRevocation(
-	cred *irma.CredentialRequest, attributes *irma.AttributeList, sk *gabi.PrivateKey,
-) (*revocation.Witness, error) {
+func (session *session) computeWitness(sk *gabi.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
 	credtyp := session.conf.IrmaConfiguration.CredentialTypes[id]
 	if !credtyp.RevocationSupported() || !session.request.Base().RevocationSupported() {
@@ -87,11 +86,10 @@ func (session *session) issuanceHandleRevocation(
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
-	if err := session.conf.IrmaConfiguration.Revocation.SyncDB(id); err != nil {
+	rs := session.conf.IrmaConfiguration.Revocation
+	if err := rs.SyncDB(id); err != nil {
 		return nil, err
 	}
-
-	rs := session.conf.IrmaConfiguration.Revocation
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
@@ -117,19 +115,45 @@ func (session *session) issuanceHandleRevocation(
 	if err != nil {
 		return nil, err
 	}
-
 	witness.SignedAccumulator = sig // attach previously selected reocation record to the witness for the client
-	attributes.Ints[credtyp.RevocationIndex+1] = witness.E
+
+	return witness, nil
+}
+
+func (session *session) computeAttributes(
+	sk *gabi.PrivateKey, cred *irma.CredentialRequest,
+) ([]*big.Int, *revocation.Witness, error) {
+	id := cred.CredentialTypeID
+	witness, err := session.computeWitness(sk, cred)
+	if err != nil {
+		return nil, nil, err
+	}
+	var nonrevAttr *big.Int
+	if witness != nil {
+		nonrevAttr = witness.E
+	}
+
+	attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03, nonrevAttr)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	issrecord := &irma.IssuanceRecord{
 		CredType:   id,
 		PKCounter:  &sk.Counter,
 		Key:        cred.RevocationKey,
-		Attr:       (*irma.RevocationAttribute)(witness.E),
+		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
 		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
-	return witness, session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
+	if witness != nil {
+		err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return attributes.Ints, witness, nil
 }
 
 func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
