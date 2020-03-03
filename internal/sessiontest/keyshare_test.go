@@ -30,7 +30,7 @@ func TestKeyshareRegister(t *testing.T) {
 	defer test.ClearTestStorage(t)
 
 	require.NoError(t, client.KeyshareRemoveAll())
-	require.NoError(t, client.RemoveAllCredentials())
+	require.NoError(t, client.RemoveStorage())
 
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
