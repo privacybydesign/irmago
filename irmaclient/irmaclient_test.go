@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -366,20 +367,20 @@ func TestRemoveStorage(t *testing.T) {
 	client := parseStorage(t)
 	defer test.ClearTestStorage(t)
 
-	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": false}  // Test storage has no logs
+	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": true}   // Test storage has 1 log
 	bucketsAfter := map[string]bool{"attrs": false, "sigs": false, "userdata": true, "logs": false} // Userdata should hold a new secret key
 
 	old_sk := *client.secretkey
 
 	// Check that buckets exist
 	for name, exists := range bucketsBefore {
-		require.Equal(t, exists, client.storage.BucketExists([]byte(name)))
+		require.Equal(t, exists, client.storage.BucketExists([]byte(name)), fmt.Sprintf("Bucket \"%s\" exists should be %t", name, exists))
 	}
 
 	require.NoError(t, client.RemoveStorage())
 
 	for name, exists := range bucketsAfter {
-		require.Equal(t, exists, client.storage.BucketExists([]byte(name)))
+		require.Equal(t, exists, client.storage.BucketExists([]byte(name)), fmt.Sprintf("Bucket \"%s\" exists should be %t", name, exists))
 	}
 
 	// Check that the client has a new secret key
