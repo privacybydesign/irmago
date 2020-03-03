@@ -7,7 +7,7 @@ import (
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 
@@ -151,8 +151,8 @@ func (s *memorySessionStore) deleteExpired() {
 var one *big.Int = big.NewInt(1)
 
 func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
-	token := common.NewSessionToken()
-	clientToken := common.NewSessionToken()
+	token := server.NewSessionToken()
+	clientToken := server.NewSessionToken()
 
 	ses := &session{
 		action:      action,

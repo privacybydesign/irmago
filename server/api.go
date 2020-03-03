@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
@@ -524,4 +525,22 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 			next.ServeHTTP(ww, r)
 		})
 	}
+}
+
+const sessionChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func NewSessionToken() string {
+	count := 20
+
+	r := make([]byte, count)
+	_, err := rand.Read(r)
+	if err != nil {
+		panic(err)
+	}
+
+	b := make([]byte, count)
+	for i := range b {
+		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
+	}
+	return string(b)
 }
