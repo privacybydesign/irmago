@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
@@ -28,6 +30,7 @@ import (
 type SessionData struct {
 	LastKeyid    irma.PublicKeyIdentifier
 	LastCommitID uint64
+	expiry       time.Time
 }
 
 type Server struct {
@@ -36,6 +39,8 @@ type Server struct {
 	core          *keysharecore.KeyshareCore
 	sessionserver *irmaserver.Server
 	db            KeyshareDB
+	scheduler     *gocron.Scheduler
+	stopScheduler chan<- bool
 
 	sessions    map[string]*SessionData
 	sessionLock sync.Mutex
@@ -44,8 +49,9 @@ type Server struct {
 func New(conf *Configuration) (*Server, error) {
 	var err error
 	s := &Server{
-		conf:     conf,
-		sessions: map[string]*SessionData{},
+		conf:      conf,
+		sessions:  map[string]*SessionData{},
+		scheduler: gocron.NewScheduler(),
 	}
 
 	// Do initial processing of configuration and create keyshare core
@@ -70,7 +76,27 @@ func New(conf *Configuration) (*Server, error) {
 	// Setup DB
 	s.db = conf.DB
 
+	// Setup session cache clearing
+	s.scheduler.Every(10).Seconds().Do(s.clearSessions)
+	s.stopScheduler = s.scheduler.Start()
+
 	return s, nil
+}
+
+func (s *Server) Stop() {
+	s.stopScheduler <- true
+	s.sessionserver.Stop()
+}
+
+func (s *Server) clearSessions() {
+	now := time.Now()
+	s.sessionLock.Lock()
+	defer s.sessionLock.Unlock()
+	for k, v := range s.sessions {
+		if now.After(v.expiry) {
+			delete(s.sessions, k)
+		}
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -167,6 +193,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sessions[username].LastCommitID = commitId
 	s.sessions[username].LastKeyid = keys[0]
+	s.sessions[username].expiry = time.Now().Add(10 * time.Second)
 	s.sessionLock.Unlock()
 
 	// And send response

@@ -2,26 +2,27 @@ package cmd
 
 import (
 	"context"
-	"syscall"
-	"os/signal"
-	"os"
-	"net/http"
-	"fmt"
 	"crypto/tls"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"fmt"
+	"net/http"
 	"net/smtp"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/fs"
+
 	"github.com/go-errors/errors"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshareserver"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var conf *keyshareserver.Configuration
@@ -37,23 +38,23 @@ var keysharedCmd = &cobra.Command{
 
 		// Load TLS configuration
 		TLSConfig, err := kesyharedTLS(
-			viper.GetString("tls-cert"), 
+			viper.GetString("tls-cert"),
 			viper.GetString("tls-cert-file"),
 			viper.GetString("tls-privkey"),
 			viper.GetString("tls-privkey-file"))
 		if err != nil {
-			die ("", err)
+			die("", err)
 		}
 
 		// Create main server
 		keyshareServer, err := keyshareserver.New(conf)
 		if err != nil {
-			die ("", err)
+			die("", err)
 		}
 
 		serv := &http.Server{
-			Addr: fullAddr,
-			Handler: keyshareServer.Handler(),
+			Addr:      fullAddr,
+			Handler:   keyshareServer.Handler(),
 			TLSConfig: TLSConfig,
 		}
 
@@ -73,11 +74,12 @@ var keysharedCmd = &cobra.Command{
 
 		for {
 			select {
-			case <- interrupt:
+			case <-interrupt:
 				conf.Logger.Debug("Caught interrupt")
 				serv.Shutdown(context.Background())
+				keyshareServer.Stop()
 				conf.Logger.Debug("Sent stop signal to server")
-			case <- stopped:
+			case <-stopped:
 				conf.Logger.Info("Exiting")
 				close(stopped)
 				close(interrupt)
@@ -210,7 +212,7 @@ func configureKeyshared(cmd *cobra.Command) {
 
 		DbType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
 		DbConnstring: viper.GetString("db"),
-		
+
 		JwtKeyId:                viper.GetInt("jwt-privkey-id"),
 		JwtPrivateKey:           viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:       viper.GetString("jwt-privkey-file"),
@@ -219,19 +221,19 @@ func configureKeyshared(cmd *cobra.Command) {
 
 		KeyshareCredential: viper.GetString("keyshare-credential"),
 		KeyshareAttribute:  viper.GetString("keyshare-attribute"),
-		
-		EmailServer: viper.GetString("email-server"),
-		EmailAuth: emailAuth,
-		EmailFrom: viper.GetString("email-from"),
-		DefaultLanguage: viper.GetString("default-language"),
-		RegistrationEmailSubject: viper.GetStringMapString("register-email-subject"),
-		RegistrationEmailFiles: viper.GetStringMapString("register-email-template"),
-		VerificationURL: viper.GetStringMapString("verification-url"),
 
-		Verbose: viper.GetInt("verbose"),
-		Quiet: viper.GetBool("quiet"),
-		LogJSON: viper.GetBool("log-json"),
-		Logger: logger,
+		EmailServer:              viper.GetString("email-server"),
+		EmailAuth:                emailAuth,
+		EmailFrom:                viper.GetString("email-from"),
+		DefaultLanguage:          viper.GetString("default-language"),
+		RegistrationEmailSubject: viper.GetStringMapString("register-email-subject"),
+		RegistrationEmailFiles:   viper.GetStringMapString("register-email-template"),
+		VerificationURL:          viper.GetStringMapString("verification-url"),
+
+		Verbose:    viper.GetInt("verbose"),
+		Quiet:      viper.GetBool("quiet"),
+		LogJSON:    viper.GetBool("log-json"),
+		Logger:     logger,
 		Production: viper.GetBool("production"),
 	}
 }
