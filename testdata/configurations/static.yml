@@ -1,0 +1,10 @@
+schemes_update: 0
+static_sessions:
+  # Start this session by scanning with the IRMA app a QR code with the following content:
+  # {"irmaqr": "redirect", "u": "http://host:port/irma/session/mystaticsession"}
+  mystaticsession:
+    callbackUrl: http://localhost/ # afterwards the verifierd attributes are POSTed here
+    request:
+      "@context": https://irma.app/ld/request/disclosure/v2
+      disclose:
+        - - - pbdf.pbdf.email.email

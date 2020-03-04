@@ -113,6 +113,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	}
 	flags.StringSlice("issue-perms", nil, issHelp)
 	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
+	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
@@ -257,6 +258,9 @@ func configureServer(cmd *cobra.Command) error {
 
 	// Handle requestors
 	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
+		return err
+	}
+	if err = handleMapOrString("static-sessions", &conf.StaticSessions); err != nil {
 		return err
 	}
 	var m map[string]*irma.RevocationSetting
