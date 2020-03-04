@@ -133,7 +133,7 @@ func TestParseIrmaConfiguration(t *testing.T) {
 		conf.SchemeManagers[NewSchemeManagerIdentifier("irma-demo")].Name["en"],
 		"irma-demo scheme manager has unexpected name")
 	require.Equal(t,
-		"Radboud University Nijmegen",
+		"Demo Radboud University Nijmegen",
 		conf.Issuers[NewIssuerIdentifier("irma-demo.RU")].Name["en"],
 		"irma-demo.RU issuer has unexpected name")
 	require.Equal(t,

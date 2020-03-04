@@ -1,7 +1,7 @@
 <IssueSpecification version="4">
 	<Name>
-		<en>Email address</en>
-		<nl>E-mailadres</nl>
+		<en>Demo Email address</en>
+		<nl>Demo E-mailadres</nl>
 	</Name>
 	<ShortName>
 		<en>Email</en>
