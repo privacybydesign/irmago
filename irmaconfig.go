@@ -627,6 +627,11 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 		if cred.RevocationUpdateSpeed == 0 {
 			cred.RevocationUpdateSpeed = RevocationParameters.ClientDefaultUpdateSpeed
 		}
+		for i, url := range cred.RevocationServers {
+			if url[len(url)-1] == '/' {
+				cred.RevocationServers[i] = url[:len(url)-1]
+			}
+		}
 		cred.Valid = conf.SchemeManagers[cred.SchemeManagerIdentifier()].Valid
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred

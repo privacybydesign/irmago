@@ -539,7 +539,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// check /update endpoint
 		url = revocationConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationServers[0] +
-			"revocation/update/irma-demo.MijnOverheid.root/16"
+			"/revocation/update/irma-demo.MijnOverheid.root/16"
 		req, err = http.NewRequest(http.MethodGet, url, nil)
 		require.NoError(t, err)
 		res, err = (&http.Client{}).Do(req)

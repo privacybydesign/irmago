@@ -337,6 +337,12 @@ func (conf *Configuration) verifyRevocation() error {
 				return errors.Errorf(message, credid)
 			}
 		}
+		if settings != nil && settings.RevocationServerURL != "" {
+			url := settings.RevocationServerURL
+			if url[len(url)-1] == '/' {
+				settings.RevocationServerURL = url[:len(url)-1]
+			}
+		}
 	}
 
 	return nil
