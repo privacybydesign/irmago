@@ -111,9 +111,11 @@ type (
 	}
 )
 
-var ErrRevocationStateNotFound = errors.New("revocation state not found")
-
-var ErrUnknownRevocationKey = errors.New("unknown revocationKey")
+var (
+	ErrRevocationStateNotFound = errors.New("revocation state not found")
+	ErrUnknownRevocationKey    = errors.New("unknown revocationKey")
+	ErrorUnknownCredentialType = errors.New("unknown credential type")
+)
 
 // RevocationParameters contains global revocation constants and default values.
 var RevocationParameters = struct {
@@ -587,7 +589,7 @@ func (rs *RevocationStorage) updateAccumulatorTimes() error {
 func (rs *RevocationStorage) SyncDB(id CredentialTypeIdentifier) error {
 	ct := rs.conf.CredentialTypes[id]
 	if ct == nil {
-		return errors.New("unknown credential type")
+		return ErrorUnknownCredentialType
 	}
 	if settings, ok := rs.settings[id]; ok && settings.Authoritative() {
 		return nil
@@ -622,7 +624,7 @@ func (rs *RevocationStorage) SyncIfOld(id CredentialTypeIdentifier, maxage uint6
 func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec *IssuanceRecord, sk *gabi.PrivateKey) error {
 	credtype := rs.conf.CredentialTypes[id]
 	if credtype == nil {
-		return errors.New("unknown credential type")
+		return ErrorUnknownCredentialType
 	}
 	if !credtype.RevocationSupported() {
 		return errors.New("cannot save issuance record: credential type does not support revocation")
@@ -697,7 +699,7 @@ func updateURL(id CredentialTypeIdentifier, conf *Configuration, rs RevocationSe
 	} else {
 		credtype := conf.CredentialTypes[id]
 		if credtype == nil {
-			return nil, errors.New("unknown credential type")
+			return nil, ErrorUnknownCredentialType
 		}
 		if !credtype.RevocationSupported() {
 			return nil, errors.New("credential type does not support revocation")
@@ -792,7 +794,11 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 	}
 	var err error
 	for credid, params := range b.Revocation {
-		if !rs.conf.CredentialTypes[credid].RevocationSupported() {
+		ct := rs.conf.CredentialTypes[credid]
+		if ct == nil {
+			return ErrorUnknownCredentialType
+		}
+		if !ct.RevocationSupported() {
 			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme", credid)
 		}
 		settings := rs.settings.Get(credid)
@@ -813,10 +819,6 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 				// asked for it; fail the session by returning an error
 				return err
 			}
-		}
-		ct := rs.conf.CredentialTypes[credid]
-		if ct == nil {
-			return errors.New("unknown credential type")
 		}
 		params.Updates, err = rs.UpdateLatest(credid, ct.RevocationUpdateCount, nil)
 		if err != nil {
@@ -847,8 +849,11 @@ func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, s
 
 func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkcounter uint, from uint64) (*revocation.Update, error) {
 	// First fetch accumulator + latest few events
-	count := client.Conf.CredentialTypes[id].RevocationUpdateCount
-	update, err := client.FetchUpdateLatest(id, pkcounter, count)
+	ct := client.Conf.CredentialTypes[id]
+	if ct == nil {
+		return nil, ErrorUnknownCredentialType
+	}
+	update, err := client.FetchUpdateLatest(id, pkcounter, ct.RevocationUpdateCount)
 	if err != nil {
 		return nil, err
 	}
