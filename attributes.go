@@ -101,6 +101,9 @@ func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]Tr
 		ctid := al.CredentialType().Identifier()
 		attrTypes := conf.CredentialTypes[ctid].AttributeTypes
 		for i, val := range al.Strings() {
+			if attrTypes[i].RevocationAttribute {
+				continue
+			}
 			al.attrMap[attrTypes[i].GetAttributeTypeIdentifier()] = val
 		}
 	}
