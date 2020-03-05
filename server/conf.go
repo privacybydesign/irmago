@@ -307,6 +307,18 @@ func (conf *Configuration) prepareRevocation(credid irma.CredentialTypeIdentifie
 func (conf *Configuration) verifyRevocation() error {
 	rev := conf.IrmaConfiguration.Revocation
 
+	// viper lowercases configuration keys, so we have to un-lowercase them back.
+	for id := range conf.IrmaConfiguration.CredentialTypes {
+		lc := irma.NewCredentialTypeIdentifier(strings.ToLower(id.String()))
+		if lc == id {
+			continue
+		}
+		if s, ok := conf.RevocationSettings[lc]; ok {
+			delete(conf.RevocationSettings, lc)
+			conf.RevocationSettings[id] = s
+		}
+	}
+
 	for credid, settings := range conf.RevocationSettings {
 		if _, known := conf.IrmaConfiguration.CredentialTypes[credid]; !known {
 			return errors.Errorf("unknown credential type %s in revocation settings", credid)

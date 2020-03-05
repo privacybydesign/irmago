@@ -533,7 +533,16 @@ func (rs *RevocationStorage) accumulator(tx sqlRevStorage, id CredentialTypeIden
 	return sacc, nil
 }
 
-func (rs *RevocationStorage) updateAccumulatorTimes(types []CredentialTypeIdentifier) error {
+func (rs *RevocationStorage) updateAccumulatorTimes() error {
+	if !rs.sqlMode {
+		return nil
+	}
+	var types []CredentialTypeIdentifier
+	for id, settings := range rs.settings {
+		if settings.Authoritative() {
+			types = append(types, id)
+		}
+	}
 	return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
 		var err error
 		var records []AccumulatorRecord
@@ -699,12 +708,8 @@ func updateURL(id CredentialTypeIdentifier, conf *Configuration, rs RevocationSe
 
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings RevocationSettings) error {
 	var t *CredentialTypeIdentifier
-	var ourtypes []CredentialTypeIdentifier
 	for id, s := range settings {
 		if s.ServerMode {
-			if s.Authoritative() {
-				ourtypes = append(ourtypes, id)
-			}
 			t = &id
 		}
 		if s.SSE {
@@ -725,14 +730,13 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 		return errors.Errorf("revocation mode for %s requires SQL database but no connection string given", *t)
 	}
 
-	if len(ourtypes) > 0 {
-		rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().Do(func() {
-			if err := rs.updateAccumulatorTimes(ourtypes); err != nil {
-				err = errors.WrapPrefix(err, "failed to write updated accumulator record", 0)
-				raven.CaptureError(err, nil)
-			}
-		})
-	}
+	rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().Do(func() {
+		if err := rs.updateAccumulatorTimes(); err != nil {
+			err = errors.WrapPrefix(err, "failed to write updated accumulator record", 0)
+			raven.CaptureError(err, nil)
+		}
+	})
+
 	rs.conf.Scheduler.Every(RevocationParameters.DeleteIssuanceRecordsInterval).Minutes().Do(func() {
 		if !rs.sqlMode {
 			return
