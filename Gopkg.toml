@@ -49,6 +49,10 @@
   version = "1.2.1"
 
 [[constraint]]
+  name = "astuart.co/go-sse"
+  source = "github.com/sietseringers/go-sse"
+
+[[constraint]]
   name = "github.com/spf13/viper"
   source = "github.com/sietseringers/viper"
   branch = "add-file-key-replacer"

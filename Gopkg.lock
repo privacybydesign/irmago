@@ -3,6 +3,15 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:e140071a6fe384a35227148248d831f3b76118ac4f2850418ae043ce2025faac"
+  name = "astuart.co/go-sse"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6cc042ab6f6dd996c6502f96872bd120afd1b4b3"
+  source = "github.com/sietseringers/go-sse"
+
+[[projects]]
+  branch = "master"
   digest = "1:24b7325ed858ab22648d01abb40f1b5f96af67ae20c0bee6807f49600688dc9e"
   name = "github.com/alexandrevicenzi/go-sse"
   packages = ["."]
@@ -377,7 +386,7 @@
 
 [[projects]]
   branch = "revocation"
-  digest = "1:a3883ba896759f107dd2babd175d094be3d198f05b0b9d801fd8a118401c981a"
+  digest = "1:322d0956598ddfb325d6b22928468377e13627c769712cfb9d08fd2eafc17038"
   name = "github.com/privacybydesign/gabi"
   packages = [
     ".",
@@ -389,7 +398,7 @@
     "signed",
   ]
   pruneopts = "UT"
-  revision = "c911b99eab0054e017dc9b4611d331e69a67cb6a"
+  revision = "9df3e395ec4d83370421a872bdad7bd54a2ed8e1"
 
 [[projects]]
   digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
@@ -584,6 +593,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "astuart.co/go-sse",
     "github.com/alexandrevicenzi/go-sse",
     "github.com/bwesterb/go-atum",
     "github.com/dgrijalva/jwt-go",
