@@ -43,6 +43,10 @@ type Configuration struct {
 	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
 	DisableTLS bool `json:"no_tls" mapstructure:"no_tls"`
 
+	// Path to static content to serve (for testing)
+	StaticPath   string
+	StaticPrefix string
+
 	// Database configuration (ignored when database is provided)
 	DbType       DatabaseType `json:"db_type" mapstructure:"db_type"`
 	DbConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
@@ -52,8 +56,9 @@ type Configuration struct {
 	// Session lifetime in seconds
 	SessionLifetime int
 
-	// Keyshare attribute to use for login
-	KeyshareAttribute string
+	// Keyshare attributes to use for login
+	KeyshareAttributeNames []string
+	KeyshareAttributes     []irma.AttributeTypeIdentifier
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
 	EmailServer     string
@@ -102,6 +107,15 @@ func processConfiguration(conf *Configuration) error {
 
 	// Force production status to match
 	conf.ServerConfiguration.Production = conf.Production
+
+	// Setup data for login requests
+	if len(conf.KeyshareAttributeNames) != 0 {
+		for _, v := range conf.KeyshareAttributeNames {
+			conf.KeyshareAttributes = append(
+				conf.KeyshareAttributes,
+				irma.NewAttributeTypeIdentifier(v))
+		}
+	}
 
 	// TODO: Setup email templates
 

@@ -16,7 +16,7 @@ type MyirmaDB interface {
 }
 
 type MemoryUserData struct {
-	id int64
+	ID int64
 }
 
 type MyirmaMemoryDB struct {
@@ -37,5 +37,5 @@ func (db *MyirmaMemoryDB) GetUserID(username string) (int64, error) {
 	if !ok {
 		return 0, ErrUserNotFound
 	}
-	return data.id, nil
+	return data.ID, nil
 }
