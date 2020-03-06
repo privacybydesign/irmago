@@ -3,7 +3,6 @@ package keyshareserver
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -501,14 +500,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Generate token
-		tokenData := make([]byte, 35)
-		_, err = rand.Read(tokenData)
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not generate email verification token")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
-		}
-		token := base32.StdEncoding.EncodeToString(tokenData)
+		token := server.NewSessionToken()
 
 		// Add it to the database
 		err = s.db.AddEmailVerification(user, *msg.Email, token)
@@ -535,6 +527,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			*msg.Email,
 			subject,
 			emsg.Bytes())
+
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not send email verifiation mail")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
 	}
 
 	// Setup and return issuance session for keyshare credential.
