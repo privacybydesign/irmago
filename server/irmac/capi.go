@@ -45,7 +45,7 @@ func Initialize(IrmaConfiguration *C.char) *C.char {
 	}
 
 	// Run the actual core function
-	s, err = servercore.New(conf)
+	s, err = servercore.New(conf, nil)
 
 	// And properly return any errors
 	if err == nil {
@@ -69,7 +69,7 @@ func StartSession(requestString *C.char) C.struct_StartSessionReturn {
 	}
 
 	// Run the actual core function
-	qr, token, err := s.StartSession(C.GoString(requestString))
+	qr, token, err := s.StartSession(C.GoString(requestString), nil)
 
 	// And properly return the result
 	if err != nil {
@@ -196,7 +196,7 @@ func HandleProtocolMessage(path *C.char, method *C.char, headers C.struct_HttpHe
 	}
 
 	// Prepare return values
-	status, body, session := s.HandleProtocolMessage(C.GoString(path), C.GoString(method), headerMap, []byte(C.GoString(message)))
+	status, body, _, session := s.HandleProtocolMessage(C.GoString(path), C.GoString(method), headerMap, []byte(C.GoString(message)))
 	if session == nil {
 		result.SessionResult = nil
 	} else {
