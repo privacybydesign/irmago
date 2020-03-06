@@ -1,6 +1,7 @@
 package myirmaserver
 
 import (
+	"html/template"
 	"net/smtp"
 	"strings"
 
@@ -61,10 +62,14 @@ type Configuration struct {
 	KeyshareAttributes     []irma.AttributeTypeIdentifier
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
-	EmailServer     string
-	EmailAuth       smtp.Auth
-	EmailFrom       string
-	DefaultLanguage string
+	EmailServer         string
+	EmailAuth           smtp.Auth
+	EmailFrom           string
+	DefaultLanguage     string
+	LoginEmailFiles     map[string]string
+	LoginEmailTemplates map[string]*template.Template
+	LoginEmailSubject   map[string]string
+	LoginEmailBaseURL   map[string]string
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
@@ -117,11 +122,29 @@ func processConfiguration(conf *Configuration) error {
 		}
 	}
 
-	// TODO: Setup email templates
+	// Setup email templates
+	if conf.EmailServer != "" && conf.LoginEmailTemplates == nil {
+		conf.LoginEmailTemplates = map[string]*template.Template{}
+		for lang, templateFile := range conf.LoginEmailFiles {
+			var err error
+			conf.LoginEmailTemplates[lang], err = template.ParseFiles(templateFile)
+			if err != nil {
+				return server.LogError(err)
+			}
+		}
+	}
 
 	// Verify email configuration
 	if conf.EmailServer != "" {
-		// TODO
+		if _, ok := conf.LoginEmailTemplates[conf.DefaultLanguage]; !ok {
+			return server.LogError(errors.Errorf("Missing login email template for default language"))
+		}
+		if _, ok := conf.LoginEmailSubject[conf.DefaultLanguage]; !ok {
+			return server.LogError(errors.Errorf("Missing login email subject for default language"))
+		}
+		if _, ok := conf.LoginEmailBaseURL[conf.DefaultLanguage]; !ok {
+			return server.LogError(errors.Errorf("Missing login email base url for default language"))
+		}
 	}
 
 	// Setup database

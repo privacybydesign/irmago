@@ -10,9 +10,11 @@ func main() {
 	db := &myirmaserver.MyirmaMemoryDB{
 		UserData: map[string]myirmaserver.MemoryUserData{
 			"rgBpfxdwfE": myirmaserver.MemoryUserData{
-				ID: 1,
+				ID:    1,
+				Email: "test@test.com",
 			},
 		},
+		LoginEmailTokens: map[string]string{},
 	}
 	s, err := myirmaserver.New(&myirmaserver.Configuration{
 		URL:                    "http://127.0.0.1:8080",
@@ -20,6 +22,12 @@ func main() {
 		StaticPrefix:           "/test/",
 		DB:                     db,
 		KeyshareAttributeNames: []string{"pbdf.sidn-pbdf.irma.pseudonym"},
+		EmailServer:            "localhost:1025",
+		EmailFrom:              "test@example.com",
+		DefaultLanguage:        "en",
+		LoginEmailFiles:        map[string]string{"en": "testtemplate.html"},
+		LoginEmailSubject:      map[string]string{"en": "Login MyIRMA"},
+		LoginEmailBaseURL:      map[string]string{"en": "http://127.0.0.1:8080/test/#token="},
 	})
 	if err != nil {
 		panic(err)
