@@ -1,11 +1,11 @@
 package myirmaserver
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi"
+	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/irmago/server"
 
 	irma "github.com/privacybydesign/irmago"
@@ -19,6 +19,8 @@ type Server struct {
 	sessionserver *irmaserver.Server
 	store         SessionStore
 	db            MyirmaDB
+	scheduler     *gocron.Scheduler
+	schedulerStop chan<- bool
 }
 
 func New(conf *Configuration) (*Server, error) {
@@ -31,34 +33,50 @@ func New(conf *Configuration) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
+	s := &Server{
+		conf:          conf,
 		sessionserver: sessionserver,
 		store:         NewMemorySessionStore(time.Duration(conf.SessionLifetime) * time.Second),
 		db:            conf.DB,
-	}, nil
+		scheduler:     gocron.NewScheduler(),
+	}
+
+	s.scheduler.Every(10).Seconds().Do(s.store.flush)
+	s.schedulerStop = s.scheduler.Start()
+
+	return s, nil
 }
 
 func (s *Server) Stop() {
 	s.sessionserver.Stop()
+	s.schedulerStop <- true
 }
 
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 	router.Post("/checksession", s.handleCheckSession)
-	router.Post("/irmalogin", s.handleDoIrmaLogin)
+	router.Post("/login/irma", s.handleIrmaLogin)
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
+
+	if s.conf.StaticPath != "" {
+		router.Mount(s.conf.StaticPrefix, s.StaticFilesHandler())
+	}
 	return router
 }
 
 func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 	token, err := r.Cookie("session")
 	if err != nil {
-		fmt.Println("err here")
 		server.WriteString(w, "expired")
 		return
 	}
 
 	session := s.store.get(token.Value)
+	if session == nil {
+		server.WriteString(w, "expired")
+		return
+	}
+
 	session.Lock()
 	defer session.Unlock()
 	if session.pendingError != nil {
@@ -72,15 +90,20 @@ func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleDoIrmaLogin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	session := s.store.create()
 	sessiontoken := session.token
 
-	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.irma.pseudonym")),
+	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...),
 		func(result *server.SessionResult) {
 			session := s.store.get(sessiontoken)
 			session.Lock()
 			defer session.Unlock()
+
+			if result.Status != server.StatusDone {
+				// Ignore incomplete attempts, frontend handles these.
+				return
+			}
 
 			username := *result.Disclosed[0][0].RawValue
 			id, err := s.db.GetUserID(username)
@@ -107,8 +130,13 @@ func (s *Server) handleDoIrmaLogin(w http.ResponseWriter, r *http.Request) {
 		Name:     "session",
 		Value:    sessiontoken,
 		MaxAge:   s.conf.SessionLifetime,
-		Secure:   true,
+		Secure:   s.conf.Production,
+		Path:     "/",
 		HttpOnly: true,
 	})
 	server.WriteJson(w, qr)
+}
+
+func (s *Server) StaticFilesHandler() http.Handler {
+	return http.StripPrefix(s.conf.StaticPrefix, http.FileServer(http.Dir(s.conf.StaticPath)))
 }
