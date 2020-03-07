@@ -302,7 +302,7 @@ func (metaObjectIdentifier) GormDataType(dialect gorm.Dialect) string {
 	case "postgres":
 		return "text"
 	case "mysql":
-		return "varchar(512)"
+		return "varchar(255)"
 	default:
 		return ""
 	}
