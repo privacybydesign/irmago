@@ -178,7 +178,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 
 		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RevocationSupported() {
 			settings := s.conf.RevocationSettings[cred.CredentialTypeID]
-			if settings == nil || (settings.RevocationServerURL == "" && !settings.ServerMode) {
+			if settings == nil || (settings.RevocationServerURL == "" && !settings.Server) {
 				return errors.Errorf("revocation enabled for %s but no revocation server configured", cred.CredentialTypeID)
 			}
 			if cred.RevocationKey == "" {

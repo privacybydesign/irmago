@@ -131,7 +131,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		if err == nil && component == server.ComponentRevocation && noun == "updateevents" {
 			id := irma.NewCredentialTypeIdentifier(args[0])
 			if settings := s.conf.RevocationSettings[id]; settings != nil &&
-				settings.ServerMode &&
+				settings.Server &&
 				s.serverSentEvents != nil {
 				s.serverSentEvents.ServeHTTP(w, r)
 			} else {

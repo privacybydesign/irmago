@@ -62,7 +62,8 @@ type (
 
 	// RevocationSetting contains revocation settings for a given credential type.
 	RevocationSetting struct {
-		ServerMode          bool   `json:"server,omitempty" mapstructure:"server"`
+		Server              bool   `json:"server,omitempty" mapstructure:"server"`
+		Authority           bool   `json:"authority,omitempty" mapstructure:"authority"`
 		RevocationServerURL string `json:"revocation_server_url,omitempty" mapstructure:"revocation_server_url"`
 		Tolerance           uint64 `json:"tolerance,omitempty" mapstructure:"tolerance"` // in seconds, min 30
 		SSE                 bool   `json:"sse,omitempty" mapstructure:"sse"`
@@ -381,7 +382,7 @@ func (rs *RevocationStorage) IssuanceRecords(id CredentialTypeIdentifier, key st
 // and updating the revocation database on disk.
 // If issued is not specified, i.e. passed the zero value, all credentials specified by key are revoked.
 func (rs *RevocationStorage) Revoke(id CredentialTypeIdentifier, key string, issued time.Time) error {
-	if !rs.settings.Get(id).Authoritative() {
+	if !rs.settings.Get(id).Authority {
 		return errors.Errorf("cannot revoke %s", id)
 	}
 	return rs.sqldb.Transaction(func(tx sqlRevStorage) error {
@@ -541,7 +542,7 @@ func (rs *RevocationStorage) updateAccumulatorTimes() error {
 	}
 	var types []CredentialTypeIdentifier
 	for id, settings := range rs.settings {
-		if settings.Authoritative() {
+		if settings.Authority {
 			types = append(types, id)
 		}
 	}
@@ -591,7 +592,7 @@ func (rs *RevocationStorage) SyncDB(id CredentialTypeIdentifier) error {
 	if ct == nil {
 		return ErrorUnknownCredentialType
 	}
-	if settings, ok := rs.settings[id]; ok && settings.Authoritative() {
+	if settings, ok := rs.settings[id]; ok && settings.Authority {
 		return nil
 	}
 
@@ -632,7 +633,7 @@ func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec
 
 	// Just store it if we are the revocation server for this credential type
 	settings := rs.settings.Get(id)
-	if settings.Authoritative() {
+	if settings.Authority {
 		return rs.AddIssuanceRecord(rec)
 	}
 
@@ -711,7 +712,17 @@ func updateURL(id CredentialTypeIdentifier, conf *Configuration, rs RevocationSe
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings RevocationSettings) error {
 	var t *CredentialTypeIdentifier
 	for id, s := range settings {
-		if s.ServerMode {
+		if !s.Authority {
+			if s.Server && s.RevocationServerURL == "" {
+				return errors.Errorf("revocation server mode for %s requires URL to be configured")
+			}
+		} else {
+			s.Server = true
+			if s.RevocationServerURL != "" {
+				return errors.Errorf("revocation authority mode for %s cannot be combined with URL", id.String())
+			}
+		}
+		if s.Server {
 			t = &id
 		}
 		if s.SSE {
@@ -829,7 +840,7 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 }
 
 func (rs *RevocationStorage) PostUpdate(id CredentialTypeIdentifier, update *revocation.Update) {
-	if rs.ServerSentEvents == nil || !rs.settings.Get(id).Authoritative() {
+	if rs.ServerSentEvents == nil || !rs.settings.Get(id).Authority {
 		return
 	}
 	Logger.WithField("credtype", id).Tracef("sending SSE update event")
@@ -1097,10 +1108,6 @@ func (rs RevocationSettings) Get(id CredentialTypeIdentifier) *RevocationSetting
 		s.Tolerance = RevocationParameters.DefaultTolerance
 	}
 	return s
-}
-
-func (s *RevocationSetting) Authoritative() bool {
-	return s.ServerMode && s.RevocationServerURL == ""
 }
 
 func (hash eventHash) Value() (driver.Value, error) {

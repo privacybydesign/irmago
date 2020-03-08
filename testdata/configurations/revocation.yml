@@ -10,7 +10,7 @@ revoke_perms:
 
 revocation_settings:
   irma-demo.MijnOverheid.root:
-    server: true
+    authority: true
 
 #revocation_db_type: mysql
 #revocation_db_str: testuser:testpassword@tcp(127.0.0.1)/test

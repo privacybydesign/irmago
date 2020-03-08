@@ -166,7 +166,7 @@ func (conf *Configuration) initialize() error {
 		if len(conf.Requestors) == 0 {
 			revServer := false
 			for _, s := range conf.RevocationSettings {
-				if s.ServerMode {
+				if s.Server {
 					revServer = true
 				}
 			}

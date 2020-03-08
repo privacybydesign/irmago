@@ -215,7 +215,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 func (s *Server) handleGetEvents(
 	cred irma.CredentialTypeIdentifier, pkcounter uint, from, to uint64,
 ) (*revocation.EventList, *irma.RemoteError, map[string][]string) {
-	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.ServerMode {
+	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Server {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"), nil
 	}
 	events, err := s.conf.IrmaConfiguration.Revocation.Events(cred, pkcounter, from, to)
@@ -229,7 +229,7 @@ func (s *Server) handleGetEvents(
 func (s *Server) handleGetUpdateLatest(
 	cred irma.CredentialTypeIdentifier, count uint64, counter *uint,
 ) (map[uint]*revocation.Update, *irma.RemoteError, map[string][]string) {
-	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.ServerMode {
+	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Server {
 		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"), nil
 	}
 	updates, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count, counter)
@@ -250,7 +250,7 @@ func (s *Server) handleGetUpdateLatest(
 func (s *Server) handlePostIssuanceRecord(
 	cred irma.CredentialTypeIdentifier, counter uint, message []byte,
 ) (string, *irma.RemoteError) {
-	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Authoritative() {
+	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Authority {
 		return "", server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
 	}
 

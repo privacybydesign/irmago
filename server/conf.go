@@ -323,14 +323,16 @@ func (conf *Configuration) verifyRevocation() error {
 		if _, known := conf.IrmaConfiguration.CredentialTypes[credid]; !known {
 			return errors.Errorf("unknown credential type %s in revocation settings", credid)
 		}
-		if settings.ServerMode {
-			conf.Logger.Info("revocation server mode enabled for " + credid.String())
-		}
-		if settings.Authoritative() {
-			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities, a.o. that this server is always reachable online for any IRMA participant, and that the contents of the database is never deleted. Failure will lead to all IRMA apps being unable to disclose credentials of this type. Read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
+		if settings.Authority {
+			conf.Logger.Info("authoritative revocation server mode enabled for " + credid.String())
 			if err := conf.prepareRevocation(credid); err != nil {
 				return err
 			}
+		} else if settings.Server {
+			conf.Logger.Info("revocation server mode enabled for " + credid.String())
+		}
+		if settings.Server {
+			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities. Failure can lead to all IRMA apps being unable to disclose credentials of this type. Read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
 		}
 	}
 
@@ -341,7 +343,7 @@ func (conf *Configuration) verifyRevocation() error {
 		_, err := rev.Keys.PrivateKeyLatest(credid.IssuerIdentifier())
 		haveSK := err == nil
 		settings := conf.RevocationSettings[credid]
-		if haveSK && (settings == nil || (settings.RevocationServerURL == "" && !settings.ServerMode)) {
+		if haveSK && (settings == nil || (settings.RevocationServerURL == "" && !settings.Server)) {
 			message := "Revocation-supporting private key installed for %s, but no revocation server is configured: issuance sessions will always fail"
 			if conf.IrmaConfiguration.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].Demo {
 				conf.Logger.Warnf(message, credid)

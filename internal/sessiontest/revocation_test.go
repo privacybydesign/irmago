@@ -704,8 +704,8 @@ func revocationConf(_ *testing.T) *server.Configuration {
 		DisableSchemesUpdate: true,
 		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
 		RevocationSettings: irma.RevocationSettings{
-			revocationTestCred:  {ServerMode: true},
-			revKeyshareTestCred: {ServerMode: true},
+			revocationTestCred:  {Authority: true},
+			revKeyshareTestCred: {Authority: true},
 		},
 		RevocationDBConnStr: revocationDbStr,
 		RevocationDBType:    revocationDbType,
