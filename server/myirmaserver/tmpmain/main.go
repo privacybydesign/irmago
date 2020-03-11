@@ -26,6 +26,7 @@ func main() {
 		StaticPrefix:           "/test/",
 		DB:                     db,
 		KeyshareAttributeNames: []string{"pbdf.sidn-pbdf.irma.pseudonym"},
+		EmailAttributeNames:    []string{"pbdf.pbdf.email.email"},
 		EmailServer:            "localhost:1025",
 		EmailFrom:              "test@example.com",
 		DefaultLanguage:        "en",
