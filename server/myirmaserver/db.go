@@ -17,6 +17,13 @@ type MyirmaDB interface {
 	LoginTokenGetCandidates(token string) ([]LoginCandidate, error)
 	LoginTokenGetEmail(token string) (string, error)
 	TryUserLoginToken(token, username string) (bool, error)
+
+	GetUserInformation(id int64) (UserInformation, error)
+}
+
+type UserInformation struct {
+	Username string   `json:"username"`
+	Emails   []string `json:"emails"`
 }
 
 type LoginCandidate struct {
@@ -26,7 +33,7 @@ type LoginCandidate struct {
 
 type MemoryUserData struct {
 	ID         int64
-	Email      string
+	Email      []string
 	LastActive time.Time
 }
 
@@ -59,9 +66,14 @@ func (db *MyirmaMemoryDB) AddEmailLoginToken(email, token string) error {
 	defer db.lock.Unlock()
 
 	found := false
-	for _, v := range db.UserData {
-		if v.Email == email {
-			found = true
+	for _, user := range db.UserData {
+		for _, userEmail := range user.Email {
+			if userEmail == email {
+				found = true
+				break
+			}
+		}
+		if found {
 			break
 		}
 	}
@@ -84,9 +96,12 @@ func (db *MyirmaMemoryDB) LoginTokenGetCandidates(token string) ([]LoginCandidat
 	}
 
 	result := []LoginCandidate{}
-	for k, v := range db.UserData {
-		if v.Email == email {
-			result = append(result, LoginCandidate{Username: k, LastActive: v.LastActive.Unix()})
+	for name, user := range db.UserData {
+		for _, userEmail := range user.Email {
+			if userEmail == email {
+				result = append(result, LoginCandidate{Username: name, LastActive: user.LastActive.Unix()})
+				break
+			}
 		}
 	}
 	return result, nil
@@ -116,10 +131,26 @@ func (db *MyirmaMemoryDB) TryUserLoginToken(token, username string) (bool, error
 	if !ok {
 		return false, ErrUserNotFound
 	}
-	if user.Email == email {
-		delete(db.LoginEmailTokens, token)
-		return true, nil
-	} else {
-		return false, nil
+
+	for _, userEmail := range user.Email {
+		if userEmail == email {
+			delete(db.LoginEmailTokens, token)
+			return true, nil
+		}
 	}
+	return false, nil
+}
+
+func (db *MyirmaMemoryDB) GetUserInformation(id int64) (UserInformation, error) {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	for username, user := range db.UserData {
+		if user.ID == id {
+			return UserInformation{
+				Username: username,
+				Emails:   user.Email,
+			}, nil
+		}
+	}
+	return UserInformation{}, ErrUserNotFound
 }
