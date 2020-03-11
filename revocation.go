@@ -714,7 +714,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 	for id, s := range settings {
 		if !s.Authority {
 			if s.Server && s.RevocationServerURL == "" {
-				return errors.Errorf("revocation server mode for %s requires URL to be configured")
+				return errors.Errorf("revocation server mode for %s requires URL to be configured", id.String())
 			}
 		} else {
 			s.Server = true
