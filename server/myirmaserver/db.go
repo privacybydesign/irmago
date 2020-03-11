@@ -19,6 +19,7 @@ type MyirmaDB interface {
 	TryUserLoginToken(token, username string) (bool, error)
 
 	GetUserInformation(id int64) (UserInformation, error)
+	AddEmail(id int64, email string) error
 }
 
 type UserInformation struct {
@@ -153,4 +154,17 @@ func (db *MyirmaMemoryDB) GetUserInformation(id int64) (UserInformation, error) 
 		}
 	}
 	return UserInformation{}, ErrUserNotFound
+}
+
+func (db *MyirmaMemoryDB) AddEmail(id int64, email string) error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	for username, user := range db.UserData {
+		if user.ID == id {
+			user.Email = append(user.Email, email)
+			db.UserData[username] = user
+			return nil
+		}
+	}
+	return ErrUserNotFound
 }
