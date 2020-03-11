@@ -57,12 +57,20 @@ func (s *Server) Stop() {
 
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
+	// Session management
 	router.Post("/checksession", s.handleCheckSession)
 	router.Post("/login/irma", s.handleIrmaLogin)
 	router.Post("/login/email", s.handleEmailLogin)
 	router.Post("/login/token/candidates", s.handleGetCandidates)
 	router.Post("/login/token", s.handleTokenLogin)
 	router.Post("/logout", s.handleLogout)
+
+	// User account data
+	router.Get("/user", s.handleUserInfo)
+
+	// Email address management
+
+	// Irma session server
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
 
 	if s.conf.StaticPath != "" {
@@ -310,6 +318,40 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
+	token, err := r.Cookie("session")
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: missing session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Missing session")
+		return
+	}
+
+	session := s.store.get(token.Value)
+	if session == nil {
+		s.conf.Logger.Info("Malformed request: expired session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Expired session")
+		return
+	}
+
+	session.Lock()
+	defer session.Unlock()
+
+	if session.userID == nil {
+		s.conf.Logger.Info("Malformed request: not logged in")
+		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
+		return
+	}
+
+	userinfo, err := s.db.GetUserInformation(*session.userID)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Problem fetching user information from database")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, userinfo)
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {

@@ -11,7 +11,11 @@ func main() {
 		UserData: map[string]myirmaserver.MemoryUserData{
 			"rgBpfxdwfE": myirmaserver.MemoryUserData{
 				ID:    1,
-				Email: "test@test.com",
+				Email: []string{"test@test.com"},
+			},
+			"blabla": myirmaserver.MemoryUserData{
+				ID:    2,
+				Email: []string{"test@test.com", "test2@test.com"},
 			},
 		},
 		LoginEmailTokens: map[string]string{},
