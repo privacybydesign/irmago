@@ -63,6 +63,8 @@ type Configuration struct {
 	// Keyshare attributes to use for login
 	KeyshareAttributeNames []string
 	KeyshareAttributes     []irma.AttributeTypeIdentifier
+	EmailAttributeNames    []string
+	EmailAttributes        []irma.AttributeTypeIdentifier
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
 	EmailServer         string
@@ -118,10 +120,19 @@ func processConfiguration(conf *Configuration) error {
 	conf.ServerConfiguration.Production = conf.Production
 
 	// Setup data for login requests
-	if len(conf.KeyshareAttributeNames) != 0 {
+	if len(conf.KeyshareAttributes) == 0 {
 		for _, v := range conf.KeyshareAttributeNames {
 			conf.KeyshareAttributes = append(
 				conf.KeyshareAttributes,
+				irma.NewAttributeTypeIdentifier(v))
+		}
+	}
+
+	// Setup data for email requests
+	if len(conf.EmailAttributes) == 0 {
+		for _, v := range conf.EmailAttributeNames {
+			conf.EmailAttributes = append(
+				conf.EmailAttributes,
 				irma.NewAttributeTypeIdentifier(v))
 		}
 	}

@@ -69,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	router.Get("/user", s.handleUserInfo)
 
 	// Email address management
+	router.Post("/email/add", s.handleAddEmail)
 
 	// Irma session server
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
@@ -267,6 +268,10 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...),
 		func(result *server.SessionResult) {
 			session := s.store.get(sessiontoken)
+			if session == nil {
+				s.conf.Logger.Info("User session expired during irma session")
+				return
+			}
 			session.Lock()
 			defer session.Unlock()
 
@@ -352,6 +357,69 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	server.WriteJson(w, userinfo)
+}
+
+func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
+	token, err := r.Cookie("session")
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: missing session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Missing session")
+		return
+	}
+
+	session := s.store.get(token.Value)
+	if session == nil {
+		s.conf.Logger.Info("Malformed request: expired session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Expired session")
+		return
+	}
+
+	session.Lock()
+	defer session.Unlock()
+
+	if session.userID == nil {
+		s.conf.Logger.Info("Malformed request: user not logged in")
+		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
+		return
+	}
+
+	sessiontoken := token.Value
+	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...),
+		func(result *server.SessionResult) {
+			session := s.store.get(sessiontoken)
+			if session == nil {
+				s.conf.Logger.Info("User session expired during irma session")
+				return
+			}
+			session.Lock()
+			defer session.Unlock()
+
+			if session.userID == nil {
+				s.conf.Logger.Error("Unexpected logged out session during email address add")
+				return
+			}
+
+			if result.Status != server.StatusDone {
+				// Ignore incomplete attempts, frontend does that
+				return
+			}
+
+			email := *result.Disclosed[0][0].RawValue
+			err := s.db.AddEmail(*session.userID, email)
+			if err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not add email address to user")
+				session.pendingError = &server.ErrorInternal
+				session.pendingErrorMessage = err.Error()
+			}
+		})
+
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Error during startup of irma session for adding email address")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, qr)
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {
