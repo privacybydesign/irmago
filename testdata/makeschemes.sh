@@ -3,8 +3,8 @@ set -euxo pipefail
 
 dir=$(cd -P -- "$(dirname -- "$0")" && pwd -P)
 
-rm -rf ${dir}/irma_configuration_invalid/*
-rm -rf ${dir}/irma_configuration_updated/*
+rm -rf ${dir}/irma_configuration_invalid/irma-demo
+rm -rf ${dir}/irma_configuration_updated/irma-demo
 
 cp -r ${dir}/irma_configuration/irma-demo ${dir}/irma_configuration_invalid/
 cp -r ${dir}/irma_configuration/irma-demo ${dir}/irma_configuration_updated/
