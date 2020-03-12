@@ -524,7 +524,7 @@ func (dr *DisclosureRequest) Validate() error {
 	if dr.LDContext != LDContextDisclosureRequest {
 		return errors.New("Not a disclosure request")
 	}
-	if len(dr.Disclose) == 0 {
+	if len(dr.Identifiers().AttributeTypes) == 0 {
 		return errors.New("Disclosure request had no attributes")
 	}
 	var err error
