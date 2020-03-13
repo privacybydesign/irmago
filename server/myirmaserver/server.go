@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi"
@@ -67,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 
 	// User account data
 	router.Get("/user", s.handleUserInfo)
+	router.Get("/user/logs/{offset}", s.handleGetLogs)
 	router.Post("/user/delete", s.handleDeleteUser)
 
 	// Email address management
@@ -401,6 +403,48 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	server.WriteJson(w, userinfo)
+}
+
+func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
+	offsetS := chi.URLParam(r, "offset")
+	offset, err := strconv.Atoi(offsetS)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed offset")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	token, err := r.Cookie("session")
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: missing session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Missing session")
+		return
+	}
+
+	session := s.store.get(token.Value)
+	if session == nil {
+		s.conf.Logger.Info("Malformed request: expired session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Expired session")
+		return
+	}
+
+	session.Lock()
+	defer session.Unlock()
+
+	if session.userID == nil {
+		s.conf.Logger.Info("Malformed request: user not logged in")
+		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
+		return
+	}
+
+	entries, err := s.db.GetLogs(*session.userID, offset, 10)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not load log entries")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, entries)
 }
 
 func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {

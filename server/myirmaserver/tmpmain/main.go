@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/privacybydesign/irmago/server/myirmaserver"
 )
@@ -12,6 +13,12 @@ func main() {
 			"rgBpfxdwfE": myirmaserver.MemoryUserData{
 				ID:    1,
 				Email: []string{"test@test.com"},
+				LogEntries: []myirmaserver.LogEntry{
+					myirmaserver.LogEntry{
+						Event:     "IRMA_SESSION",
+						Timestamp: time.Now().Unix(),
+					},
+				},
 			},
 			"blabla": myirmaserver.MemoryUserData{
 				ID:    2,
