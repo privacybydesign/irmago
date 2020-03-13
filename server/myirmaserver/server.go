@@ -67,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 
 	// User account data
 	router.Get("/user", s.handleUserInfo)
+	router.Post("/user/delete", s.handleDeleteUser)
 
 	// Email address management
 	router.Post("/email/add", s.handleAddEmail)
@@ -105,6 +106,48 @@ func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 	} else {
 		server.WriteString(w, "ok")
 	}
+}
+
+func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	token, err := r.Cookie("session")
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: missing session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Missing session")
+		return
+	}
+
+	session := s.store.get(token.Value)
+	if session == nil {
+		s.conf.Logger.Info("Malformed request: session expired")
+		server.WriteError(w, server.ErrorInvalidRequest, "session expired")
+		return
+	}
+
+	session.Lock()
+	defer session.Unlock()
+	if session.userID == nil {
+		s.conf.Logger.Info("Malformed request: not logged in")
+		server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
+		return
+	}
+
+	err = s.db.RemoveUser(*session.userID)
+
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Problem removing user")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Secure:   s.conf.Production,
+		Path:     "/",
+		HttpOnly: true,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type EmailLoginRequest struct {

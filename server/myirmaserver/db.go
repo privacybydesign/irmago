@@ -12,6 +12,7 @@ var (
 
 type MyirmaDB interface {
 	GetUserID(username string) (int64, error)
+	RemoveUser(id int64) error
 
 	AddEmailLoginToken(email, token string) error
 	LoginTokenGetCandidates(token string) ([]LoginCandidate, error)
@@ -61,6 +62,18 @@ func (db *MyirmaMemoryDB) GetUserID(username string) (int64, error) {
 		return 0, ErrUserNotFound
 	}
 	return data.ID, nil
+}
+
+func (db *MyirmaMemoryDB) RemoveUser(id int64) error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	for username, user := range db.UserData {
+		if user.ID == id {
+			delete(db.UserData, username)
+			return nil
+		}
+	}
+	return ErrUserNotFound
 }
 
 func (db *MyirmaMemoryDB) AddEmailLoginToken(email, token string) error {
