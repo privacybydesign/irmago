@@ -20,6 +20,7 @@ type MyirmaDB interface {
 	TryUserLoginToken(token, username string) (bool, error)
 
 	GetUserInformation(id int64) (UserInformation, error)
+	GetLogs(id int64, offset int, ammount int) ([]LogEntry, error)
 	AddEmail(id int64, email string) error
 	RemoveEmail(id int64, email string) error
 }
@@ -34,9 +35,16 @@ type LoginCandidate struct {
 	LastActive int64  `json:"last_active"`
 }
 
+type LogEntry struct {
+	Timestamp int64
+	Event     string `json:"event"`
+	Param     string `json:"param"`
+}
+
 type MemoryUserData struct {
 	ID         int64
 	Email      []string
+	LogEntries []LogEntry
 	LastActive time.Time
 }
 
@@ -168,6 +176,25 @@ func (db *MyirmaMemoryDB) GetUserInformation(id int64) (UserInformation, error) 
 		}
 	}
 	return UserInformation{}, ErrUserNotFound
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	} else {
+		return b
+	}
+}
+
+func (db *MyirmaMemoryDB) GetLogs(id int64, offset, ammount int) ([]LogEntry, error) {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	for _, user := range db.UserData {
+		if user.ID == id {
+			return user.LogEntries[offset:min(len(user.LogEntries), offset+ammount)], nil
+		}
+	}
+	return nil, ErrUserNotFound
 }
 
 func (db *MyirmaMemoryDB) AddEmail(id int64, email string) error {
