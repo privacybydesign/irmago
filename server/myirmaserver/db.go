@@ -20,6 +20,7 @@ type MyirmaDB interface {
 
 	GetUserInformation(id int64) (UserInformation, error)
 	AddEmail(id int64, email string) error
+	RemoveEmail(id int64, email string) error
 }
 
 type UserInformation struct {
@@ -166,5 +167,25 @@ func (db *MyirmaMemoryDB) AddEmail(id int64, email string) error {
 			return nil
 		}
 	}
+	return ErrUserNotFound
+}
+
+func (db *MyirmaMemoryDB) RemoveEmail(id int64, email string) error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	for username, user := range db.UserData {
+		if user.ID == id {
+			for i, emailv := range user.Email {
+				if emailv == email {
+					copy(user.Email[i:], user.Email[i+1:])
+					user.Email = user.Email[:len(user.Email)-1]
+					db.UserData[username] = user
+					return nil
+				}
+			}
+			return nil
+		}
+	}
+
 	return ErrUserNotFound
 }

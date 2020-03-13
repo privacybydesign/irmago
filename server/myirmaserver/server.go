@@ -70,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Email address management
 	router.Post("/email/add", s.handleAddEmail)
+	router.Post("/email/remove", s.handleRemoveEmail)
 
 	// Irma session server
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
@@ -357,6 +358,47 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	server.WriteJson(w, userinfo)
+}
+
+func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
+	email, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read body")
+		server.WriteError(w, server.ErrorInvalidRequest, "Could not parse request body")
+		return
+	}
+
+	token, err := r.Cookie("session")
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: missing session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Missing session")
+		return
+	}
+
+	session := s.store.get(token.Value)
+	if session == nil {
+		s.conf.Logger.Info("Malformed request: expired session")
+		server.WriteError(w, server.ErrorInvalidRequest, "Expired session")
+		return
+	}
+
+	session.Lock()
+	defer session.Unlock()
+
+	if session.userID == nil {
+		s.conf.Logger.Info("Malformed request: user not logged in")
+		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
+		return
+	}
+
+	err = s.db.RemoveEmail(*session.userID, string(email))
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Error removing user email address")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
