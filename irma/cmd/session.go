@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"net/http"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
 
 const pollInterval = 1000 * time.Millisecond
@@ -137,19 +138,32 @@ func serverRequest(
 	}
 
 	statuschan := make(chan server.Status)
+	var wg sync.WaitGroup
 
-	// Wait until client connects
-	go poll(server.StatusInitialized, transport, statuschan)
-	status := <-statuschan
-	if status != server.StatusConnected {
-		return nil, errors.Errorf("Unexpected status: %s", status)
-	}
+	go wait(server.StatusInitialized, transport, statuschan)
 
-	// Wait until client finishes
-	go poll(server.StatusConnected, transport, statuschan)
-	status = <-statuschan
-	if status != server.StatusDone {
-		return nil, errors.Errorf("Unexpected status: %s", status)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// Wait until client connects
+		status := <-statuschan
+		if status != server.StatusConnected {
+			err = errors.Errorf("Unexpected status: %s", status)
+			return
+		}
+
+		// Wait until client finishes
+		status = <-statuschan
+		if status != server.StatusCancelled && status != server.StatusDone {
+			err = errors.Errorf("Unexpected status: %s", status)
+			return
+		}
+	}()
+
+	wg.Wait()
+	if err != nil {
+		return nil, err
 	}
 
 	// Retrieve session result

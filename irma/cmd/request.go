@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	sseclient "astuart.co/go-sse"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/mdp/qrterminal"
@@ -111,25 +112,50 @@ func configureRequest(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configur
 
 // Helper functions
 
-// poll recursively polls the session status until a status different from initialStatus is received.
+func wait(initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
+	events := make(chan *sseclient.Event)
+
+	go func() {
+		for {
+			if e := <-events; e != nil && e.Type != "open" {
+				status := server.Status(strings.Trim(string(e.Data), `"`))
+				statuschan <- status
+				if status.Finished() {
+					return
+				}
+			}
+		}
+	}()
+
+	if err := sseclient.Notify(nil, transport.Server+"statusevents", true, events); err != nil {
+		fmt.Println("SSE failed, fallback to polling", err)
+		close(events)
+		poll(initialStatus, transport, statuschan)
+		return
+	}
+}
+
+// poll recursively polls the session status until a final status is received.
 func poll(initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
 	// First we wait
 	<-time.NewTimer(pollInterval).C
 
 	// Get session status
-	var status string
-	if err := transport.Get("status", &status); err != nil {
+	var s string
+	if err := transport.Get("status", &s); err != nil {
 		_ = server.LogFatal(err)
 	}
-	status = strings.Trim(status, `"`)
+	status := server.Status(strings.Trim(s, `"`))
 
-	// If the status has not yet changed, schedule another poll
-	if server.Status(status) == initialStatus {
-		go poll(initialStatus, transport, statuschan)
-	} else {
-		logger.Trace("Stopped polling, new status ", status)
-		statuschan <- server.Status(status)
+	// report if status changed
+	if status != initialStatus {
+		statuschan <- status
 	}
+
+	if status.Finished() {
+		return
+	}
+	go poll(status, transport, statuschan)
 }
 
 func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma.RequestorRequest, error) {
