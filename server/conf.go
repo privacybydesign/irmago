@@ -15,7 +15,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
 
@@ -162,7 +162,7 @@ func (conf *Configuration) verifyIrmaConf() error {
 		if conf.SchemesPath == "" {
 			conf.SchemesPath = irma.DefaultSchemesPath() // Returns an existing path
 		}
-		if exists, err = fs.PathExists(conf.SchemesPath); err != nil {
+		if exists, err = common.PathExists(conf.SchemesPath); err != nil {
 			return err
 		}
 		if !exists {
@@ -402,7 +402,7 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 		return nil
 	}
 
-	keybytes, err := fs.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
+	keybytes, err := common.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to read private key", 0)
 	}

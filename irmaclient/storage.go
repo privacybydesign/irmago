@@ -9,7 +9,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/go-errors/errors"
 	"go.etcd.io/bbolt"
@@ -55,7 +55,7 @@ func (s *storage) path(p string) string {
 // backups to iCloud/Google disabled) is the responsibility of the user.
 func (s *storage) Open() error {
 	var err error
-	if err = fs.AssertPathExists(s.storagePath); err != nil {
+	if err = common.AssertPathExists(s.storagePath); err != nil {
 		return err
 	}
 	s.db, err = bbolt.Open(s.path(databaseFile), 0600, &bbolt.Options{Timeout: 1 * time.Second})

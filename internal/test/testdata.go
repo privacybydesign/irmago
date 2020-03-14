@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,7 +74,7 @@ func FindTestdataFolder(t *testing.T) string {
 	path := "testdata"
 
 	for i := 0; i < 3; i++ {
-		exists, err := fs.PathExists(path)
+		exists, err := common.PathExists(path)
 		checkError(t, err)
 		if exists {
 			return path
@@ -103,14 +103,14 @@ func ClearAllTestStorage() {
 func CreateTestStorage(t *testing.T) string {
 	tmp, err := ioutil.TempDir("", "irmatest")
 	require.NoError(t, err)
-	checkError(t, fs.EnsureDirectoryExists(filepath.Join(tmp, "client")))
+	checkError(t, common.EnsureDirectoryExists(filepath.Join(tmp, "client")))
 	return tmp
 }
 
 func SetupTestStorage(t *testing.T) string {
 	storage := CreateTestStorage(t)
 	path := FindTestdataFolder(t)
-	err := fs.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(storage, "client"))
+	err := common.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(storage, "client"))
 	checkError(t, err)
 	return storage
 }

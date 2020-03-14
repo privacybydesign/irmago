@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -199,7 +199,7 @@ func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
 
 func (ct *CredentialType) Logo(conf *Configuration) string {
 	path := filepath.Join(conf.Path, ct.SchemeManagerID, ct.IssuerID, "Issues", ct.ID, "logo.png")
-	exists, err := fs.PathExists(path)
+	exists, err := common.PathExists(path)
 	if err != nil || !exists {
 		return ""
 	}

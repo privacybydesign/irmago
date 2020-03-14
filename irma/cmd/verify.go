@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,7 @@ func RunVerify(path string, verbose bool) error {
 		return err
 	}
 
-	isScheme, err := fs.PathExists(filepath.Join(path, "index"))
+	isScheme, err := common.PathExists(filepath.Join(path, "index"))
 	if err != nil {
 		return err
 	}

@@ -8,7 +8,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains the legacy storage based on files. These functions are needed
@@ -36,7 +36,7 @@ func (f *fileStorage) path(p string) string {
 }
 
 func (f *fileStorage) load(dest interface{}, path string) (err error) {
-	exists, err := fs.PathExists(f.path(path))
+	exists, err := common.PathExists(f.path(path))
 	if err != nil || !exists {
 		return
 	}
@@ -58,7 +58,7 @@ func (f *fileStorage) signatureFilename(attrs *irma.AttributeList) string {
 
 func (f *fileStorage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, witness *revocation.Witness, err error) {
 	sigpath := f.signatureFilename(attrs)
-	if err := fs.AssertPathExists(f.path(sigpath)); err != nil {
+	if err := common.AssertPathExists(f.path(sigpath)); err != nil {
 		return nil, nil, err
 	}
 	sig := &clSignatureWitness{}

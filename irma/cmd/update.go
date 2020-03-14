@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +44,7 @@ var updateCmd = &cobra.Command{
 func updateSchemeManager(paths []string) error {
 	// Before doing anything, first check that all paths are scheme managers
 	for _, path := range paths {
-		if err := fs.AssertPathExists(filepath.Join(path, "index")); err != nil {
+		if err := common.AssertPathExists(filepath.Join(path, "index")); err != nil {
 			return errors.Errorf("%s is not a valid scheme manager (%s)", path, err.Error())
 		}
 	}

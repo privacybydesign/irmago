@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // SchemeManagerPointer points to a remote IRMA scheme, containing information to download the scheme,
@@ -76,7 +76,7 @@ func (conf *Configuration) downloadDemoPrivateKeys(scheme *SchemeManager) error 
 		skpath := file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1)
 		parts := strings.Split(skpath, "/")
 		local := filepath.FromSlash(skpath)
-		exists, err := fs.PathExists(local)
+		exists, err := common.PathExists(local)
 		if exists || err != nil {
 			continue
 		}

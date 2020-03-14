@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
@@ -445,13 +445,13 @@ func TestDownloadSchemeManager(t *testing.T) {
 	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
 	basepath := filepath.Join(handler.storage, "client", "irma_configuration", "irma-demo")
-	exists, err := fs.PathExists(filepath.Join(basepath, "description.xml"))
+	exists, err := common.PathExists(filepath.Join(basepath, "description.xml"))
 	require.NoError(t, err)
 	require.True(t, exists)
-	exists, err = fs.PathExists(filepath.Join(basepath, "RU", "description.xml"))
+	exists, err = common.PathExists(filepath.Join(basepath, "RU", "description.xml"))
 	require.NoError(t, err)
 	require.True(t, exists)
-	exists, err = fs.PathExists(filepath.Join(basepath, "RU", "Issues", "studentCard", "description.xml"))
+	exists, err = common.PathExists(filepath.Join(basepath, "RU", "Issues", "studentCard", "description.xml"))
 	require.NoError(t, err)
 	require.True(t, exists)
 }

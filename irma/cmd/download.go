@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ var downloadCmd = &cobra.Command{
 		if len(args) == 0 {
 			path = defaultIrmaconf
 		} else {
-			if err := fs.AssertPathExists(args[0]); err == nil {
+			if err := common.AssertPathExists(args[0]); err == nil {
 				path = args[0]
 				urls = args[1:]
 			} else {
@@ -36,7 +36,7 @@ var downloadCmd = &cobra.Command{
 			if defaultIrmaconf == "" {
 				die("Failed to determine default irma_configuration path", nil)
 			}
-			if err := fs.EnsureDirectoryExists(defaultIrmaconf); err != nil {
+			if err := common.EnsureDirectoryExists(defaultIrmaconf); err != nil {
 				die("Failed to create irma_configuration directory", err)
 			}
 			fmt.Println("No irma_configuration path specified, using " + defaultIrmaconf)
@@ -48,7 +48,7 @@ var downloadCmd = &cobra.Command{
 }
 
 func downloadSchemeManager(dest string, urls []string) error {
-	exists, err := fs.PathExists(dest)
+	exists, err := common.PathExists(dest)
 	if err != nil {
 		return errors.Errorf("Could not check path existence: %s", err.Error())
 	}
@@ -72,7 +72,7 @@ func downloadSchemeManager(dest string, urls []string) error {
 		normalizedUrls = append(normalizedUrls, u)
 		urlparts := strings.Split(u, "/")
 		managerName := urlparts[len(urlparts)-1]
-		if err = fs.AssertPathNotExists(filepath.Join(dest, managerName)); err != nil {
+		if err = common.AssertPathNotExists(filepath.Join(dest, managerName)); err != nil {
 			return errors.Errorf("Scheme manager %s already exists", managerName)
 		}
 	}

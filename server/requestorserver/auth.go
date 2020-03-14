@@ -8,7 +8,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -98,13 +98,13 @@ func (hauth *HmacAuthenticator) AuthenticateRevocation(headers http.Header, body
 }
 
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
-	bts, err := fs.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
+	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
 	}
 
 	// We accept any of the base64 encodings
-	bts, err = fs.Base64Decode(bts)
+	bts, err = common.Base64Decode(bts)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to base64 decode hmac key of requestor "+name, 0)
 	}
@@ -125,7 +125,7 @@ func (pkauth *PublicKeyAuthenticator) AuthenticateRevocation(headers http.Header
 }
 
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
-	bts, err := fs.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
+	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
 	}
@@ -174,7 +174,7 @@ func (pskauth *PresharedKeyAuthenticator) AuthenticateRevocation(headers http.He
 }
 
 func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requestor) error {
-	bts, err := fs.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
+	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
 	}

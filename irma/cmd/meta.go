@@ -10,7 +10,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +46,7 @@ var metaCmd = &cobra.Command{
 }
 
 func printMetadataAttr(metaint *big.Int, confpath string) error {
-	if err := fs.AssertPathExists(confpath); err != nil {
+	if err := common.AssertPathExists(confpath); err != nil {
 		return errors.WrapPrefix(err, "Cannot read irma_configuration", 0)
 	}
 	conf, err := irma.NewConfiguration(confpath, irma.ConfigurationOptions{ReadOnly: true})

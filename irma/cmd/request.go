@@ -14,7 +14,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/mdp/qrterminal"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -55,13 +55,13 @@ func configureJWTKey(authmethod, key string) (interface{}, jwt.SigningMethod, er
 		bts    []byte
 	)
 	// If the key refers to an existing file, use contents of the file as key
-	if bts, err = fs.ReadKey("", key); err != nil {
+	if bts, err = common.ReadKey("", key); err != nil {
 		bts = []byte(key)
 	}
 	switch authmethod {
 	case "hmac":
 		jwtalg = jwt.SigningMethodHS256
-		if sk, err = fs.Base64Decode(bts); err != nil {
+		if sk, err = common.Base64Decode(bts); err != nil {
 			return nil, nil, err
 		}
 	case "rsa":

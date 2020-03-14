@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -79,7 +79,7 @@ IRMA applications.`,
 				return err
 			}
 		}
-		if err = fs.AssertPathExists(path); err != nil {
+		if err = common.AssertPathExists(path); err != nil {
 			return errors.WrapPrefix(err, "Nonexisting path specified", 0)
 		}
 
@@ -101,14 +101,14 @@ IRMA applications.`,
 		defaultFilename := strconv.Itoa(int(counter)) + ".xml"
 		if privkeyfile == "" {
 			keypath := filepath.Join(path, "PrivateKeys")
-			if err = fs.EnsureDirectoryExists(keypath); err != nil {
+			if err = common.EnsureDirectoryExists(keypath); err != nil {
 				return errors.WrapPrefix(err, "Failed to create"+keypath, 0)
 			}
 			privkeyfile = filepath.Join(keypath, defaultFilename)
 		}
 		if pubkeyfile == "" {
 			keypath := filepath.Join(path, "PublicKeys")
-			if err = fs.EnsureDirectoryExists(keypath); err != nil {
+			if err = common.EnsureDirectoryExists(keypath); err != nil {
 				return errors.WrapPrefix(err, "Failed to create"+keypath, 0)
 			}
 			pubkeyfile = filepath.Join(keypath, defaultFilename)

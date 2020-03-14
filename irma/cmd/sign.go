@@ -14,7 +14,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +50,7 @@ Careful: this command could fail and invalidate or destroy your scheme manager d
 			return errors.WrapPrefix(err, "Failed to read private key:", 0)
 		}
 
-		if err = fs.AssertPathExists(confpath); err != nil {
+		if err = common.AssertPathExists(confpath); err != nil {
 			return err
 		}
 
@@ -80,7 +80,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 
 	// Traverse dir and add file hashes to index
 	var index irma.SchemeManagerIndex = make(map[string]irma.ConfigurationFileHash)
-	err := fs.WalkDir(confpath, func(path string, info os.FileInfo) error {
+	err := common.WalkDir(confpath, func(path string, info os.FileInfo) error {
 		return calculateFileHash(path, info, confpath, index)
 	})
 	if err != nil {

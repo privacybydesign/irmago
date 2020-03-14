@@ -22,8 +22,8 @@ import (
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
-	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
@@ -271,10 +271,10 @@ func (transport *HTTPTransport) GetSignedFile(url string, dest string, hash Conf
 	if hash != nil && !bytes.Equal(hash, sha[:]) {
 		return errors.Errorf("Signature over new file %s is not valid", dest)
 	}
-	if err = fs.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
+	if err = common.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
 		return err
 	}
-	return fs.SaveFile(dest, b)
+	return common.SaveFile(dest, b)
 }
 
 func (transport *HTTPTransport) GetFile(url string, dest string) error {

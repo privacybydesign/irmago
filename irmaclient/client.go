@@ -13,7 +13,7 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
 
@@ -131,10 +131,10 @@ func New(
 	handler ClientHandler,
 ) (*Client, error) {
 	var err error
-	if err = fs.AssertPathExists(storagePath); err != nil {
+	if err = common.AssertPathExists(storagePath); err != nil {
 		return nil, err
 	}
-	if err = fs.AssertPathExists(irmaConfigurationPath); err != nil {
+	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
 
@@ -339,7 +339,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 
 func generateSecretKey() (*secretKey, error) {
 	return &secretKey{
-		Key: fs.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[1024].Lm))),
+		Key: common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[1024].Lm))),
 	}, nil
 }
 
@@ -844,7 +844,7 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.Session
 
 // generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
 func generateIssuerProofNonce() (*big.Int, error) {
-	return fs.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[4096].Lstatzk))), nil
+	return common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[4096].Lstatzk))), nil
 }
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol

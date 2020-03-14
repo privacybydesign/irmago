@@ -14,7 +14,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 const (
@@ -800,7 +800,7 @@ func (t *Timestamp) Floor() Timestamp {
 }
 
 func readTimestamp(path string) (*Timestamp, bool, error) {
-	exists, err := fs.PathExists(path)
+	exists, err := common.PathExists(path)
 	if err != nil {
 		return nil, false, err
 	}

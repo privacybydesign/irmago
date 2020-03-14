@@ -34,7 +34,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
 
@@ -138,11 +138,11 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 	}
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
-		if err = fs.AssertPathExists(conf.assets); err != nil {
+		if err = common.AssertPathExists(conf.assets); err != nil {
 			return nil, errors.WrapPrefix(err, "Nonexistent assets folder specified", 0)
 		}
 	}
-	if err = fs.EnsureDirectoryExists(conf.Path); err != nil {
+	if err = common.EnsureDirectoryExists(conf.Path); err != nil {
 		return nil, err
 	}
 
@@ -172,7 +172,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	// Copy any new or updated scheme managers out of the assets into storage
 	if conf.assets != "" {
-		err = fs.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
+		err = common.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
 			scheme := NewSchemeManagerIdentifier(filepath.Base(dir))
 			uptodate, err := conf.isUpToDate(scheme)
 			if err != nil {
@@ -190,7 +190,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	// Parse scheme managers in storage
 	var mgrerr *SchemeManagerError
-	err = fs.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
 		manager := NewSchemeManager(filepath.Base(dir))
 		err := conf.ParseSchemeManagerFolder(dir, manager)
 		if err == nil {
@@ -464,7 +464,7 @@ func (conf *Configuration) Prune() {
 }
 
 func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path string) error {
-	return fs.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
+	return common.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		issuer := &Issuer{}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", issuer)
 		if err != nil {
@@ -608,7 +608,7 @@ func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern st
 // parse $schememanager/$issuer/Issues/*/description.xml
 func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer *Issuer, path string) error {
 	var foundcred bool
-	err := fs.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
+	err := common.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		cred := &CredentialType{}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", cred)
 		if err != nil {
@@ -718,7 +718,7 @@ func (conf *Configuration) CopyManagerFromAssets(scheme SchemeManagerIdentifier)
 	if err := os.RemoveAll(filepath.Join(conf.Path, name)); err != nil {
 		return false, err
 	}
-	return true, fs.CopyDirectory(
+	return true, common.CopyDirectory(
 		filepath.Join(conf.assets, name),
 		filepath.Join(conf.Path, name),
 	)
@@ -802,7 +802,7 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publicke
 	}
 
 	name := manager.ID
-	if err := fs.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
+	if err := common.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
 	}
 
@@ -812,7 +812,7 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publicke
 		return err
 	}
 	if publickey != nil {
-		if err := fs.SaveFile(path+"/pk.pem", publickey); err != nil {
+		if err := common.SaveFile(path+"/pk.pem", publickey); err != nil {
 			return err
 		}
 	} else {
@@ -1057,7 +1057,7 @@ func (i SchemeManagerIndex) Scheme() SchemeManagerIdentifier {
 // parseIndex parses the index file of the specified manager.
 func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (SchemeManagerIndex, error) {
 	path := filepath.Join(conf.Path, name, "index")
-	if err := fs.AssertPathExists(path); err != nil {
+	if err := common.AssertPathExists(path); err != nil {
 		return nil, fmt.Errorf("Missing scheme manager index file; tried %s", path)
 	}
 	indexbts, err := ioutil.ReadFile(path)
@@ -1073,7 +1073,7 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (Sche
 }
 
 func (conf *Configuration) checkUnsignedFiles(name string, index SchemeManagerIndex) error {
-	return fs.WalkDir(filepath.Join(conf.Path, name), func(path string, info os.FileInfo) error {
+	return common.WalkDir(filepath.Join(conf.Path, name), func(path string, info os.FileInfo) error {
 		relpath, err := filepath.Rel(conf.Path, path)
 		if err != nil {
 			return err
@@ -1130,7 +1130,7 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 
 	var exists bool
 	for file := range manager.index {
-		exists, err = fs.PathExists(filepath.Join(conf.Path, file))
+		exists, err = common.PathExists(filepath.Join(conf.Path, file))
 		if err != nil {
 			return err
 		}
@@ -1182,7 +1182,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	}()
 
 	dir := filepath.Join(conf.Path, id.String())
-	if err := fs.AssertPathExists(filepath.Join(dir, "index"), filepath.Join(dir, "index.sig"), filepath.Join(dir, "pk.pem")); err != nil {
+	if err := common.AssertPathExists(filepath.Join(dir, "index"), filepath.Join(dir, "index.sig"), filepath.Join(dir, "pk.pem")); err != nil {
 		return errors.New("Missing scheme manager index file, signature, or public key")
 	}
 
@@ -1268,7 +1268,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		path := filepath.Join(conf.Path, filename)
 		oldHash, known := manager.index[filename]
 		var have bool
-		have, err = fs.PathExists(path)
+		have, err = common.PathExists(path)
 		if err != nil {
 			return err
 		}
@@ -1380,7 +1380,7 @@ func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer
 	if err = validateDemoPrefix(issuer.Name); manager.Demo && err != nil {
 		return errors.Errorf("Name of demo issuer %s invalid: %s", issuer.ID, err.Error())
 	}
-	if err = fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
+	if err = common.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
 	}
 	return nil
@@ -1404,7 +1404,7 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 	if err := validateDemoPrefix(cred.Name); manager.Demo && err != nil {
 		return errors.Errorf("Name of demo credential %s invalid: %s", cred.ID, err.Error())
 	}
-	if err := fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
+	if err := common.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
 	}
 	return conf.validateAttributes(cred)
@@ -1457,7 +1457,7 @@ func (conf *Configuration) validateScheme(scheme *SchemeManager, dir string) err
 		return errors.Errorf("Scheme %s has wrong directory name %s", scheme.ID, filepath.Base(dir))
 	}
 	if scheme.KeyshareServer != "" {
-		if err := fs.AssertPathExists(filepath.Join(dir, "kss-0.pem")); err != nil {
+		if err := common.AssertPathExists(filepath.Join(dir, "kss-0.pem")); err != nil {
 			scheme.Status = SchemeManagerStatusParsingError
 			return errors.Errorf("Scheme %s has keyshare URL but no keyshare public key kss-0.pem", scheme.ID)
 		}
@@ -1620,7 +1620,7 @@ func DefaultSchemesPath() string {
 		return p
 	}
 	p = filepath.Join(p, "irma_configuration")
-	if err := fs.EnsureDirectoryExists(p); err != nil {
+	if err := common.EnsureDirectoryExists(p); err != nil {
 		return ""
 	}
 	return p
@@ -1628,7 +1628,7 @@ func DefaultSchemesPath() string {
 
 func firstExistingPath(paths []string) string {
 	for _, path := range paths {
-		if err := fs.EnsureDirectoryExists(path); err == nil {
+		if err := common.EnsureDirectoryExists(path); err == nil {
 			return path
 		}
 	}

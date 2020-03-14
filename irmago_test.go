@@ -11,7 +11,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +35,7 @@ func TestConfigurationAutocopy(t *testing.T) {
 	defer test.ClearTestStorage(t, storage)
 
 	path := filepath.Join("testdata", "tmp", "client", "irma_configuration")
-	require.NoError(t, fs.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
+	require.NoError(t, common.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
 	conf, err := NewConfiguration(path, ConfigurationOptions{Assets: filepath.Join("testdata", "irma_configuration_updated")})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())

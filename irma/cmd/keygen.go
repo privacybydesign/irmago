@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/signed"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -30,10 +30,10 @@ var keygenCmd = &cobra.Command{
 		}
 
 		// For safety we enforce that we never overwrite a file
-		if err := fs.AssertPathNotExists(skfile); err != nil {
+		if err := common.AssertPathNotExists(skfile); err != nil {
 			return errors.Errorf("File %s already exists, not overwriting", skfile)
 		}
-		if err := fs.AssertPathNotExists(pkfile); err != nil {
+		if err := common.AssertPathNotExists(pkfile); err != nil {
 			return errors.Errorf("File %s already exists, not overwriting", pkfile)
 		}
 

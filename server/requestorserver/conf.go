@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -221,7 +221,7 @@ func (conf *Configuration) initialize() error {
 	}
 
 	if conf.StaticPath != "" {
-		if err := fs.AssertPathExists(conf.StaticPath); err != nil {
+		if err := common.AssertPathExists(conf.StaticPath); err != nil {
 			return errors.WrapPrefix(err, "Invalid static_path", 0)
 		}
 		if conf.StaticPrefix[0] != '/' {
@@ -365,10 +365,10 @@ func (conf *Configuration) readTlsConf(cert, certfile, key, keyfile string) (*tl
 
 	var certbts, keybts []byte
 	var err error
-	if certbts, err = fs.ReadKey(cert, certfile); err != nil {
+	if certbts, err = common.ReadKey(cert, certfile); err != nil {
 		return nil, err
 	}
-	if keybts, err = fs.ReadKey(key, keyfile); err != nil {
+	if keybts, err = common.ReadKey(key, keyfile); err != nil {
 		return nil, err
 	}
 
