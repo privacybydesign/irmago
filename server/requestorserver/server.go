@@ -114,8 +114,6 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 	}()
 
 	if tlsConf != nil {
-		// Disable HTTP/2 (see package documentation of http): it breaks server side events :(
-		serv.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 		s.conf.Logger.Info(name, " TLS enabled")
 		return filterStopError(serv.ListenAndServeTLS("", ""))
 	} else {
