@@ -164,7 +164,7 @@ func New(
 
 	// Ensure storage path exists, and populate it with necessary files
 	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration}
-	if err = client.storage.EnsureStorageExists(); err != nil {
+	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}
 	// Legacy storage does not need ensuring existence

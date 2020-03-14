@@ -49,11 +49,11 @@ func (s *storage) path(p string) string {
 	return filepath.Join(s.storagePath, p)
 }
 
-// EnsureStorageExists initializes the credential storage folder,
+// Open initializes the credential storage,
 // ensuring that it is in a usable state.
 // Setting it up in a properly protected location (e.g., with automatic
 // backups to iCloud/Google disabled) is the responsibility of the user.
-func (s *storage) EnsureStorageExists() error {
+func (s *storage) Open() error {
 	var err error
 	if err = fs.AssertPathExists(s.storagePath); err != nil {
 		return err
