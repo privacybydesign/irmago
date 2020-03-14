@@ -11,7 +11,7 @@ import (
 )
 
 var updateCmd = &cobra.Command{
-	Use:   "update [path...]",
+	Use:   "update [<path>...]",
 	Short: "Update a scheme",
 	Long:  updateHelp(),
 	Run: func(cmd *cobra.Command, args []string) {

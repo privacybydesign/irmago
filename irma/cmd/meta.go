@@ -16,7 +16,7 @@ import (
 
 // metaCmd represents the meta command
 var metaCmd = &cobra.Command{
-	Use:   "meta attribute",
+	Use:   "meta <attribute>",
 	Short: "Parse an IRMA metadata attribute and print its contents",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

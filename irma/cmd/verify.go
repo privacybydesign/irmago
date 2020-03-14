@@ -14,7 +14,7 @@ import (
 
 // verifyCmd represents the verify command
 var verifyCmd = &cobra.Command{
-	Use:   "verify [irma_configuration]",
+	Use:   "verify [<path>]",
 	Short: "Verify irma_configuration folder correctness and authenticity",
 	Long:  `The verify command parses the specified irma_configuration directory, or the current directory if not specified, and checks the signatures of the contained scheme managers.`,
 	Args:  cobra.MaximumNArgs(1),

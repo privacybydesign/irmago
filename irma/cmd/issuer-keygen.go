@@ -16,7 +16,7 @@ import (
 
 // issuerKeygenCmd represents the keygen command
 var issuerKeygenCmd = &cobra.Command{
-	Use:   "keygen [path]",
+	Use:   "keygen [<path>]",
 	Short: "Generate a new IRMA issuer private/public keypair",
 	Long: `Generate a new IRMA issuer private/public keypair
 

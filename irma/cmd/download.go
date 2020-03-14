@@ -13,7 +13,7 @@ import (
 )
 
 var downloadCmd = &cobra.Command{
-	Use:   "download [path] [url...]",
+	Use:   "download [<path>] [<url>...]",
 	Short: "Download scheme(s)",
 	Long:  downloadHelp(),
 	Run: func(cmd *cobra.Command, args []string) {

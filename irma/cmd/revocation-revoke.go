@@ -9,7 +9,7 @@ import (
 )
 
 var revokeCmd = &cobra.Command{
-	Use:   "revoke CREDENTIALTYPE KEY URL",
+	Use:   "revoke <credentialtype> <key> <url>",
 	Short: "Revoke a previously issued credential identified by a given key",
 	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
