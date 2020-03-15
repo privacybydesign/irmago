@@ -1,9 +1,11 @@
-package servercore
+package irmaserver
 
 import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
 	"reflect"
 	"time"
 
@@ -17,6 +19,10 @@ import (
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
+
+type sseCtx struct {
+	component, arg string
+}
 
 // Session helpers
 
@@ -50,6 +56,27 @@ func (session *session) fail(err server.Error, message string) *irma.RemoteError
 	session.setStatus(server.StatusCancelled)
 	session.result = &server.SessionResult{Err: rerr, Token: session.token, Status: server.StatusCancelled, Type: session.action}
 	return rerr
+}
+
+func (session *session) chooseProtocolVersion(minClient, maxClient *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
+	// Set minimum supported version to 2.5 if condiscon compatibility is required
+	minServer := minProtocolVersion
+	if !session.legacyCompatible {
+		minServer = &irma.ProtocolVersion{2, 5}
+	}
+	// Set minimum to 2.6 if nonrevocation is required
+	if len(session.request.Base().Revocation) > 0 {
+		minServer = &irma.ProtocolVersion{2, 6}
+	}
+
+	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {
+		return nil, server.LogWarning(errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minServer.String(), maxProtocolVersion.String()))
+	}
+	if maxClient.AboveVersion(maxProtocolVersion) {
+		return maxProtocolVersion, nil
+	} else {
+		return maxClient, nil
+	}
 }
 
 const retryTimeLimit = 10 * time.Second
@@ -228,27 +255,6 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 
 // Other
 
-func (session *session) chooseProtocolVersion(minClient, maxClient *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
-	// Set minimum supported version to 2.5 if condiscon compatibility is required
-	minServer := minProtocolVersion
-	if !session.legacyCompatible {
-		minServer = &irma.ProtocolVersion{2, 5}
-	}
-	// Set minimum to 2.6 if nonrevocation is required
-	if len(session.request.Base().Revocation) > 0 {
-		minServer = &irma.ProtocolVersion{2, 6}
-	}
-
-	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {
-		return nil, server.LogWarning(errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minServer.String(), maxProtocolVersion.String()))
-	}
-	if maxClient.AboveVersion(maxProtocolVersion) {
-		return maxProtocolVersion, nil
-	} else {
-		return maxClient, nil
-	}
-}
-
 func (s *Server) doResultCallback(result *server.SessionResult) {
 	url := s.GetRequest(result.Token).Base().CallbackURL
 	if url == "" {
@@ -260,6 +266,16 @@ func (s *Server) doResultCallback(result *server.SessionResult) {
 		s.GetRequest(result.Token).Base().ResultJwtValidity,
 		s.conf.JwtRSAPrivateKey,
 	)
+}
+
+func (s *Server) validateRequest(request irma.SessionRequest) error {
+	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
+		return err
+	}
+	if err := request.Base().Validate(s.conf.IrmaConfiguration); err != nil {
+		return err
+	}
+	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
 }
 
 func copyObject(i interface{}) (interface{}, error) {
@@ -303,4 +319,29 @@ func purgeRequest(request irma.RequestorRequest) irma.RequestorRequest {
 	}
 
 	return cpy.(irma.RequestorRequest)
+}
+
+func eventServer(conf *server.Configuration) *sse.Server {
+	return sse.NewServer(&sse.Options{
+		ChannelNameFunc: func(r *http.Request) string {
+			ssectx := r.Context().Value("sse")
+			if ssectx == nil {
+				return ""
+			}
+			switch ssectx.(sseCtx).component {
+			case server.ComponentSession:
+				return "session/" + ssectx.(sseCtx).arg
+			case server.ComponentRevocation:
+				return "revocation/" + ssectx.(sseCtx).arg
+			default:
+				return ""
+			}
+		},
+		Headers: map[string]string{
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Methods": "GET, OPTIONS",
+			"Access-Control-Allow-Headers": "Keep-Alive,X-Requested-With,Cache-Control,Content-Type,Last-Event-ID",
+		},
+		Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
+	})
 }

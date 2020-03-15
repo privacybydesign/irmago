@@ -1,4 +1,4 @@
-package servercore
+package irmaserver
 
 import (
 	"crypto/rand"

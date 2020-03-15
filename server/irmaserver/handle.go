@@ -1,4 +1,4 @@
-package servercore
+package irmaserver
 
 import (
 	"bytes"
@@ -334,9 +334,9 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	r = r.WithContext(context.WithValue(r.Context(), "sse", SSECtx{
-		Component: server.ComponentSession,
-		Arg:       session.clientToken,
+	r = r.WithContext(context.WithValue(r.Context(), "sse", sseCtx{
+		component: server.ComponentSession,
+		arg:       session.clientToken,
 	}))
 	if err := s.SubscribeServerSentEvents(w, r, session.clientToken, false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
@@ -405,9 +405,9 @@ func (s *Server) handleRevocationUpdateEvents(w http.ResponseWriter, r *http.Req
 	}
 	id := chi.URLParam(r, "id")
 	if id != "" {
-		r = r.WithContext(context.WithValue(r.Context(), "sse", SSECtx{
-			Component: server.ComponentRevocation,
-			Arg:       id,
+		r = r.WithContext(context.WithValue(r.Context(), "sse", sseCtx{
+			component: server.ComponentRevocation,
+			arg:       id,
 		}))
 	}
 	s.serverSentEvents.ServeHTTP(w, r)

@@ -1,8 +1,8 @@
-// Package servercore is the core of the IRMA server library, allowing IRMA verifiers, issuers
-// or attribute-based signature applications to perform IRMA sessions with irmaclient instances
-// (i.e. the IRMA app). It exposes a small interface to expose to other programming languages
-// through cgo. It is used by the irmaserver package but otherwise not meant for use in Go.
-package servercore
+// Package irmaserver is a library that allows IRMA verifiers, issuers or attribute-based signature
+// applications to perform IRMA sessions with irmaclient instances (i.e. the IRMA app). It exposes
+// functions for handling IRMA sessions and a HTTP handler that handles the sessions with the
+// irmaclient.
+package irmaserver
 
 import (
 	"net/http"
@@ -26,10 +26,24 @@ type Server struct {
 	serverSentEvents *sse.Server
 }
 
-func New(conf *server.Configuration, eventServer *sse.Server) (*Server, error) {
+// Default server instance
+var s *Server
+
+// Initialize the default server instance with the specified configuration using New().
+func Initialize(conf *server.Configuration) (err error) {
+	s, err = New(conf)
+	return
+}
+func New(conf *server.Configuration) (*Server, error) {
 	if err := conf.Check(); err != nil {
 		return nil, err
 	}
+
+	var e *sse.Server
+	if conf.EnableSSE {
+		e = eventServer(conf)
+	}
+	conf.IrmaConfiguration.Revocation.ServerSentEvents = e
 
 	s := &Server{
 		conf:      conf,
@@ -40,7 +54,7 @@ func New(conf *server.Configuration, eventServer *sse.Server) (*Server, error) {
 			conf:      conf,
 		},
 		handlers:         make(map[string]server.SessionHandler),
-		serverSentEvents: eventServer,
+		serverSentEvents: e,
 	}
 
 	s.scheduler.Every(10).Seconds().Do(func() {
@@ -64,6 +78,51 @@ func New(conf *server.Configuration, eventServer *sse.Server) (*Server, error) {
 	return s, nil
 }
 
+// HandlerFunc returns a http.HandlerFunc that handles the IRMA protocol
+// with IRMA apps.
+//
+// Example usage:
+//   http.HandleFunc("/irma/", irmaserver.HandlerFunc())
+//
+// The IRMA app can then perform IRMA sessions at https://example.com/irma.
+func HandlerFunc() http.HandlerFunc {
+	return s.HandlerFunc()
+}
+func (s *Server) HandlerFunc() http.HandlerFunc {
+	r := chi.NewRouter()
+	if s.conf.Verbose >= 2 {
+		r.Use(server.LogMiddleware("client", true, true, false))
+	}
+
+	r.Route("/session/{token}", func(r chi.Router) {
+		r.Use(s.sessionMiddleware)
+		r.Delete("/", s.handleSessionDelete)
+		r.Get("/status", s.handleSessionStatus)
+		r.Get("/statusevents", s.handleSessionStatusEvents)
+		r.Group(func(r chi.Router) {
+			r.Use(s.cacheMiddleware)
+			r.Get("/", s.handleSessionGet)
+			r.Post("/commitments", s.handleSessionCommitments)
+			r.Post("/proofs", s.handleSessionProofs)
+		})
+	})
+	r.Post("/session/{name}", s.handleStaticMessage)
+
+	r.Route("/revocation/", func(r chi.Router) {
+		r.Get("/events/{id}/{counter:\\d+}/{min:\\d+}/{max:\\d+}", s.handleRevocationGetEvents)
+		r.Get("/updateevents/{id}", s.handleRevocationUpdateEvents)
+		r.Get("/update/{id}/{count:\\d+}", s.handleRevocationGetUpdateLatest)
+		r.Get("/update/{id}/{count:\\d+}/{counter:\\d+}", s.handleRevocationGetUpdateLatest)
+		r.Post("/issuancerecord/{id}/{counter:\\d+}", s.handleRevocationPostIssuanceRecord)
+	})
+
+	return r.ServeHTTP
+}
+
+// Stop the server.
+func Stop() {
+	s.Stop()
+}
 func (s *Server) Stop() {
 	if err := s.conf.IrmaConfiguration.Revocation.Close(); err != nil {
 		_ = server.LogWarning(err)
@@ -72,16 +131,14 @@ func (s *Server) Stop() {
 	s.sessions.stop()
 }
 
-func (s *Server) validateRequest(request irma.SessionRequest) error {
-	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
-		return err
-	}
-	if err := request.Base().Validate(s.conf.IrmaConfiguration); err != nil {
-		return err
-	}
-	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
+// StartSession starts an IRMA session, running the handler on completion, if specified.
+// The session token (the second return parameter) can be used in GetSessionResult()
+// and CancelSession().
+// The request parameter can be an irma.RequestorRequest, or an irma.SessionRequest, or a
+// ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
+func StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
+	return s.StartSession(request, handler)
 }
-
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
@@ -117,6 +174,10 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 	}, session.token, nil
 }
 
+// GetSessionResult retrieves the result of the specified IRMA session.
+func GetSessionResult(token string) *server.SessionResult {
+	return s.GetSessionResult(token)
+}
 func (s *Server) GetSessionResult(token string) *server.SessionResult {
 	session := s.sessions.get(token)
 	if session == nil {
@@ -126,6 +187,10 @@ func (s *Server) GetSessionResult(token string) *server.SessionResult {
 	return session.result
 }
 
+// GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
+func GetRequest(token string) irma.RequestorRequest {
+	return s.GetRequest(token)
+}
 func (s *Server) GetRequest(token string) irma.RequestorRequest {
 	session := s.sessions.get(token)
 	if session == nil {
@@ -135,6 +200,10 @@ func (s *Server) GetRequest(token string) irma.RequestorRequest {
 	return session.rrequest
 }
 
+// CancelSession cancels the specified IRMA session.
+func CancelSession(token string) error {
+	return s.CancelSession(token)
+}
 func (s *Server) CancelSession(token string) error {
 	session := s.sessions.get(token)
 	if session == nil {
@@ -144,10 +213,21 @@ func (s *Server) CancelSession(token string) error {
 	return nil
 }
 
+// Revoke revokes the earlier issued credential specified by key. (Can only be used if this server
+// is the revocation server for the specified credential type and if the corresponding
+// issuer private key is present in the server configuration.)
+func Revoke(credid irma.CredentialTypeIdentifier, key string, issued time.Time) error {
+	return s.Revoke(credid, key, issued)
+}
 func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued time.Time) error {
 	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key, issued)
 }
 
+// SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
+// of the specified IRMA session.
+func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+	return s.SubscribeServerSentEvents(w, r, token, requestor)
+}
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
 	if !s.conf.EnableSSE {
 		return errors.New("Server sent events disabled")
@@ -178,39 +258,4 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	}()
 	s.serverSentEvents.ServeHTTP(w, r)
 	return nil
-}
-
-type SSECtx struct {
-	Component, Arg string
-}
-
-func (s *Server) Handler() http.Handler {
-	r := chi.NewRouter()
-	if s.conf.Verbose >= 2 {
-		r.Use(server.LogMiddleware("client", true, true, false))
-	}
-
-	r.Route("/session/{token}", func(r chi.Router) {
-		r.Use(s.sessionMiddleware)
-		r.Delete("/", s.handleSessionDelete)
-		r.Get("/status", s.handleSessionStatus)
-		r.Get("/statusevents", s.handleSessionStatusEvents)
-		r.Group(func(r chi.Router) {
-			r.Use(s.cacheMiddleware)
-			r.Get("/", s.handleSessionGet)
-			r.Post("/commitments", s.handleSessionCommitments)
-			r.Post("/proofs", s.handleSessionProofs)
-		})
-	})
-	r.Post("/session/{name}", s.handleStaticMessage)
-
-	r.Route("/revocation/", func(r chi.Router) {
-		r.Get("/events/{id}/{counter:\\d+}/{min:\\d+}/{max:\\d+}", s.handleRevocationGetEvents)
-		r.Get("/updateevents/{id}", s.handleRevocationUpdateEvents)
-		r.Get("/update/{id}/{count:\\d+}", s.handleRevocationGetUpdateLatest)
-		r.Get("/update/{id}/{count:\\d+}/{counter:\\d+}", s.handleRevocationGetUpdateLatest)
-		r.Post("/issuancerecord/{id}/{counter:\\d+}", s.handleRevocationPostIssuanceRecord)
-	})
-
-	return r
 }
