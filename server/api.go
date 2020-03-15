@@ -360,9 +360,10 @@ func LogWarning(err error) error {
 	return log(logrus.WarnLevel, err)
 }
 
-func LogRequest(typ, method, url, from string, headers http.Header, message []byte) {
+func LogRequest(typ, proto, method, url, from string, headers http.Header, message []byte) {
 	fields := logrus.Fields{
 		"type":   typ,
+		"proto":  proto,
 		"method": method,
 		"url":    url,
 	}
@@ -446,7 +447,7 @@ func LogMiddleware(typ string, logResponse, logHeaders, logFrom bool) func(next 
 			if logFrom {
 				from = r.RemoteAddr
 			}
-			LogRequest(typ, r.Method, r.URL.String(), from, headers, message)
+			LogRequest(typ, r.Proto, r.Method, r.URL.String(), from, headers, message)
 
 			// copy output of HTTP handler to our buffer for later logging
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
