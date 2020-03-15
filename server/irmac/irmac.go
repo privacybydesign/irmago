@@ -6,6 +6,7 @@ import "C"
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -178,6 +179,10 @@ func HandleProtocolMessage(path *C.char, method *C.char, headers *C.char, messag
 		result.Status = 500
 		result.Body = err.Error()
 		return
+	}
+
+	if returnheaders.Get("Content-Type") != "application/json" {
+		body = []byte(base64.StdEncoding.EncodeToString(body))
 	}
 
 	result.Status = status
