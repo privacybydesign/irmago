@@ -5,13 +5,11 @@
 package irmaserver
 
 import (
-	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/servercore"
 	"github.com/privacybydesign/irmago/server"
@@ -107,68 +105,24 @@ func HandlerFunc() http.HandlerFunc {
 	return s.HandlerFunc()
 }
 func (s *Server) HandlerFunc() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var message []byte
-		var err error
-		if r.Method == http.MethodPost {
-			if message, err = ioutil.ReadAll(r.Body); err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		}
-
-		component, token, noun, args, err := servercore.Route(r.URL.Path, r.Method)
-		if err == nil && component == server.ComponentSession && noun == "statusevents" { // if err != nil we let it be handled by HandleProtocolMessage below
-			if err = s.SubscribeServerSentEvents(w, r, token, false); err != nil {
-				server.WriteResponse(w, nil, &irma.RemoteError{
-					Status:      server.ErrorUnsupported.Status,
-					ErrorName:   string(server.ErrorUnsupported.Type),
-					Description: server.ErrorUnsupported.Description,
-				})
-			}
-			return
-		}
-		if err == nil && component == server.ComponentRevocation && noun == "updateevents" {
-			id := irma.NewCredentialTypeIdentifier(args[0])
-			if settings := s.conf.RevocationSettings[id]; settings != nil &&
-				settings.Server &&
-				s.serverSentEvents != nil {
-				s.serverSentEvents.ServeHTTP(w, r)
-			} else {
-				server.WriteError(w, server.ErrorUnsupported, "")
-			}
-			return
-		}
-
-		status, response, headers, _ := s.HandleProtocolMessage(r.URL.Path, r.Method, r.Header, message)
-		for key, h := range headers {
-			for _, header := range h {
-				w.Header().Add(key, header)
-			}
-		}
-		w.WriteHeader(status)
-		_, err = w.Write(response)
-		if err != nil {
-			_ = server.LogError(errors.WrapPrefix(err, "http.ResponseWriter.Write() returned error", 0))
-		}
-	}
+	return s.Handler().ServeHTTP
 }
 
 func eventServer(conf *server.Configuration) *sse.Server {
 	return sse.NewServer(&sse.Options{
 		ChannelNameFunc: func(r *http.Request) string {
-			component, token, noun, args, err := servercore.Route(r.URL.Path, r.Method)
-			if err != nil {
-				conf.Logger.Warn(err)
+			sseCtx := r.Context().Value("sse")
+			if sseCtx == nil {
 				return ""
 			}
-			if component == server.ComponentSession && noun == "statusevents" {
-				return "session/" + token
+			switch sseCtx.(servercore.SSECtx).Component {
+			case server.ComponentSession:
+				return "session/" + sseCtx.(servercore.SSECtx).Arg
+			case server.ComponentRevocation:
+				return "revocation/" + sseCtx.(servercore.SSECtx).Arg
+			default:
+				return ""
 			}
-			if component == server.ComponentRevocation && noun == "updateevents" {
-				return "revocation/" + args[0]
-			}
-			return ""
 		},
 		Headers: map[string]string{
 			"Access-Control-Allow-Origin":  "*",

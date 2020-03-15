@@ -117,13 +117,8 @@ func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
 	return encodeValOrError(v, err, json.Marshal)
 }
 
-func BinaryResponse(v interface{}, err *irma.RemoteError, headers map[string][]string) (int, []byte, map[string][]string) {
-	i, b := encodeValOrError(v, err, irma.MarshalBinary)
-	if headers == nil {
-		headers = map[string][]string{}
-	}
-	http.Header(headers).Add("Content-Type", "application/octet-stream")
-	return i, b, headers
+func BinaryResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+	return encodeValOrError(v, err, irma.MarshalBinary)
 }
 
 func encodeValOrError(v interface{}, err *irma.RemoteError, encoder func(interface{}) ([]byte, error)) (int, []byte) {
@@ -149,6 +144,13 @@ func WriteError(w http.ResponseWriter, err Error, msg string) {
 // WriteJson writes the specified object as JSON to the http.ResponseWriter.
 func WriteJson(w http.ResponseWriter, object interface{}) {
 	WriteResponse(w, object, nil)
+}
+
+func WriteBinaryResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError) {
+	status, bts := BinaryResponse(object, rerr)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(status)
+	_, _ = w.Write(bts)
 }
 
 // WriteResponse writes the specified object or error as JSON to the http.ResponseWriter.

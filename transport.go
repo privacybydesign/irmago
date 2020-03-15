@@ -224,7 +224,7 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 		apierr := &RemoteError{}
 		err = transport.unmarshal(body, apierr)
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
+			return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 		}
 		transport.log("error", apierr, false)
 		return &SessionError{ErrorType: ErrorApi, RemoteStatus: res.StatusCode, RemoteError: apierr}

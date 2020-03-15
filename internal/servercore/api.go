@@ -5,15 +5,11 @@
 package servercore
 
 import (
-	"encoding/hex"
-	"encoding/json"
 	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
+	"github.com/go-chi/chi"
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/irmago"
@@ -152,29 +148,6 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 	return s.conf.IrmaConfiguration.Revocation.Revoke(credid, key, issued)
 }
 
-func Route(path, method string) (component, token, noun string, arg []string, err error) {
-	rev := regexp.MustCompile(server.ComponentRevocation + "/(events|updateevents|update|issuancerecord)/?(.*)$")
-	matches := rev.FindStringSubmatch(path)
-	if len(matches) == 3 {
-		args := strings.Split(matches[2], "/")
-		return server.ComponentRevocation, "", matches[1], args, nil
-	}
-
-	static := regexp.MustCompile(server.ComponentSession + "/(\\w+)$")
-	matches = static.FindStringSubmatch(path)
-	if len(matches) == 2 && method == http.MethodPost {
-		return server.ComponentStatic, matches[1], "", nil, nil
-	}
-
-	client := regexp.MustCompile(server.ComponentSession + "/(\\w+)/?(|commitments|proofs|status|statusevents)$")
-	matches = client.FindStringSubmatch(path)
-	if len(matches) == 3 {
-		return server.ComponentSession, matches[1], matches[2], nil, nil
-	}
-
-	return "", "", "", nil, server.LogWarning(errors.Errorf("Invalid URL: %s", path))
-}
-
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
 	if !s.conf.EnableSSE {
 		return errors.New("Server sent events disabled")
@@ -207,285 +180,37 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
-func (s *Server) HandleProtocolMessage(
-	path string,
-	method string,
-	headers map[string][]string,
-	message []byte,
-) (int, []byte, map[string][]string, *server.SessionResult) {
-	var start time.Time
+type SSECtx struct {
+	Component, Arg string
+}
+
+func (s *Server) Handler() http.Handler {
+	r := chi.NewRouter()
 	if s.conf.Verbose >= 2 {
-		start = time.Now()
-		server.LogRequest("client", method, path, "", headers, message)
+		r.Use(server.LogMiddleware("client", true, true, false))
 	}
 
-	status, output, headers, result := s.handleProtocolMessage(path, method, headers, message)
+	r.Route("/session/{token}", func(r chi.Router) {
+		r.Use(s.sessionMiddleware)
+		r.Delete("/", s.handleSessionDelete)
+		r.Get("/status", s.handleSessionStatus)
+		r.Get("/statusevents", s.handleSessionStatusEvents)
+		r.Group(func(r chi.Router) {
+			r.Use(s.cacheMiddleware)
+			r.Get("/", s.handleSessionGet)
+			r.Post("/commitments", s.handleSessionCommitments)
+			r.Post("/proofs", s.handleSessionProofs)
+		})
+	})
+	r.Post("/session/{name}", s.handleStaticMessage)
 
-	if s.conf.Verbose >= 2 {
-		l := output
-		if http.Header(headers).Get("Content-Type") == "application/octet-stream" {
-			l = []byte(hex.EncodeToString(output))
-		}
-		server.LogResponse(status, time.Now().Sub(start), l)
-	}
+	r.Route("/revocation/", func(r chi.Router) {
+		r.Get("/events/{id}/{counter:\\d+}/{min:\\d+}/{max:\\d+}", s.handleRevocationGetEvents)
+		r.Get("/updateevents/{id}", s.handleRevocationUpdateEvents)
+		r.Get("/update/{id}/{count:\\d+}", s.handleRevocationGetUpdateLatest)
+		r.Get("/update/{id}/{count:\\d+}/{counter:\\d+}", s.handleRevocationGetUpdateLatest)
+		r.Post("/issuancerecord/{id}/{counter:\\d+}", s.handleRevocationPostIssuanceRecord)
+	})
 
-	return status, output, headers, result
-}
-
-func (s *Server) handleProtocolMessage(
-	path string,
-	method string,
-	headers map[string][]string,
-	message []byte,
-) (status int, output []byte, retheaders map[string][]string, result *server.SessionResult) {
-	// Parse path into session and action
-	if len(path) > 0 { // Remove any starting and trailing slash
-		if path[0] == '/' {
-			path = path[1:]
-		}
-		if path[len(path)-1] == '/' {
-			path = path[:len(path)-1]
-		}
-	}
-
-	component, token, noun, args, err := Route(path, method)
-	if err != nil {
-		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, ""))
-	}
-
-	switch component {
-	case server.ComponentSession:
-		status, output, result = s.handleClientMessage(token, noun, method, headers, message)
-	case server.ComponentRevocation:
-		status, output, retheaders = s.handleRevocationMessage(noun, method, args, headers, message)
-	case server.ComponentStatic:
-		status, output = s.handleStaticMessage(token, method, message)
-	default:
-		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorUnsupported, component))
-	}
-	return
-}
-
-func (s *Server) handleClientMessage(
-	token, noun, method string, headers map[string][]string, message []byte,
-) (status int, output []byte, result *server.SessionResult) {
-	// Fetch the session
-	session := s.sessions.clientGet(token)
-	if session == nil {
-		s.conf.Logger.WithField("clientToken", token).Warn("Session not found")
-		status, output = server.JsonResponse(nil, server.RemoteError(server.ErrorSessionUnknown, ""))
-		return
-	}
-	session.Lock()
-	defer session.Unlock()
-
-	// However we return, if the session status has been updated
-	// then we should inform the user by returning a SessionResult
-	defer func() {
-		if session.status != session.prevStatus {
-			session.prevStatus = session.status
-			result = session.result
-			if result != nil && result.Status.Finished() {
-				if handler := s.handlers[result.Token]; handler != nil {
-					go handler(result)
-					delete(s.handlers, token)
-				}
-			}
-		}
-	}()
-
-	// Route to handler
-	var err error
-	switch len(noun) {
-	case 0:
-		if method == http.MethodDelete {
-			session.handleDelete()
-			status = http.StatusOK
-			return
-		}
-		if method == http.MethodGet {
-			status, output = session.checkCache(message, server.StatusConnected)
-			if len(output) != 0 {
-				return
-			}
-			h := http.Header(headers)
-			min := &irma.ProtocolVersion{}
-			max := &irma.ProtocolVersion{}
-			if err = json.Unmarshal([]byte(h.Get(irma.MinVersionHeader)), min); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
-				return
-			}
-			if err = json.Unmarshal([]byte(h.Get(irma.MaxVersionHeader)), max); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
-				return
-			}
-			status, output = server.JsonResponse(session.handleGetRequest(min, max))
-			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusConnected}
-			return
-		}
-		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
-		return
-
-	default:
-		if noun == "statusevents" {
-			rerr := server.RemoteError(server.ErrorInvalidRequest, "server sent events not supported by this server")
-			status, output = server.JsonResponse(nil, rerr)
-			return
-		}
-
-		if method == http.MethodGet && noun == "status" {
-			status, output = server.JsonResponse(session.handleGetStatus())
-			return
-		}
-
-		// Below are only POST enpoints
-		if method != http.MethodPost {
-			status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
-			return
-		}
-
-		if noun == "commitments" && session.action == irma.ActionIssuing {
-			status, output = session.checkCache(message, server.StatusDone)
-			if len(output) != 0 {
-				return
-			}
-			commitments := &irma.IssueCommitmentMessage{}
-			if err = irma.UnmarshalValidate(message, commitments); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
-				return
-			}
-			status, output = server.JsonResponse(session.handlePostCommitments(commitments))
-			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusDone}
-			return
-		}
-
-		if noun == "proofs" && session.action == irma.ActionDisclosing {
-			status, output = session.checkCache(message, server.StatusDone)
-			if len(output) != 0 {
-				return
-			}
-			disclosure := &irma.Disclosure{}
-			if err = irma.UnmarshalValidate(message, disclosure); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
-				return
-			}
-			status, output = server.JsonResponse(session.handlePostDisclosure(disclosure))
-			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusDone}
-			return
-		}
-
-		if noun == "proofs" && session.action == irma.ActionSigning {
-			status, output = session.checkCache(message, server.StatusDone)
-			if len(output) != 0 {
-				return
-			}
-			signature := &irma.SignedMessage{}
-			if err = irma.UnmarshalValidate(message, signature); err != nil {
-				status, output = server.JsonResponse(nil, session.fail(server.ErrorMalformedInput, err.Error()))
-				return
-			}
-			status, output = server.JsonResponse(session.handlePostSignature(signature))
-			session.responseCache = responseCache{message: message, response: output, status: status, sessionStatus: server.StatusDone}
-			return
-		}
-
-		status, output = server.JsonResponse(nil, session.fail(server.ErrorInvalidRequest, ""))
-		return
-	}
-}
-
-func (s *Server) handleRevocationMessage(
-	noun, method string, args []string, headers map[string][]string, message []byte,
-) (int, []byte, map[string][]string) {
-	if (noun == "events") && method == http.MethodGet {
-		if len(args) != 4 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET events expects 4 url arguments"), nil)
-		}
-		cred := irma.NewCredentialTypeIdentifier(args[0])
-		pkcounter, err := strconv.ParseUint(args[1], 10, 32)
-		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
-		}
-		i, err := strconv.ParseUint(args[2], 10, 64)
-		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
-		}
-		j, err := strconv.ParseUint(args[3], 10, 64)
-		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
-		}
-		return server.BinaryResponse(s.handleGetEvents(cred, uint(pkcounter), i, j))
-	}
-	if noun == "update" && method == http.MethodGet {
-		if len(args) != 2 && len(args) != 3 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "GET update expects 2 or 3 url arguments"), nil)
-		}
-		i, err := strconv.ParseUint(args[1], 10, 64)
-		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
-		}
-		cred := irma.NewCredentialTypeIdentifier(args[0])
-		var counter *uint
-		if len(args) == 3 {
-			i, err := strconv.ParseUint(args[2], 10, 32)
-			if err != nil {
-				return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
-			}
-			j := uint(i)
-			counter = &j
-		}
-		updates, rerr, headers := s.handleGetUpdateLatest(cred, i, counter)
-		if rerr != nil {
-			return server.BinaryResponse(nil, rerr, nil)
-		}
-		if counter == nil {
-			return server.BinaryResponse(updates, rerr, headers)
-		} else {
-			return server.BinaryResponse(updates[*counter], rerr, headers)
-		}
-	}
-	if noun == "issuancerecord" && method == http.MethodPost {
-		if len(args) != 2 {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "POST issuancercord expects 2 url arguments"), nil)
-		}
-		cred := irma.NewCredentialTypeIdentifier(args[0])
-		counter, err := strconv.ParseUint(args[1], 10, 32)
-		if err != nil {
-			return server.BinaryResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()), nil)
-		}
-		status, bts := s.handlePostIssuanceRecord(cred, uint(counter), message)
-		return server.BinaryResponse(status, bts, nil)
-	}
-
-	return server.BinaryResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""), nil)
-}
-
-func (s *Server) handleStaticMessage(
-	id, method string, message []byte,
-) (int, []byte) {
-	if method != http.MethodPost {
-		return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, ""))
-	}
-	rrequest := s.conf.StaticSessionRequests[id]
-	if rrequest == nil {
-		return server.JsonResponse(nil, server.RemoteError(server.ErrorInvalidRequest, "unknown static session"))
-	}
-	qr, _, err := s.StartSession(rrequest, s.doResultCallback)
-	if err != nil {
-		return server.JsonResponse(nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
-	}
-	return server.JsonResponse(qr, nil)
-}
-
-func (s *Server) doResultCallback(result *server.SessionResult) {
-	url := s.GetRequest(result.Token).Base().CallbackURL
-	if url == "" {
-		return
-	}
-	server.DoResultCallback(url,
-		result,
-		s.conf.JwtIssuer,
-		s.GetRequest(result.Token).Base().ResultJwtValidity,
-		s.conf.JwtRSAPrivateKey,
-	)
+	return r
 }

@@ -59,21 +59,15 @@ const retryTimeLimit = 10 * time.Second
 // - the same was POSTed as last time
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
-func (session *session) checkCache(message []byte, expectedStatus server.Status) (int, []byte) {
-	if len(session.responseCache.response) > 0 {
-		if session.responseCache.sessionStatus != expectedStatus {
-			// don't replay a cache value that was set in a previous session state
-			session.responseCache = responseCache{}
-			return 0, nil
-		}
-		if sha256.Sum256(session.responseCache.message) != sha256.Sum256(message) ||
-			session.lastActive.Before(time.Now().Add(-retryTimeLimit)) ||
-			session.status != expectedStatus {
-			return server.JsonResponse(nil, session.fail(server.ErrorUnexpectedRequest, ""))
-		}
-		return session.responseCache.status, session.responseCache.response
+func (session *session) checkCache(message []byte) (int, []byte) {
+	if len(session.responseCache.response) == 0 ||
+		session.responseCache.sessionStatus != session.status ||
+		session.lastActive.Before(time.Now().Add(-retryTimeLimit)) ||
+		sha256.Sum256(session.responseCache.message) != sha256.Sum256(message) {
+		session.responseCache = responseCache{}
+		return 0, nil
 	}
-	return 0, nil
+	return session.responseCache.status, session.responseCache.response
 }
 
 // Issuance helpers
@@ -253,6 +247,19 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 	} else {
 		return maxClient, nil
 	}
+}
+
+func (s *Server) doResultCallback(result *server.SessionResult) {
+	url := s.GetRequest(result.Token).Base().CallbackURL
+	if url == "" {
+		return
+	}
+	server.DoResultCallback(url,
+		result,
+		s.conf.JwtIssuer,
+		s.GetRequest(result.Token).Base().ResultJwtValidity,
+		s.conf.JwtRSAPrivateKey,
+	)
 }
 
 func copyObject(i interface{}) (interface{}, error) {

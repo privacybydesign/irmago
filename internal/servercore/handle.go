@@ -1,19 +1,25 @@
 package servercore
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
 
-// This file contains the handler functions for the protocol messages, receiving and returning normally
-// Go-typed messages here (JSON (un)marshalling is handled by the router).
+// This file contains the handler functions for the protocol messages.
 // Maintaining the session state is done here, as well as checking whether the session is in the
 // appropriate status before handling the request.
 
@@ -211,30 +217,222 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	return sigs, nil
 }
 
-// GET revocation/events/{credtype}/{pkcounter}/{from}/{to}
-func (s *Server) handleGetEvents(
-	cred irma.CredentialTypeIdentifier, pkcounter uint, from, to uint64,
-) (*revocation.EventList, *irma.RemoteError, map[string][]string) {
-	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Server {
-		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"), nil
-	}
-	events, err := s.conf.IrmaConfiguration.Revocation.Events(cred, pkcounter, from, to)
+func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+
+		// Read r.Body, and then replace with a fresh ReadCloser for the next handler
+		var message []byte
+		var err error
+		if message, err = ioutil.ReadAll(r.Body); err != nil {
+			message = []byte("<failed to read body: " + err.Error() + ">")
+		}
+		_ = r.Body.Close()
+		r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+
+		// if a cache is set and applicable, return it
+		status, output := session.checkCache(message)
+		if status > 0 && len(output) > 0 {
+			w.WriteHeader(status)
+			_, _ = w.Write(output)
+			return
+		}
+
+		// no cache set; perform request and record output
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		buf := new(bytes.Buffer)
+		ww.Tee(buf)
+		next.ServeHTTP(ww, r)
+
+		session.responseCache = responseCache{
+			message:       message,
+			response:      buf.Bytes(),
+			status:        ww.Status(),
+			sessionStatus: session.status,
+		}
+	})
+}
+
+func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := chi.URLParam(r, "token")
+		session := s.sessions.clientGet(token)
+		if session == nil {
+			server.WriteError(w, server.ErrorSessionUnknown, "")
+			return
+		}
+
+		session.Lock()
+		defer func() {
+			if session.prevStatus != session.status {
+				session.prevStatus = session.status
+				result := session.result
+				if result != nil && session.status.Finished() {
+					if handler := s.handlers[result.Token]; handler != nil {
+						go handler(result)
+						delete(s.handlers, token)
+					}
+				}
+			}
+			session.Unlock()
+		}()
+
+		ctx := context.WithValue(r.Context(), "session", session)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request) {
+	commitments := &irma.IssueCommitmentMessage{}
+	bts, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		return nil, server.RemoteError(server.ErrorRevocation, err.Error()), nil
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
 	}
-	return events, nil, map[string][]string{"Cache-Control": {fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge)}}
+	if err := irma.UnmarshalValidate(bts, commitments); err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+	res, rerr := r.Context().Value("session").(*session).handlePostCommitments(commitments)
+	server.WriteResponse(w, res, rerr)
+}
+
+func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {
+	bts, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+	session := r.Context().Value("session").(*session)
+	var res interface{}
+	var rerr *irma.RemoteError
+	switch session.action {
+	case irma.ActionDisclosing:
+		disclosure := &irma.Disclosure{}
+		if err := irma.UnmarshalValidate(bts, disclosure); err != nil {
+			server.WriteError(w, server.ErrorMalformedInput, err.Error())
+			return
+		}
+		res, rerr = session.handlePostDisclosure(disclosure)
+	case irma.ActionSigning:
+		signature := &irma.SignedMessage{}
+		if err := irma.UnmarshalValidate(bts, signature); err != nil {
+			server.WriteError(w, server.ErrorMalformedInput, err.Error())
+			return
+		}
+		res, rerr = session.handlePostSignature(signature)
+	default:
+		rerr = server.RemoteError(server.ErrorInvalidRequest, "")
+	}
+	server.WriteResponse(w, res, rerr)
+}
+
+func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
+	res, err := r.Context().Value("session").(*session).handleGetStatus()
+	server.WriteResponse(w, res, err)
+}
+
+func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	r = r.WithContext(context.WithValue(r.Context(), "sse", SSECtx{
+		Component: server.ComponentSession,
+		Arg:       session.clientToken,
+	}))
+	if err := s.SubscribeServerSentEvents(w, r, session.clientToken, false); err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+		return
+	}
+}
+
+func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
+	r.Context().Value("session").(*session).handleDelete()
+	w.WriteHeader(200)
+}
+
+func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
+	var min, max irma.ProtocolVersion
+	if err := json.Unmarshal([]byte(r.Header.Get(irma.MinVersionHeader)), &min); err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+	if err := json.Unmarshal([]byte(r.Header.Get(irma.MaxVersionHeader)), &max); err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+	session := r.Context().Value("session").(*session)
+	res, err := session.handleGetRequest(&min, &max)
+	server.WriteResponse(w, res, err)
+}
+
+func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {
+	rrequest := s.conf.StaticSessionRequests[chi.URLParam(r, "name")]
+	if rrequest == nil {
+		server.WriteResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "unknown static session"))
+		return
+	}
+	qr, _, err := s.StartSession(rrequest, s.doResultCallback)
+	if err != nil {
+		server.WriteResponse(w, nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
+		return
+	}
+	server.WriteResponse(w, qr, nil)
+}
+
+// GET revocation/events/{credtype}/{pkcounter}/{min}/{max}
+func (s *Server) handleRevocationGetEvents(w http.ResponseWriter, r *http.Request) {
+	cred := irma.NewCredentialTypeIdentifier(chi.URLParam(r, "id"))
+	pkcounter, _ := strconv.ParseUint(chi.URLParam(r, "counter"), 10, 32)
+	min, _ := strconv.ParseUint(chi.URLParam(r, "min"), 10, 64)
+	max, _ := strconv.ParseUint(chi.URLParam(r, "max"), 10, 64)
+
+	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Server {
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"))
+		return
+	}
+	events, err := s.conf.IrmaConfiguration.Revocation.Events(cred, uint(pkcounter), min, max)
+	if err != nil {
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorRevocation, err.Error()))
+		return
+	}
+	w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge))
+	server.WriteBinaryResponse(w, events, nil)
+}
+
+func (s *Server) handleRevocationUpdateEvents(w http.ResponseWriter, r *http.Request) {
+	if !s.conf.EnableSSE {
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"))
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id != "" {
+		r = r.WithContext(context.WithValue(r.Context(), "sse", SSECtx{
+			Component: server.ComponentRevocation,
+			Arg:       id,
+		}))
+	}
+	s.serverSentEvents.ServeHTTP(w, r)
 }
 
 // GET revocation/update/{credtype}/{count}[/{pkcounter}]
-func (s *Server) handleGetUpdateLatest(
-	cred irma.CredentialTypeIdentifier, count uint64, counter *uint,
-) (map[uint]*revocation.Update, *irma.RemoteError, map[string][]string) {
+func (s *Server) handleRevocationGetUpdateLatest(w http.ResponseWriter, r *http.Request) {
+	cred := irma.NewCredentialTypeIdentifier(chi.URLParam(r, "id")) // id
+	count, _ := strconv.ParseUint(chi.URLParam(r, "count"), 10, 64) // count
+	c := chi.URLParam(r, "counter")
+	var counter *uint
+	if c != "" {
+		j, _ := strconv.ParseUint(chi.URLParam(r, "counter"), 10, 32) // counter
+		k := uint(j)
+		counter = &k
+	}
+
 	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Server {
-		return nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"), nil
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"))
+		return
 	}
 	updates, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count, counter)
 	if err != nil {
-		return nil, server.RemoteError(server.ErrorRevocation, err.Error()), nil
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorRevocation, err.Error()))
+		return
 	}
 	var mintime int64
 	for _, u := range updates {
@@ -243,33 +441,49 @@ func (s *Server) handleGetUpdateLatest(
 		}
 	}
 	maxage := mintime + int64(irma.RevocationParameters.AccumulatorUpdateInterval) - time.Now().Unix()
-	return updates, nil, map[string][]string{"Cache-Control": {fmt.Sprintf("max-age=%d", maxage)}}
+	w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d", maxage))
+	if counter == nil {
+		server.WriteBinaryResponse(w, updates, nil)
+	} else {
+		server.WriteBinaryResponse(w, updates[*counter], nil)
+	}
 }
 
-// POST revocation/issuancerecord/{credtype}/{keycounter}
-func (s *Server) handlePostIssuanceRecord(
-	cred irma.CredentialTypeIdentifier, counter uint, message []byte,
-) (string, *irma.RemoteError) {
+// POST revocation/issuancerecord/{credtype}/{counter}
+func (s *Server) handleRevocationPostIssuanceRecord(w http.ResponseWriter, r *http.Request) {
+	cred := irma.NewCredentialTypeIdentifier(chi.URLParam(r, "id"))
+	counter, _ := strconv.ParseUint(chi.URLParam(r, "counter"), 10, 32)
+
 	if settings := s.conf.RevocationSettings[cred]; settings == nil || !settings.Authority {
-		return "", server.RemoteError(server.ErrorInvalidRequest, "not supported by this server")
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"))
+		return
 	}
 
 	// Grab the counter-th issuer public key, with which the message should be signed,
 	// and verify and unmarshal the issuance record
-	pk, err := s.conf.IrmaConfiguration.Revocation.Keys.PublicKey(cred.IssuerIdentifier(), counter)
+	pk, err := s.conf.IrmaConfiguration.Revocation.Keys.PublicKey(cred.IssuerIdentifier(), uint(counter))
 	if err != nil {
-		return "", server.RemoteError(server.ErrorRevocation, err.Error())
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorRevocation, err.Error()))
+		return
 	}
 	var rec irma.IssuanceRecord
+	message, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, err.Error()))
+		return
+	}
 	if err := signed.UnmarshalVerify(pk.ECDSA, message, &rec); err != nil {
-		return "", server.RemoteError(server.ErrorUnauthorized, err.Error())
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorUnauthorized, err.Error()))
+		return
 	}
 	if rec.CredType != cred {
-		return "", server.RemoteError(server.ErrorInvalidRequest, "issuance record of wrong credential type")
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "issuance record of wrong credential type"))
+		return
 	}
 
 	if err = s.conf.IrmaConfiguration.Revocation.AddIssuanceRecord(&rec); err != nil {
-		return "", server.RemoteError(server.ErrorRevocation, err.Error())
+		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorRevocation, err.Error()))
 	}
-	return "OK", nil
+	w.WriteHeader(200)
+	return
 }
