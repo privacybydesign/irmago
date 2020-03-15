@@ -263,6 +263,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		}
 
 		session.Lock()
+		session.locked = true
 		defer func() {
 			if session.prevStatus != session.status {
 				session.prevStatus = session.status
@@ -274,7 +275,10 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 					}
 				}
 			}
-			session.Unlock()
+			if session.locked {
+				session.locked = false
+				session.Unlock()
+			}
 		}()
 
 		ctx := context.WithValue(r.Context(), "session", session)
@@ -334,6 +338,8 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
+	session.locked = false
+	session.Unlock()
 	r = r.WithContext(context.WithValue(r.Context(), "sse", sseCtx{
 		component: server.ComponentSession,
 		arg:       session.clientToken,

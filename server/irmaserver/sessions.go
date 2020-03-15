@@ -17,6 +17,7 @@ import (
 
 type session struct {
 	sync.Mutex
+	locked bool
 
 	action           irma.Action
 	token            string
