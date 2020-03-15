@@ -119,14 +119,14 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	})
 	r.Post("/session/{name}", s.handleStaticMessage)
 
-	r.Route("/revocation/", func(r chi.Router) {
+	r.Route("/revocation/{id}", func(r chi.Router) {
 		r.NotFound(errorWriter(notfound, server.WriteBinaryResponse))
 		r.MethodNotAllowed(errorWriter(notallowed, server.WriteBinaryResponse))
-		r.Get("/events/{id}/{counter:\\d+}/{min:\\d+}/{max:\\d+}", s.handleRevocationGetEvents)
-		r.Get("/updateevents/{id}", s.handleRevocationUpdateEvents)
-		r.Get("/update/{id}/{count:\\d+}", s.handleRevocationGetUpdateLatest)
-		r.Get("/update/{id}/{count:\\d+}/{counter:\\d+}", s.handleRevocationGetUpdateLatest)
-		r.Post("/issuancerecord/{id}/{counter:\\d+}", s.handleRevocationPostIssuanceRecord)
+		r.Get("/events/{counter:\\d+}/{min:\\d+}/{max:\\d+}", s.handleRevocationGetEvents)
+		r.Get("/updateevents", s.handleRevocationUpdateEvents)
+		r.Get("/update/{count:\\d+}", s.handleRevocationGetUpdateLatest)
+		r.Get("/update/{count:\\d+}/{counter:\\d+}", s.handleRevocationGetUpdateLatest)
+		r.Post("/issuancerecord/{counter:\\d+}", s.handleRevocationPostIssuanceRecord)
 	})
 
 	return s.router.ServeHTTP

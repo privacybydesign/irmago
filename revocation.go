@@ -654,11 +654,15 @@ func (rs *RevocationStorage) receiveUpdates() {
 	for {
 		select {
 		case event := <-rs.events:
+			segments := strings.Split(event.URI, "/")
+			if len(segments) < 2 {
+				Logger.Warn("malformed SSE URL: ", event.URI)
+				continue
+			}
 			var (
-				segments = strings.Split(event.URI, "/")
-				id       = NewCredentialTypeIdentifier(segments[len(segments)-1])
-				update   revocation.Update
-				err      error
+				id     = NewCredentialTypeIdentifier(segments[len(segments)-2])
+				update revocation.Update
+				err    error
 			)
 			if err = json.Unmarshal(event.Data, &update); err != nil {
 				Logger.Warn("failed to unmarshal pushed update: ", err)
@@ -735,7 +739,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 				rs.events = make(chan *sseclient.Event)
 				go rs.receiveUpdates()
 			}
-			url := fmt.Sprintf("%s/revocation/updateevents/%s", urls[0], id.String())
+			url := fmt.Sprintf("%s/revocation/%s/updateevents", urls[0], id.String())
 			go rs.listenUpdates(id, url)
 		}
 	}
@@ -854,7 +858,7 @@ func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, s
 		return err
 	}
 	return client.transport().Post(
-		fmt.Sprintf("%s/revocation/issuancerecord/%s/%d", url, id, sk.Counter), nil, []byte(message),
+		fmt.Sprintf("%s/revocation/%s/issuancerecord/%d", url, id, sk.Counter), nil, []byte(message),
 	)
 }
 
@@ -888,7 +892,7 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 			events := &revocation.EventList{ComputeProduct: true}
 			if e := client.getMultiple(
 				client.Conf.CredentialTypes[id].RevocationServers,
-				fmt.Sprintf("/revocation/events/%s/%d/%d/%d", id, pkcounter, i[0], i[1]),
+				fmt.Sprintf("/revocation/%s/events/%d/%d/%d", id, pkcounter, i[0], i[1]),
 				events,
 			); e != nil {
 				err = e
@@ -929,7 +933,7 @@ func (client RevocationClient) FetchUpdateLatest(id CredentialTypeIdentifier, pk
 	update := &revocation.Update{}
 	return update, client.getMultiple(
 		urls,
-		fmt.Sprintf("/revocation/update/%s/%d/%d", id, count, pkcounter),
+		fmt.Sprintf("/revocation/%s/update/%d/%d", id, count, pkcounter),
 		&update,
 	)
 }
@@ -942,7 +946,7 @@ func (client RevocationClient) FetchUpdatesLatest(id CredentialTypeIdentifier, c
 	update := map[uint]*revocation.Update{}
 	return update, client.getMultiple(
 		urls,
-		fmt.Sprintf("/revocation/update/%s/%d", id, count),
+		fmt.Sprintf("/revocation/%s/update/%d", id, count),
 		&update,
 	)
 }
