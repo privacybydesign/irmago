@@ -51,6 +51,10 @@ type SessionHandler func(*SessionResult)
 // Status is the status of an IRMA session.
 type Status string
 
+type LogOptions struct {
+	Response, Headers, From bool
+}
+
 const (
 	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
 	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
@@ -426,7 +430,7 @@ func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
 }
 
 // LogMiddleware is middleware for logging HTTP requests and responses.
-func LogMiddleware(typ string, logResponse, logHeaders, logFrom bool) func(next http.Handler) http.Handler {
+func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var message []byte
@@ -441,10 +445,10 @@ func LogMiddleware(typ string, logResponse, logHeaders, logFrom bool) func(next 
 
 			var headers http.Header
 			var from string
-			if logHeaders {
+			if opts.Headers {
 				headers = r.Header
 			}
-			if logFrom {
+			if opts.From {
 				from = r.RemoteAddr
 			}
 			LogRequest(typ, r.Proto, r.Method, r.URL.String(), from, headers, message)
@@ -452,7 +456,7 @@ func LogMiddleware(typ string, logResponse, logHeaders, logFrom bool) func(next 
 			// copy output of HTTP handler to our buffer for later logging
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			var buf *bytes.Buffer
-			if logResponse {
+			if opts.Response {
 				buf = new(bytes.Buffer)
 				ww.Tee(buf)
 			}
@@ -461,8 +465,11 @@ func LogMiddleware(typ string, logResponse, logHeaders, logFrom bool) func(next 
 			var resp []byte
 			var start time.Time
 			defer func() {
-				if logResponse && ww.BytesWritten() > 0 {
+				if opts.Response && ww.BytesWritten() > 0 {
 					resp = buf.Bytes()
+				}
+				if ww.Status() >= 400 {
+					resp = nil // avoid printing stacktraces in response
 				}
 				LogResponse(ww.Status(), time.Since(start), resp)
 			}()

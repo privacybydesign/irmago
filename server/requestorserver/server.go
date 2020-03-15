@@ -180,27 +180,32 @@ func (s *Server) Handler() http.Handler {
 		s.attachClientEndpoints(router)
 	}
 
-	router.NotFound(server.LogMiddleware("requestor", false, true, true)(router.NotFoundHandler()).ServeHTTP)
-	router.MethodNotAllowed(server.LogMiddleware("requestor", false, true, true)(router.MethodNotAllowedHandler()).ServeHTTP)
+	log := server.LogOptions{Response: true, Headers: true, From: true}
+	router.NotFound(server.LogMiddleware("requestor", log)(router.NotFoundHandler()).ServeHTTP)
+	router.MethodNotAllowed(server.LogMiddleware("requestor", log)(router.MethodNotAllowedHandler()).ServeHTTP)
 
 	// Group main API endpoints, so we can attach our request/response logger to it
 	// while not adding it to the endpoints already added above (which do their own logging).
+
 	router.Group(func(r chi.Router) {
 		r.Use(cors.New(corsOptions).Handler)
 		if s.conf.Verbose >= 2 {
-			r.Use(server.LogMiddleware("requestor", true, true, true))
+			r.Use(server.LogMiddleware("requestor", log))
 		}
 
 		// Server routes
-		r.Post("/session", s.handleCreateSession)
-		r.Delete("/session/{token}", s.handleDelete)
-		r.Get("/session/{token}/status", s.handleStatus)
-		r.HandleFunc("/session/{token}/statusevents", s.handleStatusEvents)
-		r.Get("/session/{token}/result", s.handleResult)
-
-		// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
-		r.Get("/session/{token}/result-jwt", s.handleJwtResult)
-		r.Get("/session/{token}/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
+		r.Route("/session", func(r chi.Router) {
+			r.Post("/", s.handleCreateSession)
+			r.Route("/{token}", func(r chi.Router) {
+				r.Delete("/", s.handleDelete)
+				r.Get("/status", s.handleStatus)
+				r.HandleFunc("/statusevents", s.handleStatusEvents)
+				r.Get("/result", s.handleResult)
+				// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
+				r.Get("/result-jwt", s.handleJwtResult)
+				r.Get("/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
+			})
+		})
 
 		r.Get("/publickey", s.handlePublicKey)
 	})
@@ -208,7 +213,7 @@ func (s *Server) Handler() http.Handler {
 	router.Group(func(r chi.Router) {
 		r.Use(cors.New(corsOptions).Handler)
 		if s.conf.Verbose >= 2 {
-			r.Use(server.LogMiddleware("revocation", true, true, true))
+			r.Use(server.LogMiddleware("revocation", log))
 		}
 		r.Post("/revocation", s.handleRevocation)
 	})
@@ -223,7 +228,8 @@ func (s *Server) StaticFilesHandler() http.Handler {
 	} else { // URL not known, don't log it but otherwise continue
 		s.conf.Logger.Infof("Hosting files at %s", s.conf.StaticPath)
 	}
-	return http.StripPrefix(s.conf.StaticPrefix, server.LogMiddleware("static", false, false, false)(
+	opts := server.LogOptions{Response: false, Headers: false, From: false}
+	return http.StripPrefix(s.conf.StaticPrefix, server.LogMiddleware("static", opts)(
 		http.FileServer(http.Dir(s.conf.StaticPath))),
 	)
 }

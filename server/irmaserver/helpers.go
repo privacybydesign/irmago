@@ -1,9 +1,12 @@
 package irmaserver
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"reflect"
@@ -11,6 +14,8 @@ import (
 
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -343,5 +348,84 @@ func eventServer(conf *server.Configuration) *sse.Server {
 			"Access-Control-Allow-Headers": "Keep-Alive,X-Requested-With,Cache-Control,Content-Type,Last-Event-ID",
 		},
 		Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
+	})
+}
+
+func errorWriter(err *irma.RemoteError, writer func(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writer(w, nil, err)
+	}
+}
+
+func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+
+		// Read r.Body, and then replace with a fresh ReadCloser for the next handler
+		var message []byte
+		var err error
+		if message, err = ioutil.ReadAll(r.Body); err != nil {
+			message = []byte("<failed to read body: " + err.Error() + ">")
+		}
+		_ = r.Body.Close()
+		r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+
+		// if a cache is set and applicable, return it
+		status, output := session.checkCache(message)
+		if status > 0 && len(output) > 0 {
+			w.WriteHeader(status)
+			_, _ = w.Write(output)
+			return
+		}
+
+		// no cache set; perform request and record output
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		buf := new(bytes.Buffer)
+		ww.Tee(buf)
+		next.ServeHTTP(ww, r)
+
+		session.responseCache = responseCache{
+			message:       message,
+			response:      buf.Bytes(),
+			status:        ww.Status(),
+			sessionStatus: session.status,
+		}
+	})
+}
+
+func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := chi.URLParam(r, "token")
+		session := s.sessions.clientGet(token)
+		if session == nil {
+			server.WriteError(w, server.ErrorSessionUnknown, "")
+			return
+		}
+
+		ctx := r.Context()
+		session.Lock()
+		session.locked = true
+		defer func() {
+			if session.prevStatus != session.status {
+				session.prevStatus = session.status
+				result := session.result
+				r := ctx.Value("sessionresult")
+				if r != nil {
+					*r.(*server.SessionResult) = *result
+				}
+				if session.status.Finished() {
+					if handler := s.handlers[result.Token]; handler != nil {
+						go handler(result)
+						delete(s.handlers, token)
+					}
+				}
+			}
+			if session.locked {
+				session.locked = false
+				session.Unlock()
+			}
+		}()
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
 	})
 }

@@ -97,13 +97,13 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r := chi.NewRouter()
 	s.router = r
 	if s.conf.Verbose >= 2 {
-		r.Use(server.LogMiddleware("client", true, true, false))
+		r.Use(server.LogMiddleware("client", server.LogOptions{Response: true, Headers: true, From: false}))
 	}
 
 	notfound := &irma.RemoteError{Status: 404, ErrorName: string(server.ErrorInvalidRequest.Type)}
 	notallowed := &irma.RemoteError{Status: 405, ErrorName: string(server.ErrorInvalidRequest.Type)}
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) { server.WriteResponse(w, nil, notfound) })
-	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) { server.WriteResponse(w, nil, notallowed) })
+	r.NotFound(errorWriter(notfound, server.WriteResponse))
+	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
 	r.Route("/session/{token}", func(r chi.Router) {
 		r.Use(s.sessionMiddleware)
@@ -120,8 +120,8 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.Post("/session/{name}", s.handleStaticMessage)
 
 	r.Route("/revocation/", func(r chi.Router) {
-		r.NotFound(func(w http.ResponseWriter, r *http.Request) { server.WriteBinaryResponse(w, nil, notfound) })
-		r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) { server.WriteBinaryResponse(w, nil, notallowed) })
+		r.NotFound(errorWriter(notfound, server.WriteBinaryResponse))
+		r.MethodNotAllowed(errorWriter(notallowed, server.WriteBinaryResponse))
 		r.Get("/events/{id}/{counter:\\d+}/{min:\\d+}/{max:\\d+}", s.handleRevocationGetEvents)
 		r.Get("/updateevents/{id}", s.handleRevocationUpdateEvents)
 		r.Get("/update/{id}/{count:\\d+}", s.handleRevocationGetUpdateLatest)
