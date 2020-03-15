@@ -19,6 +19,7 @@ import (
 
 type Server struct {
 	conf             *server.Configuration
+	router           *chi.Mux
 	sessions         sessionStore
 	scheduler        *gocron.Scheduler
 	stopScheduler    chan bool
@@ -89,7 +90,12 @@ func HandlerFunc() http.HandlerFunc {
 	return s.HandlerFunc()
 }
 func (s *Server) HandlerFunc() http.HandlerFunc {
+	if s.router != nil {
+		return s.router.ServeHTTP
+	}
+
 	r := chi.NewRouter()
+	s.router = r
 	if s.conf.Verbose >= 2 {
 		r.Use(server.LogMiddleware("client", true, true, false))
 	}
@@ -123,7 +129,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		r.Post("/issuancerecord/{id}/{counter:\\d+}", s.handleRevocationPostIssuanceRecord)
 	})
 
-	return r.ServeHTTP
+	return s.router.ServeHTTP
 }
 
 // Stop the server.
