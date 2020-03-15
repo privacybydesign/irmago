@@ -5,7 +5,6 @@
 package requestorserver
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -182,15 +180,15 @@ func (s *Server) Handler() http.Handler {
 		s.attachClientEndpoints(router)
 	}
 
-	router.NotFound(s.logHandler("requestor", false, true, true)(router.NotFoundHandler()).ServeHTTP)
-	router.MethodNotAllowed(s.logHandler("requestor", false, true, true)(router.MethodNotAllowedHandler()).ServeHTTP)
+	router.NotFound(server.LogMiddleware("requestor", false, true, true)(router.NotFoundHandler()).ServeHTTP)
+	router.MethodNotAllowed(server.LogMiddleware("requestor", false, true, true)(router.MethodNotAllowedHandler()).ServeHTTP)
 
 	// Group main API endpoints, so we can attach our request/response logger to it
 	// while not adding it to the endpoints already added above (which do their own logging).
 	router.Group(func(r chi.Router) {
 		r.Use(cors.New(corsOptions).Handler)
 		if s.conf.Verbose >= 2 {
-			r.Use(s.logHandler("requestor", true, true, true))
+			r.Use(server.LogMiddleware("requestor", true, true, true))
 		}
 
 		// Server routes
@@ -210,61 +208,12 @@ func (s *Server) Handler() http.Handler {
 	router.Group(func(r chi.Router) {
 		r.Use(cors.New(corsOptions).Handler)
 		if s.conf.Verbose >= 2 {
-			r.Use(s.logHandler("revocation", true, true, true))
+			r.Use(server.LogMiddleware("revocation", true, true, true))
 		}
 		r.Post("/revocation", s.handleRevocation)
 	})
 
 	return router
-}
-
-// logHandler is middleware for logging HTTP requests and responses.
-func (s *Server) logHandler(typ string, logResponse, logHeaders, logFrom bool) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var message []byte
-			var err error
-
-			// Read r.Body, and then replace with a fresh ReadCloser for the next handler
-			if message, err = ioutil.ReadAll(r.Body); err != nil {
-				message = []byte("<failed to read body: " + err.Error() + ">")
-			}
-			_ = r.Body.Close()
-			r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
-
-			var headers http.Header
-			var from string
-			if logHeaders {
-				headers = r.Header
-			}
-			if logFrom {
-				from = r.RemoteAddr
-			}
-			server.LogRequest(typ, r.Method, r.URL.String(), from, headers, message)
-
-			// copy output of HTTP handler to our buffer for later logging
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-			var buf *bytes.Buffer
-			if logResponse {
-				buf = new(bytes.Buffer)
-				ww.Tee(buf)
-			}
-
-			// print response afterwards
-			var resp []byte
-			var start time.Time
-			defer func() {
-				if logResponse && ww.BytesWritten() > 0 {
-					resp = buf.Bytes()
-				}
-				server.LogResponse(ww.Status(), time.Since(start), resp)
-			}()
-
-			// start timer and preform request
-			start = time.Now()
-			next.ServeHTTP(ww, r)
-		})
-	}
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {
@@ -274,7 +223,7 @@ func (s *Server) StaticFilesHandler() http.Handler {
 	} else { // URL not known, don't log it but otherwise continue
 		s.conf.Logger.Infof("Hosting files at %s", s.conf.StaticPath)
 	}
-	return http.StripPrefix(s.conf.StaticPrefix, s.logHandler("static", false, false, false)(
+	return http.StripPrefix(s.conf.StaticPrefix, server.LogMiddleware("static", false, false, false)(
 		http.FileServer(http.Dir(s.conf.StaticPath))),
 	)
 }

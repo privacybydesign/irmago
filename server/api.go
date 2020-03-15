@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
@@ -418,4 +420,53 @@ func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
 	}
 
 	return logger
+}
+
+// LogMiddleware is middleware for logging HTTP requests and responses.
+func LogMiddleware(typ string, logResponse, logHeaders, logFrom bool) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var message []byte
+			var err error
+
+			// Read r.Body, and then replace with a fresh ReadCloser for the next handler
+			if message, err = ioutil.ReadAll(r.Body); err != nil {
+				message = []byte("<failed to read body: " + err.Error() + ">")
+			}
+			_ = r.Body.Close()
+			r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+
+			var headers http.Header
+			var from string
+			if logHeaders {
+				headers = r.Header
+			}
+			if logFrom {
+				from = r.RemoteAddr
+			}
+			LogRequest(typ, r.Method, r.URL.String(), from, headers, message)
+
+			// copy output of HTTP handler to our buffer for later logging
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			var buf *bytes.Buffer
+			if logResponse {
+				buf = new(bytes.Buffer)
+				ww.Tee(buf)
+			}
+
+			// print response afterwards
+			var resp []byte
+			var start time.Time
+			defer func() {
+				if logResponse && ww.BytesWritten() > 0 {
+					resp = buf.Bytes()
+				}
+				LogResponse(ww.Status(), time.Since(start), resp)
+			}()
+
+			// start timer and preform request
+			start = time.Now()
+			next.ServeHTTP(ww, r)
+		})
+	}
 }
