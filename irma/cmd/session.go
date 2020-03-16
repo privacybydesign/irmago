@@ -246,7 +246,7 @@ func init() {
 	if err != nil {
 		logger.Warn("Could not determine local IP address: ", err.Error())
 	} else {
-		defaulturl = "http://" + defaulturl + ":port/session"
+		defaulturl = "http://" + defaulturl + ":port"
 	}
 
 	flags := sessionCmd.Flags()
