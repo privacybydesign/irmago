@@ -242,3 +242,7 @@ func RandomBigInt(limit *big.Int) *big.Int {
 	}
 	return res
 }
+
+type SSECtx struct {
+	Component, Arg string
+}

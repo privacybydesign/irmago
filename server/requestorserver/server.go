@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
@@ -199,7 +200,7 @@ func (s *Server) Handler() http.Handler {
 			r.Route("/{token}", func(r chi.Router) {
 				r.Delete("/", s.handleDelete)
 				r.Get("/status", s.handleStatus)
-				r.HandleFunc("/statusevents", s.handleStatusEvents)
+				r.Get("/statusevents", s.handleStatusEvents)
 				r.Get("/result", s.handleResult)
 				// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
 				r.Get("/result-jwt", s.handleJwtResult)
@@ -305,6 +306,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	s.conf.Logger.WithFields(logrus.Fields{"session": token}).Debug("new client subscribed to server sent events")
+	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
+		Component: server.ComponentSession,
+		Arg:       token,
+	}))
 	if err := s.irmaserv.SubscribeServerSentEvents(w, r, token, true); err != nil {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      server.ErrorUnsupported.Status,

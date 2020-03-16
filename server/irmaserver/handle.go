@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -269,9 +270,9 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 	session := r.Context().Value("session").(*session)
 	session.locked = false
 	session.Unlock()
-	r = r.WithContext(context.WithValue(r.Context(), "sse", sseCtx{
-		component: server.ComponentSession,
-		arg:       session.clientToken,
+	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
+		Component: server.ComponentSession,
+		Arg:       session.clientToken,
 	}))
 	if err := s.SubscribeServerSentEvents(w, r, session.clientToken, false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
@@ -340,9 +341,9 @@ func (s *Server) handleRevocationUpdateEvents(w http.ResponseWriter, r *http.Req
 	}
 	id := chi.URLParam(r, "id")
 	if id != "" {
-		r = r.WithContext(context.WithValue(r.Context(), "sse", sseCtx{
-			component: server.ComponentRevocation,
-			arg:       id,
+		r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
+			Component: server.ComponentRevocation,
+			Arg:       id,
 		}))
 	}
 	s.serverSentEvents.ServeHTTP(w, r)

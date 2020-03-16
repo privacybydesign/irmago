@@ -21,13 +21,10 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
-
-type sseCtx struct {
-	component, arg string
-}
 
 // Session helpers
 
@@ -333,11 +330,11 @@ func eventServer(conf *server.Configuration) *sse.Server {
 			if ssectx == nil {
 				return ""
 			}
-			switch ssectx.(sseCtx).component {
+			switch ssectx.(common.SSECtx).Component {
 			case server.ComponentSession:
-				return "session/" + ssectx.(sseCtx).arg
+				return "session/" + ssectx.(common.SSECtx).Arg
 			case server.ComponentRevocation:
-				return "revocation/" + ssectx.(sseCtx).arg
+				return "revocation/" + ssectx.(common.SSECtx).Arg
 			default:
 				return ""
 			}
