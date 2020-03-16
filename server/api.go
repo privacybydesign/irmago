@@ -52,7 +52,7 @@ type SessionHandler func(*SessionResult)
 type Status string
 
 type LogOptions struct {
-	Response, Headers, From bool
+	Response, Headers, From, EncodeBinary bool
 }
 
 const (
@@ -387,13 +387,17 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 	Logger.WithFields(fields).Tracef("=> request")
 }
 
-func LogResponse(status int, duration time.Duration, response []byte) {
+func LogResponse(status int, duration time.Duration, binary bool, response []byte) {
 	fields := logrus.Fields{
 		"status":   status,
 		"duration": duration.String(),
 	}
 	if len(response) > 0 {
-		fields["response"] = string(response)
+		if binary {
+			fields["response"] = hex.EncodeToString(response)
+		} else {
+			fields["response"] = string(response)
+		}
 	}
 	l := Logger.WithFields(fields)
 	if status < 400 {
@@ -465,13 +469,20 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 			var resp []byte
 			var start time.Time
 			defer func() {
+				if ww.Header().Get("Content-Type") == "text/event-stream" {
+					return
+				}
 				if opts.Response && ww.BytesWritten() > 0 {
 					resp = buf.Bytes()
 				}
 				if ww.Status() >= 400 {
-					resp = nil // avoid printing stacktraces in response
+					resp = nil // avoid printing stacktraces and SSE in response
 				}
-				LogResponse(ww.Status(), time.Since(start), resp)
+				var hexencode bool
+				if opts.EncodeBinary && ww.Header().Get("Content-Type") != "application/json" {
+					hexencode = true
+				}
+				LogResponse(ww.Status(), time.Since(start), hexencode, resp)
 			}()
 
 			// start timer and preform request

@@ -97,7 +97,8 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r := chi.NewRouter()
 	s.router = r
 	if s.conf.Verbose >= 2 {
-		r.Use(server.LogMiddleware("client", server.LogOptions{Response: true, Headers: true, From: false}))
+		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
+		r.Use(server.LogMiddleware("client", opts))
 	}
 
 	notfound := &irma.RemoteError{Status: 404, ErrorName: string(server.ErrorInvalidRequest.Type)}
