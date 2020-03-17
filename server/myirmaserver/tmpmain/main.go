@@ -2,13 +2,12 @@ package main
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/privacybydesign/irmago/server/myirmaserver"
 )
 
 func main() {
-	db := &myirmaserver.MyirmaMemoryDB{
+	/*db := &myirmaserver.MyirmaMemoryDB{
 		UserData: map[string]myirmaserver.MemoryUserData{
 			"rgBpfxdwfE": myirmaserver.MemoryUserData{
 				ID:    1,
@@ -29,23 +28,25 @@ func main() {
 		VerifyEmailTokens: map[string]int64{
 			"blablabla": 2,
 		},
-	}
+	}*/
+	db, err := myirmaserver.NewPostgresDatabase("postgresql://localhost:5432/test")
 	s, err := myirmaserver.New(&myirmaserver.Configuration{
-		URL:                    "http://127.0.0.1:8080",
+		URL:                    "http://127.0.0.1:8000",
+		SchemesPath:            "../../../testdata/irma_configuration",
 		StaticPath:             "irma_keyshare_webclient/build",
 		StaticPrefix:           "/test/",
 		DB:                     db,
-		KeyshareAttributeNames: []string{"pbdf.sidn-pbdf.irma.pseudonym"},
-		EmailAttributeNames:    []string{"pbdf.pbdf.email.email"},
+		KeyshareAttributeNames: []string{"test.test.mijnirma.email"},
+		EmailAttributeNames:    []string{"test.test.mijnirma.email"},
 		EmailServer:            "localhost:1025",
 		EmailFrom:              "test@example.com",
 		DefaultLanguage:        "en",
 		LoginEmailFiles:        map[string]string{"en": "testtemplate.html"},
 		LoginEmailSubject:      map[string]string{"en": "Login MyIRMA"},
-		LoginEmailBaseURL:      map[string]string{"en": "http://127.0.0.1:8080/test/#token="},
+		LoginEmailBaseURL:      map[string]string{"en": "http://127.0.0.1:8000/test/#token="},
 	})
 	if err != nil {
 		panic(err)
 	}
-	http.ListenAndServe("localhost:8080", s.Handler())
+	http.ListenAndServe("localhost:8000", s.Handler())
 }
