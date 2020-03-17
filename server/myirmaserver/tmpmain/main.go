@@ -26,6 +26,9 @@ func main() {
 			},
 		},
 		LoginEmailTokens: map[string]string{},
+		VerifyEmailTokens: map[string]int64{
+			"blablabla": 2,
+		},
 	}
 	s, err := myirmaserver.New(&myirmaserver.Configuration{
 		URL:                    "http://127.0.0.1:8080",
