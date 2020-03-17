@@ -66,6 +66,9 @@ func (s *Server) Handler() http.Handler {
 	router.Post("/login/token", s.handleTokenLogin)
 	router.Post("/logout", s.handleLogout)
 
+	// Email verification
+	router.Post("/verify", s.handleVerifyEmail)
+
 	// User account data
 	router.Get("/user", s.handleUserInfo)
 	router.Get("/user/logs/{offset}", s.handleGetLogs)
@@ -358,6 +361,37 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 	server.WriteJson(w, qr)
+}
+
+func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
+	requestData, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read body")
+		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
+		return
+	}
+
+	token := string(requestData)
+
+	id, err := s.db.VerifyEmailToken(token)
+	if err == ErrUserNotFound {
+		s.conf.Logger.Info("Trying to reuse token")
+		server.WriteError(w, server.ErrorInvalidRequest, "Token already used")
+		return
+	}
+
+	session := s.store.create()
+	session.userID = &id
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    session.token,
+		MaxAge:   s.conf.SessionLifetime,
+		Secure:   s.conf.Production,
+		Path:     "/",
+		HttpOnly: true,
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
