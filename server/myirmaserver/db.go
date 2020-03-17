@@ -12,6 +12,7 @@ var (
 
 type MyirmaDB interface {
 	GetUserID(username string) (int64, error)
+	VerifyEmailToken(token string) (int64, error)
 	RemoveUser(id int64) error
 
 	AddEmailLoginToken(email, token string) error
@@ -52,13 +53,15 @@ type MyirmaMemoryDB struct {
 	lock     sync.Mutex
 	UserData map[string]MemoryUserData
 
-	LoginEmailTokens map[string]string
+	LoginEmailTokens  map[string]string
+	VerifyEmailTokens map[string]int64
 }
 
 func NewMyirmaMemoryDB() MyirmaDB {
 	return &MyirmaMemoryDB{
-		UserData:         map[string]MemoryUserData{},
-		LoginEmailTokens: map[string]string{},
+		UserData:          map[string]MemoryUserData{},
+		LoginEmailTokens:  map[string]string{},
+		VerifyEmailTokens: map[string]int64{},
 	}
 }
 
@@ -82,6 +85,20 @@ func (db *MyirmaMemoryDB) RemoveUser(id int64) error {
 		}
 	}
 	return ErrUserNotFound
+}
+
+func (db *MyirmaMemoryDB) VerifyEmailToken(token string) (int64, error) {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	userID, ok := db.VerifyEmailTokens[token]
+	if !ok {
+		return 0, ErrUserNotFound
+	}
+
+	delete(db.VerifyEmailTokens, token)
+
+	return userID, nil
 }
 
 func (db *MyirmaMemoryDB) AddEmailLoginToken(email, token string) error {
