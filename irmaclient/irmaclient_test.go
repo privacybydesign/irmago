@@ -403,3 +403,10 @@ func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifie
 		i.t.Fatal(err)
 	}
 }
+func (i *TestClientHandler) ReportError(err error) {
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}

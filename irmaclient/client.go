@@ -101,6 +101,7 @@ type ClientHandler interface {
 	UpdateConfiguration(new *irma.IrmaIdentifierSet)
 	UpdateAttributes()
 	Revoked(cred *irma.CredentialIdentifier)
+	ReportError(err error)
 }
 
 // MissingAttributes contains all attribute requests that the client cannot satisfy with its
@@ -217,7 +218,7 @@ func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifie
 
 func (client *Client) reportError(err error) {
 	irma.Logger.Error(err)
-	raven.CaptureError(err, nil)
+	client.handler.ReportError(err)
 }
 
 // StartJobs performs scheduled background jobs in separate goroutines.

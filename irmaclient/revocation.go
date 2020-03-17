@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
@@ -195,7 +194,7 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		irma.Logger.WithField("credtype", id).Debug("scheduling nonrevocation cache update")
 		go func(cred *credential) {
 			if err := cred.NonrevPrepareCache(); err != nil {
-				raven.CaptureError(err, nil)
+				client.reportError(err)
 			}
 		}(cred)
 	}
