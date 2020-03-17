@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/bwesterb/go-atum"
-	raven "github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -432,7 +431,7 @@ func (session *session) sendResponse(message interface{}) {
 		log, err = session.createLogEntry(message)
 		if err != nil {
 			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			raven.CaptureError(err, nil)
+			session.client.reportError(err)
 		}
 	case irma.ActionDisclosing:
 		messageJson, err = json.Marshal(message)
@@ -454,7 +453,7 @@ func (session *session) sendResponse(message interface{}) {
 		log, err = session.createLogEntry(message)
 		if err != nil {
 			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			raven.CaptureError(err, nil)
+			session.client.reportError(err)
 		}
 	case irma.ActionIssuing:
 		response := []*gabi.IssueSignatureMessage{}
@@ -469,7 +468,7 @@ func (session *session) sendResponse(message interface{}) {
 		log, err = session.createLogEntry(message)
 		if err != nil {
 			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			raven.CaptureError(err, nil)
+			session.client.reportError(err)
 		}
 	}
 
