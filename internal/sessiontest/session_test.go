@@ -185,22 +185,13 @@ func TestUnsatisfiableDisclosureSession(t *testing.T) {
 		},
 	}
 
-	missing := irmaclient.MissingAttributes{}
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"0": {
-			"0": {
-				"0": {"type": "irma-demo.MijnOverheid.root.BSN"}
-			},
-			"1": {
-				"1": {"type": "irma-demo.MijnOverheid.fullName.firstname"},
-				"2": {"type": "irma-demo.MijnOverheid.fullName.familyname"}
-			}
-		}
-	}`), &missing))
+	missing := [][]irmaclient.DisclosureCandidates{}
+	require.NoError(t, json.Unmarshal([]byte(`[[[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"test.test.mijnirma.email","CredentialHash":"dc8d5f252ae0e87db6136ba74598682158bfe8d0d2e2fc4ee61dbf24aa2746d4","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.firstname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.familyname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]],[[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}]]]`), &missing))
 	require.True(t, reflect.DeepEqual(
 		missing,
 		requestorSessionHelper(t, request, client, sessionOptionUnsatisfiableRequest).Missing),
 	)
+
 }
 
 /* There is an annoying difference between how Java and Go convert big integers to and from

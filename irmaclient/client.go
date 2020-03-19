@@ -48,6 +48,8 @@ type Client struct {
 	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
 	updates          []update
 
+	lookup map[string]credLookup
+
 	// Where we store/load it to/from
 	storage storage
 	// Legacy storage needed when client has not updated to the new storage yet
@@ -98,13 +100,23 @@ type ClientHandler interface {
 	ReportError(err error)
 }
 
-// MissingAttributes contains all attribute requests that the client cannot satisfy with its
-// current attributes.
-type MissingAttributes map[int]map[int]map[int]MissingAttribute
+type credLookup struct {
+	id      irma.CredentialTypeIdentifier
+	counter int
+}
 
-// MissingAttribute is an irma.AttributeRequest that is satisfied by none of the client's attributes
-// (with Go's default JSON marshaler instead of that of irma.AttributeRequest).
-type MissingAttribute irma.AttributeRequest
+type credCandidateSet [][]*credCandidate
+
+type credCandidate irma.CredentialIdentifier
+
+type DisclosureCandidate struct {
+	*irma.AttributeIdentifier
+	Expired      bool
+	Revoked      bool
+	NotRevokable bool
+}
+
+type DisclosureCandidates []*DisclosureCandidate
 
 type secretKey struct {
 	Key *big.Int
@@ -188,6 +200,13 @@ func New(
 
 	if len(client.UnenrolledSchemeManagers()) > 1 {
 		return nil, errors.New("Too many keyshare servers")
+	}
+
+	client.lookup = map[string]credLookup{}
+	for _, attrlistlist := range client.attributes {
+		for i, attrlist := range attrlistlist {
+			client.lookup[attrlist.Hash()] = credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
+		}
 	}
 
 	client.jobs = make(chan func(), 100)
@@ -322,6 +341,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		}
 		counter := len(client.attributes[id]) - 1
 		client.credentialsCache[id][counter] = cred
+		client.lookup[cred.attrs.Hash()] = credLookup{id: id, counter: counter}
 	}
 
 	return client.storage.Transaction(func(tx *transaction) error {
@@ -461,14 +481,11 @@ func (client *Client) Attributes(id irma.CredentialTypeIdentifier, counter int) 
 }
 
 func (client *Client) attributesByHash(hash string) (*irma.AttributeList, int) {
-	for _, attrlistlist := range client.attributes {
-		for index, attrs := range attrlistlist {
-			if attrs.Hash() == hash {
-				return attrs, index
-			}
-		}
+	lookup, present := client.lookup[hash]
+	if !present {
+		return nil, 0
 	}
-	return nil, 0
+	return client.attributes[lookup.id][lookup.counter], lookup.counter
 }
 
 func (client *Client) credentialByHash(hash string) (*credential, int, error) {
@@ -481,15 +498,8 @@ func (client *Client) credentialByHash(hash string) (*credential, int, error) {
 }
 
 func (client *Client) credentialByID(id irma.CredentialIdentifier) (*credential, error) {
-	if _, exists := client.attributes[id.Type]; !exists {
-		return nil, nil
-	}
-	for index, attrs := range client.attributes[id.Type] {
-		if attrs.Hash() == id.Hash {
-			return client.credential(attrs.CredentialType().Identifier(), index)
-		}
-	}
-	return nil, nil
+	cred, _, err := client.credentialByHash(id.Hash)
+	return cred, err
 }
 
 // credential returns the requested credential, or nil if we do not have it.
@@ -538,38 +548,67 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 // in the conjunction. (A credential instance from the client is a candidate it it contains
 // attributes required in this conjunction). If one credential type occurs multiple times in the
 // conjunction it is not added twice.
-func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeCon) (credCandidateSet, error) {
-	var candidates [][]*irma.CredentialIdentifier
+func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeCon) (credCandidateSet, bool, error) {
+	var candidates [][]*credCandidate
+	satisfiable := true
+
 	for _, credtype := range con.CredentialTypes() {
 		attrlistlist := client.attributes[credtype]
-		if len(attrlistlist) == 0 {
-			return nil, nil // we'll need at least one instance of each credtype in this conjunction
+		var c []*credCandidate
+		haveUsableCred := false
+		for _, attrlist := range attrlistlist {
+			satisfies, usable := client.satisfiesCon(base, attrlist, con)
+			if satisfies { // add it to the list, even if they are unusable
+				c = append(c, &credCandidate{Type: credtype, Hash: attrlist.Hash()})
+			}
+			if usable { // having one usable credential will do
+				haveUsableCred = true
+			}
 		}
-		var c []*irma.CredentialIdentifier
-		for i, attrlist := range attrlistlist {
-			if !attrlist.IsValid() || attrlist.Revoked {
-				// if the credential is revoked, it is not a candidate for disclosure even if
-				// the requestor did not ask for a nonrevocation proof
-				continue
-			}
-			cred, err := client.credential(credtype, i)
-			if err != nil {
-				return nil, err
-			}
-			if base.RequestsRevocation(credtype) && cred.NonRevocationWitness == nil {
-				// can't disclose from non-revocation aware credentials if nonrevocation proof is required
-				continue
-			}
-			c = append(c, &irma.CredentialIdentifier{Type: credtype, Hash: attrlist.Hash()})
+		if !haveUsableCred {
+			// if for one of the credential types in this conjunction we don't have candidates,
+			// then the entire conjunction is unsatisfiable
+			satisfiable = false
+		}
+		if len(c) == 0 {
+			// No acceptable credentials found, add "empty" credential (i.e. without hash) to the candidates
+			c = append(c, &credCandidate{Type: credtype})
+			satisfiable = false
 		}
 		candidates = append(candidates, c)
 	}
-	return candidates, nil
+	return candidates, satisfiable, nil
 }
 
-type credCandidateSet [][]*irma.CredentialIdentifier
+// satsifiesCon returns:
+//  - if the attrs can satsify the conjunction (as long as it is usable),
+//  - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
+//    a nonrevocation proof is required).
+func (client *Client) satisfiesCon(base *irma.BaseRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {
+	var credfound bool
+	credtype := attrs.CredentialType().Identifier()
+	for _, attr := range con {
+		if attr.Type.CredentialTypeIdentifier() != credtype {
+			continue
+		}
+		credfound = true
+		if !attr.Satisfy(attr.Type, attrs.UntranslatedAttribute(attr.Type)) {
+			// Using attributes out of more than one instance of a credential type to satisfy
+			// a single con is not allowed, so if any one of the attributes of this instance does
+			// not have the appropriate value, then this entire credential cannot be used
+			// for this con.
+			return false, false
+		}
+	}
+	if !credfound {
+		return false, false
+	}
+	cred, _, _ := client.credentialByHash(attrs.Hash())
+	usable := !attrs.Revoked && attrs.IsValid() && (!base.RequestsRevocation(credtype) || cred.NonRevocationWitness != nil)
+	return true, usable
+}
 
-func (set credCandidateSet) multiply(candidates []*irma.CredentialIdentifier) credCandidateSet {
+func (set credCandidateSet) multiply(candidates []*credCandidate) credCandidateSet {
 	result := make(credCandidateSet, 0, len(set)*len(candidates))
 	for _, cred := range candidates {
 		for _, toDisclose := range set {
@@ -579,28 +618,30 @@ func (set credCandidateSet) multiply(candidates []*irma.CredentialIdentifier) cr
 	return result
 }
 
-func (set credCandidateSet) expand(client *Client, con irma.AttributeCon) [][]*irma.AttributeIdentifier {
-	var result [][]*irma.AttributeIdentifier
+func (set credCandidateSet) expand(client *Client, base *irma.BaseRequest, con irma.AttributeCon) []DisclosureCandidates {
+	var result []DisclosureCandidates
 
-outer:
 	for _, s := range set {
-		var candidateSet []*irma.AttributeIdentifier
-		for _, cred := range s {
+		var candidateSet []*DisclosureCandidate
+		for _, credopt := range s {
 			for _, attr := range con {
-				if attr.Type.CredentialTypeIdentifier() != cred.Type {
+				if attr.Type.CredentialTypeIdentifier() != credopt.Type {
 					continue
 				}
-				attrs, _ := client.attributesByHash(cred.Hash)
-				val := attrs.UntranslatedAttribute(attr.Type)
-				if !attr.Satisfy(attr.Type, val) {
-					// if the attribute in this credential instance has the wrong value, then we have
-					// to discard the entire candidate set
-					continue outer
+				attropt := &DisclosureCandidate{
+					AttributeIdentifier: &irma.AttributeIdentifier{
+						Type:           attr.Type,
+						CredentialHash: credopt.Hash,
+					},
 				}
-				candidateSet = append(candidateSet, &irma.AttributeIdentifier{
-					Type:           attr.Type,
-					CredentialHash: cred.Hash,
-				})
+				if credopt.Present() {
+					attrlist, _ := client.attributesByHash(credopt.Hash)
+					cred, _, _ := client.credentialByHash(credopt.Hash)
+					attropt.Expired = !attrlist.IsValid()
+					attropt.Revoked = attrlist.Revoked
+					attropt.NotRevokable = cred.NonRevocationWitness == nil && base.RequestsRevocation(credopt.Type)
+				}
+				candidateSet = append(candidateSet, attropt)
 			}
 		}
 		result = append(result, candidateSet)
@@ -609,29 +650,28 @@ outer:
 	return result
 }
 
-func cartesianProduct(candidates [][]*irma.CredentialIdentifier) credCandidateSet {
-	set := credCandidateSet{[]*irma.CredentialIdentifier{}} // Unit element for this multiplication
+func cartesianProduct(candidates [][]*credCandidate) credCandidateSet {
+	set := credCandidateSet{[]*credCandidate{}} // Unit element for this multiplication
 	for _, c := range candidates {
 		set = set.multiply(c)
 	}
 	return set
 }
 
-// Candidates returns attributes present in this client that satisfy the specified attribute
+// candidatesDisCon returns attributes present in this client that satisfy the specified attribute
 // disjunction. It returns a list of candidate attribute sets, each of which would satisfy the
-// specified disjunction. If the disjunction cannot be satisfied by the attributes that the client
-// currently posesses (ie. len(candidates) == 0), then the second return parameter lists the missing
-// attributes that would be necessary to satisfy the disjunction.
-func (client *Client) Candidates(base *irma.BaseRequest, discon irma.AttributeDisCon) (
-	candidates [][]*irma.AttributeIdentifier, missing map[int]map[int]MissingAttribute, err error,
+// specified disjunction.
+func (client *Client) candidatesDisCon(base *irma.BaseRequest, discon irma.AttributeDisCon) (
+	candidates []DisclosureCandidates, satisfiable bool, err error,
 ) {
-	candidates = [][]*irma.AttributeIdentifier{}
+	candidates = []DisclosureCandidates{}
 
 	for _, con := range discon {
 		if len(con) == 0 {
 			// An empty conjunction means the containing disjunction is optional
 			// so it is satisfied by sending no attributes
-			candidates = append(candidates, []*irma.AttributeIdentifier{})
+			candidates = append(candidates, []*DisclosureCandidate{})
+			satisfiable = true
 			continue
 		}
 
@@ -640,12 +680,12 @@ func (client *Client) Candidates(base *irma.BaseRequest, discon irma.AttributeDi
 		// attribute types as [ a.a.a.a, a.a.a.b, a.a.b.x ], we map this to:
 		// [ [ a.a.a #1, a.a.a #2] , [ a.a.b #1 ] ]
 		// assuming the client has 2 instances of a.a.a and 1 instance of a.a.b.
-		c, err := client.credCandidates(base, con)
+		c, conSatisfiable, err := client.credCandidates(base, con)
 		if err != nil {
-			return nil, nil, err
+			return nil, false, err
 		}
-		if len(c) == 0 {
-			continue
+		if conSatisfiable {
+			satisfiable = true
 		}
 
 		// The cartesian product of the list of lists constructed above results in a list of which
@@ -658,68 +698,33 @@ func (client *Client) Candidates(base *irma.BaseRequest, discon irma.AttributeDi
 		// is asking for, resulting in attribute sets each of which would satisfy the conjunction,
 		// and therefore the containing disjunction
 		// [ [ a.a.a.a #1, a.a.a.b #1, a.a.b.x #1 ], [ a.a.a.a #2, a.a.a.b #2, a.a.b.x #1 ] ]
-		candidates = append(candidates, c.expand(client, con)...)
-	}
-
-	if len(candidates) == 0 {
-		missing = client.missingAttributes(discon)
+		candidates = append(candidates, c.expand(client, base, con)...)
 	}
 
 	return
 }
 
-// missingAttributes returns for each of the conjunctions in the specified disjunction
-// a list of attributes that the client does not posess but which would be required to
-// satisfy the conjunction.
-func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]map[int]MissingAttribute {
-	missing := make(map[int]map[int]MissingAttribute, len(discon))
-
-	for i, con := range discon {
-		missing[i] = map[int]MissingAttribute{}
-	conloop:
-		for j, req := range con {
-			creds := client.attributes[req.Type.CredentialTypeIdentifier()]
-			if len(creds) == 0 {
-				missing[i][j] = MissingAttribute(req)
-				continue
-			}
-			for _, cred := range creds {
-				if cred.IsValid() && !cred.Revoked && req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
-					continue conloop
-				}
-			}
-			missing[i][j] = MissingAttribute(req)
-		}
-	}
-
-	return missing
-}
-
-// CheckSatisfiability checks if this client has the required attributes
-// to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
-// are returned.
-func (client *Client) CheckSatisfiability(request irma.SessionRequest) (
-	candidates [][][]*irma.AttributeIdentifier, missing MissingAttributes, err error,
+// Candidates returns a list of options for the user to choose from,
+// given a session request and the credentials currently in storage.
+func (client *Client) Candidates(request irma.SessionRequest) (
+	candidates [][]DisclosureCandidates, satisfiable bool, err error,
 ) {
 	condiscon := request.Disclosure().Disclose
-	base := request.Base()
-	candidates = make([][][]*irma.AttributeIdentifier, len(condiscon))
-	missing = MissingAttributes{}
+	candidates = make([][]DisclosureCandidates, len(condiscon))
 
+	satisfiable = true
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 	for i, discon := range condiscon {
-		cands, m, err := client.Candidates(base, discon)
+		cands, disconSatisfiable, err := client.candidatesDisCon(request.Base(), discon)
 		if err != nil {
-			return nil, nil, err
+			return nil, false, err
 		}
-		if len(cands) != 0 {
-			candidates[i] = cands
-		} else {
-			missing[i] = m
+		if !disconSatisfiable {
+			satisfiable = false
 		}
+		candidates[i] = cands
 	}
-
 	return
 }
 
@@ -1157,4 +1162,32 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 	}
 
 	return nil
+}
+
+func (cc *credCandidate) Present() bool {
+	return cc.Hash != ""
+}
+
+func (dc *DisclosureCandidate) Present() bool {
+	return dc.CredentialHash != ""
+}
+
+func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
+	var ids []*irma.AttributeIdentifier
+	for _, attr := range dcs {
+		if !attr.Present() {
+			return nil, errors.New("credential not present")
+		}
+		if attr.Expired {
+			return nil, errors.New("cannot choose expired credential")
+		}
+		if attr.Revoked {
+			return nil, errors.New("cannot choose revoked credential")
+		}
+		if attr.NotRevokable {
+			return nil, errors.New("credential does not support revocation")
+		}
+		ids = append(ids, attr.AttributeIdentifier)
+	}
+	return ids, nil
 }

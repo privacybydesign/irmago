@@ -34,9 +34,6 @@ type Handler interface {
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
-	UnsatisfiableRequest(request irma.SessionRequest,
-		ServerName irma.TranslatedString,
-		missing MissingAttributes)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -44,15 +41,18 @@ type Handler interface {
 	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 
 	RequestIssuancePermission(request *irma.IssuanceRequest,
-		candidates [][][]*irma.AttributeIdentifier,
+		satisfiable bool,
+		candidates [][]DisclosureCandidates,
 		ServerName irma.TranslatedString,
 		callback PermissionHandler)
 	RequestVerificationPermission(request *irma.DisclosureRequest,
-		candidates [][][]*irma.AttributeIdentifier,
+		satisfiable bool,
+		candidates [][]DisclosureCandidates,
 		ServerName irma.TranslatedString,
 		callback PermissionHandler)
 	RequestSignaturePermission(request *irma.SignatureRequest,
-		candidates [][][]*irma.AttributeIdentifier,
+		satisfiable bool,
+		candidates [][]DisclosureCandidates,
 		ServerName irma.TranslatedString,
 		callback PermissionHandler)
 	RequestSchemeManagerPermission(manager *irma.SchemeManager,
@@ -331,21 +331,12 @@ func (session *session) processSessionInfo() {
 		irma.Logger.Debug("starting candidate computation before revocation witnesses updating finished")
 	}
 
-	candidates, missing, err := session.client.CheckSatisfiability(session.request)
+	candidates, satisfiable, err := session.client.Candidates(session.request)
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 		return
 	}
-	if len(missing) > 0 {
-		session.Handler.UnsatisfiableRequest(session.request, session.ServerName, missing)
-		return
-	}
 
-	// Ask for permission to execute the session
-	callback := PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
-		session.choice = choice
-		go session.doSession(proceed)
-	})
 	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
 
 	// Handle ClientReturnURL if one is found in the session request
@@ -353,16 +344,17 @@ func (session *session) processSessionInfo() {
 		session.Handler.ClientReturnURLSet(session.request.Base().ClientReturnURL)
 	}
 
+	// Ask for permission to execute the session
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			session.request.(*irma.DisclosureRequest), candidates, session.ServerName, callback)
+			session.request.(*irma.DisclosureRequest), satisfiable, candidates, session.ServerName, session.doSession)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			session.request.(*irma.SignatureRequest), candidates, session.ServerName, callback)
+			session.request.(*irma.SignatureRequest), satisfiable, candidates, session.ServerName, session.doSession)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			session.request.(*irma.IssuanceRequest), candidates, session.ServerName, callback)
+			session.request.(*irma.IssuanceRequest), satisfiable, candidates, session.ServerName, session.doSession)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
@@ -371,11 +363,16 @@ func (session *session) processSessionInfo() {
 // doSession performs the session: it computes all proofs of knowledge, constructs credentials in case of issuance,
 // asks for the pin and performs the keyshare session, and finishes the session by either POSTing the result to the
 // API server or returning it to the caller (in case of interactive and noninteractive sessions, respectively).
-func (session *session) doSession(proceed bool) {
+func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 	defer session.recoverFromPanic()
 
 	if !proceed {
 		session.cancel()
+		return
+	}
+	session.choice = choice
+	if err := session.choice.Validate(); err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorRequiredAttributeMissing, Err: err})
 		return
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)

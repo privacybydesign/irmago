@@ -85,14 +85,10 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	// client revocation callback was called
 	require.NotNil(t, handler.(*TestClientHandler).revoked)
 	require.Equal(t, credid, handler.(*TestClientHandler).revoked.Type)
-	// credential is no longer suggested as candidate
-	candidates, missing, err := client.Candidates(
-		revocationRequest(attr).Base(),
-		irma.AttributeDisCon{{{Type: attr}}},
-	)
+	// credential is no longer available as candidate
+	_, satisfiable, err := client.Candidates(request)
 	require.NoError(t, err)
-	require.Empty(t, candidates)
-	require.NotEmpty(t, missing)
+	require.False(t, satisfiable)
 }
 
 func TestRevocationAll(t *testing.T) {
@@ -250,10 +246,12 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, uint64(0), events[len(events)-1].Index)
 
 		// Construct disclosure proof with nonrevocation proof against accumulator with index 0
-		candidates, missing, err := client.CheckSatisfiability(request)
+		candidates, satisfiable, err := client.Candidates(request)
 		require.NoError(t, err)
-		require.Empty(t, missing)
-		choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{candidates[0][0]}}
+		require.True(t, satisfiable)
+		ids, err := candidates[0][0].Choose()
+		require.NoError(t, err)
+		choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{ids}}
 		disclosure, _, err := client.Proofs(choice, request)
 		require.NoError(t, err)
 		proofAcc, err := disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
