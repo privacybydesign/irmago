@@ -120,52 +120,59 @@ func TestCandidates(t *testing.T) {
 	request := irma.NewDisclosureRequest(attrtype)
 	disjunction := request.Disclose[0]
 	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
-	attrs, missing, err := client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err := client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.Empty(t, missing)
+	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
+	require.True(t, attrs[0][0].Present())
 
 	// If the disjunction requires our attribute to have 456 as value, which it does,
 	// then our attribute is a candidate
 	reqval := "456"
 	disjunction[0][0].Value = &reqval
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.Empty(t, missing)
+	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
+	require.True(t, attrs[0][0].Present())
 
 	// If the disjunction requires our attribute to have a different value than it does,
 	// then it is NOT a match.
 	reqval = "foobarbaz"
 	disjunction[0][0].Value = &reqval
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.NotEmpty(t, missing)
+	require.False(t, satisfiable)
 	require.NotNil(t, attrs)
-	require.Empty(t, attrs)
+	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.False(t, attrs[0][0].Present())
 
 	// A required value of nil counts as no requirement on the value, so our attribute is a candidate
 	disjunction[0][0].Value = nil
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.Empty(t, missing)
+	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
+	require.True(t, attrs[0][0].Present())
 
 	// Require an attribute we do not have
 	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.ageLower.over12")
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.NotEmpty(t, missing)
-	require.Empty(t, attrs)
+	require.False(t, satisfiable)
+	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.False(t, attrs[0][0].Present())
 }
 
 func TestCandidateConjunctionOrder(t *testing.T) {
@@ -194,9 +201,9 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 	}
 
 	for i := 1; i < 20; i++ {
-		candidates, missing, err := client.CheckSatisfiability(req)
+		candidates, satisfiable, err := client.Candidates(req)
 		require.NoError(t, err)
-		require.Empty(t, missing)
+		require.True(t, satisfiable)
 		require.Equal(t, "irma-demo.RU.studentCard.level", candidates[0][0][0].Type.String())
 	}
 }

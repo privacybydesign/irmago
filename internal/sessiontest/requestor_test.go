@@ -29,7 +29,7 @@ const (
 
 type requestorSessionResult struct {
 	*server.SessionResult
-	Missing irmaclient.MissingAttributes
+	Missing [][]irmaclient.DisclosureCandidates
 }
 
 func processOptions(options ...sessionOption) sessionOption {

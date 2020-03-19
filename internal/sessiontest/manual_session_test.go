@@ -33,7 +33,7 @@ func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestH
 	bts, err := json.Marshal(request)
 	require.NoError(t, err)
 
-	client.NewSession(string(bts), h)
+	go client.NewSession(string(bts), h)
 
 	result := <-h.c
 	if result.Err != nil {

@@ -208,6 +208,17 @@ type NonRevocationRequest struct {
 
 type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
 
+func (choice *DisclosureChoice) Validate() error {
+	for _, attrlist := range choice.Attributes {
+		for _, attr := range attrlist {
+			if attr.CredentialHash == "" {
+				return errors.Errorf("no credential hash specified for %s", attr.Type)
+			}
+		}
+	}
+	return nil
+}
+
 func (n *NonRevocationParameters) UnmarshalJSON(bts []byte) error {
 	var slice []CredentialTypeIdentifier
 	if *n == nil {
