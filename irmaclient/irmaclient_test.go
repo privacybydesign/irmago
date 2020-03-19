@@ -299,21 +299,6 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	require.NotContains(t, client.keyshareServers, "test")
 }
 
-func TestUpdatePreferences(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-
-	client.SetCrashReportingPreference(!defaultPreferences.EnableCrashReporting)
-	client.applyPreferences()
-
-	err := client.storage.db.Close()
-	require.NoError(t, err)
-	client, handler = parseExistingStorage(t, handler.storage)
-
-	require.NoError(t, err)
-	require.Equal(t, false, client.Preferences.EnableCrashReporting)
-}
-
 func TestUpdatingStorage(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
