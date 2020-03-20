@@ -410,7 +410,7 @@ func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
 		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		URL:                   "http://localhost:8080/irma_keyshare_server/api/v1/",
 		DB:                    db,
 		JwtKeyId:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -433,7 +433,7 @@ func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
 	require.NoError(t, err)
 
 	r := chi.NewRouter()
-	r.Mount("/irma_keyshare_server/", s.Handler())
+	r.Mount("/irma_keyshare_server/api/v1/", s.Handler())
 
 	keyshareServ = &http.Server{
 		Addr:    "localhost:8080",
