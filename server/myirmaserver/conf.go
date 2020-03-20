@@ -133,6 +133,14 @@ func processConfiguration(conf *Configuration) error {
 		}
 	}
 
+	// Verify attriubte configuration
+	if len(conf.KeyshareAttributes) == 0 {
+		return server.LogError(errors.Errorf("Missing keyshare attributes"))
+	}
+	if len(conf.EmailAttributes) == 0 {
+		return server.LogError(errors.Errorf("Missing email attributes"))
+	}
+
 	// Setup email templates
 	if conf.EmailServer != "" && conf.LoginEmailTemplates == nil {
 		conf.LoginEmailTemplates = map[string]*template.Template{}
@@ -161,6 +169,12 @@ func processConfiguration(conf *Configuration) error {
 	// Setup database
 	if conf.DB == nil {
 		switch conf.DbType {
+		case DatabaseTypePostgres:
+			var err error
+			conf.DB, err = NewPostgresDatabase(conf.DbConnstring)
+			if err != nil {
+				return err
+			}
 		case DatabaseTypeMemory:
 			conf.DB = NewMyirmaMemoryDB()
 		default:
