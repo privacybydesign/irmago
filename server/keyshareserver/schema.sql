@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS irma.email_verification_tokens
     id serial PRIMARY KEY,
     token text NOT NULL,
     email text NOT NULL,
+    expiry bigint NOT NULL,
     user_id int NOT NULL REFERENCES irma.users (id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX email_verification_token_index ON irma.email_verification_tokens (token);
@@ -35,7 +36,8 @@ CREATE TABLE IF NOT EXISTS irma.email_login_tokens
 (
     id serial PRIMARY KEY,
     token text NOT NULL,
-    email text NOT NULL
+    email text NOT NULL,
+    expiry bigint NOT NULL
 );
 CREATE UNIQUE INDEX email_login_token_index ON irma.email_login_tokens (token);
 
