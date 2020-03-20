@@ -226,8 +226,8 @@ func configureKeyshared(cmd *cobra.Command) {
 		EmailAuth:                emailAuth,
 		EmailFrom:                viper.GetString("email-from"),
 		DefaultLanguage:          viper.GetString("default-language"),
-		RegistrationEmailSubject: viper.GetStringMapString("register-email-subject"),
-		RegistrationEmailFiles:   viper.GetStringMapString("register-email-template"),
+		RegistrationEmailSubject: viper.GetStringMapString("registration-email-subject"),
+		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-template"),
 		VerificationURL:          viper.GetStringMapString("verification-url"),
 
 		Verbose:    viper.GetInt("verbose"),
