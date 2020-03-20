@@ -35,7 +35,7 @@ var testStorageDir = "client"
 
 func StartSchemeManagerHttpServer() {
 	path := FindTestdataFolder(nil)
-	schemeServer = &http.Server{Addr: ":48681", Handler: http.FileServer(http.Dir(path))}
+	schemeServer = &http.Server{Addr: "localhost:48681", Handler: http.FileServer(http.Dir(path))}
 	go func() {
 		schemeServer.ListenAndServe()
 	}()
@@ -48,7 +48,7 @@ func StopSchemeManagerHttpServer() {
 
 // StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.
 func StartBadHttpServer(count int, timeout time.Duration, success string) {
-	badServer = &http.Server{Addr: ":48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	badServer = &http.Server{Addr: "localhost:48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if badServerCount >= count {
 			_, _ = fmt.Fprintln(w, success)
 			return

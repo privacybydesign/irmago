@@ -468,7 +468,7 @@ func TestStaticQRSession(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		received = true
 	})
-	s := &http.Server{Addr: ":48685", Handler: mux}
+	s := &http.Server{Addr: "localhost:48685", Handler: mux}
 	go func() { _ = s.ListenAndServe() }()
 
 	// setup static QR and other variables

@@ -738,7 +738,7 @@ func startRevocationServer(t *testing.T, droptables bool) {
 	require.NoError(t, err)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", revocationServer.HandlerFunc())
-	revocationHttpServer = &http.Server{Addr: ":48683", Handler: mux}
+	revocationHttpServer = &http.Server{Addr: "localhost:48683", Handler: mux}
 	go func() {
 		_ = revocationHttpServer.ListenAndServe()
 	}()

@@ -77,7 +77,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", irmaServer.HandlerFunc())
-	httpServer = &http.Server{Addr: ":48680", Handler: mux}
+	httpServer = &http.Server{Addr: "localhost:48680", Handler: mux}
 	go func() {
 		_ = httpServer.ListenAndServe()
 	}()
@@ -101,7 +101,8 @@ var IrmaServerConfiguration = &requestorserver.Configuration{
 		},
 	},
 	DisableRequestorAuthentication: true,
-	Port: 48682,
+	ListenAddress:                  "localhost",
+	Port:                           48682,
 }
 
 var JwtServerConfiguration = &requestorserver.Configuration{
@@ -130,7 +131,8 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 			},
 		},
 	},
-	Port: 48682,
+	ListenAddress: "localhost",
+	Port:          48682,
 	DisableRequestorAuthentication: false,
 	MaxRequestAge:                  3,
 	Permissions: requestorserver.Permissions{
