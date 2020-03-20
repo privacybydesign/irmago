@@ -2,6 +2,7 @@ package myirmaserver
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/go-errors/errors"
 	_ "github.com/jackc/pgx/stdlib"
@@ -272,6 +273,21 @@ func (db *myirmaPostgresDB) RemoveEmail(id int64, email string) error {
 		return err
 	}
 	if aff != 1 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+func (db *myirmaPostgresDB) SetSeen(id int64) error {
+	res, err := db.db.Exec("UPDATE irma.users SET lastSeen = $1 WHERE id = $2", time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	c, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if c != 1 {
 		return ErrUserNotFound
 	}
 	return nil

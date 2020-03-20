@@ -299,6 +299,12 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token := session.token
 
+	err = s.db.SetSeen(*session.userID)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not update users last seen date/time")
+		// not relevant for frontend, so ignore beyond log.
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    token,
@@ -344,6 +350,12 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 
 			session.userID = new(int64)
 			*session.userID = id
+
+			err = s.db.SetSeen(id)
+			if err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not update users last seen time/date")
+				// not relevant for frontend, so ignore beyond log.
+			}
 		})
 
 	if err != nil {
@@ -382,6 +394,12 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	session := s.store.create()
 	session.userID = &id
+
+	err = s.db.SetSeen(id)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not update users last seen time/date")
+		// not relevant for frontend, so ignore beyond log.
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
