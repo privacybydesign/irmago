@@ -2,6 +2,7 @@ package myirmaserver
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -12,6 +13,8 @@ import (
 type myirmaPostgresDB struct {
 	db *sql.DB
 }
+
+const EMAIL_TOKEN_VALIDITY = 60 // Ammount of time an email login token is valid (in minutes)
 
 func NewPostgresDatabase(connstring string) (MyirmaDB, error) {
 	db, err := sql.Open("pgx", connstring)
@@ -38,7 +41,7 @@ func (db *myirmaPostgresDB) GetUserID(username string) (int64, error) {
 }
 
 func (db *myirmaPostgresDB) VerifyEmailToken(token string) (int64, error) {
-	res, err := db.db.Query("SELECT user_id, email FROM irma.email_verification_tokens WHERE token = $1", token)
+	res, err := db.db.Query("SELECT user_id, email FROM irma.email_verification_tokens WHERE token = $1 AND expiry >= $2", token, time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -110,7 +113,11 @@ func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 	}
 
 	// insert and verify
-	res, err := db.db.Exec("INSERT INTO irma.email_login_tokens (token, email) VALUES ($1, $2)", token, email)
+	res, err := db.db.Exec("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ($1, $2, $3)",
+		token,
+		email,
+		time.Now().Add(EMAIL_TOKEN_VALIDITY*time.Minute).Unix())
+	fmt.Println(time.Now().Add(EMAIL_TOKEN_VALIDITY*time.Minute).Unix(), " ", time.Now().Unix())
 	if err != nil {
 		return err
 	}
@@ -128,7 +135,8 @@ func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 func (db *myirmaPostgresDB) LoginTokenGetCandidates(token string) ([]LoginCandidate, error) {
 	res, err := db.db.Query(`SELECT username, lastseen FROM irma.users WHERE id IN
 							     (SELECT user_id FROM irma.email_addresses WHERE
-									 email_addresses.emailAddress = (SELECT email FROM irma.email_login_tokens WHERE token = $1))`, token)
+									 email_addresses.emailAddress = (SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2))`,
+		token, time.Now().Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +148,7 @@ func (db *myirmaPostgresDB) LoginTokenGetCandidates(token string) ([]LoginCandid
 		if err != nil {
 			return nil, err
 		}
+		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
 		return nil, ErrUserNotFound
@@ -148,7 +157,7 @@ func (db *myirmaPostgresDB) LoginTokenGetCandidates(token string) ([]LoginCandid
 }
 
 func (db *myirmaPostgresDB) LoginTokenGetEmail(token string) (string, error) {
-	res, err := db.db.Query("SELECT email FROM irma.email_login_tokens WHERE token = $1", token)
+	res, err := db.db.Query("SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2", token, time.Now().Unix())
 	if err != nil {
 		return "", err
 	}
@@ -164,7 +173,8 @@ func (db *myirmaPostgresDB) LoginTokenGetEmail(token string) (string, error) {
 func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (bool, error) {
 	res, err := db.db.Query(`SELECT 1 FROM irma.users INNER JOIN irma.email_addresses ON users.id = email_addresses.user_id WHERE
 								 username = $1 AND
-								 emailAddress = (SELECT email FROM irma.email_login_tokens WHERE token = $2)`, username, token)
+								 emailAddress = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
+		username, token, time.Now().Unix())
 	if err != nil {
 		return false, err
 	}
