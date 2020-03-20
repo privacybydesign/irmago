@@ -101,12 +101,12 @@ func (s *Server) clearSessions() {
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
-	router.Post("/api/v1/client/register", s.handleRegister)
-	router.Post("/api/v1/users/isAuthorized", s.handleValidate)
-	router.Post("/api/v1/users/verify/pin", s.handleVerifyPin)
-	router.Post("/api/v1/users/change/pin", s.handleChangePin)
-	router.Post("/api/v1/prove/getCommitments", s.handleCommitments)
-	router.Post("/api/v1/prove/getResponse", s.handleResponse)
+	router.Post("/client/register", s.handleRegister)
+	router.Post("/users/isAuthorized", s.handleValidate)
+	router.Post("/users/verify/pin", s.handleVerifyPin)
+	router.Post("/users/change/pin", s.handleChangePin)
+	router.Post("/prove/getCommitments", s.handleCommitments)
+	router.Post("/prove/getResponse", s.handleResponse)
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
 	return router
 }

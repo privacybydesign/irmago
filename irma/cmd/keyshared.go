@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/go-chi/chi"
 	"github.com/privacybydesign/irmago/internal/fs"
 
 	"github.com/go-errors/errors"
@@ -52,9 +53,12 @@ var keysharedCmd = &cobra.Command{
 			die("", err)
 		}
 
+		r := chi.NewRouter()
+		r.Mount(viper.GetString("path-prefix"), keyshareServer.Handler())
+
 		serv := &http.Server{
 			Addr:      fullAddr,
-			Handler:   keyshareServer.Handler(),
+			Handler:   r,
 			TLSConfig: TLSConfig,
 		}
 
@@ -103,6 +107,7 @@ func init() {
 
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
+	flags.String("path-prefix", "/", "prefix to listen path")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
 	flags.String("db-type", keyshareserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
