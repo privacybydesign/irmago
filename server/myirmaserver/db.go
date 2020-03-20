@@ -24,6 +24,8 @@ type MyirmaDB interface {
 	GetLogs(id int64, offset int, ammount int) ([]LogEntry, error)
 	AddEmail(id int64, email string) error
 	RemoveEmail(id int64, email string) error
+
+	SetSeen(id int64) error
 }
 
 type UserInformation struct {
@@ -244,5 +246,18 @@ func (db *MyirmaMemoryDB) RemoveEmail(id int64, email string) error {
 		}
 	}
 
+	return ErrUserNotFound
+}
+
+func (db *MyirmaMemoryDB) SetSeen(id int64) error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	for username, user := range db.UserData {
+		if user.ID == id {
+			user.LastActive = time.Now()
+			db.UserData[username] = user
+			return nil
+		}
+	}
 	return ErrUserNotFound
 }
