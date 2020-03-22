@@ -41,27 +41,35 @@ type MetadataAttribute struct {
 // AttributeList contains attributes, excluding the secret key,
 // providing convenient access to the metadata attribute.
 type AttributeList struct {
-	*MetadataAttribute `json:"-"`
-	Ints               []*big.Int
-	Revoked            bool `json:",omitempty"`
-	strings            []TranslatedString
-	attrMap            map[AttributeTypeIdentifier]TranslatedString
-	info               *CredentialInfo
-	h                  string
+	*MetadataAttribute  `json:"-"`
+	Ints                []*big.Int
+	Revoked             bool `json:",omitempty"`
+	RevocationSupported bool `json:,omitempty`
+	strings             []TranslatedString
+	attrMap             map[AttributeTypeIdentifier]TranslatedString
+	info                *CredentialInfo
+	h                   string
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
 func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeList {
-	al := &AttributeList{
-		Ints:              ints,
-		MetadataAttribute: MetadataFromInt(ints[0], conf),
+	metadata := MetadataFromInt(ints[0], conf)
+	credtype := metadata.CredentialType()
+	idx := credtype.RevocationIndex + 1
+	var rev bool
+	if credtype != nil {
+		rev = len(ints) > idx && ints[idx] != nil && ints[idx].Cmp(bigZero) != 0
 	}
-	return al
+	return &AttributeList{
+		Ints:                ints,
+		MetadataAttribute:   metadata,
+		RevocationSupported: rev,
+	}
 }
 
 func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
-		al.info = NewCredentialInfo(al.Ints, al.Conf)
+		al.info = al.CredentialInfo()
 	}
 	al.info.Revoked = al.Revoked
 	return al.info
@@ -95,11 +103,11 @@ func (al *AttributeList) Hash() string {
 	return al.h
 }
 
-func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]TranslatedString {
+func (al *AttributeList) Map() map[AttributeTypeIdentifier]TranslatedString {
 	if al.attrMap == nil {
 		al.attrMap = make(map[AttributeTypeIdentifier]TranslatedString)
 		ctid := al.CredentialType().Identifier()
-		attrTypes := conf.CredentialTypes[ctid].AttributeTypes
+		attrTypes := al.Conf.CredentialTypes[ctid].AttributeTypes
 		for i, val := range al.Strings() {
 			if attrTypes[i].RevocationAttribute {
 				continue
