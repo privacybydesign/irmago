@@ -4,43 +4,41 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/privacybydesign/gabi/big"
 )
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
-	ID              string                                       // e.g., "studentCard"
-	IssuerID        string                                       // e.g., "RU"
-	SchemeManagerID string                                       // e.g., "irma-demo"
-	SignedOn        Timestamp                                    // Unix timestamp
-	Expires         Timestamp                                    // Unix timestamp
-	Attributes      map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
-	Hash            string                                       // SHA256 hash over the attributes
-	Revoked         bool                                         // If the credential has been revoked
+	ID                  string                                       // e.g., "studentCard"
+	IssuerID            string                                       // e.g., "RU"
+	SchemeManagerID     string                                       // e.g., "irma-demo"
+	SignedOn            Timestamp                                    // Unix timestamp
+	Expires             Timestamp                                    // Unix timestamp
+	Attributes          map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
+	Hash                string                                       // SHA256 hash over the attributes
+	Revoked             bool                                         // If the credential has been revoked
+	RevocationSupported bool                                         // If the credential supports creating nonrevocation proofs
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
 type CredentialInfoList []*CredentialInfo
 
-func NewCredentialInfo(ints []*big.Int, conf *Configuration) *CredentialInfo {
-	meta := MetadataFromInt(ints[0], conf)
-	credtype := meta.CredentialType()
+func (attrs *AttributeList) CredentialInfo() *CredentialInfo {
+	credtype := attrs.CredentialType()
 	if credtype == nil {
 		return nil
 	}
-
-	attrs := NewAttributeListFromInts(ints, conf)
 	id := credtype.Identifier()
 	issid := id.IssuerIdentifier()
 	return &CredentialInfo{
-		ID:              id.Name(),
-		IssuerID:        issid.Name(),
-		SchemeManagerID: issid.SchemeManagerIdentifier().Name(),
-		SignedOn:        Timestamp(meta.SigningDate()),
-		Expires:         Timestamp(meta.Expiry()),
-		Attributes:      attrs.Map(conf),
-		Hash:            attrs.Hash(),
+		ID:                  id.Name(),
+		IssuerID:            issid.Name(),
+		SchemeManagerID:     issid.SchemeManagerIdentifier().Name(),
+		SignedOn:            Timestamp(attrs.SigningDate()),
+		Expires:             Timestamp(attrs.Expiry()),
+		Attributes:          attrs.Map(),
+		Hash:                attrs.Hash(),
+		Revoked:             attrs.Revoked,
+		RevocationSupported: attrs.RevocationSupported,
 	}
 }
 

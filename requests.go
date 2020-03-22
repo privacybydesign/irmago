@@ -552,7 +552,7 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*C
 	if err != nil {
 		return nil, err
 	}
-	return NewCredentialInfo(list.Ints, conf), nil
+	return list.CredentialInfo(), nil
 }
 
 // Validate checks that this credential request is consistent with the specified Configuration:
