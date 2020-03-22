@@ -383,8 +383,11 @@ func (dc AttributeDisCon) Validate() error {
 func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, revocation map[int]*time.Time, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	for _, con := range dc {
 		satisfied, attrs, err := con.Satisfy(proofs, indices, revocation, conf)
-		if satisfied || err != nil {
-			return true, attrs, err
+		if err != nil {
+			return false, nil, err
+		}
+		if satisfied {
+			return true, attrs, nil
 		}
 	}
 	return false, nil, nil
