@@ -30,6 +30,8 @@ unit_tests:
 binaries:
   stage: build
   artifacts:
+    # Disabling artifact expiry is not supported yet, so make
+    expire_in: 100 year
     paths:
       - artifacts/*
   script:
