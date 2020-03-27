@@ -274,7 +274,7 @@ func (db *myirmaPostgresDB) AddEmail(id int64, email string) error {
 }
 
 func (db *myirmaPostgresDB) RemoveEmail(id int64, email string) error {
-	res, err := db.db.Exec("DELETE FROM irma.email_addresses WHERE id = $1 AND emailAddress = $2", id, email)
+	res, err := db.db.Exec("DELETE FROM irma.email_addresses WHERE user_id = $1 AND emailAddress = $2", id, email)
 	if err != nil {
 		return err
 	}
