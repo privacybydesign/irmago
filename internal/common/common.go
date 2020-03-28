@@ -44,11 +44,11 @@ func AssertPathNotExists(paths ...string) error {
 
 // PathExists checks if the specified path exists.
 func PathExists(path string) (bool, error) {
-	_, exists, err := stat(path)
+	_, exists, err := Stat(path)
 	return exists, err
 }
 
-func stat(path string) (os.FileInfo, bool, error) {
+func Stat(path string) (os.FileInfo, bool, error) {
 	info, err := os.Stat(path)
 	if err == nil {
 		return info, true, nil
@@ -60,7 +60,7 @@ func stat(path string) (os.FileInfo, bool, error) {
 }
 
 func EnsureDirectoryExists(path string) error {
-	info, exists, err := stat(path)
+	info, exists, err := Stat(path)
 	if err != nil {
 		return err
 	}

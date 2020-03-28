@@ -263,6 +263,13 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 }
 
 func (transport *HTTPTransport) GetSignedFile(url string, dest string, hash ConfigurationFileHash) error {
+	info, exists, err := common.Stat(dest)
+	if err != nil {
+		return err
+	}
+	if exists && (info.IsDir() || !info.Mode().IsRegular()) {
+		return errors.New("invalid destination path")
+	}
 	b, err := transport.GetBytes(url)
 	if err != nil {
 		return err
