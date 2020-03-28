@@ -111,33 +111,35 @@ func CopyDirectory(src, dest string) error {
 		return err
 	}
 
-	return filepath.Walk(src, filepath.WalkFunc(
-		func(path string, info os.FileInfo, err error) error {
-			if path == src {
-				return nil
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) (e error) {
+		if err != nil {
+			return err
+		}
+		if path == src {
+			return
+		}
+		subpath := path[len(src):]
+		if info.IsDir() {
+			if err := EnsureDirectoryExists(dest + subpath); err != nil {
+				return err
 			}
-			subpath := path[len(src):]
-			if info.IsDir() {
-				if err := EnsureDirectoryExists(dest + subpath); err != nil {
-					return err
-				}
-			} else {
-				srcfile, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-				defer srcfile.Close()
-				bts, err := ioutil.ReadAll(srcfile)
-				if err != nil {
-					return err
-				}
-				if err := SaveFile(dest+subpath, bts); err != nil {
-					return err
-				}
+		} else {
+			srcfile, err := os.Open(path)
+			if err != nil {
+				return err
 			}
-			return nil
-		}),
-	)
+			defer func() { e = srcfile.Close() }()
+			bts, err := ioutil.ReadAll(srcfile)
+			if err != nil {
+				return err
+			}
+			if err := SaveFile(dest+subpath, bts); err != nil {
+				return err
+			}
+		}
+		return
+	})
+
 }
 
 // ReadKey returns either the content of the file specified at path, if it exists,

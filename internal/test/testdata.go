@@ -37,13 +37,13 @@ func StartSchemeManagerHttpServer() {
 	path := FindTestdataFolder(nil)
 	schemeServer = &http.Server{Addr: "localhost:48681", Handler: http.FileServer(http.Dir(path))}
 	go func() {
-		schemeServer.ListenAndServe()
+		_ = schemeServer.ListenAndServe()
 	}()
 	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
 func StopSchemeManagerHttpServer() {
-	schemeServer.Close()
+	_ = schemeServer.Close()
 }
 
 // StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.

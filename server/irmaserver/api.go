@@ -139,7 +139,7 @@ func Stop() {
 }
 func (s *Server) Stop() {
 	if err := s.conf.IrmaConfiguration.Revocation.Close(); err != nil {
-		_ = server.LogWarning(err)
+		server.LogWarning(err)
 	}
 	s.stopScheduler <- true
 	s.sessions.stop()

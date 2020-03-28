@@ -262,7 +262,9 @@ func (attr *MetadataAttribute) setValidityDuration(weeks uint) {
 }
 
 func (attr *MetadataAttribute) setDefaultValidityDuration() {
-	attr.setExpiryDate(nil)
+	// setExpiryDate only errors if setting the expiry date before the signing date,
+	// which never happens here
+	_ = attr.setExpiryDate(nil)
 }
 
 func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {

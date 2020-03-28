@@ -162,14 +162,20 @@ func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteE
 	status, bts := JsonResponse(object, rerr)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(bts)
+	_, err := w.Write(bts)
+	if err != nil {
+		LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+	}
 }
 
 // WriteString writes the specified string to the http.ResponseWriter.
 func WriteString(w http.ResponseWriter, str string) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(str))
+	_, err := w.Write([]byte(str))
+	if err != nil {
+		LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+	}
 }
 
 // ParseSessionRequest attempts to parse the input as an irma.RequestorRequest instance, accepting (skipping "irma.")
@@ -360,8 +366,8 @@ func LogError(err error) error {
 	return log(logrus.ErrorLevel, err)
 }
 
-func LogWarning(err error) error {
-	return log(logrus.WarnLevel, err)
+func LogWarning(err error) {
+	_ = log(logrus.WarnLevel, err)
 }
 
 func LogRequest(typ, proto, method, url, from string, headers http.Header, message []byte) {
