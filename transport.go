@@ -40,13 +40,19 @@ var Logger *logrus.Logger
 var transportlogger *log.Logger
 
 func init() {
-	Logger = logrus.New()
-	Logger.SetFormatter(&prefixed.TextFormatter{
+	logger := logrus.New()
+	logger.SetFormatter(&prefixed.TextFormatter{
 		DisableColors:   true,
 		FullTimestamp:   true,
 		TimestampFormat: "15:04:05.000000",
 	})
+	SetLogger(logger)
+}
+
+func SetLogger(logger *logrus.Logger) {
+	Logger = logger
 	gabi.Logger = Logger
+	common.Logger = Logger
 	revocation.Logger = Logger
 }
 

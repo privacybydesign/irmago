@@ -33,7 +33,7 @@ var revokeCmd = &cobra.Command{
 
 func postRevocation(request *irma.RevocationRequest, url, schemespath, authmethod, key, name string, verbosity int) {
 	logger.Level = server.Verbosity(verbosity)
-	irma.Logger = logger
+	irma.SetLogger(logger)
 
 	conf, err := irma.NewConfiguration(schemespath, irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {

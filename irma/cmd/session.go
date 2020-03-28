@@ -232,7 +232,7 @@ func configureSessionServer(url string, port int, privatekeysPath string, irmaco
 func configureSession(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, error) {
 	verbosity, _ := cmd.Flags().GetCount("verbose")
 	logger.Level = server.Verbosity(verbosity)
-	irma.Logger = logger
+	irma.SetLogger(logger)
 
 	return configureRequest(cmd)
 }

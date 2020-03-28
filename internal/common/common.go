@@ -12,7 +12,10 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/sirupsen/logrus"
 )
+
+var Logger *logrus.Logger
 
 // AssertPathExists returns nil only if it has been successfully
 // verified that all specified paths exists.
@@ -78,6 +81,7 @@ func EnsureDirectoryExists(path string) error {
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
 	dir := path.Dir(fpath)
+	Logger.Debug("writing ", fpath)
 
 	// Read random data for filename and convert to hex
 	randBytes := make([]byte, 16)

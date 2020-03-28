@@ -89,7 +89,7 @@ func (conf *Configuration) Check() error {
 		conf.Logger = NewLogger(conf.Verbose, conf.Quiet, conf.LogJSON)
 	}
 	Logger = conf.Logger
-	irma.Logger = conf.Logger
+	irma.SetLogger(conf.Logger)
 
 	// loop to avoid repetetive err != nil line triplets
 	for _, f := range []func() error{
