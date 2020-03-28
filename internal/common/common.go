@@ -44,25 +44,33 @@ func AssertPathNotExists(paths ...string) error {
 
 // PathExists checks if the specified path exists.
 func PathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
+	_, exists, err := stat(path)
+	return exists, err
+}
+
+func stat(path string) (os.FileInfo, bool, error) {
+	info, err := os.Stat(path)
 	if err == nil {
-		return true, nil
+		return info, true, nil
 	}
 	if os.IsNotExist(err) {
-		return false, nil
+		return nil, false, nil
 	}
-	return true, err
+	return nil, false, err
 }
 
 func EnsureDirectoryExists(path string) error {
-	exists, err := PathExists(path)
+	info, exists, err := stat(path)
 	if err != nil {
 		return err
 	}
-	if exists {
-		return nil
+	if !exists {
+		return os.MkdirAll(path, 0700)
 	}
-	return os.MkdirAll(path, 0700)
+	if !info.IsDir() {
+		return errors.New("path exists but is not a directory")
+	}
+	return nil
 }
 
 func Empty(path string) bool {
