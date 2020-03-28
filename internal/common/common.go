@@ -10,7 +10,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/pkg/errors"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 )
 
@@ -165,10 +165,13 @@ func ReadKey(key, path string) ([]byte, error) {
 	} else {
 		stat, err := os.Stat(path)
 		if err != nil {
-			return nil, errors.New("no key found at specified path")
+			return nil, errors.WrapPrefix(err, "failed to stat key", 0)
 		}
 		if stat.IsDir() {
 			return nil, errors.New("cannot read key from a directory")
+		}
+		if !stat.Mode().IsRegular() {
+			return nil, errors.New("cannot read key from nonregular file")
 		}
 		bts, err = ioutil.ReadFile(path)
 		if err != nil {
