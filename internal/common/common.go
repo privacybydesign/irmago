@@ -73,23 +73,6 @@ func EnsureDirectoryExists(path string) error {
 	return nil
 }
 
-func Empty(path string) bool {
-	matches, _ := filepath.Glob(filepath.Join(path, "*"))
-	return len(matches) == 0
-}
-
-func Copy(src, dest string) error {
-	exists, err := PathExists(src)
-	if err != nil || !exists {
-		return err
-	}
-	bts, err := ioutil.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return SaveFile(dest, bts)
-}
-
 // Save the filecontents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
