@@ -1233,20 +1233,6 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		return errors.Errorf("Cannot update unknown scheme manager %s", id)
 	}
 
-	// Check remote timestamp and see if we have to do anything
-	transport := NewHTTPTransport(manager.URL + "/")
-	timestampBts, err := transport.GetBytes("timestamp")
-	if err != nil {
-		return err
-	}
-	timestamp, err := parseTimestamp(timestampBts)
-	if err != nil {
-		return err
-	}
-	if !manager.Timestamp.Before(*timestamp) {
-		return nil
-	}
-
 	// Download the new index and its signature, and check that the new index
 	// is validly signed by the new signature
 	// By aborting immediately in case of error, and restoring backup versions
@@ -1258,6 +1244,25 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 	newIndex, err := conf.parseIndex(manager.ID, manager)
 	if err != nil {
 		return
+	}
+
+	// Check remote timestamp, verify it against the new index, and see if we have to do anything
+	transport := NewHTTPTransport(manager.URL + "/")
+	timestampFile := filepath.Join(conf.Path, manager.ID, "timestamp")
+	err = transport.GetSignedFile("timestamp", timestampFile, newIndex[manager.ID+"/timestamp"])
+	if err != nil {
+		return err
+	}
+	timestampBts, err := ioutil.ReadFile(timestampFile)
+	if err != nil {
+		return err
+	}
+	timestamp, err := parseTimestamp(timestampBts)
+	if err != nil {
+		return err
+	}
+	if !manager.Timestamp.Before(*timestamp) {
+		return nil
 	}
 
 	issPattern := regexp.MustCompile("^([^/]+)/([^/]+)/description\\.xml")
