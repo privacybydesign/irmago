@@ -3,7 +3,6 @@ package irma
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -11,11 +10,9 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
@@ -266,32 +263,6 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
 	return b, nil
-}
-
-func (transport *HTTPTransport) GetSignedFile(url string, dest string, hash ConfigurationFileHash) error {
-	info, exists, err := common.Stat(dest)
-	if err != nil {
-		return err
-	}
-	if exists && (info.IsDir() || !info.Mode().IsRegular()) {
-		return errors.New("invalid destination path")
-	}
-	b, err := transport.GetBytes(url)
-	if err != nil {
-		return err
-	}
-	sha := sha256.Sum256(b)
-	if hash != nil && !bytes.Equal(hash, sha[:]) {
-		return errors.Errorf("Signature over new file %s is not valid", dest)
-	}
-	if err = common.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
-		return err
-	}
-	return common.SaveFile(dest, b)
-}
-
-func (transport *HTTPTransport) GetFile(url string, dest string) error {
-	return transport.GetSignedFile(url, dest, nil)
 }
 
 // Post sends the object to the server and parses its response into result.

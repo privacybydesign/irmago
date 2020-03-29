@@ -80,8 +80,14 @@ func EnsureDirectoryExists(path string) error {
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
-	dir := path.Dir(fpath)
 	Logger.Debug("writing ", fpath)
+	info, exists, err := Stat(fpath)
+	if err != nil {
+		return err
+	}
+	if exists && (info.IsDir() || !info.Mode().IsRegular()) {
+		return errors.New("invalid destination path")
+	}
 
 	// Read random data for filename and convert to hex
 	randBytes := make([]byte, 16)
@@ -92,6 +98,7 @@ func SaveFile(fpath string, content []byte) (err error) {
 	tempfilename := hex.EncodeToString(randBytes)
 
 	// Create temp file
+	dir := path.Dir(fpath)
 	err = ioutil.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
 	if err != nil {
 		return

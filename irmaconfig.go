@@ -807,16 +807,15 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publicke
 	}
 
 	t := NewHTTPTransport(manager.URL)
-	path := fmt.Sprintf("%s/%s", conf.Path, name)
-	if err := t.GetFile("description.xml", path+"/description.xml"); err != nil {
+	if err := conf.downloadFile(t, name, "description.xml"); err != nil {
 		return err
 	}
 	if publickey != nil {
-		if err := common.SaveFile(path+"/pk.pem", publickey); err != nil {
+		if err := common.SaveFile(filepath.Join(conf.Path, name, "pk.pem"), publickey); err != nil {
 			return err
 		}
 	} else {
-		if err := t.GetFile("pk.pem", path+"/pk.pem"); err != nil {
+		if err := conf.downloadFile(t, name, "pk.pem"); err != nil {
 			return err
 		}
 	}
@@ -839,14 +838,10 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	}
 
 	t := NewHTTPTransport(manager.URL)
-	path := fmt.Sprintf("%s/%s", conf.Path, manager.ID)
-	index := filepath.Join(path, "index")
-	sig := filepath.Join(path, "index.sig")
-
-	if err = t.GetFile("index", index); err != nil {
+	if err = conf.downloadFile(t, manager.ID, "index"); err != nil {
 		return
 	}
-	if err = t.GetFile("index.sig", sig); err != nil {
+	if err = conf.downloadFile(t, manager.ID, "index.sig"); err != nil {
 		return
 	}
 	err = conf.VerifySignature(manager.Identifier())
@@ -1248,12 +1243,11 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 
 	// Check remote timestamp, verify it against the new index, and see if we have to do anything
 	transport := NewHTTPTransport(manager.URL + "/")
-	timestampFile := filepath.Join(conf.Path, manager.ID, "timestamp")
-	err = transport.GetSignedFile("timestamp", timestampFile, newIndex[manager.ID+"/timestamp"])
+	err = conf.downloadSignedFile(transport, manager.ID, "timestamp", newIndex[manager.ID+"/timestamp"])
 	if err != nil {
 		return err
 	}
-	timestampBts, err := ioutil.ReadFile(timestampFile)
+	timestampBts, err := ioutil.ReadFile(filepath.Join(conf.Path, manager.ID, "timestamp"))
 	if err != nil {
 		return err
 	}
@@ -1286,7 +1280,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		}
 		stripped := filename[len(manager.ID)+1:] // Scheme manager URL already ends with its name
 		// Download the new file, store it in our own irma_configuration folder
-		if err = transport.GetSignedFile(stripped, path, newHash); err != nil {
+		if err = conf.downloadSignedFile(transport, manager.ID, stripped, newHash); err != nil {
 			return
 		}
 		// See if the file is a credential type or issuer, and add it to the downloaded set if so
@@ -1350,6 +1344,28 @@ func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 		<-time.NewTimer(200 * time.Millisecond).C
 		update()
 	}()
+}
+
+func (conf *Configuration) downloadSignedFile(
+	transport *HTTPTransport, scheme, path string, hash ConfigurationFileHash,
+) error {
+	b, err := transport.GetBytes(path)
+	if err != nil {
+		return err
+	}
+	sha := sha256.Sum256(b)
+	if hash != nil && !bytes.Equal(hash, sha[:]) {
+		return errors.Errorf("Signature over new file %s is not valid", scheme)
+	}
+	dest := filepath.Join(conf.Path, scheme, filepath.FromSlash(path))
+	if err = common.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
+		return err
+	}
+	return common.SaveFile(dest, b)
+}
+
+func (conf *Configuration) downloadFile(transport *HTTPTransport, scheme string, path string) error {
+	return conf.downloadSignedFile(transport, scheme, path, nil)
 }
 
 // Validation methods containing consistency checks on irma_configuration
