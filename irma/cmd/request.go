@@ -193,7 +193,7 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 	}
 
 	var request irma.RequestorRequest
-	if len(disclose) != 0 {
+	if len(disclose) != 0 && len(issue) == 0 {
 		disclose, err := parseAttrs(disclose, conf)
 		if err != nil {
 			return nil, err
