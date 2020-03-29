@@ -289,6 +289,15 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 
 	for typ, typeperms := range perms {
 		for _, permission := range typeperms {
+			switch strings.Count(permission, "*") {
+			case 0: // ok, nop
+			case 1:
+				if permission[len(permission)-1] != '*' {
+					errs = append(errs, fmt.Sprintf("%s %s permission '%s' contains asterisk not at end of line", requestor, typ, permission))
+				}
+			default:
+				errs = append(errs, fmt.Sprintf("%s %s permission '%s' contains too many asterisks (at most 1 permitted)", requestor, typ, permission))
+			}
 			parts := strings.Split(permission, ".")
 			if parts[len(parts)-1] == "*" {
 				if len(parts) > permissionlength[typ] {
