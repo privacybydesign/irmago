@@ -52,7 +52,7 @@ func PathExists(path string) (bool, error) {
 }
 
 func Stat(path string) (os.FileInfo, bool, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err == nil {
 		return info, true, nil
 	}

@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"path/filepath"
 
@@ -36,9 +37,12 @@ func (f *fileStorage) path(p string) string {
 }
 
 func (f *fileStorage) load(dest interface{}, path string) (err error) {
-	exists, err := common.PathExists(f.path(path))
+	info, exists, err := common.Stat(f.path(path))
 	if err != nil || !exists {
 		return
+	}
+	if info.IsDir() || !info.Mode().IsRegular() {
+		return errors.New("invalid file")
 	}
 	bytes, err := ioutil.ReadFile(f.path(path))
 	if err != nil {
