@@ -80,12 +80,18 @@ func EnsureDirectoryExists(path string) error {
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
+	fpath = filepath.FromSlash(fpath)
 	Logger.Debug("writing ", fpath)
 	info, exists, err := Stat(fpath)
 	if err != nil {
 		return err
 	}
 	if exists && (info.IsDir() || !info.Mode().IsRegular()) {
+		return errors.New("invalid destination path: not a file")
+	}
+
+	// Only accept 'simple' paths without . or .. or multiple separators
+	if fpath != filepath.Clean(fpath) {
 		return errors.New("invalid destination path")
 	}
 
