@@ -535,6 +535,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 	attrList := client.Attributes(credID, 0)
 
 	// Metadata attribute + election + votingnumber
-	require.Equal(t, 3, len(attrList.Ints), "Number of attributes in credential should be 3")
+	require.Equal(t, 3, len(attrList.Ints), "number of attributes in credential should be 3")
+	require.NotNil(t, attrList.Ints[2], "randomblind attribute is nil")
 	require.NoError(t, client.Close())
 }
