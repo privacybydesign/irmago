@@ -745,7 +745,6 @@ func DownloadSchemeManager(url string) (*SchemeManager, error) {
 		return nil, err
 	}
 
-	manager.URL = url // TODO?
 	return manager, nil
 }
 
@@ -787,29 +786,42 @@ func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err e
 	if err != nil {
 		return
 	}
+	pkbts, err := ioutil.ReadFile(filepath.Join(conf.Path, manager.ID, "pk.pem"))
+	if err != nil {
+		return err
+	}
 	if err = conf.DeleteSchemeManager(manager.Identifier()); err != nil {
 		return
 	}
-	err = conf.InstallSchemeManager(manager, nil)
+	err = conf.InstallSchemeManager(manager, pkbts)
 	return
 }
 
+// DangerousTOFUInstallSchemeManager downloads and adds the specified scheme to this Configuration,
+// downloading and trusting its public key from the scheme's remote URL.
+func (conf *Configuration) DangerousTOFUInstallSchemeManager(manager *SchemeManager) error {
+	return conf.installSchemeManager(manager, nil)
+}
+
 // InstallSchemeManager downloads and adds the specified scheme manager to this Configuration,
-// provided its signature is valid.
+// provided its signature is valid against the specified key.
 func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publickey []byte) error {
+	if len(publickey) == 0 {
+		return errors.New("no public key specified")
+	}
+	return conf.installSchemeManager(manager, publickey)
+}
+
+func (conf *Configuration) installSchemeManager(manager *SchemeManager, publickey []byte) error {
 	if conf.readOnly {
 		return errors.New("cannot install scheme into a read-only configuration")
 	}
-
 	name := manager.ID
 	if err := common.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
 	}
-
 	t := NewHTTPTransport(manager.URL)
-	if err := conf.downloadFile(t, name, "description.xml"); err != nil {
-		return err
-	}
+
 	if publickey != nil {
 		if err := common.SaveFile(filepath.Join(conf.Path, name, "pk.pem"), publickey); err != nil {
 			return err
@@ -818,6 +830,10 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publicke
 		if err := conf.downloadFile(t, name, "pk.pem"); err != nil {
 			return err
 		}
+	}
+
+	if err := conf.downloadFile(t, name, "description.xml"); err != nil {
+		return err
 	}
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
 		return err
