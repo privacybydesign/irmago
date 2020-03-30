@@ -119,11 +119,6 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return client.newQrSession(qr, handler)
 	}
 
-	schemeRequest := &irma.SchemeManagerRequest{}
-	if err := irma.UnmarshalValidate(bts, schemeRequest); err == nil {
-		return client.newSchemeSession(schemeRequest, handler)
-	}
-
 	sigRequest := &irma.SignatureRequest{}
 	if err := irma.UnmarshalValidate(bts, sigRequest); err == nil {
 		return client.newManualSession(sigRequest, handler, irma.ActionSigning)
@@ -153,20 +148,6 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
 	session.processSessionInfo()
-	return session
-}
-
-func (client *Client) newSchemeSession(qr *irma.SchemeManagerRequest, handler Handler) SessionDismisser {
-	session := &session{
-		ServerURL: qr.URL,
-		transport: irma.NewHTTPTransport(qr.URL),
-		Action:    irma.ActionSchemeManager,
-		Handler:   handler,
-		client:    client,
-	}
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-
-	go session.managerSession()
 	return session
 }
 
@@ -502,42 +483,6 @@ func (session *session) sendResponse(message interface{}) {
 	session.client.nonrevRepopulateCaches(session.request)
 	session.client.StartJobs()
 	session.Handler.Success(string(messageJson))
-}
-
-// managerSession performs a "session" in which a new scheme manager is added (asking for permission first).
-func (session *session) managerSession() {
-	defer session.recoverFromPanic()
-
-	// We have to download the scheme manager description.xml here before installing it,
-	// because we need to show its contents (name, description, website) to the user
-	// when asking installation permission.
-	manager, err := irma.DownloadSchemeManager(session.ServerURL)
-	if err != nil {
-		session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
-		return
-	}
-
-	session.Handler.RequestSchemeManagerPermission(manager, func(proceed bool) {
-		if !proceed {
-			session.Handler.Cancelled() // No need to DELETE session here
-			return
-		}
-		if err := session.client.Configuration.InstallSchemeManager(manager, nil); err != nil {
-			session.Handler.Failure(&irma.SessionError{ErrorType: irma.ErrorConfigurationDownload, Err: err})
-			return
-		}
-
-		// Update state and inform user of success
-		session.client.handler.UpdateConfiguration(
-			&irma.IrmaIdentifierSet{
-				SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{manager.Identifier(): {}},
-				Issuers:         map[irma.IssuerIdentifier]struct{}{},
-				CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
-			},
-		)
-		session.Handler.Success("")
-	})
-	return
 }
 
 // Response calculation methods

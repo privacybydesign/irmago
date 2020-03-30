@@ -167,8 +167,6 @@ type Qr struct {
 	Type Action `json:"irmaqr"`
 }
 
-type SchemeManagerRequest Qr
-
 // Statuses
 const (
 	StatusConnected     = Status("connected")
@@ -178,13 +176,12 @@ const (
 
 // Actions
 const (
-	ActionSchemeManager = Action("schememanager")
-	ActionDisclosing    = Action("disclosing")
-	ActionSigning       = Action("signing")
-	ActionIssuing       = Action("issuing")
-	ActionRedirect      = Action("redirect")
-	ActionRevoking      = Action("revoking")
-	ActionUnknown       = Action("unknown")
+	ActionDisclosing = Action("disclosing")
+	ActionSigning    = Action("signing")
+	ActionIssuing    = Action("issuing")
+	ActionRedirect   = Action("redirect")
+	ActionRevoking   = Action("revoking")
+	ActionUnknown    = Action("unknown")
 )
 
 // Protocol errors
@@ -347,18 +344,5 @@ func (qr *Qr) Validate() (err error) {
 		return errors.New("Unsupported session type")
 	}
 
-	return nil
-}
-
-func (smr *SchemeManagerRequest) Validate() error {
-	if smr.Type != ActionSchemeManager {
-		return errors.New("Not a scheme manager request")
-	}
-	if smr.URL == "" {
-		return errors.New("No URL specified")
-	}
-	if _, err := url.ParseRequestURI(smr.URL); err != nil {
-		return errors.Errorf("Invalid URL: %s", err.Error())
-	}
 	return nil
 }

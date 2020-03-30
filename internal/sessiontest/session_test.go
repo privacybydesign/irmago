@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
@@ -408,52 +406,6 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 		},
 	}
 	require.True(t, reflect.DeepEqual(expectedErr, err), "Download() returned incorrect missing identifier set")
-}
-
-// Test installing a new scheme manager from a qr, and do a(n issuance) session
-// within this manager to test the autmatic downloading of credential definitions,
-// issuers, and public keys.
-func TestDownloadSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-
-	// Remove irma-demo scheme manager as we need to test adding it
-	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, client.Configuration.RemoveSchemeManager(irmademo, true))
-	require.NotContains(t, client.Configuration.SchemeManagers, irmademo)
-
-	// Do an add-scheme-manager-session
-	c := make(chan *SessionResult)
-	qr, err := json.Marshal(&irma.SchemeManagerRequest{
-		Type: irma.ActionSchemeManager,
-		URL:  "http://localhost:48681/irma_configuration/irma-demo",
-	})
-	require.NoError(t, err)
-	client.NewSession(string(qr), &TestHandler{t: t, c: c, client: client, expectedServerName: nil})
-	if result := <-c; result != nil {
-		require.NoError(t, result.Err)
-	}
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-
-	// Do a session to test downloading of cred types, issuers and keys
-	request := getCombinedIssuanceRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sessionHelper(t, request, "issue", client)
-
-	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.Contains(t, client.Configuration.Issuers, irma.NewIssuerIdentifier("irma-demo.RU"))
-	require.Contains(t, client.Configuration.CredentialTypes, irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
-
-	basepath := filepath.Join(handler.storage, "client", "irma_configuration", "irma-demo")
-	exists, err := common.PathExists(filepath.Join(basepath, "description.xml"))
-	require.NoError(t, err)
-	require.True(t, exists)
-	exists, err = common.PathExists(filepath.Join(basepath, "RU", "description.xml"))
-	require.NoError(t, err)
-	require.True(t, exists)
-	exists, err = common.PathExists(filepath.Join(basepath, "RU", "Issues", "studentCard", "description.xml"))
-	require.NoError(t, err)
-	require.True(t, exists)
 }
 
 func TestStaticQRSession(t *testing.T) {
