@@ -454,15 +454,6 @@ func (conf *Configuration) IsInitialized() bool {
 	return conf.initialized
 }
 
-// Prune removes any invalid scheme managers and everything they own from this Configuration
-func (conf *Configuration) Prune() {
-	for _, manager := range conf.SchemeManagers {
-		if !manager.Valid {
-			_ = conf.RemoveSchemeManager(manager.Identifier(), false) // does not return errors
-		}
-	}
-}
-
 func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path string) error {
 	return common.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		issuer := &Issuer{}
@@ -488,6 +479,10 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 }
 
 func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error {
+	if conf.readOnly {
+		return errors.New("cannot delete scheme from a read-only configuration")
+	}
+
 	delete(conf.SchemeManagers, id)
 	delete(conf.DisabledSchemeManagers, id)
 	name := id.String()
@@ -506,10 +501,8 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 			delete(conf.CredentialTypes, cred)
 		}
 	}
-	if !conf.readOnly {
-		return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
-	}
-	return nil
+
+	return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
 }
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
@@ -746,33 +739,6 @@ func DownloadSchemeManager(url string) (*SchemeManager, error) {
 	}
 
 	return manager, nil
-}
-
-// RemoveSchemeManager removes the specified scheme manager and all associated issuers,
-// public keys and credential types from this Configuration.
-func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromStorage bool) error {
-	// Remove everything falling under the manager's responsibility
-	for credid := range conf.CredentialTypes {
-		if credid.IssuerIdentifier().SchemeManagerIdentifier() == id {
-			delete(conf.CredentialTypes, credid)
-		}
-	}
-	for issid := range conf.Issuers {
-		if issid.SchemeManagerIdentifier() == id {
-			delete(conf.Issuers, issid)
-		}
-	}
-	for issid := range conf.publicKeys {
-		if issid.SchemeManagerIdentifier() == id {
-			delete(conf.publicKeys, issid)
-		}
-	}
-	delete(conf.SchemeManagers, id)
-
-	if fromStorage || !conf.readOnly {
-		return os.RemoveAll(fmt.Sprintf("%s/%s", conf.Path, id.String()))
-	}
-	return nil
 }
 
 func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err error) {
