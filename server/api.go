@@ -1,72 +1,29 @@
 package server
 
 import (
+	"bytes"
+	"crypto/rsa"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var Logger *logrus.Logger = logrus.StandardLogger()
-
-// Configuration contains configuration for the irmaserver library and irmad.
-type Configuration struct {
-	// irma_configuration. If not given, this will be popupated using SchemesPath.
-	IrmaConfiguration *irma.Configuration `json:"-"`
-	// Path to IRMA schemes to parse into IrmaConfiguration (only used if IrmaConfiguration == nil).
-	// If left empty, default value is taken using DefaultSchemesPath().
-	// If an empty folder is specified, default schemes (irma-demo and pbdf) are downloaded into it.
-	SchemesPath string `json:"schemes_path" mapstructure:"schemes_path"`
-	// If specified, schemes found here are copied into SchemesPath (only used if IrmaConfiguration == nil)
-	SchemesAssetsPath string `json:"schemes_assets_path" mapstructure:"schemes_assets_path"`
-	// Disable scheme updating
-	DisableSchemesUpdate bool `json:"disable_schemes_update" mapstructure:"disable_schemes_update"`
-	// Update all schemes every x minutes (default value 0 means 60) (use DisableSchemesUpdate to disable)
-	SchemesUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
-	// Path to issuer private keys to parse
-	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
-	// Issuer private keys
-	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
-	// URL at which the IRMA app can reach this server during sessions
-	URL string `json:"url" mapstructure:"url"`
-	// Required to be set to true if URL does not begin with https:// in production mode.
-	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
-	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
-	DisableTLS bool `json:"no_tls" mapstructure:"no_tls"`
-	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
-	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
-	// for more information
-	Email string `json:"email" mapstructure:"email"`
-	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
-	EnableSSE bool `json:"enable_sse" mapstructure:"enable_sse"`
-
-	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
-	Verbose int `json:"verbose" mapstructure:"verbose"`
-	// Don't log anything at all
-	Quiet bool `json:"quiet" mapstructure:"quiet"`
-	// Output structured log in JSON format
-	LogJSON bool `json:"log_json" mapstructure:"log_json"`
-	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
-	Logger *logrus.Logger `json:"-"`
-
-	// Production mode: enables safer and stricter defaults and config checking
-	Production bool `json:"production" mapstructure:"production"`
-}
 
 type SessionPackage struct {
 	SessionPtr *irma.Qr `json:"sessionPtr"`
@@ -87,8 +44,16 @@ type SessionResult struct {
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
 }
 
+// SessionHandler is a function that can handle a session result
+// once an IRMA session has completed.
+type SessionHandler func(*SessionResult)
+
 // Status is the status of an IRMA session.
 type Status string
+
+type LogOptions struct {
+	Response, Headers, From, EncodeBinary bool
+}
 
 const (
 	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
@@ -96,6 +61,12 @@ const (
 	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
 	StatusDone        Status = "DONE"        // The session has completed successfully
 	StatusTimeout     Status = "TIMEOUT"     // Session timed out
+)
+
+const (
+	ComponentRevocation = "revocation"
+	ComponentSession    = "session"
+	ComponentStatic     = "static"
 )
 
 // Remove this when dropping support for legacy pre-condiscon session requests
@@ -116,31 +87,6 @@ func (r *SessionResult) Legacy() *LegacySessionResult {
 		disclosed = append(disclosed, l[0])
 	}
 	return &LegacySessionResult{r.Token, r.Status, r.Type, r.ProofStatus, disclosed, r.Signature, r.Err}
-}
-
-func (conf *Configuration) PrivateKey(id irma.IssuerIdentifier) (sk *gabi.PrivateKey, err error) {
-	sk = conf.IssuerPrivateKeys[id]
-	if sk == nil {
-		if sk, err = conf.IrmaConfiguration.PrivateKey(id); err != nil {
-			return nil, err
-		}
-	}
-	return sk, nil
-}
-
-func (conf *Configuration) HavePrivateKeys() (bool, error) {
-	var err error
-	var sk *gabi.PrivateKey
-	for id := range conf.IrmaConfiguration.Issuers {
-		sk, err = conf.PrivateKey(id)
-		if err != nil {
-			return false, err
-		}
-		if sk != nil {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (status Status) Finished() bool {
@@ -172,13 +118,21 @@ func RemoteError(err Error, message string) *irma.RemoteError {
 // JsonResponse JSON-marshals the specified object or error
 // and returns it along with a suitable HTTP status code
 func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+	return encodeValOrError(v, err, json.Marshal)
+}
+
+func BinaryResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+	return encodeValOrError(v, err, irma.MarshalBinary)
+}
+
+func encodeValOrError(v interface{}, err *irma.RemoteError, encoder func(interface{}) ([]byte, error)) (int, []byte) {
 	msg := v
 	status := http.StatusOK
 	if err != nil {
 		msg = err
 		status = err.Status
 	}
-	b, e := json.Marshal(msg)
+	b, e := encoder(msg)
 	if e != nil {
 		Logger.Error("Failed to serialize response:", e.Error())
 		return http.StatusInternalServerError, nil
@@ -196,19 +150,32 @@ func WriteJson(w http.ResponseWriter, object interface{}) {
 	WriteResponse(w, object, nil)
 }
 
+func WriteBinaryResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError) {
+	status, bts := BinaryResponse(object, rerr)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(status)
+	_, _ = w.Write(bts)
+}
+
 // WriteResponse writes the specified object or error as JSON to the http.ResponseWriter.
 func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError) {
 	status, bts := JsonResponse(object, rerr)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(bts)
+	_, err := w.Write(bts)
+	if err != nil {
+		LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+	}
 }
 
 // WriteString writes the specified string to the http.ResponseWriter.
 func WriteString(w http.ResponseWriter, str string) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(str))
+	_, err := w.Write([]byte(str))
+	if err != nil {
+		LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+	}
 }
 
 // ParseSessionRequest attempts to parse the input as an irma.RequestorRequest instance, accepting (skipping "irma.")
@@ -301,56 +268,6 @@ func LocalIP() (string, error) {
 	return "", errors.New("No IP found")
 }
 
-// DefaultSchemesPath returns the default path for IRMA schemes, using XDG Base Directory Specification
-// https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html:
-//  - %LOCALAPPDATA% (i.e. C:\Users\$user\AppData\Local) if on Windows,
-//  - $XDG_DATA_HOME if set, otherwise $HOME/.local/share
-//  - $XDG_DATA_DIRS if set, otherwise /usr/local/share/ and /usr/share/
-//  - then the OSes temp dir (os.TempDir()),
-// returning the first of these that exists or can be created.
-func DefaultSchemesPath() string {
-	candidates := make([]string, 0, 8)
-	home := os.Getenv("HOME")
-	xdgDataHome := os.Getenv("XDG_DATA_HOME")
-	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
-
-	if runtime.GOOS == "windows" {
-		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
-		if appdata != "" {
-			candidates = append(candidates, appdata)
-		}
-	}
-
-	if xdgDataHome != "" {
-		candidates = append(candidates, xdgDataHome)
-	}
-	if xdgDataHome == "" && home != "" {
-		candidates = append(candidates, filepath.Join(home, ".local", "share"))
-	}
-	if xdgDataDirs != "" {
-		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
-	} else {
-		candidates = append(candidates, "/usr/local/share", "/usr/share")
-	}
-	candidates = append(candidates, filepath.Join(os.TempDir()))
-
-	for i := range candidates {
-		candidates[i] = filepath.Join(candidates[i], "irma", "irma_configuration")
-	}
-
-	return firstExistingPath(candidates)
-}
-
-func firstExistingPath(paths []string) string {
-	for _, path := range paths {
-		if err := fs.EnsureDirectoryExists(path); err != nil {
-			continue
-		}
-		return path
-	}
-	return ""
-}
-
 func Verbosity(level int) logrus.Level {
 	switch {
 	case level == 1:
@@ -364,6 +281,64 @@ func Verbosity(level int) logrus.Level {
 
 func TypeString(x interface{}) string {
 	return reflect.TypeOf(x).String()
+}
+
+func ResultJwt(sessionresult *SessionResult, issuer string, validity int, privatekey *rsa.PrivateKey) (string, error) {
+	standardclaims := jwt.StandardClaims{
+		Issuer:   issuer,
+		IssuedAt: time.Now().Unix(),
+		Subject:  string(sessionresult.Type) + "_result",
+	}
+	standardclaims.ExpiresAt = time.Now().Unix() + int64(validity)
+
+	var claims jwt.Claims
+	if sessionresult.LegacySession {
+		claims = struct {
+			jwt.StandardClaims
+			*LegacySessionResult
+		}{standardclaims, sessionresult.Legacy()}
+	} else {
+		claims = struct {
+			jwt.StandardClaims
+			*SessionResult
+		}{standardclaims, sessionresult}
+	}
+
+	// Sign the jwt and return it
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	return token.SignedString(privatekey)
+}
+
+func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, validity int, privatekey *rsa.PrivateKey) {
+	logger := Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
+	if !strings.HasPrefix(callbackUrl, "https") {
+		logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
+	} else {
+		logger.Debug("POSTing session result")
+	}
+
+	var res string
+	if privatekey != nil {
+		var err error
+		res, err = ResultJwt(result, issuer, validity, privatekey)
+		if err != nil {
+			_ = LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
+			return
+		}
+	} else {
+		bts, err := json.Marshal(result)
+		if err != nil {
+			_ = LogError(errors.WrapPrefix(err, "Failed to marshal session result for result callback", 0))
+			return
+		}
+		res = string(bts)
+	}
+
+	var x string // dummy for the server's return value that we don't care about
+	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, res); err != nil {
+		// not our problem, log it and go on
+		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
+	}
 }
 
 func log(level logrus.Level, err error) error {
@@ -391,13 +366,14 @@ func LogError(err error) error {
 	return log(logrus.ErrorLevel, err)
 }
 
-func LogWarning(err error) error {
-	return log(logrus.WarnLevel, err)
+func LogWarning(err error) {
+	_ = log(logrus.WarnLevel, err)
 }
 
-func LogRequest(typ, method, url, from string, headers http.Header, message []byte) {
+func LogRequest(typ, proto, method, url, from string, headers http.Header, message []byte) {
 	fields := logrus.Fields{
 		"type":   typ,
+		"proto":  proto,
 		"method": method,
 		"url":    url,
 	}
@@ -405,7 +381,11 @@ func LogRequest(typ, method, url, from string, headers http.Header, message []by
 		fields["headers"] = headers
 	}
 	if len(message) > 0 {
-		fields["message"] = string(message)
+		if headers.Get("Content-Type") == "application/octet-stream" {
+			fields["message"] = hex.EncodeToString(message)
+		} else {
+			fields["message"] = string(message)
+		}
 	}
 	if from != "" {
 		fields["from"] = from
@@ -413,13 +393,17 @@ func LogRequest(typ, method, url, from string, headers http.Header, message []by
 	Logger.WithFields(fields).Tracef("=> request")
 }
 
-func LogResponse(status int, duration time.Duration, response []byte) {
+func LogResponse(status int, duration time.Duration, binary bool, response []byte) {
 	fields := logrus.Fields{
 		"status":   status,
 		"duration": duration.String(),
 	}
 	if len(response) > 0 {
-		fields["response"] = string(response)
+		if binary {
+			fields["response"] = hex.EncodeToString(response)
+		} else {
+			fields["response"] = string(response)
+		}
 	}
 	l := Logger.WithFields(fields)
 	if status < 400 {
@@ -453,4 +437,63 @@ func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
 	}
 
 	return logger
+}
+
+// LogMiddleware is middleware for logging HTTP requests and responses.
+func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var message []byte
+			var err error
+
+			// Read r.Body, and then replace with a fresh ReadCloser for the next handler
+			if message, err = ioutil.ReadAll(r.Body); err != nil {
+				message = []byte("<failed to read body: " + err.Error() + ">")
+			}
+			_ = r.Body.Close()
+			r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+
+			var headers http.Header
+			var from string
+			if opts.Headers {
+				headers = r.Header
+			}
+			if opts.From {
+				from = r.RemoteAddr
+			}
+			LogRequest(typ, r.Proto, r.Method, r.URL.String(), from, headers, message)
+
+			// copy output of HTTP handler to our buffer for later logging
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			var buf *bytes.Buffer
+			if opts.Response {
+				buf = new(bytes.Buffer)
+				ww.Tee(buf)
+			}
+
+			// print response afterwards
+			var resp []byte
+			var start time.Time
+			defer func() {
+				if ww.Header().Get("Content-Type") == "text/event-stream" {
+					return
+				}
+				if opts.Response && ww.BytesWritten() > 0 {
+					resp = buf.Bytes()
+				}
+				if ww.Status() >= 400 {
+					resp = nil // avoid printing stacktraces and SSE in response
+				}
+				var hexencode bool
+				if opts.EncodeBinary && ww.Header().Get("Content-Type") != "application/json" {
+					hexencode = true
+				}
+				LogResponse(ww.Status(), time.Since(start), hexencode, resp)
+			}()
+
+			// start timer and preform request
+			start = time.Now()
+			next.ServeHTTP(ww, r)
+		})
+	}
 }

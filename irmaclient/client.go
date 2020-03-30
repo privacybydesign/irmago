@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bwesterb/go-atum"
@@ -10,8 +11,10 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/sirupsen/logrus"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -56,6 +59,11 @@ type Client struct {
 	Configuration         *irma.Configuration
 	irmaConfigurationPath string
 	handler               ClientHandler
+
+	jobs      chan func()   // queue of jobs to run
+	jobsPause chan struct{} // sending pauses background jobs
+
+	credMutex sync.Mutex
 }
 
 // SentryDSN should be set in the init() function
@@ -92,6 +100,7 @@ type ClientHandler interface {
 
 	UpdateConfiguration(new *irma.IrmaIdentifierSet)
 	UpdateAttributes()
+	Revoked(cred *irma.CredentialIdentifier)
 }
 
 // MissingAttributes contains all attribute requests that the client cannot satisfy with its
@@ -122,14 +131,14 @@ func New(
 	handler ClientHandler,
 ) (*Client, error) {
 	var err error
-	if err = fs.AssertPathExists(storagePath); err != nil {
+	if err = common.AssertPathExists(storagePath); err != nil {
 		return nil, err
 	}
-	if err = fs.AssertPathExists(irmaConfigurationPath); err != nil {
+	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
 
-	cm := &Client{
+	client := &Client{
 		credentialsCache:      make(map[irma.CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
@@ -137,12 +146,15 @@ func New(
 		handler:               handler,
 	}
 
-	cm.Configuration, err = irma.NewConfigurationFromAssets(filepath.Join(storagePath, "irma_configuration"), irmaConfigurationPath)
+	client.Configuration, err = irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath},
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	schemeMgrErr := cm.Configuration.ParseOrRestoreFolder()
+	schemeMgrErr := client.Configuration.ParseOrRestoreFolder()
 	// If schemMgrErr is of type SchemeManagerError, we continue and
 	// return it at the end; otherwise bail out now
 	_, isSchemeMgrErr := schemeMgrErr.(*irma.SchemeManagerError)
@@ -151,43 +163,97 @@ func New(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	cm.storage = storage{storagePath: storagePath, Configuration: cm.Configuration}
-	if err = cm.storage.EnsureStorageExists(); err != nil {
+	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration}
+	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}
 	// Legacy storage does not need ensuring existence
-	cm.fileStorage = fileStorage{storagePath: storagePath, Configuration: cm.Configuration}
+	client.fileStorage = fileStorage{storagePath: storagePath, Configuration: client.Configuration}
 
-	if cm.Preferences, err = cm.storage.LoadPreferences(); err != nil {
+	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
 		return nil, err
 	}
-	cm.applyPreferences()
+	client.applyPreferences()
 
 	// Perform new update functions from clientUpdates, if any
-	if err = cm.update(); err != nil {
+	if err = client.update(); err != nil {
 		return nil, err
 	}
 
 	// Load our stuff
-	if cm.secretkey, err = cm.storage.LoadSecretKey(); err != nil {
+	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
 		return nil, err
 	}
-	if cm.attributes, err = cm.storage.LoadAttributes(); err != nil {
+	if client.attributes, err = client.storage.LoadAttributes(); err != nil {
 		return nil, err
 	}
-	if cm.keyshareServers, err = cm.storage.LoadKeyshareServers(); err != nil {
+	if client.keyshareServers, err = client.storage.LoadKeyshareServers(); err != nil {
 		return nil, err
 	}
 
-	if len(cm.UnenrolledSchemeManagers()) > 1 {
+	if len(client.UnenrolledSchemeManagers()) > 1 {
 		return nil, errors.New("Too many keyshare servers")
 	}
 
-	return cm, schemeMgrErr
+	client.jobs = make(chan func(), 100)
+	client.initRevocation()
+	client.StartJobs()
+
+	return client, schemeMgrErr
 }
 
 func (client *Client) Close() error {
 	return client.storage.Close()
+}
+
+func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
+	irma.Logger.WithFields(logrus.Fields{"credid": credid, "index": index}).Debug("Preparing cache")
+	cred, err := client.credential(credid, index)
+	if err != nil {
+		return err
+	}
+	return cred.NonrevPrepareCache()
+}
+
+func (client *Client) reportError(err error) {
+	irma.Logger.Error(err)
+	raven.CaptureError(err, nil)
+}
+
+// StartJobs performs scheduled background jobs in separate goroutines.
+// Pause pending jobs with PauseJobs().
+func (client *Client) StartJobs() {
+	irma.Logger.Debug("starting jobs")
+	if client.jobsPause != nil {
+		irma.Logger.Debug("already running")
+		return
+	}
+
+	client.jobsPause = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-client.jobsPause:
+				client.jobsPause = nil
+				irma.Logger.Debug("jobs stopped")
+				return
+			case job := <-client.jobs:
+				irma.Logger.Debug("doing job")
+				job()
+				irma.Logger.Debug("job done")
+			}
+		}
+	}()
+}
+
+// PauseJobs pauses background job processing.
+func (client *Client) PauseJobs() {
+	irma.Logger.Debug("pausing jobs")
+	if client.jobsPause == nil {
+		irma.Logger.Debug("already paused")
+		return
+	}
+	close(client.jobsPause)
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
@@ -215,12 +281,21 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		id = cred.CredentialType().Identifier()
 	}
 
-	// Don't add duplicate creds
+	// If we receive a duplicate credential it should overwrite the previous one; remove it first
+	// (it makes no sense to possess duplicate credentials, but the new signature might contain new
+	// functionality such as a nonrevocation witness, so it does not suffice to just return here)
+	index := -1
 	for _, attrlistlist := range client.attributes {
-		for _, attrs := range attrlistlist {
-			if attrs.Hash() == cred.AttributeList().Hash() {
-				return nil
+		for i, attrs := range attrlistlist {
+			if attrs.Hash() == cred.attrs.Hash() {
+				index = i
+				break
 			}
+		}
+	}
+	if index != -1 {
+		if err = client.remove(id, index, false); err != nil {
+			return err
 		}
 	}
 
@@ -236,7 +311,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		}
 
 		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
-			if client.attrs(id)[i].EqualsExceptMetadata(cred.AttributeList()) {
+			if client.attrs(id)[i].EqualsExceptMetadata(cred.attrs) {
 				if err = client.remove(id, i, false); err != nil {
 					return
 				}
@@ -245,7 +320,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 	}
 
 	// Append the new cred to our attributes and credentials
-	client.attributes[id] = append(client.attrs(id), cred.AttributeList())
+	client.attributes[id] = append(client.attrs(id), cred.attrs)
 	if !id.Empty() {
 		if _, exists := client.credentialsCache[id]; !exists {
 			client.credentialsCache[id] = make(map[int]*credential)
@@ -263,11 +338,9 @@ func (client *Client) addCredential(cred *credential) (err error) {
 }
 
 func generateSecretKey() (*secretKey, error) {
-	key, err := gabi.RandomBigInt(gabi.DefaultSystemParameters[1024].Lm)
-	if err != nil {
-		return nil, err
-	}
-	return &secretKey{Key: key}, nil
+	return &secretKey{
+		Key: common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[1024].Lm))),
+	}, nil
 }
 
 // Removal methods
@@ -331,33 +404,34 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
-// RemoveAllCredentials removes all credentials.
-func (client *Client) RemoveAllCredentials() error {
-	removed := map[irma.CredentialTypeIdentifier][]irma.TranslatedString{}
-	for _, attrlistlist := range client.attributes {
-		for _, attrs := range attrlistlist {
-			if attrs.CredentialType() != nil {
-				removed[attrs.CredentialType().Identifier()] = attrs.Strings()
-			}
-		}
-	}
-	client.attributes = map[irma.CredentialTypeIdentifier][]*irma.AttributeList{}
+// Removes all attributes, signatures, logs and userdata
+// Includes the user's secret key, keyshare servers and preferences/updates
+// A fresh secret key is installed.
+func (client *Client) RemoveStorage() error {
+	var err error
 
-	logentry := &LogEntry{
-		Type:    ActionRemoval,
-		Time:    irma.Timestamp(time.Now()),
-		Removed: removed,
+	// Remove data from memory
+	client.attributes = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
+	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
+	client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
+
+	if err = client.storage.DeleteAll(); err != nil {
+		return err
 	}
 
-	return client.storage.Transaction(func(tx *transaction) error {
-		if err := client.storage.TxDeleteAllAttributes(tx); err != nil {
-			return err
-		}
-		if err := client.storage.TxDeleteAllSignatures(tx); err != nil {
-			return err
-		}
-		return client.storage.TxAddLogEntry(tx, logentry)
-	})
+	// Client assumes there is always a secret key, so we have to load a new one
+	client.secretkey, err = client.storage.LoadSecretKey()
+	if err != nil {
+		return err
+	}
+
+	// TODO: do we consider this setting as user data?
+	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
+		return err
+	}
+	client.applyPreferences()
+
+	return nil
 }
 
 // Attribute and credential getter methods
@@ -433,7 +507,7 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 		if attrs == nil { // We do not have the requested cred
 			return
 		}
-		sig, err := client.storage.LoadSignature(attrs)
+		sig, witness, err := client.storage.LoadSignature(attrs)
 		if err != nil {
 			return nil, err
 		}
@@ -449,10 +523,11 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 			return nil, errors.New("unknown public key")
 		}
 		cred, err := newCredential(&gabi.Credential{
-			Attributes: append([]*big.Int{client.secretkey.Key}, attrs.Ints...),
-			Signature:  sig,
-			Pk:         pk,
-		}, client.Configuration)
+			Attributes:           append([]*big.Int{client.secretkey.Key}, attrs.Ints...),
+			Signature:            sig,
+			NonRevocationWitness: witness,
+			Pk:                   pk,
+		}, attrs, client.Configuration)
 		if err != nil {
 			return nil, err
 		}
@@ -468,23 +543,33 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 // in the conjunction. (A credential instance from the client is a candidate it it contains
 // attributes required in this conjunction). If one credential type occurs multiple times in the
 // conjunction it is not added twice.
-func (client *Client) credCandidates(con irma.AttributeCon) credCandidateSet {
+func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeCon) (credCandidateSet, error) {
 	var candidates [][]*irma.CredentialIdentifier
 	for _, credtype := range con.CredentialTypes() {
-		creds := client.attributes[credtype]
-		if len(creds) == 0 {
-			return nil // we'll need at least one instance of each credtype in this conjunction
+		attrlistlist := client.attributes[credtype]
+		if len(attrlistlist) == 0 {
+			return nil, nil // we'll need at least one instance of each credtype in this conjunction
 		}
 		var c []*irma.CredentialIdentifier
-		for _, cred := range creds {
-			if !cred.IsValid() {
+		for i, attrlist := range attrlistlist {
+			if !attrlist.IsValid() || attrlist.Revoked {
+				// if the credential is revoked, it is not a candidate for disclosure even if
+				// the requestor did not ask for a nonrevocation proof
 				continue
 			}
-			c = append(c, &irma.CredentialIdentifier{Type: credtype, Hash: cred.Hash()})
+			cred, err := client.credential(credtype, i)
+			if err != nil {
+				return nil, err
+			}
+			if base.RequestsRevocation(credtype) && cred.NonRevocationWitness == nil {
+				// can't disclose from non-revocation aware credentials if nonrevocation proof is required
+				continue
+			}
+			c = append(c, &irma.CredentialIdentifier{Type: credtype, Hash: attrlist.Hash()})
 		}
 		candidates = append(candidates, c)
 	}
-	return candidates
+	return candidates, nil
 }
 
 type credCandidateSet [][]*irma.CredentialIdentifier
@@ -542,8 +627,8 @@ func cartesianProduct(candidates [][]*irma.CredentialIdentifier) credCandidateSe
 // specified disjunction. If the disjunction cannot be satisfied by the attributes that the client
 // currently posesses (ie. len(candidates) == 0), then the second return parameter lists the missing
 // attributes that would be necessary to satisfy the disjunction.
-func (client *Client) Candidates(discon irma.AttributeDisCon) (
-	candidates [][]*irma.AttributeIdentifier, missing map[int]map[int]MissingAttribute,
+func (client *Client) Candidates(base *irma.BaseRequest, discon irma.AttributeDisCon) (
+	candidates [][]*irma.AttributeIdentifier, missing map[int]map[int]MissingAttribute, err error,
 ) {
 	candidates = [][]*irma.AttributeIdentifier{}
 
@@ -560,7 +645,10 @@ func (client *Client) Candidates(discon irma.AttributeDisCon) (
 		// attribute types as [ a.a.a.a, a.a.a.b, a.a.b.x ], we map this to:
 		// [ [ a.a.a #1, a.a.a #2] , [ a.a.b #1 ] ]
 		// assuming the client has 2 instances of a.a.a and 1 instance of a.a.b.
-		c := client.credCandidates(con)
+		c, err := client.credCandidates(base, con)
+		if err != nil {
+			return nil, nil, err
+		}
 		if len(c) == 0 {
 			continue
 		}
@@ -601,7 +689,7 @@ func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]map
 				continue
 			}
 			for _, cred := range creds {
-				if cred.IsValid() && req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
+				if cred.IsValid() && !cred.Revoked && req.Satisfy(req.Type, cred.UntranslatedAttribute(req.Type)) {
 					continue conloop
 				}
 			}
@@ -615,16 +703,24 @@ func (client *Client) missingAttributes(discon irma.AttributeDisCon) map[int]map
 // CheckSatisfiability checks if this client has the required attributes
 // to satisfy the specifed disjunction list. If not, the unsatisfiable disjunctions
 // are returned.
-func (client *Client) CheckSatisfiability(condiscon irma.AttributeConDisCon) (
-	candidates [][][]*irma.AttributeIdentifier, missing MissingAttributes,
+func (client *Client) CheckSatisfiability(request irma.SessionRequest) (
+	candidates [][][]*irma.AttributeIdentifier, missing MissingAttributes, err error,
 ) {
+	condiscon := request.Disclosure().Disclose
+	base := request.Base()
 	candidates = make([][][]*irma.AttributeIdentifier, len(condiscon))
 	missing = MissingAttributes{}
 
+	client.credMutex.Lock()
+	defer client.credMutex.Unlock()
 	for i, discon := range condiscon {
-		var m map[int]map[int]MissingAttribute
-		candidates[i], m = client.Candidates(discon)
-		if len(candidates[i]) == 0 {
+		cands, m, err := client.Candidates(base, discon)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(cands) != 0 {
+			candidates[i] = cands
+		} else {
 			missing[i] = m
 		}
 	}
@@ -695,12 +791,21 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 	}
 
 	var builders gabi.ProofBuilderList
+	var builder gabi.ProofBuilder
 	for _, grp := range todisclose {
 		cred, err := client.credentialByID(grp.cred)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		builders = append(builders, cred.Credential.CreateDisclosureProofBuilder(grp.attrs))
+		if cred.attrs.Revoked {
+			return nil, nil, nil, revocation.ErrorRevoked
+		}
+		nonrev := request.Base().RequestsRevocation(cred.CredentialType().Identifier())
+		builder, err = cred.CreateDisclosureProofBuilder(grp.attrs, nonrev)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		builders = append(builders, builder)
 	}
 
 	var timestamp *atum.Timestamp
@@ -739,7 +844,7 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.Session
 
 // generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
 func generateIssuerProofNonce() (*big.Int, error) {
-	return gabi.RandomBigInt(gabi.DefaultSystemParameters[4096].Lstatzk)
+	return common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[4096].Lstatzk))), nil
 }
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
@@ -808,7 +913,16 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 			continue
 		}
 		sig := msg[i-offset]
-		attrs, err := request.Credentials[i-offset].AttributeList(client.Configuration, irma.GetMetadataVersion(request.Base().ProtocolVersion))
+
+		var nonrevAttr *big.Int
+		if sig.NonRevocationWitness != nil {
+			nonrevAttr = sig.NonRevocationWitness.E
+		}
+		attrs, err := request.Credentials[i-offset].AttributeList(
+			client.Configuration,
+			irma.GetMetadataVersion(request.Base().ProtocolVersion),
+			nonrevAttr,
+		)
 		if err != nil {
 			return err
 		}
@@ -820,7 +934,8 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 	}
 
 	for _, gabicred := range gabicreds {
-		newcred, err := newCredential(gabicred, client.Configuration)
+		attrs := irma.NewAttributeListFromInts(gabicred.Attributes[1:], client.Configuration)
+		newcred, err := newCredential(gabicred, attrs, client.Configuration)
 		if err != nil {
 			return err
 		}
@@ -1056,7 +1171,6 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 				client.credentialsCache[id][i].Attributes[:1],
 				attrs...,
 			)
-			client.credentialsCache[id][i].attrs = nil
 		}
 	}
 

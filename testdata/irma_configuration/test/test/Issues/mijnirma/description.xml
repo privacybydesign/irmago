@@ -1,7 +1,7 @@
 <IssueSpecification version="4">
 	<Name>
-		<en>MyIRMA login</en>
-		<nl>MijnIRMA login</nl>
+		<en>Demo MyIRMA login</en>
+		<nl>Demo MijnIRMA login</nl>
 	</Name>
 	<ShortName>
 		<en>MyIRMA</en>

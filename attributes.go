@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,6 +44,7 @@ type MetadataAttribute struct {
 type AttributeList struct {
 	*MetadataAttribute `json:"-"`
 	Ints               []*big.Int
+	Revoked            bool `json:",omitempty"`
 	strings            []TranslatedString
 	attrMap            map[AttributeTypeIdentifier]TranslatedString
 	info               *CredentialInfo
@@ -51,16 +53,18 @@ type AttributeList struct {
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
 func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeList {
-	return &AttributeList{
+	al := &AttributeList{
 		Ints:              ints,
 		MetadataAttribute: MetadataFromInt(ints[0], conf),
 	}
+	return al
 }
 
 func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
 		al.info = NewCredentialInfo(al.Ints, al.Conf)
 	}
+	al.info.Revoked = al.Revoked
 	return al.info
 }
 
@@ -98,6 +102,9 @@ func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]Tr
 		ctid := al.CredentialType().Identifier()
 		attrTypes := conf.CredentialTypes[ctid].AttributeTypes
 		for i, val := range al.Strings() {
+			if attrTypes[i].RevocationAttribute {
+				continue
+			}
 			al.attrMap[attrTypes[i].GetAttributeTypeIdentifier()] = val
 		}
 	}
@@ -239,15 +246,15 @@ func (attr *MetadataAttribute) SigningDate() time.Time {
 }
 
 func (attr *MetadataAttribute) setSigningDate() {
-	attr.setField(signingDateField, shortToByte(int(time.Now().Unix()/ExpiryFactor)))
+	attr.setField(signingDateField, shortToByte(uint(time.Now().Unix()/ExpiryFactor)))
 }
 
 // KeyCounter return the public key counter of the metadata attribute
-func (attr *MetadataAttribute) KeyCounter() int {
-	return int(binary.BigEndian.Uint16(attr.field(keyCounterField)))
+func (attr *MetadataAttribute) KeyCounter() uint {
+	return uint(binary.BigEndian.Uint16(attr.field(keyCounterField)))
 }
 
-func (attr *MetadataAttribute) setKeyCounter(i int) {
+func (attr *MetadataAttribute) setKeyCounter(i uint) {
 	attr.setField(keyCounterField, shortToByte(i))
 }
 
@@ -256,12 +263,14 @@ func (attr *MetadataAttribute) ValidityDuration() int {
 	return int(binary.BigEndian.Uint16(attr.field(validityField)))
 }
 
-func (attr *MetadataAttribute) setValidityDuration(weeks int) {
+func (attr *MetadataAttribute) setValidityDuration(weeks uint) {
 	attr.setField(validityField, shortToByte(weeks))
 }
 
 func (attr *MetadataAttribute) setDefaultValidityDuration() {
-	attr.setExpiryDate(nil)
+	// setExpiryDate only errors if setting the expiry date before the signing date,
+	// which never happens here
+	_ = attr.setExpiryDate(nil)
 }
 
 func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
@@ -272,7 +281,10 @@ func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
 		expiry = time.Time(*timestamp).Unix()
 	}
 	signing := attr.SigningDate().Unix()
-	attr.setValidityDuration(int((expiry - signing) / ExpiryFactor))
+	if expiry-signing < 0 {
+		return errors.New("cannot set expired date")
+	}
+	attr.setValidityDuration(uint((expiry - signing) / ExpiryFactor))
 	return nil
 }
 
@@ -343,8 +355,11 @@ func (attr *MetadataAttribute) setField(field metadataField, value []byte) {
 	attr.Int.SetBytes(bytes)
 }
 
-func shortToByte(x int) []byte {
+func shortToByte(x uint) []byte {
 	bytes := make([]byte, 2)
+	if x > 1<<16 {
+		panic("overflow uint16")
+	}
 	binary.BigEndian.PutUint16(bytes, uint16(x))
 	return bytes
 }

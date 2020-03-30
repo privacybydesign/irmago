@@ -7,9 +7,10 @@ import (
 	"reflect"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/bwesterb/go-atum"
-	"github.com/getsentry/raven-go"
+	raven "github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -72,11 +73,12 @@ type session struct {
 	Version    *irma.ProtocolVersion
 	ServerName irma.TranslatedString
 
-	choice      *irma.DisclosureChoice
-	attrIndices irma.DisclosedAttributeIndices
-	client      *Client
-	request     irma.SessionRequest
-	done        bool
+	choice         *irma.DisclosureChoice
+	attrIndices    irma.DisclosedAttributeIndices
+	client         *Client
+	request        irma.SessionRequest
+	done           bool
+	prepRevocation chan error // used when nonrevocation preprocessing is done
 
 	// State for issuance sessions
 	issuerProofNonce *big.Int
@@ -99,6 +101,7 @@ var supportedVersions = map[int][]int{
 	2: {
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
+		6, // introduces nonrevocation proofs
 	},
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
@@ -137,12 +140,15 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
+	client.PauseJobs()
+
 	session := &session{
-		Action:  action,
-		Handler: handler,
-		client:  client,
-		Version: minVersion,
-		request: request,
+		Action:         action,
+		Handler:        handler,
+		client:         client,
+		Version:        minVersion,
+		request:        request,
+		prepRevocation: make(chan error),
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
@@ -179,14 +185,17 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		return client.newQrSession(newqr, handler)
 	}
 
+	client.PauseJobs()
+
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
 	session := &session{
-		ServerURL: qr.URL,
-		Hostname:  u.Hostname(),
-		transport: irma.NewHTTPTransport(qr.URL),
-		Action:    irma.Action(qr.Type),
-		Handler:   handler,
-		client:    client,
+		ServerURL:      qr.URL,
+		Hostname:       u.Hostname(),
+		transport:      irma.NewHTTPTransport(qr.URL),
+		Action:         irma.Action(qr.Type),
+		Handler:        handler,
+		client:         client,
+		prepRevocation: make(chan error),
 	}
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
@@ -298,7 +307,36 @@ func (session *session) processSessionInfo() {
 		}
 	}
 
-	candidates, missing := session.client.CheckSatisfiability(session.request.Disclosure().Disclose)
+	// Prepare and update all revocation state asynchroniously.
+	// At this point, the user is waiting on us to present her with candidate attributes to choose from.
+	// We don't want to take too long, but we also preferably want to update our nonrevocation witnesses
+	// before we start calculating candidate attributes, as the update process may revoke some of
+	// our credentials: if updating finishes after the candidate computation, it could happen that
+	// options corresponding to revoked credentials are presented to the user. If she chooses those
+	// then the session would fail.
+	// So we wait a small amount of time for the update process to finish, so that
+	// if it finishes in time, then credentials that have been revoked can be excluded from the
+	// candidate calculation.
+	go func() {
+		session.prepRevocation <- session.client.NonrevPrepare(session.request)
+	}()
+	select {
+	case err := <-session.prepRevocation:
+		irma.Logger.Debug("revocation witnesses updated before candidate computation")
+		close(session.prepRevocation)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorRevocation, Err: err})
+			return
+		}
+	case <-time.After(time.Duration(irma.RevocationParameters.ClientUpdateTimeout) * time.Millisecond):
+		irma.Logger.Debug("starting candidate computation before revocation witnesses updating finished")
+	}
+
+	candidates, missing, err := session.client.CheckSatisfiability(session.request)
+	if err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+		return
+	}
 	if len(missing) > 0 {
 		session.Handler.UnsatisfiableRequest(session.request, session.ServerName, missing)
 		return
@@ -342,6 +380,13 @@ func (session *session) doSession(proceed bool) {
 		return
 	}
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+
+	// wait for revocation preparation to finish
+	err := <-session.prepRevocation
+	if err != nil {
+		session.fail(&irma.SessionError{ErrorType: irma.ErrorRevocation, Err: err})
+		return
+	}
 
 	if !session.Distributed() {
 		message, err := session.getProof()
@@ -454,6 +499,8 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.done = true
+	session.client.nonrevRepopulateCaches(session.request)
+	session.client.StartJobs()
 	session.Handler.Success(string(messageJson))
 }
 
@@ -630,12 +677,16 @@ func panicToError(e interface{}) *irma.SessionError {
 	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info + "\n\n" + string(debug.Stack())}
 }
 
-// Idempotently send DELETE to remote server, returning whether or not we did something
-func (session *session) delete() bool {
+// finish the session, by sending a DELETE to the server if there is one, and restarting local
+// background jobs. This function is idempotent, doing nothing when called a second time. It
+// returns whether or not it did something.
+func (session *session) finish() bool {
 	if !session.done {
 		if session.IsInteractive() {
 			session.transport.Delete()
 		}
+		session.client.nonrevRepopulateCaches(session.request)
+		session.client.StartJobs()
 		session.done = true
 		return true
 	}
@@ -643,14 +694,15 @@ func (session *session) delete() bool {
 }
 
 func (session *session) fail(err *irma.SessionError) {
-	if session.delete() && err.ErrorType != irma.ErrorKeyshareUnenrolled {
+	if session.finish() && err.ErrorType != irma.ErrorKeyshareUnenrolled {
+		irma.Logger.Warn("client session error: ", err.Error())
 		err.Err = errors.Wrap(err.Err, 0)
 		session.Handler.Failure(err)
 	}
 }
 
 func (session *session) cancel() {
-	if session.delete() {
+	if session.finish() {
 		session.Handler.Cancelled()
 	}
 }

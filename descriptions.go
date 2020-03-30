@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -57,19 +57,22 @@ type Issuer struct {
 
 // CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
 type CredentialType struct {
-	ID              string           `xml:"CredentialID"`
-	Name            TranslatedString `xml:"Name"`
-	ShortName       TranslatedString `xml:"ShortName"`
-	IssuerID        string           `xml:"IssuerID"`
-	SchemeManagerID string           `xml:"SchemeManager"`
-	IsSingleton     bool             `xml:"ShouldBeSingleton"`
-	DisallowDelete  bool             `xml:"DisallowDelete"`
-	Description     TranslatedString
-	AttributeTypes  []*AttributeType `xml:"Attributes>Attribute" json:"-"`
-	XMLVersion      int              `xml:"version,attr"`
-	XMLName         xml.Name         `xml:"IssueSpecification"`
-	IssueURL        TranslatedString `xml:"IssueURL"`
-	DeprecatedSince Timestamp
+	ID                    string           `xml:"CredentialID"`
+	Name                  TranslatedString `xml:"Name"`
+	ShortName             TranslatedString `xml:"ShortName"`
+	IssuerID              string           `xml:"IssuerID"`
+	SchemeManagerID       string           `xml:"SchemeManager"`
+	IsSingleton           bool             `xml:"ShouldBeSingleton"`
+	DisallowDelete        bool             `xml:"DisallowDelete"`
+	Description           TranslatedString
+	AttributeTypes        []*AttributeType `xml:"Attributes>Attribute" json:"-"`
+	RevocationServers     []string         `xml:"RevocationServers>RevocationServer"`
+	RevocationUpdateCount uint64
+	RevocationUpdateSpeed uint64
+	RevocationIndex       int              `xml:"-"`
+	XMLVersion            int              `xml:"version,attr"`
+	XMLName               xml.Name         `xml:"IssueSpecification"`
+	IssueURL              TranslatedString `xml:"IssueURL"`
 
 	Valid bool `xml:"-"`
 }
@@ -85,6 +88,8 @@ type AttributeType struct {
 
 	Index        int  `xml:"-"`
 	DisplayIndex *int `xml:"displayIndex,attr" json:",omitempty"`
+
+	RevocationAttribute bool `xml:"revocation,attr" json:",omitempty"`
 
 	// Taken from containing CredentialType
 	CredentialTypeID string `xml:"-"`
@@ -110,6 +115,10 @@ func (ct *CredentialType) RandomBlinds() []int {
 		}
 	}
 	return indices
+}
+
+func (ct *CredentialType) RevocationSupported() bool {
+	return len(ct.RevocationServers) > 0
 }
 
 // ContainsAttribute tests whether the specified attribute is contained in this
@@ -204,7 +213,7 @@ func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
 
 func (ct *CredentialType) Logo(conf *Configuration) string {
 	path := filepath.Join(conf.Path, ct.SchemeManagerID, ct.IssuerID, "Issues", ct.ID, "logo.png")
-	exists, err := fs.PathExists(path)
+	exists, err := common.PathExists(path)
 	if err != nil || !exists {
 		return ""
 	}

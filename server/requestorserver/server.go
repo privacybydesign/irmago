@@ -5,7 +5,6 @@
 package requestorserver
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -14,15 +13,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/sirupsen/logrus"
@@ -116,8 +113,6 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 	}()
 
 	if tlsConf != nil {
-		// Disable HTTP/2 (see package documentation of http): it breaks server side events :(
-		serv.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 		s.conf.Logger.Info(name, " TLS enabled")
 		return filterStopError(serv.ListenAndServeTLS("", ""))
 	} else {
@@ -173,12 +168,6 @@ func (s *Server) attachClientEndpoints(router *chi.Mux) {
 	if s.conf.StaticPath != "" {
 		router.Mount(s.conf.StaticPrefix, s.StaticFilesHandler())
 	}
-	router.Group(func(r chi.Router) {
-		if s.conf.Verbose >= 2 {
-			r.Use(s.logHandler("staticsession", true, true, true))
-		}
-		r.Post("/irma/session/{name}", s.handleCreateStatic)
-	})
 }
 
 // Handler returns a http.Handler that handles all IRMA requestor messages
@@ -192,81 +181,45 @@ func (s *Server) Handler() http.Handler {
 		s.attachClientEndpoints(router)
 	}
 
-	router.NotFound(s.logHandler("requestor", false, true, true)(router.NotFoundHandler()).ServeHTTP)
-	router.MethodNotAllowed(s.logHandler("requestor", false, true, true)(router.MethodNotAllowedHandler()).ServeHTTP)
+	log := server.LogOptions{Response: true, Headers: true, From: true}
+	router.NotFound(server.LogMiddleware("requestor", log)(router.NotFoundHandler()).ServeHTTP)
+	router.MethodNotAllowed(server.LogMiddleware("requestor", log)(router.MethodNotAllowedHandler()).ServeHTTP)
 
 	// Group main API endpoints, so we can attach our request/response logger to it
 	// while not adding it to the endpoints already added above (which do their own logging).
+
 	router.Group(func(r chi.Router) {
 		r.Use(cors.New(corsOptions).Handler)
 		if s.conf.Verbose >= 2 {
-			r.Use(s.logHandler("requestor", true, true, true))
+			r.Use(server.LogMiddleware("requestor", log))
 		}
 
 		// Server routes
-		r.Post("/session", s.handleCreate)
-		r.Delete("/session/{token}", s.handleDelete)
-		r.Get("/session/{token}/status", s.handleStatus)
-		r.Get("/session/{token}/statusevents", s.handleStatusEvents)
-		r.Get("/session/{token}/result", s.handleResult)
-
-		// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
-		r.Get("/session/{token}/result-jwt", s.handleJwtResult)
-		r.Get("/session/{token}/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
+		r.Route("/session", func(r chi.Router) {
+			r.Post("/", s.handleCreateSession)
+			r.Route("/{token}", func(r chi.Router) {
+				r.Delete("/", s.handleDelete)
+				r.Get("/status", s.handleStatus)
+				r.Get("/statusevents", s.handleStatusEvents)
+				r.Get("/result", s.handleResult)
+				// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
+				r.Get("/result-jwt", s.handleJwtResult)
+				r.Get("/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
+			})
+		})
 
 		r.Get("/publickey", s.handlePublicKey)
 	})
 
+	router.Group(func(r chi.Router) {
+		r.Use(cors.New(corsOptions).Handler)
+		if s.conf.Verbose >= 2 {
+			r.Use(server.LogMiddleware("revocation", log))
+		}
+		r.Post("/revocation", s.handleRevocation)
+	})
+
 	return router
-}
-
-// logHandler is middleware for logging HTTP requests and responses.
-func (s *Server) logHandler(typ string, logResponse, logHeaders, logFrom bool) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var message []byte
-			var err error
-
-			// Read r.Body, and then replace with a fresh ReadCloser for the next handler
-			if message, err = ioutil.ReadAll(r.Body); err != nil {
-				message = []byte("<failed to read body: " + err.Error() + ">")
-			}
-			_ = r.Body.Close()
-			r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
-
-			var headers http.Header
-			var from string
-			if logHeaders {
-				headers = r.Header
-			}
-			if logFrom {
-				from = r.RemoteAddr
-			}
-			server.LogRequest(typ, r.Method, r.URL.String(), from, headers, message)
-
-			// copy output of HTTP handler to our buffer for later logging
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-			var buf *bytes.Buffer
-			if logResponse {
-				buf = new(bytes.Buffer)
-				ww.Tee(buf)
-			}
-
-			// print response afterwards
-			var resp []byte
-			var start time.Time
-			defer func() {
-				if logResponse && ww.BytesWritten() > 0 {
-					resp = buf.Bytes()
-				}
-				server.LogResponse(ww.Status(), time.Since(start), resp)
-			}()
-
-			// start timer and preform request
-			start = time.Now()
-			next.ServeHTTP(ww, r)
-		})
-	}
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {
@@ -276,12 +229,13 @@ func (s *Server) StaticFilesHandler() http.Handler {
 	} else { // URL not known, don't log it but otherwise continue
 		s.conf.Logger.Infof("Hosting files at %s", s.conf.StaticPath)
 	}
-	return http.StripPrefix(s.conf.StaticPrefix, s.logHandler("static", false, false, false)(
+	opts := server.LogOptions{Response: false, Headers: false, From: false}
+	return http.StripPrefix(s.conf.StaticPrefix, server.LogMiddleware("static", opts)(
 		http.FileServer(http.Dir(s.conf.StaticPath))),
 	)
 }
 
-func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		s.conf.Logger.Error("Could not read session request HTTP POST body")
@@ -295,83 +249,49 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// one of them is applicable and able to authenticate the request.
 	var (
 		rrequest  irma.RequestorRequest
-		request   irma.SessionRequest
 		requestor string
 		rerr      *irma.RemoteError
 		applies   bool
 	)
 	for _, authenticator := range authenticators { // rrequest abbreviates "requestor request"
-		applies, rrequest, requestor, rerr = authenticator.Authenticate(r.Header, body)
+		applies, rrequest, requestor, rerr = authenticator.AuthenticateSession(r.Header, body)
 		if applies || rerr != nil {
 			break
 		}
 	}
-	if rerr != nil {
-		_ = server.LogError(rerr)
-		server.WriteResponse(w, nil, rerr)
-		return
-	}
-	if !applies {
-		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s",
-			server.ToJson(r.Header), string(body))
-		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authorized")
+	if ok := s.checkAuth(w, r, rerr, applies, body); !ok {
 		return
 	}
 
-	// Authorize request: check if the requestor is allowed to verify or issue
-	// the requested attributes or credentials
-	request = rrequest.SessionRequest()
-	if request.Action() == irma.ActionIssuing {
-		allowed, reason := s.conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
-		if !allowed {
-			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
-				Warn("Requestor not authorized to issue credential; full request: ", server.ToJson(request))
-			server.WriteError(w, server.ErrorUnauthorized, reason)
-			return
-		}
-	}
-	condiscon := request.Disclosure().Disclose
-	if len(condiscon) > 0 {
-		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), condiscon)
-		if !allowed {
-			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
-				Warn("Requestor not authorized to verify attribute; full request: ", server.ToJson(request))
-			server.WriteError(w, server.ErrorUnauthorized, reason)
-			return
-		}
-	}
-	if rrequest.Base().CallbackURL != "" && s.conf.jwtPrivateKey == nil {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
-		server.WriteError(w, server.ErrorUnsupported, "")
-		return
-	}
-
-	// Everything is authenticated and parsed, we're good to go!
-	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
-
-	server.WriteJson(w, server.SessionPackage{
-		SessionPtr: qr,
-		Token:      token,
-	})
+	s.createSession(w, requestor, rrequest)
 }
 
-func (s *Server) handleCreateStatic(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	rrequest := s.conf.staticSessions[name]
-	if rrequest == nil {
-		server.WriteError(w, server.ErrorInvalidRequest, "unknown static session")
-		return
-	}
-	qr, _, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		s.conf.Logger.Error("Could not read revocation request HTTP POST body")
+		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	server.WriteJson(w, qr)
+
+	var (
+		revreq    *irma.RevocationRequest
+		requestor string
+		rerr      *irma.RemoteError
+		applies   bool
+	)
+	for _, authenticator := range authenticators {
+		applies, revreq, requestor, rerr = authenticator.AuthenticateRevocation(r.Header, body)
+		if applies || rerr != nil {
+			break
+		}
+	}
+	if ok := s.checkAuth(w, r, rerr, applies, body); !ok {
+		return
+	}
+
+	s.revoke(w, requestor, revreq)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -386,6 +306,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	s.conf.Logger.WithFields(logrus.Fields{"session": token}).Debug("new client subscribed to server sent events")
+	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
+		Component: server.ComponentSession,
+		Arg:       token,
+	}))
 	if err := s.irmaserv.SubscribeServerSentEvents(w, r, token, true); err != nil {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      server.ErrorUnsupported.Status,
@@ -416,7 +340,7 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
-	if s.conf.jwtPrivateKey == nil {
+	if s.conf.JwtRSAPrivateKey == nil {
 		s.conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
@@ -429,7 +353,11 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	j, err := s.resultJwt(res)
+	j, err := server.ResultJwt(res,
+		s.conf.JwtIssuer,
+		s.irmaserv.GetRequest(res.Token).Base().ResultJwtValidity,
+		s.conf.JwtRSAPrivateKey,
+	)
 	if err != nil {
 		s.conf.Logger.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)
@@ -440,7 +368,7 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
-	if s.conf.jwtPrivateKey == nil {
+	if s.conf.JwtRSAPrivateKey == nil {
 		s.conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
@@ -491,7 +419,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 
 	// Sign the jwt and return it
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	resultJwt, err := token.SignedString(s.conf.jwtPrivateKey)
+	resultJwt, err := token.SignedString(s.conf.JwtRSAPrivateKey)
 	if err != nil {
 		s.conf.Logger.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)
@@ -502,12 +430,12 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
-	if s.conf.jwtPrivateKey == nil {
+	if s.conf.JwtRSAPrivateKey == nil {
 		server.WriteError(w, server.ErrorUnsupported, "")
 		return
 	}
 
-	bts, err := x509.MarshalPKIXPublicKey(&s.conf.jwtPrivateKey.PublicKey)
+	bts, err := x509.MarshalPKIXPublicKey(&s.conf.JwtRSAPrivateKey.PublicKey)
 	if err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
@@ -519,66 +447,100 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(pubBytes)
 }
 
-func (s *Server) resultJwt(sessionresult *server.SessionResult) (string, error) {
-	standardclaims := jwt.StandardClaims{
-		Issuer:   s.conf.JwtIssuer,
-		IssuedAt: time.Now().Unix(),
-		Subject:  string(sessionresult.Type) + "_result",
+func (s *Server) doResultCallback(result *server.SessionResult) {
+	url := s.irmaserv.GetRequest(result.Token).Base().CallbackURL
+	if url == "" {
+		return
 	}
-	validity := s.irmaserv.GetRequest(sessionresult.Token).Base().ResultJwtValidity
-	standardclaims.ExpiresAt = time.Now().Unix() + int64(validity)
-
-	var claims jwt.Claims
-	if sessionresult.LegacySession {
-		claims = struct {
-			jwt.StandardClaims
-			*server.LegacySessionResult
-		}{standardclaims, sessionresult.Legacy()}
-	} else {
-		claims = struct {
-			jwt.StandardClaims
-			*server.SessionResult
-		}{standardclaims, sessionresult}
-	}
-
-	// Sign the jwt and return it
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(s.conf.jwtPrivateKey)
+	server.DoResultCallback(url,
+		result,
+		s.conf.JwtIssuer,
+		s.irmaserv.GetRequest(result.Token).Base().ResultJwtValidity,
+		s.conf.JwtRSAPrivateKey,
+	)
 }
 
-func (s *Server) doResultCallback(result *server.SessionResult) {
-	callbackUrl := s.irmaserv.GetRequest(result.Token).Base().CallbackURL
-	if callbackUrl == "" {
+func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
+	// Authorize request: check if the requestor is allowed to verify or issue
+	// the requested attributes or credentials
+	request := rrequest.SessionRequest()
+	if request.Action() == irma.ActionIssuing {
+		allowed, reason := s.conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
+		if !allowed {
+			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+				Warn("Requestor not authorized to issue credential; full request: ", server.ToJson(request))
+			server.WriteError(w, server.ErrorUnauthorized, reason)
+			return
+		}
+	}
+	condiscon := request.Disclosure().Disclose
+	if len(condiscon) > 0 {
+		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), condiscon)
+		if !allowed {
+			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+				Warn("Requestor not authorized to verify attribute; full request: ", server.ToJson(request))
+			server.WriteError(w, server.ErrorUnauthorized, reason)
+			return
+		}
+	}
+	if rrequest.Base().CallbackURL != "" && s.conf.JwtRSAPrivateKey == nil {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
+		server.WriteError(w, server.ErrorUnsupported, "")
 		return
 	}
 
-	logger := s.conf.Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
-	if !strings.HasPrefix(callbackUrl, "https") {
-		logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
-	} else {
-		logger.Debug("POSTing session result")
+	// Everything is authenticated and parsed, we're good to go!
+	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
 	}
 
-	var res string
-	if s.conf.jwtPrivateKey != nil {
-		var err error
-		res, err = s.resultJwt(result)
-		if err != nil {
-			_ = server.LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
-			return
-		}
-	} else {
-		bts, err := json.Marshal(result)
-		if err != nil {
-			_ = server.LogError(errors.WrapPrefix(err, "Failed to marshal session result for result callback", 0))
-			return
-		}
-		res = string(bts)
-	}
+	server.WriteJson(w, server.SessionPackage{
+		SessionPtr: qr,
+		Token:      token,
+	})
+}
 
-	var x string // dummy for the server's return value that we don't care about
-	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, res); err != nil {
-		// not our problem, log it and go on
-		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
+func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
+	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
+	if !allowed {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "message": reason}).
+			Warn("Requestor not authorized to revoke credential; full request: ", server.ToJson(request))
+		server.WriteError(w, server.ErrorUnauthorized, reason)
+		return
 	}
+	var issued time.Time
+	if request.Issued != 0 {
+		issued = time.Unix(0, request.Issued)
+	}
+	if err := s.irmaserv.Revoke(request.CredentialType, request.Key, issued); err != nil {
+		if err == irma.ErrUnknownRevocationKey {
+			server.WriteError(w, server.ErrorUnknownRevocationKey, request.Key)
+		} else {
+			server.WriteError(w, server.ErrorRevocation, err.Error())
+		}
+		return
+	}
+	server.WriteString(w, "OK")
+}
+
+func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.RemoteError, applies bool, body []byte) bool {
+	if rerr != nil {
+		_ = server.LogError(rerr)
+		server.WriteResponse(w, nil, rerr)
+		return false
+	}
+	if !applies {
+		var ctype = r.Header.Get("Content-Type")
+		if ctype != "application/json" && ctype != "text/plain" {
+			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", ctype)
+			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
+			return false
+		}
+		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
+		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authenticated")
+		return false
+	}
+	return true
 }

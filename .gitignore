@@ -1,6 +1,6 @@
 *.test
 .idea/
-testdata/storage/*
-!testdata/storage/cardemu.xml
+testdata/tmp/*
+!testdata/tmp/cardemu.xml
 errors_*.go
 vendor/

@@ -8,13 +8,13 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
 // verifyCmd represents the verify command
 var verifyCmd = &cobra.Command{
-	Use:   "verify [irma_configuration]",
+	Use:   "verify [<path>]",
 	Short: "Verify irma_configuration folder correctness and authenticity",
 	Long:  `The verify command parses the specified irma_configuration directory, or the current directory if not specified, and checks the signatures of the contained scheme managers.`,
 	Args:  cobra.MaximumNArgs(1),
@@ -45,7 +45,7 @@ func RunVerify(path string, verbose bool) error {
 		return err
 	}
 
-	isScheme, err := fs.PathExists(filepath.Join(path, "index"))
+	isScheme, err := common.PathExists(filepath.Join(path, "index"))
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func RunVerify(path string, verbose bool) error {
 }
 
 func VerifyScheme(path string) error {
-	conf, err := irma.NewConfigurationReadOnly(filepath.Dir(path))
+	conf, err := irma.NewConfiguration(filepath.Dir(path), irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func VerifyScheme(path string) error {
 }
 
 func VerifyIrmaConfiguration(path string) error {
-	conf, err := irma.NewConfigurationReadOnly(path)
+	conf, err := irma.NewConfiguration(path, irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}

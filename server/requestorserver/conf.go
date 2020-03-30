@@ -1,18 +1,15 @@
 package requestorserver
 
 import (
-	"crypto/rsa"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -48,15 +45,7 @@ type Configuration struct {
 	ClientTlsPrivateKeyFile  string `json:"client_tls_privkey_file" mapstructure:"client_tls_privkey_file"`
 
 	// Requestor-specific permission and authentication configuration
-	RequestorsString string               `json:"-" mapstructure:"requestors"`
-	Requestors       map[string]Requestor `json:"requestors"`
-
-	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
-	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
-
-	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
-	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
-	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
+	Requestors map[string]Requestor `json:"requestors"`
 
 	// Max age in seconds of a session request JWT (using iat field)
 	MaxRequestAge int `json:"max_request_age" mapstructure:"max_request_age"`
@@ -65,11 +54,6 @@ type Configuration struct {
 	StaticPath string `json:"static_path" mapstructure:"static_path"`
 	// Host static files under this URL prefix
 	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
-
-	StaticSessions map[string]interface{} `json:"static_sessions"`
-
-	staticSessions map[string]irma.RequestorRequest
-	jwtPrivateKey  *rsa.PrivateKey
 }
 
 // Permissions specify which attributes or credential a requestor may verify or issue.
@@ -77,6 +61,7 @@ type Permissions struct {
 	Disclosing []string `json:"disclose_perms" mapstructure:"disclose_perms"`
 	Signing    []string `json:"sign_perms" mapstructure:"sign_perms"`
 	Issuing    []string `json:"issue_perms" mapstructure:"issue_perms"`
+	Revoking   []string `json:"revoke_perms" mapstructure:"revoke_perms"`
 }
 
 // Requestor contains all configuration (disclosure or verification permissions and authentication)
@@ -147,18 +132,29 @@ func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action,
 	return true, ""
 }
 
-func (conf *Configuration) initialize() error {
-	if err := conf.readPrivateKey(); err != nil {
-		return err
+func (conf *Configuration) CanRevoke(requestor string, cred irma.CredentialTypeIdentifier) (bool, string) {
+	permissions := append(conf.Requestors[requestor].Revoking, conf.Revoking...)
+	if len(permissions) == 0 { // requestor is not present in the permissions
+		return false, ""
 	}
+	_, err := conf.IrmaConfiguration.Revocation.Keys.PrivateKeyLatest(cred.IssuerIdentifier())
+	if err != nil {
+		return false, err.Error()
+	}
+	if contains(permissions, "*") ||
+		contains(permissions, cred.Root()+".*") ||
+		contains(permissions, cred.IssuerIdentifier().String()+".*") ||
+		contains(permissions, cred.String()) {
+		return true, ""
+	}
+	return false, cred.String()
+}
 
+func (conf *Configuration) initialize() error {
 	if conf.DisableRequestorAuthentication {
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
 		conf.Logger.Warn("Authentication of incoming session requests disabled: anyone who can reach this server can use it")
-		havekeys, err := conf.HavePrivateKeys()
-		if err != nil {
-			return err
-		}
+		havekeys := conf.HavePrivateKeys()
 		if len(conf.Permissions.Issuing) > 0 && havekeys {
 			if conf.separateClientServer() || !conf.Production {
 				conf.Logger.Warn("Issuance enabled and private keys installed: anyone who can reach this server can use it to issue attributes")
@@ -168,7 +164,15 @@ func (conf *Configuration) initialize() error {
 		}
 	} else {
 		if len(conf.Requestors) == 0 {
-			return errors.New("No requestors configured; either configure one or more requestors or disable requestor authentication")
+			revServer := false
+			for _, s := range conf.RevocationSettings {
+				if s.Server {
+					revServer = true
+				}
+			}
+			if !revServer {
+				return errors.New("No requestors configured; either configure one or more requestors or disable requestor authentication")
+			}
 		}
 		authenticators = map[AuthenticationMethod]Authenticator{
 			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},
@@ -217,7 +221,7 @@ func (conf *Configuration) initialize() error {
 	}
 
 	if conf.StaticPath != "" {
-		if err := fs.AssertPathExists(conf.StaticPath); err != nil {
+		if err := common.AssertPathExists(conf.StaticPath); err != nil {
 			return errors.WrapPrefix(err, "Invalid static_path", 0)
 		}
 		if conf.StaticPrefix[0] != '/' {
@@ -251,30 +255,8 @@ func (conf *Configuration) initialize() error {
 		}
 	}
 
-	if len(conf.StaticSessions) != 0 && conf.jwtPrivateKey == nil {
+	if len(conf.StaticSessions) != 0 && conf.JwtRSAPrivateKey == nil {
 		conf.Logger.Warn("Static sessions enabled and no JWT private key installed. Ensure that POSTs to the callback URLs of static sessions are trustworthy by keeping the callback URLs secret and by using HTTPS.")
-	}
-	conf.staticSessions = make(map[string]irma.RequestorRequest)
-	for name, r := range conf.StaticSessions {
-		if !regexp.MustCompile("^[a-zA-Z0-9_]+$").MatchString(name) {
-			return errors.Errorf("static session name %s not allowed, must be alphanumeric", name)
-		}
-		j, err := json.Marshal(r)
-		if err != nil {
-			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
-		}
-		rrequest, err := server.ParseSessionRequest(j)
-		if err != nil {
-			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
-		}
-		action := rrequest.SessionRequest().Action()
-		if action != irma.ActionDisclosing && action != irma.ActionSigning {
-			return errors.Errorf("static session %s must be either a disclosing or signing session", name)
-		}
-		if rrequest.Base().CallbackURL == "" {
-			return errors.Errorf("static session %s has no callback URL", name)
-		}
-		conf.staticSessions[name] = rrequest
 	}
 
 	return nil
@@ -301,11 +283,21 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 		"issuing":    requestorperms.Issuing,
 		"signing":    requestorperms.Signing,
 		"disclosing": requestorperms.Disclosing,
+		"revoking":   requestorperms.Revoking,
 	}
-	permissionlength := map[string]int{"issuing": 3, "signing": 4, "disclosing": 4}
+	permissionlength := map[string]int{"issuing": 3, "signing": 4, "disclosing": 4, "revoking": 3}
 
 	for typ, typeperms := range perms {
 		for _, permission := range typeperms {
+			switch strings.Count(permission, "*") {
+			case 0: // ok, nop
+			case 1:
+				if permission[len(permission)-1] != '*' {
+					errs = append(errs, fmt.Sprintf("%s %s permission '%s' contains asterisk not at end of line", requestor, typ, permission))
+				}
+			default:
+				errs = append(errs, fmt.Sprintf("%s %s permission '%s' contains too many asterisks (at most 1 permitted)", requestor, typ, permission))
+			}
 			parts := strings.Split(permission, ".")
 			if parts[len(parts)-1] == "*" {
 				if len(parts) > permissionlength[typ] {
@@ -331,9 +323,27 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 			}
 			if len(parts) > 2 && parts[2] != "*" {
 				id := irma.NewCredentialTypeIdentifier(strings.Join(parts[:3], "."))
-				if conf.IrmaConfiguration.CredentialTypes[id] == nil {
+				credtype := conf.IrmaConfiguration.CredentialTypes[id]
+				if credtype == nil {
 					errs = append(errs, fmt.Sprintf("%s %s permission '%s': unknown credential type", requestor, typ, permission))
 					continue
+				}
+				if typ == "issuing" || typ == "revoking" {
+					sk, err := conf.IrmaConfiguration.PrivateKeyLatest(credtype.IssuerIdentifier())
+					if err != nil {
+						errs = append(errs, fmt.Sprintf("%s %s permission '%s': failed to load private key: %s", requestor, typ, permission, err))
+						continue
+					}
+					if sk == nil {
+						errs = append(errs, fmt.Sprintf("%s %s permission '%s': private key not installed", requestor, typ, permission))
+						continue
+					}
+					if typ == "revoking" {
+						if _, err = sk.RevocationKey(); err != nil {
+							errs = append(errs, fmt.Sprintf("%s %s permission '%s': private key does not support revocation (add revocation key material to it using \"irma issuer revocation keypair\")", requestor, typ, permission))
+							continue
+						}
+					}
 				}
 			}
 			if len(parts) > 3 && parts[3] != "*" {
@@ -364,10 +374,10 @@ func (conf *Configuration) readTlsConf(cert, certfile, key, keyfile string) (*tl
 
 	var certbts, keybts []byte
 	var err error
-	if certbts, err = fs.ReadKey(cert, certfile); err != nil {
+	if certbts, err = common.ReadKey(cert, certfile); err != nil {
 		return nil, err
 	}
-	if keybts, err = fs.ReadKey(key, keyfile); err != nil {
+	if keybts, err = common.ReadKey(key, keyfile); err != nil {
 		return nil, err
 	}
 
@@ -389,21 +399,6 @@ func (conf *Configuration) readTlsConf(cert, certfile, key, keyfile string) (*tl
 			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}, nil
-}
-
-func (conf *Configuration) readPrivateKey() error {
-	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
-		return nil
-	}
-
-	keybytes, err := fs.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
-	if err != nil {
-		return errors.WrapPrefix(err, "failed to read private key", 0)
-	}
-
-	conf.jwtPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
-	conf.Logger.Info("Private key parsed, JWT endpoints enabled")
-	return err
 }
 
 func (conf *Configuration) separateClientServer() bool {

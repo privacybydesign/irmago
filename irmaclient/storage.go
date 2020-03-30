@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-errors/errors"
-
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/gabi/revocation"
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
+
+	"github.com/go-errors/errors"
 	"go.etcd.io/bbolt"
 )
 
@@ -48,13 +49,13 @@ func (s *storage) path(p string) string {
 	return filepath.Join(s.storagePath, p)
 }
 
-// EnsureStorageExists initializes the credential storage folder,
+// Open initializes the credential storage,
 // ensuring that it is in a usable state.
 // Setting it up in a properly protected location (e.g., with automatic
 // backups to iCloud/Google disabled) is the responsibility of the user.
-func (s *storage) EnsureStorageExists() error {
+func (s *storage) Open() error {
 	var err error
-	if err = fs.AssertPathExists(s.storagePath); err != nil {
+	if err = common.AssertPathExists(s.storagePath); err != nil {
 		return err
 	}
 	s.db, err = bbolt.Open(s.path(databaseFile), 0600, &bbolt.Options{Timeout: 1 * time.Second})
@@ -63,6 +64,15 @@ func (s *storage) EnsureStorageExists() error {
 
 func (s *storage) Close() error {
 	return s.db.Close()
+}
+
+func (s *storage) BucketExists(name []byte) bool {
+	return s.db.View(func(tx *bbolt.Tx) error {
+		if tx.Bucket(name) == nil {
+			return bbolt.ErrBucketNotFound
+		}
+		return nil
+	}) == nil
 }
 
 func (s *storage) txStore(tx *transaction, bucketName string, key string, value interface{}) error {
@@ -122,11 +132,19 @@ func (s *storage) TxDeleteAllSignatures(tx *transaction) error {
 	return tx.DeleteBucket([]byte(signaturesBucket))
 }
 
-func (s *storage) TxStoreSignature(tx *transaction, cred *credential) error {
-	return s.TxStoreCLSignature(tx, cred.AttributeList().Hash(), cred.Signature)
+type clSignatureWitness struct {
+	*gabi.CLSignature
+	Witness *revocation.Witness
 }
 
-func (s *storage) TxStoreCLSignature(tx *transaction, credHash string, sig *gabi.CLSignature) error {
+func (s *storage) TxStoreSignature(tx *transaction, cred *credential) error {
+	return s.TxStoreCLSignature(tx, cred.attrs.Hash(), &clSignatureWitness{
+		CLSignature: cred.Signature,
+		Witness:     cred.NonRevocationWitness,
+	})
+}
+
+func (s *storage) TxStoreCLSignature(tx *transaction, credHash string, sig *clSignatureWitness) error {
 	// We take the SHA256 hash over all attributes as the bucket key for the signature.
 	// This means that of the signatures of two credentials that have identical attributes
 	// only one gets stored, one overwriting the other - but that doesn't
@@ -223,15 +241,27 @@ func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
 	return s.txStore(tx, userdataBucket, updatesKey, updates)
 }
 
-func (s *storage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
-	signature = new(gabi.CLSignature)
-	found, err := s.load(signaturesBucket, attrs.Hash(), signature)
+func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
+	sig := new(clSignatureWitness)
+	found, err := s.load(signaturesBucket, attrs.Hash(), sig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if !found {
-		return nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
+		return nil, nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
 	}
-	return
+	if sig.Witness != nil {
+		pk, err := s.Configuration.Revocation.Keys.PublicKey(
+			attrs.CredentialType().IssuerIdentifier(),
+			sig.Witness.SignedAccumulator.PKCounter,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err = sig.Witness.Verify(pk); err != nil {
+			return nil, nil, err
+		}
+	}
+	return sig.CLSignature, sig.Witness, nil
 }
 
 // LoadSecretKey retrieves and returns the secret key from bbolt storage, or if no secret key
@@ -338,4 +368,34 @@ func (s *storage) LoadPreferences() (Preferences, error) {
 	config := defaultPreferences
 	_, err := s.load(userdataBucket, preferencesKey, &config)
 	return config, err
+}
+
+func (s *storage) TxDeleteUserdata(tx *transaction) error {
+	return tx.DeleteBucket([]byte(userdataBucket))
+}
+
+func (s *storage) TxDeleteLogs(tx *transaction) error {
+	return tx.DeleteBucket([]byte(logsBucket))
+}
+
+func (s *storage) TxDeleteAll(tx *transaction) error {
+	if err := s.TxDeleteAllAttributes(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	if err := s.TxDeleteAllSignatures(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	if err := s.TxDeleteUserdata(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	if err := s.TxDeleteLogs(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	return nil
+}
+
+func (s *storage) DeleteAll() error {
+	return s.Transaction(func(tx *transaction) error {
+		return s.TxDeleteAll(tx)
+	})
 }

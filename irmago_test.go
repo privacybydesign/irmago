@@ -1,21 +1,23 @@
 package irma
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
 
 func parseConfiguration(t *testing.T) *Configuration {
-	conf, err := NewConfiguration("testdata/irma_configuration")
+	conf, err := NewConfiguration("testdata/irma_configuration", ConfigurationOptions{})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 	return conf
@@ -29,12 +31,12 @@ func s2big(s string) (r *big.Int) {
 }
 
 func TestConfigurationAutocopy(t *testing.T) {
-	test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t)
+	storage := test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t, storage)
 
-	path := filepath.Join("testdata", "storage", "test", "irma_configuration")
-	require.NoError(t, fs.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
-	conf, err := NewConfigurationFromAssets(path, filepath.Join("testdata", "irma_configuration_updated"))
+	path := filepath.Join("testdata", "tmp", "client", "irma_configuration")
+	require.NoError(t, common.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
+	conf, err := NewConfiguration(path, ConfigurationOptions{Assets: filepath.Join("testdata", "irma_configuration_updated")})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 
@@ -46,7 +48,7 @@ func TestConfigurationAutocopy(t *testing.T) {
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	// The description.xml of the scheme manager under this folder has been edited
 	// to invalidate the scheme manager signature
-	conf, err := NewConfigurationReadOnly(filepath.Join("testdata", "irma_configuration_invalid"))
+	conf, err := NewConfiguration(filepath.Join("testdata", "irma_configuration_invalid"), ConfigurationOptions{ReadOnly: true})
 	require.NoError(t, err)
 
 	// Parsing it should return a SchemeManagerError
@@ -78,11 +80,12 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
 
-	test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t)
+	storage := test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t, storage)
 
-	conf, err := NewConfigurationFromAssets(filepath.Join("testdata", "storage", "test", "irma_configuration"),
-		filepath.Join("testdata", "irma_configuration_invalid"))
+	conf, err := NewConfiguration(filepath.Join("testdata", "tmp", "client", "irma_configuration"), ConfigurationOptions{
+		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
+	})
 	require.NoError(t, err)
 
 	err = conf.ParseOrRestoreFolder()
@@ -93,11 +96,12 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 }
 
 func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
-	test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t)
+	storage := test.CreateTestStorage(t)
+	defer test.ClearTestStorage(t, storage)
 
-	conf, err := NewConfigurationFromAssets(filepath.Join("testdata", "storage", "test", "irma_configuration"),
-		filepath.Join("testdata", "irma_configuration_invalid"))
+	conf, err := NewConfiguration(filepath.Join(storage, "client", "irma_configuration"), ConfigurationOptions{
+		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
+	})
 	require.NoError(t, err)
 
 	// Fails: no remote and the version in the assets is broken
@@ -129,7 +133,7 @@ func TestParseIrmaConfiguration(t *testing.T) {
 		conf.SchemeManagers[NewSchemeManagerIdentifier("irma-demo")].Name["en"],
 		"irma-demo scheme manager has unexpected name")
 	require.Equal(t,
-		"Radboud University Nijmegen",
+		"Demo Radboud University Nijmegen",
 		conf.Issuers[NewIssuerIdentifier("irma-demo.RU")].Name["en"],
 		"irma-demo.RU issuer has unexpected name")
 	require.Equal(t,
@@ -167,7 +171,7 @@ func TestMetadataAttribute(t *testing.T) {
 }
 
 func TestMetadataCompatibility(t *testing.T) {
-	conf, err := NewConfigurationReadOnly(filepath.Join("testdata", "irma_configuration"))
+	conf, err := NewConfiguration(filepath.Join("testdata", "irma_configuration"), ConfigurationOptions{ReadOnly: true})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 
@@ -183,7 +187,7 @@ func TestMetadataCompatibility(t *testing.T) {
 	require.Equal(t, byte(0x02), attr.Version(), "Unexpected metadata version")
 	require.Equal(t, time.Unix(1499904000, 0), attr.SigningDate(), "Unexpected signing date")
 	require.Equal(t, time.Unix(1516233600, 0), attr.Expiry(), "Unexpected expiry date")
-	require.Equal(t, 2, attr.KeyCounter(), "Unexpected key counter")
+	require.Equal(t, uint(2), attr.KeyCounter(), "Unexpected key counter")
 }
 
 func TestTimestamp(t *testing.T) {
@@ -521,4 +525,140 @@ func TestConDisconSingletons(t *testing.T) {
 			require.Error(t, args.attrs.Validate(conf))
 		}
 	}
+}
+
+func parseDisclosure(t *testing.T) (*Configuration, *DisclosureRequest, *Disclosure) {
+	conf := parseConfiguration(t)
+
+	requestJson := `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"zVQJMG6TKZwfcv5TExFVSQ==","protocolVersion":"2.5","disclose":[[["irma-demo.RU.studentCard.studentID"]]],"labels":{"0":null}}`
+	dislosureJson := `{"proofs":[{"c":"o21UPItMKWXmXNhBKsCBHDWjfRoy+uDdbDB1yhhpg3k=","A":"Bl68Ut2nu2nwhIweU9QGoNd6TkjUIRbQ6SDg22m8PzMEgca0KA4/Oy1gaJCUHM3FFJ0Gdj0+6/VpcF85JyuQZou93UXXwzN/Y7ohUw+YxVTQ7WcJmZ/VGDh3SME5KJ9aWjGmq61J2LQiiDSq+XrcWFfKPwad6BkDhV2reo4yo68=","e_response":"VD0pWdeDkd3V+R3734xyRcGeWMMTzpB0ZiJhKMzv37DmHN6RpRzTF/0HroAsMIMz8mBWxYPVRBiw","v_response":"3OWsmIDM7v0ByEXax2YZGp3BnJ5nkCLMcT6/ENU0EcpjrOz+rT+NayQSLgMshxAATpgkgAluFQ3owOoQEL8ZAkZTWUDW5j+qy7GDFd22ZOKEZLWf8Q1XRK3x6exV9CIMkcBQrv5W6EI9XB5OKKNB3Z/VTALY3UW8cQQ0DPHj83YBEL3LJQDxwaxvQeHx4nysJjsEoLJE1KPBynXlfxpk17O3HTg+NuX5gj7+ckiHrmXgthJHvqCTnNpEORtXDJTmKJUccUiyWuftA36cIXIxW4N6I88T4BYctwN+T9NY+hcjYESITtxB+r2elB98bzlWgHF8ohpOkkJGuNjTFjw=","a_responses":{"0":"eDQA3Lrh2WC3o/VP6KD/uaMSRy/em3gEfuqXD9tVT+yJFYb7GT91lle5dB6lg235pUSHzYIOET7FYOHwb4/YSAGQiix0IzqFkLo=","2":"kT3kfcIaPy3UBYPX78X10w/R1Cb5rHqoW5OUd06xqC1V9MqVw3zhtc/nBgWmvVwTgJrl2CyuBjjoF10RJz/FEjYZ0JAF57uUXW8=","3":"4oSBcyUT6mOBhk/Szk/5G5QrgaAADW6wSl91hGwTTNDTIUiK01GE11JozbwDeZsLPoFikzikwkPu9ZsOAtOtb/+IcadB6NP0KXA=","5":"OwUSSCBb9NOMOYYSGSYCrdFUNLKJ/b2YP5LlElFG5r4GPR71zTQsZ4QuJiMIt9iFPRP6PQUvMvjWA59UTQ9AlwKc9JcQzbScYBM="},"a_disclosed":{"1":"AwAKOQIBAALWy2qU9p3l52l9LU1rVT4M","4":"aGpt"}}],"indices":[[{"cred":0,"attr":4}]]}`
+	request := &DisclosureRequest{}
+	require.NoError(t, json.Unmarshal([]byte(requestJson), request))
+	disclosure := &Disclosure{}
+	require.NoError(t, json.Unmarshal([]byte(dislosureJson), disclosure))
+
+	return conf, request, disclosure
+}
+
+func TestVerify(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		conf, request, disclosure := parseDisclosure(t)
+		attr, status, err := disclosure.Verify(conf, request)
+		require.NoError(t, err)
+		require.Equal(t, ProofStatusValid, status)
+		require.Equal(t, "456", *attr[0][0].RawValue)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		conf, request, disclosure := parseDisclosure(t)
+		disclosure.Proofs[0].(*gabi.ProofD).AResponses[0] = big.NewInt(100)
+		_, status, err := disclosure.Verify(conf, request)
+		require.NoError(t, err)
+		require.Equal(t, ProofStatusInvalid, status)
+	})
+
+	t.Run("wrong attribute", func(t *testing.T) {
+		conf, request, disclosure := parseDisclosure(t)
+		request.Disclose[0][0][0].Type = NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+		_, status, err := disclosure.Verify(conf, request)
+		require.NoError(t, err)
+		require.Equal(t, ProofStatusMissingAttributes, status)
+	})
+
+	t.Run("wrong nonce", func(t *testing.T) {
+		conf, request, disclosure := parseDisclosure(t)
+		request.Nonce = big.NewInt(100)
+		_, status, err := disclosure.Verify(conf, request)
+		require.NoError(t, err)
+		require.Equal(t, ProofStatusInvalid, status)
+	})
+}
+
+var (
+	revocationTestCred  = NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	revocationPkCounter = uint(2)
+)
+
+func TestRevocationMemoryStore(t *testing.T) {
+	conf := parseConfiguration(t)
+	db := conf.Revocation.memdb
+	require.NotNil(t, db)
+
+	// prepare key material
+	sk, err := conf.Revocation.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
+	require.NoError(t, err)
+	pk, err := conf.Revocation.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
+	require.NoError(t, err)
+
+	// construct initial update
+	update, err := revocation.NewAccumulator(sk)
+	require.NoError(t, err)
+
+	// insert and retrieve it and check its validity
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 0, 0)
+
+	// construct new update message with a few revocation events
+	update = revokeMultiple(t, sk, update)
+	oldupdate := *update // save a copy for below
+
+	// insert it, retrieve it with a varying amount of events, verify
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 4, 3)
+
+	// construct and test against a new update whose events have no overlap with that of our db
+	update = revokeMultiple(t, sk, update)
+	update.Events = update.Events[4:]
+	require.Equal(t, uint64(4), update.Events[0].Index)
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 4, 6)
+
+	// attempt to insert an update that is too new
+	update = revokeMultiple(t, sk, update)
+	update.Events = update.Events[5:]
+	require.Equal(t, uint64(9), update.Events[0].Index)
+	db.Insert(revocationTestCred, update)
+	retrieve(t, pk, db, 4, 6)
+
+	// attempt to insert an update that is too old
+	db.Insert(revocationTestCred, &oldupdate)
+	retrieve(t, pk, db, 4, 6)
+}
+
+func revokeMultiple(t *testing.T, sk *revocation.PrivateKey, update *revocation.Update) *revocation.Update {
+	acc := update.SignedAccumulator.Accumulator
+	event := update.Events[len(update.Events)-1]
+	events := update.Events
+	for i := 0; i < 3; i++ {
+		acc, event = revoke(t, acc, event, sk)
+		events = append(events, event)
+	}
+	update, err := revocation.NewUpdate(sk, acc, events)
+	require.NoError(t, err)
+	return update
+}
+
+func retrieve(t *testing.T, pk *revocation.PublicKey, db memRevStorage, count uint64, expectedIndex uint64) {
+	var updates map[uint]*revocation.Update
+	var err error
+	for i := uint64(0); i <= count; i++ {
+		updates = db.Latest(revocationTestCred, i)
+		require.Len(t, updates, 1)
+		require.NotNil(t, updates[revocationPkCounter])
+		require.Len(t, updates[revocationPkCounter].Events, int(i))
+		_, err = updates[revocationPkCounter].Verify(pk)
+		require.NoError(t, err)
+	}
+	sacc := db.SignedAccumulator(revocationTestCred, revocationPkCounter)
+	acc, err := sacc.UnmarshalVerify(pk)
+	require.NoError(t, err)
+	require.Equal(t, expectedIndex, acc.Index)
+}
+
+func revoke(t *testing.T, acc *revocation.Accumulator, parent *revocation.Event, sk *revocation.PrivateKey) (*revocation.Accumulator, *revocation.Event) {
+	e, err := rand.Prime(rand.Reader, 100)
+	require.NoError(t, err)
+	acc, event, err := acc.Remove(sk, big.Convert(e), parent)
+	require.NoError(t, err)
+	return acc, event
 }

@@ -13,7 +13,7 @@ type credential struct {
 	attrs *irma.AttributeList
 }
 
-func newCredential(gabicred *gabi.Credential, conf *irma.Configuration) (*credential, error) {
+func newCredential(gabicred *gabi.Credential, attrs *irma.AttributeList, conf *irma.Configuration) (*credential, error) {
 	meta := irma.MetadataFromInt(gabicred.Attributes[1], conf)
 	cred := &credential{
 		Credential:        gabicred,
@@ -30,12 +30,6 @@ func newCredential(gabicred *gabi.Credential, conf *irma.Configuration) (*creden
 	if err != nil {
 		return nil, err
 	}
+	cred.attrs = attrs
 	return cred, nil
-}
-
-func (cred *credential) AttributeList() *irma.AttributeList {
-	if cred.attrs == nil {
-		cred.attrs = irma.NewAttributeListFromInts(cred.Credential.Attributes[1:], cred.MetadataAttribute.Conf)
-	}
-	return cred.attrs
 }

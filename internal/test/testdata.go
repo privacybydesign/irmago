@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,24 +31,24 @@ func checkError(t *testing.T, err error) {
 var schemeServer *http.Server
 var badServer *http.Server
 var badServerCount int
-var testStorageDir = "teststorage"
+var testStorageDir = "client"
 
 func StartSchemeManagerHttpServer() {
 	path := FindTestdataFolder(nil)
-	schemeServer = &http.Server{Addr: ":48681", Handler: http.FileServer(http.Dir(path))}
+	schemeServer = &http.Server{Addr: "localhost:48681", Handler: http.FileServer(http.Dir(path))}
 	go func() {
-		schemeServer.ListenAndServe()
+		_ = schemeServer.ListenAndServe()
 	}()
 	time.Sleep(100 * time.Millisecond) // Give server time to start
 }
 
 func StopSchemeManagerHttpServer() {
-	schemeServer.Close()
+	_ = schemeServer.Close()
 }
 
 // StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.
 func StartBadHttpServer(count int, timeout time.Duration, success string) {
-	badServer = &http.Server{Addr: ":48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	badServer = &http.Server{Addr: "localhost:48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if badServerCount >= count {
 			_, _ = fmt.Fprintln(w, success)
 			return
@@ -73,7 +74,7 @@ func FindTestdataFolder(t *testing.T) string {
 	path := "testdata"
 
 	for i := 0; i < 3; i++ {
-		exists, err := fs.PathExists(path)
+		exists, err := common.PathExists(path)
 		checkError(t, err)
 		if exists {
 			return path
@@ -85,32 +86,33 @@ func FindTestdataFolder(t *testing.T) string {
 	return ""
 }
 
-// ClearTestStorage removes any output from previously run tests to ensure a clean state;
-// some of the tests don't like it when there is existing state in storage.
-func ClearTestStorage(t *testing.T) {
-	path := filepath.Join(FindTestdataFolder(t), "storage", "test")
-	err := os.RemoveAll(path)
-	checkError(t, err)
+// ClearTestStorage removes any output from previously run tests.
+func ClearTestStorage(t *testing.T, storage string) {
+	checkError(t, os.RemoveAll(storage))
 }
 
-func CreateTestStorage(t *testing.T) {
-	ClearTestStorage(t)
-	path := filepath.Join(FindTestdataFolder(t), "storage")
-
-	// EnsureDirectoryExists eventually uses mkdir from the OS which is not recursive
-	// so we have to create the temporary test storage by two function calls.
-	// We ignore any error possibly returned by creating the first one, because if it errors,
-	// then the second one certainly will as well.
-	_ = fs.EnsureDirectoryExists(path)
-	err := fs.EnsureDirectoryExists(filepath.Join(path, "test"))
-	checkError(t, err)
+func ClearAllTestStorage() {
+	dir := filepath.Join(os.TempDir(), "irmatest*")
+	matches, err := filepath.Glob(dir)
+	checkError(nil, err)
+	for _, match := range matches {
+		checkError(nil, os.RemoveAll(match))
+	}
 }
 
-func SetupTestStorage(t *testing.T) {
-	CreateTestStorage(t)
+func CreateTestStorage(t *testing.T) string {
+	tmp, err := ioutil.TempDir("", "irmatest")
+	require.NoError(t, err)
+	checkError(t, common.EnsureDirectoryExists(filepath.Join(tmp, "client")))
+	return tmp
+}
+
+func SetupTestStorage(t *testing.T) string {
+	storage := CreateTestStorage(t)
 	path := FindTestdataFolder(t)
-	err := fs.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(path, "storage", "test"))
+	err := common.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(storage, "client"))
 	checkError(t, err)
+	return storage
 }
 
 func PrettyPrint(t *testing.T, ob interface{}) string {

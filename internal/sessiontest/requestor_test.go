@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
-
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -22,6 +22,9 @@ const (
 	sessionOptionUpdatedIrmaConfiguration sessionOption = 1 << iota
 	sessionOptionUnsatisfiableRequest
 	sessionOptionRetryPost
+	sessionOptionIgnoreError
+	sessionOptionReuseServer
+	sessionOptionClientWait
 )
 
 type requestorSessionResult struct {
@@ -29,14 +32,26 @@ type requestorSessionResult struct {
 	Missing irmaclient.MissingAttributes
 }
 
+func processOptions(options ...sessionOption) sessionOption {
+	var opts sessionOption = 0
+	for _, o := range options {
+		opts |= o
+	}
+	return opts
+}
+
 func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
 	if client == nil {
-		client, _ = parseStorage(t)
-		defer test.ClearTestStorage(t)
+		var handler *TestClientHandler
+		client, handler = parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
 	}
 
-	StartIrmaServer(t, len(options) == 1 && options[0] == sessionOptionUpdatedIrmaConfiguration)
-	defer StopIrmaServer()
+	opts := processOptions(options...)
+	if opts&sessionOptionReuseServer == 0 {
+		StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0)
+		defer StopIrmaServer()
+	}
 
 	clientChan := make(chan *SessionResult)
 	serverChan := make(chan *server.SessionResult)
@@ -46,27 +61,26 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	})
 	require.NoError(t, err)
 
-	opts := 0
-	for _, o := range options {
-		opts |= int(o)
-	}
-
 	var h irmaclient.Handler
-	if opts&int(sessionOptionUnsatisfiableRequest) > 0 {
-		h = &UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil, ""}}
+	if opts&sessionOptionUnsatisfiableRequest > 0 {
+		h = &UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil, 0, ""}}
 	} else {
-		h = &TestHandler{t, clientChan, client, nil, ""}
+		var wait time.Duration = 0
+		if opts&sessionOptionClientWait > 0 {
+			wait = 2 * time.Second
+		}
+		h = &TestHandler{t, clientChan, client, nil, wait, ""}
 	}
 
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(j), h)
 	clientResult := <-clientChan
-	if clientResult != nil {
+	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
 		require.NoError(t, clientResult.Err)
 	}
 
-	if opts&int(sessionOptionUnsatisfiableRequest) > 0 {
+	if opts&sessionOptionUnsatisfiableRequest > 0 {
 		require.NotNil(t, clientResult)
 		return &requestorSessionResult{nil, clientResult.Missing}
 	}
@@ -74,7 +88,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	serverResult := <-serverChan
 	require.Equal(t, token, serverResult.Token)
 
-	if opts&int(sessionOptionRetryPost) > 0 {
+	if opts&sessionOptionRetryPost > 0 {
 		req, err := http.NewRequest(http.MethodPost,
 			qr.URL+"/proofs",
 			bytes.NewBuffer([]byte(h.(*TestHandler).result)),
@@ -120,7 +134,8 @@ func TestRequestorDoubleGET(t *testing.T) {
 }
 
 func TestRequestorSignatureSession(t *testing.T) {
-	client, _ := parseStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	var serverResult *requestorSessionResult
@@ -175,7 +190,7 @@ func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest, opti
 }
 
 func TestRequestorIssuanceSession(t *testing.T) {
-	testRequestorIssuance(t, false)
+	testRequestorIssuance(t, false, nil)
 }
 
 func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
@@ -184,7 +199,7 @@ func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
 		"type":"issuing",
 		"credentials": [
 			{
-				"credential":"irma-demo.MijnOverheid.root",
+				"credential":"irma-demo.MijnOverheid.singleton",
 				"attributes" : {
 					"BSN":"12345"
 				}
@@ -209,7 +224,7 @@ func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
 	require.Equal(t, server.StatusDone, requestorSessionHelper(t, &ir, nil).Status)
 }
 
-func testRequestorIssuance(t *testing.T, keyshare bool) {
+func testRequestorIssuance(t *testing.T, keyshare bool, client *irmaclient.Client) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
@@ -220,9 +235,11 @@ func testRequestorIssuance(t *testing.T, keyshare bool) {
 			"level":             "42",
 		},
 	}, {
-		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 		Attributes: map[string]string{
-			"BSN": "299792458",
+			"firstnames": "Johan Pieter",
+			"firstname":  "Johan",
+			"familyname": "Stuivezand",
 		},
 	}}, attrid)
 	if keyshare {
@@ -232,7 +249,7 @@ func testRequestorIssuance(t *testing.T, keyshare bool) {
 		})
 	}
 
-	result := requestorSessionHelper(t, request, nil)
+	result := requestorSessionHelper(t, request, client)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
@@ -241,7 +258,8 @@ func testRequestorIssuance(t *testing.T, keyshare bool) {
 }
 
 func TestConDisCon(t *testing.T) {
-	client, _ := parseStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	ir := getMultipleIssuanceRequest()
 	ir.Credentials = append(ir.Credentials, &irma.CredentialRequest{
 		Validity:         ir.Credentials[0].Validity,
@@ -280,7 +298,8 @@ func TestConDisCon(t *testing.T) {
 }
 
 func TestOptionalDisclosure(t *testing.T) {
-	client, _ := parseStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	university := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university")
 	studentid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 

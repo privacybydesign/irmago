@@ -1,24 +1,26 @@
-image: privacybydesign/golang_dep:latest
+image: privacybydesign/golang_sql:latest
 
 cache:
   key: $CI_COMMIT_REF_SLUG
   paths:
-  - vendor/
+    - vendor/go/pkg/mod/
 
 stages:
   - test
   - build
 
 variables:
+  GOFLAGS: -mod=readonly
+  GOPATH: ${CI_PROJECT_DIR}/vendor/go
   PACKAGE_NAME: github.com/privacybydesign/irmago
   PLATFORMS: linux/amd64 darwin/amd64 windows/amd64 linux/arm linux/arm64
 
 before_script:
   - set -euxo pipefail
-  - mkdir -p "$GOPATH/src/$(dirname "$PACKAGE_NAME")"
-  - ln -s "$CI_PROJECT_DIR" "$GOPATH/src/$PACKAGE_NAME"
-  - cd "$GOPATH/src/$PACKAGE_NAME"
-  - dep ensure -v
+  - service mysql start
+  - mysql -e "create database test"
+  - mysql -e "grant all privileges on *.* to 'testuser'@'localhost' identified by 'testpassword'"
+  - mysql -e "flush privileges"
 
 unit_tests:
   stage: test
@@ -28,6 +30,8 @@ unit_tests:
 binaries:
   stage: build
   artifacts:
+    # Disabling artifact expiry is not supported yet, so make
+    expire_in: 100 year
     paths:
       - artifacts/*
   script:

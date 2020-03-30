@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // SchemeManagerPointer points to a remote IRMA scheme, containing information to download the scheme,
@@ -59,7 +59,7 @@ func (conf *Configuration) downloadDemoPrivateKeys(scheme *SchemeManager) error 
 	Logger.Debugf("Attempting downloading of private keys of scheme %s", scheme.ID)
 	transport := NewHTTPTransport(scheme.URL)
 
-	err := transport.GetFile("sk.pem", filepath.Join(conf.Path, scheme.ID, "sk.pem"))
+	err := conf.downloadFile(transport, scheme.ID, "sk.pem")
 	if err != nil { // If downloading of any of the private key fails just log it, and then continue
 		Logger.Warnf("Downloading private key of scheme %s failed ", scheme.ID)
 	}
@@ -75,13 +75,12 @@ func (conf *Configuration) downloadDemoPrivateKeys(scheme *SchemeManager) error 
 		i := strings.LastIndex(pkpath, "PublicKeys")
 		skpath := file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1)
 		parts := strings.Split(skpath, "/")
-		local := filepath.FromSlash(skpath)
-		exists, err := fs.PathExists(local)
+		exists, err := common.PathExists(filepath.FromSlash(skpath))
 		if exists || err != nil {
 			continue
 		}
-		remote := strings.Join(parts[len(parts)-3:len(parts)], "/")
-		if err = transport.GetFile(remote, local); err != nil {
+		remote := strings.Join(parts[len(parts)-3:], "/")
+		if err = conf.downloadFile(transport, scheme.ID, remote); err != nil {
 			Logger.Warnf("Downloading private key %s failed: %s", skpath, err)
 		}
 	}

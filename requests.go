@@ -13,23 +13,30 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 const (
 	LDContextDisclosureRequest = "https://irma.app/ld/request/disclosure/v2"
 	LDContextSignatureRequest  = "https://irma.app/ld/request/signature/v2"
 	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
+	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
 )
 
-// BaseRequest contains the context and nonce for an IRMA session.
+// BaseRequest contains information used by all IRMA session types, such the context and nonce,
+// and revocation information.
 type BaseRequest struct {
 	LDContext string `json:"@context,omitempty"`
 
-	// Chosen by the IRMA server during the session
+	// Set by the IRMA server during the session
 	Context         *big.Int         `json:"context,omitempty"`
 	Nonce           *big.Int         `json:"nonce,omitempty"`
 	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
+
+	// Revocation is set by the requestor to indicate that it requires nonrevocation proofs for the
+	// specified credential types.
+	Revocation NonRevocationParameters `json:"revocation,omitempty"`
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
@@ -80,9 +87,10 @@ type IssuanceRequest struct {
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
 	Validity         *Timestamp               `json:"validity,omitempty"`
-	KeyCounter       int                      `json:"keyCounter,omitempty"`
+	KeyCounter       uint                     `json:"keyCounter,omitempty"`
 	CredentialTypeID CredentialTypeIdentifier `json:"credential"`
 	Attributes       map[string]string        `json:"attributes"`
+	RevocationKey    string                   `json:"revocationKey,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -158,6 +166,11 @@ type IdentityProviderJwt struct {
 	Request *IdentityProviderRequest `json:"iprequest"`
 }
 
+type RevocationJwt struct {
+	ServerJwt
+	Request *RevocationRequest `json:"revrequest"`
+}
+
 // A RequestorJwt contains an IRMA session object.
 type RequestorJwt interface {
 	Action() Action
@@ -181,6 +194,45 @@ type AttributeRequest struct {
 	NotNull bool                    `json:"notNull,omitempty"`
 }
 
+type RevocationRequest struct {
+	LDContext      string                   `json:"@context,omitempty"`
+	CredentialType CredentialTypeIdentifier `json:"type"`
+	Key            string                   `json:"revocationKey,omitempty"`
+	Issued         int64                    `json:"issued,omitempty"`
+}
+
+type NonRevocationRequest struct {
+	Tolerance uint64                      `json:"tolerance,omitempty"`
+	Updates   map[uint]*revocation.Update `json:"updates,omitempty"`
+}
+
+type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
+
+func (n *NonRevocationParameters) UnmarshalJSON(bts []byte) error {
+	var slice []CredentialTypeIdentifier
+	if *n == nil {
+		*n = NonRevocationParameters{}
+	}
+	if err := json.Unmarshal(bts, &slice); err == nil {
+		for _, s := range slice {
+			(*n)[s] = &NonRevocationRequest{}
+		}
+		return nil
+	}
+	return json.Unmarshal(bts, (*map[CredentialTypeIdentifier]*NonRevocationRequest)(n))
+}
+
+func (n *NonRevocationParameters) MarshalJSON() ([]byte, error) {
+	return json.Marshal((*map[CredentialTypeIdentifier]*NonRevocationRequest)(n))
+}
+
+func (r *RevocationRequest) Validate() error {
+	if r.LDContext != LDContextRevocationRequest {
+		return errors.New("not a revocation request")
+	}
+	return nil
+}
+
 var (
 	bigZero = big.NewInt(0)
 	bigOne  = big.NewInt(1)
@@ -202,6 +254,29 @@ func (b *BaseRequest) GetNonce(*atum.Timestamp) *big.Int {
 		return bigZero
 	}
 	return b.Nonce
+}
+
+// RequestsRevocation indicates whether or not the requestor requires a nonrevocation proof for
+// the given credential type; that is, whether or not it included revocation update messages.
+func (b *BaseRequest) RequestsRevocation(id CredentialTypeIdentifier) bool {
+	return len(b.Revocation) > 0 && b.Revocation[id] != nil && len(b.Revocation[id].Updates) > 0
+}
+
+func (b *BaseRequest) RevocationSupported() bool {
+	return !b.ProtocolVersion.Below(2, 6)
+}
+
+func (b *BaseRequest) Validate(conf *Configuration) error {
+	for credid := range b.Revocation {
+		credtyp, ok := conf.CredentialTypes[credid]
+		if !ok {
+			return errors.Errorf("cannot requet nonrevocation proof for %s: unknown credential type", credid)
+		}
+		if !credtyp.RevocationSupported() {
+			return errors.Errorf("cannot request nonrevocation proof for %s: revocation not enabled in scheme", credid)
+		}
+	}
+	return nil
 }
 
 // CredentialTypes returns an array of all credential types occuring in this conjunction.
@@ -267,7 +342,7 @@ func (ar *AttributeRequest) Satisfy(attr AttributeTypeIdentifier, val *string) b
 
 // Satisfy returns if each of the attributes specified by proofs and indices satisfies each of
 // the contained AttributeRequests's. If so it also returns a list of the disclosed attribute values.
-func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
+func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, revocation map[int]*time.Time, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	if len(indices) < len(c) {
 		return false, nil, nil
 	}
@@ -278,7 +353,7 @@ func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttribu
 
 	for j := range c {
 		index := indices[j]
-		attr, val, err := extractAttribute(proofs, index, conf)
+		attr, val, err := extractAttribute(proofs, index, revocation[index.CredentialIndex], conf)
 		if err != nil {
 			return false, nil, err
 		}
@@ -305,11 +380,14 @@ func (dc AttributeDisCon) Validate() error {
 
 // Satisfy returns true if the attributes specified by proofs and indices satisfies any one of the
 // contained AttributeCon's. If so it also returns a list of the disclosed attribute values.
-func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, conf *Configuration) (bool, []*DisclosedAttribute, error) {
+func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttributeIndex, revocation map[int]*time.Time, conf *Configuration) (bool, []*DisclosedAttribute, error) {
 	for _, con := range dc {
-		satisfied, attrs, err := con.Satisfy(proofs, indices, conf)
-		if satisfied || err != nil {
-			return true, attrs, err
+		satisfied, attrs, err := con.Satisfy(proofs, indices, revocation, conf)
+		if err != nil {
+			return false, nil, err
+		}
+		if satisfied {
+			return true, attrs, nil
 		}
 	}
 	return false, nil, nil
@@ -336,7 +414,7 @@ func (cdc AttributeConDisCon) Validate(conf *Configuration) error {
 
 // Satisfy returns true if each of the contained AttributeDisCon is satisfied by the specified disclosure.
 // If so it also returns the disclosed attributes.
-func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuration) (bool, [][]*DisclosedAttribute, error) {
+func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, revocation map[int]*time.Time, conf *Configuration) (bool, [][]*DisclosedAttribute, error) {
 	if len(disclosure.Indices) < len(cdc) {
 		return false, nil, nil
 	}
@@ -344,7 +422,7 @@ func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, conf *Configuratio
 	complete := true
 
 	for i, discon := range cdc {
-		satisfied, attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[i], conf)
+		satisfied, attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[i], revocation, conf)
 		if err != nil {
 			return false, nil, err
 		}
@@ -416,7 +494,7 @@ func (dr *DisclosureRequest) identifiers() *IrmaIdentifierSet {
 		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
 		Issuers:         map[IssuerIdentifier]struct{}{},
 		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-		PublicKeys:      map[IssuerIdentifier][]int{},
+		PublicKeys:      map[IssuerIdentifier][]uint{},
 		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 	}
 
@@ -462,7 +540,7 @@ func (dr *DisclosureRequest) Validate() error {
 }
 
 func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*CredentialInfo, error) {
-	list, err := cr.AttributeList(conf, metadataVersion)
+	list, err := cr.AttributeList(conf, metadataVersion, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -494,8 +572,12 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 	}
 
 	for _, attrtype := range credtype.AttributeTypes {
-		if _, present := cr.Attributes[attrtype.ID]; !present && attrtype.Optional != "true" {
+		_, present := cr.Attributes[attrtype.ID]
+		if !present && !attrtype.RevocationAttribute && attrtype.Optional != "true" {
 			return errors.New("Required attribute not present in credential request")
+		}
+		if present && attrtype.RevocationAttribute {
+			return errors.New("revocation attribute cannot be set in credential request")
 		}
 	}
 
@@ -503,9 +585,18 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 }
 
 // AttributeList returns the list of attributes from this credential request.
-func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion byte) (*AttributeList, error) {
+func (cr *CredentialRequest) AttributeList(
+	conf *Configuration,
+	metadataVersion byte,
+	revocationAttr *big.Int,
+) (*AttributeList, error) {
 	if err := cr.Validate(conf); err != nil {
 		return nil, err
+	}
+
+	credtype := conf.CredentialTypes[cr.CredentialTypeID]
+	if !credtype.RevocationSupported() && revocationAttr != nil {
+		return nil, errors.Errorf("cannot specify revocationAttr: credtype %s does not support revocation", cr.CredentialTypeID.String())
 	}
 
 	// Compute metadata attribute
@@ -518,10 +609,19 @@ func (cr *CredentialRequest) AttributeList(conf *Configuration, metadataVersion 
 	}
 
 	// Compute other attributes
-	credtype := conf.CredentialTypes[cr.CredentialTypeID]
 	attrs := make([]*big.Int, len(credtype.AttributeTypes)+1)
 	attrs[0] = meta.Int
+	if credtype.RevocationSupported() {
+		if revocationAttr != nil {
+			attrs[credtype.RevocationIndex+1] = revocationAttr
+		} else {
+			attrs[credtype.RevocationIndex+1] = bigZero
+		}
+	}
 	for i, attrtype := range credtype.AttributeTypes {
+		if attrtype.RevocationAttribute {
+			continue
+		}
 		attrs[i+1] = new(big.Int)
 		if str, present := cr.Attributes[attrtype.ID]; present && !attrtype.RandomBlind {
 			// Set attribute to str << 1 + 1
@@ -543,7 +643,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			Issuers:         map[IssuerIdentifier]struct{}{},
 			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
 			AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
-			PublicKeys:      map[IssuerIdentifier][]int{},
+			PublicKeys:      map[IssuerIdentifier][]uint{},
 		}
 
 		for _, credreq := range ir.Credentials {
@@ -556,7 +656,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 				ir.ids.AttributeTypes[NewAttributeTypeIdentifier(credID.String()+"."+attr)] = struct{}{}
 			}
 			if ir.ids.PublicKeys[issuer] == nil {
-				ir.ids.PublicKeys[issuer] = []int{}
+				ir.ids.PublicKeys[issuer] = []uint{}
 			}
 			ir.ids.PublicKeys[issuer] = append(ir.ids.PublicKeys[issuer], credreq.KeyCounter)
 		}
@@ -703,7 +803,7 @@ func (t *Timestamp) Floor() Timestamp {
 }
 
 func readTimestamp(path string) (*Timestamp, bool, error) {
-	exists, err := fs.PathExists(path)
+	exists, err := common.PathExists(path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -880,6 +980,17 @@ func (claims *IdentityProviderJwt) Valid() error {
 		return errors.New("Issuance jwt not yet valid")
 	}
 	return nil
+}
+
+func (claims *RevocationJwt) Valid() error {
+	if time.Time(claims.IssuedAt).After(time.Now()) {
+		return errors.New("Signature jwt not yet valid")
+	}
+	return nil
+}
+
+func (claims *RevocationJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+	return jwt.NewWithClaims(method, claims).SignedString(key)
 }
 
 func (claims *ServiceProviderJwt) Action() Action { return ActionDisclosing }

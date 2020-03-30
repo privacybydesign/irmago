@@ -1,6 +1,7 @@
 <SchemeManager version="7">
 	<Id>irma-demo</Id>
 	<Url>http://localhost:48681/irma_configuration/irma-demo</Url>
+	<Demo>true</Demo>
 	<Name>
 		<en>Irma Demo</en>
 		<nl>Irma Demo</nl>

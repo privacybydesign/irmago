@@ -2,13 +2,14 @@ package requestorserver
 
 import (
 	"encoding/json"
+	"testing"
+	"time"
+
 	"github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
@@ -24,7 +25,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 			"Content-Type":  {"application/json"},
 		}
 
-		applies, parsedRequest, requestor, err := authenticator.Authenticate(requestHeaders, validRequestBody)
+		applies, parsedRequest, requestor, err := authenticator.AuthenticateSession(requestHeaders, validRequestBody)
 		if err != nil {
 			require.NoError(t, err)
 		}
@@ -42,7 +43,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 		}
 		invalidRequestBody := []byte(`{}`)
 
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, invalidRequestBody)
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, invalidRequestBody)
 		require.Error(t, err)
 		require.True(t, applies)
 	})
@@ -52,7 +53,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 			"Authorization": {"invalid"},
 			"Content-Type":  {"application/json"},
 		}
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, validRequestBody)
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, validRequestBody)
 		require.True(t, applies)
 		require.Error(t, err)
 	})
@@ -62,7 +63,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 			"UnusedHeader": {"token"},
 			"Content-Type": {"application/json"},
 		}
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, validRequestBody)
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, validRequestBody)
 		require.False(t, applies)
 		if err != nil {
 			require.NoError(t, err)
@@ -73,7 +74,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 		requestHeaders := map[string][]string{
 			"Authorization": {"token"},
 		}
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, validRequestBody)
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, validRequestBody)
 		require.False(t, applies)
 		if err != nil {
 			require.NoError(t, err)
@@ -103,7 +104,7 @@ func TestHmacAuthenticator_Authenticate(t *testing.T) {
 	}
 
 	t.Run("valid", func(t *testing.T) {
-		applies, parsedRequest, requestor, err := authenticator.Authenticate(requestHeaders, []byte(validJwtData))
+		applies, parsedRequest, requestor, err := authenticator.AuthenticateSession(requestHeaders, []byte(validJwtData))
 		if err != nil {
 			require.NoError(t, err)
 		}
@@ -118,7 +119,7 @@ func TestHmacAuthenticator_Authenticate(t *testing.T) {
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
 		require.NoError(t, jErr)
 
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, []byte(invalidJwtData))
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
 		require.Error(t, err)
 	})
@@ -132,7 +133,7 @@ func TestHmacAuthenticator_Authenticate(t *testing.T) {
 		})
 		emptyJwtData, jErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
 		require.NoError(t, jErr)
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, []byte(emptyJwtData))
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(emptyJwtData))
 		require.True(t, applies)
 		require.Error(t, err)
 		require.Equal(t, string(server.ErrorInvalidRequest.Type), err.ErrorName)
@@ -143,7 +144,7 @@ func TestHmacAuthenticator_Authenticate(t *testing.T) {
 		j.IssuedAt = (irma.Timestamp)(time.Unix(0, 0))
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
 		require.NoError(t, jErr)
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, []byte(invalidJwtData))
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
 		require.Error(t, err)
 		require.Equal(t, string(server.ErrorUnauthorized.Type), err.ErrorName)
@@ -154,7 +155,7 @@ func TestHmacAuthenticator_Authenticate(t *testing.T) {
 		j.IssuedAt = (irma.Timestamp)(time.Now().AddDate(1, 0, 0))
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
 		require.NoError(t, jErr)
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, []byte(invalidJwtData))
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
 		require.Error(t, err)
 		require.Equal(t, string(server.ErrorInvalidRequest.Type), err.ErrorName)
@@ -164,7 +165,7 @@ func TestHmacAuthenticator_Authenticate(t *testing.T) {
 		j := irma.NewServiceProviderJwt("my_requestor", disclosureRequest)
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, invalidKey)
 		require.NoError(t, jErr)
-		applies, _, _, err := authenticator.Authenticate(requestHeaders, []byte(invalidJwtData))
+		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
 		require.Error(t, err)
 	})

@@ -25,8 +25,9 @@ func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *Manual
 
 func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
 	if client == nil {
-		client, _ = parseStorage(t)
-		defer test.ClearTestStorage(t)
+		var handler *TestClientHandler
+		client, handler = parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
 	}
 
 	bts, err := json.Marshal(request)
@@ -110,8 +111,8 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 }
 
 func TestManualSessionMultiProof(t *testing.T) {
-	client, _ := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	// First, we need to issue an extra credential (BSN)
 	sessionHelper(t, getMultipleIssuanceRequest(), "issue", client)
@@ -119,7 +120,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 	// Request to sign with both BSN and StudentID
 	request := irma.NewSignatureRequest("I owe you everything",
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
-		irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN"))
+		irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname"))
 
 	ms := createManualSessionHandler(t, client)
 

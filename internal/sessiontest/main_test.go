@@ -27,24 +27,25 @@ func init() {
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
 	test.StartSchemeManagerHttpServer()
-	defer test.StopSchemeManagerHttpServer()
 
-	test.CreateTestStorage(nil)
-	defer test.ClearTestStorage(nil)
+	retval := m.Run()
 
-	os.Exit(m.Run())
+	test.StopSchemeManagerHttpServer()
+	test.ClearAllTestStorage()
+
+	os.Exit(retval)
 }
 
 func parseStorage(t *testing.T) (*irmaclient.Client, *TestClientHandler) {
-	test.SetupTestStorage(t)
-	return parseExistingStorage(t)
+	storage := test.SetupTestStorage(t)
+	return parseExistingStorage(t, storage)
 }
 
-func parseExistingStorage(t *testing.T) (*irmaclient.Client, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error)}
+func parseExistingStorage(t *testing.T, storage string) (*irmaclient.Client, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
 	client, err := irmaclient.New(
-		filepath.Join(path, "storage", "test"),
+		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
 	)
@@ -112,9 +113,11 @@ func getMultipleIssuanceRequest() *irma.IssuanceRequest {
 	request := getIssuanceRequest(false)
 	request.Credentials = append(request.Credentials, &irma.CredentialRequest{
 		Validity:         request.Credentials[0].Validity,
-		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 		Attributes: map[string]string{
-			"BSN": "299792458",
+			"firstnames": "Johan Pieter",
+			"firstname":  "Johan",
+			"familyname": "Stuivezand",
 		},
 	})
 	return request
@@ -201,8 +204,9 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 
 func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) {
 	if client == nil {
-		client, _ = parseStorage(t)
-		defer test.ClearTestStorage(t)
+		var handler *TestClientHandler
+		client, handler = parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
 	}
 
 	if TestType == "irmaserver" || TestType == "irmaserver-jwt" || TestType == "irmaserver-hmac-jwt" {

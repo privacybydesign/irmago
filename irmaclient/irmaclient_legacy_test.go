@@ -1,16 +1,16 @@
 package irmaclient
 
 import (
-	"github.com/privacybydesign/irmago/internal/test"
 	"testing"
+
+	"github.com/privacybydesign/irmago/internal/test"
 )
 
 func TestConvertingLegacyStorage(t *testing.T) {
-	test.SetTestStorageDir("legacy_teststorage")
-	defer test.SetTestStorageDir("teststorage")
+	test.SetTestStorageDir("client_legacy")
+	defer test.SetTestStorageDir("client")
 
 	// Test all tests in this file with legacy storage too
-	t.Run("TestVerify", TestVerify)
 	t.Run("TestStorageDeserialization", TestStorageDeserialization)
 	t.Run("TestCandidates", TestCandidates)
 	t.Run("TestCandidateConjunctionOrder", TestCandidateConjunctionOrder)

@@ -1,20 +1,23 @@
-package servercore
+package irmaserver
 
 import (
 	"crypto/rand"
 	"sync"
 	"time"
 
+	"github.com/alexandrevicenzi/go-sse"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
+
 	"github.com/sirupsen/logrus"
-	"gopkg.in/antage/eventsource.v1"
 )
 
 type session struct {
 	sync.Mutex
+	locked bool
 
 	action           irma.Action
 	token            string
@@ -26,7 +29,7 @@ type session struct {
 
 	status        server.Status
 	prevStatus    server.Status
-	evtSource     eventsource.EventSource
+	sse           *sse.Server
 	responseCache responseCache
 
 	lastActive time.Time
@@ -69,7 +72,7 @@ const (
 
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
-	maxProtocolVersion = irma.NewVersion(2, 5)
+	maxProtocolVersion = irma.NewVersion(2, 6)
 )
 
 func (s *memorySessionStore) get(t string) *session {
@@ -99,8 +102,9 @@ func (s *memorySessionStore) stop() {
 	s.Lock()
 	defer s.Unlock()
 	for _, session := range s.requestor {
-		if session.evtSource != nil {
-			session.evtSource.Close()
+		if session.sse != nil {
+			session.sse.CloseChannel("session/" + session.token)
+			session.sse.CloseChannel("session/" + session.clientToken)
 		}
 	}
 }
@@ -136,8 +140,9 @@ func (s *memorySessionStore) deleteExpired() {
 	s.Lock()
 	for _, token := range expired {
 		session := s.requestor[token]
-		if session.evtSource != nil {
-			session.evtSource.Close()
+		if session.sse != nil {
+			session.sse.CloseChannel("session/" + session.token)
+			session.sse.CloseChannel("session/" + session.clientToken)
 		}
 		delete(s.client, session.clientToken)
 		delete(s.requestor, token)
@@ -162,6 +167,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		prevStatus:  server.StatusInitialized,
 		conf:        s.conf,
 		sessions:    s.sessions,
+		sse:         s.serverSentEvents,
 		result: &server.SessionResult{
 			LegacySession: request.SessionRequest().Base().Legacy(),
 			Token:         token,
@@ -171,7 +177,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.token}).Debug("New session started")
-	nonce, _ := gabi.RandomBigInt(gabi.DefaultSystemParameters[2048].Lstatzk)
+	nonce := common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabi.DefaultSystemParameters[2048].Lstatzk))
 	ses.request.Base().Nonce = nonce
 	ses.request.Base().Context = one
 	s.sessions.add(ses)

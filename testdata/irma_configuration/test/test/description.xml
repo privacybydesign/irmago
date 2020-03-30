@@ -1,15 +1,15 @@
 <Issuer version="4">
 	<ID>test</ID>
 	<ShortName>
-		<en>PbD.f</en>
-		<nl>PbD.f</nl>
+		<en>Demo test issuer</en>
+		<nl>Demo test issuer</nl>
 	</ShortName>
 	<Name>
-		<en>Privacy by Design Foundation</en>
-		<nl>Stichting Privacy by Design</nl>
+		<en>Demo test issuer</en>
+		<nl>Demo test issuer</nl>
 	</Name>
 	<SchemeManager>test</SchemeManager>
 	<ContactAddress></ContactAddress>
-	<ContactEMail>info@privacybydesign.foundation</ContactEMail>
+	<ContactEMail>info@example.com</ContactEMail>
 	<baseURL></baseURL>
 </Issuer>

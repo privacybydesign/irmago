@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -24,18 +25,17 @@ import (
 
 	"encoding/hex"
 
-	"crypto/ecdsa"
 	"crypto/x509"
-	"encoding/asn1"
 	"encoding/pem"
-	gobig "math/big"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/gabi/signed"
+	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/sirupsen/logrus"
 )
 
 // Configuration keeps track of scheme managers, issuers, credential types and public keys,
@@ -45,6 +45,14 @@ type Configuration struct {
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
+
+	// Issuer private keys. If set (after calling ParseFolder()), will use these keys
+	// instead of keys in irma_configuration/$issuer/PrivateKeys.
+	PrivateKeys map[IssuerIdentifier]map[uint]*gabi.PrivateKey
+
+	Revocation *RevocationStorage `json:"-"`
+
+	Scheduler *gocron.Scheduler
 
 	// Path to the irma_configuration folder that this instance represents
 	Path string
@@ -56,14 +64,13 @@ type Configuration struct {
 	Warnings []string
 
 	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
-	publicKeys    map[IssuerIdentifier]map[int]*gabi.PublicKey
-	privateKeys   map[IssuerIdentifier]*gabi.PrivateKey
+	publicKeys    map[IssuerIdentifier]map[uint]*gabi.PublicKey
 	reverseHashes map[string]CredentialTypeIdentifier
 	initialized   bool
 	assets        string
 	readOnly      bool
-	cronchan      chan bool
-	scheduler     *gocron.Scheduler
+
+	options ConfigurationOptions
 }
 
 // ConfigurationFileHash encodes the SHA256 hash of an authenticated
@@ -104,45 +111,38 @@ const (
 	privkeyPattern = "%s/%s/%s/PrivateKeys/*.xml"
 )
 
+var (
+	validLangs = []string{"en", "nl"} // Hardcode these for now, TODO make configurable
+)
+
 func (sme SchemeManagerError) Error() string {
 	return fmt.Sprintf("Error parsing scheme manager %s: %s", sme.Manager.Name(), sme.Err.Error())
 }
 
+type ConfigurationOptions struct {
+	Assets              string
+	ReadOnly            bool
+	RevocationDBConnStr string
+	RevocationDBType    string
+	RevocationSettings  RevocationSettings
+}
+
 // NewConfiguration returns a new configuration. After this
 // ParseFolder() should be called to parse the specified path.
-func NewConfiguration(path string) (*Configuration, error) {
-	return newConfiguration(path, "")
-}
-
-// NewConfigurationReadOnly returns a new configuration whose representation on disk
-// is never altered. ParseFolder() should be called to parse the specified path.
-func NewConfigurationReadOnly(path string) (*Configuration, error) {
-	conf, err := newConfiguration(path, "")
-	if err != nil {
-		return nil, err
-	}
-	conf.readOnly = true
-	return conf, nil
-}
-
-// NewConfigurationFromAssets returns a new configuration, copying the schemes out of the assets folder to path.
-// ParseFolder() should be called to parse the specified path.
-func NewConfigurationFromAssets(path, assets string) (*Configuration, error) {
-	return newConfiguration(path, assets)
-}
-
-func newConfiguration(path string, assets string) (conf *Configuration, err error) {
+func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configuration, err error) {
 	conf = &Configuration{
-		Path:   path,
-		assets: assets,
+		Path:     path,
+		assets:   opts.Assets,
+		readOnly: opts.ReadOnly,
+		options:  opts,
 	}
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
-		if err = fs.AssertPathExists(conf.assets); err != nil {
+		if err = common.AssertPathExists(conf.assets); err != nil {
 			return nil, errors.WrapPrefix(err, "Nonexistent assets folder specified", 0)
 		}
 	}
-	if err = fs.EnsureDirectoryExists(conf.Path); err != nil {
+	if err = common.EnsureDirectoryExists(conf.Path); err != nil {
 		return nil, err
 	}
 
@@ -159,8 +159,8 @@ func (conf *Configuration) clear() {
 	conf.AttributeTypes = make(map[AttributeTypeIdentifier]*AttributeType)
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
-	conf.publicKeys = make(map[IssuerIdentifier]map[int]*gabi.PublicKey)
-	conf.privateKeys = make(map[IssuerIdentifier]*gabi.PrivateKey)
+	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
+	conf.PrivateKeys = make(map[IssuerIdentifier]map[uint]*gabi.PrivateKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 }
 
@@ -172,7 +172,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	// Copy any new or updated scheme managers out of the assets into storage
 	if conf.assets != "" {
-		err = fs.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
+		err = common.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
 			scheme := NewSchemeManagerIdentifier(filepath.Base(dir))
 			uptodate, err := conf.isUpToDate(scheme)
 			if err != nil {
@@ -190,7 +190,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	// Parse scheme managers in storage
 	var mgrerr *SchemeManagerError
-	err = fs.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
 		manager := NewSchemeManager(filepath.Base(dir))
 		err := conf.ParseSchemeManagerFolder(dir, manager)
 		if err == nil {
@@ -208,6 +208,21 @@ func (conf *Configuration) ParseFolder() (err error) {
 	if err != nil {
 		return
 	}
+
+	if conf.Revocation == nil {
+		conf.Scheduler = gocron.NewScheduler()
+		conf.Scheduler.Start()
+		conf.Revocation = &RevocationStorage{conf: conf}
+		if err = conf.Revocation.Load(
+			Logger.IsLevelEnabled(logrus.DebugLevel),
+			conf.options.RevocationDBType,
+			conf.options.RevocationDBConnStr,
+			conf.options.RevocationSettings,
+		); err != nil {
+			return err
+		}
+	}
+
 	conf.initialized = true
 	if mgrerr != nil {
 		return mgrerr
@@ -314,51 +329,46 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-// PrivateKey returns the specified private key, or nil if not present in the Configuration.
-func (conf *Configuration) PrivateKey(id IssuerIdentifier) (*gabi.PrivateKey, error) {
-	if sk := conf.privateKeys[id]; sk != nil {
-		return sk, nil
+// PrivateKey returns the specified private key of the specified issuer if present; an error otherwise.
+func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
+	if _, haveIssuer := conf.PrivateKeys[id]; haveIssuer {
+		if sk := conf.PrivateKeys[id][counter]; sk != nil {
+			return sk, nil
+		}
 	}
 
 	path := fmt.Sprintf(privkeyPattern, conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
-	files, err := filepath.Glob(path)
-	if err != nil {
-		return nil, err
-	}
-	if len(files) == 0 {
-		return nil, nil
-	}
-
-	// List private keys and get highest counter
-	counters := make([]int, 0, len(files))
-	for _, file := range files {
-		filename := filepath.Base(file)
-		count := filename[:len(filename)-4]
-		i, err := strconv.Atoi(count)
-		if err != nil {
-			return nil, err
-		}
-		counters = append(counters, i)
-	}
-	sort.Ints(counters)
-	counter := counters[len(counters)-1]
-
-	// Read private key
-	file := strings.Replace(path, "*", strconv.Itoa(counter), 1)
+	file := strings.Replace(path, "*", strconv.FormatUint(uint64(counter), 10), 1)
 	sk, err := gabi.NewPrivateKeyFromFile(file)
 	if err != nil {
 		return nil, err
 	}
-	if int(sk.Counter) != counter {
+	if sk.Counter != counter {
 		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
 	}
-	conf.privateKeys[id] = sk
+
+	if conf.PrivateKeys[id] == nil {
+		conf.PrivateKeys[id] = make(map[uint]*gabi.PrivateKey)
+	}
+	conf.PrivateKeys[id][counter] = sk
 
 	return sk, nil
 }
 
+// PrivateKeyLatest returns the latest private key of the specified issuer.
+func (conf *Configuration) PrivateKeyLatest(id IssuerIdentifier) (*gabi.PrivateKey, error) {
+	indices, err := conf.PrivateKeyIndices(id)
+	if err != nil {
+		return nil, err
+	}
+	if len(indices) == 0 {
+		return nil, errors.New("no private keys found")
+	}
+	return conf.PrivateKey(id, indices[len(indices)-1])
+}
+
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
-func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.PublicKey, error) {
+func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabi.PublicKey, error) {
 	var haveIssuer, haveKey bool
 	var err error
 	_, haveIssuer = conf.publicKeys[id]
@@ -374,6 +384,18 @@ func (conf *Configuration) PublicKey(id IssuerIdentifier, counter int) (*gabi.Pu
 		}
 	}
 	return conf.publicKeys[id][counter], nil
+}
+
+// PublicKeyLatest returns the latest private key of the specified issuer.
+func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabi.PublicKey, error) {
+	indices, err := conf.PublicKeyIndices(id)
+	if err != nil {
+		return nil, err
+	}
+	if len(indices) == 0 {
+		return nil, errors.New("no public keys found")
+	}
+	return conf.PublicKey(id, indices[len(indices)-1])
 }
 
 // KeyshareServerKeyFunc returns a function that returns the public key with which to verify a keyshare server JWT,
@@ -442,7 +464,7 @@ func (conf *Configuration) Prune() {
 }
 
 func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path string) error {
-	return fs.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
+	return common.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		issuer := &Issuer{}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", issuer)
 		if err != nil {
@@ -493,7 +515,7 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	manager := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
-	conf.publicKeys[issuerid] = map[int]*gabi.PublicKey{}
+	conf.publicKeys[issuerid] = map[uint]*gabi.PublicKey{}
 	path := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(path)
 	if err != nil {
@@ -503,7 +525,7 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	for _, file := range files {
 		filename := filepath.Base(file)
 		count := filename[:len(filename)-4]
-		i, err := strconv.Atoi(count)
+		i, err := strconv.ParseUint(count, 10, 32)
 		if err != nil {
 			return err
 		}
@@ -519,42 +541,74 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil {
 			return err
 		}
-		if int(pk.Counter) != i {
+		if pk.Counter != uint(i) {
 			return errors.Errorf("Public key %s of issuer %s has wrong <Counter>", file, issuerid.String())
 		}
 		pk.Issuer = issuerid.String()
-		conf.publicKeys[issuerid][i] = pk
+		conf.publicKeys[issuerid][uint(i)] = pk
 	}
 
 	return nil
 }
 
-func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []int, err error) {
+func sorter(ints []uint) func(i, j int) bool {
+	return func(i, j int) bool { return ints[i] < ints[j] }
+}
+
+// unionset returns the concatenation of a and b, without duplicates, and sorted.
+func unionset(a, b []uint) []uint {
+	m := map[uint]struct{}{}
+	for _, c := range [][]uint{a, b} {
+		for _, i := range c {
+			m[i] = struct{}{}
+		}
+	}
+	var ints []uint
+	for i := range m {
+		ints = append(ints, i)
+	}
+	sort.Slice(ints, sorter(ints))
+	return ints
+}
+
+func (conf *Configuration) PrivateKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
+	filekeys, err := conf.matchKeyPattern(issuerid, privkeyPattern)
+	if err != nil {
+		return nil, err
+	}
+	var mapkeys []uint
+	for _, sk := range conf.PrivateKeys[issuerid] {
+		mapkeys = append(mapkeys, sk.Counter)
+	}
+	return unionset(filekeys, mapkeys), nil
+}
+
+func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
 	return conf.matchKeyPattern(issuerid, pubkeyPattern)
 }
 
-func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (i []int, err error) {
+func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (ints []uint, err error) {
 	pkpath := fmt.Sprintf(pattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(pkpath)
 	if err != nil {
 		return
 	}
 	for _, file := range files {
-		var count int
+		var count uint64
 		base := filepath.Base(file)
-		if count, err = strconv.Atoi(base[:len(base)-4]); err != nil {
+		if count, err = strconv.ParseUint(base[:len(base)-4], 10, 32); err != nil {
 			return
 		}
-		i = append(i, count)
+		ints = append(ints, uint(count))
 	}
-	sort.Ints(i)
+	sort.Slice(ints, sorter(ints))
 	return
 }
 
 // parse $schememanager/$issuer/Issues/*/description.xml
 func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer *Issuer, path string) error {
 	var foundcred bool
-	err := fs.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
+	err := common.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		cred := &CredentialType{}
 		exists, err := conf.pathToDescription(manager, dir+"/description.xml", cred)
 		if err != nil {
@@ -567,6 +621,17 @@ func (conf *Configuration) parseCredentialsFolder(manager *SchemeManager, issuer
 			return err
 		}
 		foundcred = true
+		if cred.RevocationUpdateCount == 0 {
+			cred.RevocationUpdateCount = RevocationParameters.DefaultUpdateEventCount
+		}
+		if cred.RevocationUpdateSpeed == 0 {
+			cred.RevocationUpdateSpeed = RevocationParameters.ClientDefaultUpdateSpeed
+		}
+		for i, url := range cred.RevocationServers {
+			if url[len(url)-1] == '/' {
+				cred.RevocationServers[i] = url[:len(url)-1]
+			}
+		}
 		cred.Valid = conf.SchemeManagers[cred.SchemeManagerIdentifier()].Valid
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
@@ -653,7 +718,7 @@ func (conf *Configuration) CopyManagerFromAssets(scheme SchemeManagerIdentifier)
 	if err := os.RemoveAll(filepath.Join(conf.Path, name)); err != nil {
 		return false, err
 	}
-	return true, fs.CopyDirectory(
+	return true, common.CopyDirectory(
 		filepath.Join(conf.assets, name),
 		filepath.Join(conf.Path, name),
 	)
@@ -737,21 +802,20 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publicke
 	}
 
 	name := manager.ID
-	if err := fs.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
+	if err := common.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
 	}
 
 	t := NewHTTPTransport(manager.URL)
-	path := fmt.Sprintf("%s/%s", conf.Path, name)
-	if err := t.GetFile("description.xml", path+"/description.xml"); err != nil {
+	if err := conf.downloadFile(t, name, "description.xml"); err != nil {
 		return err
 	}
 	if publickey != nil {
-		if err := fs.SaveFile(path+"/pk.pem", publickey); err != nil {
+		if err := common.SaveFile(filepath.Join(conf.Path, name, "pk.pem"), publickey); err != nil {
 			return err
 		}
 	} else {
-		if err := t.GetFile("pk.pem", path+"/pk.pem"); err != nil {
+		if err := conf.downloadFile(t, name, "pk.pem"); err != nil {
 			return err
 		}
 	}
@@ -774,14 +838,10 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 	}
 
 	t := NewHTTPTransport(manager.URL)
-	path := fmt.Sprintf("%s/%s", conf.Path, manager.ID)
-	index := filepath.Join(path, "index")
-	sig := filepath.Join(path, "index.sig")
-
-	if err = t.GetFile("index", index); err != nil {
+	if err = conf.downloadFile(t, manager.ID, "index"); err != nil {
 		return
 	}
-	if err = t.GetFile("index.sig", sig); err != nil {
+	if err = conf.downloadFile(t, manager.ID, "index.sig"); err != nil {
 		return
 	}
 	err = conf.VerifySignature(manager.Identifier())
@@ -879,7 +939,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 			// Check if all attributes from the configuration are present, unless they are marked as optional
 			for _, attrtype := range typ.AttributeTypes {
 				_, present := credreq.Attributes[attrtype.ID]
-				if !present && !attrtype.IsOptional() {
+				if !present && !attrtype.RevocationAttribute && !attrtype.IsOptional() {
 					requiredMissing.AttributeTypes[attrtype.GetAttributeTypeIdentifier()] = struct{}{}
 				}
 			}
@@ -992,7 +1052,7 @@ func (i SchemeManagerIndex) Scheme() SchemeManagerIdentifier {
 // parseIndex parses the index file of the specified manager.
 func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (SchemeManagerIndex, error) {
 	path := filepath.Join(conf.Path, name, "index")
-	if err := fs.AssertPathExists(path); err != nil {
+	if err := common.AssertPathExists(path); err != nil {
 		return nil, fmt.Errorf("Missing scheme manager index file; tried %s", path)
 	}
 	indexbts, err := ioutil.ReadFile(path)
@@ -1008,7 +1068,7 @@ func (conf *Configuration) parseIndex(name string, manager *SchemeManager) (Sche
 }
 
 func (conf *Configuration) checkUnsignedFiles(name string, index SchemeManagerIndex) error {
-	return fs.WalkDir(filepath.Join(conf.Path, name), func(path string, info os.FileInfo) error {
+	return common.WalkDir(filepath.Join(conf.Path, name), func(path string, info os.FileInfo) error {
 		relpath, err := filepath.Rel(conf.Path, path)
 		if err != nil {
 			return err
@@ -1065,7 +1125,7 @@ func (conf *Configuration) VerifySchemeManager(manager *SchemeManager) error {
 
 	var exists bool
 	for file := range manager.index {
-		exists, err = fs.PathExists(filepath.Join(conf.Path, file))
+		exists, err = common.PathExists(filepath.Join(conf.Path, file))
 		if err != nil {
 			return err
 		}
@@ -1117,7 +1177,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	}()
 
 	dir := filepath.Join(conf.Path, id.String())
-	if err := fs.AssertPathExists(filepath.Join(dir, "index"), filepath.Join(dir, "index.sig"), filepath.Join(dir, "pk.pem")); err != nil {
+	if err := common.AssertPathExists(filepath.Join(dir, "index"), filepath.Join(dir, "index.sig"), filepath.Join(dir, "pk.pem")); err != nil {
 		return errors.New("Missing scheme manager index file, signature, or public key")
 	}
 
@@ -1126,14 +1186,13 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	if err != nil {
 		return err
 	}
-	indexhash := sha256.Sum256(indexbts)
 
 	// Read and parse scheme manager public key
 	pkbts, err := ioutil.ReadFile(filepath.Join(dir, "pk.pem"))
 	if err != nil {
 		return err
 	}
-	pk, err := ParsePemEcdsaPublicKey(pkbts)
+	pk, err := signed.UnmarshalPemPublicKey(pkbts)
 	if err != nil {
 		return err
 	}
@@ -1143,27 +1202,8 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	if err != nil {
 		return err
 	}
-	ints := make([]*gobig.Int, 0, 2)
-	_, err = asn1.Unmarshal(sig, &ints)
 
-	// Verify signature
-	if !ecdsa.Verify(pk, indexhash[:], ints[0], ints[1]) {
-		return errors.New("Scheme manager signature was invalid")
-	}
-	return nil
-}
-
-func ParsePemEcdsaPublicKey(pkbts []byte) (*ecdsa.PublicKey, error) {
-	pkblk, _ := pem.Decode(pkbts)
-	genericPk, err := x509.ParsePKIXPublicKey(pkblk.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	pk, ok := genericPk.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, errors.New("Invalid scheme manager public key")
-	}
-	return pk, nil
+	return signed.Verify(pk, indexbts, sig)
 }
 
 func (hash ConfigurationFileHash) String() string {
@@ -1188,20 +1228,6 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		return errors.Errorf("Cannot update unknown scheme manager %s", id)
 	}
 
-	// Check remote timestamp and see if we have to do anything
-	transport := NewHTTPTransport(manager.URL + "/")
-	timestampBts, err := transport.GetBytes("timestamp")
-	if err != nil {
-		return err
-	}
-	timestamp, err := parseTimestamp(timestampBts)
-	if err != nil {
-		return err
-	}
-	if !manager.Timestamp.Before(*timestamp) {
-		return nil
-	}
-
 	// Download the new index and its signature, and check that the new index
 	// is validly signed by the new signature
 	// By aborting immediately in case of error, and restoring backup versions
@@ -1215,6 +1241,24 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		return
 	}
 
+	// Check remote timestamp, verify it against the new index, and see if we have to do anything
+	transport := NewHTTPTransport(manager.URL + "/")
+	err = conf.downloadSignedFile(transport, manager.ID, "timestamp", newIndex[manager.ID+"/timestamp"])
+	if err != nil {
+		return err
+	}
+	timestampBts, err := ioutil.ReadFile(filepath.Join(conf.Path, manager.ID, "timestamp"))
+	if err != nil {
+		return err
+	}
+	timestamp, err := parseTimestamp(timestampBts)
+	if err != nil {
+		return err
+	}
+	if !manager.Timestamp.Before(*timestamp) {
+		return nil
+	}
+
 	issPattern := regexp.MustCompile("^([^/]+)/([^/]+)/description\\.xml")
 	credPattern := regexp.MustCompile("^([^/]+)/([^/]+)/Issues/([^/]+)/description\\.xml")
 
@@ -1223,7 +1267,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		path := filepath.Join(conf.Path, filename)
 		oldHash, known := manager.index[filename]
 		var have bool
-		have, err = fs.PathExists(path)
+		have, err = common.PathExists(path)
 		if err != nil {
 			return err
 		}
@@ -1236,7 +1280,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 		}
 		stripped := filename[len(manager.ID)+1:] // Scheme manager URL already ends with its name
 		// Download the new file, store it in our own irma_configuration folder
-		if err = transport.GetSignedFile(stripped, path, newHash); err != nil {
+		if err = conf.downloadSignedFile(transport, manager.ID, stripped, newHash); err != nil {
 			return
 		}
 		// See if the file is a credential type or issuer, and add it to the downloaded set if so
@@ -1284,9 +1328,7 @@ func (conf *Configuration) UpdateSchemes() error {
 
 func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 	Logger.Infof("Updating schemes every %d minutes", interval)
-
-	conf.scheduler = gocron.NewScheduler()
-	conf.scheduler.Every(uint64(interval)).Minutes().Do(func() {
+	update := func() {
 		if err := conf.UpdateSchemes(); err != nil {
 			Logger.Error("Scheme autoupdater failed: ")
 			if e, ok := err.(*errors.Error); ok {
@@ -1295,24 +1337,47 @@ func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 				Logger.Errorf("%s %s", reflect.TypeOf(err).String(), err.Error())
 			}
 		}
-	})
-
-	conf.cronchan = conf.scheduler.Start() // Schedule updates (first one in interval minutes from now)
-	go func() {                            // Run first update after a small delay
+	}
+	conf.Scheduler.Every(uint64(interval)).Minutes().Do(update)
+	// Run first update after a small delay
+	go func() {
 		<-time.NewTimer(200 * time.Millisecond).C
-		conf.scheduler.RunAll()
+		update()
 	}()
-
 }
 
-func (conf *Configuration) StopAutoUpdateSchemes() {
-	if conf.cronchan != nil {
-		Logger.Info("Stopped scheme autoupdater")
-		conf.cronchan <- true
+func (conf *Configuration) downloadSignedFile(
+	transport *HTTPTransport, scheme, path string, hash ConfigurationFileHash,
+) error {
+	b, err := transport.GetBytes(path)
+	if err != nil {
+		return err
 	}
+	sha := sha256.Sum256(b)
+	if hash != nil && !bytes.Equal(hash, sha[:]) {
+		return errors.Errorf("Signature over new file %s is not valid", scheme)
+	}
+	dest := filepath.Join(conf.Path, scheme, filepath.FromSlash(path))
+	if err = common.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
+		return err
+	}
+	return common.SaveFile(dest, b)
+}
+
+func (conf *Configuration) downloadFile(transport *HTTPTransport, scheme string, path string) error {
+	return conf.downloadSignedFile(transport, scheme, path, nil)
 }
 
 // Validation methods containing consistency checks on irma_configuration
+func validateDemoPrefix(ts TranslatedString) error {
+	prefix := "Demo "
+	for _, lang := range validLangs {
+		if !strings.HasPrefix(map[string]string(ts)[lang], prefix) {
+			return errors.Errorf("value in language %s is not prefixed with '%s'", lang, prefix)
+		}
+	}
+	return nil
+}
 
 func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer, dir string) error {
 	issuerid := issuer.Identifier()
@@ -1333,7 +1398,10 @@ func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer
 	if manager.ID != issuer.SchemeManagerID {
 		return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
 	}
-	if err = fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
+	if err = validateDemoPrefix(issuer.Name); manager.Demo && err != nil {
+		return errors.Errorf("Name of demo issuer %s invalid: %s", issuer.ID, err.Error())
+	}
+	if err = common.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Issuer %s has no logo.png", issuerid.String()))
 	}
 	return nil
@@ -1354,7 +1422,10 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 	if cred.SchemeManagerID != manager.ID {
 		return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
 	}
-	if err := fs.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
+	if err := validateDemoPrefix(cred.Name); manager.Demo && err != nil {
+		return errors.Errorf("Name of demo credential %s invalid: %s", cred.ID, err.Error())
+	}
+	if err := common.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
 	}
 	return conf.validateAttributes(cred)
@@ -1363,12 +1434,15 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 	name := cred.Identifier().String()
 	indices := make(map[int]struct{})
+	revocation := false
 	count := len(cred.AttributeTypes)
 	if count == 0 {
 		return errors.Errorf("Credenial type %s has no attributes", name)
 	}
 	for i, attr := range cred.AttributeTypes {
-		conf.validateTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
+		if !attr.RevocationAttribute {
+			conf.validateTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr)
+		}
 		index := i
 		if attr.DisplayIndex != nil {
 			index = *attr.DisplayIndex
@@ -1377,9 +1451,19 @@ func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 			conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute displayIndex at attribute %d", name, i))
 		}
 		indices[index] = struct{}{}
+		if attr.RevocationAttribute {
+			cred.RevocationIndex = i
+			revocation = true
+		}
 	}
 	if len(indices) != count {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has invalid attribute ordering, check the displayIndex tags", name))
+	}
+	if revocation && !cred.RevocationSupported() {
+		return errors.New("revocation attribute found but no RevocationServers configured")
+	}
+	if !revocation && cred.RevocationSupported() {
+		return errors.New("RevocationServers configured but no revocation attribute found")
 	}
 	return nil
 }
@@ -1394,7 +1478,7 @@ func (conf *Configuration) validateScheme(scheme *SchemeManager, dir string) err
 		return errors.Errorf("Scheme %s has wrong directory name %s", scheme.ID, filepath.Base(dir))
 	}
 	if scheme.KeyshareServer != "" {
-		if err := fs.AssertPathExists(filepath.Join(dir, "kss-0.pem")); err != nil {
+		if err := common.AssertPathExists(filepath.Join(dir, "kss-0.pem")); err != nil {
 			scheme.Status = SchemeManagerStatusParsingError
 			return errors.Errorf("Scheme %s has keyshare URL but no keyshare public key kss-0.pem", scheme.ID)
 		}
@@ -1406,7 +1490,6 @@ func (conf *Configuration) validateScheme(scheme *SchemeManager, dir string) err
 // validateTranslations checks for each member of the interface o that is of type TranslatedString
 // that it contains all necessary translations.
 func (conf *Configuration) validateTranslations(file string, o interface{}) {
-	langs := []string{"en", "nl"} // Hardcode these for now, TODO make configurable
 	v := reflect.ValueOf(o)
 
 	// Dereference in case of pointer or interface
@@ -1421,7 +1504,7 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 			continue
 		}
 		val := field.Interface().(TranslatedString)
-		for _, lang := range langs {
+		for _, lang := range validLangs {
 			if _, exists := val[lang]; !exists {
 				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
 			}
@@ -1461,33 +1544,30 @@ func (conf *Configuration) ValidateKeys() error {
 		}
 
 		// Check private keys if any
-		privkeypath := fmt.Sprintf(privkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
-		privkeys, err := filepath.Glob(privkeypath)
+		indices, err = conf.PrivateKeyIndices(issuerid)
 		if err != nil {
 			return err
 		}
-		for _, privkey := range privkeys {
-			filename := filepath.Base(privkey)
-			count, err := strconv.Atoi(filename[:len(filename)-4])
+		for _, i := range indices {
+			sk, err := conf.PrivateKey(issuerid, i)
 			if err != nil {
 				return err
 			}
-			sk, err := gabi.NewPrivateKeyFromFile(privkey)
-			if err != nil {
-				return err
+			if sk.Counter != i {
+				return errors.Errorf("Private key %d of issuer %s has wrong <Counter>", i, issuerid.String())
 			}
-			if int(sk.Counter) != count {
-				return errors.Errorf("Private key %s of issuer %s has wrong <Counter>", filename, issuerid.String())
-			}
-			pk, err := conf.PublicKey(issuerid, count)
+			pk, err := conf.PublicKey(issuerid, i)
 			if err != nil {
 				return err
 			}
 			if pk == nil {
-				return errors.Errorf("Private key %s of issuer %s has no corresponding public key", filename, issuerid.String())
+				return errors.Errorf("Private key %d of issuer %s has no corresponding public key", i, issuerid.String())
 			}
 			if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-				return errors.Errorf("Private key %s of issuer %s does not belong to public key %s", filename, issuerid.String(), filename)
+				return errors.Errorf("Private key %d of issuer %s does not belong to corresponding public key", i, issuerid.String())
+			}
+			if sk.RevocationSupported() != pk.RevocationSupported() {
+				return errors.Errorf("revocation support of private key %d of issuer %s is not consistent with corresponding public key", i, issuerid.String())
 			}
 		}
 
@@ -1500,8 +1580,78 @@ func (conf *Configuration) ValidateKeys() error {
 			if len(typ.AttributeTypes)+2 > len(latest.R) {
 				return errors.Errorf("Latest public key of issuer %s does not support the amount of attributes that credential type %s requires (%d, required: %d)", issuerid.String(), id.String(), len(latest.R), len(typ.AttributeTypes)+2)
 			}
+			pk, err := conf.PublicKeyLatest(typ.IssuerIdentifier())
+			if err != nil {
+				return err
+			}
+			if typ.RevocationSupported() && !pk.RevocationSupported() {
+				return errors.Errorf("credential type %s supports revocation but latest private key of issuer %s does not", typ.Identifier(), issuerid)
+			}
 		}
 	}
 
 	return nil
+}
+
+// DefaultDataPath returns the default storage path for IRMA, using XDG Base Directory Specification
+// https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html:
+//  - %LOCALAPPDATA% (i.e. C:\Users\$user\AppData\Local) if on Windows,
+//  - $XDG_DATA_HOME if set, otherwise $HOME/.local/share
+//  - $XDG_DATA_DIRS if set, otherwise /usr/local/share/ and /usr/share/
+//  - then the OSes temp dir (os.TempDir()),
+// returning the first of these that exists or can be created.
+func DefaultDataPath() string {
+	candidates := make([]string, 0, 8)
+	home := os.Getenv("HOME")
+	xdgDataHome := os.Getenv("XDG_DATA_HOME")
+	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
+
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
+		if appdata != "" {
+			candidates = append(candidates, appdata)
+		}
+	}
+
+	if xdgDataHome != "" {
+		candidates = append(candidates, xdgDataHome)
+	}
+	if xdgDataHome == "" && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "share"))
+	}
+	if xdgDataDirs != "" {
+		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
+	} else {
+		candidates = append(candidates, "/usr/local/share", "/usr/share")
+	}
+	candidates = append(candidates, filepath.Join(os.TempDir()))
+
+	for i := range candidates {
+		candidates[i] = filepath.Join(candidates[i], "irma")
+	}
+
+	return firstExistingPath(candidates)
+}
+
+// DefaultSchemesPath returns the default storage path for irma_configuration,
+// namely DefaultDataPath + "/irma_configuration"
+func DefaultSchemesPath() string {
+	p := DefaultDataPath()
+	if p == "" {
+		return p
+	}
+	p = filepath.Join(p, "irma_configuration")
+	if err := common.EnsureDirectoryExists(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+func firstExistingPath(paths []string) string {
+	for _, path := range paths {
+		if err := common.EnsureDirectoryExists(path); err == nil {
+			return path
+		}
+	}
+	return ""
 }

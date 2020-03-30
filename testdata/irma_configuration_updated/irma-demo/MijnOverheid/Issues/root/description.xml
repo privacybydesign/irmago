@@ -1,7 +1,7 @@
 <IssueSpecification version="4">
 	<Name>
-		<en>Root</en>
-		<nl>Root</nl>
+		<en>Demo Root</en>
+		<nl>Demo Root</nl>
 	</Name>
 	<ShortName>
 		<en>Root</en>
@@ -16,6 +16,9 @@
 	</Description>
 	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>true</ShouldBeSingleton>
+	<RevocationServers>
+		<RevocationServer>http://localhost:48683/</RevocationServer>
+	</RevocationServers>
 
 	<Attributes>
 		<Attribute id="BSN">
@@ -28,6 +31,7 @@
 				<nl>Uw BSN-nummer</nl>
 			</Description>
 		</Attribute>
+		<Attribute revocation="true" />
 	</Attributes>
 
 </IssueSpecification>

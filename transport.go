@@ -3,28 +3,30 @@ package irma
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/revocation"
 	"github.com/sirupsen/logrus"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
-	"github.com/privacybydesign/irmago/internal/fs"
 )
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
 	Server  string
+	Binary  bool
 	client  *retryablehttp.Client
 	headers map[string]string
 }
@@ -35,9 +37,20 @@ var Logger *logrus.Logger
 var transportlogger *log.Logger
 
 func init() {
-	if Logger == nil {
-		Logger = logrus.StandardLogger()
-	}
+	logger := logrus.New()
+	logger.SetFormatter(&prefixed.TextFormatter{
+		DisableColors:   true,
+		FullTimestamp:   true,
+		TimestampFormat: "15:04:05.000000",
+	})
+	SetLogger(logger)
+}
+
+func SetLogger(logger *logrus.Logger) {
+	Logger = logger
+	gabi.Logger = Logger
+	common.Logger = Logger
+	revocation.Logger = Logger
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
@@ -90,13 +103,56 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 	}
 }
 
+func (transport *HTTPTransport) marshal(o interface{}) ([]byte, error) {
+	if transport.Binary {
+		return MarshalBinary(o)
+	}
+	return json.Marshal(o)
+}
+
+func (transport *HTTPTransport) unmarshal(data []byte, dst interface{}) error {
+	if transport.Binary {
+		return UnmarshalBinary(data, dst)
+	}
+	return json.Unmarshal(data, dst)
+}
+
+func (transport *HTTPTransport) unmarshalValidate(data []byte, dst interface{}) error {
+	if transport.Binary {
+		return UnmarshalValidateBinary(data, dst)
+	}
+	return UnmarshalValidate(data, dst)
+}
+
+func (transport *HTTPTransport) log(prefix string, message interface{}, binary bool) {
+	if !Logger.IsLevelEnabled(logrus.TraceLevel) {
+		return // do nothing if nothing would be printed anyway
+	}
+	var str string
+	switch s := message.(type) {
+	case []byte:
+		str = string(s)
+	case string:
+		str = s
+	default:
+		tmp, _ := json.Marshal(message)
+		str = string(tmp)
+		binary = false
+	}
+	if !binary {
+		Logger.Tracef("transport: %s: %s", prefix, str)
+	} else {
+		Logger.Tracef("transport: %s (hex): %s", prefix, hex.EncodeToString([]byte(str)))
+	}
+}
+
 // SetHeader sets a header to be sent in requests.
 func (transport *HTTPTransport) SetHeader(name, val string) {
 	transport.headers[name] = val
 }
 
 func (transport *HTTPTransport) request(
-	url string, method string, reader io.Reader, isstr bool,
+	url string, method string, reader io.Reader, contenttype string,
 ) (response *http.Response, err error) {
 	var req retryablehttp.Request
 	req.Request, err = http.NewRequest(method, transport.Server+url, reader)
@@ -105,12 +161,8 @@ func (transport *HTTPTransport) request(
 	}
 
 	req.Header.Set("User-Agent", "irmago")
-	if reader != nil {
-		if isstr {
-			req.Header.Set("Content-Type", "text/plain; charset=UTF-8")
-		} else {
-			req.Header.Set("Content-Type", "application/json; charset=UTF-8")
-		}
+	if reader != nil && contenttype != "" {
+		req.Header.Set("Content-Type", contenttype)
 	}
 	for name, val := range transport.headers {
 		req.Header.Set(name, val)
@@ -131,24 +183,34 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 		panic("Cannot GET and also post an object")
 	}
 
-	var isstr bool
 	var reader io.Reader
+	var contenttype string
 	if object != nil {
-		var objstr string
-		if objstr, isstr = object.(string); isstr {
-			Logger.Trace("transport: body: ", objstr)
-			reader = bytes.NewBuffer([]byte(objstr))
-		} else {
-			marshaled, err := json.Marshal(object)
+		switch o := object.(type) {
+		case []byte:
+			transport.log("body", o, true)
+			contenttype = "application/octet-stream"
+			reader = bytes.NewBuffer(o)
+		case string:
+			transport.log("body", o, false)
+			contenttype = "text/plain; charset=UTF-8"
+			reader = bytes.NewBuffer([]byte(o))
+		default:
+			marshaled, err := transport.marshal(object)
 			if err != nil {
 				return &SessionError{ErrorType: ErrorSerialization, Err: err}
 			}
-			Logger.Trace("transport: body: ", string(marshaled))
+			transport.log("body", string(marshaled), transport.Binary)
+			if transport.Binary {
+				contenttype = "application/octet-stream"
+			} else {
+				contenttype = "application/json; charset=UTF-8"
+			}
 			reader = bytes.NewBuffer(marshaled)
 		}
 	}
 
-	res, err := transport.request(url, method, reader, isstr)
+	res, err := transport.request(url, method, reader, contenttype)
 	if err != nil {
 		return err
 	}
@@ -162,19 +224,22 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	}
 	if res.StatusCode != 200 {
 		apierr := &RemoteError{}
-		err = json.Unmarshal(body, apierr)
+		err = transport.unmarshal(body, apierr)
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
+			return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 		}
-		Logger.Tracef("transport: error: %+v", apierr)
+		transport.log("error", apierr, false)
 		return &SessionError{ErrorType: ErrorApi, RemoteStatus: res.StatusCode, RemoteError: apierr}
 	}
 
-	Logger.Tracef("transport: response: %s", string(body))
+	transport.log("response", body, transport.Binary)
+	if result == nil { // caller doesn't care about server response
+		return nil
+	}
 	if _, resultstr := result.(*string); resultstr {
 		*result.(*string) = string(body)
 	} else {
-		err = UnmarshalValidate(body, result)
+		err = transport.unmarshalValidate(body, result)
 		if err != nil {
 			return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 		}
@@ -184,7 +249,7 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 }
 
 func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
-	res, err := transport.request(url, http.MethodGet, nil, false)
+	res, err := transport.request(url, http.MethodGet, nil, "")
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
@@ -197,25 +262,6 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
 	return b, nil
-}
-
-func (transport *HTTPTransport) GetSignedFile(url string, dest string, hash ConfigurationFileHash) error {
-	b, err := transport.GetBytes(url)
-	if err != nil {
-		return err
-	}
-	sha := sha256.Sum256(b)
-	if hash != nil && !bytes.Equal(hash, sha[:]) {
-		return errors.Errorf("Signature over new file %s is not valid", dest)
-	}
-	if err = fs.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
-		return err
-	}
-	return fs.SaveFile(dest, b)
-}
-
-func (transport *HTTPTransport) GetFile(url string, dest string) error {
-	return transport.GetSignedFile(url, dest, nil)
 }
 
 // Post sends the object to the server and parses its response into result.

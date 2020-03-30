@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 )
@@ -131,6 +132,24 @@ func UnmarshalValidate(data []byte, dest interface{}) error {
 	return nil
 }
 
+func UnmarshalValidateBinary(data []byte, dest interface{}) error {
+	if err := UnmarshalBinary(data, dest); err != nil {
+		return err
+	}
+	if v, ok := dest.(Validator); ok {
+		return v.Validate()
+	}
+	return nil
+}
+
+func MarshalBinary(message interface{}) ([]byte, error) {
+	return cbor.Marshal(message, cbor.EncOptions{})
+}
+
+func UnmarshalBinary(data []byte, dst interface{}) error {
+	return cbor.Unmarshal(data, dst)
+}
+
 func (err *RemoteError) Error() string {
 	var msg string
 	if err.Message != "" {
@@ -164,6 +183,7 @@ const (
 	ActionSigning       = Action("signing")
 	ActionIssuing       = Action("issuing")
 	ActionRedirect      = Action("redirect")
+	ActionRevoking      = Action("revoking")
 	ActionUnknown       = Action("unknown")
 )
 
@@ -179,6 +199,8 @@ const (
 	ErrorUnknownAction = ErrorType("unknownAction")
 	// Crypto error during calculation of our response (second IRMA message)
 	ErrorCrypto = ErrorType("crypto")
+	// Error involving revocation or nonrevocation proofs
+	ErrorRevocation = ErrorType("revocation")
 	// Server rejected our response (second IRMA message)
 	ErrorRejected = ErrorType("rejected")
 	// (De)serializing of a message failed
@@ -226,7 +248,7 @@ type DisclosedAttributeIndex struct {
 
 type IssueCommitmentMessage struct {
 	*gabi.IssueCommitmentMessage
-	Indices DisclosedAttributeIndices `json:"indices"`
+	Indices DisclosedAttributeIndices `json:"indices,omitempty"`
 }
 
 func (err ErrorType) Error() string {

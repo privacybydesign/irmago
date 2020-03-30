@@ -140,7 +140,7 @@ func init() {
 	genkeypairCmd.Flags().StringP("public-key-file", "p", "ipk.xml", "File to write public key to")
 	genkeypairCmd.Flags().StringP("expirydate", "e", "", "Expiry date for the key pair. Specify in RFC3339 (\"2006-01-02T15:04:05+07:00\") format. Alternatively, use the --valid-for option.")
 	genkeypairCmd.Flags().StringP("valid-for", "v", "1y", "The duration key pair should be valid starting from now. Specify as a number followed by either y, M, d, h, or m (for years, months, days, hours, and minutes, respectively). For example, use \"2y\" for a expiry date 2 years from now. This flag is ignored when expirydate flag is used.")
-	genkeypairCmd.Flags().IntP("keylength", "l", 1024, "Keylength")
+	genkeypairCmd.Flags().IntP("keylength", "l", 2048, "Keylength")
 	genkeypairCmd.Flags().UintP("counter", "c", 0, "Set the counter (for the number of generated key pairs).")
 	genkeypairCmd.Flags().IntP("numattributes", "a", 6, "Number of attributes")
 	genkeypairCmd.Flags().BoolP("force-overwrite", "f", false, "Force overwriting of key files if files already exist. If not set, irmatool will refuse to overwrite existing files.")

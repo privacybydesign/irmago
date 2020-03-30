@@ -1,16 +1,21 @@
-package fs
+package common
 
 import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 
-	"github.com/pkg/errors"
+	"github.com/go-errors/errors"
+	"github.com/privacybydesign/gabi/big"
+	"github.com/sirupsen/logrus"
 )
+
+var Logger *logrus.Logger
 
 // AssertPathExists returns nil only if it has been successfully
 // verified that all specified paths exists.
@@ -42,49 +47,47 @@ func AssertPathNotExists(paths ...string) error {
 
 // PathExists checks if the specified path exists.
 func PathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
+	_, exists, err := Stat(path)
+	return exists, err
+}
+
+func Stat(path string) (os.FileInfo, bool, error) {
+	info, err := os.Lstat(path)
 	if err == nil {
-		return true, nil
+		return info, true, nil
 	}
 	if os.IsNotExist(err) {
-		return false, nil
+		return nil, false, nil
 	}
-	return true, err
+	return nil, false, err
 }
 
 func EnsureDirectoryExists(path string) error {
-	exists, err := PathExists(path)
+	info, exists, err := Stat(path)
 	if err != nil {
 		return err
 	}
-	if exists {
-		return nil
+	if !exists {
+		return os.MkdirAll(path, 0700)
 	}
-	return os.MkdirAll(path, 0700)
-}
-
-func Empty(path string) bool {
-	matches, _ := filepath.Glob(filepath.Join(path, "*"))
-	return len(matches) == 0
-}
-
-func Copy(src, dest string) error {
-	exists, err := PathExists(src)
-	if err != nil || !exists {
-		return err
+	if !info.IsDir() {
+		return errors.New("path exists but is not a directory")
 	}
-	bts, err := ioutil.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return SaveFile(dest, bts)
+	return nil
 }
 
 // Save the filecontents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
-	dir := path.Dir(fpath)
+	Logger.Debug("writing ", fpath)
+	info, exists, err := Stat(fpath)
+	if err != nil {
+		return err
+	}
+	if exists && (info.IsDir() || !info.Mode().IsRegular()) {
+		return errors.New("invalid destination path")
+	}
 
 	// Read random data for filename and convert to hex
 	randBytes := make([]byte, 16)
@@ -95,6 +98,7 @@ func SaveFile(fpath string, content []byte) (err error) {
 	tempfilename := hex.EncodeToString(randBytes)
 
 	// Create temp file
+	dir := path.Dir(fpath)
 	err = ioutil.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
 	if err != nil {
 		return
@@ -109,33 +113,35 @@ func CopyDirectory(src, dest string) error {
 		return err
 	}
 
-	return filepath.Walk(src, filepath.WalkFunc(
-		func(path string, info os.FileInfo, err error) error {
-			if path == src {
-				return nil
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) (e error) {
+		if err != nil {
+			return err
+		}
+		if path == src {
+			return
+		}
+		subpath := path[len(src):]
+		if info.IsDir() {
+			if err := EnsureDirectoryExists(dest + subpath); err != nil {
+				return err
 			}
-			subpath := path[len(src):]
-			if info.IsDir() {
-				if err := EnsureDirectoryExists(dest + subpath); err != nil {
-					return err
-				}
-			} else {
-				srcfile, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-				defer srcfile.Close()
-				bts, err := ioutil.ReadAll(srcfile)
-				if err != nil {
-					return err
-				}
-				if err := SaveFile(dest+subpath, bts); err != nil {
-					return err
-				}
+		} else {
+			srcfile, err := os.Open(path)
+			if err != nil {
+				return err
 			}
-			return nil
-		}),
-	)
+			defer func() { e = srcfile.Close() }()
+			bts, err := ioutil.ReadAll(srcfile)
+			if err != nil {
+				return err
+			}
+			if err := SaveFile(dest+subpath, bts); err != nil {
+				return err
+			}
+		}
+		return
+	})
+
 }
 
 // ReadKey returns either the content of the file specified at path, if it exists,
@@ -153,10 +159,13 @@ func ReadKey(key, path string) ([]byte, error) {
 	} else {
 		stat, err := os.Stat(path)
 		if err != nil {
-			return nil, errors.New("no key found at specified path")
+			return nil, errors.WrapPrefix(err, "failed to stat key", 0)
 		}
 		if stat.IsDir() {
 			return nil, errors.New("cannot read key from a directory")
+		}
+		if !stat.Mode().IsRegular() {
+			return nil, errors.New("cannot read key from nonregular file")
 		}
 		bts, err = ioutil.ReadFile(path)
 		if err != nil {
@@ -231,4 +240,16 @@ func WalkDir(path string, handler func(string, os.FileInfo) error) error {
 		}
 		return handler(p, info)
 	})
+}
+
+func RandomBigInt(limit *big.Int) *big.Int {
+	res, err := big.RandInt(rand.Reader, limit)
+	if err != nil {
+		panic(fmt.Sprintf("big.RandInt failed: %v", err))
+	}
+	return res
+}
+
+type SSECtx struct {
+	Component, Arg string
 }

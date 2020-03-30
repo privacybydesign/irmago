@@ -4,16 +4,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
-	"encoding/pem"
-	"os"
-
 	"io/ioutil"
 
 	"fmt"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/gabi/signed"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
@@ -33,10 +30,10 @@ var keygenCmd = &cobra.Command{
 		}
 
 		// For safety we enforce that we never overwrite a file
-		if err := fs.AssertPathNotExists(skfile); err != nil {
+		if err := common.AssertPathNotExists(skfile); err != nil {
 			return errors.Errorf("File %s already exists, not overwriting", skfile)
 		}
-		if err := fs.AssertPathNotExists(pkfile); err != nil {
+		if err := common.AssertPathNotExists(pkfile); err != nil {
 			return errors.Errorf("File %s already exists, not overwriting", pkfile)
 		}
 
@@ -47,16 +44,14 @@ var keygenCmd = &cobra.Command{
 		}
 
 		// Marshal keys
-		bts, err := x509.MarshalECPrivateKey(key)
+		pemEncoded, err := signed.MarshalPemPrivateKey(key)
 		if err != nil {
 			return err
 		}
-		pemEncoded := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: bts})
-		bts, err = x509.MarshalPKIXPublicKey(&key.PublicKey)
+		pemEncodedPub, err := signed.MarshalPemPublicKey(&key.PublicKey)
 		if err != nil {
-			os.Exit(1)
+			return err
 		}
-		pemEncodedPub := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: bts})
 
 		// Save keys
 		if err = ioutil.WriteFile(skfile, pemEncoded, 0600); err != nil {

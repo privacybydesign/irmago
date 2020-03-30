@@ -13,12 +13,17 @@ import (
 )
 
 type TestClientHandler struct {
-	t *testing.T
-	c chan error
+	t       *testing.T
+	c       chan error
+	revoked *irma.CredentialIdentifier
+	storage string
 }
 
 func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
 func (i *TestClientHandler) UpdateAttributes()                               {}
+func (i *TestClientHandler) Revoked(cred *irma.CredentialIdentifier) {
+	i.revoked = cred
+}
 func (i *TestClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
 	select {
 	case i.c <- nil: // nop
@@ -67,6 +72,7 @@ type TestHandler struct {
 	c                  chan *SessionResult
 	client             *irmaclient.Client
 	expectedServerName irma.TranslatedString
+	wait               time.Duration
 	result             string
 }
 
@@ -91,7 +97,6 @@ func (th TestHandler) Cancelled() {
 	th.Failure(&irma.SessionError{Err: errors.New("Cancelled")})
 }
 func (th TestHandler) Failure(err *irma.SessionError) {
-	th.t.Logf("Session failed: %+v\n", *err)
 	select {
 	case th.c <- &SessionResult{Err: err}:
 	default:
@@ -111,6 +116,9 @@ func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequ
 	}
 	if len(th.expectedServerName) != 0 {
 		require.Equal(th.t, th.expectedServerName, ServerName)
+	}
+	if th.wait != 0 {
+		time.Sleep(th.wait)
 	}
 	callback(true, &choice)
 }

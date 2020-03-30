@@ -17,6 +17,7 @@ type CredentialInfo struct {
 	Expires         Timestamp                                    // Unix timestamp
 	Attributes      map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
 	Hash            string                                       // SHA256 hash over the attributes
+	Revoked         bool                                         // If the credential has been revoked
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).

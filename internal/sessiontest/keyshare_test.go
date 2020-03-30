@@ -22,15 +22,15 @@ func TestManualKeyshareSession(t *testing.T) {
 }
 
 func TestRequestorIssuanceKeyshareSession(t *testing.T) {
-	testRequestorIssuance(t, true)
+	testRequestorIssuance(t, true, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	require.NoError(t, client.KeyshareRemoveAll())
-	require.NoError(t, client.RemoveAllCredentials())
+	require.NoError(t, client.RemoveStorage())
 
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
@@ -45,8 +45,8 @@ func TestKeyshareRegister(t *testing.T) {
 // in a keyshare session of each session type.
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
-	client, _ := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 	keyshareSessions(t, client)
 }
 
@@ -79,10 +79,31 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 
 	sessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
-			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.email"),
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
 			Attributes: map[string]string{
 				"email": "example@example.com",
 			},
 		},
 	}, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")), "issue", nil)
+}
+
+func TestKeyshareRevocation(t *testing.T) {
+	t.Run("Keyshare", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+	})
+
+	t.Run("Both", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+		testRevocation(t, revocationTestAttr, client, handler)
+	})
 }

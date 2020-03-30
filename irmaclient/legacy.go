@@ -2,11 +2,14 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"errors"
 	"io/ioutil"
 	"path/filepath"
+
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/revocation"
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains the legacy storage based on files. These functions are needed
@@ -34,9 +37,12 @@ func (f *fileStorage) path(p string) string {
 }
 
 func (f *fileStorage) load(dest interface{}, path string) (err error) {
-	exists, err := fs.PathExists(f.path(path))
+	info, exists, err := common.Stat(f.path(path))
 	if err != nil || !exists {
 		return
+	}
+	if info.IsDir() || !info.Mode().IsRegular() {
+		return errors.New("invalid file")
 	}
 	bytes, err := ioutil.ReadFile(f.path(path))
 	if err != nil {
@@ -54,16 +60,16 @@ func (f *fileStorage) signatureFilename(attrs *irma.AttributeList) string {
 	return filepath.Join(signaturesDir, attrs.Hash())
 }
 
-func (f *fileStorage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, err error) {
+func (f *fileStorage) LoadSignature(attrs *irma.AttributeList) (signature *gabi.CLSignature, witness *revocation.Witness, err error) {
 	sigpath := f.signatureFilename(attrs)
-	if err := fs.AssertPathExists(f.path(sigpath)); err != nil {
-		return nil, err
+	if err := common.AssertPathExists(f.path(sigpath)); err != nil {
+		return nil, nil, err
 	}
-	signature = new(gabi.CLSignature)
-	if err := f.load(signature, sigpath); err != nil {
-		return nil, err
+	sig := &clSignatureWitness{}
+	if err := f.load(sig, sigpath); err != nil {
+		return nil, nil, err
 	}
-	return signature, nil
+	return sig.CLSignature, sig.Witness, nil
 }
 
 // LoadSecretKey retrieves and returns the secret key from file storage. When no secret key

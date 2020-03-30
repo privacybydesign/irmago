@@ -10,14 +10,13 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
 )
 
 // metaCmd represents the meta command
 var metaCmd = &cobra.Command{
-	Use:   "meta attribute",
+	Use:   "meta <attribute>",
 	Short: "Parse an IRMA metadata attribute and print its contents",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,10 +46,10 @@ var metaCmd = &cobra.Command{
 }
 
 func printMetadataAttr(metaint *big.Int, confpath string) error {
-	if err := fs.AssertPathExists(confpath); err != nil {
+	if err := common.AssertPathExists(confpath); err != nil {
 		return errors.WrapPrefix(err, "Cannot read irma_configuration", 0)
 	}
-	conf, err := irma.NewConfigurationReadOnly(confpath)
+	conf, err := irma.NewConfiguration(confpath, irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to parse irma_configuration", 0)
 	}
@@ -99,5 +98,5 @@ func prettyprint(ob interface{}) string {
 func init() {
 	RootCmd.AddCommand(metaCmd)
 
-	metaCmd.Flags().StringP("irmaconf", "i", server.DefaultSchemesPath(), "path to irma_configuration")
+	metaCmd.Flags().StringP("irmaconf", "i", irma.DefaultSchemesPath(), "path to irma_configuration")
 }

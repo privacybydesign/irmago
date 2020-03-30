@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
+	sseclient "astuart.co/go-sse"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/mdp/qrterminal"
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
+	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -46,7 +47,7 @@ var requestCmd = &cobra.Command{
 	},
 }
 
-func signRequest(request irma.RequestorRequest, name, authmethod, key string) (string, error) {
+func configureJWTKey(authmethod, key string) (interface{}, jwt.SigningMethod, error) {
 	var (
 		err    error
 		sk     interface{}
@@ -54,24 +55,32 @@ func signRequest(request irma.RequestorRequest, name, authmethod, key string) (s
 		bts    []byte
 	)
 	// If the key refers to an existing file, use contents of the file as key
-	if bts, err = fs.ReadKey("", key); err != nil {
+	if bts, err = common.ReadKey("", key); err != nil {
 		bts = []byte(key)
 	}
 	switch authmethod {
 	case "hmac":
 		jwtalg = jwt.SigningMethodHS256
-		if sk, err = fs.Base64Decode(bts); err != nil {
-			return "", err
+		if sk, err = common.Base64Decode(bts); err != nil {
+			return nil, nil, err
 		}
 	case "rsa":
 		jwtalg = jwt.SigningMethodRS256
 		if sk, err = jwt.ParseRSAPrivateKeyFromPEM(bts); err != nil {
-			return "", err
+			return nil, nil, err
 		}
 	default:
-		return "", errors.Errorf("Unsupported signing algorithm: '%s'", authmethod)
+		return nil, nil, errors.Errorf("Unsupported signing algorithm: '%s'", authmethod)
 	}
 
+	return sk, jwtalg, nil
+}
+
+func signRequest(request irma.RequestorRequest, name, authmethod, key string) (string, error) {
+	sk, jwtalg, err := configureJWTKey(authmethod, key)
+	if err != nil {
+		return "", err
+	}
 	return irma.SignRequestorRequest(request, jwtalg, sk, name)
 }
 
@@ -80,7 +89,7 @@ func configureRequest(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configur
 	if err != nil {
 		return nil, nil, err
 	}
-	irmaconfig, err := irma.NewConfiguration(irmaconfigPath)
+	irmaconfig, err := irma.NewConfiguration(irmaconfigPath, irma.ConfigurationOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -103,25 +112,50 @@ func configureRequest(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configur
 
 // Helper functions
 
-// poll recursively polls the session status until a status different from initialStatus is received.
+func wait(initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
+	events := make(chan *sseclient.Event)
+
+	go func() {
+		for {
+			if e := <-events; e != nil && e.Type != "open" {
+				status := server.Status(strings.Trim(string(e.Data), `"`))
+				statuschan <- status
+				if status.Finished() {
+					return
+				}
+			}
+		}
+	}()
+
+	if err := sseclient.Notify(nil, transport.Server+"statusevents", true, events); err != nil {
+		fmt.Println("SSE failed, fallback to polling", err)
+		close(events)
+		poll(initialStatus, transport, statuschan)
+		return
+	}
+}
+
+// poll recursively polls the session status until a final status is received.
 func poll(initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
 	// First we wait
 	<-time.NewTimer(pollInterval).C
 
 	// Get session status
-	var status string
-	if err := transport.Get("status", &status); err != nil {
+	var s string
+	if err := transport.Get("status", &s); err != nil {
 		_ = server.LogFatal(err)
 	}
-	status = strings.Trim(status, `"`)
+	status := server.Status(strings.Trim(s, `"`))
 
-	// If the status has not yet changed, schedule another poll
-	if server.Status(status) == initialStatus {
-		go poll(initialStatus, transport, statuschan)
-	} else {
-		logger.Trace("Stopped polling, new status ", status)
-		statuschan <- server.Status(status)
+	// report if status changed
+	if status != initialStatus {
+		statuschan <- status
 	}
+
+	if status.Finished() {
+		return
+	}
+	go poll(status, transport, statuschan)
 }
 
 func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma.RequestorRequest, error) {
@@ -159,7 +193,7 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 	}
 
 	var request irma.RequestorRequest
-	if len(disclose) != 0 {
+	if len(disclose) != 0 && len(issue) == 0 {
 		disclose, err := parseAttrs(disclose, conf)
 		if err != nil {
 			return nil, err
@@ -309,7 +343,7 @@ func authmethodAlias(f *pflag.FlagSet, name string) pflag.NormalizedName {
 }
 
 func addRequestFlags(flags *pflag.FlagSet) {
-	flags.StringP("schemes-path", "s", server.DefaultSchemesPath(), "path to irma_configuration")
+	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
 	flags.StringP("auth-method", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
 	flags.SetNormalizeFunc(authmethodAlias)
 	flags.String("key", "", "Key to sign request with")

@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 )
 
 // ProofStatus is the status of the complete proof
@@ -31,17 +32,19 @@ const (
 
 // DisclosedAttribute represents a disclosed attribute.
 type DisclosedAttribute struct {
-	RawValue     *string                 `json:"rawvalue"`
-	Value        TranslatedString        `json:"value"` // Value of the disclosed attribute
-	Identifier   AttributeTypeIdentifier `json:"id"`
-	Status       AttributeProofStatus    `json:"status"`
-	IssuanceTime Timestamp               `json:"issuancetime"`
+	RawValue         *string                 `json:"rawvalue"`
+	Value            TranslatedString        `json:"value"` // Value of the disclosed attribute
+	Identifier       AttributeTypeIdentifier `json:"id"`
+	Status           AttributeProofStatus    `json:"status"`
+	IssuanceTime     Timestamp               `json:"issuancetime"`
+	NotRevoked       bool                    `json:"notrevoked,omitempty"`
+	NotRevokedBefore *Timestamp              `json:"notrevokedbefore,omitempty"`
 }
 
 // ProofList is a gabi.ProofList with some extra methods.
 type ProofList gabi.ProofList
 
-var ErrorMissingPublicKey = errors.New("Missing public key")
+var ErrMissingPublicKey = errors.New("Missing public key")
 
 // ExtractPublicKeys returns the public keys of each proof in the proofList, in the same order,
 // for later use in verification of the proofList. If one of the proofs is not a ProofD
@@ -59,7 +62,7 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 				return nil, err
 			}
 			if publicKey == nil {
-				return nil, ErrorMissingPublicKey
+				return nil, ErrMissingPublicKey
 			}
 			publicKeys = append(publicKeys, publicKey)
 		default:
@@ -67,63 +70,6 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 		}
 	}
 	return publicKeys, nil
-}
-
-// VerifyProofs verifies the proofs cryptographically.
-func (pl ProofList) VerifyProofs(configuration *Configuration, context *big.Int, nonce *big.Int, publickeys []*gabi.PublicKey, isSig bool) (bool, error) {
-	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
-	if len(pl) == 0 {
-		return true, nil
-	}
-
-	if publickeys == nil {
-		var err error
-		publickeys, err = pl.ExtractPublicKeys(configuration)
-		if err != nil {
-			return false, err
-		}
-	}
-
-	if len(pl) != len(publickeys) {
-		return false, errors.New("Insufficient public keys to verify the proofs")
-	}
-
-	// Compute slice to inform gabi of which proofs should be verified to share the same secret key
-	keyshareServers := make([]string, len(pl))
-	for i := range pl {
-		schemeID := NewIssuerIdentifier(publickeys[i].Issuer).SchemeManagerIdentifier()
-		if !configuration.SchemeManagers[schemeID].Distributed() {
-			keyshareServers[i] = "." // dummy value: no IRMA scheme will ever have this name
-		} else {
-			keyshareServers[i] = schemeID.Name()
-		}
-	}
-
-	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers) {
-		return false, nil
-	}
-
-	// Verify that any singleton credential occurs at most once in the prooflist
-	singletons := map[CredentialTypeIdentifier]bool{}
-	for _, proof := range pl {
-		proofd, ok := proof.(*gabi.ProofD)
-		if !ok {
-			continue
-		}
-		typ := MetadataFromInt(proofd.ADisclosed[1], configuration).CredentialType()
-		if typ == nil {
-			return false, errors.New("Received unknown credential type")
-		}
-		if typ.IsSingleton {
-			if !singletons[typ.Identifier()] { // Seen for the first time
-				singletons[typ.Identifier()] = true
-			} else { // Seen for the second time
-				return false, nil
-			}
-		}
-	}
-
-	return true, nil
 }
 
 // Expired returns true if any of the contained disclosure proofs is specified at the specified time,
@@ -146,7 +92,7 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
 	return false
 }
 
-func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, conf *Configuration) (*DisclosedAttribute, *string, error) {
+func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, notrevoked *time.Time, conf *Configuration) (*DisclosedAttribute, *string, error) {
 	if len(pl) < index.CredentialIndex {
 		return nil, nil, errors.New("Credential index out of range")
 	}
@@ -158,7 +104,140 @@ func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, conf *C
 	}
 
 	metadata := MetadataFromInt(proofd.ADisclosed[1], conf) // index 1 is metadata attribute
-	return parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
+	attr, str, err := parseAttribute(index.AttributeIndex, metadata, proofd.ADisclosed[index.AttributeIndex])
+	if err != nil {
+		return nil, nil, err
+	}
+	attr.NotRevokedBefore = (*Timestamp)(notrevoked)
+	attr.NotRevoked = proofd.NonRevocationProof != nil
+	return attr, str, nil
+}
+
+// VerifyProofs verifies the proofs cryptographically.
+func (pl ProofList) VerifyProofs(
+	configuration *Configuration,
+	request SessionRequest,
+	context *big.Int, nonce *big.Int,
+	publickeys []*gabi.PublicKey,
+	validAt *time.Time,
+	isSig bool,
+) (bool, map[int]*time.Time, error) {
+	// Empty proof lists are allowed (if consistent with the session request, which is checked elsewhere)
+	if len(pl) == 0 {
+		return true, nil, nil
+	}
+
+	if publickeys == nil {
+		var err error
+		publickeys, err = pl.ExtractPublicKeys(configuration)
+		if err != nil {
+			return false, nil, err
+		}
+	}
+
+	if len(pl) != len(publickeys) {
+		return false, nil, errors.New("Insufficient public keys to verify the proofs")
+	}
+
+	// Compute slice to inform gabi of which proofs should be verified to share the same secret key
+	keyshareServers := make([]string, len(pl))
+	for i := range pl {
+		schemeID := NewIssuerIdentifier(publickeys[i].Issuer).SchemeManagerIdentifier()
+		if !configuration.SchemeManagers[schemeID].Distributed() {
+			keyshareServers[i] = "." // dummy value: no IRMA scheme will ever have this name
+		} else {
+			keyshareServers[i] = schemeID.Name()
+		}
+	}
+
+	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers) {
+		return false, nil, nil
+	}
+
+	// Perform per-proof verifications for each proof:
+	// - verify that any singleton credential occurs at most once in the prooflist
+	// - verify that all required nonrevocation proofs are present
+	singletons := map[CredentialTypeIdentifier]bool{}
+	revocationtime := map[int]*time.Time{} // per proof, stores up to what time it is known to be not revoked
+	var revParams NonRevocationParameters
+	if request != nil {
+		revParams = request.Base().Revocation
+	}
+	for i, proof := range pl {
+		proofd, ok := proof.(*gabi.ProofD)
+		if !ok {
+			continue
+		}
+		typ := MetadataFromInt(proofd.ADisclosed[1], configuration).CredentialType()
+		if typ == nil {
+			return false, nil, errors.New("Received unknown credential type")
+		}
+		id := typ.Identifier()
+		if typ.IsSingleton {
+			if !singletons[id] { // Seen for the first time
+				singletons[id] = true
+			} else { // Seen for the second time
+				return false, nil, nil
+			}
+		}
+
+		// The cryptographic validity of all included nonrevocation proofs has already been checked
+		// by ProofList.Verify() above, so all that remains here is to check if all expected
+		// nonrevocation proofs are present, and against the expected accumulator value:
+		// the last one in the update message set we provided along with the session request,
+		// OR a newer one included in the proofs itself.
+		if !proofd.HasNonRevocationProof() {
+			if revParams[id] != nil {
+				// no nonrevocation proof is included but one was required in the session request
+				return false, nil, nil
+			} else {
+				continue
+			}
+		}
+
+		sig := proofd.NonRevocationProof.SignedAccumulator
+		pk, err := RevocationKeys{configuration}.PublicKey(typ.IssuerIdentifier(), sig.PKCounter)
+		if err != nil {
+			return false, nil, nil
+		}
+		acc, err := proofd.NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
+		if err != nil {
+			return false, nil, nil
+		}
+
+		theirs := acc.Index
+		acctime := time.Unix(acc.Time, 0)
+		settings := configuration.Revocation.settings.Get(id)
+		var ours uint64
+		var updates map[uint]*revocation.Update
+		if revParams[id] != nil {
+			updates = revParams[id].Updates
+		}
+		if u := updates[sig.PKCounter]; u != nil {
+			ours = u.Events[len(u.Events)-1].Index
+		}
+		if ours > theirs {
+			return false, nil, nil
+		}
+		if ours == theirs {
+			if settings.updated.After(acctime) {
+				acctime = settings.updated
+			}
+		}
+		if validAt == nil {
+			t := time.Now()
+			validAt = &t
+		}
+		tolerance := settings.Tolerance
+		if s := revParams[id]; s != nil && s.Tolerance != 0 {
+			tolerance = s.Tolerance
+		}
+		if uint64(validAt.Sub(acctime).Seconds()) > tolerance {
+			revocationtime[i] = &acctime
+		}
+	}
+
+	return true, revocationtime, nil
 }
 
 func (d *Disclosure) extraIndices(condiscon AttributeConDisCon) []*DisclosedAttributeIndex {
@@ -201,8 +280,11 @@ func (d *Disclosure) extraIndices(condiscon AttributeConDisCon) []*DisclosedAttr
 // is included, then the first attributes in the returned slice match with the disjunction list in
 // the disjunction list. The first return parameter of this function indicates whether or not all
 // disjunctions (if present) are satisfied.
-func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon AttributeConDisCon) (bool, [][]*DisclosedAttribute, error) {
-	complete, list, err := condiscon.Satisfy(d, configuration)
+func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon AttributeConDisCon, revtimes map[int]*time.Time) (bool, [][]*DisclosedAttribute, error) {
+	if revtimes == nil {
+		revtimes = map[int]*time.Time{}
+	}
+	complete, list, err := condiscon.Satisfy(d, revtimes, configuration)
 	if err != nil {
 		return false, nil, err
 	}
@@ -210,7 +292,7 @@ func (d *Disclosure) DisclosedAttributes(configuration *Configuration, condiscon
 	var extra []*DisclosedAttribute
 	indices := d.extraIndices(condiscon)
 	for _, index := range indices {
-		attr, _, err := extractAttribute(d.Proofs, index, configuration)
+		attr, _, err := extractAttribute(d.Proofs, index, revtimes[index.CredentialIndex], configuration)
 		if err != nil {
 			return false, nil, err
 		}
@@ -252,21 +334,26 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 	}, attrval, nil
 }
 
-func (d *Disclosure) VerifyAgainstDisjunctions(
+func (d *Disclosure) VerifyAgainstRequest(
 	configuration *Configuration,
-	required AttributeConDisCon,
+	request SessionRequest,
 	context, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
+	validAt *time.Time,
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
-	// Cryptographically verify the IRMA disclosure proofs in the signature
-	valid, err := ProofList(d.Proofs).VerifyProofs(configuration, context, nonce, publickeys, issig)
+	// Cryptographically verify all included IRMA proofs
+	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(configuration, request, context, nonce, publickeys, validAt, issig)
 	if !valid || err != nil {
 		return nil, ProofStatusInvalid, err
 	}
 
 	// Next extract the contained attributes from the proofs, and match them to the signature request if present
-	allmatched, list, err := d.DisclosedAttributes(configuration, required)
+	var required AttributeConDisCon
+	if request != nil {
+		required = request.Disclosure().Disclose
+	}
+	allmatched, list, err := d.DisclosedAttributes(configuration, required, revtimes)
 	if err != nil {
 		return nil, ProofStatusInvalid, err
 	}
@@ -276,21 +363,16 @@ func (d *Disclosure) VerifyAgainstDisjunctions(
 		return list, ProofStatusMissingAttributes, nil
 	}
 
+	// Check that all credentials were unexpired
+	if expired := ProofList(d.Proofs).Expired(configuration, validAt); expired {
+		return list, ProofStatusExpired, nil
+	}
+
 	return list, ProofStatusValid, nil
 }
 
 func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
-	list, status, err := d.VerifyAgainstDisjunctions(configuration, request.Disclose, request.GetContext(), request.GetNonce(nil), nil, false)
-	if err != nil {
-		return list, status, err
-	}
-
-	now := time.Now()
-	if expired := ProofList(d.Proofs).Expired(configuration, &now); expired {
-		return list, ProofStatusExpired, nil
-	}
-
-	return list, status, nil
+	return d.VerifyAgainstRequest(configuration, request, request.GetContext(), request.GetNonce(nil), nil, nil, false)
 }
 
 // Verify the attribute-based signature, optionally against a corresponding signature request. If the request is present
@@ -321,17 +403,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 		message = sm.Message
 	}
 
-	// Now, cryptographically verify the IRMA disclosure proofs in the signature
-	var required AttributeConDisCon
-	if request != nil {
-		required = request.Disclose
-	}
-	result, status, err := sm.Disclosure().VerifyAgainstDisjunctions(configuration, required, sm.Context, sm.GetNonce(), nil, true)
-	if status != ProofStatusValid || err != nil {
-		return result, status, err
-	}
-
-	// Next, verify the timestamp
+	// Next, verify the timestamp so we can safely use its time
 	t := time.Now()
 	if sm.Timestamp != nil {
 		if err := sm.VerifyTimestamp(message, configuration); err != nil {
@@ -340,13 +412,13 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 		t = time.Unix(sm.Timestamp.Time, 0)
 	}
 
-	// Check if a credential was expired at creation time, according to the timestamp
-	if expired := ProofList(sm.Signature).Expired(configuration, &t); expired {
-		return result, ProofStatusExpired, nil
+	// Finally, cryptographically verify the IRMA disclosure proofs in the signature
+	// and verify that it satisfies the signature request, if present
+	var r SessionRequest // wrapper for request to avoid avoid https://golang.org/doc/faq#nil_error
+	if request != nil {
+		r = request
 	}
-
-	// The attributes were valid, nonexpired, and the request was satisfied
-	return result, ProofStatusValid, nil
+	return sm.Disclosure().VerifyAgainstRequest(configuration, r, sm.Context, sm.GetNonce(), nil, &t, true)
 }
 
 // ExpiredError indicates that something (e.g. a JWT) has expired.
