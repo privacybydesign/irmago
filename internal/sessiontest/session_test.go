@@ -512,8 +512,8 @@ func TestBlindIssuanceSession(t *testing.T) {
 	attrID1 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.election")
 	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
 
-	client, _ := parseStorage(t)
-	defer test.ClearTestStorage(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
