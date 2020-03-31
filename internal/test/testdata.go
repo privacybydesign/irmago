@@ -12,17 +12,10 @@ import (
 	"testing"
 	"time"
 
-<<<<<<< HEAD
-	"github.com/go-chi/chi"
 	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/internal/keysharecore"
-	"github.com/privacybydesign/irmago/server/keyshareserver"
-	"github.com/stretchr/testify/assert"
-=======
-	"github.com/privacybydesign/irmago/internal/fs"
->>>>>>> Reorganized testing support code to eliminate circular dependency on main package from irmago tests.
+
 	"github.com/stretchr/testify/require"
 )
 
