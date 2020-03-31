@@ -12,9 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago/internal/common"
-
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/stretchr/testify/require"
 )
 
