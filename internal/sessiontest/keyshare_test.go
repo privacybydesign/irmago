@@ -23,8 +23,8 @@ func TestManualKeyshareSession(t *testing.T) {
 }
 
 func TestRequestorIssuanceKeyshareSession(t *testing.T) {
-	testkeyshare.startKeyshareServer(t)
-	defer testkeyshare.stopKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t)
+	defer testkeyshare.StopKeyshareServer(t)
 	testRequestorIssuance(t, true, nil)
 }
 
@@ -51,8 +51,8 @@ func TestKeyshareRegister(t *testing.T) {
 // in a keyshare session of each session type.
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
-	testkeyshare.startKeyshareServer(t)
-	defer testkeyshare.stopKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t)
+	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 	keyshareSessions(t, client)
@@ -99,6 +99,8 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 
 func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Keyshare", func(t *testing.T) {
+		testkeyshare.StartKeyshareServer(t)
+		defer testkeyshare.StopKeyshareServer(t)
 		startRevocationServer(t, true)
 		defer stopRevocationServer()
 		client, handler := parseStorage(t)
@@ -108,6 +110,8 @@ func TestKeyshareRevocation(t *testing.T) {
 	})
 
 	t.Run("Both", func(t *testing.T) {
+		testkeyshare.StartKeyshareServer(t)
+		defer testkeyshare.StopKeyshareServer(t)
 		startRevocationServer(t, true)
 		defer stopRevocationServer()
 		client, handler := parseStorage(t)

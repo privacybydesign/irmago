@@ -15,10 +15,10 @@ import (
 	"syscall"
 
 	"github.com/go-chi/chi"
-	"github.com/privacybydesign/irmago/internal/fs"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshareserver"
 	"github.com/sirupsen/logrus"
@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var conf *keyshareserver.Configuration
+var confKeysharePhone *keyshareserver.Configuration
 
 var keysharedCmd = &cobra.Command{
 	Use:   "keyshared",
@@ -48,7 +48,7 @@ var keysharedCmd = &cobra.Command{
 		}
 
 		// Create main server
-		keyshareServer, err := keyshareserver.New(conf)
+		keyshareServer, err := keyshareserver.New(confKeysharePhone)
 		if err != nil {
 			die("", err)
 		}
@@ -72,19 +72,19 @@ var keysharedCmd = &cobra.Command{
 			} else {
 				err = serv.ListenAndServe()
 			}
-			conf.Logger.Debug("Server stopped")
+			confKeysharePhone.Logger.Debug("Server stopped")
 			stopped <- struct{}{}
 		}()
 
 		for {
 			select {
 			case <-interrupt:
-				conf.Logger.Debug("Caught interrupt")
+				confKeysharePhone.Logger.Debug("Caught interrupt")
 				serv.Shutdown(context.Background())
 				keyshareServer.Stop()
-				conf.Logger.Debug("Sent stop signal to server")
+				confKeysharePhone.Logger.Debug("Sent stop signal to server")
 			case <-stopped:
-				conf.Logger.Info("Exiting")
+				confKeysharePhone.Logger.Info("Exiting")
 				close(stopped)
 				close(interrupt)
 				return
@@ -99,7 +99,7 @@ func init() {
 	flags := keysharedCmd.Flags()
 	flags.SortFlags = false
 	flags.StringP("config", "c", "", "path to configuration file")
-	flags.StringP("schemes-path", "s", server.DefaultSchemesPath(), "path to irma_configuration")
+	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
 	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
@@ -206,7 +206,7 @@ func configureKeyshared(cmd *cobra.Command) {
 	}
 
 	// And build the configuration
-	conf = &keyshareserver.Configuration{
+	confKeysharePhone = &keyshareserver.Configuration{
 		SchemesPath:           viper.GetString("schemes-path"),
 		SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
 		SchemesUpdateInterval: viper.GetInt("schemes-update"),
@@ -250,10 +250,10 @@ func kesyharedTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {
 
 	var certbts, keybts []byte
 	var err error
-	if certbts, err = fs.ReadKey(cert, certfile); err != nil {
+	if certbts, err = common.ReadKey(cert, certfile); err != nil {
 		return nil, err
 	}
-	if keybts, err = fs.ReadKey(key, keyfile); err != nil {
+	if keybts, err = common.ReadKey(key, keyfile); err != nil {
 		return nil, err
 	}
 

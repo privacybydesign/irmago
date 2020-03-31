@@ -8,13 +8,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/fs"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -46,7 +46,7 @@ type Configuration struct {
 	// Path to issuer private keys to parse
 	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
 	// Issuer private keys
-	IssuerPrivateKeys map[irma.IssuerIdentifier]*gabi.PrivateKey `json:"-"`
+	IssuerPrivateKeys map[irma.IssuerIdentifier]map[uint]*gabi.PrivateKey `json:"-"`
 	// URL at which the IRMA app can reach this keyshare server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
@@ -176,9 +176,9 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 			exists bool
 		)
 		if conf.ServerConfiguration.SchemesPath == "" {
-			conf.ServerConfiguration.SchemesPath = server.DefaultSchemesPath() // Returns an existing path
+			conf.ServerConfiguration.SchemesPath = irma.DefaultSchemesPath() // Returns an existing path
 		}
-		if exists, err = fs.PathExists(conf.ServerConfiguration.SchemesPath); err != nil {
+		if exists, err = common.PathExists(conf.ServerConfiguration.SchemesPath); err != nil {
 			return nil, server.LogError(err)
 		}
 		if !exists {
@@ -186,10 +186,10 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 		}
 		conf.Logger.WithField("schemes_path", conf.ServerConfiguration.SchemesPath).Info("Determined schemes path")
 		if conf.ServerConfiguration.SchemesAssetsPath == "" {
-			conf.ServerConfiguration.IrmaConfiguration, err = irma.NewConfiguration(conf.ServerConfiguration.SchemesPath)
+			conf.ServerConfiguration.IrmaConfiguration, err = irma.NewConfiguration(conf.ServerConfiguration.SchemesPath, irma.ConfigurationOptions{})
 		} else {
-			conf.ServerConfiguration.IrmaConfiguration, err = irma.NewConfigurationFromAssets(
-				conf.ServerConfiguration.SchemesPath, conf.ServerConfiguration.SchemesAssetsPath)
+			conf.ServerConfiguration.IrmaConfiguration, err = irma.NewConfiguration(
+				conf.ServerConfiguration.SchemesPath, irma.ConfigurationOptions{Assets: conf.ServerConfiguration.SchemesAssetsPath})
 		}
 		if err != nil {
 			return nil, server.LogError(err)
@@ -239,7 +239,7 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
 		return nil, server.LogError(errors.Errorf("Missing keyshare server jwt key"))
 	}
-	keybytes, err := fs.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
+	keybytes, err := common.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
 	}
