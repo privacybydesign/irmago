@@ -4,11 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
 	"time"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+
+	"github.com/go-errors/errors"
 )
 
 const (
