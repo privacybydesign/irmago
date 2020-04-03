@@ -25,12 +25,13 @@ package cmd
 import (
 	"time"
 
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 
 	"github.com/privacybydesign/gabi"
+
+	"github.com/go-errors/errors"
 	"github.com/spf13/cobra"
 )
 

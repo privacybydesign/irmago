@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 
+	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

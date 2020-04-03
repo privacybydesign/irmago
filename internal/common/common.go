@@ -10,7 +10,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/pkg/errors"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 )
 

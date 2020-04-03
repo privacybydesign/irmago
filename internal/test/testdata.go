@@ -4,7 +4,6 @@ package test
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/internal/common"
+
+	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/require"
 )
 
