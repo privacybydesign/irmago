@@ -227,7 +227,7 @@ func (client *Client) nonrevPrepareCache(id irma.CredentialTypeIdentifier, index
 func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
 	for id := range request.Disclosure().Identifiers().CredentialTypes {
 		credtype := client.Configuration.CredentialTypes[id]
-		if !credtype.RevocationSupported() {
+		if credtype == nil || !credtype.RevocationSupported() {
 			continue
 		}
 		for i := range client.attrs(id) {
