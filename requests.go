@@ -209,6 +209,9 @@ type NonRevocationRequest struct {
 type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
 
 func (choice *DisclosureChoice) Validate() error {
+	if choice == nil {
+		return nil
+	}
 	for _, attrlist := range choice.Attributes {
 		for _, attr := range attrlist {
 			if attr.CredentialHash == "" {
