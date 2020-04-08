@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -37,10 +36,6 @@ type Configuration struct {
 	// (used only if ServerConfiguration == nil)
 	SchemesUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
 	// Path to issuer private keys to parse
-	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
-	// Issuer private keys
-	IssuerPrivateKeys map[irma.IssuerIdentifier]map[uint]*gabi.PrivateKey `json:"-"`
-	// URL at which the IRMA app can reach this keyshare server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
 	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
@@ -106,8 +101,6 @@ func processConfiguration(conf *Configuration) error {
 			SchemesAssetsPath:     conf.SchemesAssetsPath,
 			DisableSchemesUpdate:  conf.DisableSchemesUpdate,
 			SchemesUpdateInterval: conf.SchemesUpdateInterval,
-			IssuerPrivateKeys:     conf.IssuerPrivateKeys,
-			IssuerPrivateKeysPath: conf.IssuerPrivateKeysPath,
 			DisableTLS:            conf.DisableTLS,
 			Logger:                conf.Logger,
 		}
