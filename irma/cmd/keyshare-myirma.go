@@ -15,24 +15,23 @@ import (
 	"syscall"
 
 	"github.com/go-chi/chi"
-
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshareserver"
+	"github.com/privacybydesign/irmago/server/myirmaserver"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var confKeysharePhone *keyshareserver.Configuration
+var confKeyshareMyirma *myirmaserver.Configuration
 
-var keysharedCmd = &cobra.Command{
-	Use:   "keyshared",
-	Short: "Irma keyshare server",
+var myirmadCmd = &cobra.Command{
+	Use:   "myirma",
+	Short: "Imra keyshare server myirma component",
 	Run: func(command *cobra.Command, args []string) {
-		configureKeyshared(command)
+		configureMyirmad(command)
 
 		// Determine full listening address.
 		fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen-addr"), viper.GetInt("port"))
@@ -48,13 +47,13 @@ var keysharedCmd = &cobra.Command{
 		}
 
 		// Create main server
-		keyshareServer, err := keyshareserver.New(confKeysharePhone)
+		myirmaServer, err := myirmaserver.New(confKeyshareMyirma)
 		if err != nil {
 			die("", err)
 		}
 
 		r := chi.NewRouter()
-		r.Mount(viper.GetString("path-prefix"), keyshareServer.Handler())
+		r.Mount(viper.GetString("path-prefix"), myirmaServer.Handler())
 
 		serv := &http.Server{
 			Addr:      fullAddr,
@@ -81,7 +80,7 @@ var keysharedCmd = &cobra.Command{
 			case <-interrupt:
 				confKeysharePhone.Logger.Debug("Caught interrupt")
 				serv.Shutdown(context.Background())
-				keyshareServer.Stop()
+				myirmaServer.Stop()
 				confKeysharePhone.Logger.Debug("Sent stop signal to server")
 			case <-stopped:
 				confKeysharePhone.Logger.Info("Exiting")
@@ -94,15 +93,15 @@ var keysharedCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(keysharedCmd)
+	keyshareRoot.AddCommand(myirmadCmd)
 
-	flags := keysharedCmd.Flags()
+	flags := myirmadCmd.Flags()
 	flags.SortFlags = false
+
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
 	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
-	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.StringP("url", "u", "", "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
 
 	flags.IntP("port", "p", 8080, "port at which to listen")
@@ -110,20 +109,13 @@ func init() {
 	flags.String("path-prefix", "/", "prefix to listen path")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.String("db-type", keyshareserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
+	flags.String("db-type", myirmaserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 
-	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
-	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
-	flags.Int("jwt-privkey-id", 0, "Key identifier of keyshare server public key matching used private key")
-	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
-	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
-	flags.Lookup("jwt-privkey").Header = `Cryptographic keys`
-
-	flags.String("keyshare-credential", "", "Credential issued during keyshare server registration")
-	flags.String("keyshare-attribute", "", "Attribute within keyshare credential that contains username")
-	flags.Lookup("keyshare-credential").Header = `Keyshare server credential`
+	flags.StringArray("keyshare-attributes", nil, "Attributes allowed for login to myirma")
+	flags.StringArray("email-attributes", nil, "Attributes allowed for adding email addresses")
+	flags.Lookup("keyshare-attributes").Header = `Irma session configuration`
 
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
@@ -131,9 +123,9 @@ func init() {
 	flags.String("email-password", "", "Password to use when authenticating with email server")
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
-	flags.StringToString("registration-email-subject", nil, "Translated subject lines for the registration email")
-	flags.StringToString("registration-email-template", nil, "Translated emails for the registration email")
-	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
+	flags.StringToString("login-email-subject", nil, "Translated subject lines for the registration email")
+	flags.StringToString("login-email-template", nil, "Translated emails for the registration email")
+	flags.StringToString("login-url", nil, "Base URL for the email verification link (localized)")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
@@ -150,7 +142,7 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureKeyshared(cmd *cobra.Command) {
+func configureMyirmad(cmd *cobra.Command) {
 	dashReplacer := strings.NewReplacer("-", "_")
 	viper.SetEnvKeyReplacer(dashReplacer)
 	viper.SetFileKeyReplacer(dashReplacer)
@@ -168,9 +160,9 @@ func configureKeyshared(cmd *cobra.Command) {
 		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
 		viper.AddConfigPath(dir)
 	} else {
-		viper.SetConfigName("keyshared")
+		viper.SetConfigName("myirmad")
 		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/keyshared/")
+		viper.AddConfigPath("/etc/myirmad/")
 	}
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 
@@ -206,34 +198,27 @@ func configureKeyshared(cmd *cobra.Command) {
 	}
 
 	// And build the configuration
-	confKeysharePhone = &keyshareserver.Configuration{
+	confKeyshareMyirma = &myirmaserver.Configuration{
 		SchemesPath:           viper.GetString("schemes-path"),
 		SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
 		SchemesUpdateInterval: viper.GetInt("schemes-update"),
 		DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
-		IssuerPrivateKeysPath: viper.GetString("privkeys"),
 		URL:                   string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 		DisableTLS:            viper.GetBool("no-tls"),
 
-		DbType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
+		DbType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
 		DbConnstring: viper.GetString("db"),
 
-		JwtKeyId:                viper.GetInt("jwt-privkey-id"),
-		JwtPrivateKey:           viper.GetString("jwt-privkey"),
-		JwtPrivateKeyFile:       viper.GetString("jwt-privkey-file"),
-		StoragePrimaryKeyFile:   viper.GetString("storage-primary-keyfile"),
-		StorageFallbackKeyFiles: viper.GetStringSlice("storage-fallback-keyfile"),
+		KeyshareAttributeNames: viper.GetStringSlice("keyshare-attributes"),
+		EmailAttributeNames:    viper.GetStringSlice("email-attributes"),
 
-		KeyshareCredential: viper.GetString("keyshare-credential"),
-		KeyshareAttribute:  viper.GetString("keyshare-attribute"),
-
-		EmailServer:              viper.GetString("email-server"),
-		EmailAuth:                emailAuth,
-		EmailFrom:                viper.GetString("email-from"),
-		DefaultLanguage:          viper.GetString("default-language"),
-		RegistrationEmailSubject: viper.GetStringMapString("registration-email-subject"),
-		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-template"),
-		VerificationURL:          viper.GetStringMapString("verification-url"),
+		EmailServer:       viper.GetString("email-server"),
+		EmailAuth:         emailAuth,
+		EmailFrom:         viper.GetString("email-from"),
+		DefaultLanguage:   viper.GetString("default-language"),
+		LoginEmailSubject: viper.GetStringMapString("login-email-subject"),
+		LoginEmailFiles:   viper.GetStringMapString("login-email-template"),
+		LoginEmailBaseURL: viper.GetStringMapString("login-url"),
 
 		Verbose:    viper.GetInt("verbose"),
 		Quiet:      viper.GetBool("quiet"),
@@ -243,7 +228,7 @@ func configureKeyshared(cmd *cobra.Command) {
 	}
 }
 
-func kesyharedTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {
+func myirmadTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {
 	if cert == "" && certfile == "" && key == "" && keyfile == "" {
 		return nil, nil
 	}
