@@ -19,7 +19,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(postgresTestUrl, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
@@ -62,7 +62,7 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(postgresTestUrl, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
@@ -111,7 +111,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(postgresTestUrl, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
@@ -180,6 +180,9 @@ func TestPostgresDBUserInfo(t *testing.T) {
 
 	err = db.RemoveEmail(17, "test@test.com")
 	assert.NoError(t, err)
+
+	// Need sleep here to ensure time has passed since delete
+	time.Sleep(1 * time.Second)
 
 	info, err = db.GetUserInformation(17)
 	assert.NoError(t, err)
