@@ -29,6 +29,7 @@ type MyirmaDB interface {
 type UserInformation struct {
 	Username string   `json:"username"`
 	Emails   []string `json:"emails"`
+	language string
 }
 
 type LoginCandidate struct {

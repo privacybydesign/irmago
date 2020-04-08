@@ -49,6 +49,7 @@ type Configuration struct {
 	// Database configuration (ignored when database is provided)
 	DbType       DatabaseType `json:"db_type" mapstructure:"db_type"`
 	DbConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
+	DeleteDelay  int          `json:"delete_delay" mapstructure:"delete_delay"`
 	// Provide a prepared database (useful for testing)
 	DB MyirmaDB `json:"-"`
 
@@ -62,14 +63,17 @@ type Configuration struct {
 	EmailAttributes        []irma.AttributeTypeIdentifier
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
-	EmailServer         string
-	EmailAuth           smtp.Auth
-	EmailFrom           string
-	DefaultLanguage     string
-	LoginEmailFiles     map[string]string
-	LoginEmailTemplates map[string]*template.Template
-	LoginEmailSubject   map[string]string
-	LoginEmailBaseURL   map[string]string
+	EmailServer          string
+	EmailAuth            smtp.Auth
+	EmailFrom            string
+	DefaultLanguage      string
+	LoginEmailFiles      map[string]string
+	LoginEmailTemplates  map[string]*template.Template
+	LoginEmailSubject    map[string]string
+	LoginEmailBaseURL    map[string]string
+	DeleteEmailFiles     map[string]string
+	DeleteEmailTemplates map[string]*template.Template
+	DeleteEmailSubject   map[string]string
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
@@ -149,6 +153,16 @@ func processConfiguration(conf *Configuration) error {
 			}
 		}
 	}
+	if conf.EmailServer != "" && conf.DeleteEmailTemplates == nil {
+		conf.DeleteEmailTemplates = map[string]*template.Template{}
+		for lang, templateFile := range conf.DeleteEmailFiles {
+			var err error
+			conf.DeleteEmailTemplates[lang], err = template.ParseFiles(templateFile)
+			if err != nil {
+				return server.LogError(err)
+			}
+		}
+	}
 
 	// Verify email configuration
 	if conf.EmailServer != "" {
@@ -161,6 +175,12 @@ func processConfiguration(conf *Configuration) error {
 		if _, ok := conf.LoginEmailBaseURL[conf.DefaultLanguage]; !ok {
 			return server.LogError(errors.Errorf("Missing login email base url for default language"))
 		}
+		if _, ok := conf.DeleteEmailTemplates[conf.DefaultLanguage]; !ok {
+			return server.LogError(errors.Errorf("Missing delete email template for default language"))
+		}
+		if _, ok := conf.DeleteEmailSubject[conf.DefaultLanguage]; !ok {
+			return server.LogError(errors.Errorf("Missing delete email subject for default language"))
+		}
 	}
 
 	// Setup database
@@ -168,7 +188,7 @@ func processConfiguration(conf *Configuration) error {
 		switch conf.DbType {
 		case DatabaseTypePostgres:
 			var err error
-			conf.DB, err = NewPostgresDatabase(conf.DbConnstring)
+			conf.DB, err = NewPostgresDatabase(conf.DbConnstring, conf.DeleteDelay)
 			if err != nil {
 				return err
 			}

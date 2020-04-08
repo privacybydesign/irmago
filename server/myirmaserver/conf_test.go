@@ -102,6 +102,8 @@ func TestConfInvalidAESKey(t *testing.T) {
 		LoginEmailFiles:    map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		LoginEmailSubject:  map[string]string{"en": "testsubject"},
 		LoginEmailBaseURL:  map[string]string{"en": "localhost:8000/test/"},
+		DeleteEmailFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		DeleteEmailSubject: map[string]string{"en": "testsubject"},
 	})
 	assert.NoError(t, err)
 
@@ -117,6 +119,8 @@ func TestConfInvalidAESKey(t *testing.T) {
 		LoginEmailFiles:    map[string]string{"en": filepath.Join(testdataPath, "invalidemailtemplate.html")},
 		LoginEmailSubject:  map[string]string{"en": "testsubject"},
 		LoginEmailBaseURL:  map[string]string{"en": "localhost:8000/test/"},
+		DeleteEmailFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		DeleteEmailSubject: map[string]string{"en": "testsubject"},
 	})
 	assert.Error(t, err)
 
@@ -132,6 +136,8 @@ func TestConfInvalidAESKey(t *testing.T) {
 		LoginEmailFiles:    map[string]string{},
 		LoginEmailSubject:  map[string]string{"en": "testsubject"},
 		LoginEmailBaseURL:  map[string]string{"en": "localhost:8000/test/"},
+		DeleteEmailFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		DeleteEmailSubject: map[string]string{"en": "testsubject"},
 	})
 	assert.Error(t, err)
 
@@ -147,6 +153,8 @@ func TestConfInvalidAESKey(t *testing.T) {
 		LoginEmailFiles:    map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		LoginEmailSubject:  map[string]string{},
 		LoginEmailBaseURL:  map[string]string{"en": "localhost:8000/test/"},
+		DeleteEmailFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		DeleteEmailSubject: map[string]string{"en": "testsubject"},
 	})
 	assert.Error(t, err)
 
@@ -162,6 +170,42 @@ func TestConfInvalidAESKey(t *testing.T) {
 		LoginEmailFiles:    map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		LoginEmailSubject:  map[string]string{"en": "testsubject"},
 		LoginEmailBaseURL:  map[string]string{},
+		DeleteEmailFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		DeleteEmailSubject: map[string]string{"en": "testsubject"},
+	})
+	assert.Error(t, err)
+
+	_, err = New(&Configuration{
+		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
+		URL:                "http://localhost:8000/",
+		DbType:             DatabaseTypeMemory,
+		SessionLifetime:    60,
+		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		EmailServer:        "localhost:1025",
+		DefaultLanguage:    "en",
+		LoginEmailFiles:    map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		LoginEmailSubject:  map[string]string{"en": "testsubject"},
+		LoginEmailBaseURL:  map[string]string{"en": "localhost:8000/test/"},
+		DeleteEmailFiles:   map[string]string{"de": filepath.Join(testdataPath, "emailtemplate.html")},
+		DeleteEmailSubject: map[string]string{"en": "testsubject"},
+	})
+	assert.Error(t, err)
+
+	_, err = New(&Configuration{
+		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
+		URL:                "http://localhost:8000/",
+		DbType:             DatabaseTypeMemory,
+		SessionLifetime:    60,
+		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		EmailServer:        "localhost:1025",
+		DefaultLanguage:    "en",
+		LoginEmailFiles:    map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		LoginEmailSubject:  map[string]string{"en": "testsubject"},
+		LoginEmailBaseURL:  map[string]string{"en": "localhost:8000/test/"},
+		DeleteEmailFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
+		DeleteEmailSubject: map[string]string{"de": "testsubject"},
 	})
 	assert.Error(t, err)
 }

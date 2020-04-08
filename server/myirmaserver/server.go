@@ -530,6 +530,57 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	info, err := s.db.GetUserInformation(*session.userID)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Error checking whether email address can be removed")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+	validEmail := false
+	for _, emailL := range info.Emails {
+		if string(email) == emailL {
+			validEmail = true
+		}
+	}
+	if !validEmail {
+		s.conf.Logger.Info("Malformed request: invalid email address to delete")
+		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
+		return
+	}
+
+	if s.conf.EmailServer != "" {
+		template, ok := s.conf.DeleteEmailTemplates[info.language]
+		if !ok {
+			template = s.conf.DeleteEmailTemplates[s.conf.DefaultLanguage]
+		}
+		subject, ok := s.conf.DeleteEmailSubject[info.language]
+		if !ok {
+			subject = s.conf.DeleteEmailSubject[s.conf.DefaultLanguage]
+		}
+
+		var emsg bytes.Buffer
+		err = template.Execute(&emsg, map[string]string{"username": info.Username})
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not generate login mail from template")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+
+		err = server.SendHTMLMail(
+			s.conf.EmailServer,
+			s.conf.EmailAuth,
+			s.conf.EmailFrom,
+			string(email),
+			subject,
+			emsg.Bytes())
+
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not send login mail")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+	}
+
 	err = s.db.RemoveEmail(*session.userID, string(email))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error removing user email address")

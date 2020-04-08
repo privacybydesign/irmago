@@ -408,6 +408,12 @@ func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 		LoginEmailBaseURL: map[string]string{
 			"en": "http://example.com/verify/",
 		},
+		DeleteEmailFiles: map[string]string{
+			"en": filepath.Join(testdataPath, "emailtemplate.html"),
+		},
+		DeleteEmailSubject: map[string]string{
+			"en": "testsubject",
+		},
 	})
 	require.NoError(t, err)
 
