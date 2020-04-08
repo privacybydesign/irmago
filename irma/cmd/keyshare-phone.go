@@ -25,11 +25,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var keysharedConf *keyshareserver.Configuration
+var confKeysharePhone *keyshareserver.Configuration
 
 var keysharedCmd = &cobra.Command{
-	Use:   "keyshared",
-	Short: "Irma keyshare server",
+	Use:   "phone",
+	Short: "Irma keyshare server phone component",
 	Run: func(command *cobra.Command, args []string) {
 		configureKeyshared(command)
 
@@ -47,7 +47,7 @@ var keysharedCmd = &cobra.Command{
 		}
 
 		// Create main server
-		keyshareServer, err := keyshareserver.New(keysharedConf)
+		keyshareServer, err := keyshareserver.New(confKeysharePhone)
 		if err != nil {
 			die("", err)
 		}
@@ -71,19 +71,19 @@ var keysharedCmd = &cobra.Command{
 			} else {
 				err = serv.ListenAndServe()
 			}
-			keysharedConf.Logger.Debug("Server stopped")
+			confKeysharePhone.Logger.Debug("Server stopped")
 			stopped <- struct{}{}
 		}()
 
 		for {
 			select {
 			case <-interrupt:
-				keysharedConf.Logger.Debug("Caught interrupt")
+				confKeysharePhone.Logger.Debug("Caught interrupt")
 				serv.Shutdown(context.Background())
 				keyshareServer.Stop()
-				keysharedConf.Logger.Debug("Sent stop signal to server")
+				confKeysharePhone.Logger.Debug("Sent stop signal to server")
 			case <-stopped:
-				keysharedConf.Logger.Info("Exiting")
+				confKeysharePhone.Logger.Info("Exiting")
 				close(stopped)
 				close(interrupt)
 				return
@@ -93,7 +93,7 @@ var keysharedCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(keysharedCmd)
+	keyshareRoot.AddCommand(keysharedCmd)
 
 	flags := keysharedCmd.Flags()
 	flags.SortFlags = false
@@ -205,7 +205,7 @@ func configureKeyshared(cmd *cobra.Command) {
 	}
 
 	// And build the configuration
-	keysharedConf = &keyshareserver.Configuration{
+	confKeysharePhone = &keyshareserver.Configuration{
 		SchemesPath:           viper.GetString("schemes-path"),
 		SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
 		SchemesUpdateInterval: viper.GetInt("schemes-update"),
