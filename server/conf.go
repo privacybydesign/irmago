@@ -183,10 +183,10 @@ func (conf *Configuration) verifyIrmaConf() error {
 		}
 	}
 
-	// Put private keys into conf.IrmaConfiguration so we can use conf.IrmaConfiguration.PrivateKey()
-	if len(conf.IssuerPrivateKeys) > 0 {
-		conf.IrmaConfiguration.PrivateKeys = conf.IssuerPrivateKeys
+	if len(conf.IssuerPrivateKeys) == 0 {
+		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]map[uint]*gabi.PrivateKey)
 	}
+	conf.IrmaConfiguration.PrivateKeys = conf.IssuerPrivateKeys
 
 	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
 		conf.Logger.Infof("No schemes found in %s, downloading default (irma-demo and pbdf)", conf.SchemesPath)
