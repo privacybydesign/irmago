@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 )
@@ -17,7 +17,8 @@ type Configuration struct {
 	*server.Configuration `mapstructure:",squash"`
 
 	// Disclosing, signing or issuance permissions that apply to all requestors
-	Permissions `mapstructure:",squash"`
+	Permissions             `mapstructure:",squash"`
+	SkipPermissionKeysCheck bool `json:"skip_permission_keys_check" mapstructure:"skip_permission_keys_check"`
 
 	// Whether or not incoming session requests should be authenticated. If false, anyone
 	// can submit session requests. If true, the request is first authenticated against the
@@ -328,7 +329,7 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 					errs = append(errs, fmt.Sprintf("%s %s permission '%s': unknown credential type", requestor, typ, permission))
 					continue
 				}
-				if typ == "issuing" || typ == "revoking" {
+				if (typ == "issuing" || typ == "revoking") && !conf.SkipPermissionKeysCheck {
 					sk, err := conf.IrmaConfiguration.PrivateKeyLatest(credtype.IssuerIdentifier())
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s %s permission '%s': failed to load private key: %s", requestor, typ, permission, err))
