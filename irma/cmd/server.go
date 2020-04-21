@@ -113,7 +113,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	}
 	flags.StringSlice("issue-perms", nil, issHelp)
 	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
-	flags.Bool("skip-permission-keys-check", false, "whether or not to skip checking whether the keys that requestors have permission for using are present in the configuration")
+	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
@@ -228,7 +228,7 @@ func configureServer(cmd *cobra.Command) error {
 			Issuing:    handlePermission("issue-perms"),
 			Revoking:   handlePermission("revoke-perms"),
 		},
-		SkipPermissionKeysCheck:        viper.GetBool("skip-permission-keys-check"),
+		SkipPrivateKeysCheck:           viper.GetBool("skip-private-keys-check"),
 		ListenAddress:                  viper.GetString("listen-addr"),
 		Port:                           viper.GetInt("port"),
 		ClientListenAddress:            viper.GetString("client-listen-addr"),
