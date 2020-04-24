@@ -5,10 +5,11 @@ CREATE TABLE IF NOT EXISTS irma.users
     id serial PRIMARY KEY,
     username text NOT NULL,
     language text NOT NULL,
-    coredata bytea NOT NULL,
+    coredata bytea,
     lastSeen bigint NOT NULL,
     pinCounter int NOT NULL,
-    pinBlockDate bigint NOT NULL
+    pinBlockDate bigint NOT NULL,
+    delete_on bigint
 );
 CREATE UNIQUE INDEX username_index ON irma.users (username);
 
