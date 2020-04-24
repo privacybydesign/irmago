@@ -51,9 +51,6 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	err = db.RemoveUser(15)
 	assert.NoError(t, err)
 
-	_, err = db.GetUserID("testuser")
-	assert.Error(t, err)
-
 	err = db.RemoveUser(15)
 	assert.Error(t, err)
 }
