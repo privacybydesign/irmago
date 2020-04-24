@@ -57,7 +57,7 @@ func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) (KeyshareUser
 }
 
 func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) {
-	rows, err := db.db.Query("SELECT id, username, language, coredata FROM irma.users WHERE username = $1", username)
+	rows, err := db.db.Query("SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL", username)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 		UPDATE irma.users
 		SET pinCounter = pinCounter+1,
 			pinBlockDate = $1+$2*2^GREATEST(0, pinCounter-$3)
-		WHERE id=$4 AND pinBlockDate<=$5
+		WHERE id=$4 AND pinBlockDate<=$5 AND coredata IS NOT NULL
 		RETURNING pinCounter, pinBlockDate`,
 		time.Now().Unix()-1-BACKOFF_START, // Grace time of 2 seconds on pinBlockDate set
 		BACKOFF_START,
@@ -124,7 +124,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	if !uprows.Next() {
 		// if no, then account either does not exist (which would be weird here) or is blocked
 		// so request wait timeout
-		pinrows, err := db.db.Query("SELECT pinBlockDate FROM irma.users WHERE id=$1", userdata.id)
+		pinrows, err := db.db.Query("SELECT pinBlockDate FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", userdata.id)
 		if err != nil {
 			return false, 0, 0, err
 		}

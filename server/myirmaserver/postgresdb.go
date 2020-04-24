@@ -82,7 +82,9 @@ func (db *myirmaPostgresDB) VerifyEmailToken(token string) (int64, error) {
 }
 
 func (db *myirmaPostgresDB) RemoveUser(id int64) error {
-	res, err := db.db.Exec("DELETE FROM irma.users WHERE id = $1", id)
+	res, err := db.db.Exec("UPDATE irma.users SET coredata = NULL, delete_on = $2 WHERE id = $1 AND coredata IS NOT NULL",
+		id,
+		time.Now().Add(time.Duration(24*db.deleteDelay)*time.Hour).Unix())
 	if err != nil {
 		return err
 	}
@@ -168,7 +170,7 @@ func (db *myirmaPostgresDB) LoginTokenGetEmail(token string) (string, error) {
 
 func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (bool, error) {
 	res, err := db.db.Query(`SELECT 1 FROM irma.users INNER JOIN irma.email_addresses ON users.id = email_addresses.user_id WHERE
-								 username = $1 AND (delete_on >= $3 OR delete_on IS NULL) AND
+								 username = $1 AND (email_addresses.delete_on >= $3 OR email_addresses.delete_on IS NULL) AND
 								 emailAddress = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
 		username, token, time.Now().Unix())
 	if err != nil {
