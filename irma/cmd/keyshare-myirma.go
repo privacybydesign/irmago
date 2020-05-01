@@ -123,9 +123,13 @@ func init() {
 	flags.String("email-password", "", "Password to use when authenticating with email server")
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
-	flags.StringToString("login-email-subject", nil, "Translated subject lines for the registration email")
-	flags.StringToString("login-email-template", nil, "Translated emails for the registration email")
+	flags.StringToString("login-email-subject", nil, "Translated subject lines for the login email")
+	flags.StringToString("login-email-template", nil, "Translated emails for the login email")
 	flags.StringToString("login-url", nil, "Base URL for the email verification link (localized)")
+	flags.StringToString("delete-email-subject", nil, "Translated subject lines for the delete email email")
+	flags.StringToString("delete-email-template", nil, "Translated emails for the delete email email")
+	flags.StringToString("delete-account-subject", nil, "Translated subject lines for the delete account email")
+	flags.StringToString("delete-account-template", nil, "Translated emails for the delete account email")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
@@ -212,13 +216,17 @@ func configureMyirmad(cmd *cobra.Command) {
 		KeyshareAttributeNames: viper.GetStringSlice("keyshare-attributes"),
 		EmailAttributeNames:    viper.GetStringSlice("email-attributes"),
 
-		EmailServer:       viper.GetString("email-server"),
-		EmailAuth:         emailAuth,
-		EmailFrom:         viper.GetString("email-from"),
-		DefaultLanguage:   viper.GetString("default-language"),
-		LoginEmailSubject: viper.GetStringMapString("login-email-subject"),
-		LoginEmailFiles:   viper.GetStringMapString("login-email-template"),
-		LoginEmailBaseURL: viper.GetStringMapString("login-url"),
+		EmailServer:          viper.GetString("email-server"),
+		EmailAuth:            emailAuth,
+		EmailFrom:            viper.GetString("email-from"),
+		DefaultLanguage:      viper.GetString("default-language"),
+		LoginEmailSubject:    viper.GetStringMapString("login-email-subject"),
+		LoginEmailFiles:      viper.GetStringMapString("login-email-template"),
+		LoginEmailBaseURL:    viper.GetStringMapString("login-url"),
+		DeleteEmailFiles:     viper.GetStringMapString("delete-email-template"),
+		DeleteEmailSubject:   viper.GetStringMapString("delete-email-subject"),
+		DeleteAccountFiles:   viper.GetStringMapString("delete-account-template"),
+		DeleteAccountSubject: viper.GetStringMapString("delete-account-subject"),
 
 		Verbose:    viper.GetInt("verbose"),
 		Quiet:      viper.GetBool("quiet"),
@@ -226,6 +234,8 @@ func configureMyirmad(cmd *cobra.Command) {
 		Logger:     logger,
 		Production: viper.GetBool("production"),
 	}
+
+	fmt.Println(confKeyshareMyirma)
 }
 
 func myirmadTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {
