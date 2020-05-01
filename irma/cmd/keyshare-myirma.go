@@ -71,19 +71,19 @@ var myirmadCmd = &cobra.Command{
 			} else {
 				err = serv.ListenAndServe()
 			}
-			confKeysharePhone.Logger.Debug("Server stopped")
+			confKeyshareMyirma.Logger.Debug("Server stopped")
 			stopped <- struct{}{}
 		}()
 
 		for {
 			select {
 			case <-interrupt:
-				confKeysharePhone.Logger.Debug("Caught interrupt")
+				confKeyshareMyirma.Logger.Debug("Caught interrupt")
 				serv.Shutdown(context.Background())
 				myirmaServer.Stop()
-				confKeysharePhone.Logger.Debug("Sent stop signal to server")
+				confKeyshareMyirma.Logger.Debug("Sent stop signal to server")
 			case <-stopped:
-				confKeysharePhone.Logger.Info("Exiting")
+				confKeyshareMyirma.Logger.Info("Exiting")
 				close(stopped)
 				close(interrupt)
 				return
@@ -234,8 +234,6 @@ func configureMyirmad(cmd *cobra.Command) {
 		Logger:     logger,
 		Production: viper.GetBool("production"),
 	}
-
-	fmt.Println(confKeyshareMyirma)
 }
 
 func myirmadTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {
