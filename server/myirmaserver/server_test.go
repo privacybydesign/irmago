@@ -414,6 +414,12 @@ func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 		DeleteEmailSubject: map[string]string{
 			"en": "testsubject",
 		},
+		DeleteAccountFiles: map[string]string{
+			"en": filepath.Join(testdataPath, "emailtemplate.html"),
+		},
+		DeleteAccountSubject: map[string]string{
+			"en": "testsubject",
+		},
 	})
 	require.NoError(t, err)
 

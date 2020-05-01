@@ -5,10 +5,12 @@ package myirmaserver
 import (
 	"bytes"
 	"net/http"
+	"net/http/cookiejar"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServerLoginEmail(t *testing.T) {
@@ -50,5 +52,28 @@ func TestServerLoginEmail(t *testing.T) {
 	res, err = http.Post("http://localhost:8080/login/email", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 204, res.StatusCode)
+	res.Body.Close()
+
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	client := &http.Client{
+		Jar: jar,
+	}
+
+	reqData = bytes.NewBufferString(`{"username":"testuser", "token":"testtoken"}`)
+	res, err = client.Post("http://localhost:8080/login/token", "application/json", reqData)
+	require.NoError(t, err)
+	require.Equal(t, 204, res.StatusCode)
+	res.Body.Close()
+
+	reqData = bytes.NewBufferString("test@test.com")
+	res, err = client.Post("http://localhost:8080/email/remove", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 204, res.StatusCode)
+	res.Body.Close()
+
+	res, err = client.Post("http://localhost:8080/user/delete", "", nil)
+	require.NoError(t, err)
+	require.Equal(t, 204, res.StatusCode)
 	res.Body.Close()
 }

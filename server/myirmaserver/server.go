@@ -136,6 +136,47 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// First, send all emails
+	if s.conf.EmailServer != "" {
+		userData, err := s.db.GetUserInformation(*session.userID)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not fetch user information")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+
+		template, ok := s.conf.DeleteAccountTemplates[userData.language]
+		if !ok {
+			template = s.conf.DeleteAccountTemplates[s.conf.DefaultLanguage]
+		}
+		subject, ok := s.conf.DeleteAccountSubject[userData.language]
+		if !ok {
+			subject = s.conf.DeleteAccountSubject[s.conf.DefaultLanguage]
+		}
+		var emsg bytes.Buffer
+		err = template.Execute(&emsg, map[string]string{})
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not render account deletion email")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+		for _, email := range userData.Emails {
+			err = server.SendHTMLMail(
+				s.conf.EmailServer,
+				s.conf.EmailAuth,
+				s.conf.EmailFrom,
+				email,
+				subject,
+				emsg.Bytes())
+			if err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not send account deletion email")
+				server.WriteError(w, server.ErrorInternal, err.Error())
+				return
+			}
+		}
+	}
+
+	// Then remove user
 	err = s.db.RemoveUser(*session.userID)
 
 	if err != nil {

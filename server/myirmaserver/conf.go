@@ -63,17 +63,20 @@ type Configuration struct {
 	EmailAttributes        []irma.AttributeTypeIdentifier
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
-	EmailServer          string
-	EmailAuth            smtp.Auth
-	EmailFrom            string
-	DefaultLanguage      string
-	LoginEmailFiles      map[string]string
-	LoginEmailTemplates  map[string]*template.Template
-	LoginEmailSubject    map[string]string
-	LoginEmailBaseURL    map[string]string
-	DeleteEmailFiles     map[string]string
-	DeleteEmailTemplates map[string]*template.Template
-	DeleteEmailSubject   map[string]string
+	EmailServer            string
+	EmailAuth              smtp.Auth
+	EmailFrom              string
+	DefaultLanguage        string
+	LoginEmailFiles        map[string]string
+	LoginEmailTemplates    map[string]*template.Template
+	LoginEmailSubject      map[string]string
+	LoginEmailBaseURL      map[string]string
+	DeleteEmailFiles       map[string]string
+	DeleteEmailTemplates   map[string]*template.Template
+	DeleteEmailSubject     map[string]string
+	DeleteAccountFiles     map[string]string
+	DeleteAccountTemplates map[string]*template.Template
+	DeleteAccountSubject   map[string]string
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
@@ -163,6 +166,16 @@ func processConfiguration(conf *Configuration) error {
 			}
 		}
 	}
+	if conf.EmailServer != "" && conf.DeleteAccountTemplates == nil {
+		conf.DeleteAccountTemplates = map[string]*template.Template{}
+		for lang, templateFile := range conf.DeleteAccountFiles {
+			var err error
+			conf.DeleteAccountTemplates[lang], err = template.ParseFiles(templateFile)
+			if err != nil {
+				return server.LogError(err)
+			}
+		}
+	}
 
 	// Verify email configuration
 	if conf.EmailServer != "" {
@@ -180,6 +193,12 @@ func processConfiguration(conf *Configuration) error {
 		}
 		if _, ok := conf.DeleteEmailSubject[conf.DefaultLanguage]; !ok {
 			return server.LogError(errors.Errorf("Missing delete email subject for default language"))
+		}
+		if _, ok := conf.DeleteAccountTemplates[conf.DefaultLanguage]; !ok {
+			return server.LogError(errors.Errorf("Missing delete account template for default language"))
+		}
+		if _, ok := conf.DeleteAccountSubject[conf.DefaultLanguage]; !ok {
+			return server.LogError(errors.Errorf("Missing delete account subject for default language"))
 		}
 	}
 
