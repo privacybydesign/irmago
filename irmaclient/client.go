@@ -60,8 +60,9 @@ type Client struct {
 	irmaConfigurationPath string
 	handler               ClientHandler
 
-	jobs      chan func()   // queue of jobs to run
-	jobsPause chan struct{} // sending pauses background jobs
+	jobs       chan func()   // queue of jobs to run
+	jobsPause  chan struct{} // sending pauses background jobs
+	jobsPaused bool
 
 	credMutex sync.Mutex
 }
@@ -229,6 +230,7 @@ func (client *Client) StartJobs() {
 		return
 	}
 
+	client.jobsPaused = false
 	client.jobsPause = make(chan struct{})
 	go func() {
 		for {
@@ -249,10 +251,11 @@ func (client *Client) StartJobs() {
 // PauseJobs pauses background job processing.
 func (client *Client) PauseJobs() {
 	irma.Logger.Debug("pausing jobs")
-	if client.jobsPause == nil {
+	if client.jobsPaused {
 		irma.Logger.Debug("already paused")
 		return
 	}
+	client.jobsPaused = true
 	close(client.jobsPause)
 }
 
