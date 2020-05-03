@@ -114,21 +114,33 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 	bts := []byte(sessionrequest)
 
 	qr := &irma.Qr{}
-	if err := irma.UnmarshalValidate(bts, qr); err == nil {
+	if err := json.Unmarshal(bts, qr); err == nil && qr.IsQr() {
+		if err = qr.Validate(); err != nil {
+			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
+			return nil
+		}
 		return client.newQrSession(qr, handler)
 	}
 
 	sigRequest := &irma.SignatureRequest{}
-	if err := irma.UnmarshalValidate(bts, sigRequest); err == nil {
+	if err := json.Unmarshal(bts, sigRequest); err == nil && sigRequest.IsSignatureRequest() {
+		if err = sigRequest.Validate(); err != nil {
+			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
+			return nil
+		}
 		return client.newManualSession(sigRequest, handler, irma.ActionSigning)
 	}
 
 	disclosureRequest := &irma.DisclosureRequest{}
-	if err := irma.UnmarshalValidate(bts, disclosureRequest); err == nil {
+	if err := json.Unmarshal(bts, disclosureRequest); err == nil && disclosureRequest.IsDisclosureRequest() {
+		if err = disclosureRequest.Validate(); err != nil {
+			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
+			return nil
+		}
 		return client.newManualSession(disclosureRequest, handler, irma.ActionDisclosing)
 	}
 
-	handler.Failure(&irma.SessionError{Err: errors.New("Session request could not be parsed"), Info: sessionrequest})
+	handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Info: "session request of unsupported type"})
 	return nil
 }
 
@@ -259,6 +271,13 @@ func (session *session) processSessionInfo() {
 	}
 
 	baserequest := session.request.Base()
+	if baserequest.DevelopmentMode && !session.client.Preferences.DeveloperMode {
+		session.fail(&irma.SessionError{
+			ErrorType: irma.ErrorInvalidRequest,
+			Info:      "server running in developer mode: either switch to production mode, or enable developer mode in IRMA app",
+		})
+		return
+	}
 	confirmedProtocolVersion := baserequest.ProtocolVersion
 	if confirmedProtocolVersion != nil {
 		session.Version = confirmedProtocolVersion

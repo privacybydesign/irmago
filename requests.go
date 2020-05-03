@@ -40,8 +40,9 @@ type BaseRequest struct {
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
-	legacy bool   // Whether or not this was deserialized from a legacy (pre-condiscon) request
-	Type   Action `json:"type,omitempty"` // Session type, only used in legacy code
+	legacy          bool   // Whether or not this was deserialized from a legacy (pre-condiscon) request
+	Type            Action `json:"type,omitempty"` // Session type, only used in legacy code
+	DevelopmentMode bool   `json:"devMode,omitempty"`
 
 	ClientReturnURL string `json:"clientReturnUrl,omitempty"` // URL to proceed to when IRMA session is completed
 }
@@ -537,8 +538,12 @@ func (dr *DisclosureRequest) Base() *BaseRequest {
 
 func (dr *DisclosureRequest) Action() Action { return ActionDisclosing }
 
+func (dr *DisclosureRequest) IsDisclosureRequest() bool {
+	return dr.LDContext == LDContextDisclosureRequest
+}
+
 func (dr *DisclosureRequest) Validate() error {
-	if dr.LDContext != LDContextDisclosureRequest {
+	if !dr.IsDisclosureRequest() {
 		return errors.New("Not a disclosure request")
 	}
 	if len(dr.Disclose) == 0 {
@@ -746,8 +751,12 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp 
 
 func (sr *SignatureRequest) Action() Action { return ActionSigning }
 
+func (sr *SignatureRequest) IsSignatureRequest() bool {
+	return sr.LDContext == LDContextSignatureRequest
+}
+
 func (sr *SignatureRequest) Validate() error {
-	if sr.LDContext != LDContextSignatureRequest {
+	if !sr.IsSignatureRequest() {
 		return errors.New("Not a signature request")
 	}
 	if sr.Message == "" {

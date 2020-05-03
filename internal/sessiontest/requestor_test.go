@@ -352,3 +352,39 @@ func TestOptionalDisclosure(t *testing.T) {
 		require.True(t, reflect.DeepEqual(args.disclosed, result.Disclosed))
 	}
 }
+
+func TestClientDeveloperMode(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	StartIrmaServer(t, false)
+	defer StopIrmaServer()
+
+	// parseStorage returns a client with developer mode already enabled.
+	// Do a session with our local testserver (without https)
+	issuanceRequest := getNameIssuanceRequest()
+	requestorSessionHelper(t, issuanceRequest, client, sessionOptionReuseServer)
+	require.True(t, issuanceRequest.DevelopmentMode) // set to true by server
+
+	// RemoveStorage resets developer mode preference back to its default (disabled)
+	require.NoError(t, client.RemoveStorage())
+	require.False(t, client.Preferences.DeveloperMode)
+
+	// Try to start another session with our non-https server
+	issuanceRequest = getNameIssuanceRequest()
+	qr, _, err := irmaServer.StartSession(issuanceRequest, nil)
+	require.NoError(t, err)
+	c := make(chan *SessionResult, 1)
+	j, err := json.Marshal(qr)
+	require.NoError(t, err)
+	client.NewSession(string(j), &TestHandler{t, c, client, nil, 0, ""})
+	result := <-c
+
+	// Check that it failed with an appropriate error message
+	require.NotNil(t, result)
+	require.Error(t, result.Err)
+	serr, ok := result.Err.(*irma.SessionError)
+	require.True(t, ok)
+	require.NotNil(t, serr)
+	require.Equal(t, irma.ErrorInvalidRequest, serr.ErrorType)
+	require.Equal(t, "remote server does not use https", serr.Err.Error())
+}

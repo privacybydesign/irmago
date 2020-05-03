@@ -50,6 +50,7 @@ func parseExistingStorage(t *testing.T, storage string) (*irmaclient.Client, *Te
 		handler,
 	)
 	require.NoError(t, err)
+	client.SetDeveloperMode(true)
 	return client, handler
 }
 

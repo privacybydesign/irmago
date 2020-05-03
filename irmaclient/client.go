@@ -68,12 +68,15 @@ type Client struct {
 	credMutex sync.Mutex
 }
 
-// TODO: Decide if we want to remove this functionality, or keep it for future preferences
-// Also consider if we should save irmamobile preferences here, because they would automatically
+// TODO: consider if we should save irmamobile preferences here, because they would automatically
 // be part of any backup and syncing solution we implement at a later time
-type Preferences struct{}
+type Preferences struct {
+	DeveloperMode bool
+}
 
-var defaultPreferences = Preferences{}
+var defaultPreferences = Preferences{
+	DeveloperMode: false,
+}
 
 // KeyshareHandler is used for asking the user for his email address and PIN,
 // for enrolling at a keyshare server.
@@ -1122,9 +1125,14 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, 
 	return client.storage.LoadLogsBefore(beforeIndex, max)
 }
 
-// TODO: See comment at Preferences struct definition (client.go)
-func (client *Client) applyPreferences() {
+func (client *Client) SetDeveloperMode(enable bool) {
+	client.Preferences.DeveloperMode = enable
+	_ = client.storage.StorePreferences(client.Preferences)
+	client.applyPreferences()
+}
 
+func (client *Client) applyPreferences() {
+	irma.ForceHttps = !client.Preferences.DeveloperMode
 }
 
 // ConfigurationUpdated should be run after Configuration.Download().

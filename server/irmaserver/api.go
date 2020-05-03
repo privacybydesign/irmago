@@ -172,6 +172,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 		}
 	}
 
+	request.Base().DevelopmentMode = !s.conf.Production
 	session := s.newSession(action, rrequest)
 	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.token}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {

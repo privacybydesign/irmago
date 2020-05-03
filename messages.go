@@ -18,8 +18,7 @@ import (
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
 
-// disabled until we offer a convenient way to toggle this in irma_mobile
-var ForceHttps bool = false
+var ForceHttps = true
 
 const (
 	MinVersionHeader = "X-IRMA-MinProtocolVersion"
@@ -323,26 +322,31 @@ func ParseRequestorJwt(action string, requestorJwt string) (RequestorJwt, error)
 	return retval, nil
 }
 
-func (qr *Qr) Validate() (err error) {
-	if qr.URL == "" {
-		return errors.New("No URL specified")
-	}
-	var u *url.URL
-	if u, err = url.ParseRequestURI(qr.URL); err != nil {
-		return errors.Errorf("Invalid URL: %s", err.Error())
-	}
-	if ForceHttps && u.Scheme != "https" {
-		return errors.Errorf("URL did not begin with https")
-	}
-
+func (qr *Qr) IsQr() bool {
 	switch qr.Type {
 	case ActionDisclosing: // nop
 	case ActionIssuing: // nop
 	case ActionSigning: // nop
 	case ActionRedirect: // nop
 	default:
-		return errors.New("Unsupported session type")
+		return false
 	}
+	return true
+}
 
+func (qr *Qr) Validate() (err error) {
+	if qr.URL == "" {
+		return errors.New("no URL specified")
+	}
+	var u *url.URL
+	if u, err = url.ParseRequestURI(qr.URL); err != nil {
+		return errors.Errorf("invalid URL: %s", err.Error())
+	}
+	if ForceHttps && u.Scheme != "https" {
+		return errors.Errorf("remote server does not use https")
+	}
+	if !qr.IsQr() {
+		return errors.New("unsupported session type")
+	}
 	return nil
 }
