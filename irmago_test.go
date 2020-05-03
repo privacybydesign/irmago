@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	common.ForceHTTPS = false // globally disable https enforcement
+}
+
 func parseConfiguration(t *testing.T) *Configuration {
 	conf, err := NewConfiguration("testdata/irma_configuration", ConfigurationOptions{})
 	require.NoError(t, err)
@@ -69,7 +73,7 @@ func TestRetryHTTPRequest(t *testing.T) {
 	test.StartBadHttpServer(2, 1*time.Second, "42")
 	defer test.StopBadHttpServer()
 
-	transport := NewHTTPTransport("http://localhost:48682")
+	transport := NewHTTPTransport("http://localhost:48682", false)
 	transport.client.HTTPClient.Timeout = 500 * time.Millisecond
 	bts, err := transport.GetBytes("")
 	require.NoError(t, err)

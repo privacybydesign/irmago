@@ -998,7 +998,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
-	transport := irma.NewHTTPTransport(manager.KeyshareServer)
+	transport := irma.NewHTTPTransport(manager.KeyshareServer, !client.Preferences.DeveloperMode)
 	kss, err := newKeyshareServer(managerID)
 	if err != nil {
 		return err
@@ -1043,7 +1043,9 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 		}
 	}
 	kss := client.keyshareServers[schemeid]
-	return verifyPinWorker(pin, kss, irma.NewHTTPTransport(scheme.KeyshareServer))
+	return verifyPinWorker(pin, kss,
+		irma.NewHTTPTransport(scheme.KeyshareServer, !client.Preferences.DeveloperMode),
+	)
 }
 
 func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
@@ -1061,7 +1063,7 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 		return errors.New("Unknown keyshare server")
 	}
 
-	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer)
+	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer, !client.Preferences.DeveloperMode)
 	message := keyshareChangepin{
 		Username: kss.Username,
 		OldPin:   kss.HashedPin(oldPin),
@@ -1126,14 +1128,17 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, 
 }
 
 func (client *Client) SetDeveloperMode(enable bool) {
+	if enable {
+		irma.Logger.Info("developer mode enabled")
+	} else {
+		irma.Logger.Info("developer mode disabled")
+	}
 	client.Preferences.DeveloperMode = enable
 	_ = client.storage.StorePreferences(client.Preferences)
 	client.applyPreferences()
 }
 
-func (client *Client) applyPreferences() {
-	irma.ForceHttps = !client.Preferences.DeveloperMode
-}
+func (client *Client) applyPreferences() {}
 
 // ConfigurationUpdated should be run after Configuration.Download().
 // For any credential type in the updated scheme to which new attributes were added, this function

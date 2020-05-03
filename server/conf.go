@@ -389,7 +389,7 @@ func (conf *Configuration) verifyEmail() error {
 		if !strings.Contains(conf.Email, "@") || strings.Contains(conf.Email, "\n") {
 			return errors.New("Invalid email address specified")
 		}
-		t := irma.NewHTTPTransport("https://metrics.privacybydesign.foundation/history")
+		t := irma.NewHTTPTransport("https://metrics.privacybydesign.foundation/history", true)
 		t.SetHeader("User-Agent", "irmaserver")
 		var x string
 		_ = t.Post("email", &x, conf.Email)

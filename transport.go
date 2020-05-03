@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
@@ -26,10 +27,11 @@ import (
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
-	Server  string
-	Binary  bool
-	client  *retryablehttp.Client
-	headers http.Header
+	Server     string
+	Binary     bool
+	ForceHTTPS bool
+	client     *retryablehttp.Client
+	headers    http.Header
 }
 
 var HTTPHeaders = map[string]http.Header{}
@@ -57,7 +59,7 @@ func SetLogger(logger *logrus.Logger) {
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
-func NewHTTPTransport(serverURL string) *HTTPTransport {
+func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	if Logger.IsLevelEnabled(logrus.TraceLevel) {
 		transportlogger = log.New(Logger.WriterLevel(logrus.TraceLevel), "transport: ", 0)
 	} else {
@@ -110,9 +112,10 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 		headers = http.Header{}
 	}
 	return &HTTPTransport{
-		Server:  serverURL,
-		headers: headers,
-		client:  client,
+		Server:     serverURL,
+		ForceHTTPS: forceHTTPS,
+		headers:    headers,
+		client:     client,
 	}
 }
 
@@ -168,7 +171,11 @@ func (transport *HTTPTransport) request(
 	url string, method string, reader io.Reader, contenttype string,
 ) (response *http.Response, err error) {
 	var req retryablehttp.Request
-	req.Request, err = http.NewRequest(method, transport.Server+url, reader)
+	u := transport.Server + url
+	if common.ForceHTTPS && transport.ForceHTTPS && !strings.HasPrefix(u, "https") {
+		return nil, &SessionError{ErrorType: ErrorHTTPS, Err: errors.New("remote server does not use https")}
+	}
+	req.Request, err = http.NewRequest(method, u, reader)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}

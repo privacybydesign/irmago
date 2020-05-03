@@ -12,6 +12,7 @@ import (
 
 	jwt "github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
@@ -20,7 +21,7 @@ import (
 )
 
 func init() {
-	irma.ForceHttps = false
+	common.ForceHTTPS = false // globally disable https enforcement
 	irma.Logger.SetLevel(logrus.WarnLevel)
 }
 
@@ -136,19 +137,19 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 	switch TestType {
 	case "apiserver":
 		url := "http://localhost:8088/irma_api_server/api/v2/" + sessiontype
-		err = irma.NewHTTPTransport(url).Post("", qr, getJwt(t, request, sessiontype, jwt.SigningMethodNone))
+		err = irma.NewHTTPTransport(url, false).Post("", qr, getJwt(t, request, sessiontype, jwt.SigningMethodNone))
 		qr.URL = url + "/" + qr.URL
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
+		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
 		qr = sesPkg.SessionPtr
 	case "irmaserver-hmac-jwt":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
+		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
 		qr = sesPkg.SessionPtr
 	case "irmaserver":
 		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url).Post("session", &sesPkg, request)
+		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, request)
 		qr = sesPkg.SessionPtr
 	default:
 		t.Fatal("Invalid TestType")

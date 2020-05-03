@@ -335,7 +335,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 	}
 
 	var x string // dummy for the server's return value that we don't care about
-	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, res); err != nil {
+	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", &x, res); err != nil {
 		// not our problem, log it and go on
 		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
 	}

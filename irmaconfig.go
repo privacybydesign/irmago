@@ -720,7 +720,7 @@ func (conf *Configuration) CopyManagerFromAssets(scheme SchemeManagerIdentifier)
 // DownloadSchemeManager downloads and returns a scheme manager description.xml file
 // from the specified URL.
 func DownloadSchemeManager(url string) (*SchemeManager, error) {
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+	if !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
 	if url[len(url)-1] == '/' {
@@ -729,7 +729,7 @@ func DownloadSchemeManager(url string) (*SchemeManager, error) {
 	if strings.HasSuffix(url, "/description.xml") {
 		url = url[:len(url)-len("/description.xml")]
 	}
-	b, err := NewHTTPTransport(url).GetBytes("description.xml")
+	b, err := NewHTTPTransport(url, true).GetBytes("description.xml")
 	if err != nil {
 		return nil, err
 	}
@@ -786,7 +786,7 @@ func (conf *Configuration) installSchemeManager(manager *SchemeManager, publicke
 	if err := common.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
 	}
-	t := NewHTTPTransport(manager.URL)
+	t := NewHTTPTransport(manager.URL, true)
 
 	if publickey != nil {
 		if err := common.SaveFile(filepath.Join(conf.Path, name, "pk.pem"), publickey); err != nil {
@@ -819,7 +819,7 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 		return errors.New("cannot download into a read-only configuration")
 	}
 
-	t := NewHTTPTransport(manager.URL)
+	t := NewHTTPTransport(manager.URL, true)
 	if err = conf.downloadFile(t, manager.ID, "index"); err != nil {
 		return
 	}
@@ -1224,7 +1224,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 	}
 
 	// Check remote timestamp, verify it against the new index, and see if we have to do anything
-	transport := NewHTTPTransport(manager.URL + "/")
+	transport := NewHTTPTransport(manager.URL+"/", true)
 	err = conf.downloadSignedFile(transport, manager.ID, "timestamp", newIndex[manager.ID+"/timestamp"])
 	if err != nil {
 		return err

@@ -166,7 +166,8 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
-		if err := irma.NewHTTPTransport("").Post(qr.URL, newqr, struct{}{}); err != nil {
+		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)
+		if err := transport.Post(qr.URL, newqr, struct{}{}); err != nil {
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorTransport, Err: errors.Wrap(err, 0)})
 			return nil
 		}
@@ -183,8 +184,8 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	session := &session{
 		ServerURL:      qr.URL,
 		Hostname:       u.Hostname(),
-		transport:      irma.NewHTTPTransport(qr.URL),
-		Action:         irma.Action(qr.Type),
+		transport:      irma.NewHTTPTransport(qr.URL, !client.Preferences.DeveloperMode),
+		Action:         qr.Type,
 		Handler:        handler,
 		client:         client,
 		prepRevocation: make(chan error),
@@ -402,10 +403,11 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 			session.Handler,
 			session.builders,
 			session.request,
-			session.client.Configuration,
-			session.client.keyshareServers,
 			session.issuerProofNonce,
 			session.timestamp,
+			session.client.Configuration,
+			session.client.keyshareServers,
+			session.client.Preferences,
 		)
 	}
 }

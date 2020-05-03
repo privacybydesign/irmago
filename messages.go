@@ -18,8 +18,6 @@ import (
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
 
-var ForceHttps = true
-
 const (
 	MinVersionHeader = "X-IRMA-MinProtocolVersion"
 	MaxVersionHeader = "X-IRMA-MaxProtocolVersion"
@@ -189,6 +187,8 @@ const (
 	ErrorProtocolVersionNotSupported = ErrorType("protocolVersionNotSupported")
 	// Error in HTTP communication
 	ErrorTransport = ErrorType("transport")
+	// HTTPS required
+	ErrorHTTPS = ErrorType("https")
 	// Invalid client JWT in first IRMA message
 	ErrorInvalidJWT = ErrorType("invalidJwt")
 	// Unkown session type (not disclosing, signing, or issuing)
@@ -338,12 +338,8 @@ func (qr *Qr) Validate() (err error) {
 	if qr.URL == "" {
 		return errors.New("no URL specified")
 	}
-	var u *url.URL
-	if u, err = url.ParseRequestURI(qr.URL); err != nil {
+	if _, err = url.ParseRequestURI(qr.URL); err != nil {
 		return errors.Errorf("invalid URL: %s", err.Error())
-	}
-	if ForceHttps && u.Scheme != "https" {
-		return errors.Errorf("remote server does not use https")
 	}
 	if !qr.IsQr() {
 		return errors.New("unsupported session type")

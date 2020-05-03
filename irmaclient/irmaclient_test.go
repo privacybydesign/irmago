@@ -9,6 +9,7 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 
@@ -19,6 +20,7 @@ import (
 
 func TestMain(m *testing.M) {
 	irma.Logger.SetLevel(logrus.FatalLevel)
+	common.ForceHTTPS = false // globally disable https enforcement
 
 	// Create HTTP server for scheme managers
 	test.StartSchemeManagerHttpServer()

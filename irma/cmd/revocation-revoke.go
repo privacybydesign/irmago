@@ -51,7 +51,7 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 		die("credential type does not support revocation", nil)
 	}
 
-	transport := irma.NewHTTPTransport(url)
+	transport := irma.NewHTTPTransport(url, false)
 
 	switch authmethod {
 	case "none":

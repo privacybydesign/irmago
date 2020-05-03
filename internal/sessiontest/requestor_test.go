@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
@@ -126,7 +127,7 @@ func TestRequestorDoubleGET(t *testing.T) {
 
 	// Simulate the first GET by the client in the session protocol, twice
 	var o interface{}
-	transport := irma.NewHTTPTransport(qr.URL)
+	transport := irma.NewHTTPTransport(qr.URL, false)
 	transport.SetHeader(irma.MinVersionHeader, "2.5")
 	transport.SetHeader(irma.MaxVersionHeader, "2.5")
 	require.NoError(t, transport.Get("", &o))
@@ -354,6 +355,8 @@ func TestOptionalDisclosure(t *testing.T) {
 }
 
 func TestClientDeveloperMode(t *testing.T) {
+	common.ForceHTTPS = true
+	defer func() { common.ForceHTTPS = false }()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 	StartIrmaServer(t, false)
@@ -385,6 +388,6 @@ func TestClientDeveloperMode(t *testing.T) {
 	serr, ok := result.Err.(*irma.SessionError)
 	require.True(t, ok)
 	require.NotNil(t, serr)
-	require.Equal(t, irma.ErrorInvalidRequest, serr.ErrorType)
+	require.Equal(t, string(irma.ErrorHTTPS), string(serr.ErrorType))
 	require.Equal(t, "remote server does not use https", serr.Err.Error())
 }

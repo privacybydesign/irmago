@@ -857,7 +857,7 @@ func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, s
 	if err != nil {
 		return err
 	}
-	return client.transport().Post(
+	return client.transport(false).Post(
 		fmt.Sprintf("%s/revocation/%s/issuancerecord/%d", url, id, sk.Counter), nil, []byte(message),
 	)
 }
@@ -954,7 +954,7 @@ func (client RevocationClient) FetchUpdatesLatest(id CredentialTypeIdentifier, c
 func (client RevocationClient) getMultiple(urls []string, path string, dest interface{}) error {
 	var (
 		errs      multierror.Error
-		transport = client.transport()
+		transport = client.transport(true)
 	)
 	for _, url := range urls {
 		transport.Server = url
@@ -968,9 +968,9 @@ func (client RevocationClient) getMultiple(urls []string, path string, dest inte
 	return &errs
 }
 
-func (client RevocationClient) transport() *HTTPTransport {
+func (client RevocationClient) transport(forceHTTPS bool) *HTTPTransport {
 	if client.http == nil {
-		client.http = NewHTTPTransport("")
+		client.http = NewHTTPTransport("", forceHTTPS)
 		client.http.Binary = true
 	}
 	return client.http
