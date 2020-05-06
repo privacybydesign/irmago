@@ -47,7 +47,7 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 		handler,
 	)
 	require.NoError(t, err)
-	client.SetDeveloperMode(true)
+	client.SetPreferences(Preferences{DeveloperMode: true})
 	return client, handler
 }
 

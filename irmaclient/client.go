@@ -1127,13 +1127,13 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, 
 	return client.storage.LoadLogsBefore(beforeIndex, max)
 }
 
-func (client *Client) SetDeveloperMode(enable bool) {
-	if enable {
+func (client *Client) SetPreferences(pref Preferences) {
+	if pref.DeveloperMode {
 		irma.Logger.Info("developer mode enabled")
 	} else {
 		irma.Logger.Info("developer mode disabled")
 	}
-	client.Preferences.DeveloperMode = enable
+	client.Preferences = pref
 	_ = client.storage.StorePreferences(client.Preferences)
 	client.applyPreferences()
 }
