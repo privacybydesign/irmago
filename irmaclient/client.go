@@ -433,6 +433,7 @@ func (client *Client) RemoveStorage() error {
 	client.attributes = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
 	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
+	client.lookup = make(map[string]*credLookup)
 
 	if err = client.storage.DeleteAll(); err != nil {
 		return err
