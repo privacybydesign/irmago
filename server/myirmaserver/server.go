@@ -154,7 +154,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 			subject = s.conf.DeleteAccountSubject[s.conf.DefaultLanguage]
 		}
 		var emsg bytes.Buffer
-		err = template.Execute(&emsg, map[string]string{})
+		err = template.Execute(&emsg, map[string]string{"Username": userData.Username})
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not render account deletion email")
 			server.WriteError(w, server.ErrorInternal, err.Error())
@@ -600,7 +600,7 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var emsg bytes.Buffer
-		err = template.Execute(&emsg, map[string]string{"username": info.Username})
+		err = template.Execute(&emsg, map[string]string{"Username": info.Username})
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not generate login mail from template")
 			server.WriteError(w, server.ErrorInternal, err.Error())
