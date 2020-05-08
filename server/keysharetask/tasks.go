@@ -90,23 +90,6 @@ func (t *TaskHandler) ExpireAccounts() {
 			return
 		}
 
-		// Prepare email body
-		template, ok := t.conf.DeleteExpiredAccountTemplate[lang]
-		if !ok {
-			template = t.conf.DeleteExpiredAccountTemplate[t.conf.DefaultLanguage]
-		}
-		subject, ok := t.conf.DeleteExpiredAccountSubject[lang]
-		if !ok {
-			subject = t.conf.DeleteExpiredAccountSubject[t.conf.DefaultLanguage]
-		}
-		var emsg bytes.Buffer
-
-		err = template.Execute(&emsg, map[string]string{"username": username})
-		if err != nil {
-			t.conf.Logger.WithField("error", err).Error("Could not render email")
-			return
-		}
-
 		// Fetch user's email addresses
 		emailres, err := t.db.Query("SELECT emailAddress FROM irma.email_addresses WHERE user_id = $1", id)
 		if err != nil {
@@ -118,6 +101,23 @@ func (t *TaskHandler) ExpireAccounts() {
 			err = emailres.Scan(&email)
 			if err != nil {
 				t.conf.Logger.WithField("error", err).Error("Could not retrieve email address")
+				return
+			}
+
+			// Prepare email body
+			template, ok := t.conf.DeleteExpiredAccountTemplate[lang]
+			if !ok {
+				template = t.conf.DeleteExpiredAccountTemplate[t.conf.DefaultLanguage]
+			}
+			subject, ok := t.conf.DeleteExpiredAccountSubject[lang]
+			if !ok {
+				subject = t.conf.DeleteExpiredAccountSubject[t.conf.DefaultLanguage]
+			}
+			var emsg bytes.Buffer
+
+			err = template.Execute(&emsg, map[string]string{"Username": username, "Email": email})
+			if err != nil {
+				t.conf.Logger.WithField("error", err).Error("Could not render email")
 				return
 			}
 
