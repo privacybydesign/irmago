@@ -29,7 +29,7 @@ var confKeyshareMyirma *myirmaserver.Configuration
 
 var myirmadCmd = &cobra.Command{
 	Use:   "myirma",
-	Short: "Imra keyshare server myirma component",
+	Short: "Irma keyshare server myirma component",
 	Run: func(command *cobra.Command, args []string) {
 		configureMyirmad(command)
 
@@ -103,6 +103,8 @@ func init() {
 	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
 	flags.StringP("url", "u", "", "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
+	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
+	flags.String("static-prefix", "/", "Host static files under this URL prefix")
 
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
@@ -150,7 +152,7 @@ func configureMyirmad(cmd *cobra.Command) {
 	dashReplacer := strings.NewReplacer("-", "_")
 	viper.SetEnvKeyReplacer(dashReplacer)
 	viper.SetFileKeyReplacer(dashReplacer)
-	viper.SetEnvPrefix("KEYSHARED")
+	viper.SetEnvPrefix("MYIRMA")
 	viper.AutomaticEnv()
 
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
@@ -209,6 +211,9 @@ func configureMyirmad(cmd *cobra.Command) {
 		DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
 		URL:                   string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 		DisableTLS:            viper.GetBool("no-tls"),
+
+		StaticPath:   viper.GetString("static-path"),
+		StaticPrefix: viper.GetString("static-prefix"),
 
 		DbType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
 		DbConnstring: viper.GetString("db"),
