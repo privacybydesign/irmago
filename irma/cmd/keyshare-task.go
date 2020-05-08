@@ -83,9 +83,9 @@ func configureKeyshareTask(cmd *cobra.Command) {
 		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
 		viper.AddConfigPath(dir)
 	} else {
-		viper.SetConfigName("myirmad")
+		viper.SetConfigName("keysharetask")
 		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/myirmad/")
+		viper.AddConfigPath("/etc/keysharetask/")
 	}
 	err := viper.ReadInConfig()
 
