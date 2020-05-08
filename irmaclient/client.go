@@ -48,7 +48,7 @@ type Client struct {
 	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
 	updates          []update
 
-	lookup map[string]credLookup
+	lookup map[string]*credLookup
 
 	// Where we store/load it to/from
 	storage storage
@@ -202,10 +202,10 @@ func New(
 		return nil, errors.New("Too many keyshare servers")
 	}
 
-	client.lookup = map[string]credLookup{}
+	client.lookup = map[string]*credLookup{}
 	for _, attrlistlist := range client.attributes {
 		for i, attrlist := range attrlistlist {
-			client.lookup[attrlist.Hash()] = credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
+			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
 		}
 	}
 
@@ -341,7 +341,7 @@ func (client *Client) addCredential(cred *credential) (err error) {
 		}
 		counter := len(client.attributes[id]) - 1
 		client.credentialsCache[id][counter] = cred
-		client.lookup[cred.attrs.Hash()] = credLookup{id: id, counter: counter}
+		client.lookup[cred.attrs.Hash()] = &credLookup{id: id, counter: counter}
 	}
 
 	return client.storage.Transaction(func(tx *transaction) error {
@@ -398,6 +398,10 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeL
 			delete(creds, index)
 			client.credentialsCache[id] = creds
 		}
+	}
+	delete(client.lookup, attrs.Hash())
+	for i, attrs := range client.attributes[id] {
+		client.lookup[attrs.Hash()].counter = i
 	}
 	return nil
 }
