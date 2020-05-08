@@ -495,6 +495,9 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if userinfo.Emails == nil {
+		userinfo.Emails = []string{}
+	} // Ensure we never send nil in place of an empty list
 	server.WriteJson(w, userinfo)
 }
 
@@ -537,6 +540,9 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if entries == nil {
+		entries = []LogEntry{}
+	} // Ensure we never send an nil as empty list
 	server.WriteJson(w, entries)
 }
 
