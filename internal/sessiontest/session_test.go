@@ -1,8 +1,10 @@
 package sessiontest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"testing"
@@ -452,4 +454,25 @@ func TestIssuedCredentialIsStored(t *testing.T) {
 	client, handler = parseExistingStorage(t, handler.storage)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
 	sessionHelper(t, getDisclosureRequest(id), "verification", client)
+}
+
+func TestPOSTSizeLimit(t *testing.T) {
+	StartRequestorServer(IrmaServerConfiguration)
+	defer StopRequestorServer()
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://localhost:48682/session/",
+		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	bts, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	var rerr irma.RemoteError
+	require.NoError(t, json.Unmarshal(bts, &rerr))
+	require.Equal(t, "http: request body too large", rerr.Message)
 }

@@ -100,6 +100,9 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 		Addr:      fulladdr,
 		Handler:   handler,
 		TLSConfig: tlsConf,
+		// See https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/
+		ReadTimeout:  server.ReadTimeout,
+		WriteTimeout: server.WriteTimeout,
 	}
 
 	go func() {
@@ -189,6 +192,7 @@ func (s *Server) Handler() http.Handler {
 	// while not adding it to the endpoints already added above (which do their own logging).
 
 	router.Group(func(r chi.Router) {
+		r.Use(server.SizeLimitMiddleware)
 		r.Use(cors.New(corsOptions).Handler)
 		if s.conf.Verbose >= 2 {
 			r.Use(server.LogMiddleware("requestor", log))
@@ -212,6 +216,7 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	router.Group(func(r chi.Router) {
+		r.Use(server.SizeLimitMiddleware)
 		r.Use(cors.New(corsOptions).Handler)
 		if s.conf.Verbose >= 2 {
 			r.Use(server.LogMiddleware("revocation", log))
