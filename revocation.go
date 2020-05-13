@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	sseclient "astuart.co/go-sse"
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/fxamacker/cbor"
 	"github.com/getsentry/raven-go"
@@ -22,6 +21,7 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
+	sseclient "github.com/sietseringers/go-sse"
 
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/postgres"

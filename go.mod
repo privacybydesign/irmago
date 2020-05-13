@@ -3,7 +3,7 @@ module github.com/privacybydesign/irmago
 go 1.13
 
 require (
-	astuart.co/go-sse v0.0.0-20200223201439-6cc042ab6f6d
+	github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/alexandrevicenzi/go-sse v1.3.1-0.20200117161408-7b23d5ff7420
 	github.com/bwesterb/go-atum v1.0.0
@@ -50,8 +50,6 @@ require (
 	go.etcd.io/bbolt v1.3.2
 	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72 // indirect
 )
-
-replace astuart.co/go-sse => github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
 
 replace github.com/spf13/pflag => github.com/sietseringers/pflag v1.0.4-0.20190111213756-a45bfec10d59
 
