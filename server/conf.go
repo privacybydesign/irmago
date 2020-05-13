@@ -103,7 +103,7 @@ func (conf *Configuration) Check() error {
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
-			if conf.IrmaConfiguration != nil {
+			if conf.IrmaConfiguration != nil && conf.IrmaConfiguration.Revocation != nil {
 				if e := conf.IrmaConfiguration.Revocation.Close(); e != nil {
 					_ = LogError(e)
 				}
