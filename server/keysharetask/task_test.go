@@ -23,9 +23,9 @@ func TestCleanupEmails(t *testing.T) {
 
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.users (id, username, lastSeen, language, coredata, pinCounter, pinBlockDate) VALUES (15, 'testuser', 15, '', '', 0,0)")
+	_, err = db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 15, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.email_addresses (user_id, emailAddress, delete_on) VALUES (15, 'test@test.com', NULL), (15, 'test2@test.com', $1), (15, 'test3@test.com', 0)", time.Now().Add(time.Hour).Unix())
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), (15, 'test2@test.com', $1), (15, 'test3@test.com', 0)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
 	th, err := New(&Configuration{DbConnstring: postgresTestUrl})
@@ -33,7 +33,7 @@ func TestCleanupEmails(t *testing.T) {
 
 	th.CleanupEmails()
 
-	res, err := db.Query("SELECT COUNT(*) FROM irma.email_addresses")
+	res, err := db.Query("SELECT COUNT(*) FROM irma.emails")
 	require.NoError(t, err)
 	defer res.Close()
 	require.True(t, res.Next())
@@ -48,7 +48,7 @@ func TestCleanupTokens(t *testing.T) {
 
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.users (id, username, lastSeen, language, coredata, pinCounter, pinBlockDate) VALUES (15, 'testuser', 15, '', '', 0,0)")
+	_, err = db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 15, '', '', 0,0)")
 	require.NoError(t, err)
 	_, err = db.Exec("INSERT INTO irma.email_verification_tokens (token, user_id, email, expiry) VALUES ('t1', 15, 't1@test.com', 0), ('t2', 15, 't2@test.com', $1)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestCleanupAccounts(t *testing.T) {
 
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.users (id, username, language, coredata, pinCounter, pinBlockDate, lastseen, delete_on) VALUES (15, 'testuser', '', '', 0,0, 0, NULL), (16, 't2', '', '', 0, 0, 0, $1-3600), (17, 't3', '', '', 0, 0, $1, $1-3600), (18, 't4', '', NULL, 0, 0, $1, $1-3600)", time.Now().Unix())
+	_, err = db.Exec("INSERT INTO irma.users (id, username, language, coredata, pin_counter, pin_block_date, last_seen, delete_on) VALUES (15, 'testuser', '', '', 0,0, 0, NULL), (16, 't2', '', '', 0, 0, 0, $1-3600), (17, 't3', '', '', 0, 0, $1, $1-3600), (18, 't4', '', NULL, 0, 0, $1, $1-3600)", time.Now().Unix())
 	require.NoError(t, err)
 
 	th, err := New(&Configuration{DbConnstring: postgresTestUrl})
@@ -106,9 +106,9 @@ func TestExpireAccounts(t *testing.T) {
 
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pincounter, pinBlockDate, lastseen) VALUES (15, 'A', '', '', 0, 0, $1-12*3600), (16, 'B', '', '', 0, 0, 0), (17, 'C', '', '', 0, 0, 0)", time.Now().Unix())
+	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (15, 'A', '', '', 0, 0, $1-12*3600), (16, 'B', '', '', 0, 0, 0), (17, 'C', '', '', 0, 0, 0)", time.Now().Unix())
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.email_addresses (user_id, emailAddress, delete_on) VALUES (15, 'test@test.com', NULL), (16, 'test@test.com', NULL)")
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), (16, 'test@test.com', NULL)")
 	require.NoError(t, err)
 
 	th, err := New(&Configuration{

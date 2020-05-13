@@ -100,7 +100,7 @@ func (db *myirmaPostgresDB) RemoveUser(id int64) error {
 
 func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 	// Check if email address exists in database
-	eres, err := db.db.Query("SELECT 1 FROM irma.email_addresses WHERE emailAddress = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
+	eres, err := db.db.Query("SELECT 1 FROM irma.emails WHERE email = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
 		email, time.Now().Unix())
 	if err != nil {
 		return err
@@ -131,9 +131,9 @@ func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 }
 
 func (db *myirmaPostgresDB) LoginTokenGetCandidates(token string) ([]LoginCandidate, error) {
-	res, err := db.db.Query(`SELECT username, lastseen FROM irma.users WHERE id IN
-							     (SELECT user_id FROM irma.email_addresses WHERE (delete_on >= $2 OR delete_on is NULL) AND
-									 email_addresses.emailAddress = (SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2))`,
+	res, err := db.db.Query(`SELECT username, last_seen FROM irma.users WHERE id IN
+							     (SELECT user_id FROM irma.emails WHERE (delete_on >= $2 OR delete_on is NULL) AND
+									 emails.email = (SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2))`,
 		token, time.Now().Unix())
 	if err != nil {
 		return nil, err
@@ -169,9 +169,9 @@ func (db *myirmaPostgresDB) LoginTokenGetEmail(token string) (string, error) {
 }
 
 func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (bool, error) {
-	res, err := db.db.Query(`SELECT 1 FROM irma.users INNER JOIN irma.email_addresses ON users.id = email_addresses.user_id WHERE
-								 username = $1 AND (email_addresses.delete_on >= $3 OR email_addresses.delete_on IS NULL) AND
-								 emailAddress = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
+	res, err := db.db.Query(`SELECT 1 FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
+								 username = $1 AND (emails.delete_on >= $3 OR emails.delete_on IS NULL) AND
+								 email = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
 		username, token, time.Now().Unix())
 	if err != nil {
 		return false, err
@@ -214,7 +214,7 @@ func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error
 	}
 
 	// fetch email addresses
-	rese, err := db.db.Query("SELECT emailAddress FROM irma.email_addresses WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)",
+	rese, err := db.db.Query("SELECT email FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)",
 		id, time.Now().Unix())
 	if err != nil {
 		return UserInformation{}, err
@@ -259,7 +259,7 @@ func (db *myirmaPostgresDB) GetLogs(id int64, offset, ammount int) ([]LogEntry, 
 
 func (db *myirmaPostgresDB) AddEmail(id int64, email string) error {
 	// Try to restore email in process of deletion
-	res, err := db.db.Exec("UPDATE irma.email_addresses SET delete_on = NULL WHERE user_id = $1 AND emailAddress = $2", id, email)
+	res, err := db.db.Exec("UPDATE irma.emails SET delete_on = NULL WHERE user_id = $1 AND email = $2", id, email)
 	if err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func (db *myirmaPostgresDB) AddEmail(id int64, email string) error {
 	}
 
 	// Fall back to adding new one
-	res, err = db.db.Exec("INSERT INTO irma.email_addresses (user_id, emailAddress) VALUES ($1, $2)", id, email)
+	res, err = db.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", id, email)
 	if err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (db *myirmaPostgresDB) AddEmail(id int64, email string) error {
 }
 
 func (db *myirmaPostgresDB) RemoveEmail(id int64, email string) error {
-	res, err := db.db.Exec("UPDATE irma.email_addresses SET delete_on = $3 WHERE user_id = $1 AND emailAddress = $2 AND delete_on IS NULL",
+	res, err := db.db.Exec("UPDATE irma.emails SET delete_on = $3 WHERE user_id = $1 AND email = $2 AND delete_on IS NULL",
 		id,
 		email,
 		time.Now().Add(time.Duration(24*db.deleteDelay)*time.Hour).Unix())
@@ -305,7 +305,7 @@ func (db *myirmaPostgresDB) RemoveEmail(id int64, email string) error {
 }
 
 func (db *myirmaPostgresDB) SetSeen(id int64) error {
-	res, err := db.db.Exec("UPDATE irma.users SET lastSeen = $1 WHERE id = $2", time.Now().Unix(), id)
+	res, err := db.db.Exec("UPDATE irma.users SET last_seen = $1 WHERE id = $2", time.Now().Unix(), id)
 	if err != nil {
 		return err
 	}

@@ -36,7 +36,7 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 }
 
 func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) (KeyshareUser, error) {
-	res, err := db.db.Query("INSERT INTO irma.users (username, language, coredata, lastSeen, pinCounter, pinBlockDate) VALUES ($1, $2, $3, $4, 0, 0) RETURNING id",
+	res, err := db.db.Query("INSERT INTO irma.users (username, language, coredata, last_seen, pin_counter, pin_block_date) VALUES ($1, $2, $3, $4, 0, 0) RETURNING id",
 		user.Username,
 		user.Language,
 		user.Coredata[:],
@@ -106,10 +106,10 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	//  update pinCounter and pinBlockDate
 	uprows, err := db.db.Query(`
 		UPDATE irma.users
-		SET pinCounter = pinCounter+1,
-			pinBlockDate = $1+$2*2^GREATEST(0, pinCounter-$3)
-		WHERE id=$4 AND pinBlockDate<=$5 AND coredata IS NOT NULL
-		RETURNING pinCounter, pinBlockDate`,
+		SET pin_counter = pin_counter+1,
+			pin_block_date = $1+$2*2^GREATEST(0, pin_counter-$3)
+		WHERE id=$4 AND pin_block_date<=$5 AND coredata IS NOT NULL
+		RETURNING pin_counter, pin_block_date`,
 		time.Now().Unix()-1-BACKOFF_START, // Grace time of 2 seconds on pinBlockDate set
 		BACKOFF_START,
 		MAX_PIN_TRIES-2,
@@ -124,7 +124,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	if !uprows.Next() {
 		// if no, then account either does not exist (which would be weird here) or is blocked
 		// so request wait timeout
-		pinrows, err := db.db.Query("SELECT pinBlockDate FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", userdata.id)
+		pinrows, err := db.db.Query("SELECT pin_block_date FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", userdata.id)
 		if err != nil {
 			return false, 0, 0, err
 		}
@@ -165,7 +165,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 
 func (db *keysharePostgresDatabase) ClearPincheck(user KeyshareUser) error {
 	userdata := user.(*keysharePostgresUser)
-	res, err := db.db.Exec("UPDATE irma.users SET pinCounter=0, pinBlockDate=0 WHERE id=$1", userdata.id)
+	res, err := db.db.Exec("UPDATE irma.users SET pin_counter=0, pin_block_date=0 WHERE id=$1", userdata.id)
 	if err != nil {
 		return err
 	}
@@ -181,7 +181,7 @@ func (db *keysharePostgresDatabase) ClearPincheck(user KeyshareUser) error {
 
 func (db *keysharePostgresDatabase) SetSeen(user KeyshareUser) error {
 	userdata := user.(*keysharePostgresUser)
-	res, err := db.db.Exec("UPDATE irma.users SET lastSeen = $1 WHERE id = $2", time.Now().Unix(), userdata.id)
+	res, err := db.db.Exec("UPDATE irma.users SET last_seen = $1 WHERE id = $2", time.Now().Unix(), userdata.id)
 	if err != nil {
 		return err
 	}
