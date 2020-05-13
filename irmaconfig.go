@@ -160,8 +160,10 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
-	conf.PrivateKeys = make(map[IssuerIdentifier]map[uint]*gabi.PrivateKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
+	if conf.PrivateKeys == nil { // keep if already populated
+		conf.PrivateKeys = make(map[IssuerIdentifier]map[uint]*gabi.PrivateKey)
+	}
 }
 
 // ParseFolder populates the current Configuration by parsing the storage path,
