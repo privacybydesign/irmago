@@ -23,7 +23,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
-	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, lastSeen, language, coredata, pinCounter, pinBlockDate) VALUES (15, 'testuser', 0, '', '', 0,0)")
+	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 0, '', '', 0,0)")
 	require.NoError(t, err)
 	_, err = pdb.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, expiry, user_id) VALUES ('testtoken', 'test@test.com', $1, 15)", time.Now().Unix())
 	require.NoError(t, err)
@@ -63,11 +63,11 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
-	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, lastSeen, language, coredata, pinCounter, pinBlockDate) VALUES (15, 'testuser', 0, '', '', 0,0)")
+	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 0, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, lastSeen, language, coredata, pinCounter, pinBlockDate) VALUES (17, 'noemail', 0, '', '', 0,0)")
+	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (17, 'noemail', 0, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.email_addresses (user_id, emailAddress) VALUES (15, 'test@test.com')")
+	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@test.com')")
 	require.NoError(t, err)
 
 	err = db.AddEmailLoginToken("test2@test.com", "test2token")
@@ -112,11 +112,11 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
-	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, lastSeen, language, coredata, pinCounter, pinBlockDate) VALUES (15, 'testuser', 15, '', '', 0,0)")
+	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 15, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, lastSeen, language, coredata, pinCounter, pinBlockDate) VALUES (17, 'noemail', 20, '', '', 0,0)")
+	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (17, 'noemail', 20, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.email_addresses (user_id, emailAddress) VALUES (15, 'test@test.com')")
+	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@test.com')")
 	require.NoError(t, err)
 	_, err = pdb.db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES (110, 'test', '', 15), (120, 'test2', '15', 15)")
 	require.NoError(t, err)

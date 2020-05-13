@@ -31,7 +31,7 @@ func New(conf *Configuration) (*TaskHandler, error) {
 }
 
 func (t *TaskHandler) CleanupEmails() {
-	_, err := t.db.Exec("DELETE FROM irma.email_addresses WHERE delete_on < $1", time.Now().Unix())
+	_, err := t.db.Exec("DELETE FROM irma.emails WHERE delete_on < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email addresses marked for deletion")
 	}
@@ -50,7 +50,7 @@ func (t *TaskHandler) CleanupTokens() {
 }
 
 func (t *TaskHandler) CleanupAccounts() {
-	_, err := t.db.Exec("DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR lastseen < delete_on - $2)",
+	_, err := t.db.Exec("DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR last_seen < delete_on - $2)",
 		time.Now().Unix(),
 		t.conf.DeleteDelay*24*60*60)
 	if err != nil {
@@ -67,11 +67,11 @@ func (t *TaskHandler) ExpireAccounts() {
 
 	res, err := t.db.Query(`SELECT id, username, language 
 							FROM irma.users 
-							WHERE lastseen < $1 
+							WHERE last_seen < $1 
 								AND (
 										SELECT count(*) 
-										FROM irma.email_addresses 
-										WHERE irma.users.id = irma.email_addresses.user_id
+										FROM irma.emails 
+										WHERE irma.users.id = irma.emails.user_id
 									) > 0 
 							LIMIT 10`,
 		time.Now().Add(time.Duration(-24*t.conf.ExpiryDelay)*time.Hour).Unix())
@@ -91,7 +91,7 @@ func (t *TaskHandler) ExpireAccounts() {
 		}
 
 		// Fetch user's email addresses
-		emailres, err := t.db.Query("SELECT emailAddress FROM irma.email_addresses WHERE user_id = $1", id)
+		emailres, err := t.db.Query("SELECT email FROM irma.emails WHERE user_id = $1", id)
 		if err != nil {
 			t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
 			return
