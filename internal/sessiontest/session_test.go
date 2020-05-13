@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -296,6 +297,43 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 }
 
+func TestIrmaServerPrivateKeysFolder(t *testing.T) {
+	storage, err := ioutil.TempDir("", "servertest")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
+	StartIrmaServer(t, false, storage)
+	defer StopIrmaServer()
+
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+
+	require.NotZero(t, len(irmaServerConfiguration.IrmaConfiguration.PrivateKeys))
+	sk, err := irmaServerConfiguration.IrmaConfiguration.PrivateKeyLatest(credid.IssuerIdentifier())
+	require.NoError(t, err)
+	require.NotNil(t, sk)
+
+	issuanceRequest := getIssuanceRequest(true)
+	delete(issuanceRequest.Credentials[0].Attributes, "level")
+
+	conf := irmaServerConfiguration.IrmaConfiguration
+	conf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	downloaded, err := conf.Download(issuanceRequest)
+	require.NoError(t, err)
+	require.Equal(t, &irma.IrmaIdentifierSet{
+		SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
+		Issuers:        map[irma.IssuerIdentifier]struct{}{},
+		CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
+			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"): {},
+		},
+		PublicKeys:     map[irma.IssuerIdentifier][]uint{},
+		AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{},
+	}, downloaded)
+
+	require.NotZero(t, len(irmaServerConfiguration.IrmaConfiguration.PrivateKeys))
+	sk, err = irmaServerConfiguration.IrmaConfiguration.PrivateKeyLatest(credid.IssuerIdentifier())
+	require.NoError(t, err)
+	require.NotNil(t, sk)
+}
+
 func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -310,7 +348,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 
 	serverChan := make(chan *server.SessionResult)
 
-	StartIrmaServer(t, false) // Run a server with old configuration (level is non-optional)
+	StartIrmaServer(t, false, "") // Run a server with old configuration (level is non-optional)
 	_, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
@@ -329,7 +367,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	require.True(t, reflect.DeepEqual(err, expectedError), "Incorrect missing identifierset")
 	StopIrmaServer()
 
-	StartIrmaServer(t, true) // Run a server with updated configuration (level is optional)
+	StartIrmaServer(t, true, "") // Run a server with updated configuration (level is optional)
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())

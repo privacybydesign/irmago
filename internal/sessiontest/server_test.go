@@ -53,24 +53,32 @@ func StopRequestorServer() {
 	requestorServer.Stop()
 }
 
-func StartIrmaServer(t *testing.T, updatedIrmaConf bool) {
+func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) {
 	testdata := test.FindTestdataFolder(t)
 	irmaconf := "irma_configuration"
 	if updatedIrmaConf {
 		irmaconf += "_updated"
 	}
 
-	var err error
+	var assets string
+	path := filepath.Join(testdata, irmaconf)
+	if storage != "" {
+		assets = path
+		path = storage
+	}
 	irmaServerConfiguration = &server.Configuration{
-		URL:                  "http://localhost:48680",
-		Logger:               logger,
-		DisableSchemesUpdate: true,
-		SchemesPath:          filepath.Join(testdata, irmaconf),
+		URL:                   "http://localhost:48680",
+		Logger:                logger,
+		DisableSchemesUpdate:  true,
+		SchemesPath:           path,
+		SchemesAssetsPath:     assets,
+		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:  {RevocationServerURL: "http://localhost:48683", SSE: true},
 			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 		},
 	}
+	var err error
 	irmaServer, err = irmaserver.New(irmaServerConfiguration)
 
 	require.NoError(t, err)

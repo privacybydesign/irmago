@@ -50,7 +50,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 
 	opts := processOptions(options...)
 	if opts&sessionOptionReuseServer == 0 {
-		StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0)
+		StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0, "")
 		defer StopIrmaServer()
 	}
 
@@ -108,7 +108,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
 func TestRequestorInvalidRequest(t *testing.T) {
-	StartIrmaServer(t, false)
+	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
 	_, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
@@ -118,7 +118,7 @@ func TestRequestorInvalidRequest(t *testing.T) {
 }
 
 func TestRequestorDoubleGET(t *testing.T) {
-	StartIrmaServer(t, false)
+	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
 	qr, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
@@ -359,7 +359,7 @@ func TestClientDeveloperMode(t *testing.T) {
 	defer func() { common.ForceHTTPS = false }()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	StartIrmaServer(t, false)
+	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
 
 	// parseStorage returns a client with developer mode already enabled.
