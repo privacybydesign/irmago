@@ -214,10 +214,11 @@ func NewMetadataAttribute(version byte) *MetadataAttribute {
 }
 
 // Bytes returns this metadata attribute as a byte slice.
+// Bigint's Bytes() method returns a big-endian byte slice, so add padding at begin.
 func (attr *MetadataAttribute) Bytes() []byte {
 	bytes := attr.Int.Bytes()
 	if len(bytes) < metadataLength {
-		bytes = append(bytes, make([]byte, metadataLength-len(bytes))...)
+		bytes = append(make([]byte, metadataLength-len(bytes)), bytes...)
 	}
 	return bytes
 }
@@ -277,13 +278,14 @@ func (attr *MetadataAttribute) setDefaultValidityDuration() {
 }
 
 func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
+	signingTimestamp := attr.SigningDate()
 	var expiry int64
 	if timestamp == nil {
-		expiry = time.Now().AddDate(0, 6, 0).Unix()
+		expiry = signingTimestamp.AddDate(0, 6, 0).Unix()
 	} else {
 		expiry = time.Time(*timestamp).Unix()
 	}
-	signing := attr.SigningDate().Unix()
+	signing := signingTimestamp.Unix()
 	if expiry-signing < 0 {
 		return errors.New("cannot set expired date")
 	}
