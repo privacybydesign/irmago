@@ -60,6 +60,7 @@ type Client struct {
 	Configuration         *irma.Configuration
 	irmaConfigurationPath string
 	handler               ClientHandler
+	sessions              sessions
 
 	jobs       chan func()   // queue of jobs to run
 	jobsPause  chan struct{} // sending pauses background jobs
@@ -212,6 +213,8 @@ func New(
 			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
 		}
 	}
+
+	client.sessions = sessions{client: client, sessions: map[string]*session{}}
 
 	client.jobs = make(chan func(), 100)
 	client.initRevocation()

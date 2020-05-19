@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains the logic and state of performing IRMA sessions, communicates
@@ -72,6 +73,7 @@ type session struct {
 	Version    *irma.ProtocolVersion
 	ServerName irma.TranslatedString
 
+	token          string
 	choice         *irma.DisclosureChoice
 	attrIndices    irma.DisclosedAttributeIndices
 	client         *Client
@@ -90,6 +92,11 @@ type session struct {
 	Hostname  string
 	ServerURL string
 	transport *irma.HTTPTransport
+}
+
+type sessions struct {
+	client   *Client
+	sessions map[string]*session
 }
 
 // We implement the handler for the keyshare protocol
@@ -156,6 +163,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 		request:        request,
 		prepRevocation: make(chan error),
 	}
+	client.sessions.add(session)
 	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
 
 	session.processSessionInfo()
@@ -190,6 +198,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		client:         client,
 		prepRevocation: make(chan error),
 	}
+	client.sessions.add(session)
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 	min := minVersion
@@ -333,6 +342,15 @@ func (session *session) processSessionInfo() {
 		irma.Logger.Debug("starting candidate computation before revocation witnesses updating finished")
 	}
 
+	// Handle ClientReturnURL if one is found in the session request
+	if session.request.Base().ClientReturnURL != "" {
+		session.Handler.ClientReturnURLSet(session.request.Base().ClientReturnURL)
+	}
+
+	session.requestPermission()
+}
+
+func (session *session) requestPermission() {
 	candidates, satisfiable, err := session.client.Candidates(session.request)
 	if err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
@@ -340,11 +358,6 @@ func (session *session) processSessionInfo() {
 	}
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
-
-	// Handle ClientReturnURL if one is found in the session request
-	if session.request.Base().ClientReturnURL != "" {
-		session.Handler.ClientReturnURLSet(session.request.Base().ClientReturnURL)
-	}
 
 	// Ask for permission to execute the session
 	switch session.Action {
@@ -393,6 +406,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 			return
 		}
 		session.sendResponse(message)
+		session.finish(false)
 	} else {
 		var err error
 		session.builders, session.attrIndices, session.issuerProofNonce, err = session.getBuilders()
@@ -497,7 +511,7 @@ func (session *session) sendResponse(message interface{}) {
 	if session.Action == irma.ActionIssuing {
 		session.client.handler.UpdateAttributes()
 	}
-	session.done = true
+	session.finish(false)
 	session.client.nonrevRepopulateCaches(session.request)
 	session.client.StartJobs()
 	session.Handler.Success(string(messageJson))
@@ -548,6 +562,7 @@ func (session *session) checkKeyshareEnrollment() bool {
 		distributed := session.client.Configuration.SchemeManagers[id].Distributed()
 		_, enrolled := session.client.keyshareServers[id]
 		if distributed && !enrolled {
+			session.finish(false)
 			session.Handler.KeyshareEnrollmentMissing(id)
 			return false
 		}
@@ -619,6 +634,7 @@ func (session *session) Distributed() bool {
 
 func (session *session) recoverFromPanic() {
 	if e := recover(); e != nil {
+		session.finish(false)
 		if session.Handler != nil {
 			session.Handler.Failure(panicToError(e))
 		}
@@ -643,13 +659,13 @@ func panicToError(e interface{}) *irma.SessionError {
 // finish the session, by sending a DELETE to the server if there is one, and restarting local
 // background jobs. This function is idempotent, doing nothing when called a second time. It
 // returns whether or not it did something.
-func (session *session) finish() bool {
+func (session *session) finish(delete bool) bool {
 	if !session.done {
-		if session.IsInteractive() {
+		if delete && session.IsInteractive() {
 			session.transport.Delete()
 		}
 		session.client.nonrevRepopulateCaches(session.request)
-		session.client.StartJobs()
+		session.client.sessions.remove(session.token)
 		session.done = true
 		return true
 	}
@@ -657,7 +673,7 @@ func (session *session) finish() bool {
 }
 
 func (session *session) fail(err *irma.SessionError) {
-	if session.finish() && err.ErrorType != irma.ErrorKeyshareUnenrolled {
+	if session.finish(true) && err.ErrorType != irma.ErrorKeyshareUnenrolled {
 		irma.Logger.Warn("client session error: ", err.Error())
 		err.Err = errors.Wrap(err.Err, 0)
 		session.Handler.Failure(err)
@@ -665,7 +681,7 @@ func (session *session) fail(err *irma.SessionError) {
 }
 
 func (session *session) cancel() {
-	if session.finish() {
+	if session.finish(true) {
 		session.Handler.Cancelled()
 	}
 }
@@ -698,14 +714,17 @@ func (session *session) KeyshareCancelled() {
 }
 
 func (session *session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	session.finish(false)
 	session.Handler.KeyshareEnrollmentIncomplete(manager)
 }
 
 func (session *session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	session.finish(false)
 	session.Handler.KeyshareEnrollmentDeleted(manager)
 }
 
 func (session *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	session.finish(false)
 	session.Handler.KeyshareBlocked(manager, duration)
 }
 
@@ -726,4 +745,24 @@ func (session *session) KeysharePin() {
 
 func (session *session) KeysharePinOK() {
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+}
+
+func (s sessions) remove(token string) {
+	last := s.sessions[token]
+	delete(s.sessions, token)
+
+	if last.Action == irma.ActionIssuing {
+		for _, session := range s.sessions {
+			session.requestPermission()
+		}
+	}
+
+	if len(s.sessions) == 0 {
+		s.client.StartJobs()
+	}
+}
+
+func (s sessions) add(session *session) {
+	session.token = common.NewSessionToken()
+	s.sessions[session.token] = session
 }

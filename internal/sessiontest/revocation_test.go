@@ -82,6 +82,8 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	logger.Info("step 5")
 	result = revocationSession(t, client, request, sessionOptionUnsatisfiableRequest)
 	require.NotEmpty(t, result.Missing)
+	require.NotNil(t, result.Dismisser)
+	result.Dismisser.Dismiss()
 	// client revocation callback was called
 	require.NotNil(t, handler.(*TestClientHandler).revoked)
 	require.Equal(t, credid, handler.(*TestClientHandler).revoked.Type)

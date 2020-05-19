@@ -26,11 +26,13 @@ const (
 	sessionOptionIgnoreError
 	sessionOptionReuseServer
 	sessionOptionClientWait
+	sessionOptionWait
 )
 
 type requestorSessionResult struct {
 	*server.SessionResult
-	Missing [][]irmaclient.DisclosureCandidates
+	Missing   [][]irmaclient.DisclosureCandidates
+	Dismisser irmaclient.SessionDismisser
 }
 
 func processOptions(options ...sessionOption) sessionOption {
@@ -54,7 +56,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		defer StopIrmaServer()
 	}
 
-	clientChan := make(chan *SessionResult)
+	clientChan := make(chan *SessionResult, 2)
 	serverChan := make(chan *server.SessionResult)
 
 	qr, token, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
@@ -64,7 +66,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 
 	var h irmaclient.Handler
 	if opts&sessionOptionUnsatisfiableRequest > 0 {
-		h = &UnsatisfiableTestHandler{TestHandler{t, clientChan, client, nil, 0, ""}}
+		h = &UnsatisfiableTestHandler{TestHandler: TestHandler{t, clientChan, client, nil, 0, ""}}
 	} else {
 		var wait time.Duration = 0
 		if opts&sessionOptionClientWait > 0 {
@@ -75,15 +77,15 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
-	client.NewSession(string(j), h)
+	dismisser := client.NewSession(string(j), h)
 	clientResult := <-clientChan
 	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
 		require.NoError(t, clientResult.Err)
 	}
 
-	if opts&sessionOptionUnsatisfiableRequest > 0 {
+	if opts&sessionOptionUnsatisfiableRequest > 0 && opts&sessionOptionWait == 0 {
 		require.NotNil(t, clientResult)
-		return &requestorSessionResult{nil, clientResult.Missing}
+		return &requestorSessionResult{nil, clientResult.Missing, dismisser}
 	}
 
 	serverResult := <-serverChan
@@ -103,7 +105,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		require.NoError(t, err)
 	}
 
-	return &requestorSessionResult{serverResult, nil}
+	return &requestorSessionResult{serverResult, nil, dismisser}
 }
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
@@ -390,4 +392,46 @@ func TestClientDeveloperMode(t *testing.T) {
 	require.NotNil(t, serr)
 	require.Equal(t, string(irma.ErrorHTTPS), string(serr.ErrorType))
 	require.Equal(t, "remote server does not use https", serr.Err.Error())
+}
+
+func TestParallelSessions(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
+
+	// Ensure we don't have the requested attribute at first
+	require.NoError(t, client.RemoveStorage())
+	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+
+	// Start disclosure session for an attribute we don't have.
+	// sessionOptionWait makes this block until the IRMA server returns a result.
+	disclosure := make(chan *requestorSessionResult)
+	go func() {
+		disclosure <- requestorSessionHelper(t,
+			getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")),
+			client,
+			sessionOptionUnsatisfiableRequest, sessionOptionReuseServer, sessionOptionWait,
+		)
+	}()
+
+	// Wait for a bit then check that so far zero sessions have been done
+	time.Sleep(100 * time.Millisecond)
+	logs, err := client.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Zero(t, len(logs))
+
+	// Issue credential containing above attribute
+	requestorSessionHelper(t, getIssuanceRequest(false), client, sessionOptionReuseServer)
+
+	// Running disclosure session should now finish using the new credential
+	result := <-disclosure
+	require.Nil(t, result.Err)
+	require.NotEmpty(t, result.Disclosed)
+	require.Equal(t, "s1234567", result.Disclosed[0][0].Value["en"])
+
+	// Two sessions should now have been done
+	logs, err = client.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
 }

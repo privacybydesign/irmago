@@ -22,6 +22,11 @@ var Logger *logrus.Logger
 // Only for use in unit tests.
 var ForceHTTPS = true
 
+const (
+	sessionChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	sessionTokenLength = 20
+)
+
 // AssertPathExists returns nil only if it has been successfully
 // verified that all specified paths exists.
 func AssertPathExists(paths ...string) error {
@@ -263,4 +268,18 @@ func RandomBigInt(limit *big.Int) *big.Int {
 
 type SSECtx struct {
 	Component, Arg string
+}
+
+func NewSessionToken() string {
+	r := make([]byte, sessionTokenLength)
+	_, err := rand.Read(r)
+	if err != nil {
+		panic(err)
+	}
+
+	b := make([]byte, sessionTokenLength)
+	for i := range b {
+		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
+	}
+	return string(b)
 }

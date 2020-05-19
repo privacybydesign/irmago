@@ -157,21 +157,37 @@ type SessionResult struct {
 	Missing          [][]irmaclient.DisclosureCandidates
 }
 
+// UnsatisfiableTestHandler is a session handler that expects RequestVerificationPermission
+// to be called for an unsatisfiable session. If called a second time, it checks
+// that the session has beome satifsiable and finishes it.
 type UnsatisfiableTestHandler struct {
 	TestHandler
+	called bool
 }
 
-func (th UnsatisfiableTestHandler) Success(result string) {
-	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded")})
-}
-
-func (th UnsatisfiableTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	if satisfiable {
-		th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded")})
-		return
+func (th *UnsatisfiableTestHandler) Success(result string) {
+	if !th.called {
+		th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded early")})
+	} else {
+		th.c <- nil
 	}
-	th.c <- &SessionResult{Missing: candidates}
 }
+
+func (th *UnsatisfiableTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	if !th.called {
+		if satisfiable {
+			th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded")})
+			return
+		}
+		th.called = true
+		th.c <- &SessionResult{Missing: candidates}
+	} else {
+		th.TestHandler.RequestVerificationPermission(request, satisfiable, candidates, ServerName, callback)
+	}
+}
+
+// Override TestHandler.Cancelled() so we can cancel future RequestVerificationPermission() invocations
+func (th *UnsatisfiableTestHandler) Cancelled() {}
 
 // ManualTestHandler embeds a TestHandler to inherit its methods.
 // Below we overwrite the methods that require behaviour specific to manual settings.
