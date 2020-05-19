@@ -45,7 +45,7 @@ type AttributeList struct {
 	*MetadataAttribute  `json:"-"`
 	Ints                []*big.Int
 	Revoked             bool `json:",omitempty"`
-	RevocationSupported bool `json:,omitempty`
+	RevocationSupported bool `json:",omitempty"`
 	strings             []TranslatedString
 	attrMap             map[AttributeTypeIdentifier]TranslatedString
 	info                *CredentialInfo
