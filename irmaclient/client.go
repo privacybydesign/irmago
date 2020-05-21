@@ -927,10 +927,12 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 		if sig.NonRevocationWitness != nil {
 			nonrevAttr = sig.NonRevocationWitness.E
 		}
+		issuedAt := time.Now()
 		attrs, err := request.Credentials[i-offset].AttributeList(
 			client.Configuration,
 			irma.GetMetadataVersion(request.Base().ProtocolVersion),
 			nonrevAttr,
+			issuedAt,
 		)
 		if err != nil {
 			return err

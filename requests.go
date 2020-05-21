@@ -558,8 +558,8 @@ func (dr *DisclosureRequest) Validate() error {
 	return nil
 }
 
-func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*CredentialInfo, error) {
-	list, err := cr.AttributeList(conf, metadataVersion, nil)
+func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, issuedAt time.Time) (*CredentialInfo, error) {
+	list, err := cr.AttributeList(conf, metadataVersion, nil, issuedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -608,6 +608,7 @@ func (cr *CredentialRequest) AttributeList(
 	conf *Configuration,
 	metadataVersion byte,
 	revocationAttr *big.Int,
+	issuedAt time.Time,
 ) (*AttributeList, error) {
 	if err := cr.Validate(conf); err != nil {
 		return nil, err
@@ -622,7 +623,7 @@ func (cr *CredentialRequest) AttributeList(
 	meta := NewMetadataAttribute(metadataVersion)
 	meta.setKeyCounter(cr.KeyCounter)
 	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
-	meta.setSigningDate()
+	meta.setSigningDate(issuedAt)
 	if err := meta.setExpiryDate(cr.Validity); err != nil {
 		return nil, err
 	}
@@ -685,10 +686,14 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 	return ir.ids
 }
 
-func (ir *IssuanceRequest) GetCredentialInfoList(conf *Configuration, version *ProtocolVersion) (CredentialInfoList, error) {
+func (ir *IssuanceRequest) GetCredentialInfoList(
+	conf *Configuration,
+	version *ProtocolVersion,
+	issuedAt time.Time,
+) (CredentialInfoList, error) {
 	if ir.CredentialInfoList == nil {
 		for _, credreq := range ir.Credentials {
-			info, err := credreq.Info(conf, GetMetadataVersion(version))
+			info, err := credreq.Info(conf, GetMetadataVersion(version), issuedAt)
 			if err != nil {
 				return nil, err
 			}
