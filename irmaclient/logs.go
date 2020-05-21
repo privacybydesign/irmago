@@ -100,7 +100,7 @@ func (entry *LogEntry) GetIssuedCredentials(conf *irma.Configuration) (list irma
 	if err != nil {
 		return nil, err
 	}
-	return request.(*irma.IssuanceRequest).GetCredentialInfoList(conf, entry.Version)
+	return request.(*irma.IssuanceRequest).GetCredentialInfoList(conf, entry.Version, time.Time(entry.Time))
 }
 
 // GetSignedMessage gets the signed for a log entry

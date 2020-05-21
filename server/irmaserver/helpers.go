@@ -158,7 +158,8 @@ func (session *session) computeAttributes(
 		nonrevAttr = witness.E
 	}
 
-	attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03, nonrevAttr)
+	issuedAt := time.Now()
+	attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03, nonrevAttr, issuedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -168,7 +169,7 @@ func (session *session) computeAttributes(
 		PKCounter:  &sk.Counter,
 		Key:        cred.RevocationKey,
 		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
-		Issued:     time.Now().UnixNano(), // or (floored) cred issuance time?
+		Issued:     attributes.SigningDate().UnixNano(),
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
 	if witness != nil {

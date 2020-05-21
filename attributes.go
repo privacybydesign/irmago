@@ -207,7 +207,7 @@ func MetadataFromInt(i *big.Int, conf *Configuration) *MetadataAttribute {
 func NewMetadataAttribute(version byte) *MetadataAttribute {
 	val := MetadataAttribute{new(big.Int), nil, nil}
 	val.setField(versionField, []byte{version})
-	val.setSigningDate()
+	val.setSigningDate(time.Now())
 	val.setKeyCounter(0)
 	val.setDefaultValidityDuration()
 	return &val
@@ -249,8 +249,8 @@ func (attr *MetadataAttribute) SigningDate() time.Time {
 	return time.Unix(timestamp, 0)
 }
 
-func (attr *MetadataAttribute) setSigningDate() {
-	attr.setField(signingDateField, shortToByte(uint(time.Now().Unix()/ExpiryFactor)))
+func (attr *MetadataAttribute) setSigningDate(issuedAt time.Time) {
+	attr.setField(signingDateField, shortToByte(uint(issuedAt.Unix()/ExpiryFactor)))
 }
 
 // KeyCounter return the public key counter of the metadata attribute
