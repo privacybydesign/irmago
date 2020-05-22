@@ -574,9 +574,9 @@ func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeC
 			satisfies, usable := client.satisfiesCon(base, attrlist, con)
 			if satisfies { // add it to the list, even if they are unusable
 				c = append(c, &credCandidate{Type: credtype, Hash: attrlist.Hash()})
-			}
-			if usable { // having one usable credential will do
-				haveUsableCred = true
+				if usable { // having one usable credential will do
+					haveUsableCred = true
+				}
 			}
 		}
 		if !haveUsableCred {
