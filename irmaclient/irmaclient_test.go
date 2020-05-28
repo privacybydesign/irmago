@@ -324,7 +324,11 @@ func TestRemoveStorage(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": true}   // Test storage has 1 log
+	// Check whether we have logs in storage to know whether the logs bucket is there
+	logs, err := client.LoadNewestLogs(1)
+	require.NoError(t, err)
+
+	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": len(logs) > 0}
 	bucketsAfter := map[string]bool{"attrs": false, "sigs": false, "userdata": true, "logs": false} // Userdata should hold a new secret key
 
 	old_sk := *client.secretkey
