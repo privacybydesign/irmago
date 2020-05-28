@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/privacybydesign/gabi"
@@ -133,4 +134,23 @@ func (f *fileStorage) LoadPreferences() (Preferences, error) {
 
 func (f *fileStorage) LoadLogs() (logs []*LogEntry, err error) {
 	return logs, f.load(&logs, logsFile)
+}
+
+func (f *fileStorage) DeleteAll() error {
+	// Remove all legacy storage files
+	files := []string{skFile, attributesFile, kssFile, updatesFile, logsFile, preferencesFile}
+	for _, file := range files {
+		path := f.path(file)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	// Remove all legacy signatures
+	path := f.path(signaturesDir)
+	if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return nil
 }
