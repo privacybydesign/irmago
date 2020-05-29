@@ -569,14 +569,14 @@ func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeC
 	var candidates [][]*credCandidate
 	satisfiable := true
 
-	for _, credtype := range con.CredentialTypes() {
-		attrlistlist := client.attributes[credtype]
+	for _, credTypeID := range con.CredentialTypes() {
+		attrlistlist := client.attributes[credTypeID]
 		var c []*credCandidate
 		haveUsableCred := false
 		for _, attrlist := range attrlistlist {
 			satisfies, usable := client.satisfiesCon(base, attrlist, con)
 			if satisfies { // add it to the list, even if they are unusable
-				c = append(c, &credCandidate{Type: credtype, Hash: attrlist.Hash()})
+				c = append(c, &credCandidate{Type: credTypeID, Hash: attrlist.Hash()})
 				if usable { // having one usable credential will do
 					haveUsableCred = true
 				}
@@ -589,7 +589,15 @@ func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeC
 		}
 		if len(c) == 0 {
 			// No acceptable credentials found, add "empty" credential (i.e. without hash) to the candidates
-			c = append(c, &credCandidate{Type: credtype})
+			// Only add the credential if it is not deprecated.
+			credType := client.Configuration.CredentialTypes[credTypeID]
+			credDeprecatedSince := credType.DeprecatedSince
+			issuerDeprecatedSince := client.Configuration.Issuers[credType.IssuerIdentifier()].DeprecatedSince
+			now := irma.Timestamp(time.Now())
+			if (credDeprecatedSince.IsZero() || credDeprecatedSince.After(now)) &&
+				(issuerDeprecatedSince.IsZero() || issuerDeprecatedSince.After(now)) {
+				c = append(c, &credCandidate{Type: credTypeID})
+			}
 			satisfiable = false
 		}
 		candidates = append(candidates, c)
