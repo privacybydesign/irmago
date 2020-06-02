@@ -200,7 +200,7 @@ func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error
 	var result UserInformation
 
 	// fetch username
-	res, err := db.db.Query("SELECT username, language, (delete_on IS NOT NULL) AS delete_in_progress FROM irma.users WHERE id = $1", id)
+	res, err := db.db.Query("SELECT username, language, (coredata IS NULL) AS delete_in_progress FROM irma.users WHERE id = $1", id)
 	if err != nil {
 		return UserInformation{}, err
 	}
