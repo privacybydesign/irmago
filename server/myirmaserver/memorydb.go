@@ -149,9 +149,17 @@ func (db *MyirmaMemoryDB) GetUserInformation(id int64) (UserInformation, error) 
 	defer db.lock.Unlock()
 	for username, user := range db.UserData {
 		if user.ID == id {
+			var emailList []UserEmail
+			for _, e := range user.Email {
+				emailList = append(emailList, UserEmail{
+					Email:            e,
+					DeleteInProgress: false,
+				})
+			}
 			return UserInformation{
-				Username: username,
-				Emails:   user.Email,
+				Username:         username,
+				Emails:           emailList,
+				DeleteInProgress: false,
 			}, nil
 		}
 	}
