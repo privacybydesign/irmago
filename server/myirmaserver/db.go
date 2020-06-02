@@ -26,10 +26,16 @@ type MyirmaDB interface {
 	SetSeen(id int64) error
 }
 
+type UserEmail struct {
+	Email            string `json:"email"`
+	DeleteInProgress bool   `json:"delete_in_progress"`
+}
+
 type UserInformation struct {
-	Username string   `json:"username"`
-	Emails   []string `json:"emails"`
-	language string
+	Username         string      `json:"username"`
+	Emails           []UserEmail `json:"emails"`
+	language         string
+	DeleteInProgress bool `json:"delete_in_progress"`
 }
 
 type LoginCandidate struct {
