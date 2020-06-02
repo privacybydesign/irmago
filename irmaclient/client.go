@@ -566,7 +566,7 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 // in the conjunction. (A credential instance from the client is a candidate it it contains
 // attributes required in this conjunction). If one credential type occurs multiple times in the
 // conjunction it is not added twice.
-func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeCon) (credCandidateSet, bool, error) {
+func (client *Client) credCandidates(request irma.SessionRequest, con irma.AttributeCon) (credCandidateSet, bool, error) {
 	var candidates [][]*credCandidate
 	satisfiable := true
 
@@ -575,7 +575,7 @@ func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeC
 		var c []*credCandidate
 		haveUsableCred := false
 		for _, attrlist := range attrlistlist {
-			satisfies, usable := client.satisfiesCon(base, attrlist, con)
+			satisfies, usable := client.satisfiesCon(request.Base(), attrlist, con)
 			if satisfies { // add it to the list, even if they are unusable
 				c = append(c, &credCandidate{Type: credTypeID, Hash: attrlist.Hash()})
 				if usable { // having one usable credential will do
@@ -589,14 +589,9 @@ func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeC
 			satisfiable = false
 		}
 		if len(c) == 0 {
-			// No acceptable credentials found, add "empty" credential (i.e. without hash) to the candidates
-			// Only add the credential if it is not deprecated.
-			credType := client.Configuration.CredentialTypes[credTypeID]
-			credDeprecatedSince := credType.DeprecatedSince
-			issuerDeprecatedSince := client.Configuration.Issuers[credType.IssuerIdentifier()].DeprecatedSince
-			now := irma.Timestamp(time.Now())
-			if (credDeprecatedSince.IsZero() || credDeprecatedSince.After(now)) &&
-				(issuerDeprecatedSince.IsZero() || issuerDeprecatedSince.After(now)) {
+			if client.addCredSuggestion(request, credTypeID) {
+				// No acceptable credentials found. Excluding some nonsensical cases,
+				// add an "empty" credential (i.e. without hash) as a suggestion to the user
 				c = append(c, &credCandidate{Type: credTypeID})
 			}
 			satisfiable = false
@@ -604,6 +599,32 @@ func (client *Client) credCandidates(base *irma.BaseRequest, con irma.AttributeC
 		candidates = append(candidates, c)
 	}
 	return candidates, satisfiable, nil
+}
+
+// addCredSuggestion decides whether or not to include an "empty" credential candidate
+// (i.e. without hash) with the disclosure candidates to the user as a suggestion.
+func (client *Client) addCredSuggestion(
+	request irma.SessionRequest, credTypeID irma.CredentialTypeIdentifier,
+) bool {
+	credType := client.Configuration.CredentialTypes[credTypeID]
+	credDeprecatedSince := credType.DeprecatedSince
+	issuerDeprecatedSince := client.Configuration.Issuers[credType.IssuerIdentifier()].DeprecatedSince
+	now := irma.Timestamp(time.Now())
+
+	if (!credDeprecatedSince.IsZero() && credDeprecatedSince.Before(now)) ||
+		(!issuerDeprecatedSince.IsZero() && issuerDeprecatedSince.Before(now)) {
+		return false
+	}
+
+	if isreq, ok := request.(*irma.IssuanceRequest); ok {
+		for _, req := range isreq.Credentials {
+			if req.CredentialTypeID == credTypeID {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // satsifiesCon returns:
@@ -691,7 +712,7 @@ func cartesianProduct(candidates [][]*credCandidate) credCandidateSet {
 // candidatesDisCon returns attributes present in this client that satisfy the specified attribute
 // disjunction. It returns a list of candidate attribute sets, each of which would satisfy the
 // specified disjunction.
-func (client *Client) candidatesDisCon(base *irma.BaseRequest, discon irma.AttributeDisCon) (
+func (client *Client) candidatesDisCon(request irma.SessionRequest, discon irma.AttributeDisCon) (
 	candidates []DisclosureCandidates, satisfiable bool, err error,
 ) {
 	candidates = []DisclosureCandidates{}
@@ -710,7 +731,7 @@ func (client *Client) candidatesDisCon(base *irma.BaseRequest, discon irma.Attri
 		// attribute types as [ a.a.a.a, a.a.a.b, a.a.b.x ], we map this to:
 		// [ [ a.a.a #1, a.a.a #2] , [ a.a.b #1 ] ]
 		// assuming the client has 2 instances of a.a.a and 1 instance of a.a.b.
-		c, conSatisfiable, err := client.credCandidates(base, con)
+		c, conSatisfiable, err := client.credCandidates(request, con)
 		if err != nil {
 			return nil, false, err
 		}
@@ -728,7 +749,7 @@ func (client *Client) candidatesDisCon(base *irma.BaseRequest, discon irma.Attri
 		// is asking for, resulting in attribute sets each of which would satisfy the conjunction,
 		// and therefore the containing disjunction
 		// [ [ a.a.a.a #1, a.a.a.b #1, a.a.b.x #1 ], [ a.a.a.a #2, a.a.a.b #2, a.a.b.x #1 ] ]
-		expanded, err := c.expand(client, base, con)
+		expanded, err := c.expand(client, request.Base(), con)
 		if err != nil {
 			return nil, false, err
 		}
@@ -750,7 +771,7 @@ func (client *Client) Candidates(request irma.SessionRequest) (
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 	for i, discon := range condiscon {
-		cands, disconSatisfiable, err := client.candidatesDisCon(request.Base(), discon)
+		cands, disconSatisfiable, err := client.candidatesDisCon(request, discon)
 		if err != nil {
 			return nil, false, err
 		}
