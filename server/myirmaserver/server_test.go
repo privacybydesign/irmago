@@ -329,7 +329,7 @@ func TestServerUserData(t *testing.T) {
 	assert.NoError(t, err)
 	err = json.Unmarshal(body, &userdata)
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"test@test.com"}, userdata.Emails)
+	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, userdata.Emails)
 	res.Body.Close()
 
 	reqData = bytes.NewBufferString("test@test.com")

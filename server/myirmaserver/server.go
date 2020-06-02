@@ -165,7 +165,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 				s.conf.EmailServer,
 				s.conf.EmailAuth,
 				s.conf.EmailFrom,
-				email,
+				email.Email,
 				subject,
 				emsg.Bytes())
 			if err != nil {
@@ -496,7 +496,7 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if userinfo.Emails == nil {
-		userinfo.Emails = []string{}
+		userinfo.Emails = []UserEmail{}
 	} // Ensure we never send nil in place of an empty list
 	server.WriteJson(w, userinfo)
 }
@@ -533,7 +533,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := s.db.GetLogs(*session.userID, offset, 10)
+	entries, err := s.db.GetLogs(*session.userID, offset, 11)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not load log entries")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -585,7 +585,7 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	validEmail := false
 	for _, emailL := range info.Emails {
-		if string(email) == emailL {
+		if string(email) == emailL.Email {
 			validEmail = true
 		}
 	}

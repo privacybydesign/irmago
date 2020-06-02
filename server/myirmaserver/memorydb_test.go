@@ -135,12 +135,12 @@ func TestMemoryDBUserInfo(t *testing.T) {
 	info, err := db.GetUserInformation(15)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", info.Username)
-	assert.Equal(t, []string{"test@test.com"}, info.Emails)
+	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
 
 	info, err = db.GetUserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, "noemail", info.Username)
-	assert.Equal(t, []string(nil), info.Emails)
+	assert.Equal(t, []UserEmail(nil), info.Emails)
 
 	_, err = db.GetUserInformation(1231)
 	assert.Error(t, err)
@@ -180,7 +180,7 @@ func TestMemoryDBUserInfo(t *testing.T) {
 
 	info, err = db.GetUserInformation(17)
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"test@test.com"}, info.Emails)
+	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
 
 	err = db.AddEmail(20, "bla@bla.com")
 	assert.Error(t, err)

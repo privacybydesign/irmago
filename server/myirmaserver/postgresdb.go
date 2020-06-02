@@ -200,7 +200,7 @@ func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error
 	var result UserInformation
 
 	// fetch username
-	res, err := db.db.Query("SELECT username, language FROM irma.users WHERE id = $1", id)
+	res, err := db.db.Query("SELECT username, language, (delete_on IS NOT NULL) AS delete_in_progress FROM irma.users WHERE id = $1", id)
 	if err != nil {
 		return UserInformation{}, err
 	}
@@ -208,21 +208,21 @@ func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error
 	if !res.Next() {
 		return UserInformation{}, ErrUserNotFound
 	}
-	err = res.Scan(&result.Username, &result.language)
+	err = res.Scan(&result.Username, &result.language, &result.DeleteInProgress)
 	if err != nil {
 		return UserInformation{}, err
 	}
 
 	// fetch email addresses
-	rese, err := db.db.Query("SELECT email FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)",
+	rese, err := db.db.Query("SELECT email, (delete_on IS NOT NULL) AS delete_in_progress FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)",
 		id, time.Now().Unix())
 	if err != nil {
 		return UserInformation{}, err
 	}
 	defer res.Close()
 	for rese.Next() {
-		var email string
-		err = rese.Scan(&email)
+		var email UserEmail
+		err = rese.Scan(&email.Email, &email.DeleteInProgress)
 		if err != nil {
 			return UserInformation{}, err
 		}
