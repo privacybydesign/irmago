@@ -169,7 +169,7 @@ func TestCandidates(t *testing.T) {
 	require.True(t, attrs[0][0].Present())
 
 	// Require an attribute we do not have
-	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.ageLower.over12")
+	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.root.BSN")
 	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
 	require.False(t, satisfiable)
