@@ -13,7 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
-	"github.com/x-cray/logrus-prefixed-formatter"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
 
 var (
@@ -24,6 +24,11 @@ var (
 
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
+
+	revocationTestAttr  = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	revocationTestCred  = revocationTestAttr.CredentialTypeIdentifier()
+	revKeyshareTestAttr = irma.NewAttributeTypeIdentifier("test.test.email.email")
+	revKeyshareTestCred = revKeyshareTestAttr.CredentialTypeIdentifier()
 )
 
 func init() {
@@ -139,8 +144,8 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 			},
 		},
 	},
-	ListenAddress: "localhost",
-	Port:          48682,
+	ListenAddress:                  "localhost",
+	Port:                           48682,
 	DisableRequestorAuthentication: false,
 	MaxRequestAge:                  3,
 	Permissions: requestorserver.Permissions{

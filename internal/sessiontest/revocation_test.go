@@ -1,3 +1,5 @@
+// +build !local_tests
+
 package sessiontest
 
 import (
@@ -29,10 +31,6 @@ var (
 	revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
 
 	revocationPkCounter uint = 2
-	revocationTestAttr       = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
-	revocationTestCred       = revocationTestAttr.CredentialTypeIdentifier()
-	revKeyshareTestAttr      = irma.NewAttributeTypeIdentifier("test.test.email.email")
-	revKeyshareTestCred      = revKeyshareTestAttr.CredentialTypeIdentifier()
 )
 
 func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler) {
