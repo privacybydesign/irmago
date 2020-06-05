@@ -1,6 +1,7 @@
 package keysharecore
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"sync"
 
@@ -17,7 +18,7 @@ type (
 		encryptionKey   AesKey
 		encryptionKeyID uint32
 
-		signKey *rsa.PrivateKey
+		signKey   *rsa.PrivateKey
 		signKeyId int
 
 		commitmentData  map[uint64]*big.Int
@@ -33,6 +34,12 @@ func NewKeyshareCore() *KeyshareCore {
 		commitmentData: map[uint64]*big.Int{},
 		trustedKeys:    map[irma.PublicKeyIdentifier]*gabi.PublicKey{},
 	}
+}
+
+func GenerateAESKey() (AesKey, error) {
+	var res AesKey
+	_, err := rand.Read(res[:])
+	return res, err
 }
 
 func (c *KeyshareCore) DangerousAddAESKey(keyid uint32, key AesKey) {
