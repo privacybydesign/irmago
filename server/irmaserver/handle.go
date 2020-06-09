@@ -28,23 +28,24 @@ func (session *session) handleDelete() {
 	}
 	session.markAlive()
 
-	session.result = &server.SessionResult{Token: session.token, Status: server.StatusCancelled, Type: session.action}
+	session.result = &server.SessionResult{Token: session.backendToken, Status: server.StatusCancelled, Type: session.action}
 	session.setStatus(server.StatusCancelled)
 }
 
-func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
-	if session.status != server.StatusInitialized {
-		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
+func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (
+	*server.SessionInfo, *irma.SessionRequest, *irma.RemoteError) {
+	if session.status != server.StatusInitialized && session.status != server.StatusBindingCompleted {
+		return nil, nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
 
 	session.markAlive()
-	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.token})
+	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken})
 
 	// we include the latest revocation updates for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
 	var err error
 	if err = session.conf.IrmaConfiguration.Revocation.SetRevocationUpdates(session.request.Base()); err != nil {
-		return nil, session.fail(server.ErrorRevocation, err.Error())
+		return nil, nil, session.fail(server.ErrorRevocation, err.Error())
 	}
 
 	// Handle legacy clients that do not support condiscon, by attempting to convert the condiscon
@@ -56,7 +57,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	}
 
 	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
-		return nil, session.fail(server.ErrorProtocolVersion, "")
+		return nil, nil, session.fail(server.ErrorProtocolVersion, "")
 	}
 	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
@@ -66,31 +67,36 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	if session.version.Below(2, 5) {
 		logger.Info("Returning legacy session format")
 		legacy.Base().ProtocolVersion = session.version
-		return legacy, nil
+		return nil, &legacy, nil
 	}
 
-	// In case of issuance requests, strip revocation keys from []CredentialRequest
-	isreq, issuing := session.request.(*irma.IssuanceRequest)
-	if !issuing {
-		return session.request, nil
+	if session.version.Below(2, 7) {
+		// These versions do not support binding, so force binding completion to prevent problems.
+		if session.options.BindingEnabled {
+			session.options.BindingCompleted = true
+		}
+		request, rerr := session.getRequest()
+		return nil, &request, rerr
 	}
-	cpy, err := copyObject(isreq)
-	if err != nil {
-		return nil, session.fail(server.ErrorRevocation, err.Error())
-	}
-	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
-		cred.RevocationSupported = cred.RevocationKey != ""
-		cred.RevocationKey = ""
-	}
-	return cpy.(*irma.IssuanceRequest), nil
+	info, rerr := session.getInfo()
+	return info, nil, rerr
 }
 
 func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
 	return session.status, nil
 }
 
+func (session *session) handlePostOptions(optionsRequest *irma.OptionsRequest, token irma.FrontendToken) (
+	*server.SessionOptions, *irma.RemoteError) {
+	if token != session.frontendToken {
+		return nil, server.RemoteError(server.ErrorUnauthorized, "")
+	}
+	return session.updateOptions(optionsRequest), nil
+}
+
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ProofStatus, *irma.RemoteError) {
-	if session.status != server.StatusConnected {
+	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
+	if session.version == nil || session.version.Below(2, 7) && session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
@@ -113,7 +119,8 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 }
 
 func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma.ProofStatus, *irma.RemoteError) {
-	if session.status != server.StatusConnected {
+	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
+	if session.version == nil || session.version.Below(2, 7) && session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
@@ -135,7 +142,8 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 }
 
 func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
-	if session.status != server.StatusConnected {
+	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
+	if session.version == nil || session.version.Below(2, 7) && session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
@@ -298,8 +306,41 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Context().Value("session").(*session)
-	res, err := session.handleGetRequest(&min, &max)
-	server.WriteResponse(w, res, err)
+	// When session binding is supported by all clients, the legacy support can be removed
+	res, legacyRes, err := session.handleGetRequest(&min, &max)
+	if legacyRes != nil {
+		server.WriteResponse(w, legacyRes, err)
+	} else {
+		server.WriteResponse(w, res, err)
+	}
+}
+
+func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	if session.options.BindingEnabled && !session.options.BindingCompleted {
+		server.WriteError(w, server.ErrorUnauthorized, "Binding required")
+		return
+	}
+	request, err := session.getRequest()
+	server.WriteResponse(w, request, err)
+}
+
+func (s *Server) handleSessionOptionsPost(w http.ResponseWriter, r *http.Request) {
+	optionsRequest := &irma.OptionsRequest{}
+	bts, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+	err = irma.UnmarshalValidate(bts, optionsRequest)
+	if err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+	frontendToken := r.Header.Get(irma.AuthorizationHeader)
+	session := r.Context().Value("session").(*session)
+	res, rerr := session.handlePostOptions(optionsRequest, frontendToken)
+	server.WriteResponse(w, res, rerr)
 }
 
 func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +349,7 @@ func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "unknown static session"))
 		return
 	}
-	qr, _, err := s.StartSession(rrequest, s.doResultCallback)
+	qr, _, _, err := s.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		return

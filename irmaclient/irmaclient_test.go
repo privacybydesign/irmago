@@ -124,7 +124,7 @@ func TestCandidates(t *testing.T) {
 	// If the disjunction contains no required values at all, then our attribute is a candidate
 	request := irma.NewDisclosureRequest(attrtype)
 	disjunction := request.Disclose[0]
-	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
+	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
 	attrs, satisfiable, err := client.candidatesDisCon(request, disjunction)
 	require.NoError(t, err)
 	require.True(t, satisfiable)

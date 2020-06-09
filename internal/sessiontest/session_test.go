@@ -119,6 +119,12 @@ func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
+func TestIssuanceBinding(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+	sessionHelperWithBinding(t, request, "issue", nil, func(*testing.T, *irma.HTTPTransport) {})
+}
+
 func TestLargeAttribute(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -349,7 +355,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	serverChan := make(chan *server.SessionResult)
 
 	StartIrmaServer(t, false, "") // Run a server with old configuration (level is non-optional)
-	_, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	_, _, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	expectedError := &irma.RequiredAttributeMissingError{
@@ -372,7 +378,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	_, _, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)
@@ -471,7 +477,7 @@ func TestStaticQRSession(t *testing.T) {
 	c := make(chan *SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, ""})
+	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, "", nil})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
@@ -521,7 +527,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 
 	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
-	_, _, err := irmaServer.StartSession(request, nil)
+	_, _, _, err := irmaServer.StartSession(request, nil)
 	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
 
 	// Make the request valid
@@ -587,4 +593,19 @@ func TestPOSTSizeLimit(t *testing.T) {
 	var rerr irma.RemoteError
 	require.NoError(t, json.Unmarshal(bts, &rerr))
 	require.Equal(t, "http: request body too large", rerr.Message)
+}
+
+func TestOptionsChangeAfterConnected(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	check := func(t *testing.T, transport *irma.HTTPTransport) {
+		request := irma.NewOptionsRequest()
+		result := &server.SessionOptions{}
+		err := transport.Post("options", result, request)
+		require.NoError(t, err)
+		require.NotEqual(t, request.EnableBinding, result.BindingEnabled)
+	}
+
+	sessionHelperWithBinding(t, request, "issue", nil, check)
 }

@@ -82,6 +82,7 @@ type TestHandler struct {
 	expectedServerName *irma.RequestorInfo
 	wait               time.Duration
 	result             string
+	bindingCodeChan    chan string
 }
 
 func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
@@ -149,6 +150,13 @@ func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager
 }
 func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	callback(true, "12345")
+}
+func (th TestHandler) BindingRequired(bindingCode string) {
+	if th.bindingCodeChan != nil {
+		th.bindingCodeChan <- bindingCode
+		return
+	}
+	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Binding required")})
 }
 
 type SessionResult struct {

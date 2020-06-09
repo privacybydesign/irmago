@@ -30,11 +30,11 @@ import (
 
 func (session *session) markAlive() {
 	session.lastActive = time.Now()
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debugf("Session marked active, expiry delayed")
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken}).Debugf("Session marked active, expiry delayed")
 }
 
 func (session *session) setStatus(status server.Status) {
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "prevStatus": session.prevStatus, "status": status}).
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken, "prevStatus": session.prevStatus, "status": status}).
 		Info("Session status updated")
 	session.status = status
 	session.result.Status = status
@@ -48,15 +48,33 @@ func (session *session) onUpdate() {
 	session.sse.SendMessage("session/"+session.clientToken,
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
-	session.sse.SendMessage("session/"+session.token,
+	session.sse.SendMessage("session/"+session.backendToken,
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
+}
+
+// Checks whether requested options are valid in the current session context.
+func (session *session) updateOptions(request *irma.OptionsRequest) *server.SessionOptions {
+	if session.status == server.StatusInitialized {
+		session.options.BindingEnabled = request.EnableBinding
+		if request.EnableBinding {
+			session.options.BindingCode = common.NewBindingCode()
+		} else {
+			session.options.BindingCode = ""
+		}
+	} else if session.status == server.StatusConnected {
+		if session.options.BindingEnabled && !session.options.BindingCompleted && request.BindingCompleted {
+			session.options.BindingCompleted = true
+			session.status = server.StatusBindingCompleted
+		}
+	}
+	return &session.options
 }
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
 	session.setStatus(server.StatusCancelled)
-	session.result = &server.SessionResult{Err: rerr, Token: session.token, Status: server.StatusCancelled, Type: session.action}
+	session.result = &server.SessionResult{Err: rerr, Token: session.backendToken, Status: server.StatusCancelled, Type: session.action}
 	return rerr
 }
 
@@ -90,8 +108,9 @@ const retryTimeLimit = 10 * time.Second
 // - the same was POSTed as last time
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
-func (session *session) checkCache(message []byte) (int, []byte) {
-	if len(session.responseCache.response) == 0 ||
+func (session *session) checkCache(endpoint string, message []byte) (int, []byte) {
+	if session.responseCache.endpoint != endpoint ||
+		len(session.responseCache.response) == 0 ||
 		session.responseCache.sessionStatus != session.status ||
 		session.lastActive.Before(time.Now().Add(-retryTimeLimit)) ||
 		sha256.Sum256(session.responseCache.message) != sha256.Sum256(message) {
@@ -262,6 +281,40 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	return session.kssProofs[scheme], nil
 }
 
+func (session *session) getInfo() (*server.SessionInfo, *irma.RemoteError) {
+	info := server.SessionInfo{
+		LDContext:       server.LDContextSessionInfo,
+		ProtocolVersion: session.version,
+		Options:         &session.options,
+	}
+
+	if !session.options.BindingEnabled || session.options.BindingCompleted {
+		request, rerr := session.getRequest()
+		if rerr != nil {
+			return nil, rerr
+		}
+		info.Request = request
+	}
+	return &info, nil
+}
+
+func (session *session) getRequest() (irma.SessionRequest, *irma.RemoteError) {
+	// In case of issuance requests, strip revocation keys from []CredentialRequest
+	isreq, issuing := session.request.(*irma.IssuanceRequest)
+	if !issuing {
+		return session.request, nil
+	}
+	cpy, err := copyObject(isreq)
+	if err != nil {
+		return nil, session.fail(server.ErrorRevocation, err.Error())
+	}
+	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
+		cred.RevocationSupported = cred.RevocationKey != ""
+		cred.RevocationKey = ""
+	}
+	return cpy.(*irma.IssuanceRequest), nil
+}
+
 // Other
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
@@ -375,7 +428,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 		r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
 
 		// if a cache is set and applicable, return it
-		status, output := session.checkCache(message)
+		status, output := session.checkCache(r.URL.Path, message)
 		if status > 0 && len(output) > 0 {
 			w.WriteHeader(status)
 			_, _ = w.Write(output)
@@ -389,6 +442,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(ww, r)
 
 		session.responseCache = responseCache{
+			endpoint:      r.URL.Path,
 			message:       message,
 			response:      buf.Bytes(),
 			status:        ww.Status(),
@@ -399,7 +453,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := chi.URLParam(r, "token")
+		token := chi.URLParam(r, "backendToken")
 		session := s.sessions.clientGet(token)
 		if session == nil {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -431,5 +485,44 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		}()
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
+	})
+}
+
+func (s *Server) authenticationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+
+		authorization := r.Header.Get(irma.AuthorizationHeader)
+		if authorization == "" && session.version != nil {
+			// Protocol versions below 2.7 use legacy authentication handled in handleSessionGet and cacheMiddleware.
+			if session.version.Below(2, 7) {
+				next.ServeHTTP(w, r)
+			} else {
+				server.WriteError(w, server.ErrorClientUnauthorized, "No authorization header provided")
+			}
+			return
+		}
+
+		if session.clientAuth == "" {
+			session.clientAuth = authorization
+		} else if session.clientAuth != authorization {
+			server.WriteError(w, server.ErrorClientUnauthorized, "")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+
+		if session.options.BindingEnabled && !session.options.BindingCompleted {
+			server.WriteError(w, server.ErrorBindingRequired, "")
+			return
+		}
+
+		next.ServeHTTP(w, r)
 	})
 }

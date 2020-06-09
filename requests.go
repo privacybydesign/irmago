@@ -22,6 +22,7 @@ const (
 	LDContextSignatureRequest  = "https://irma.app/ld/request/signature/v2"
 	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
 	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
+	LDContextOptionsRequest    = "https://irma.app/ld/request/options/v1"
 )
 
 // BaseRequest contains information used by all IRMA session types, such the context and nonce,
@@ -195,6 +196,13 @@ type AttributeRequest struct {
 	Type    AttributeTypeIdentifier `json:"type"`
 	Value   *string                 `json:"value,omitempty"`
 	NotNull bool                    `json:"notNull,omitempty"`
+}
+
+// An OptionsRequest asks for a options change of a particular session.
+type OptionsRequest struct {
+	LDContext        string `json:"@context,omitempty"`
+	EnableBinding    bool   `json:"enableBinding,omitempty"`
+	BindingCompleted bool   `json:"bindingCompleted,omitempty"`
 }
 
 type RevocationRequest struct {
@@ -1078,4 +1086,11 @@ func SignRequestorRequest(request RequestorRequest, alg jwt.SigningMethod, key i
 // NewAttributeRequest requests the specified attribute.
 func NewAttributeRequest(attr string) AttributeRequest {
 	return AttributeRequest{Type: NewAttributeTypeIdentifier(attr)}
+}
+
+// NewOptionsRequest returns a new options request initialized with default values for each option
+func NewOptionsRequest() OptionsRequest {
+	return OptionsRequest{
+		LDContext: LDContextOptionsRequest,
+	}
 }

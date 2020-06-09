@@ -3,7 +3,6 @@ module github.com/privacybydesign/irmago
 go 1.13
 
 require (
-	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/alexandrevicenzi/go-sse v1.3.1-0.20200117161408-7b23d5ff7420
 	github.com/bwesterb/go-atum v1.0.0
 	github.com/certifi/gocertifi v0.0.0-20180118203423-deb3ae2ef261 // indirect
@@ -17,12 +16,10 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hashicorp/go-retryablehttp v0.6.2
-	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jasonlvhit/gocron v0.0.0-20180312192515-54194c9749d4
 	github.com/jinzhu/gorm v1.9.12
 	github.com/lib/pq v1.3.0 // indirect
-	github.com/mattn/go-colorable v0.0.9 // indirect
 	github.com/mattn/go-isatty v0.0.4 // indirect
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
@@ -30,9 +27,8 @@ require (
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
-	github.com/pkg/errors v0.8.1
-	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/privacybydesign/gabi v0.0.0-20200823153621-467696543652
+	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819
 	github.com/sietseringers/viper v1.3.2-0.20200909194413-4120aa4ee8e8

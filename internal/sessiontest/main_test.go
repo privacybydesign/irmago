@@ -121,7 +121,7 @@ func getMultipleIssuanceRequest() *irma.IssuanceRequest {
 
 var TestType = "irmaserver-jwt"
 
-func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *irma.Qr {
+func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) (*irma.Qr, irma.FrontendToken) {
 	var (
 		qr     *irma.Qr = new(irma.Qr)
 		sesPkg server.SessionPackage
@@ -150,7 +150,7 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 	}
 
 	require.NoError(t, err)
-	return qr
+	return qr, sesPkg.FrontendToken
 }
 
 func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg jwt.SigningMethod) string {
@@ -210,13 +210,70 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		defer StopRequestorServer()
 	}
 
-	qr := startSession(t, request, sessiontype)
+	qr, _ := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
 	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(qrjson), h)
+
+	if result := <-c; result != nil {
+		require.NoError(t, result.Err)
+	}
+}
+
+func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client,
+	bindingCheck func(t *testing.T, transport *irma.HTTPTransport)) {
+	if client == nil {
+		var handler *TestClientHandler
+		client, handler = parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
+	}
+
+	if TestType == "irmaserver" || TestType == "irmaserver-jwt" || TestType == "irmaserver-hmac-jwt" {
+		StartRequestorServer(JwtServerConfiguration)
+		defer StopRequestorServer()
+	}
+
+	qr, frontendToken := startSession(t, request, sessiontype)
+	optionsRequest := irma.NewOptionsRequest()
+	optionsRequest.EnableBinding = true
+	options := &server.SessionOptions{}
+	transport := irma.NewHTTPTransport(qr.URL, false)
+	transport.SetHeader(irma.AuthorizationHeader, frontendToken)
+	err := transport.Post("options", options, optionsRequest)
+	require.NoError(t, err)
+	require.Equal(t, true, options.BindingEnabled)
+	require.Equal(t, false, options.BindingCompleted)
+
+	c := make(chan *SessionResult)
+	cBindingCode := make(chan string)
+	h := &TestHandler{
+		t:                  t,
+		c:                  c,
+		client:             client,
+		expectedServerName: expectedRequestorInfo(t, client.Configuration),
+		bindingCodeChan:    cBindingCode,
+	}
+
+	qrjson, err := json.Marshal(qr)
+	require.NoError(t, err)
+	client.NewSession(string(qrjson), h)
+
+	// Binding can only be done from protocol version 2.7
+	if _, max := client.GetSupportedVersions(); max.Above(2, 6) {
+		bindingCode := <-cBindingCode
+		bindingCheck(t, transport)
+		require.Equal(t, options.BindingCode, bindingCode)
+		optionsRequest = irma.NewOptionsRequest()
+		optionsRequest.BindingCompleted = true
+		options = &server.SessionOptions{}
+		err = transport.Post("options", options, optionsRequest)
+		require.NoError(t, err)
+		require.Equal(t, true, options.BindingEnabled)
+		require.Equal(t, true, options.BindingCompleted)
+	}
 
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
