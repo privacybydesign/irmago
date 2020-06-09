@@ -9,6 +9,7 @@ type Error struct {
 
 type ErrorType string
 
+// General errors
 var (
 	ErrorInvalidTimestamp          Error = Error{Type: "INVALID_TIMESTAMP", Status: 400, Description: "Timestamp was not an epoch boundary"}
 	ErrorIssuingDisabled           Error = Error{Type: "ISSUING_DISABLED", Status: 403, Description: "This server does not support issuing"}
@@ -38,7 +39,7 @@ var (
 	ErrorInternal        Error = Error{Type: "INTERNAL_ERROR", Status: 500, Description: "Internal server error"}
 )
 
-// Keyshare errors (TODO: MOVE TO FINAL PLACE)
+// Keyshare errors
 var (
 	ErrorUserNotRegistered = Error{Type: "USER_NOT_REGISTERED", Status: 403, Description: "User is not yet fully registered"}
 	ErrorInvalidJWT        = Error{Type: "UNAUTHORIZED", Status: 403, Description: "Invalid or expired jwt provided"}
