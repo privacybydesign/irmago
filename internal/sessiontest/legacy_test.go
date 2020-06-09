@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"github.com/privacybydesign/irmago/irmaclient"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -33,4 +34,37 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 
 	// Test whether credential is still there after the storage has been reloaded
 	sessionHelper(t, getDisclosureRequest(idRoot), "verification", client)
+}
+
+func TestWithoutBindingSupport(t *testing.T) {
+	defer irmaclient.SetMaxVersion(nil)
+	irmaclient.SetMaxVersion(&irma.ProtocolVersion{Major: 2, Minor: 6})
+
+	t.Run("TestSigningSession", TestSigningSession)
+	t.Run("TestDisclosureSession", TestDisclosureSession)
+	t.Run("TestNoAttributeDisclosureSession", TestNoAttributeDisclosureSession)
+	t.Run("TestEmptyDisclosure", TestEmptyDisclosure)
+	t.Run("TestIssuanceSession", TestIssuanceSession)
+	t.Run("TestMultipleIssuanceSession", TestMultipleIssuanceSession)
+	t.Run("TestDefaultCredentialValidity", TestDefaultCredentialValidity)
+	t.Run("TestIssuanceDisclosureEmptyAttributes", TestIssuanceDisclosureEmptyAttributes)
+	t.Run("TestIssuanceOptionalZeroLengthAttributes", TestIssuanceOptionalZeroLengthAttributes)
+	t.Run("TestIssuanceOptionalSetAttributes", TestIssuanceOptionalSetAttributes)
+	t.Run("TestIssuanceSameAttributesNotSingleton", TestIssuanceSameAttributesNotSingleton)
+	t.Run("TestIssuanceBinding", TestIssuanceBinding)
+	t.Run("TestLargeAttribute", TestLargeAttribute)
+	t.Run("TestIssuanceSingletonCredential", TestIssuanceSingletonCredential)
+	t.Run("TestUnsatisfiableDisclosureSession", TestUnsatisfiableDisclosureSession)
+	t.Run("TestAttributeByteEncoding", TestAttributeByteEncoding)
+	t.Run("TestOutdatedClientIrmaConfiguration", TestOutdatedClientIrmaConfiguration)
+	t.Run("TestDisclosureNewAttributeUpdateSchemeManager", TestDisclosureNewAttributeUpdateSchemeManager)
+	t.Run("TestIssueNewAttributeUpdateSchemeManager", TestIssueNewAttributeUpdateSchemeManager)
+	t.Run("TestIssueOptionalAttributeUpdateSchemeManager", TestIssueOptionalAttributeUpdateSchemeManager)
+	t.Run("TestIssueNewCredTypeUpdateSchemeManager", TestIssueNewCredTypeUpdateSchemeManager)
+	t.Run("TestDisclosureNewCredTypeUpdateSchemeManager", TestDisclosureNewCredTypeUpdateSchemeManager)
+	t.Run("TestDisclosureNonexistingCredTypeUpdateSchemeManager", TestDisclosureNonexistingCredTypeUpdateSchemeManager)
+	t.Run("TestStaticQRSession", TestStaticQRSession)
+	t.Run("TestIssuedCredentialIsStored", TestIssuedCredentialIsStored)
+	t.Run("TestPOSTSizeLimit", TestPOSTSizeLimit)
+	// TestOptionsChangeAfterConnected is not necessary since the extra check is always skipped for legacy versions.
 }

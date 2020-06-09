@@ -16,6 +16,7 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hashicorp/go-retryablehttp v0.6.2
+	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jasonlvhit/gocron v0.0.0-20180312192515-54194c9749d4
 	github.com/jinzhu/gorm v1.9.12
 	github.com/lib/pq v1.3.0 // indirect
@@ -26,6 +27,7 @@ require (
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/privacybydesign/gabi v0.0.0-20210409092845-6113e0d3ec81
+	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819

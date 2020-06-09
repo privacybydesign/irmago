@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/privacybydesign/irmago/server"
+
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -34,6 +36,8 @@ type Handler interface {
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
+
+	BindingRequired(bindingCode string)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -110,11 +114,21 @@ var supportedVersions = map[int][]int{
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
 		6, // introduces nonrevocation proofs
-		7, // introduces chained sessions
+		7, // introduces chained sessions and session binding
 	},
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
 var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
+
+const clientTokenChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func SetMaxVersion(version *irma.ProtocolVersion) {
+	if version == nil {
+		maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
+	} else {
+		maxVersion = version
+	}
+}
 
 // Session constructors
 
@@ -129,7 +143,8 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
 			return nil
 		}
-		return client.newQrSession(qr, handler)
+		_, dismisser := client.NewQrSession(qr, handler)
+		return dismisser
 	}
 
 	sigRequest := &irma.SignatureRequest{}
@@ -177,20 +192,20 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 	return session
 }
 
-// newQrSession creates and starts a new interactive IRMA session
-func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
+// NewQrSession creates and starts a new interactive IRMA session
+func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientToken, *session) {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)
 		if err := transport.Post(qr.URL, newqr, struct{}{}); err != nil {
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorTransport, Err: errors.Wrap(err, 0)})
-			return nil
+			return "", nil
 		}
 		if newqr.Type == irma.ActionRedirect { // explicitly avoid infinite recursion
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: errors.New("infinite static QR recursion")})
-			return nil
+			return "", nil
 		}
-		return client.newQrSession(newqr, handler)
+		return client.NewQrSession(newqr, handler)
 	}
 
 	client.PauseJobs()
@@ -228,35 +243,72 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 		fallthrough
 	default:
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownAction, Info: string(session.Action)})
-		return nil
+		return "", nil
 	}
 
+	clientToken := common.NewSessionToken()
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
 	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
+	session.transport.SetHeader(irma.AuthorizationHeader, clientToken)
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"
 	}
 
 	go session.getSessionInfo()
-	return session
+	return clientToken, session
 }
 
 // Core session methods
 
 // getSessionInfo retrieves the first message in the IRMA protocol (only in interactive sessions)
+// If needed, it also handles binding.
 func (session *session) getSessionInfo() {
 	defer session.recoverFromPanic()
 
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
-	err := session.transport.Get("", session.request)
+	info := &server.SessionInfo{
+		Request: session.request, // As request is an interface it need to be initialized with a specific instance.
+	}
+	err := session.transport.Get("", info)
+	if err != nil {
+		session.fail(err.(*irma.SessionError))
+		return
+	}
+
+	// Check whether binding is needed, and if so, wait for it to be completed
+	if info.Options.BindingEnabled {
+		err = session.handleBinding(info.Options.BindingCode)
+	}
 	if err != nil {
 		session.fail(err.(*irma.SessionError))
 		return
 	}
 
 	session.processSessionInfo()
+}
+
+func (session *session) handleBinding(bindingCode string) error {
+	session.Handler.BindingRequired(bindingCode)
+
+	statuschan := make(chan server.Status)
+	errorchan := make(chan error)
+
+	go server.WaitStatusChanged(session.transport, server.StatusInitialized, statuschan, errorchan)
+	select {
+	case status := <-statuschan:
+		if status == server.StatusBindingCompleted {
+			return session.transport.Get("request", session.request)
+		} else {
+			return errors.New("Server finished session without completing binding")
+		}
+	case <-errorchan:
+		return &irma.SessionError{
+			ErrorType: irma.ErrorServerResponse,
+			Info:      "Binding aborted by server",
+		}
+	}
 }
 
 func requestorInfo(serverURL string, conf *irma.Configuration) *irma.RequestorInfo {
@@ -530,7 +582,7 @@ func (session *session) sendResponse(message interface{}) {
 	session.finish(false)
 
 	if serverResponse != nil && serverResponse.NextSession != nil {
-		session.next = session.client.newQrSession(serverResponse.NextSession, session.Handler)
+		_, session.next = session.client.NewQrSession(serverResponse.NextSession, session.Handler)
 		session.next.implicitDisclosure = session.choice.Attributes
 	} else {
 		session.Handler.Success(string(messageJson))

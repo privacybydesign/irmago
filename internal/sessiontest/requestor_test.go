@@ -60,7 +60,7 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	clientChan := make(chan *SessionResult, 2)
 	serverChan := make(chan *server.SessionResult)
 
-	qr, token, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
+	qr, backendToken, _, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)
@@ -68,18 +68,16 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	var h irmaclient.Handler
 	requestor := expectedRequestorInfo(t, client.Configuration)
 	if opts&sessionOptionUnsatisfiableRequest > 0 {
-		h = &UnsatisfiableTestHandler{TestHandler: TestHandler{t, clientChan, client, requestor, 0, ""}}
+		h = &UnsatisfiableTestHandler{TestHandler: TestHandler{t, clientChan, client, requestor, 0, "", nil}}
 	} else {
 		var wait time.Duration = 0
 		if opts&sessionOptionClientWait > 0 {
 			wait = 2 * time.Second
 		}
-		h = &TestHandler{t, clientChan, client, requestor, wait, ""}
+		h = &TestHandler{t, clientChan, client, requestor, wait, "", nil}
 	}
 
-	j, err := json.Marshal(qr)
-	require.NoError(t, err)
-	dismisser := client.NewSession(string(j), h)
+	clientToken, dismisser := client.NewQrSession(qr, h)
 	clientResult := <-clientChan
 	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
 		require.NoError(t, clientResult.Err)
@@ -91,7 +89,7 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	}
 
 	serverResult := <-serverChan
-	require.Equal(t, token, serverResult.Token)
+	require.Equal(t, backendToken, serverResult.Token)
 
 	if opts&sessionOptionRetryPost > 0 {
 		req, err := http.NewRequest(http.MethodPost,
@@ -100,6 +98,7 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 		)
 		require.NoError(t, err)
 		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add(irma.AuthorizationHeader, clientToken)
 		res, err := new(http.Client).Do(req)
 		require.NoError(t, err)
 		require.True(t, res.StatusCode < 300)
@@ -114,7 +113,7 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 func TestRequestorInvalidRequest(t *testing.T) {
 	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
-	_, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+	_, _, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
 		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
 	), nil)
@@ -124,7 +123,7 @@ func TestRequestorInvalidRequest(t *testing.T) {
 func TestRequestorDoubleGET(t *testing.T) {
 	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
-	qr, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+	qr, _, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
 	), nil)
 	require.NoError(t, err)
@@ -378,12 +377,12 @@ func TestClientDeveloperMode(t *testing.T) {
 
 	// Try to start another session with our non-https server
 	issuanceRequest = getNameIssuanceRequest()
-	qr, _, err := irmaServer.StartSession(issuanceRequest, nil)
+	qr, _, _, err := irmaServer.StartSession(issuanceRequest, nil)
 	require.NoError(t, err)
 	c := make(chan *SessionResult, 1)
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
-	client.NewSession(string(j), &TestHandler{t, c, client, nil, 0, ""})
+	client.NewSession(string(j), &TestHandler{t, c, client, nil, 0, "", nil})
 	result := <-c
 
 	// Check that it failed with an appropriate error message
@@ -464,6 +463,6 @@ func TestIssueExpiredKey(t *testing.T) {
 
 	// server aborts issuance sessions in case of expired public keys
 	expireKey(t, irmaServerConfiguration.IrmaConfiguration)
-	_, _, err := irmaServer.StartSession(getIssuanceRequest(true), nil)
+	_, _, _, err := irmaServer.StartSession(getIssuanceRequest(true), nil)
 	require.Error(t, err)
 }

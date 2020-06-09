@@ -25,9 +25,22 @@ import (
 
 var Logger *logrus.Logger = logrus.StandardLogger()
 
+const LDContextSessionInfo = "https://irma.app/ld/request/info/v1"
+
 type SessionPackage struct {
-	SessionPtr *irma.Qr `json:"sessionPtr"`
-	Token      string   `json:"token"`
+	SessionPtr    *irma.Qr           `json:"sessionPtr"`
+	Token         irma.BackendToken  `json:"token"`
+	FrontendToken irma.FrontendToken `json:"frontendToken"`
+}
+
+// SessionInfo contains all information irmaclient needs to know to initiate a session.
+// Session request is stored as RawMessage since it is not used internally and otherwise we would
+// have to make a manual JSON marshal function with type checking since SessionRequest is an interface.
+type SessionInfo struct {
+	LDContext       string                `json:"@context,omitempty"`
+	ProtocolVersion *irma.ProtocolVersion `json:"protocolVersion,omitempty"`
+	Options         *SessionOptions       `json:"options,omitempty"`
+	Request         irma.SessionRequest   `json:"request,omitempty"`
 }
 
 // SessionResult contains session information such as the session status, type, possible errors,
@@ -35,7 +48,7 @@ type SessionPackage struct {
 type SessionResult struct {
 	Token       string                       `json:"token"`
 	Status      Status                       `json:"status"`
-	Type        irma.Action                  `json:"type"'`
+	Type        irma.Action                  `json:"type"`
 	ProofStatus irma.ProofStatus             `json:"proofStatus,omitempty"`
 	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
 	Signature   *irma.SignedMessage          `json:"signature,omitempty"`
@@ -43,6 +56,12 @@ type SessionResult struct {
 	NextSession string                       `json:"nextSession,omitempty"`
 
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
+}
+
+type SessionOptions struct {
+	BindingEnabled   bool   `json:"bindingEnabled"`
+	BindingCode      string `json:"bindingCode,omitempty"`
+	BindingCompleted bool   `json:"bindingCompleted,omitempty"`
 }
 
 // SessionHandler is a function that can handle a session result
@@ -68,14 +87,6 @@ type LegacySessionResult struct {
 }
 
 const (
-	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
-	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
-	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
-	StatusDone        Status = "DONE"        // The session has completed successfully
-	StatusTimeout     Status = "TIMEOUT"     // Session timed out
-)
-
-const (
 	ComponentRevocation = "revocation"
 	ComponentSession    = "session"
 	ComponentStatic     = "static"
@@ -85,6 +96,15 @@ const (
 	PostSizeLimit = 10 << 20 // 10 MB
 	ReadTimeout   = 5 * time.Second
 	WriteTimeout  = 2 * ReadTimeout
+)
+
+const (
+	StatusInitialized      Status = "INITIALIZED"       // The session has been started and is waiting for the client
+	StatusBindingCompleted Status = "BINDING_COMPLETED" // The client has bound and can retrieve the request
+	StatusConnected        Status = "CONNECTED"         // The client has retrieved the session request, we wait for its response
+	StatusCancelled        Status = "CANCELLED"         // The session is cancelled, possibly due to an error
+	StatusDone             Status = "DONE"              // The session has completed successfully
+	StatusTimeout          Status = "TIMEOUT"           // Session timed out
 )
 
 // Remove this when dropping support for legacy pre-condiscon session requests
@@ -529,4 +549,23 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 			next.ServeHTTP(ww, r)
 		})
 	}
+}
+
+func (info *SessionInfo) UnmarshalJSON(data []byte) error {
+	// Marshal in alias first to prevent infinite recursion
+	type Alias SessionInfo
+	err := json.Unmarshal(data, &struct{ *Alias }{(*Alias)(info)})
+	if err == nil && info.LDContext == LDContextSessionInfo {
+		return nil
+	}
+
+	// For legacy sessions initialize session info by hand using the fetched request
+	err = json.Unmarshal(data, info.Request)
+	if err != nil {
+		return err
+	}
+	info.LDContext = LDContextSessionInfo
+	info.ProtocolVersion = info.Request.Base().ProtocolVersion
+	info.Options = &SessionOptions{}
+	return nil
 }

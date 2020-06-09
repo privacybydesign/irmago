@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -16,8 +15,6 @@ import (
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
-
-const pollInterval = 1000 * time.Millisecond
 
 var (
 	httpServer *http.Server
@@ -63,6 +60,7 @@ irma session --server http://localhost:8088 --authmethod token --key mytoken --d
 		url, _ := cmd.Flags().GetString("url")
 		serverurl, _ := cmd.Flags().GetString("server")
 		noqr, _ := cmd.Flags().GetBool("noqr")
+		binding, _ := cmd.Flags().GetBool("binding")
 
 		if url != defaulturl && serverurl != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
@@ -72,12 +70,12 @@ irma session --server http://localhost:8088 --authmethod token --key mytoken --d
 			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
 			verbosity, _ := cmd.Flags().GetCount("verbose")
-			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity)
+			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity, binding)
 		} else {
 			authmethod, _ := flags.GetString("authmethod")
 			key, _ := flags.GetString("key")
 			name, _ := flags.GetString("name")
-			result, err = serverRequest(request, serverurl, authmethod, key, name, noqr)
+			result, err = serverRequest(request, serverurl, authmethod, key, name, noqr, binding)
 		}
 		if err != nil {
 			die("Session failed", err)
@@ -100,6 +98,7 @@ func libraryRequest(
 	privatekeysPath string,
 	noqr bool,
 	verbosity int,
+	binding bool,
 ) (*server.SessionResult, error) {
 	if err := configureSessionServer(url, port, privatekeysPath, irmaconfig, verbosity); err != nil {
 		return nil, err
@@ -108,15 +107,24 @@ func libraryRequest(
 
 	// Start the session
 	resultchan := make(chan *server.SessionResult)
-	qr, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) {
+	qr, backendToken, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) {
 		resultchan <- r
 	})
 	if err != nil {
 		return nil, errors.WrapPrefix(err, "IRMA session failed", 0)
 	}
 
+	// Currently, the default session options are the same in all conditions,
+	// so do only fetch them when a change is requested
+	sessionOptions := &server.SessionOptions{}
+	if binding {
+		optionsRequest := irma.NewOptionsRequest()
+		optionsRequest.EnableBinding = true
+		sessionOptions = irmaServer.SetOptions(backendToken, &optionsRequest)
+	}
+
 	// Print QR code
-	if err := printQr(qr, noqr); err != nil {
+	if err := printQr(qr, noqr, sessionOptions); err != nil {
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
@@ -128,25 +136,33 @@ func serverRequest(
 	request irma.RequestorRequest,
 	serverurl, authmethod, key, name string,
 	noqr bool,
+	binding bool,
 ) (*server.SessionResult, error) {
 	logger.Debug("Server URL: ", serverurl)
 
 	// Start session at server
-	qr, transport, err := postRequest(serverurl, request, name, authmethod, key)
+	qr, sessionOptions, transport, err := postRequest(serverurl, request, name, authmethod, key, binding)
 	if err != nil {
 		return nil, err
 	}
 
 	// Print session QR
 	logger.Debug("QR: ", prettyprint(qr))
-	if err := printQr(qr, noqr); err != nil {
+	if err := printQr(qr, noqr, sessionOptions); err != nil {
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
 	statuschan := make(chan server.Status)
+	errorchan := make(chan error)
 	var wg sync.WaitGroup
 
-	go wait(server.StatusInitialized, transport, statuschan)
+	go server.WaitStatus(transport, server.StatusInitialized, statuschan, errorchan)
+	go func() {
+		err := <-errorchan
+		if err != nil {
+			_ = server.LogFatal(err)
+		}
+	}()
 
 	wg.Add(1)
 	go func() {
@@ -180,7 +196,8 @@ func serverRequest(
 	return result, nil
 }
 
-func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (*irma.Qr, *irma.HTTPTransport, error) {
+func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string, binding bool) (
+	*irma.Qr, *server.SessionOptions, *irma.HTTPTransport, error) {
 	var (
 		err       error
 		pkg       = &server.SessionPackage{}
@@ -197,17 +214,26 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 		var jwtstr string
 		jwtstr, err = signRequest(request, name, authmethod, key)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
 		err = transport.Post("session", pkg, jwtstr)
 	default:
-		return nil, nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
+		return nil, nil, nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
 
-	token := pkg.Token
-	transport.Server += fmt.Sprintf("session/%s/", token)
-	return pkg.SessionPtr, transport, err
+	if err != nil {
+		return nil, nil, transport, err
+	}
+
+	backendToken := pkg.Token
+	transport.Server += fmt.Sprintf("session/%s/", backendToken)
+	sessionOptions := &server.SessionOptions{}
+	if binding {
+		transport.SetHeader(irma.AuthorizationHeader, pkg.FrontendToken)
+		err = transport.Post(pkg.SessionPtr.URL+"/options", &irma.OptionsRequest{EnableBinding: true}, &sessionOptions)
+	}
+	return pkg.SessionPtr, sessionOptions, transport, err
 }
 
 // Configuration functions
@@ -260,6 +286,7 @@ func init() {
 	flags.StringP("url", "u", defaulturl, "external URL to which IRMA app connects (when not using --server), \":port\" being replaced by --port value")
 	flags.IntP("port", "p", 48680, "port to listen at (when not using --server)")
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
+	flags.Bool("binding", false, "Enable extra binding step between server and IRMA app")
 	flags.StringP("request", "r", "", "JSON session request")
 	flags.StringP("privkeys", "k", "", "path to private keys")
 	flags.Bool("disable-schemes-update", false, "disable scheme updates")
