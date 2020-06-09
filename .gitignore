@@ -1,6 +1,8 @@
 *.test
+.DS_STORE
 .idea/
 testdata/tmp/*
 !testdata/tmp/cardemu.xml
 errors_*.go
 vendor/
+irma/irma
