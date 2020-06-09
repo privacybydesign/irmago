@@ -54,6 +54,29 @@ func (c *KeyshareCore) GenerateKeyshareSecret(pinRaw string) (EncryptedKeyshareP
 	return c.encryptPacket(p)
 }
 
+func (c *KeyshareCore) DangerousBuildKeyshareSecret(pinRaw string, secret *big.Int) (EncryptedKeysharePacket, error) {
+	pin, err := padPin(pinRaw)
+	if err != nil {
+		return EncryptedKeysharePacket{}, err
+	}
+
+	var id [32]byte
+	_, err = rand.Read(id[:])
+	if err != nil {
+		return EncryptedKeysharePacket{}, err
+	}
+
+	var p unencryptedKeysharePacket
+	p.setPin(pin)
+	err = p.setKeyshareSecret(secret)
+	if err != nil {
+		return EncryptedKeysharePacket{}, err
+	}
+	p.setId(id)
+
+	return c.encryptPacket(p)
+}
+
 // Check pin for validity, and generate jwt for future access
 //  userid is an extra field added to the jwt for
 func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, userid string) (string, error) {
