@@ -224,7 +224,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 }
 
 func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client,
-	bindingCheck func(t *testing.T, transport *irma.HTTPTransport)) {
+	additionalCheck func(t *testing.T, transport *irma.HTTPTransport)) {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)
@@ -264,7 +264,7 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 	// Binding can only be done from protocol version 2.7
 	if _, max := client.GetSupportedVersions(); max.Above(2, 6) {
 		bindingCode := <-cBindingCode
-		bindingCheck(t, transport)
+		additionalCheck(t, transport)
 		require.Equal(t, options.BindingCode, bindingCode)
 		optionsRequest = irma.NewOptionsRequest()
 		optionsRequest.BindingCompleted = true
