@@ -3,6 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
@@ -12,10 +16,6 @@ import (
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/pflag"
-	"net/http"
-	"os"
-	"strconv"
-	"strings"
 )
 
 // requestCmd represents the request command

@@ -636,7 +636,8 @@ func TestChainedSessions(t *testing.T) {
 	require.NoError(t, errors.New("newly issued credential not found in client"))
 }
 
-func TestOptionsChangeAfterConnected(t *testing.T) {
+func TestDisableBindingAfterClientConnected(t *testing.T) {
+	// When client is already connected, the frontend may not change the binding setting anymore.
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
@@ -645,6 +646,7 @@ func TestOptionsChangeAfterConnected(t *testing.T) {
 		result := &server.SessionOptions{}
 		err := transport.Post("options", result, request)
 		require.NoError(t, err)
+		// The request may not have been accepted, so the result must differ.
 		require.NotEqual(t, request.EnableBinding, result.BindingEnabled)
 	}
 

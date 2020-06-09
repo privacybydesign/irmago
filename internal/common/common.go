@@ -27,8 +27,8 @@ var ForceHTTPS = true
 const (
 	sessionChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	sessionTokenLength = 20
-	bindingChars       = "0123456789"
-	bindingTokenLength = 4
+	bindingCodeChars   = "0123456789"
+	bindingCodeLength  = 4
 )
 
 // AssertPathExists returns nil only if it has been successfully
@@ -279,7 +279,7 @@ func NewSessionToken() string {
 }
 
 func NewBindingCode() string {
-	return newToken(bindingTokenLength, bindingChars)
+	return newToken(bindingCodeLength, bindingCodeChars)
 }
 
 func newToken(count int, characterSet string) string {

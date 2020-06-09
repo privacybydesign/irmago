@@ -66,5 +66,5 @@ func TestWithoutBindingSupport(t *testing.T) {
 	t.Run("TestStaticQRSession", TestStaticQRSession)
 	t.Run("TestIssuedCredentialIsStored", TestIssuedCredentialIsStored)
 	t.Run("TestPOSTSizeLimit", TestPOSTSizeLimit)
-	// TestOptionsChangeAfterConnected is not necessary since the extra check is always skipped for legacy versions.
+	// TestDisableBindingAfterClientConnected is not necessary since the extra check is always skipped for legacy versions.
 }

@@ -33,11 +33,10 @@ type PinHandler func(proceed bool, pin string)
 type Handler interface {
 	StatusUpdate(action irma.Action, status irma.Status)
 	ClientReturnURLSet(clientReturnURL string)
+	BindingRequired(bindingCode string)
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
-
-	BindingRequired(bindingCode string)
 
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -119,8 +118,6 @@ var supportedVersions = map[int][]int{
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
 var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
-
-const clientTokenChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func SetMaxVersion(version *irma.ProtocolVersion) {
 	if version == nil {
