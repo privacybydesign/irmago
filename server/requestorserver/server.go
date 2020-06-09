@@ -311,13 +311,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
-	token := chi.URLParam(r, "token")
-	s.conf.Logger.WithFields(logrus.Fields{"session": token}).Debug("new client subscribed to server sent events")
+	backendToken := chi.URLParam(r, "backendToken")
+	s.conf.Logger.WithFields(logrus.Fields{"session": backendToken}).Debug("new client subscribed to server sent events")
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
-		Arg:       token,
+		Arg:       backendToken,
 	}))
-	if err := s.irmaserv.SubscribeServerSentEvents(w, r, token, true); err != nil {
+	if err := s.irmaserv.SubscribeServerSentEvents(w, r, backendToken, true); err != nil {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      server.ErrorUnsupported.Status,
 			ErrorName:   string(server.ErrorUnsupported.Type),
@@ -381,8 +381,8 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessiontoken := chi.URLParam(r, "token")
-	res := s.irmaserv.GetSessionResult(sessiontoken)
+	backendToken := chi.URLParam(r, "token")
+	res := s.irmaserv.GetSessionResult(backendToken)
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -407,7 +407,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		claims["iss"] = s.conf.JwtIssuer
 	}
 	claims["status"] = res.ProofStatus
-	validity := s.irmaserv.GetRequest(sessiontoken).Base().ResultJwtValidity
+	validity := s.irmaserv.GetRequest(backendToken).Base().ResultJwtValidity
 	if validity != 0 {
 		claims["exp"] = time.Now().Unix() + int64(validity)
 	}
@@ -512,15 +512,16 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	qr, backendToken, frontendToken, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
 	server.WriteJson(w, server.SessionPackage{
-		SessionPtr: qr,
-		Token:      token,
+		SessionPtr:    qr,
+		Token:         backendToken,
+		FrontendToken: frontendToken,
 	})
 }
 

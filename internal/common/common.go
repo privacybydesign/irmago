@@ -27,6 +27,8 @@ var ForceHTTPS = true
 const (
 	sessionChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	sessionTokenLength = 20
+	bindingChars       = "0123456789"
+	bindingTokenLength = 4
 )
 
 // AssertPathExists returns nil only if it has been successfully
@@ -273,15 +275,23 @@ type SSECtx struct {
 }
 
 func NewSessionToken() string {
-	r := make([]byte, sessionTokenLength)
+	return newToken(sessionTokenLength, sessionChars)
+}
+
+func NewBindingCode() string {
+	return newToken(bindingTokenLength, bindingChars)
+}
+
+func newToken(count int, characterSet string) string {
+	r := make([]byte, count)
 	_, err := rand.Read(r)
 	if err != nil {
 		panic(err)
 	}
 
-	b := make([]byte, sessionTokenLength)
+	b := make([]byte, count)
 	for i := range b {
-		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
+		b[i] = characterSet[r[i]%byte(len(characterSet))]
 	}
 	return string(b)
 }

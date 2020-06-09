@@ -19,8 +19,9 @@ import (
 type Status string
 
 const (
-	MinVersionHeader = "X-IRMA-MinProtocolVersion"
-	MaxVersionHeader = "X-IRMA-MaxProtocolVersion"
+	MinVersionHeader    = "X-IRMA-MinProtocolVersion"
+	MaxVersionHeader    = "X-IRMA-MaxProtocolVersion"
+	AuthorizationHeader = "Authorization"
 )
 
 // ProtocolVersion encodes the IRMA protocol version of an IRMA session.
@@ -163,6 +164,14 @@ type Qr struct {
 	// Session type (disclosing, signing, issuing)
 	Type Action `json:"irmaqr"`
 }
+
+// Tokens to identify a session from the perspective of the different agents
+type BackendToken = string
+type ClientToken = string
+type FrontendToken = string
+
+// Authorization headers
+type ClientAuthorization = string
 
 // Statuses
 const (

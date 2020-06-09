@@ -124,7 +124,7 @@ func TestCandidates(t *testing.T) {
 	// but we should also get the option to get another value
 	request := irma.NewDisclosureRequest(attrtype)
 	disjunction := request.Disclose[0]
-	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
+	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
 	attrs, satisfiable, err := client.candidatesDisCon(request, disjunction)
 	require.NoError(t, err)
 	require.True(t, satisfiable)

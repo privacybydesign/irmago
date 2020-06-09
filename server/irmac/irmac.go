@@ -49,9 +49,10 @@ func Initialize(IrmaConfiguration *C.char) *C.char {
 func StartSession(requestString *C.char) (r *C.char) {
 	// Create struct for return information
 	result := struct {
-		IrmaQr string
-		Token  string
-		Error  string
+		IrmaQr        string
+		BackendToken  string
+		FrontendToken string
+		Error         string
 	}{}
 	defer func() {
 		j, _ := json.Marshal(result)
@@ -65,7 +66,7 @@ func StartSession(requestString *C.char) (r *C.char) {
 	}
 
 	// Run the actual core function
-	qr, token, err := s.StartSession(C.GoString(requestString), nil)
+	qr, backendToken, frontendToken, err := s.StartSession(C.GoString(requestString), nil)
 
 	// And properly return the result
 	if err != nil {
@@ -79,7 +80,8 @@ func StartSession(requestString *C.char) (r *C.char) {
 	}
 	// return actual results
 	result.IrmaQr = string(qrJson)
-	result.Token = token
+	result.BackendToken = backendToken
+	result.FrontendToken = frontendToken
 	return
 }
 

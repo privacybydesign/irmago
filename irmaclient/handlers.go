@@ -83,3 +83,6 @@ func (h *keyshareEnrollmentHandler) KeyshareEnrollmentMissing(manager irma.Schem
 func (h *keyshareEnrollmentHandler) ClientReturnURLSet(clientReturnURL string) {
 	h.fail(errors.New("Keyshare enrollment session unexpectedly found an external return url"))
 }
+func (h *keyshareEnrollmentHandler) BindingRequired(bindingCode string) {
+	h.fail(errors.New("Keyshare enrollment session unexpectedly found an binding required"))
+}
