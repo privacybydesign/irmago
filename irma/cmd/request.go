@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -287,6 +288,11 @@ func printQr(qr *irma.Qr, noqr bool, options *server.SessionOptions) error {
 	}
 	if options.BindingEnabled {
 		fmt.Println("\nBinding code:", options.BindingCode)
+		fmt.Print("Press Enter to confirm your device is connected; otherwise press ctrl-C: ")
+		if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+			return err
+		}
+
 	}
 	return nil
 }

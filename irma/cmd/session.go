@@ -128,6 +128,15 @@ func libraryRequest(
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
+	if sessionOptions.BindingEnabled {
+		optionsRequest := irma.NewOptionsRequest()
+		optionsRequest.BindingCompleted = true
+		sessionOptions = irmaServer.SetOptions(backendToken, &optionsRequest)
+		if !sessionOptions.BindingCompleted {
+			return nil, errors.New("Binding could not be completed")
+		}
+	}
+
 	// Wait for session to finish and then return session result
 	return <-resultchan, nil
 }
@@ -141,15 +150,42 @@ func serverRequest(
 	logger.Debug("Server URL: ", serverurl)
 
 	// Start session at server
-	qr, sessionOptions, transport, err := postRequest(serverurl, request, name, authmethod, key, binding)
+	qr, frontendToken, transport, err := postRequest(serverurl, request, name, authmethod, key)
 	if err != nil {
 		return nil, err
+	}
+
+	// Enable binding if necessary
+	frontendTransport := irma.NewHTTPTransport(qr.URL, false)
+	frontendTransport.SetHeader(irma.AuthorizationHeader, frontendToken)
+	sessionOptions := &server.SessionOptions{}
+	if binding {
+		optionsRequest := irma.NewOptionsRequest()
+		optionsRequest.EnableBinding = true
+		err = frontendTransport.Post("options", sessionOptions, optionsRequest)
+		if err != nil {
+			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)
+		}
 	}
 
 	// Print session QR
 	logger.Debug("QR: ", prettyprint(qr))
 	if err := printQr(qr, noqr, sessionOptions); err != nil {
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
+	}
+
+	if sessionOptions.BindingEnabled {
+		optionsRequest := irma.NewOptionsRequest()
+		optionsRequest.BindingCompleted = true
+		sessionOptions := &server.SessionOptions{}
+		err = frontendTransport.Post("options", sessionOptions, optionsRequest)
+		if err != nil {
+			return nil, errors.WrapPrefix(err, "Failed to complete binding", 0)
+		} else if !sessionOptions.BindingCompleted {
+			return nil, errors.New("Failed to complete binding for unknown reason")
+		}
+	} else if binding {
+		return nil, errors.New("Session aborted")
 	}
 
 	statuschan := make(chan server.Status)
@@ -196,8 +232,8 @@ func serverRequest(
 	return result, nil
 }
 
-func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string, binding bool) (
-	*irma.Qr, *server.SessionOptions, *irma.HTTPTransport, error) {
+func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (
+	*irma.Qr, irma.FrontendToken, *irma.HTTPTransport, error) {
 	var (
 		err       error
 		pkg       = &server.SessionPackage{}
@@ -214,26 +250,22 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 		var jwtstr string
 		jwtstr, err = signRequest(request, name, authmethod, key)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, "", nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
 		err = transport.Post("session", pkg, jwtstr)
 	default:
-		return nil, nil, nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
+		return nil, "", nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
 
 	if err != nil {
-		return nil, nil, transport, err
+		return nil, "", transport, err
 	}
 
 	backendToken := pkg.Token
 	transport.Server += fmt.Sprintf("session/%s/", backendToken)
-	sessionOptions := &server.SessionOptions{}
-	if binding {
-		transport.SetHeader(irma.AuthorizationHeader, pkg.FrontendToken)
-		err = transport.Post(pkg.SessionPtr.URL+"/options", &irma.OptionsRequest{EnableBinding: true}, &sessionOptions)
-	}
-	return pkg.SessionPtr, sessionOptions, transport, err
+
+	return pkg.SessionPtr, pkg.FrontendToken, transport, err
 }
 
 // Configuration functions
