@@ -237,15 +237,7 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 	}
 
 	qr, frontendToken := startSession(t, request, sessiontype)
-	optionsRequest := irma.NewOptionsRequest()
-	optionsRequest.EnableBinding = true
-	options := &server.SessionOptions{}
-	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.AuthorizationHeader, frontendToken)
-	err := transport.Post("options", options, optionsRequest)
-	require.NoError(t, err)
-	require.Equal(t, true, options.BindingEnabled)
-	require.Equal(t, false, options.BindingCompleted)
+	frontendTransport, bindingCode := enableBinding(t, qr, frontendToken)
 
 	c := make(chan *SessionResult)
 	cBindingCode := make(chan string)
@@ -257,19 +249,26 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 		bindingCodeChan:    cBindingCode,
 	}
 
-	qrjson, err := json.Marshal(qr)
-	require.NoError(t, err)
-	client.NewSession(string(qrjson), h)
+	clientAuth, _ := client.NewQrSession(qr, h)
 
 	// Binding can only be done from protocol version 2.7
 	if _, max := client.GetSupportedVersions(); max.Above(2, 6) {
-		bindingCode := <-cBindingCode
-		additionalCheck(t, transport)
-		require.Equal(t, options.BindingCode, bindingCode)
-		optionsRequest = irma.NewOptionsRequest()
+		enteredBindingCode := <-cBindingCode
+		require.Equal(t, bindingCode, enteredBindingCode)
+
+		// Check whether access to request endpoint is denied as long as binding is not finished
+		transport := irma.NewHTTPTransport(qr.URL, false)
+		transport.SetHeader(irma.AuthorizationHeader, clientAuth)
+		err := transport.Get("request", struct{}{})
+		require.Error(t, err)
+		require.Equal(t, 403, err.(*irma.SessionError).RemoteStatus)
+
+		additionalCheck(t, frontendTransport)
+
+		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.BindingCompleted = true
-		options = &server.SessionOptions{}
-		err = transport.Post("options", options, optionsRequest)
+		options := &server.SessionOptions{}
+		err = frontendTransport.Post("options", options, optionsRequest)
 		require.NoError(t, err)
 		require.Equal(t, true, options.BindingEnabled)
 		require.Equal(t, true, options.BindingCompleted)
@@ -278,6 +277,20 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
+}
+
+func enableBinding(t *testing.T, qr *irma.Qr, frontendToken irma.FrontendToken) (*irma.HTTPTransport, string) {
+	optionsRequest := irma.NewOptionsRequest()
+	optionsRequest.EnableBinding = true
+	options := &server.SessionOptions{}
+	transport := irma.NewHTTPTransport(qr.URL, false)
+	transport.SetHeader(irma.AuthorizationHeader, frontendToken)
+	err := transport.Post("options", options, optionsRequest)
+
+	require.NoError(t, err)
+	require.Equal(t, true, options.BindingEnabled)
+	require.Equal(t, false, options.BindingCompleted)
+	return transport, options.BindingCode
 }
 
 func expectedRequestorInfo(t *testing.T, conf *irma.Configuration) *irma.RequestorInfo {

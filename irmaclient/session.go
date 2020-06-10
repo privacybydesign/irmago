@@ -187,7 +187,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 }
 
 // NewQrSession creates and starts a new interactive IRMA session
-func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientToken, SessionDismisser) {
+func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientAuthorization, SessionDismisser) {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)
@@ -240,16 +240,16 @@ func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientTok
 		return "", nil
 	}
 
-	clientToken := common.NewSessionToken()
+	clientAuth := common.NewSessionToken()
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
 	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
-	session.transport.SetHeader(irma.AuthorizationHeader, clientToken)
+	session.transport.SetHeader(irma.AuthorizationHeader, clientAuth)
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"
 	}
 
 	go session.getSessionInfo()
-	return clientToken, session
+	return clientAuth, session
 }
 
 // Core session methods

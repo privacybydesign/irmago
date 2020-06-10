@@ -77,7 +77,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		h = &TestHandler{t, clientChan, client, requestor, wait, "", nil}
 	}
 
-	clientToken, dismisser := client.NewQrSession(qr, h)
+	clientAuth, dismisser := client.NewQrSession(qr, h)
 	clientResult := <-clientChan
 	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
 		require.NoError(t, clientResult.Err)
@@ -98,7 +98,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		)
 		require.NoError(t, err)
 		req.Header.Add("Content-Type", "application/json")
-		req.Header.Add(irma.AuthorizationHeader, clientToken)
+		req.Header.Add(irma.AuthorizationHeader, clientAuth)
 		res, err := new(http.Client).Do(req)
 		require.NoError(t, err)
 		require.True(t, res.StatusCode < 300)
