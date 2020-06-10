@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -124,16 +125,36 @@ func libraryRequest(
 	}
 
 	// Print QR code
-	if err := printQr(qr, noqr, sessionOptions); err != nil {
+	if err := printQr(qr, noqr); err != nil {
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
 	if sessionOptions.BindingEnabled {
-		optionsRequest := irma.NewOptionsRequest()
-		optionsRequest.BindingCompleted = true
-		sessionOptions = irmaServer.SetOptions(backendToken, &optionsRequest)
-		if !sessionOptions.BindingCompleted {
-			return nil, errors.New("Binding could not be completed")
+		// Listen for session status
+		statuschan := make(chan server.Status)
+		go func() {
+			var status server.Status
+			for {
+				newStatus := irmaServer.GetSessionResult(backendToken).Status
+				if newStatus != status {
+					status = newStatus
+					statuschan <- status
+					if status.Finished() {
+						return
+					}
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+		}()
+
+		_, err = handleBinding(sessionOptions, statuschan, func() bool {
+			optionsRequest := irma.NewOptionsRequest()
+			optionsRequest.BindingCompleted = true
+			sessionOptions := irmaServer.SetOptions(backendToken, &optionsRequest)
+			return sessionOptions.BindingCompleted
+		})
+		if err != nil {
+			return nil, errors.WrapPrefix(err, "Failed to handle binding", 0)
 		}
 	}
 
@@ -165,27 +186,15 @@ func serverRequest(
 		err = frontendTransport.Post("options", sessionOptions, optionsRequest)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)
+		} else if !sessionOptions.BindingEnabled {
+			return nil, errors.New("Binding is supported by server but could not be enabled for unknown reason")
 		}
 	}
 
 	// Print session QR
 	logger.Debug("QR: ", prettyprint(qr))
-	if err := printQr(qr, noqr, sessionOptions); err != nil {
+	if err := printQr(qr, noqr); err != nil {
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
-	}
-
-	if sessionOptions.BindingEnabled {
-		optionsRequest := irma.NewOptionsRequest()
-		optionsRequest.BindingCompleted = true
-		sessionOptions := &server.SessionOptions{}
-		err = frontendTransport.Post("options", sessionOptions, optionsRequest)
-		if err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to complete binding", 0)
-		} else if !sessionOptions.BindingCompleted {
-			return nil, errors.New("Failed to complete binding for unknown reason")
-		}
-	} else if binding {
-		return nil, errors.New("Session aborted")
 	}
 
 	statuschan := make(chan server.Status)
@@ -204,15 +213,34 @@ func serverRequest(
 	go func() {
 		defer wg.Done()
 
-		// Wait until client connects
-		status := <-statuschan
-		if status != server.StatusConnected {
-			err = errors.Errorf("Unexpected status: %s", status)
-			return
+		var status server.Status
+		if binding {
+			status, err = handleBinding(sessionOptions, statuschan, func() bool {
+				optionsRequest := irma.NewOptionsRequest()
+				optionsRequest.BindingCompleted = true
+				sessionOptions := &server.SessionOptions{}
+				err = frontendTransport.Post("options", sessionOptions, optionsRequest)
+				if err != nil {
+					err = errors.WrapPrefix(err, "Failed to complete binding", 0)
+				}
+				return sessionOptions.BindingCompleted
+			})
+			if err != nil {
+				err = errors.WrapPrefix(err, "Failed to handle binding", 0)
+				return
+			}
+		} else {
+			// Wait until client connects if binding is disabled
+			status := <-statuschan
+			if status != server.StatusConnected {
+				err = errors.Errorf("Unexpected status: %s", status)
+				return
+			}
+
+			// Wait until client finishes
+			status = <-statuschan
 		}
 
-		// Wait until client finishes
-		status = <-statuschan
 		if status != server.StatusCancelled && status != server.StatusDone {
 			err = errors.Errorf("Unexpected status: %s", status)
 			return

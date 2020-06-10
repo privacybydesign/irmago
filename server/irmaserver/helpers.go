@@ -56,7 +56,7 @@ func (session *session) onUpdate() {
 
 // Checks whether requested options are valid in the current session context.
 func (session *session) updateOptions(request *irma.OptionsRequest) *server.SessionOptions {
-	if session.status == server.StatusInitialized {
+	if session.status == server.StatusInitialized && !request.BindingCompleted {
 		session.options.BindingEnabled = request.EnableBinding
 		if request.EnableBinding {
 			session.options.BindingCode = common.NewBindingCode()
@@ -66,7 +66,9 @@ func (session *session) updateOptions(request *irma.OptionsRequest) *server.Sess
 	} else if session.status == server.StatusConnected {
 		if session.options.BindingEnabled && !session.options.BindingCompleted && request.BindingCompleted {
 			session.options.BindingCompleted = true
-			session.status = server.StatusBindingCompleted
+			if session.version.Above(2, 6) {
+				session.status = server.StatusBindingCompleted
+			}
 		}
 	}
 	return &session.options
