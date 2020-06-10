@@ -636,6 +636,38 @@ func TestChainedSessions(t *testing.T) {
 	require.NoError(t, errors.New("newly issued credential not found in client"))
 }
 
+func TestDisableBinding(t *testing.T) {
+	var handler *TestClientHandler
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+
+	StartRequestorServer(JwtServerConfiguration)
+	defer StopRequestorServer()
+
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+	sesPkg, frontendToken := startSession(t, request, "issue")
+	transport, _ := enableBinding(t, sesPkg.SessionPtr, frontendToken)
+
+	// Disable binding again
+	optionsRequest := irma.NewOptionsRequest()
+	options := &server.SessionOptions{}
+	optionsRequest.EnableBinding = false
+	err := transport.Post("options", options, optionsRequest)
+	require.NoError(t, err)
+	require.Equal(t, optionsRequest.EnableBinding, options.BindingEnabled)
+
+	c := make(chan *SessionResult)
+	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
+	qrjson, err := json.Marshal(sesPkg.SessionPtr)
+	require.NoError(t, err)
+	client.NewSession(string(qrjson), h)
+
+	if result := <-c; result != nil {
+		require.NoError(t, result.Err)
+	}
+}
+
 func TestDisableBindingAfterClientConnected(t *testing.T) {
 	// When client is already connected, the frontend may not change the binding setting anymore.
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
