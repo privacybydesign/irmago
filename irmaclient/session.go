@@ -240,10 +240,16 @@ func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientAut
 		return "", nil
 	}
 
-	clientAuth := common.NewSessionToken()
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
 	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
-	session.transport.SetHeader(irma.AuthorizationHeader, clientAuth)
+
+	// From protocol version 2.7 also a authorization header must be included.
+	clientAuth := ""
+	if maxVersion.Above(2, 6) {
+		clientAuth = common.NewSessionToken()
+		session.transport.SetHeader(irma.AuthorizationHeader, clientAuth)
+	}
+
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"
 	}
@@ -265,13 +271,14 @@ func (session *session) getSessionInfo() {
 	info := &server.SessionInfo{
 		Request: session.request, // As request is an interface it need to be initialized with a specific instance.
 	}
+	// UnmarshalJSON of SessionInfo takes into account legacy protocols, so we do not have to check that here.
 	err := session.transport.Get("", info)
 	if err != nil {
 		session.fail(err.(*irma.SessionError))
 		return
 	}
 
-	// Check whether binding is needed, and if so, wait for it to be completed
+	// Check whether binding is needed, and if so, wait for it to be completed.
 	if info.Options.BindingEnabled {
 		err = session.handleBinding(info.Options.BindingCode)
 	}

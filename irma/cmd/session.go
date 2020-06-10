@@ -128,7 +128,7 @@ func libraryRequest(
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
-	if sessionOptions.BindingEnabled {
+	if binding {
 		// Listen for session status
 		statuschan := make(chan server.Status)
 		go func() {
@@ -239,7 +239,6 @@ func serverRequest(
 
 		// Wait until client finishes
 		status = <-statuschan
-
 		if status != server.StatusCancelled && status != server.StatusDone {
 			err = errors.Errorf("Unexpected status: %s", status)
 			return
@@ -346,7 +345,7 @@ func init() {
 	flags.StringP("url", "u", defaulturl, "external URL to which IRMA app connects (when not using --server), \":port\" being replaced by --port value")
 	flags.IntP("port", "p", 48680, "port to listen at (when not using --server)")
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
-	flags.Bool("binding", false, "Enable extra binding step between server and IRMA app")
+	flags.Bool("binding", false, "Enable explicit binding between server and IRMA app")
 	flags.StringP("request", "r", "", "JSON session request")
 	flags.StringP("privkeys", "k", "", "path to private keys")
 	flags.Bool("disable-schemes-update", false, "disable scheme updates")
