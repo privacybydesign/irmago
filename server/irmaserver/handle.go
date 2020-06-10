@@ -35,7 +35,8 @@ func (session *session) handleDelete() {
 
 func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (
 	*server.SessionInfo, *irma.SessionRequest, *irma.RemoteError) {
-	if session.status != server.StatusInitialized && session.status != server.StatusBindingCompleted {
+	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
+	if session.status != server.StatusInitialized {
 		return nil, nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
 
@@ -63,7 +64,11 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (
 	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
 
-	session.setStatus(server.StatusConnected)
+	if session.options.BindingEnabled && session.version.Above(2, 6) {
+		session.setStatus(server.StatusBinding)
+	} else {
+		session.setStatus(server.StatusConnected)
+	}
 
 	if session.version.Below(2, 5) {
 		logger.Info("Returning legacy session format")
@@ -97,7 +102,7 @@ func (session *session) handlePostOptions(optionsRequest *irma.OptionsRequest, t
 
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
 	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
-	if session.version == nil || session.version.Below(2, 7) && session.status != server.StatusConnected {
+	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
@@ -129,7 +134,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 
 func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma.ServerSessionResponse, *irma.RemoteError) {
 	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
-	if session.version == nil || session.version.Below(2, 7) && session.status != server.StatusConnected {
+	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
@@ -161,7 +166,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 
 func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
 	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
-	if session.version == nil || session.version.Below(2, 7) && session.status != server.StatusConnected {
+	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
 	session.markAlive()
