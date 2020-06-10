@@ -275,14 +275,14 @@ type SSECtx struct {
 }
 
 func NewSessionToken() string {
-	return newToken(sessionTokenLength, sessionChars)
+	return newRandomString(sessionTokenLength, sessionChars)
 }
 
 func NewBindingCode() string {
-	return newToken(bindingCodeLength, bindingCodeChars)
+	return newRandomString(bindingCodeLength, bindingCodeChars)
 }
 
-func newToken(count int, characterSet string) string {
+func newRandomString(count int, characterSet string) string {
 	r := make([]byte, count)
 	_, err := rand.Read(r)
 	if err != nil {

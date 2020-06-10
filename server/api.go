@@ -86,6 +86,15 @@ type LegacySessionResult struct {
 }
 
 const (
+	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
+	StatusBinding     Status = "BINDING"     // The client is binding, waiting for the frontend to accept
+	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
+	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
+	StatusDone        Status = "DONE"        // The session has completed successfully
+	StatusTimeout     Status = "TIMEOUT"     // Session timed out
+)
+
+const (
 	ComponentRevocation = "revocation"
 	ComponentSession    = "session"
 	ComponentStatic     = "static"
@@ -95,15 +104,6 @@ const (
 	PostSizeLimit = 10 << 20 // 10 MB
 	ReadTimeout   = 5 * time.Second
 	WriteTimeout  = 2 * ReadTimeout
-)
-
-const (
-	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
-	StatusBinding     Status = "BINDING"     // The client is binding, waiting for the frontend to accept
-	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
-	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
-	StatusDone        Status = "DONE"        // The session has completed successfully
-	StatusTimeout     Status = "TIMEOUT"     // Session timed out
 )
 
 // Remove this when dropping support for legacy pre-condiscon session requests
