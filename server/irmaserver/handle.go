@@ -33,7 +33,7 @@ func (session *session) handleDelete() {
 	session.setStatus(server.StatusCancelled)
 }
 
-func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (
+func (session *session) handleGetInfo(min, max *irma.ProtocolVersion) (
 	*server.SessionInfo, *irma.SessionRequest, *irma.RemoteError) {
 	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
 	if session.status != server.StatusInitialized {
@@ -432,7 +432,7 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 	}
 	session := r.Context().Value("session").(*session)
 	// When session binding is supported by all clients, the legacy support can be removed
-	res, legacyRes, err := session.handleGetRequest(&min, &max)
+	res, legacyRes, err := session.handleGetInfo(&min, &max)
 	if legacyRes != nil {
 		server.WriteResponse(w, legacyRes, err)
 	} else {
