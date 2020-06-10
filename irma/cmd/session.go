@@ -235,10 +235,10 @@ func serverRequest(
 				err = errors.Errorf("Unexpected status: %s", status)
 				return
 			}
-
-			// Wait until client finishes
-			status = <-statuschan
 		}
+
+		// Wait until client finishes
+		status = <-statuschan
 
 		if status != server.StatusCancelled && status != server.StatusDone {
 			err = errors.Errorf("Unexpected status: %s", status)

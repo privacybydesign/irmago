@@ -291,36 +291,34 @@ func printQr(qr *irma.Qr, noqr bool) error {
 
 func handleBinding(options *server.SessionOptions, statusChan chan server.Status, completeBinding func() bool) (
 	server.Status, error) {
-	fmt.Println("\nBinding code:", options.BindingCode)
-
 	errorChan := make(chan error)
-	go func() {
-		for {
-			fmt.Println("Press Enter to confirm your device is connected; otherwise press Ctrl-C.")
-			_, err := bufio.NewReader(os.Stdin).ReadString('\n')
-			if err == nil {
-				if completeBinding() {
-					fmt.Println("Binding completed.")
-					return
-				}
-				fmt.Println("No connected device was found, please try again.")
-			} else {
-				errorChan <- err
-				return
-			}
-		}
-	}()
-
 	status := server.StatusInitialized
+	bindingStarted := false
 	for {
 		select {
 		case status = <-statusChan:
-			if status == server.StatusInitialized || status == server.StatusConnected {
-				// Continue until status is other than StatusInitialized or StatusConnected
-				break
-			}
-			if status != server.StatusBindingCompleted && status != server.StatusTimeout {
-				fmt.Println("Binding was not supported by the connected device.")
+			if status == server.StatusInitialized {
+				continue
+			} else if status == server.StatusBinding {
+				bindingStarted = true
+				go func() {
+					fmt.Println("\nBinding code:", options.BindingCode)
+					fmt.Println("Press Enter to confirm your device is connected; otherwise press Ctrl-C.")
+					_, err := bufio.NewReader(os.Stdin).ReadString('\n')
+					if err == nil {
+						if completeBinding() {
+							fmt.Println("Binding completed.")
+						} else {
+							errorChan <- errors.New("Failed to complete binding")
+						}
+					} else {
+						errorChan <- err
+						return
+					}
+				}()
+				continue
+			} else if status == server.StatusConnected && !bindingStarted {
+				fmt.Println("Binding is not supported by the connected device.")
 			}
 			return status, nil
 		case err := <-errorChan:
