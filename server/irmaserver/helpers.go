@@ -63,12 +63,10 @@ func (session *session) updateOptions(request *irma.OptionsRequest) *server.Sess
 		} else {
 			session.options.BindingCode = ""
 		}
-	} else if session.status == server.StatusConnected {
+	} else if session.status == server.StatusBinding {
 		if session.options.BindingEnabled && !session.options.BindingCompleted && request.BindingCompleted {
 			session.options.BindingCompleted = true
-			if session.version.Above(2, 6) {
-				session.status = server.StatusBindingCompleted
-			}
+			session.setStatus(server.StatusConnected)
 		}
 	}
 	return &session.options

@@ -292,10 +292,10 @@ func (session *session) handleBinding(bindingCode string) error {
 	statuschan := make(chan server.Status)
 	errorchan := make(chan error)
 
-	go server.WaitStatusChanged(session.transport, server.StatusInitialized, statuschan, errorchan)
+	go server.WaitStatusChanged(session.transport, server.StatusBinding, statuschan, errorchan)
 	select {
 	case status := <-statuschan:
-		if status == server.StatusBindingCompleted {
+		if status == server.StatusConnected {
 			return session.transport.Get("request", session.request)
 		} else {
 			return errors.New("Server finished session without completing binding")

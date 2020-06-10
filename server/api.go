@@ -99,12 +99,12 @@ const (
 )
 
 const (
-	StatusInitialized      Status = "INITIALIZED"       // The session has been started and is waiting for the client
-	StatusBindingCompleted Status = "BINDING_COMPLETED" // The client has bound and can retrieve the request
-	StatusConnected        Status = "CONNECTED"         // The client has retrieved the session request, we wait for its response
-	StatusCancelled        Status = "CANCELLED"         // The session is cancelled, possibly due to an error
-	StatusDone             Status = "DONE"              // The session has completed successfully
-	StatusTimeout          Status = "TIMEOUT"           // Session timed out
+	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
+	StatusBinding     Status = "BINDING"     // The client is binding, waiting for the frontend to accept
+	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
+	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
+	StatusDone        Status = "DONE"        // The session has completed successfully
+	StatusTimeout     Status = "TIMEOUT"     // Session timed out
 )
 
 // Remove this when dropping support for legacy pre-condiscon session requests
