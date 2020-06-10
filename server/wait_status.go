@@ -48,12 +48,13 @@ func subscribeSSE(transport *irma.HTTPTransport, statuschan chan Status, errorch
 // poll recursively polls the session status until a final status is received.
 func poll(transport *irma.HTTPTransport, initialStatus Status, statuschan chan Status, errorchan chan error) {
 	go func() {
+		status := initialStatus
 		for {
 			statuschanPolling := make(chan Status)
 			errorchanPolling := make(chan error)
-			go pollUntilChange(transport, initialStatus, statuschanPolling, errorchanPolling)
+			go pollUntilChange(transport, status, statuschanPolling, errorchanPolling)
 			select {
-			case status := <-statuschanPolling:
+			case status = <-statuschanPolling:
 				statuschan <- status
 				if status.Finished() {
 					errorchan <- nil
