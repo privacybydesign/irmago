@@ -8,10 +8,15 @@ import (
 	_ "github.com/jackc/pgx/stdlib"
 )
 
+// postgresDB provides a postgres-backed implementation of KeyshareDB
+// database access is done through the database/sql mechanisms, using
+// pgx as database driver
+
 type keysharePostgresDatabase struct {
 	db *sql.DB
 }
 
+// For easy access in the database, we store the row id also in the returned user data
 type keysharePostgresUser struct {
 	KeyshareUserData
 	id int64

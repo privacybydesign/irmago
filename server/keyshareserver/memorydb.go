@@ -6,6 +6,10 @@ import (
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 )
 
+// MemoryDB provides an easy-to-configure testing implementation of the
+// keyshare server database. It does not provide full functionality, instead
+// mocking some behaviour, as noted on the specific functions.
+
 type keyshareMemoryDB struct {
 	lock  sync.Mutex
 	users map[string]keysharecore.EncryptedKeysharePacket
@@ -77,13 +81,16 @@ func (db *keyshareMemoryDB) ClearPincheck(user KeyshareUser) error {
 }
 
 func (db *keyshareMemoryDB) SetSeen(user KeyshareUser) error {
+	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
 func (db *keyshareMemoryDB) AddLog(user KeyshareUser, eventType LogEntryType, param interface{}) error {
+	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
 func (db *keyshareMemoryDB) AddEmailVerification(user KeyshareUser, emailAddress, token string) error {
+	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
