@@ -394,7 +394,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 			// Do not send to user
 		}
 
-		err = s.db.AddLog(user, PinCheckSucces, nil)
+		err = s.db.AddLog(user, PinCheckSuccess, nil)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 			server.WriteError(w, server.ErrorInternal, err.Error())

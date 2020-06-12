@@ -16,7 +16,7 @@ type LogEntryType string
 
 const (
 	PinCheckRefused = "PIN_CHECK_REFUSED"
-	PinCheckSucces  = "PIN_CHECK_SUCCESS"
+	PinCheckSuccess = "PIN_CHECK_SUCCESS"
 	PinCheckFailed  = "PIN_CHECK_FAILED"
 	PinCheckBlocked = "PIN_CHECK_BLOCKED"
 	IrmaSession     = "IRMA_SESSION"
