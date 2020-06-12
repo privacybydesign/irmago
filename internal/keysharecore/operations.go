@@ -111,6 +111,7 @@ func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, useri
 	return token.SignedString(c.signKey)
 }
 
+// Check whether the given JWT is currently valid as an access token for operations on the provided encrypted keyshare packet
 func (c *KeyshareCore) ValidateJWT(ep EncryptedKeysharePacket, jwt string) error {
 	_, err := c.verifyAccess(ep, jwt)
 	return err
