@@ -37,6 +37,8 @@ type Configuration struct {
 	Logger *logrus.Logger `json:"-"`
 }
 
+// Process a passed configuration to ensure all field values are valid and initialized
+// as required by the rest of this keyshare server component.
 func processConfiguration(conf *Configuration) error {
 	// Setup log
 	if conf.Logger == nil {
