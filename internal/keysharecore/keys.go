@@ -63,7 +63,7 @@ func (c *KeyshareCore) DangerousSetAESEncryptionKey(keyid uint32, key AesKey) {
 }
 
 // Set key used to sign keyshare protocol messages
-func (c *KeyshareCore) DangerousSetSignKey(key *rsa.PrivateKey, id int) {
+func (c *KeyshareCore) SetSignKey(key *rsa.PrivateKey, id int) {
 	c.signKey = key
 	c.signKeyId = id
 }
