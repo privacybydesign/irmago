@@ -240,7 +240,7 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
 	}
-	core.DangerousSetSignKey(jwtPrivateKey, conf.JwtKeyId)
+	core.SetSignKey(jwtPrivateKey, conf.JwtKeyId)
 	encId, encKey, err := readAESKey(conf.StoragePrimaryKeyFile)
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to load primary storage key", 0))
