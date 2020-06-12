@@ -27,20 +27,25 @@ import (
 )
 
 type SessionData struct {
-	LastKeyid    irma.PublicKeyIdentifier
+	LastKeyid    irma.PublicKeyIdentifier // last used key, used in signing the issuance message
 	LastCommitID uint64
 	expiry       time.Time
 }
 
 type Server struct {
+	// configuration
 	conf *Configuration
 
+	// external components
 	core          *keysharecore.KeyshareCore
 	sessionserver *irmaserver.Server
 	db            KeyshareDB
+
+	// Scheduler used to clean sessions
 	scheduler     *gocron.Scheduler
 	stopScheduler chan<- bool
 
+	// Session data, keeping track of current keyshare protocol session state for each user
 	sessions    map[string]*SessionData
 	sessionLock sync.Mutex
 }
@@ -87,6 +92,7 @@ func (s *Server) Stop() {
 	s.sessionserver.Stop()
 }
 
+// clean up any expired sessions
 func (s *Server) clearSessions() {
 	now := time.Now()
 	s.sessionLock.Lock()
@@ -101,16 +107,25 @@ func (s *Server) clearSessions() {
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
+	// Registration
 	router.Post("/client/register", s.handleRegister)
+
+	// Pin and login
 	router.Post("/users/isAuthorized", s.handleValidate)
 	router.Post("/users/verify/pin", s.handleVerifyPin)
 	router.Post("/users/change/pin", s.handleChangePin)
+
+	// Keyshare sessions
 	router.Post("/prove/getCommitments", s.handleCommitments)
 	router.Post("/prove/getResponse", s.handleResponse)
+
+	// Irma server for issuing myirma credential during registration
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
 	return router
 }
 
+// On configuration changes, inform the keyshare core of any
+// new irma issuer public keys.
 func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
 	for _, issuer := range conf.Issuers {
 		keyIds, err := conf.PublicKeyIndices(issuer.Identifier())
@@ -129,6 +144,7 @@ func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
 	}
 }
 
+// /prove/getCommitments
 func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	// Read keys
 	body, err := ioutil.ReadAll(r.Body)
@@ -199,6 +215,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, proofPCommitmentMap{Commitments: mappedCommitments})
 }
 
+// /prove/getResponse
 func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	// Read challenge
 	body, err := ioutil.ReadAll(r.Body)
@@ -273,6 +290,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	server.WriteString(w, proofResponse)
 }
 
+// /users/isAuthorized
 func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	// Extract username and authorization from request
 	username := r.Header.Get("X-IRMA-Keyshare-Username")
@@ -298,6 +316,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// /users/verify/pin
 func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	body, err := ioutil.ReadAll(r.Body)
@@ -386,6 +405,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// /users/change/pin
 func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	body, err := ioutil.ReadAll(r.Body)
@@ -452,6 +472,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, keysharePinStatus{Status: "success"})
 }
 
+// /client/register
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	body, err := ioutil.ReadAll(r.Body)
