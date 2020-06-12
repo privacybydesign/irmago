@@ -30,7 +30,7 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	err = db.AddEmailVerification(nuser, "test@test.com", "testtoken")
 	assert.NoError(t, err)
 
-	err = db.AddLog(nuser, PinCheckSucces, nil)
+	err = db.AddLog(nuser, PinCheckSuccess, nil)
 	assert.NoError(t, err)
 
 	ok, tries, wait, err := db.ReservePincheck(nuser)
