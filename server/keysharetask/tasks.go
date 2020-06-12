@@ -30,6 +30,7 @@ func New(conf *Configuration) (*TaskHandler, error) {
 	}, nil
 }
 
+// Remove email addresses marked for deletion long enough ago
 func (t *TaskHandler) CleanupEmails() {
 	_, err := t.db.Exec("DELETE FROM irma.emails WHERE delete_on < $1", time.Now().Unix())
 	if err != nil {
@@ -37,6 +38,7 @@ func (t *TaskHandler) CleanupEmails() {
 	}
 }
 
+// Remove old login and email verifciation tokens
 func (t *TaskHandler) CleanupTokens() {
 	_, err := t.db.Exec("DELETE FROM irma.email_login_tokens WHERE expiry < $1", time.Now().Unix())
 	if err != nil {
@@ -49,6 +51,7 @@ func (t *TaskHandler) CleanupTokens() {
 	}
 }
 
+// Cleanup accounts disabled long enough ago.
 func (t *TaskHandler) CleanupAccounts() {
 	_, err := t.db.Exec("DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR last_seen < delete_on - $2)",
 		time.Now().Unix(),
@@ -58,6 +61,7 @@ func (t *TaskHandler) CleanupAccounts() {
 	}
 }
 
+// Mark old unused accounts for deletion, and inform their owners.
 func (t *TaskHandler) ExpireAccounts() {
 	// Disable this task when email server is not given
 	if t.conf.EmailServer == "" {
@@ -65,6 +69,8 @@ func (t *TaskHandler) ExpireAccounts() {
 		return
 	}
 
+	// Select users we havent seen in ExpiryDelay days, and which have a registered email.
+	// We ignore (and thus keep alive) accounts without email addresses, as we cant inform their owners.
 	res, err := t.db.Query(`SELECT id, username, language 
 							FROM irma.users 
 							WHERE last_seen < $1 
@@ -80,6 +86,8 @@ func (t *TaskHandler) ExpireAccounts() {
 		return
 	}
 	defer res.Close()
+
+	// Send emails and mark for deletion each of the found inactive accounts.
 	for res.Next() {
 		var id int64
 		var username string
@@ -96,6 +104,8 @@ func (t *TaskHandler) ExpireAccounts() {
 			t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
 			return
 		}
+
+		// And send emails to each of them.
 		for emailres.Next() {
 			var email string
 			err = emailres.Scan(&email)
@@ -114,13 +124,13 @@ func (t *TaskHandler) ExpireAccounts() {
 				subject = t.conf.DeleteExpiredAccountSubject[t.conf.DefaultLanguage]
 			}
 			var emsg bytes.Buffer
-
 			err = template.Execute(&emsg, map[string]string{"Username": username, "Email": email})
 			if err != nil {
 				t.conf.Logger.WithField("error", err).Error("Could not render email")
 				return
 			}
 
+			// And send
 			server.SendHTMLMail(
 				t.conf.EmailServer,
 				t.conf.EmailAuth,
@@ -130,6 +140,7 @@ func (t *TaskHandler) ExpireAccounts() {
 				emsg.Bytes())
 		}
 
+		// Finally, do marking for deletion
 		del, err := t.db.Exec("UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
 			time.Now().Add(time.Duration(24*t.conf.DeleteDelay)*time.Hour).Unix())
 		if err != nil {
