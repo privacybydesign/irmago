@@ -977,7 +977,7 @@ func (client RevocationClient) transport(forceHTTPS bool) *HTTPTransport {
 }
 
 func (rs RevocationKeys) PrivateKeyLatest(issid IssuerIdentifier) (*revocation.PrivateKey, error) {
-	sk, err := rs.Conf.PrivateKeyLatest(issid)
+	sk, err := rs.Conf.PrivateKeys.Latest(issid)
 	if err != nil {
 		return nil, err
 	}
@@ -992,7 +992,7 @@ func (rs RevocationKeys) PrivateKeyLatest(issid IssuerIdentifier) (*revocation.P
 }
 
 func (rs RevocationKeys) PrivateKey(issid IssuerIdentifier, counter uint) (*revocation.PrivateKey, error) {
-	sk, err := rs.Conf.PrivateKey(issid, counter)
+	sk, err := rs.Conf.PrivateKeys.Get(issid, counter)
 	if err != nil {
 		return nil, err
 	}

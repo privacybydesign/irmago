@@ -32,7 +32,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -46,9 +45,7 @@ type Configuration struct {
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 
-	// Issuer private keys. If set (after calling ParseFolder()), will use these keys
-	// instead of keys in irma_configuration/$issuer/PrivateKeys.
-	PrivateKeys map[IssuerIdentifier]map[uint]*gabi.PrivateKey
+	PrivateKeys PrivateKeyRing
 
 	Revocation *RevocationStorage `json:"-"`
 
@@ -162,7 +159,7 @@ func (conf *Configuration) clear() {
 	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 	if conf.PrivateKeys == nil { // keep if already populated
-		conf.PrivateKeys = make(map[IssuerIdentifier]map[uint]*gabi.PrivateKey)
+		conf.PrivateKeys = &privateKeyRingMerge{}
 	}
 }
 
@@ -209,6 +206,14 @@ func (conf *Configuration) ParseFolder() (err error) {
 	})
 	if err != nil {
 		return
+	}
+
+	if len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
+		ring, err := newPrivateKeyRingScheme(conf.Path, conf)
+		if err != nil {
+			return err
+		}
+		conf.PrivateKeys.(*privateKeyRingMerge).Add(ring)
 	}
 
 	if conf.Revocation == nil {
@@ -331,42 +336,12 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-// PrivateKey returns the specified private key of the specified issuer if present; an error otherwise.
-func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
-	if _, haveIssuer := conf.PrivateKeys[id]; haveIssuer {
-		if sk := conf.PrivateKeys[id][counter]; sk != nil {
-			return sk, nil
-		}
+func (conf *Configuration) AddPrivateKeyRing(ring PrivateKeyRing) error {
+	if err := validatePrivateKeyRing(ring, conf); err != nil {
+		return err
 	}
-
-	path := fmt.Sprintf(privkeyPattern, conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
-	file := strings.Replace(path, "*", strconv.FormatUint(uint64(counter), 10), 1)
-	sk, err := gabi.NewPrivateKeyFromFile(file)
-	if err != nil {
-		return nil, err
-	}
-	if sk.Counter != counter {
-		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
-	}
-
-	if conf.PrivateKeys[id] == nil {
-		conf.PrivateKeys[id] = make(map[uint]*gabi.PrivateKey)
-	}
-	conf.PrivateKeys[id][counter] = sk
-
-	return sk, nil
-}
-
-// PrivateKeyLatest returns the latest private key of the specified issuer.
-func (conf *Configuration) PrivateKeyLatest(id IssuerIdentifier) (*gabi.PrivateKey, error) {
-	indices, err := conf.PrivateKeyIndices(id)
-	if err != nil {
-		return nil, err
-	}
-	if len(indices) == 0 {
-		return nil, errors.New("no private keys found")
-	}
-	return conf.PrivateKey(id, indices[len(indices)-1])
+	conf.PrivateKeys.(*privateKeyRingMerge).Add(ring)
+	return nil
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
@@ -550,40 +525,12 @@ func sorter(ints []uint) func(i, j int) bool {
 	return func(i, j int) bool { return ints[i] < ints[j] }
 }
 
-// unionset returns the concatenation of a and b, without duplicates, and sorted.
-func unionset(a, b []uint) []uint {
-	m := map[uint]struct{}{}
-	for _, c := range [][]uint{a, b} {
-		for _, i := range c {
-			m[i] = struct{}{}
-		}
-	}
-	var ints []uint
-	for i := range m {
-		ints = append(ints, i)
-	}
-	sort.Slice(ints, sorter(ints))
-	return ints
-}
-
-func (conf *Configuration) PrivateKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
-	filekeys, err := conf.matchKeyPattern(issuerid, privkeyPattern)
-	if err != nil {
-		return nil, err
-	}
-	var mapkeys []uint
-	for _, sk := range conf.PrivateKeys[issuerid] {
-		mapkeys = append(mapkeys, sk.Counter)
-	}
-	return unionset(filekeys, mapkeys), nil
-}
-
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
-	return conf.matchKeyPattern(issuerid, pubkeyPattern)
+	return matchKeyPattern(conf.Path, issuerid, pubkeyPattern)
 }
 
-func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (ints []uint, err error) {
-	pkpath := fmt.Sprintf(pattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+func matchKeyPattern(path string, issuerid IssuerIdentifier, pattern string) (ints []uint, err error) {
+	pkpath := fmt.Sprintf(pattern, path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(pkpath)
 	if err != nil {
 		return
@@ -1524,34 +1471,6 @@ func (conf *Configuration) ValidateKeys() error {
 			if latest != nil && latest.ExpiryDate > now.Unix() && latest.ExpiryDate < now.Unix()+expiryBoundary {
 				conf.Warnings = append(conf.Warnings, fmt.Sprintf("Latest public key of issuer %s expires soon (at %s)",
 					issuerid.String(), time.Unix(latest.ExpiryDate, 0).String()))
-			}
-		}
-
-		// Check private keys if any
-		indices, err = conf.PrivateKeyIndices(issuerid)
-		if err != nil {
-			return err
-		}
-		for _, i := range indices {
-			sk, err := conf.PrivateKey(issuerid, i)
-			if err != nil {
-				return err
-			}
-			if sk.Counter != i {
-				return errors.Errorf("Private key %d of issuer %s has wrong <Counter>", i, issuerid.String())
-			}
-			pk, err := conf.PublicKey(issuerid, i)
-			if err != nil {
-				return err
-			}
-			if pk == nil {
-				return errors.Errorf("Private key %d of issuer %s has no corresponding public key", i, issuerid.String())
-			}
-			if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-				return errors.Errorf("Private key %d of issuer %s does not belong to corresponding public key", i, issuerid.String())
-			}
-			if sk.RevocationSupported() != pk.RevocationSupported() {
-				return errors.Errorf("revocation support of private key %d of issuer %s is not consistent with corresponding public key", i, issuerid.String())
 			}
 		}
 

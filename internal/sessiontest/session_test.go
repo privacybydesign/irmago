@@ -306,8 +306,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 
-	require.NotZero(t, len(irmaServerConfiguration.IrmaConfiguration.PrivateKeys))
-	sk, err := irmaServerConfiguration.IrmaConfiguration.PrivateKeyLatest(credid.IssuerIdentifier())
+	sk, err := irmaServerConfiguration.IrmaConfiguration.PrivateKeys.Latest(credid.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NotNil(t, sk)
 
@@ -328,8 +327,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 		AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{},
 	}, downloaded)
 
-	require.NotZero(t, len(irmaServerConfiguration.IrmaConfiguration.PrivateKeys))
-	sk, err = irmaServerConfiguration.IrmaConfiguration.PrivateKeyLatest(credid.IssuerIdentifier())
+	sk, err = irmaServerConfiguration.IrmaConfiguration.PrivateKeys.Latest(credid.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NotNil(t, sk)
 }
