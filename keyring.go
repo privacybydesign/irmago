@@ -1,6 +1,7 @@
 package irma
 
 import (
+	goerrors "errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -89,7 +90,7 @@ func (p *PrivateKeyRingFolder) readFile(filename string) (*gabi.PrivateKey, erro
 
 func (p *PrivateKeyRingFolder) Get(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
 	sk, err := p.readFile(fmt.Sprintf("%s.%d.xml", id.String(), counter))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil && !goerrors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	if sk != nil {
@@ -202,7 +203,7 @@ func (p *privateKeyRingMerge) Get(id IssuerIdentifier, counter uint) (*gabi.Priv
 		if err == nil {
 			return sk, nil
 		}
-		if !errors.Is(err, os.ErrNotExist) {
+		if !goerrors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 	}
@@ -213,7 +214,7 @@ func (p *privateKeyRingMerge) Latest(id IssuerIdentifier) (*gabi.PrivateKey, err
 	var sk *gabi.PrivateKey
 	for _, ring := range p.rings {
 		s, err := ring.Latest(id)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err != nil && !goerrors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 		if s != nil && (sk == nil || s.Counter > sk.Counter) {
