@@ -35,11 +35,12 @@ type (
 	// of the form scheme.issuer.xml and scheme.issuer.counter.xml.
 	PrivateKeyRingFolder struct {
 		path string
+		conf *Configuration
 	}
 
 	// privateKeyRingScheme provides access to private keys present in a scheme.
 	privateKeyRingScheme struct {
-		path string
+		conf *Configuration
 	}
 
 	// privateKeyRingMerge is a merge of multiple key rings into one, provides access to the
@@ -54,7 +55,7 @@ func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingF
 	if err != nil {
 		return nil, err
 	}
-	ring := &PrivateKeyRingFolder{path}
+	ring := &PrivateKeyRingFolder{path, conf}
 	for _, file := range files {
 		filename := file.Name()
 		dotcount := strings.Count(filename, ".")
@@ -70,33 +71,37 @@ func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingF
 			counter, err = strconv.Atoi(base[index+1:])
 			base = base[:index]
 		}
-		sk, err := ring.readFile(filename)
+		sk, err := ring.readFile(filename, NewIssuerIdentifier(base))
 		if err != nil {
 			return nil, err
 		}
 		if counter >= 0 && uint(counter) != sk.Counter {
 			return nil, errors.Errorf("private key %s has wrong counter %d in filename, should be %d", filename, counter, sk.Counter)
 		}
-		if err = validatePrivateKey(NewIssuerIdentifier(base), sk, conf); err != nil {
-			return nil, err
-		}
 	}
 	return ring, nil
 }
 
-func (p *PrivateKeyRingFolder) readFile(filename string) (*gabi.PrivateKey, error) {
-	return gabi.NewPrivateKeyFromFile(filepath.Join(p.path, filename))
+func (p *PrivateKeyRingFolder) readFile(filename string, id IssuerIdentifier) (*gabi.PrivateKey, error) {
+	sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(p.path, filename))
+	if err != nil {
+		return nil, err
+	}
+	if err = validatePrivateKey(id, sk, p.conf); err != nil {
+		return nil, err
+	}
+	return sk, nil
 }
 
 func (p *PrivateKeyRingFolder) Get(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
-	sk, err := p.readFile(fmt.Sprintf("%s.%d.xml", id.String(), counter))
+	sk, err := p.readFile(fmt.Sprintf("%s.%d.xml", id.String(), counter), id)
 	if err != nil && !goerrors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	if sk != nil {
 		return sk, nil
 	}
-	sk, err = p.readFile(fmt.Sprintf("%s.xml", id.String()))
+	sk, err = p.readFile(fmt.Sprintf("%s.xml", id.String()), id)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +133,7 @@ func (p *PrivateKeyRingFolder) Iterate(id IssuerIdentifier, f func(sk *gabi.Priv
 		return err
 	}
 	for _, file := range files {
-		sk, err := p.readFile(filepath.Base(file))
+		sk, err := p.readFile(filepath.Base(file), id)
 		if err != nil {
 			return err
 		}
@@ -139,21 +144,20 @@ func (p *PrivateKeyRingFolder) Iterate(id IssuerIdentifier, f func(sk *gabi.Priv
 	return nil
 }
 
-func newPrivateKeyRingScheme(path string, conf *Configuration) (*privateKeyRingScheme, error) {
-	ring := &privateKeyRingScheme{path}
-	err := validatePrivateKeyRing(ring, conf)
-	if err != nil {
+func newPrivateKeyRingScheme(conf *Configuration) (*privateKeyRingScheme, error) {
+	ring := &privateKeyRingScheme{conf}
+	if err := validatePrivateKeyRing(ring, conf); err != nil {
 		return nil, err
 	}
 	return ring, nil
 }
 
 func (p *privateKeyRingScheme) counters(issuerid IssuerIdentifier) (i []uint, err error) {
-	return matchKeyPattern(p.path, issuerid, privkeyPattern)
+	return matchKeyPattern(p.conf.Path, issuerid, privkeyPattern)
 }
 
 func (p *privateKeyRingScheme) Get(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
-	path := fmt.Sprintf(privkeyPattern, p.path, id.SchemeManagerIdentifier().Name(), id.Name())
+	path := fmt.Sprintf(privkeyPattern, p.conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
 	file := strings.Replace(path, "*", strconv.FormatUint(uint64(counter), 10), 1)
 	sk, err := gabi.NewPrivateKeyFromFile(file)
 	if err != nil {
@@ -161,6 +165,9 @@ func (p *privateKeyRingScheme) Get(id IssuerIdentifier, counter uint) (*gabi.Pri
 	}
 	if sk.Counter != counter {
 		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
+	}
+	if err = validatePrivateKey(id, sk, p.conf); err != nil {
+		return nil, err
 	}
 	return sk, nil
 }

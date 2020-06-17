@@ -209,7 +209,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 	}
 
 	if len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
-		ring, err := newPrivateKeyRingScheme(conf.Path, conf)
+		ring, err := newPrivateKeyRingScheme(conf)
 		if err != nil {
 			return err
 		}
