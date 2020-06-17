@@ -66,8 +66,8 @@ func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingF
 		base := strings.TrimSuffix(filename, filepath.Ext(filename)) // strip .xml
 		if dotcount == 3 {
 			index := strings.LastIndex(base, ".")
-			base = base[:index]
 			counter, err = strconv.Atoi(base[index+1:])
+			base = base[:index]
 		}
 		sk, err := ring.readFile(filename)
 		if err != nil {
