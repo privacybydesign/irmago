@@ -666,3 +666,48 @@ func revoke(t *testing.T, acc *revocation.Accumulator, parent *revocation.Event,
 	require.NoError(t, err)
 	return acc, event
 }
+
+func TestPrivateKeyRings(t *testing.T) {
+	conf := parseConfiguration(t)
+	mo := NewIssuerIdentifier("irma-demo.MijnOverheid")
+	ru := NewIssuerIdentifier("irma-demo.RU")
+	tst := NewIssuerIdentifier("test.test")
+
+	schemering, err := newPrivateKeyRingScheme(conf)
+	require.NoError(t, err)
+	_, err = schemering.Get(mo, 2)
+	require.NoError(t, err)
+	_, err = schemering.Latest(mo)
+	require.NoError(t, err)
+	_, err = schemering.Get(ru, 2)
+	require.Error(t, err) // not present in scheme
+	_, err = schemering.Latest(ru)
+	require.Error(t, err) // not present in scheme
+
+	folderring, err := NewPrivateKeyRingFolder(filepath.Join(test.FindTestdataFolder(t), "privatekeys"), conf)
+	require.NoError(t, err)
+	_, err = folderring.Get(mo, 2)
+	require.Error(t, err) // not present in folder
+	_, err = folderring.Get(mo, 1)
+	require.NoError(t, err) // present in both
+	_, err = folderring.Get(ru, 2)
+	require.NoError(t, err)
+	_, err = folderring.Latest(ru)
+	require.NoError(t, err)
+	_, err = folderring.Get(tst, 3)
+	require.NoError(t, err)
+	_, err = folderring.Latest(tst)
+	require.NoError(t, err)
+
+	mergedring := privateKeyRingMerge{rings: []PrivateKeyRing{schemering, folderring}}
+	_, err = mergedring.Get(mo, 1)
+	require.NoError(t, err) // present in both
+	_, err = mergedring.Get(mo, 2)
+	require.NoError(t, err)
+	_, err = mergedring.Latest(mo)
+	require.NoError(t, err)
+	_, err = mergedring.Get(ru, 2)
+	require.NoError(t, err)
+	_, err = mergedring.Latest(ru)
+	require.NoError(t, err)
+}
