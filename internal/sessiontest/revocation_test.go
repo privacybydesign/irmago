@@ -696,11 +696,12 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 
 func revocationConf(_ *testing.T) *server.Configuration {
 	return &server.Configuration{
-		URL:                  "http://localhost:48683",
-		Logger:               logger,
-		EnableSSE:            true,
-		DisableSchemesUpdate: true,
-		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
+		URL:                   "http://localhost:48683",
+		Logger:                logger,
+		EnableSSE:             true,
+		DisableSchemesUpdate:  true,
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:  {Authority: true},
 			revKeyshareTestCred: {Authority: true},
