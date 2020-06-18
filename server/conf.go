@@ -113,6 +113,9 @@ func (conf *Configuration) Check() error {
 func (conf *Configuration) HavePrivateKeys() bool {
 	var err error
 	for id := range conf.IrmaConfiguration.Issuers {
+		if conf.IrmaConfiguration.SchemeManagers[id.SchemeManagerIdentifier()].Demo {
+			continue
+		}
 		if _, err = conf.IrmaConfiguration.PrivateKeys.Latest(id); err == nil {
 			return true
 		}
