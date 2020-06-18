@@ -50,6 +50,10 @@ type (
 	}
 )
 
+var (
+	ErrMissingPrivateKey = fmt.Errorf("issuer private key not found: %w", os.ErrNotExist)
+)
+
 func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingFolder, error) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
@@ -106,7 +110,7 @@ func (p *PrivateKeyRingFolder) Get(id IssuerIdentifier, counter uint) (*gabi.Pri
 		return nil, err
 	}
 	if counter != sk.Counter {
-		return nil, os.ErrNotExist
+		return nil, ErrMissingPrivateKey
 	}
 	return sk, nil
 }
@@ -122,7 +126,7 @@ func (p *PrivateKeyRingFolder) Latest(id IssuerIdentifier) (*gabi.PrivateKey, er
 		return nil, err
 	}
 	if sk == nil {
-		return nil, os.ErrNotExist
+		return nil, ErrMissingPrivateKey
 	}
 	return sk, nil
 }
@@ -178,7 +182,7 @@ func (p *privateKeyRingScheme) Latest(id IssuerIdentifier) (*gabi.PrivateKey, er
 		return nil, err
 	}
 	if len(counters) == 0 {
-		return nil, os.ErrNotExist
+		return nil, ErrMissingPrivateKey
 	}
 	return p.Get(id, counters[len(counters)-1])
 }
@@ -214,7 +218,7 @@ func (p *privateKeyRingMerge) Get(id IssuerIdentifier, counter uint) (*gabi.Priv
 			return nil, err
 		}
 	}
-	return nil, os.ErrNotExist
+	return nil, ErrMissingPrivateKey
 }
 
 func (p *privateKeyRingMerge) Latest(id IssuerIdentifier) (*gabi.PrivateKey, error) {
@@ -229,7 +233,7 @@ func (p *privateKeyRingMerge) Latest(id IssuerIdentifier) (*gabi.PrivateKey, err
 		}
 	}
 	if sk == nil {
-		return nil, os.ErrNotExist
+		return nil, ErrMissingPrivateKey
 	}
 	return sk, nil
 }
