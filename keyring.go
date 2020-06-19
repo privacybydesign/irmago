@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -62,28 +63,45 @@ func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingF
 	ring := &PrivateKeyRingFolder{path, conf}
 	for _, file := range files {
 		filename := file.Name()
-		dotcount := strings.Count(filename, ".")
-		// filename format may be scheme.issuer.xml or scheme.issuer.counter.xml; skip any other file
-		if filepath.Ext(filename) != ".xml" || filename[0] == '.' || dotcount < 2 || dotcount > 3 {
-			Logger.WithField("file", filename).Infof("Skipping non-private key file encountered in private keys path")
-			continue
-		}
-		counter := -1
-		base := strings.TrimSuffix(filename, filepath.Ext(filename)) // strip .xml
-		if dotcount == 3 {
-			index := strings.LastIndex(base, ".")
-			counter, err = strconv.Atoi(base[index+1:])
-			base = base[:index]
-		}
-		sk, err := ring.readFile(filename, NewIssuerIdentifier(base))
+		issuerid, counter, err := ring.parseFilename(filename)
 		if err != nil {
 			return nil, err
 		}
-		if counter >= 0 && uint(counter) != sk.Counter {
+		if issuerid == nil {
+			Logger.WithField("file", filename).Infof("Skipping non-private key file encountered in private keys path")
+			continue
+		}
+		sk, err := ring.readFile(filename, *issuerid)
+		if err != nil {
+			return nil, err
+		}
+		if counter != nil && *counter != sk.Counter {
 			return nil, errors.Errorf("private key %s has wrong counter %d in filename, should be %d", filename, counter, sk.Counter)
 		}
 	}
 	return ring, nil
+}
+
+func (_ *PrivateKeyRingFolder) parseFilename(filename string) (*IssuerIdentifier, *uint, error) {
+	// This regexp returns one of the following:
+	// [ "foo.bar.xml", "foo.bar", "", "" ] in case of "foo.bar.xml"
+	// [ "foo.bar.xml", "foo.bar", ".2", "2" ] in case of "foo.bar.2.xml"
+	// nil in case of other files.
+	matches := regexp.MustCompile(`^([^.]+\.[^.]+)(\.(\d+))?\.xml$`).FindStringSubmatch(filename)
+
+	if len(matches) != 4 {
+		return nil, nil, nil
+	}
+	issuerid := NewIssuerIdentifier(matches[1])
+	if matches[3] == "" {
+		return &issuerid, nil, nil
+	}
+	counter, err := strconv.ParseUint(matches[3], 10, 32)
+	if err != nil {
+		return nil, nil, err
+	}
+	c := uint(counter)
+	return &issuerid, &c, nil
 }
 
 func (p *PrivateKeyRingFolder) readFile(filename string, id IssuerIdentifier) (*gabi.PrivateKey, error) {
