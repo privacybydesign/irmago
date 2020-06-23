@@ -69,10 +69,25 @@ type CredentialType struct {
 	RevocationServers     []string         `xml:"RevocationServers>RevocationServer"`
 	RevocationUpdateCount uint64
 	RevocationUpdateSpeed uint64
-	RevocationIndex       int              `xml:"-"`
-	XMLVersion            int              `xml:"version,attr"`
-	XMLName               xml.Name         `xml:"IssueSpecification"`
-	IssueURL              TranslatedString `xml:"IssueURL"`
+	RevocationIndex       int      `xml:"-"`
+	XMLVersion            int      `xml:"version,attr"`
+	XMLName               xml.Name `xml:"IssueSpecification"`
+
+	IssueURL     TranslatedString `xml:"IssueURL"`
+	IsULIssueURL bool             `xml:"IsULIssueURL"`
+
+	DeprecatedSince Timestamp
+
+	ForegroundColor         string
+	BackgroundGradientStart string
+	BackgroundGradientEnd   string
+
+	IsInCredentialStore bool
+	Category            TranslatedString
+	FAQIntro            TranslatedString
+	FAQPurpose          TranslatedString
+	FAQContent          TranslatedString
+	FAQHowto            TranslatedString
 
 	Valid bool `xml:"-"`
 }
@@ -86,8 +101,9 @@ type AttributeType struct {
 
 	RandomBlind bool `xml:"randomblind,attr,optional" json:",omitempty"`
 
-	Index        int  `xml:"-"`
-	DisplayIndex *int `xml:"displayIndex,attr" json:",omitempty"`
+	Index        int    `xml:"-"`
+	DisplayIndex *int   `xml:"displayIndex,attr" json:",omitempty"`
+	DisplayHint  string `xml:"displayHint,attr"  json:",omitempty"`
 
 	RevocationAttribute bool `xml:"revocation,attr" json:",omitempty"`
 

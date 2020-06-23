@@ -8,6 +8,8 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+
+	"github.com/go-errors/errors"
 )
 
 const (
@@ -40,27 +42,35 @@ type MetadataAttribute struct {
 // AttributeList contains attributes, excluding the secret key,
 // providing convenient access to the metadata attribute.
 type AttributeList struct {
-	*MetadataAttribute `json:"-"`
-	Ints               []*big.Int
-	Revoked            bool `json:",omitempty"`
-	strings            []TranslatedString
-	attrMap            map[AttributeTypeIdentifier]TranslatedString
-	info               *CredentialInfo
-	h                  string
+	*MetadataAttribute  `json:"-"`
+	Ints                []*big.Int
+	Revoked             bool `json:",omitempty"`
+	RevocationSupported bool `json:",omitempty"`
+	strings             []TranslatedString
+	attrMap             map[AttributeTypeIdentifier]TranslatedString
+	info                *CredentialInfo
+	h                   string
 }
 
 // NewAttributeListFromInts initializes a new AttributeList from a list of bigints.
 func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeList {
-	al := &AttributeList{
-		Ints:              ints,
-		MetadataAttribute: MetadataFromInt(ints[0], conf),
+	metadata := MetadataFromInt(ints[0], conf)
+	credtype := metadata.CredentialType()
+	idx := credtype.RevocationIndex + 1
+	var rev bool
+	if credtype != nil {
+		rev = len(ints) > idx && ints[idx] != nil && ints[idx].Cmp(bigZero) != 0
 	}
-	return al
+	return &AttributeList{
+		Ints:                ints,
+		MetadataAttribute:   metadata,
+		RevocationSupported: rev,
+	}
 }
 
 func (al *AttributeList) Info() *CredentialInfo {
 	if al.info == nil {
-		al.info = NewCredentialInfo(al.Ints, al.Conf)
+		al.info = al.CredentialInfo()
 	}
 	al.info.Revoked = al.Revoked
 	return al.info
@@ -94,11 +104,11 @@ func (al *AttributeList) Hash() string {
 	return al.h
 }
 
-func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]TranslatedString {
+func (al *AttributeList) Map() map[AttributeTypeIdentifier]TranslatedString {
 	if al.attrMap == nil {
 		al.attrMap = make(map[AttributeTypeIdentifier]TranslatedString)
 		ctid := al.CredentialType().Identifier()
-		attrTypes := conf.CredentialTypes[ctid].AttributeTypes
+		attrTypes := al.Conf.CredentialTypes[ctid].AttributeTypes
 		for i, val := range al.Strings() {
 			if attrTypes[i].RevocationAttribute || attrTypes[i].RandomBlind {
 				continue
@@ -197,17 +207,18 @@ func MetadataFromInt(i *big.Int, conf *Configuration) *MetadataAttribute {
 func NewMetadataAttribute(version byte) *MetadataAttribute {
 	val := MetadataAttribute{new(big.Int), nil, nil}
 	val.setField(versionField, []byte{version})
-	val.setSigningDate()
+	val.setSigningDate(time.Now())
 	val.setKeyCounter(0)
 	val.setDefaultValidityDuration()
 	return &val
 }
 
 // Bytes returns this metadata attribute as a byte slice.
+// Bigint's Bytes() method returns a big-endian byte slice, so add padding at begin.
 func (attr *MetadataAttribute) Bytes() []byte {
 	bytes := attr.Int.Bytes()
 	if len(bytes) < metadataLength {
-		bytes = append(bytes, make([]byte, metadataLength-len(bytes))...)
+		bytes = append(make([]byte, metadataLength-len(bytes)), bytes...)
 	}
 	return bytes
 }
@@ -238,8 +249,8 @@ func (attr *MetadataAttribute) SigningDate() time.Time {
 	return time.Unix(timestamp, 0)
 }
 
-func (attr *MetadataAttribute) setSigningDate() {
-	attr.setField(signingDateField, shortToByte(uint(time.Now().Unix()/ExpiryFactor)))
+func (attr *MetadataAttribute) setSigningDate(issuedAt time.Time) {
+	attr.setField(signingDateField, shortToByte(uint(issuedAt.Unix()/ExpiryFactor)))
 }
 
 // KeyCounter return the public key counter of the metadata attribute
@@ -267,13 +278,14 @@ func (attr *MetadataAttribute) setDefaultValidityDuration() {
 }
 
 func (attr *MetadataAttribute) setExpiryDate(timestamp *Timestamp) error {
+	signingTimestamp := attr.SigningDate()
 	var expiry int64
 	if timestamp == nil {
-		expiry = time.Now().AddDate(0, 6, 0).Unix()
+		expiry = signingTimestamp.AddDate(0, 6, 0).Unix()
 	} else {
 		expiry = time.Time(*timestamp).Unix()
 	}
-	signing := attr.SigningDate().Unix()
+	signing := signingTimestamp.Unix()
 	if expiry-signing < 0 {
 		return errors.New("cannot set expired date")
 	}

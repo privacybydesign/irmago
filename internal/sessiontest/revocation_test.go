@@ -1,3 +1,5 @@
+// +build !local_tests
+
 package sessiontest
 
 import (
@@ -29,10 +31,6 @@ var (
 	revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
 
 	revocationPkCounter uint = 2
-	revocationTestAttr       = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
-	revocationTestCred       = revocationTestAttr.CredentialTypeIdentifier()
-	revKeyshareTestAttr      = irma.NewAttributeTypeIdentifier("test.test.email.email")
-	revKeyshareTestCred      = revKeyshareTestAttr.CredentialTypeIdentifier()
 )
 
 func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler) {
@@ -82,17 +80,15 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	logger.Info("step 5")
 	result = revocationSession(t, client, request, sessionOptionUnsatisfiableRequest)
 	require.NotEmpty(t, result.Missing)
+	require.NotNil(t, result.Dismisser)
+	result.Dismisser.Dismiss()
 	// client revocation callback was called
 	require.NotNil(t, handler.(*TestClientHandler).revoked)
 	require.Equal(t, credid, handler.(*TestClientHandler).revoked.Type)
-	// credential is no longer suggested as candidate
-	candidates, missing, err := client.Candidates(
-		revocationRequest(attr).Base(),
-		irma.AttributeDisCon{{{Type: attr}}},
-	)
+	// credential is no longer available as candidate
+	_, satisfiable, err := client.Candidates(request)
 	require.NoError(t, err)
-	require.Empty(t, candidates)
-	require.NotEmpty(t, missing)
+	require.False(t, satisfiable)
 }
 
 func TestRevocationAll(t *testing.T) {
@@ -177,7 +173,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("POSTUpdates", func(t *testing.T) {
 		startRevocationServer(t, true)
 		defer stopRevocationServer()
-		StartIrmaServer(t, false)
+		StartIrmaServer(t, false, "")
 		defer StopIrmaServer()
 
 		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SyncDB(revocationTestCred))
@@ -250,10 +246,12 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, uint64(0), events[len(events)-1].Index)
 
 		// Construct disclosure proof with nonrevocation proof against accumulator with index 0
-		candidates, missing, err := client.CheckSatisfiability(request)
+		candidates, satisfiable, err := client.Candidates(request)
 		require.NoError(t, err)
-		require.Empty(t, missing)
-		choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{candidates[0][0]}}
+		require.True(t, satisfiable)
+		ids, err := candidates[0][0].Choose()
+		require.NoError(t, err)
+		choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{ids}}
 		disclosure, _, err := client.Proofs(choice, request)
 		require.NoError(t, err)
 		proofAcc, err := disclosure.Proofs[0].(*gabi.ProofD).NonRevocationProof.SignedAccumulator.UnmarshalVerify(pk)
@@ -339,7 +337,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, client.NonrevUpdateFromServer(revocationTestCred))
 
 		// Start an IRMA server and let it update at revocation server
-		StartIrmaServer(t, false)
+		StartIrmaServer(t, false, "")
 		defer StopIrmaServer()
 		conf = irmaServerConfiguration.IrmaConfiguration.Revocation
 		require.NoError(t, conf.SyncDB(revocationTestCred))
@@ -362,7 +360,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("SameIrmaServer", func(t *testing.T) {
-		StartIrmaServer(t, false)
+		StartIrmaServer(t, false, "")
 		defer StopIrmaServer()
 
 		// issue a credential, populating irmaServer's revocation memdb
@@ -556,7 +554,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Start irma server and hackily temporarily disable revocation for our credtype
 		// by editing its irma.Configuration instance
-		StartIrmaServer(t, false)
+		StartIrmaServer(t, false, "")
 		defer StopIrmaServer()
 		conf := irmaServerConfiguration.IrmaConfiguration
 		credtyp := conf.CredentialTypes[revocationTestCred]
@@ -698,11 +696,12 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 
 func revocationConf(_ *testing.T) *server.Configuration {
 	return &server.Configuration{
-		URL:                  "http://localhost:48683",
-		Logger:               logger,
-		EnableSSE:            true,
-		DisableSchemesUpdate: true,
-		SchemesPath:          filepath.Join(testdata, "irma_configuration"),
+		URL:                   "http://localhost:48683",
+		Logger:                logger,
+		EnableSSE:             true,
+		DisableSchemesUpdate:  true,
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:  {Authority: true},
 			revKeyshareTestCred: {Authority: true},

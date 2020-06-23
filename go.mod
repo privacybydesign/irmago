@@ -3,7 +3,6 @@ module github.com/privacybydesign/irmago
 go 1.13
 
 require (
-	astuart.co/go-sse v0.0.0-20200223201439-6cc042ab6f6d
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/alexandrevicenzi/go-sse v1.3.1-0.20200117161408-7b23d5ff7420
 	github.com/bwesterb/go-atum v1.0.0
@@ -22,7 +21,6 @@ require (
 	github.com/jasonlvhit/gocron v0.0.0-20180312192515-54194c9749d4
 	github.com/jinzhu/gorm v1.9.12
 	github.com/lib/pq v1.3.0 // indirect
-	github.com/magiconair/properties v1.8.0 // indirect
 	github.com/mattn/go-colorable v0.0.9 // indirect
 	github.com/mattn/go-isatty v0.0.4 // indirect
 	github.com/mdp/qrterminal v1.0.1
@@ -31,8 +29,9 @@ require (
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
-	github.com/pkg/errors v0.8.0
+	github.com/pkg/errors v0.8.1
 	github.com/privacybydesign/gabi v0.0.0-20200623124015-624da89c8543
+	github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.0 // indirect
 	github.com/spf13/cast v1.3.0
@@ -47,8 +46,6 @@ require (
 	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72 // indirect
 )
 
-replace astuart.co/go-sse => github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
-
 replace github.com/spf13/pflag => github.com/sietseringers/pflag v1.0.4-0.20190111213756-a45bfec10d59
 
-replace github.com/spf13/viper => github.com/sietseringers/viper v1.0.1-0.20200205174444-d996804203c7
+replace github.com/spf13/viper => github.com/sietseringers/viper v1.0.1-0.20200501103550-1e89975c9328

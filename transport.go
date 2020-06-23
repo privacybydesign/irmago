@@ -10,9 +10,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
@@ -25,11 +27,14 @@ import (
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
-	Server  string
-	Binary  bool
-	client  *retryablehttp.Client
-	headers map[string]string
+	Server     string
+	Binary     bool
+	ForceHTTPS bool
+	client     *retryablehttp.Client
+	headers    http.Header
 }
+
+var HTTPHeaders = map[string]http.Header{}
 
 // Logger is used for logging. If not set, init() will initialize it to logrus.StandardLogger().
 var Logger *logrus.Logger
@@ -54,16 +59,15 @@ func SetLogger(logger *logrus.Logger) {
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
-func NewHTTPTransport(serverURL string) *HTTPTransport {
+func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	if Logger.IsLevelEnabled(logrus.TraceLevel) {
 		transportlogger = log.New(Logger.WriterLevel(logrus.TraceLevel), "transport: ", 0)
 	} else {
 		transportlogger = log.New(ioutil.Discard, "", 0)
 	}
 
-	url := serverURL
-	if serverURL != "" && !strings.HasSuffix(url, "/") { // TODO fix this
-		url += "/"
+	if serverURL != "" && !strings.HasSuffix(serverURL, "/") {
+		serverURL += "/"
 	}
 
 	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS)
@@ -96,10 +100,22 @@ func NewHTTPTransport(serverURL string) *HTTPTransport {
 		},
 	}
 
+	var host string
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		Logger.Warnf("failed to parse URL %s: %s", serverURL, err.Error())
+	} else {
+		host = u.Host
+	}
+	headers := HTTPHeaders[host].Clone()
+	if headers == nil {
+		headers = http.Header{}
+	}
 	return &HTTPTransport{
-		Server:  url,
-		headers: map[string]string{},
-		client:  client,
+		Server:     serverURL,
+		ForceHTTPS: forceHTTPS,
+		headers:    headers,
+		client:     client,
 	}
 }
 
@@ -148,26 +164,26 @@ func (transport *HTTPTransport) log(prefix string, message interface{}, binary b
 
 // SetHeader sets a header to be sent in requests.
 func (transport *HTTPTransport) SetHeader(name, val string) {
-	transport.headers[name] = val
+	transport.headers.Set(name, val)
 }
 
 func (transport *HTTPTransport) request(
 	url string, method string, reader io.Reader, contenttype string,
 ) (response *http.Response, err error) {
 	var req retryablehttp.Request
-	req.Request, err = http.NewRequest(method, transport.Server+url, reader)
+	u := transport.Server + url
+	if common.ForceHTTPS && transport.ForceHTTPS && !strings.HasPrefix(u, "https") {
+		return nil, &SessionError{ErrorType: ErrorHTTPS, Err: errors.New("remote server does not use https")}
+	}
+	req.Request, err = http.NewRequest(method, u, reader)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
-
+	req.Header = transport.headers.Clone()
 	req.Header.Set("User-Agent", "irmago")
 	if reader != nil && contenttype != "" {
 		req.Header.Set("Content-Type", contenttype)
 	}
-	for name, val := range transport.headers {
-		req.Header.Set(name, val)
-	}
-
 	res, err := transport.client.Do(&req)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}

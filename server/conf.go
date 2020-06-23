@@ -4,16 +4,13 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -35,8 +32,6 @@ type Configuration struct {
 	SchemesUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
 	// Path to issuer private keys to parse
 	IssuerPrivateKeysPath string `json:"privkeys" mapstructure:"privkeys"`
-	// Issuer private keys
-	IssuerPrivateKeys map[irma.IssuerIdentifier]map[uint]*gabi.PrivateKey `json:"-"`
 	// URL at which the IRMA app can reach this server during sessions
 	URL string `json:"url" mapstructure:"url"`
 	// Required to be set to true if URL does not begin with https:// in production mode.
@@ -103,7 +98,7 @@ func (conf *Configuration) Check() error {
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
-			if conf.IrmaConfiguration != nil {
+			if conf.IrmaConfiguration != nil && conf.IrmaConfiguration.Revocation != nil {
 				if e := conf.IrmaConfiguration.Revocation.Close(); e != nil {
 					_ = LogError(e)
 				}
@@ -118,7 +113,10 @@ func (conf *Configuration) Check() error {
 func (conf *Configuration) HavePrivateKeys() bool {
 	var err error
 	for id := range conf.IrmaConfiguration.Issuers {
-		if _, err = conf.IrmaConfiguration.PrivateKeyLatest(id); err == nil {
+		if conf.IrmaConfiguration.SchemeManagers[id.SchemeManagerIdentifier()].Demo {
+			continue
+		}
+		if _, err = conf.IrmaConfiguration.PrivateKeys.Latest(id); err == nil {
 			return true
 		}
 	}
@@ -183,11 +181,6 @@ func (conf *Configuration) verifyIrmaConf() error {
 		}
 	}
 
-	// Put private keys into conf.IrmaConfiguration so we can use conf.IrmaConfiguration.PrivateKey()
-	if len(conf.IssuerPrivateKeys) > 0 {
-		conf.IrmaConfiguration.PrivateKeys = conf.IssuerPrivateKeys
-	}
-
 	if len(conf.IrmaConfiguration.SchemeManagers) == 0 {
 		conf.Logger.Infof("No schemes found in %s, downloading default (irma-demo and pbdf)", conf.SchemesPath)
 		if err := conf.IrmaConfiguration.DownloadDefaultSchemes(); err != nil {
@@ -205,102 +198,45 @@ func (conf *Configuration) verifyIrmaConf() error {
 }
 
 func (conf *Configuration) verifyPrivateKeys() error {
-	if conf.IssuerPrivateKeys == nil {
-		conf.IssuerPrivateKeys = make(map[irma.IssuerIdentifier]map[uint]*gabi.PrivateKey)
+	if conf.IssuerPrivateKeysPath == "" {
+		return nil
 	}
-	if conf.IssuerPrivateKeysPath != "" {
-		files, err := ioutil.ReadDir(conf.IssuerPrivateKeysPath)
-		if err != nil {
-			return err
-		}
-		for _, file := range files {
-			filename := file.Name()
-			dotcount := strings.Count(filename, ".")
-			if filepath.Ext(filename) != ".xml" || filename[0] == '.' || dotcount < 2 || dotcount > 3 {
-				conf.Logger.WithField("file", filename).Infof("Skipping non-private key file encountered in private keys path")
-				continue
-			}
-			base := strings.TrimSuffix(filename, filepath.Ext(filename))
-			counter := -1
-			var err error
-			if dotcount == 3 {
-				index := strings.LastIndex(base, ".")
-				counter, err = strconv.Atoi(base[index+1:])
-				if err != nil {
-					return err
-				}
-				base = base[:index]
-			}
-
-			issid := irma.NewIssuerIdentifier(base) // strip .xml
-			if _, ok := conf.IrmaConfiguration.Issuers[issid]; !ok {
-				return errors.Errorf("Private key %s belongs to an unknown issuer", filename)
-			}
-			sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(conf.IssuerPrivateKeysPath, filename))
-			if err != nil {
-				return err
-			}
-			if counter >= 0 && uint(counter) != sk.Counter {
-				return errors.Errorf("private key %s has wrong counter %d in filename, should be %d", filename, counter, sk.Counter)
-			}
-			if len(conf.IssuerPrivateKeys[issid]) == 0 {
-				conf.IssuerPrivateKeys[issid] = map[uint]*gabi.PrivateKey{}
-			}
-			conf.IssuerPrivateKeys[issid][sk.Counter] = sk
-		}
+	ring, err := irma.NewPrivateKeyRingFolder(conf.IssuerPrivateKeysPath, conf.IrmaConfiguration)
+	if err != nil {
+		return err
 	}
-	for issid := range conf.IssuerPrivateKeys {
-		for _, sk := range conf.IssuerPrivateKeys[issid] {
-			pk, err := conf.IrmaConfiguration.PublicKey(issid, sk.Counter)
-			if err != nil {
-				return err
-			}
-			if pk == nil {
-				return errors.Errorf("Missing public key belonging to private key %s-%d", issid.String(), sk.Counter)
-			}
-			if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-				return errors.Errorf("Private key %s-%d does not belong to corresponding public key", issid.String(), sk.Counter)
-			}
-		}
-	}
-
-	return nil
+	return conf.IrmaConfiguration.AddPrivateKeyRing(ring)
 }
 
 func (conf *Configuration) prepareRevocation(credid irma.CredentialTypeIdentifier) error {
-	sks, err := conf.IrmaConfiguration.PrivateKeyIndices(credid.IssuerIdentifier())
-	if err != nil {
-		return errors.WrapPrefix(err, "failed to load private key indices for revocation", 0)
-	}
-	if len(sks) == 0 {
-		return errors.Errorf("revocation server mode enabled for %s but no private key installed", credid)
-	}
-
-	rev := conf.IrmaConfiguration.Revocation
-	for _, skcounter := range sks {
-		isk, err := conf.IrmaConfiguration.PrivateKey(credid.IssuerIdentifier(), skcounter)
-		if err != nil {
-			return errors.WrapPrefix(err, fmt.Sprintf("failed to load private key %s-%d for revocation", credid, skcounter), 0)
-		}
+	var sk *revocation.PrivateKey
+	err := conf.IrmaConfiguration.PrivateKeys.Iterate(credid.IssuerIdentifier(), func(isk *gabi.PrivateKey) error {
 		if !isk.RevocationSupported() {
-			continue
+			return nil
 		}
-		sk, err := isk.RevocationKey()
+		s, err := isk.RevocationKey()
 		if err != nil {
-			return errors.WrapPrefix(err, fmt.Sprintf("failed to load revocation private key %s-%d", credid, skcounter), 0)
+			return errors.WrapPrefix(err, fmt.Sprintf("failed to load revocation private key %s-%d", credid, isk.Counter), 0)
 		}
-		exists, err := rev.Exists(credid, skcounter)
+		sk = s
+		exists, err := conf.IrmaConfiguration.Revocation.Exists(credid, isk.Counter)
 		if err != nil {
-			return errors.WrapPrefix(err, fmt.Sprintf("failed to check if accumulator exists for %s-%d", credid, skcounter), 0)
+			return errors.WrapPrefix(err, fmt.Sprintf("failed to check if accumulator exists for %s-%d", credid, isk.Counter), 0)
 		}
 		if !exists {
-			conf.Logger.Warnf("Creating initial accumulator for %s-%d", credid, skcounter)
+			conf.Logger.Warnf("Creating initial accumulator for %s-%d", credid, isk.Counter)
 			if err := conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
-				return errors.WrapPrefix(err, fmt.Sprintf("failed create initial accumulator for %s-%d", credid, skcounter), 0)
+				return errors.WrapPrefix(err, fmt.Sprintf("failed create initial accumulator for %s-%d", credid, isk.Counter), 0)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-
+	if sk == nil {
+		return errors.Errorf("revocation server mode enabled for %s but no private key installed", credid)
+	}
 	return nil
 }
 
@@ -389,7 +325,7 @@ func (conf *Configuration) verifyEmail() error {
 		if !strings.Contains(conf.Email, "@") || strings.Contains(conf.Email, "\n") {
 			return errors.New("Invalid email address specified")
 		}
-		t := irma.NewHTTPTransport("https://metrics.privacybydesign.foundation/history")
+		t := irma.NewHTTPTransport("https://metrics.privacybydesign.foundation/history", true)
 		t.SetHeader("User-Agent", "irmaserver")
 		var x string
 		_ = t.Post("email", &x, conf.Email)

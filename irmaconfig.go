@@ -32,7 +32,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -46,9 +45,7 @@ type Configuration struct {
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 
-	// Issuer private keys. If set (after calling ParseFolder()), will use these keys
-	// instead of keys in irma_configuration/$issuer/PrivateKeys.
-	PrivateKeys map[IssuerIdentifier]map[uint]*gabi.PrivateKey
+	PrivateKeys PrivateKeyRing
 
 	Revocation *RevocationStorage `json:"-"`
 
@@ -61,7 +58,7 @@ type Configuration struct {
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
 	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
 
-	Warnings []string
+	Warnings []string `json:"-"`
 
 	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
 	publicKeys    map[IssuerIdentifier]map[uint]*gabi.PublicKey
@@ -160,8 +157,10 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
-	conf.PrivateKeys = make(map[IssuerIdentifier]map[uint]*gabi.PrivateKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
+	if conf.PrivateKeys == nil { // keep if already populated
+		conf.PrivateKeys = &privateKeyRingMerge{}
+	}
 }
 
 // ParseFolder populates the current Configuration by parsing the storage path,
@@ -207,6 +206,14 @@ func (conf *Configuration) ParseFolder() (err error) {
 	})
 	if err != nil {
 		return
+	}
+
+	if len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
+		ring, err := newPrivateKeyRingScheme(conf)
+		if err != nil {
+			return err
+		}
+		conf.PrivateKeys.(*privateKeyRingMerge).Add(ring)
 	}
 
 	if conf.Revocation == nil {
@@ -329,42 +336,12 @@ func (conf *Configuration) ParseSchemeManagerFolder(dir string, manager *SchemeM
 	return
 }
 
-// PrivateKey returns the specified private key of the specified issuer if present; an error otherwise.
-func (conf *Configuration) PrivateKey(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
-	if _, haveIssuer := conf.PrivateKeys[id]; haveIssuer {
-		if sk := conf.PrivateKeys[id][counter]; sk != nil {
-			return sk, nil
-		}
+func (conf *Configuration) AddPrivateKeyRing(ring PrivateKeyRing) error {
+	if err := validatePrivateKeyRing(ring, conf); err != nil {
+		return err
 	}
-
-	path := fmt.Sprintf(privkeyPattern, conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
-	file := strings.Replace(path, "*", strconv.FormatUint(uint64(counter), 10), 1)
-	sk, err := gabi.NewPrivateKeyFromFile(file)
-	if err != nil {
-		return nil, err
-	}
-	if sk.Counter != counter {
-		return nil, errors.Errorf("Private key %s of issuer %s has wrong <Counter>", file, id.String())
-	}
-
-	if conf.PrivateKeys[id] == nil {
-		conf.PrivateKeys[id] = make(map[uint]*gabi.PrivateKey)
-	}
-	conf.PrivateKeys[id][counter] = sk
-
-	return sk, nil
-}
-
-// PrivateKeyLatest returns the latest private key of the specified issuer.
-func (conf *Configuration) PrivateKeyLatest(id IssuerIdentifier) (*gabi.PrivateKey, error) {
-	indices, err := conf.PrivateKeyIndices(id)
-	if err != nil {
-		return nil, err
-	}
-	if len(indices) == 0 {
-		return nil, errors.New("no private keys found")
-	}
-	return conf.PrivateKey(id, indices[len(indices)-1])
+	conf.PrivateKeys.(*privateKeyRingMerge).Add(ring)
+	return nil
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
@@ -454,15 +431,6 @@ func (conf *Configuration) IsInitialized() bool {
 	return conf.initialized
 }
 
-// Prune removes any invalid scheme managers and everything they own from this Configuration
-func (conf *Configuration) Prune() {
-	for _, manager := range conf.SchemeManagers {
-		if !manager.Valid {
-			_ = conf.RemoveSchemeManager(manager.Identifier(), false) // does not return errors
-		}
-	}
-}
-
 func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path string) error {
 	return common.IterateSubfolders(path, func(dir string, _ os.FileInfo) error {
 		issuer := &Issuer{}
@@ -488,6 +456,10 @@ func (conf *Configuration) parseIssuerFolders(manager *SchemeManager, path strin
 }
 
 func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error {
+	if conf.readOnly {
+		return errors.New("cannot delete scheme from a read-only configuration")
+	}
+
 	delete(conf.SchemeManagers, id)
 	delete(conf.DisabledSchemeManagers, id)
 	name := id.String()
@@ -506,10 +478,8 @@ func (conf *Configuration) DeleteSchemeManager(id SchemeManagerIdentifier) error
 			delete(conf.CredentialTypes, cred)
 		}
 	}
-	if !conf.readOnly {
-		return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
-	}
-	return nil
+
+	return os.RemoveAll(filepath.Join(conf.Path, id.Name()))
 }
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
@@ -555,40 +525,12 @@ func sorter(ints []uint) func(i, j int) bool {
 	return func(i, j int) bool { return ints[i] < ints[j] }
 }
 
-// unionset returns the concatenation of a and b, without duplicates, and sorted.
-func unionset(a, b []uint) []uint {
-	m := map[uint]struct{}{}
-	for _, c := range [][]uint{a, b} {
-		for _, i := range c {
-			m[i] = struct{}{}
-		}
-	}
-	var ints []uint
-	for i := range m {
-		ints = append(ints, i)
-	}
-	sort.Slice(ints, sorter(ints))
-	return ints
-}
-
-func (conf *Configuration) PrivateKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
-	filekeys, err := conf.matchKeyPattern(issuerid, privkeyPattern)
-	if err != nil {
-		return nil, err
-	}
-	var mapkeys []uint
-	for _, sk := range conf.PrivateKeys[issuerid] {
-		mapkeys = append(mapkeys, sk.Counter)
-	}
-	return unionset(filekeys, mapkeys), nil
-}
-
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
-	return conf.matchKeyPattern(issuerid, pubkeyPattern)
+	return matchKeyPattern(conf.Path, issuerid, pubkeyPattern)
 }
 
-func (conf *Configuration) matchKeyPattern(issuerid IssuerIdentifier, pattern string) (ints []uint, err error) {
-	pkpath := fmt.Sprintf(pattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+func matchKeyPattern(path string, issuerid IssuerIdentifier, pattern string) (ints []uint, err error) {
+	pkpath := fmt.Sprintf(pattern, path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
 	files, err := filepath.Glob(pkpath)
 	if err != nil {
 		return
@@ -727,7 +669,7 @@ func (conf *Configuration) CopyManagerFromAssets(scheme SchemeManagerIdentifier)
 // DownloadSchemeManager downloads and returns a scheme manager description.xml file
 // from the specified URL.
 func DownloadSchemeManager(url string) (*SchemeManager, error) {
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+	if !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
 	if url[len(url)-1] == '/' {
@@ -736,7 +678,7 @@ func DownloadSchemeManager(url string) (*SchemeManager, error) {
 	if strings.HasSuffix(url, "/description.xml") {
 		url = url[:len(url)-len("/description.xml")]
 	}
-	b, err := NewHTTPTransport(url).GetBytes("description.xml")
+	b, err := NewHTTPTransport(url, true).GetBytes("description.xml")
 	if err != nil {
 		return nil, err
 	}
@@ -745,35 +687,7 @@ func DownloadSchemeManager(url string) (*SchemeManager, error) {
 		return nil, err
 	}
 
-	manager.URL = url // TODO?
 	return manager, nil
-}
-
-// RemoveSchemeManager removes the specified scheme manager and all associated issuers,
-// public keys and credential types from this Configuration.
-func (conf *Configuration) RemoveSchemeManager(id SchemeManagerIdentifier, fromStorage bool) error {
-	// Remove everything falling under the manager's responsibility
-	for credid := range conf.CredentialTypes {
-		if credid.IssuerIdentifier().SchemeManagerIdentifier() == id {
-			delete(conf.CredentialTypes, credid)
-		}
-	}
-	for issid := range conf.Issuers {
-		if issid.SchemeManagerIdentifier() == id {
-			delete(conf.Issuers, issid)
-		}
-	}
-	for issid := range conf.publicKeys {
-		if issid.SchemeManagerIdentifier() == id {
-			delete(conf.publicKeys, issid)
-		}
-	}
-	delete(conf.SchemeManagers, id)
-
-	if fromStorage || !conf.readOnly {
-		return os.RemoveAll(fmt.Sprintf("%s/%s", conf.Path, id.String()))
-	}
-	return nil
 }
 
 func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err error) {
@@ -787,29 +701,42 @@ func (conf *Configuration) ReinstallSchemeManager(manager *SchemeManager) (err e
 	if err != nil {
 		return
 	}
+	pkbts, err := ioutil.ReadFile(filepath.Join(conf.Path, manager.ID, "pk.pem"))
+	if err != nil {
+		return err
+	}
 	if err = conf.DeleteSchemeManager(manager.Identifier()); err != nil {
 		return
 	}
-	err = conf.InstallSchemeManager(manager, nil)
+	err = conf.InstallSchemeManager(manager, pkbts)
 	return
 }
 
+// DangerousTOFUInstallSchemeManager downloads and adds the specified scheme to this Configuration,
+// downloading and trusting its public key from the scheme's remote URL.
+func (conf *Configuration) DangerousTOFUInstallSchemeManager(manager *SchemeManager) error {
+	return conf.installSchemeManager(manager, nil)
+}
+
 // InstallSchemeManager downloads and adds the specified scheme manager to this Configuration,
-// provided its signature is valid.
+// provided its signature is valid against the specified key.
 func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publickey []byte) error {
+	if len(publickey) == 0 {
+		return errors.New("no public key specified")
+	}
+	return conf.installSchemeManager(manager, publickey)
+}
+
+func (conf *Configuration) installSchemeManager(manager *SchemeManager, publickey []byte) error {
 	if conf.readOnly {
 		return errors.New("cannot install scheme into a read-only configuration")
 	}
-
 	name := manager.ID
 	if err := common.EnsureDirectoryExists(filepath.Join(conf.Path, name)); err != nil {
 		return err
 	}
+	t := NewHTTPTransport(manager.URL, true)
 
-	t := NewHTTPTransport(manager.URL)
-	if err := conf.downloadFile(t, name, "description.xml"); err != nil {
-		return err
-	}
 	if publickey != nil {
 		if err := common.SaveFile(filepath.Join(conf.Path, name, "pk.pem"), publickey); err != nil {
 			return err
@@ -818,6 +745,10 @@ func (conf *Configuration) InstallSchemeManager(manager *SchemeManager, publicke
 		if err := conf.downloadFile(t, name, "pk.pem"); err != nil {
 			return err
 		}
+	}
+
+	if err := conf.downloadFile(t, name, "description.xml"); err != nil {
+		return err
 	}
 	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
 		return err
@@ -837,7 +768,7 @@ func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager
 		return errors.New("cannot download into a read-only configuration")
 	}
 
-	t := NewHTTPTransport(manager.URL)
+	t := NewHTTPTransport(manager.URL, true)
 	if err = conf.downloadFile(t, manager.ID, "index"); err != nil {
 		return
 	}
@@ -1242,7 +1173,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 	}
 
 	// Check remote timestamp, verify it against the new index, and see if we have to do anything
-	transport := NewHTTPTransport(manager.URL + "/")
+	transport := NewHTTPTransport(manager.URL+"/", true)
 	err = conf.downloadSignedFile(transport, manager.ID, "timestamp", newIndex[manager.ID+"/timestamp"])
 	if err != nil {
 		return err
@@ -1543,34 +1474,6 @@ func (conf *Configuration) ValidateKeys() error {
 			if latest != nil && latest.ExpiryDate > now.Unix() && latest.ExpiryDate < now.Unix()+expiryBoundary {
 				conf.Warnings = append(conf.Warnings, fmt.Sprintf("Latest public key of issuer %s expires soon (at %s)",
 					issuerid.String(), time.Unix(latest.ExpiryDate, 0).String()))
-			}
-		}
-
-		// Check private keys if any
-		indices, err = conf.PrivateKeyIndices(issuerid)
-		if err != nil {
-			return err
-		}
-		for _, i := range indices {
-			sk, err := conf.PrivateKey(issuerid, i)
-			if err != nil {
-				return err
-			}
-			if sk.Counter != i {
-				return errors.Errorf("Private key %d of issuer %s has wrong <Counter>", i, issuerid.String())
-			}
-			pk, err := conf.PublicKey(issuerid, i)
-			if err != nil {
-				return err
-			}
-			if pk == nil {
-				return errors.Errorf("Private key %d of issuer %s has no corresponding public key", i, issuerid.String())
-			}
-			if new(big.Int).Mul(sk.P, sk.Q).Cmp(pk.N) != 0 {
-				return errors.Errorf("Private key %d of issuer %s does not belong to corresponding public key", i, issuerid.String())
-			}
-			if sk.RevocationSupported() != pk.RevocationSupported() {
-				return errors.Errorf("revocation support of private key %d of issuer %s is not consistent with corresponding public key", i, issuerid.String())
 			}
 		}
 

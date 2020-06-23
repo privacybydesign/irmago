@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
@@ -66,6 +66,13 @@ func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifie
 		i.t.Fatal(err)
 	}
 }
+func (i *TestClientHandler) ReportError(err error) {
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
 
 type TestHandler struct {
 	t                  *testing.T
@@ -104,15 +111,23 @@ func (th TestHandler) Failure(err *irma.SessionError) {
 	}
 }
 func (th TestHandler) ClientReturnURLSet(clientReturnUrl string) {}
-func (th TestHandler) UnsatisfiableRequest(request irma.SessionRequest, serverName irma.TranslatedString, missing irmaclient.MissingAttributes) {
-	th.Failure(&irma.SessionError{
-		ErrorType: irma.ErrorType("UnsatisfiableRequest"),
-	})
-}
-func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	if !satisfiable {
+		th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("UnsatisfiableRequest")})
+		return
+	}
 	var choice irma.DisclosureChoice
 	for _, cand := range candidates {
-		choice.Attributes = append(choice.Attributes, cand[0])
+		var ids []*irma.AttributeIdentifier
+		var err error
+		for _, c := range cand {
+			ids, err = c.Choose()
+			if err == nil {
+				break
+			}
+		}
+		require.NoError(th.t, err)
+		choice.Attributes = append(choice.Attributes, ids)
 	}
 	if len(th.expectedServerName) != 0 {
 		require.Equal(th.t, th.expectedServerName, ServerName)
@@ -122,11 +137,11 @@ func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequ
 	}
 	callback(true, &choice)
 }
-func (th TestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(&request.DisclosureRequest, candidates, ServerName, callback)
+func (th TestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	th.RequestVerificationPermission(&request.DisclosureRequest, satisfiable, candidates, ServerName, callback)
 }
-func (th TestHandler) RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(&request.DisclosureRequest, candidates, ServerName, callback)
+func (th TestHandler) RequestSignaturePermission(request *irma.SignatureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	th.RequestVerificationPermission(&request.DisclosureRequest, satisfiable, candidates, ServerName, callback)
 }
 func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(true)
@@ -139,20 +154,40 @@ type SessionResult struct {
 	Err              error
 	SignatureResult  *irma.SignedMessage
 	DisclosureResult *irma.Disclosure
-	Missing          irmaclient.MissingAttributes
+	Missing          [][]irmaclient.DisclosureCandidates
 }
 
+// UnsatisfiableTestHandler is a session handler that expects RequestVerificationPermission
+// to be called for an unsatisfiable session. If called a second time, it checks
+// that the session has beome satifsiable and finishes it.
 type UnsatisfiableTestHandler struct {
 	TestHandler
+	called bool
 }
 
-func (th UnsatisfiableTestHandler) UnsatisfiableRequest(request irma.SessionRequest, serverName irma.TranslatedString, missing irmaclient.MissingAttributes) {
-	th.c <- &SessionResult{Missing: missing}
+func (th *UnsatisfiableTestHandler) Success(result string) {
+	if !th.called {
+		th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded early")})
+	} else {
+		th.c <- nil
+	}
 }
 
-func (th UnsatisfiableTestHandler) Success(result string) {
-	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded")})
+func (th *UnsatisfiableTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName irma.TranslatedString, callback irmaclient.PermissionHandler) {
+	if !th.called {
+		if satisfiable {
+			th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Unsatisfiable request succeeded")})
+			return
+		}
+		th.called = true
+		th.c <- &SessionResult{Missing: candidates}
+	} else {
+		th.TestHandler.RequestVerificationPermission(request, satisfiable, candidates, ServerName, callback)
+	}
 }
+
+// Override TestHandler.Cancelled() so we can cancel future RequestVerificationPermission() invocations
+func (th *UnsatisfiableTestHandler) Cancelled() {}
 
 // ManualTestHandler embeds a TestHandler to inherit its methods.
 // Below we overwrite the methods that require behaviour specific to manual settings.
@@ -191,10 +226,10 @@ func (th *ManualTestHandler) Success(result string) {
 
 	th.c <- retval
 }
-func (th *ManualTestHandler) RequestSignaturePermission(request *irma.SignatureRequest, candidates [][][]*irma.AttributeIdentifier, requesterName irma.TranslatedString, ph irmaclient.PermissionHandler) {
-	th.RequestVerificationPermission(&request.DisclosureRequest, candidates, requesterName, ph)
+func (th *ManualTestHandler) RequestSignaturePermission(request *irma.SignatureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, requesterName irma.TranslatedString, ph irmaclient.PermissionHandler) {
+	th.RequestVerificationPermission(&request.DisclosureRequest, satisfiable, candidates, requesterName, ph)
 }
-func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, candidates [][][]*irma.AttributeIdentifier, issuerName irma.TranslatedString, ph irmaclient.PermissionHandler) {
+func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, issuerName irma.TranslatedString, ph irmaclient.PermissionHandler) {
 	ph(true, nil)
 }
 
@@ -202,10 +237,23 @@ func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceReq
 func (th *ManualTestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
-func (th *ManualTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, candidates [][][]*irma.AttributeIdentifier, verifierName irma.TranslatedString, ph irmaclient.PermissionHandler) {
+func (th *ManualTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, verifierName irma.TranslatedString, ph irmaclient.PermissionHandler) {
+	if !satisfiable {
+		th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("UnsatisfiableRequest")})
+		return
+	}
 	var choice irma.DisclosureChoice
 	for _, cand := range candidates {
-		choice.Attributes = append(choice.Attributes, cand[0])
+		var ids []*irma.AttributeIdentifier
+		var err error
+		for _, c := range cand {
+			ids, err = c.Choose()
+			if err == nil {
+				break
+			}
+		}
+		require.NoError(th.t, err)
+		choice.Attributes = append(choice.Attributes, ids)
 	}
 	ph(true, &choice)
 }

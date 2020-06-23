@@ -55,6 +55,17 @@ type LogOptions struct {
 	Response, Headers, From, EncodeBinary bool
 }
 
+// Remove this when dropping support for legacy pre-condiscon session requests
+type LegacySessionResult struct {
+	Token       string                     `json:"token"`
+	Status      Status                     `json:"status"`
+	Type        irma.Action                `json:"type"`
+	ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
+	Disclosed   []*irma.DisclosedAttribute `json:"disclosed,omitempty"`
+	Signature   *irma.SignedMessage        `json:"signature,omitempty"`
+	Err         *irma.RemoteError          `json:"error,omitempty"`
+}
+
 const (
 	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
 	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
@@ -69,16 +80,11 @@ const (
 	ComponentStatic     = "static"
 )
 
-// Remove this when dropping support for legacy pre-condiscon session requests
-type LegacySessionResult struct {
-	Token       string                     `json:"token"`
-	Status      Status                     `json:"status"`
-	Type        irma.Action                `json:"type"`
-	ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
-	Disclosed   []*irma.DisclosedAttribute `json:"disclosed,omitempty"`
-	Signature   *irma.SignedMessage        `json:"signature,omitempty"`
-	Err         *irma.RemoteError          `json:"error,omitempty"`
-}
+const (
+	PostSizeLimit = 10 << 20 // 10 MB
+	ReadTimeout   = 5 * time.Second
+	WriteTimeout  = 10 * time.Second
+)
 
 // Remove this when dropping support for legacy pre-condiscon session requests
 func (r *SessionResult) Legacy() *LegacySessionResult {
@@ -335,7 +341,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 	}
 
 	var x string // dummy for the server's return value that we don't care about
-	if err := irma.NewHTTPTransport(callbackUrl).Post("", &x, res); err != nil {
+	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", &x, res); err != nil {
 		// not our problem, log it and go on
 		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
 	}
@@ -437,6 +443,13 @@ func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
 	}
 
 	return logger
+}
+
+var SizeLimitMiddleware = func(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, PostSizeLimit)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // LogMiddleware is middleware for logging HTTP requests and responses.

@@ -32,6 +32,7 @@ func TestKeyshareRegister(t *testing.T) {
 	require.NoError(t, client.KeyshareRemoveAll())
 	require.NoError(t, client.RemoveStorage())
 
+	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
 

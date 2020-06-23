@@ -18,9 +18,6 @@ import (
 // Status encodes the status of an IRMA session (e.g., connected).
 type Status string
 
-// disabled until we offer a convenient way to toggle this in irma_mobile
-var ForceHttps bool = false
-
 const (
 	MinVersionHeader = "X-IRMA-MinProtocolVersion"
 	MaxVersionHeader = "X-IRMA-MaxProtocolVersion"
@@ -167,8 +164,6 @@ type Qr struct {
 	Type Action `json:"irmaqr"`
 }
 
-type SchemeManagerRequest Qr
-
 // Statuses
 const (
 	StatusConnected     = Status("connected")
@@ -178,13 +173,12 @@ const (
 
 // Actions
 const (
-	ActionSchemeManager = Action("schememanager")
-	ActionDisclosing    = Action("disclosing")
-	ActionSigning       = Action("signing")
-	ActionIssuing       = Action("issuing")
-	ActionRedirect      = Action("redirect")
-	ActionRevoking      = Action("revoking")
-	ActionUnknown       = Action("unknown")
+	ActionDisclosing = Action("disclosing")
+	ActionSigning    = Action("signing")
+	ActionIssuing    = Action("issuing")
+	ActionRedirect   = Action("redirect")
+	ActionRevoking   = Action("revoking")
+	ActionUnknown    = Action("unknown")
 )
 
 // Protocol errors
@@ -193,6 +187,8 @@ const (
 	ErrorProtocolVersionNotSupported = ErrorType("protocolVersionNotSupported")
 	// Error in HTTP communication
 	ErrorTransport = ErrorType("transport")
+	// HTTPS required
+	ErrorHTTPS = ErrorType("https")
 	// Invalid client JWT in first IRMA message
 	ErrorInvalidJWT = ErrorType("invalidJwt")
 	// Unkown session type (not disclosing, signing, or issuing)
@@ -326,39 +322,27 @@ func ParseRequestorJwt(action string, requestorJwt string) (RequestorJwt, error)
 	return retval, nil
 }
 
-func (qr *Qr) Validate() (err error) {
-	if qr.URL == "" {
-		return errors.New("No URL specified")
-	}
-	var u *url.URL
-	if u, err = url.ParseRequestURI(qr.URL); err != nil {
-		return errors.Errorf("Invalid URL: %s", err.Error())
-	}
-	if ForceHttps && u.Scheme != "https" {
-		return errors.Errorf("URL did not begin with https")
-	}
-
+func (qr *Qr) IsQr() bool {
 	switch qr.Type {
 	case ActionDisclosing: // nop
 	case ActionIssuing: // nop
 	case ActionSigning: // nop
 	case ActionRedirect: // nop
 	default:
-		return errors.New("Unsupported session type")
+		return false
 	}
-
-	return nil
+	return true
 }
 
-func (smr *SchemeManagerRequest) Validate() error {
-	if smr.Type != ActionSchemeManager {
-		return errors.New("Not a scheme manager request")
+func (qr *Qr) Validate() (err error) {
+	if qr.URL == "" {
+		return errors.New("no URL specified")
 	}
-	if smr.URL == "" {
-		return errors.New("No URL specified")
+	if _, err = url.ParseRequestURI(qr.URL); err != nil {
+		return errors.Errorf("invalid URL: %s", err.Error())
 	}
-	if _, err := url.ParseRequestURI(smr.URL); err != nil {
-		return errors.Errorf("Invalid URL: %s", err.Error())
+	if !qr.IsQr() {
+		return errors.New("unsupported session type")
 	}
 	return nil
 }

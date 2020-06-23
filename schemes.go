@@ -57,7 +57,7 @@ func (conf *Configuration) downloadDemoPrivateKeys(scheme *SchemeManager) error 
 	}
 
 	Logger.Debugf("Attempting downloading of private keys of scheme %s", scheme.ID)
-	transport := NewHTTPTransport(scheme.URL)
+	transport := NewHTTPTransport(scheme.URL, true)
 
 	err := conf.downloadFile(transport, scheme.ID, "sk.pem")
 	if err != nil { // If downloading of any of the private key fails just log it, and then continue

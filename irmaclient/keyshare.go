@@ -51,6 +51,7 @@ type keyshareSession struct {
 	issuerProofNonce *big.Int
 	timestamp        *atum.Timestamp
 	pinCheck         bool
+	preferences      Preferences
 }
 
 type keyshareServer struct {
@@ -153,10 +154,11 @@ func startKeyshareSession(
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
 	session irma.SessionRequest,
-	conf *irma.Configuration,
-	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
 	issuerProofNonce *big.Int,
 	timestamp *atum.Timestamp,
+	conf *irma.Configuration,
+	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
+	preferences Preferences,
 ) {
 	ksscount := 0
 	for managerID := range session.Identifiers().SchemeManagers {
@@ -186,6 +188,7 @@ func startKeyshareSession(
 		issuerProofNonce: issuerProofNonce,
 		timestamp:        timestamp,
 		pinCheck:         false,
+		preferences:      preferences,
 	}
 
 	for managerID := range session.Identifiers().SchemeManagers {
@@ -195,7 +198,7 @@ func startKeyshareSession(
 		}
 
 		ks.keyshareServer = ks.keyshareServers[managerID]
-		transport := irma.NewHTTPTransport(scheme.KeyshareServer)
+		transport := irma.NewHTTPTransport(scheme.KeyshareServer, !ks.preferences.DeveloperMode)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, "Bearer "+ks.keyshareServer.token)
 		transport.SetHeader(kssVersionHeader, "2")

@@ -180,7 +180,7 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 	var (
 		err       error
 		pkg       = &server.SessionPackage{}
-		transport = irma.NewHTTPTransport(serverurl)
+		transport = irma.NewHTTPTransport(serverurl, false)
 	)
 
 	switch authmethod {

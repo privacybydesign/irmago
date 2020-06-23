@@ -40,8 +40,9 @@ type BaseRequest struct {
 
 	ids *IrmaIdentifierSet // cache for Identifiers() method
 
-	legacy bool   // Whether or not this was deserialized from a legacy (pre-condiscon) request
-	Type   Action `json:"type,omitempty"` // Session type, only used in legacy code
+	legacy          bool   // Whether or not this was deserialized from a legacy (pre-condiscon) request
+	Type            Action `json:"type,omitempty"` // Session type, only used in legacy code
+	DevelopmentMode bool   `json:"devMode,omitempty"`
 
 	ClientReturnURL string `json:"clientReturnUrl,omitempty"` // URL to proceed to when IRMA session is completed
 }
@@ -207,6 +208,20 @@ type NonRevocationRequest struct {
 }
 
 type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
+
+func (choice *DisclosureChoice) Validate() error {
+	if choice == nil {
+		return nil
+	}
+	for _, attrlist := range choice.Attributes {
+		for _, attr := range attrlist {
+			if attr.CredentialHash == "" {
+				return errors.Errorf("no credential hash specified for %s", attr.Type)
+			}
+		}
+	}
+	return nil
+}
 
 func (n *NonRevocationParameters) UnmarshalJSON(bts []byte) error {
 	var slice []CredentialTypeIdentifier
@@ -523,8 +538,12 @@ func (dr *DisclosureRequest) Base() *BaseRequest {
 
 func (dr *DisclosureRequest) Action() Action { return ActionDisclosing }
 
+func (dr *DisclosureRequest) IsDisclosureRequest() bool {
+	return dr.LDContext == LDContextDisclosureRequest
+}
+
 func (dr *DisclosureRequest) Validate() error {
-	if dr.LDContext != LDContextDisclosureRequest {
+	if !dr.IsDisclosureRequest() {
 		return errors.New("Not a disclosure request")
 	}
 	if len(dr.Disclose) == 0 {
@@ -539,12 +558,12 @@ func (dr *DisclosureRequest) Validate() error {
 	return nil
 }
 
-func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte) (*CredentialInfo, error) {
-	list, err := cr.AttributeList(conf, metadataVersion, nil)
+func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, issuedAt time.Time) (*CredentialInfo, error) {
+	list, err := cr.AttributeList(conf, metadataVersion, nil, issuedAt)
 	if err != nil {
 		return nil, err
 	}
-	return NewCredentialInfo(list.Ints, conf), nil
+	return list.CredentialInfo(), nil
 }
 
 // Validate checks that this credential request is consistent with the specified Configuration:
@@ -592,6 +611,7 @@ func (cr *CredentialRequest) AttributeList(
 	conf *Configuration,
 	metadataVersion byte,
 	revocationAttr *big.Int,
+	issuedAt time.Time,
 ) (*AttributeList, error) {
 	if err := cr.Validate(conf); err != nil {
 		return nil, err
@@ -606,7 +626,7 @@ func (cr *CredentialRequest) AttributeList(
 	meta := NewMetadataAttribute(metadataVersion)
 	meta.setKeyCounter(cr.KeyCounter)
 	meta.setCredentialTypeIdentifier(cr.CredentialTypeID.String())
-	meta.setSigningDate()
+	meta.setSigningDate(issuedAt)
 	if err := meta.setExpiryDate(cr.Validity); err != nil {
 		return nil, err
 	}
@@ -669,10 +689,14 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 	return ir.ids
 }
 
-func (ir *IssuanceRequest) GetCredentialInfoList(conf *Configuration, version *ProtocolVersion) (CredentialInfoList, error) {
+func (ir *IssuanceRequest) GetCredentialInfoList(
+	conf *Configuration,
+	version *ProtocolVersion,
+	issuedAt time.Time,
+) (CredentialInfoList, error) {
 	if ir.CredentialInfoList == nil {
 		for _, credreq := range ir.Credentials {
-			info, err := credreq.Info(conf, GetMetadataVersion(version))
+			info, err := credreq.Info(conf, GetMetadataVersion(version), issuedAt)
 			if err != nil {
 				return nil, err
 			}
@@ -735,8 +759,12 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp 
 
 func (sr *SignatureRequest) Action() Action { return ActionSigning }
 
+func (sr *SignatureRequest) IsSignatureRequest() bool {
+	return sr.LDContext == LDContextSignatureRequest
+}
+
 func (sr *SignatureRequest) Validate() error {
-	if sr.LDContext != LDContextSignatureRequest {
+	if !sr.IsSignatureRequest() {
 		return errors.New("Not a signature request")
 	}
 	if sr.Message == "" {

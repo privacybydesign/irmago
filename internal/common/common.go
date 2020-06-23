@@ -17,6 +17,16 @@ import (
 
 var Logger *logrus.Logger
 
+// Disables HTTP forcing in irma.HTTPTransport for all instances,
+// regardless of the instance's ForceHTTPS member.
+// Only for use in unit tests.
+var ForceHTTPS = true
+
+const (
+	sessionChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	sessionTokenLength = 20
+)
+
 // AssertPathExists returns nil only if it has been successfully
 // verified that all specified paths exists.
 func AssertPathExists(paths ...string) error {
@@ -80,12 +90,18 @@ func EnsureDirectoryExists(path string) error {
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
+	fpath = filepath.FromSlash(fpath)
 	Logger.Debug("writing ", fpath)
 	info, exists, err := Stat(fpath)
 	if err != nil {
 		return err
 	}
 	if exists && (info.IsDir() || !info.Mode().IsRegular()) {
+		return errors.New("invalid destination path: not a file")
+	}
+
+	// Only accept 'simple' paths without . or .. or multiple separators
+	if fpath != filepath.Clean(fpath) {
 		return errors.New("invalid destination path")
 	}
 
@@ -252,4 +268,18 @@ func RandomBigInt(limit *big.Int) *big.Int {
 
 type SSECtx struct {
 	Component, Arg string
+}
+
+func NewSessionToken() string {
+	r := make([]byte, sessionTokenLength)
+	_, err := rand.Read(r)
+	if err != nil {
+		panic(err)
+	}
+
+	b := make([]byte, sessionTokenLength)
+	for i := range b {
+		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
+	}
+	return string(b)
 }

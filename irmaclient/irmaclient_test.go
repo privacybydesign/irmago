@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,15 +9,18 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 
+	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
 	irma.Logger.SetLevel(logrus.FatalLevel)
+	common.ForceHTTPS = false // globally disable https enforcement
 
 	// Create HTTP server for scheme managers
 	test.StartSchemeManagerHttpServer()
@@ -45,6 +47,7 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 		handler,
 	)
 	require.NoError(t, err)
+	client.SetPreferences(Preferences{DeveloperMode: true})
 	return client, handler
 }
 
@@ -120,52 +123,59 @@ func TestCandidates(t *testing.T) {
 	request := irma.NewDisclosureRequest(attrtype)
 	disjunction := request.Disclose[0]
 	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
-	attrs, missing, err := client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err := client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.Empty(t, missing)
+	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
+	require.True(t, attrs[0][0].Present())
 
 	// If the disjunction requires our attribute to have 456 as value, which it does,
 	// then our attribute is a candidate
 	reqval := "456"
 	disjunction[0][0].Value = &reqval
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.Empty(t, missing)
+	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
+	require.True(t, attrs[0][0].Present())
 
 	// If the disjunction requires our attribute to have a different value than it does,
 	// then it is NOT a match.
 	reqval = "foobarbaz"
 	disjunction[0][0].Value = &reqval
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.NotEmpty(t, missing)
+	require.False(t, satisfiable)
 	require.NotNil(t, attrs)
-	require.Empty(t, attrs)
+	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.False(t, attrs[0][0].Present())
 
 	// A required value of nil counts as no requirement on the value, so our attribute is a candidate
 	disjunction[0][0].Value = nil
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.Empty(t, missing)
+	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
+	require.True(t, attrs[0][0].Present())
 
 	// Require an attribute we do not have
-	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.ageLower.over12")
-	attrs, missing, err = client.Candidates(request.Base(), disjunction)
+	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.root.BSN")
+	attrs, satisfiable, err = client.candidatesDisCon(request.Base(), disjunction)
 	require.NoError(t, err)
-	require.NotEmpty(t, missing)
-	require.Empty(t, attrs)
+	require.False(t, satisfiable)
+	require.Len(t, attrs, 1)
+	require.NotNil(t, attrs[0])
+	require.False(t, attrs[0][0].Present())
 }
 
 func TestCandidateConjunctionOrder(t *testing.T) {
@@ -194,9 +204,9 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 	}
 
 	for i := 1; i < 20; i++ {
-		candidates, missing, err := client.CheckSatisfiability(req)
+		candidates, satisfiable, err := client.Candidates(req)
 		require.NoError(t, err)
-		require.Empty(t, missing)
+		require.True(t, satisfiable)
 		require.Equal(t, "irma-demo.RU.studentCard.level", candidates[0][0][0].Type.String())
 	}
 }
@@ -299,21 +309,6 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	require.NotContains(t, client.keyshareServers, "test")
 }
 
-func TestUpdatePreferences(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-
-	client.SetCrashReportingPreference(!defaultPreferences.EnableCrashReporting)
-	client.applyPreferences()
-
-	err := client.storage.db.Close()
-	require.NoError(t, err)
-	client, handler = parseExistingStorage(t, handler.storage)
-
-	require.NoError(t, err)
-	require.Equal(t, false, client.Preferences.EnableCrashReporting)
-}
-
 func TestUpdatingStorage(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -329,7 +324,11 @@ func TestRemoveStorage(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": true}   // Test storage has 1 log
+	// Check whether we have logs in storage to know whether the logs bucket is there
+	logs, err := client.LoadNewestLogs(1)
+	require.NoError(t, err)
+
+	bucketsBefore := map[string]bool{"attrs": true, "sigs": true, "userdata": true, "logs": len(logs) > 0}
 	bucketsAfter := map[string]bool{"attrs": false, "sigs": false, "userdata": true, "logs": false} // Userdata should hold a new secret key
 
 	old_sk := *client.secretkey
@@ -397,6 +396,13 @@ func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentif
 }
 func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
 	err := errors.New("blocked account")
+	select {
+	case i.c <- err: //nop
+	default:
+		i.t.Fatal(err)
+	}
+}
+func (i *TestClientHandler) ReportError(err error) {
 	select {
 	case i.c <- err: //nop
 	default:

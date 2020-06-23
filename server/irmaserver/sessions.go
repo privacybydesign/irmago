@@ -1,7 +1,6 @@
 package irmaserver
 
 import (
-	"crypto/rand"
 	"sync"
 	"time"
 
@@ -67,7 +66,6 @@ type memorySessionStore struct {
 
 const (
 	maxSessionLifetime = 5 * time.Minute // After this a session is cancelled
-	sessionChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
 
 var (
@@ -153,8 +151,8 @@ func (s *memorySessionStore) deleteExpired() {
 var one *big.Int = big.NewInt(1)
 
 func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
-	token := newSessionToken()
-	clientToken := newSessionToken()
+	token := common.NewSessionToken()
+	clientToken := common.NewSessionToken()
 
 	ses := &session{
 		action:      action,
@@ -183,20 +181,4 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	s.sessions.add(ses)
 
 	return ses
-}
-
-func newSessionToken() string {
-	count := 20
-
-	r := make([]byte, count)
-	_, err := rand.Read(r)
-	if err != nil {
-		panic(err)
-	}
-
-	b := make([]byte, count)
-	for i := range b {
-		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
-	}
-	return string(b)
 }
