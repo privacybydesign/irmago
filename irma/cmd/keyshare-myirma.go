@@ -115,8 +115,8 @@ func init() {
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 
-	flags.StringArray("keyshare-attributes", nil, "Attributes allowed for login to myirma")
-	flags.StringArray("email-attributes", nil, "Attributes allowed for adding email addresses")
+	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
+	flags.StringSlice("email-attributes", nil, "Attributes allowed for adding email addresses")
 	flags.Lookup("keyshare-attributes").Header = `Irma session configuration`
 
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
