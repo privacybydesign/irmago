@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -525,8 +526,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 			Validity:         &expiry,
 			CredentialTypeID: credID,
 			Attributes: map[string]string{
-				"election":     "plantsoen",
-				"votingnumber": "",
+				"election": "plantsoen",
 			},
 		},
 	})
@@ -534,8 +534,9 @@ func TestBlindIssuanceSession(t *testing.T) {
 	sessionHelper(t, request, "issue", client)
 	attrList := client.Attributes(credID, 0)
 
-	// Metadata attribute + election + votingnumber
+	// Since attrList.Ints does not include the secret key,
+	// we should have {metadata attribute, election, votingnumber}.
 	require.Equal(t, 3, len(attrList.Ints), "number of attributes in credential should be 3")
-	require.NotNil(t, attrList.Ints[2], "randomblind attribute is nil")
+	require.NotEqual(t, 0, attrList.Ints[2].Cmp(big.NewInt(0)), "randomblind attribute should not be zero")
 	require.NoError(t, client.Close())
 }
