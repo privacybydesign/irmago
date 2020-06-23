@@ -939,7 +939,7 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 			// Check if all attributes from the configuration are present, unless they are marked as optional
 			for _, attrtype := range typ.AttributeTypes {
 				_, present := credreq.Attributes[attrtype.ID]
-				if !present && !attrtype.RevocationAttribute && !attrtype.IsOptional() {
+				if !present && !attrtype.RevocationAttribute && !attrtype.RandomBlind && !attrtype.IsOptional() {
 					requiredMissing.AttributeTypes[attrtype.GetAttributeTypeIdentifier()] = struct{}{}
 				}
 			}
@@ -1454,6 +1454,9 @@ func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 		if attr.RevocationAttribute {
 			cred.RevocationIndex = i
 			revocation = true
+		}
+		if attr.RevocationAttribute && attr.RandomBlind {
+			return errors.New("attribute can not be both revocation attribute and randomblind attribute")
 		}
 	}
 	if len(indices) != count {

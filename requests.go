@@ -573,11 +573,14 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 
 	for _, attrtype := range credtype.AttributeTypes {
 		_, present := cr.Attributes[attrtype.ID]
-		if !present && !attrtype.RevocationAttribute && attrtype.Optional != "true" {
+		if !present && !attrtype.RevocationAttribute && !attrtype.RandomBlind && attrtype.Optional != "true" {
 			return errors.New("Required attribute not present in credential request")
 		}
 		if present && attrtype.RevocationAttribute {
 			return errors.New("revocation attribute cannot be set in credential request")
+		}
+		if present && attrtype.RandomBlind {
+			return errors.New("randomblind attribute cannot be set in credential request")
 		}
 	}
 
