@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/privacybydesign/gabi"
@@ -102,7 +100,7 @@ func (al *AttributeList) Map(conf *Configuration) map[AttributeTypeIdentifier]Tr
 		ctid := al.CredentialType().Identifier()
 		attrTypes := conf.CredentialTypes[ctid].AttributeTypes
 		for i, val := range al.Strings() {
-			if attrTypes[i].RevocationAttribute {
+			if attrTypes[i].RevocationAttribute || attrTypes[i].RandomBlind {
 				continue
 			}
 			al.attrMap[attrTypes[i].GetAttributeTypeIdentifier()] = val
@@ -142,11 +140,6 @@ func NewTranslatedString(attr *string) TranslatedString {
 func (al *AttributeList) decode(i int) *string {
 	attr := al.Ints[i+1]
 	metadataVersion := al.MetadataAttribute.Version()
-	// TODO: how to decode random blind attributes?
-	if al.CredentialType().AttributeTypes[i].RandomBlind {
-		str := fmt.Sprintf("%s (random blind attribute)", al.Ints[i+1].String())
-		return &str
-	}
 	return decodeAttribute(attr, metadataVersion)
 }
 
