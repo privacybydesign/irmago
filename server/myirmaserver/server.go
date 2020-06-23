@@ -3,6 +3,7 @@ package myirmaserver
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -246,7 +247,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 		baseURL = s.conf.LoginEmailBaseURL[s.conf.DefaultLanguage]
 	}
 	var emsg bytes.Buffer
-	err = template.Execute(&emsg, map[string]string{"TokenURL": baseURL + token})
+	err = template.Execute(&emsg, map[string]string{"TokenURL": fmt.Sprintf("%s#token=%s", baseURL, token)})
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate login mail from template")
 		server.WriteError(w, server.ErrorInternal, err.Error())
