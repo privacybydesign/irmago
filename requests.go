@@ -645,8 +645,12 @@ func (cr *CredentialRequest) AttributeList(
 		if attrtype.RevocationAttribute {
 			continue
 		}
+		if attrtype.RandomBlind {
+			attrs[i+1] = big.NewInt(0)
+			continue
+		}
 		attrs[i+1] = new(big.Int)
-		if str, present := cr.Attributes[attrtype.ID]; present && !attrtype.RandomBlind {
+		if str, present := cr.Attributes[attrtype.ID]; present {
 			// Set attribute to str << 1 + 1
 			attrs[i+1].SetBytes([]byte(str))
 			if meta.Version() >= 0x03 {
