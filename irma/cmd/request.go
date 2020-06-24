@@ -256,12 +256,7 @@ func parseCredentials(credentialsStr []string, conf *irma.Configuration) ([]*irm
 		// Construct the attribute -> value map for in he CredentialRequest
 		attrs := make(map[string]string, len(attrsSlice))
 		for i, typ := range credtype.AttributeTypes {
-			if !typ.RandomBlind {
-				attrs[typ.ID] = attrsSlice[i]
-			} else {
-				// for now throw in an empty string
-				attrs[typ.ID] = ""
-			}
+			attrs[typ.ID] = attrsSlice[i]
 		}
 		list = append(list, &irma.CredentialRequest{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(credIdStr),
