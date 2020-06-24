@@ -506,15 +506,29 @@ func TestBlindIssuanceSession(t *testing.T) {
 
 	require.True(t, client.Configuration.AttributeTypes[attrID2].RandomBlind, "AttributeType votingnumber is not of type random blind")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
+
+	// this request should give an error by the server that the random blind attribute should not be in the credentialrequest
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			Validity:         &expiry,
 			CredentialTypeID: credID,
 			Attributes: map[string]string{
-				"election": "plantsoen",
+				"election":     "plantsoen",
+				"votingnumber": "blabla",
 			},
 		},
 	})
+
+	serverChan := make(chan *server.SessionResult)
+	StartIrmaServer(t, false, "")
+	_, _, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
+		serverChan <- result
+	})
+	require.EqualError(t, err, "randomblind attribute cannot be set in credential request")
+	StopIrmaServer()
+
+	// Make the request valid
+	delete(request.Credentials[0].Attributes, "votingnumber")
 
 	sessionHelper(t, request, "issue", client)
 	attrList := client.Attributes(credID, 0)
