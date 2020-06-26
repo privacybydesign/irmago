@@ -245,9 +245,13 @@ func parseCredentials(credentialsStr []string, conf *irma.Configuration) ([]*irm
 			return nil, errors.New("unknown credential type: " + credIdStr)
 		}
 
-		randomblinds := credtype.RandomBlinds()
-		// we dont need values for the random blind attributes, since they are randomly generated during issuance
-		required := len(credtype.AttributeTypes) - len(randomblinds)
+		// we dont need values for the random blind attributes,
+		// since they are randomly generated during issuance
+		missingValues := credtype.RandomBlinds()
+		if len(credtype.RevocationServers) > 0 {
+			missingValues += 1
+		}
+		required := len(credtype.AttributeTypes) - missingValues
 		attrsSlice := strings.Split(attrsStr, ",")
 		if len(attrsSlice) != required {
 			return nil, errors.Errorf("%d attributes required but %d provided for %s", required, len(attrsSlice), credIdStr)
@@ -255,8 +259,12 @@ func parseCredentials(credentialsStr []string, conf *irma.Configuration) ([]*irm
 
 		// Construct the attribute -> value map for in he CredentialRequest
 		attrs := make(map[string]string, len(attrsSlice))
-		for i, typ := range credtype.AttributeTypes {
-			attrs[typ.ID] = attrsSlice[i]
+		j := 0 // idx in attrSlice
+		for _, typ := range credtype.AttributeTypes {
+			if !typ.RandomBlind && !typ.RevocationAttribute {
+				attrs[typ.ID] = attrsSlice[j]
+				j += 1
+			}
 		}
 		list = append(list, &irma.CredentialRequest{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(credIdStr),
