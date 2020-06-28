@@ -1431,7 +1431,13 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		name := v.Type().Field(i).Name
-		if field.Type() != reflect.TypeOf(TranslatedString{}) || name == "IssueURL" {
+		if field.Type() != reflect.TypeOf(TranslatedString{}) ||
+			name == "IssueURL" ||
+			name == "Category" ||
+			name == "FAQIntro" ||
+			name == "FAQPurpose" ||
+			name == "FAQContent" ||
+			name == "FAQHowto" {
 			continue
 		}
 		val := field.Interface().(TranslatedString)
