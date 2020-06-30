@@ -954,7 +954,7 @@ func (client RevocationClient) FetchUpdatesLatest(id CredentialTypeIdentifier, c
 func (client RevocationClient) getMultiple(urls []string, path string, dest interface{}) error {
 	var (
 		errs      multierror.Error
-		transport = client.transport(true)
+		transport = client.transport(false)
 	)
 	for _, url := range urls {
 		transport.Server = url
