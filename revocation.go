@@ -730,7 +730,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 			t = &id
 		}
 		if s.SSE {
-			urls, err := updateURL(id, rs.conf, rs.settings)
+			urls, err := updateURL(id, rs.conf, settings)
 			if err != nil {
 				return err
 			}
