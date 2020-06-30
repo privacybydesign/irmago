@@ -50,15 +50,18 @@ irma session --server http://localhost:8088 --authmethod token --key mytoken --d
 		}
 
 		// Make sure we always run with latest configuration
-		if err = irmaconfig.UpdateSchemes(); err != nil {
-			die("failed updating schemes", err)
+		flags := cmd.Flags()
+		disableUpdate, _ := flags.GetBool("disable-schemes-update")
+		if !disableUpdate {
+			if err = irmaconfig.UpdateSchemes(); err != nil {
+				die("failed updating schemes", err)
+			}
 		}
 
 		var result *server.SessionResult
 		url, _ := cmd.Flags().GetString("url")
 		serverurl, _ := cmd.Flags().GetString("server")
 		noqr, _ := cmd.Flags().GetBool("noqr")
-		flags := cmd.Flags()
 
 		if url != defaulturl && serverurl != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
@@ -259,6 +262,7 @@ func init() {
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
 	flags.StringP("request", "r", "", "JSON session request")
 	flags.StringP("privkeys", "k", "", "path to private keys")
+	flags.Bool("disable-schemes-update", false, "disable scheme updates")
 
 	addRequestFlags(flags)
 
