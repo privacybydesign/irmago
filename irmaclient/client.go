@@ -942,7 +942,14 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 			nonrevAttr = sig.NonRevocationWitness.E
 		}
 		issuedAt := time.Now()
-		attrs, err := request.Credentials[i-offset].AttributeList(
+		req := request.Credentials[i-offset]
+		if !req.RevocationSupported && (nonrevAttr != nil) {
+			return errors.New("credential signature unexpectedly containend nonrevocation witness")
+		}
+		if req.RevocationSupported && (nonrevAttr == nil) {
+			return errors.New("credential signature did not contain nonrevocation witness")
+		}
+		attrs, err := req.AttributeList(
 			client.Configuration,
 			irma.GetMetadataVersion(request.Base().ProtocolVersion),
 			nonrevAttr,

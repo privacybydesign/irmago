@@ -87,11 +87,12 @@ type IssuanceRequest struct {
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
-	Validity         *Timestamp               `json:"validity,omitempty"`
-	KeyCounter       uint                     `json:"keyCounter,omitempty"`
-	CredentialTypeID CredentialTypeIdentifier `json:"credential"`
-	Attributes       map[string]string        `json:"attributes"`
-	RevocationKey    string                   `json:"revocationKey,omitempty"`
+	Validity            *Timestamp               `json:"validity,omitempty"`
+	KeyCounter          uint                     `json:"keyCounter,omitempty"`
+	CredentialTypeID    CredentialTypeIdentifier `json:"credential"`
+	Attributes          map[string]string        `json:"attributes"`
+	RevocationKey       string                   `json:"revocationKey,omitempty"`
+	RevocationSupported bool                     `json:"revocationSupported,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -653,7 +654,9 @@ func (cr *CredentialRequest) AttributeList(
 		}
 	}
 
-	return NewAttributeListFromInts(attrs, conf), nil
+	list := NewAttributeListFromInts(attrs, conf)
+	list.RevocationSupported = cr.RevocationSupported
+	return list, nil
 }
 
 func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
