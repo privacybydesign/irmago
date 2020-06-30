@@ -164,6 +164,7 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 	sign, _ := cmd.Flags().GetStringArray("sign")
 	message, _ := cmd.Flags().GetString("message")
 	jsonrequest, _ := cmd.Flags().GetString("request")
+	revocationKey, _ := cmd.Flags().GetString("revocation-key")
 
 	if len(disclose) == 0 && len(issue) == 0 && len(sign) == 0 && message == "" {
 		if jsonrequest == "" {
@@ -214,7 +215,7 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 		request.SessionRequest().(*irma.SignatureRequest).Disclose = disclose
 	}
 	if len(issue) != 0 {
-		creds, err := parseCredentials(issue, conf)
+		creds, err := parseCredentials(issue, revocationKey, conf)
 		if err != nil {
 			return nil, err
 		}
@@ -231,8 +232,11 @@ func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma
 	return request, nil
 }
 
-func parseCredentials(credentialsStr []string, conf *irma.Configuration) ([]*irma.CredentialRequest, error) {
+func parseCredentials(
+	credentialsStr []string, revocationKey string, conf *irma.Configuration,
+) ([]*irma.CredentialRequest, error) {
 	list := make([]*irma.CredentialRequest, 0, len(credentialsStr))
+	revocationUsed := false
 
 	for _, credStr := range credentialsStr {
 		parts := strings.Split(credStr, "=")
@@ -246,18 +250,39 @@ func parseCredentials(credentialsStr []string, conf *irma.Configuration) ([]*irm
 		}
 
 		attrsSlice := strings.Split(attrsStr, ",")
-		if len(attrsSlice) != len(credtype.AttributeTypes) {
-			return nil, errors.Errorf("%d attributes required but %d provided for %s", len(credtype.AttributeTypes), len(attrsSlice), credIdStr)
+		attrcount := len(credtype.AttributeTypes)
+		if credtype.RevocationSupported() {
+			attrcount -= 1
+		}
+		if len(attrsSlice) != attrcount {
+			return nil, errors.Errorf("%d attributes required but %d provided for %s", attrcount, len(attrsSlice), credIdStr)
 		}
 
 		attrs := make(map[string]string, len(attrsSlice))
-		for i, typ := range credtype.AttributeTypes {
+		i := 0
+		for _, typ := range credtype.AttributeTypes {
+			if typ.RevocationAttribute {
+				continue
+			}
 			attrs[typ.ID] = attrsSlice[i]
+			i++
 		}
-		list = append(list, &irma.CredentialRequest{
+		req := &irma.CredentialRequest{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(credIdStr),
 			Attributes:       attrs,
-		})
+		}
+		if credtype.RevocationSupported() {
+			if revocationKey == "" {
+				return nil, errors.Errorf("revocationKey required for %s", credIdStr)
+			}
+			revocationUsed = true
+			req.RevocationKey = revocationKey
+		}
+		list = append(list, req)
+	}
+
+	if !revocationUsed && revocationKey != "" {
+		return nil, errors.New("revocation key specified but no credential uses revocation")
 	}
 
 	return list, nil
@@ -343,4 +368,5 @@ func addRequestFlags(flags *pflag.FlagSet) {
 	flags.StringArray("issue", nil, "Add a credential to issue")
 	flags.StringArray("sign", nil, "Add an attribute disjunction to signature session")
 	flags.String("message", "", "Message to sign in signature session")
+	flags.String("revocation-key", "", "Revocation key")
 }
