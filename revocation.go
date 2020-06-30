@@ -714,6 +714,7 @@ func updateURL(id CredentialTypeIdentifier, conf *Configuration, rs RevocationSe
 }
 
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings RevocationSettings) error {
+	settings.fixCase(rs.conf)
 	var t *CredentialTypeIdentifier
 	for id, s := range settings {
 		if !s.Authority {
@@ -1112,6 +1113,16 @@ func (rs RevocationSettings) Get(id CredentialTypeIdentifier) *RevocationSetting
 		s.Tolerance = RevocationParameters.DefaultTolerance
 	}
 	return s
+}
+
+func (rs RevocationSettings) fixCase(conf *Configuration) {
+	for id := range conf.CredentialTypes {
+		idlc := NewCredentialTypeIdentifier(strings.ToLower(id.String()))
+		if settings := rs[idlc]; settings != nil {
+			delete(rs, idlc)
+			rs[id] = settings
+		}
+	}
 }
 
 func (hash eventHash) Value() (driver.Value, error) {
