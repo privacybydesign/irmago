@@ -505,7 +505,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send email if user specified email address
-	if msg.Email != nil && s.conf.EmailServer != "" {
+	if msg.Email != nil && *msg.Email != "" && s.conf.EmailServer != "" {
 		// Fetch template and configuration data for users language, falling back if needed
 		template, ok := s.conf.RegistrationEmailTemplates[msg.Language]
 		if !ok {
