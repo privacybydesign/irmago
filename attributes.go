@@ -6,16 +6,19 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/eknkc/basex"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-
-	"github.com/go-errors/errors"
 )
 
 const (
 	// ExpiryFactor is the precision for the expiry attribute. Value is one week.
 	ExpiryFactor   = 60 * 60 * 24 * 7
 	metadataLength = 1 + 3 + 2 + 2 + 16
+
+	// Alphabet for base-62 encoding
+	alph = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
 var (
@@ -96,7 +99,9 @@ func (al *AttributeList) Hash() string {
 	if al.h == "" {
 		bytes := []byte{}
 		for _, i := range al.Ints {
-			bytes = append(bytes, i.Bytes()...)
+			if i != nil {
+				bytes = append(bytes, i.Bytes()...)
+			}
 		}
 		shasum := sha256.Sum256(bytes)
 		al.h = hex.EncodeToString(shasum[:])
@@ -110,7 +115,7 @@ func (al *AttributeList) Map() map[AttributeTypeIdentifier]TranslatedString {
 		ctid := al.CredentialType().Identifier()
 		attrTypes := al.Conf.CredentialTypes[ctid].AttributeTypes
 		for i, val := range al.Strings() {
-			if attrTypes[i].RevocationAttribute || attrTypes[i].RandomBlind {
+			if attrTypes[i].RevocationAttribute {
 				continue
 			}
 			al.attrMap[attrTypes[i].GetAttributeTypeIdentifier()] = val
@@ -147,8 +152,22 @@ func NewTranslatedString(attr *string) TranslatedString {
 	}
 }
 
+func decodeRandomBlind(attr *big.Int) *string {
+	var s string
+	if attr == nil {
+		s = "<nil>"
+	} else {
+		enc, _ := basex.NewEncoding(alph)
+		s = enc.Encode(attr.Bytes())
+	}
+	return &s
+}
+
 func (al *AttributeList) decode(i int) *string {
 	attr := al.Ints[i+1]
+	if al.CredentialType().AttributeTypes[i].RandomBlind {
+		return decodeRandomBlind(attr)
+	}
 	metadataVersion := al.MetadataAttribute.Version()
 	return decodeAttribute(attr, metadataVersion)
 }
