@@ -646,7 +646,7 @@ func (cr *CredentialRequest) AttributeList(
 			continue
 		}
 		if attrtype.RandomBlind {
-			attrs[i+1] = big.NewInt(0)
+			attrs[i+1] = nil
 			continue
 		}
 		attrs[i+1] = new(big.Int)

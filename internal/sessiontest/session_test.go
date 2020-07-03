@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -536,7 +535,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 	// Since attrList.Ints does not include the secret key,
 	// we should have {metadata attribute, election, votingnumber}.
 	require.Equal(t, 3, len(attrList.Ints), "number of attributes in credential should be 3")
-	require.NotEqual(t, 0, attrList.Ints[2].Cmp(big.NewInt(0)), "randomblind attribute should not be zero")
+	require.NotNil(t, attrList.Ints[2], "randomblind attribute should not be nil")
 	require.NoError(t, client.Close())
 }
 
