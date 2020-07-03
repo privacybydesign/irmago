@@ -8,6 +8,7 @@ require (
 	github.com/bwesterb/go-atum v1.0.0
 	github.com/certifi/gocertifi v0.0.0-20180118203423-deb3ae2ef261 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/eknkc/basex v1.0.0
 	github.com/fxamacker/cbor v1.5.0
 	github.com/getsentry/raven-go v0.0.0-20180121060056-563b81fc02b7
 	github.com/go-chi/chi v3.3.3+incompatible
@@ -30,7 +31,7 @@ require (
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
-	github.com/privacybydesign/gabi v0.0.0-20200623124015-624da89c8543
+	github.com/privacybydesign/gabi v0.0.0-20200701112435-7694e5bd4c08
 	github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.0 // indirect
