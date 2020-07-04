@@ -715,6 +715,7 @@ func updateURL(id CredentialTypeIdentifier, conf *Configuration, rs RevocationSe
 
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings RevocationSettings) error {
 	settings.fixCase(rs.conf)
+	settings.fixSlash()
 	var t *CredentialTypeIdentifier
 	for id, s := range settings {
 		if !s.Authority {
@@ -1122,6 +1123,12 @@ func (rs RevocationSettings) fixCase(conf *Configuration) {
 			delete(rs, idlc)
 			rs[id] = settings
 		}
+	}
+}
+
+func (rs RevocationSettings) fixSlash() {
+	for _, s := range rs {
+		s.RevocationServerURL = strings.TrimRight(s.RevocationServerURL, "/")
 	}
 }
 
