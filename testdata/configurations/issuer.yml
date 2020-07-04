@@ -1,5 +1,5 @@
-# Assumes 1) $PWD = irmago and 2) irma_mobile exists next to irmago. Overwrite e.g. with -s if necessary
-schemes_path: ../irma_mobile/irma_configuration
+# Assumes 1) $PWD = irmago and 2) irmamobile exists next to irmago. Overwrite e.g. with -s if necessary
+schemes_path: ../irmamobile/irma_configuration
 
 schemes_update: 0
 revocation_settings:
