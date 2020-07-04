@@ -81,7 +81,7 @@ func EnsureDirectoryExists(path string) error {
 		return os.MkdirAll(path, 0700)
 	}
 	if !info.IsDir() {
-		return errors.New("path exists but is not a directory")
+		return errors.Errorf("path %s exists but is not a directory", path)
 	}
 	return nil
 }
