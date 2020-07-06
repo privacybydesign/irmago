@@ -116,6 +116,7 @@ type credCandidate irma.CredentialIdentifier
 
 type DisclosureCandidate struct {
 	*irma.AttributeIdentifier
+	Value        irma.TranslatedString
 	Expired      bool
 	Revoked      bool
 	NotRevokable bool
@@ -658,6 +659,7 @@ func (set credCandidateSet) expand(client *Client, base *irma.BaseRequest, con i
 						Type:           attr.Type,
 						CredentialHash: credopt.Hash,
 					},
+					Value: irma.NewTranslatedString(attr.Value),
 				}
 				if credopt.Present() {
 					attrlist, _ := client.attributesByHash(credopt.Hash)
