@@ -76,10 +76,7 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion) (
 	}
 
 	if session.version.Below(2, 7) {
-		// These versions do not support binding, so force binding completion to prevent problems.
-		if session.options.BindingEnabled {
-			session.options.BindingCompleted = true
-		}
+		// These versions do not support binding, so the request is always returned immediately.
 		request, rerr := session.getRequest()
 		return nil, &request, rerr
 	}
@@ -91,19 +88,7 @@ func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
 	return session.status, nil
 }
 
-func (session *session) handlePostOptions(optionsRequest *irma.OptionsRequest, token irma.FrontendToken) (
-	*server.SessionOptions, *irma.RemoteError) {
-	if token != session.frontendToken {
-		return nil, server.RemoteError(server.ErrorUnauthorized, "")
-	}
-	return session.updateOptions(optionsRequest), nil
-}
-
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ProofStatus, *irma.RemoteError) {
-	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
-	if session.status != server.StatusConnected {
-		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
-	}
 	session.markAlive()
 
 	var err error
@@ -124,10 +109,6 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 }
 
 func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma.ProofStatus, *irma.RemoteError) {
-	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
-	if session.status != server.StatusConnected {
-		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
-	}
 	session.markAlive()
 
 	var err error
@@ -147,12 +128,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 }
 
 func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
-	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
-	if session.status != server.StatusConnected {
-		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
-	}
 	session.markAlive()
-
 	request := session.request.(*irma.IssuanceRequest)
 
 	discloseCount := len(commitments.Proofs) - len(request.Credentials)
@@ -322,15 +298,15 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	if session.options.BindingEnabled && !session.options.BindingCompleted {
-		server.WriteError(w, server.ErrorUnauthorized, "Binding required")
+	if session.version.Below(2, 7) {
+		server.WriteError(w, server.ErrorUnexpectedRequest, "Endpoint is not support in used protocol version")
 		return
 	}
 	request, err := session.getRequest()
 	server.WriteResponse(w, request, err)
 }
 
-func (s *Server) handleSessionOptionsPost(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Request) {
 	optionsRequest := &irma.OptionsRequest{}
 	bts, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -342,10 +318,23 @@ func (s *Server) handleSessionOptionsPost(w http.ResponseWriter, r *http.Request
 		server.WriteError(w, server.ErrorMalformedInput, err.Error())
 		return
 	}
-	frontendToken := r.Header.Get(irma.AuthorizationHeader)
+
 	session := r.Context().Value("session").(*session)
-	res, rerr := session.handlePostOptions(optionsRequest, frontendToken)
-	server.WriteResponse(w, res, rerr)
+	res, err := session.updateFrontendOptions(optionsRequest)
+	if err != nil {
+		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+		return
+	}
+	server.WriteResponse(w, res, nil)
+}
+
+func (s *Server) handleFrontendBindingCompleted(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	if err := session.bindingCompleted(); err != nil {
+		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {

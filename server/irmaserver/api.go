@@ -114,7 +114,11 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)
 		r.Get("/statusevents", s.handleSessionStatusEvents)
-		r.Post("/options", s.handleSessionOptionsPost)
+		r.Route("/frontend", func(r chi.Router) {
+			r.Use(s.frontendMiddleware)
+			r.Post("/options", s.handleFrontendOptionsPost)
+			r.Post("/bindingcompleted", s.handleFrontendBindingCompleted)
+		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.authenticationMiddleware)
 			r.Use(s.cacheMiddleware)
@@ -246,15 +250,26 @@ func (s *Server) CancelSession(backendToken irma.BackendToken) error {
 	return nil
 }
 
-// Requests a change of the session options at the server.
-// Returns the updated options struct. Invalid requested options are ignored.
+// Requests a change of the session frontend options at the server.
+// Returns the updated options struct. Frontend options can only be
+// changed the irma client has not connected yet. Otherwise an error is returned.
 // Options that are not specified in the request, keep their old value.
-func SetOptions(backendToken irma.BackendToken, request *irma.OptionsRequest) *server.SessionOptions {
-	return s.SetOptions(backendToken, request)
+func SetFrontendOptions(backendToken irma.BackendToken, request *irma.OptionsRequest) (*server.SessionOptions, error) {
+	return s.SetFrontendOptions(backendToken, request)
 }
-func (s *Server) SetOptions(backendToken irma.BackendToken, request *irma.OptionsRequest) *server.SessionOptions {
+func (s *Server) SetFrontendOptions(backendToken irma.BackendToken, request *irma.OptionsRequest) (*server.SessionOptions, error) {
 	session := s.sessions.get(backendToken)
-	return session.updateOptions(request)
+	return session.updateFrontendOptions(request)
+}
+
+// Complete binding between the irma client and the frontend. Returns
+// an error when no client is actually connected.
+func BindingCompleted(backendToken irma.BackendToken) error {
+	return s.BindingCompleted(backendToken)
+}
+func (s *Server) BindingCompleted(backendToken irma.BackendToken) error {
+	session := s.sessions.get(backendToken)
+	return session.bindingCompleted()
 }
 
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server

@@ -289,7 +289,7 @@ func printQr(qr *irma.Qr, noqr bool) error {
 	return nil
 }
 
-func handleBinding(options *server.SessionOptions, statusChan chan server.Status, completeBinding func() bool) (
+func handleBinding(options *server.SessionOptions, statusChan chan server.Status, completeBinding func() error) (
 	server.Status, error) {
 	errorChan := make(chan error)
 	status := server.StatusInitialized
@@ -306,10 +306,11 @@ func handleBinding(options *server.SessionOptions, statusChan chan server.Status
 					fmt.Println("Press Enter to confirm your device is connected; otherwise press Ctrl-C.")
 					_, err := bufio.NewReader(os.Stdin).ReadString('\n')
 					if err == nil {
-						if completeBinding() {
+						err = completeBinding()
+						if err == nil {
 							fmt.Println("Binding completed.")
 						} else {
-							errorChan <- errors.New("Failed to complete binding")
+							errorChan <- err
 						}
 					} else {
 						errorChan <- err

@@ -120,7 +120,9 @@ func libraryRequest(
 	if binding {
 		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.EnableBinding = true
-		sessionOptions = irmaServer.SetOptions(backendToken, &optionsRequest)
+		if sessionOptions, err = irmaServer.SetFrontendOptions(backendToken, &optionsRequest); err != nil {
+			return nil, errors.WrapPrefix(err, "IRMA enable binding failed", 0)
+		}
 	}
 
 	// Print QR code
@@ -146,11 +148,8 @@ func libraryRequest(
 			}
 		}()
 
-		_, err = handleBinding(sessionOptions, statuschan, func() bool {
-			optionsRequest := irma.NewOptionsRequest()
-			optionsRequest.BindingCompleted = true
-			sessionOptions := irmaServer.SetOptions(backendToken, &optionsRequest)
-			return sessionOptions.BindingCompleted
+		_, err = handleBinding(sessionOptions, statuschan, func() error {
+			return irmaServer.BindingCompleted(backendToken)
 		})
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to handle binding", 0)
@@ -182,7 +181,7 @@ func serverRequest(
 	if binding {
 		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.EnableBinding = true
-		err = frontendTransport.Post("options", sessionOptions, optionsRequest)
+		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)
 		} else if !sessionOptions.BindingEnabled {
@@ -214,15 +213,12 @@ func serverRequest(
 
 		var status server.Status
 		if binding {
-			status, err = handleBinding(sessionOptions, statuschan, func() bool {
-				optionsRequest := irma.NewOptionsRequest()
-				optionsRequest.BindingCompleted = true
-				sessionOptions := &server.SessionOptions{}
-				err = frontendTransport.Post("options", sessionOptions, optionsRequest)
+			status, err = handleBinding(sessionOptions, statuschan, func() error {
+				err = frontendTransport.Post("frontend/bindingcompleted", nil, nil)
 				if err != nil {
-					err = errors.WrapPrefix(err, "Failed to complete binding", 0)
+					return errors.WrapPrefix(err, "Failed to complete binding", 0)
 				}
-				return sessionOptions.BindingCompleted
+				return nil
 			})
 			if err != nil {
 				err = errors.WrapPrefix(err, "Failed to handle binding", 0)

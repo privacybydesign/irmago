@@ -26,6 +26,7 @@ import (
 var Logger *logrus.Logger = logrus.StandardLogger()
 
 const LDContextSessionInfo = "https://irma.app/ld/request/info/v1"
+const LDContextSessionOptions = "https://irma.app/ld/options/v1"
 
 type SessionPackage struct {
 	SessionPtr    *irma.Qr           `json:"sessionPtr"`
@@ -58,9 +59,9 @@ type SessionResult struct {
 }
 
 type SessionOptions struct {
-	BindingEnabled   bool   `json:"bindingEnabled"`
-	BindingCode      string `json:"bindingCode,omitempty"`
-	BindingCompleted bool   `json:"bindingCompleted,omitempty"`
+	LDContext      string `json:"@context,omitempty"`
+	BindingEnabled bool   `json:"bindingEnabled"`
+	BindingCode    string `json:"bindingCode,omitempty"`
 }
 
 // SessionHandler is a function that can handle a session result
@@ -561,6 +562,6 @@ func (info *SessionInfo) UnmarshalJSON(data []byte) error {
 	}
 	info.LDContext = LDContextSessionInfo
 	info.ProtocolVersion = info.Request.Base().ProtocolVersion
-	info.Options = &SessionOptions{}
+	info.Options = &SessionOptions{LDContext: LDContextSessionOptions}
 	return nil
 }
