@@ -174,7 +174,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		action:        action,
 		rrequest:      request,
 		request:       request.SessionRequest(),
-		options:       server.SessionOptions{},
+		options:       server.SessionOptions{LDContext: server.LDContextSessionOptions},
 		lastActive:    time.Now(),
 		backendToken:  backendToken,
 		clientToken:   clientToken,

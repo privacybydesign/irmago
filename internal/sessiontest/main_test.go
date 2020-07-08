@@ -262,13 +262,8 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 
 		additionalCheck(t, frontendTransport)
 
-		optionsRequest := irma.NewOptionsRequest()
-		optionsRequest.BindingCompleted = true
-		options := &server.SessionOptions{}
-		err = frontendTransport.Post("options", options, optionsRequest)
+		err = frontendTransport.Post("frontend/bindingcompleted", nil, nil)
 		require.NoError(t, err)
-		require.Equal(t, true, options.BindingEnabled)
-		require.Equal(t, true, options.BindingCompleted)
 	}
 
 	if result := <-c; result != nil {
@@ -282,11 +277,10 @@ func enableBinding(t *testing.T, qr *irma.Qr, frontendToken irma.FrontendToken) 
 	options := &server.SessionOptions{}
 	transport := irma.NewHTTPTransport(qr.URL, false)
 	transport.SetHeader(irma.AuthorizationHeader, frontendToken)
-	err := transport.Post("options", options, optionsRequest)
+	err := transport.Post("frontend/options", options, optionsRequest)
 
 	require.NoError(t, err)
 	require.Equal(t, true, options.BindingEnabled)
-	require.Equal(t, false, options.BindingCompleted)
 	return transport, options.BindingCode
 }
 

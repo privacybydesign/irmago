@@ -54,21 +54,26 @@ func (session *session) onUpdate() {
 }
 
 // Checks whether requested options are valid in the current session context.
-func (session *session) updateOptions(request *irma.OptionsRequest) *server.SessionOptions {
-	if session.status == server.StatusInitialized && !request.BindingCompleted {
+func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*server.SessionOptions, error) {
+	if session.status == server.StatusInitialized {
 		session.options.BindingEnabled = request.EnableBinding
 		if request.EnableBinding {
 			session.options.BindingCode = common.NewBindingCode()
 		} else {
 			session.options.BindingCode = ""
 		}
-	} else if session.status == server.StatusBinding {
-		if session.options.BindingEnabled && !session.options.BindingCompleted && request.BindingCompleted {
-			session.options.BindingCompleted = true
-			session.setStatus(server.StatusConnected)
-		}
+		return &session.options, nil
 	}
-	return &session.options
+	return nil, errors.New("Frontend options cannot be updated when client is already connected")
+}
+
+// Complete the binding process of frontend and irma client
+func (session *session) bindingCompleted() error {
+	if session.status == server.StatusBinding {
+		session.setStatus(server.StatusConnected)
+		return nil
+	}
+	return errors.New("Binding was not enabled")
 }
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
@@ -292,7 +297,7 @@ func (session *session) getInfo() (*server.SessionInfo, *irma.RemoteError) {
 		Options:         &session.options,
 	}
 
-	if !session.options.BindingEnabled || session.options.BindingCompleted {
+	if !session.options.BindingEnabled {
 		request, rerr := session.getRequest()
 		if rerr != nil {
 			return nil, rerr
@@ -427,6 +432,19 @@ func errorWriter(err *irma.RemoteError, writer func(w http.ResponseWriter, objec
 	}
 }
 
+func (s *Server) frontendMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+		frontendToken := r.Header.Get(irma.AuthorizationHeader)
+
+		if frontendToken != session.frontendToken {
+			server.WriteError(w, server.ErrorUnauthorized, "")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
@@ -516,6 +534,8 @@ func (s *Server) authenticationMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// If the client connects for the first time, we grant access and make sure
+		// only that exact client can connect to this session in future requests.
 		if session.clientAuth == "" {
 			session.clientAuth = authorization
 		} else if session.clientAuth != authorization {
@@ -531,8 +551,14 @@ func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
 
-		if session.options.BindingEnabled && !session.options.BindingCompleted {
+		if session.options.BindingEnabled && session.status == server.StatusBinding {
 			server.WriteError(w, server.ErrorBindingRequired, "")
+			return
+		}
+
+		// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
+		if session.status != server.StatusConnected {
+			server.WriteError(w, server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 			return
 		}
 

@@ -213,9 +213,8 @@ type AttributeRequest struct {
 
 // An OptionsRequest asks for a options change of a particular session.
 type OptionsRequest struct {
-	LDContext        string `json:"@context,omitempty"`
-	EnableBinding    bool   `json:"enableBinding,omitempty"`
-	BindingCompleted bool   `json:"bindingCompleted,omitempty"`
+	LDContext     string `json:"@context,omitempty"`
+	EnableBinding bool   `json:"enableBinding,omitempty"`
 }
 
 type RevocationRequest struct {

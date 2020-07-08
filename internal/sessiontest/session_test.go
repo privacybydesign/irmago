@@ -653,7 +653,7 @@ func TestDisableBinding(t *testing.T) {
 	optionsRequest := irma.NewOptionsRequest()
 	options := &server.SessionOptions{}
 	optionsRequest.EnableBinding = false
-	err := transport.Post("options", options, optionsRequest)
+	err := transport.Post("frontend/options", options, optionsRequest)
 	require.NoError(t, err)
 	require.Equal(t, optionsRequest.EnableBinding, options.BindingEnabled)
 
@@ -676,10 +676,8 @@ func TestDisableBindingAfterClientConnected(t *testing.T) {
 	check := func(t *testing.T, transport *irma.HTTPTransport) {
 		request := irma.NewOptionsRequest()
 		result := &server.SessionOptions{}
-		err := transport.Post("options", result, request)
-		require.NoError(t, err)
-		// The request may not have been accepted, so the result must differ.
-		require.NotEqual(t, request.EnableBinding, result.BindingEnabled)
+		err := transport.Post("frontend/options", result, request)
+		require.Error(t, err)
 	}
 
 	sessionHelperWithBinding(t, request, "issue", nil, check)
