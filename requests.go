@@ -198,10 +198,15 @@ type AttributeRequest struct {
 	NotNull bool                    `json:"notNull,omitempty"`
 }
 
+type BindingMethod string
+
+const BindingMethodNone = "none"
+const BindingMethodPin = "pin"
+
 // An OptionsRequest asks for a options change of a particular session.
 type OptionsRequest struct {
-	LDContext     string `json:"@context,omitempty"`
-	EnableBinding bool   `json:"enableBinding,omitempty"`
+	LDContext     string        `json:"@context,omitempty"`
+	BindingMethod BindingMethod `json:"bindingMethod"`
 }
 
 type RevocationRequest struct {
@@ -1090,6 +1095,7 @@ func NewAttributeRequest(attr string) AttributeRequest {
 // NewOptionsRequest returns a new options request initialized with default values for each option
 func NewOptionsRequest() OptionsRequest {
 	return OptionsRequest{
-		LDContext: LDContextOptionsRequest,
+		LDContext:     LDContextOptionsRequest,
+		BindingMethod: BindingMethodNone,
 	}
 }

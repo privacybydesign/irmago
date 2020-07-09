@@ -119,7 +119,7 @@ func libraryRequest(
 	sessionOptions := &server.SessionOptions{}
 	if binding {
 		optionsRequest := irma.NewOptionsRequest()
-		optionsRequest.EnableBinding = true
+		optionsRequest.BindingMethod = irma.BindingMethodPin
 		if sessionOptions, err = irmaServer.SetFrontendOptions(backendToken, &optionsRequest); err != nil {
 			return nil, errors.WrapPrefix(err, "IRMA enable binding failed", 0)
 		}
@@ -180,7 +180,7 @@ func serverRequest(
 	sessionOptions := &server.SessionOptions{}
 	if binding {
 		optionsRequest := irma.NewOptionsRequest()
-		optionsRequest.EnableBinding = true
+		optionsRequest.BindingMethod = irma.BindingMethodPin
 		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)

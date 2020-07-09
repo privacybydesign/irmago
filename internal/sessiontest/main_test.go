@@ -276,7 +276,7 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 
 func enableBinding(t *testing.T, qr *irma.Qr, frontendToken irma.FrontendToken) (*irma.HTTPTransport, string) {
 	optionsRequest := irma.NewOptionsRequest()
-	optionsRequest.EnableBinding = true
+	optionsRequest.BindingMethod = irma.BindingMethodPin
 	options := &server.SessionOptions{}
 	transport := irma.NewHTTPTransport(qr.URL, false)
 	transport.SetHeader(irma.AuthorizationHeader, frontendToken)
