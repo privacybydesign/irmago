@@ -655,7 +655,6 @@ func TestDisableBinding(t *testing.T) {
 	optionsRequest.BindingMethod = irma.BindingMethodNone
 	err := transport.Post("frontend/options", options, optionsRequest)
 	require.NoError(t, err)
-	require.Equal(t, false, options.BindingEnabled)
 
 	c := make(chan *SessionResult)
 	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}

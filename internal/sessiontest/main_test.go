@@ -280,7 +280,6 @@ func enableBinding(t *testing.T, qr *irma.Qr, frontendToken irma.FrontendToken) 
 	err := transport.Post("frontend/options", options, optionsRequest)
 
 	require.NoError(t, err)
-	require.Equal(t, true, options.BindingEnabled)
 	return transport, options.BindingCode
 }
 

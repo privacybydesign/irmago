@@ -213,8 +213,10 @@ type AttributeRequest struct {
 
 type BindingMethod string
 
-const BindingMethodNone = "none"
-const BindingMethodPin = "pin"
+const (
+	BindingMethodNone = "none"
+	BindingMethodPin  = "pin"
+)
 
 // An OptionsRequest asks for a options change of a particular session.
 type OptionsRequest struct {

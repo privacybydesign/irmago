@@ -60,9 +60,9 @@ type SessionResult struct {
 }
 
 type SessionOptions struct {
-	LDContext      string `json:"@context,omitempty"`
-	BindingEnabled bool   `json:"bindingEnabled"`
-	BindingCode    string `json:"bindingCode,omitempty"`
+	LDContext     string             `json:"@context,omitempty"`
+	BindingMethod irma.BindingMethod `json:"bindingMethod"`
+	BindingCode   string             `json:"bindingCode,omitempty"`
 }
 
 // SessionHandler is a function that can handle a session result
@@ -567,6 +567,9 @@ func (info *SessionInfo) UnmarshalJSON(data []byte) error {
 	}
 	info.LDContext = LDContextSessionInfo
 	info.ProtocolVersion = info.Request.Base().ProtocolVersion
-	info.Options = &SessionOptions{LDContext: LDContextSessionOptions}
+	info.Options = &SessionOptions{
+		LDContext:     LDContextSessionOptions,
+		BindingMethod: irma.BindingMethodNone,
+	}
 	return nil
 }
