@@ -160,10 +160,13 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	frontendToken := common.NewSessionToken()
 
 	ses := &session{
-		action:        action,
-		rrequest:      request,
-		request:       request.SessionRequest(),
-		options:       server.SessionOptions{LDContext: server.LDContextSessionOptions},
+		action:   action,
+		rrequest: request,
+		request:  request.SessionRequest(),
+		options: server.SessionOptions{
+			LDContext:     server.LDContextSessionOptions,
+			BindingMethod: irma.BindingMethodNone,
+		},
 		lastActive:    time.Now(),
 		backendToken:  backendToken,
 		clientToken:   clientToken,

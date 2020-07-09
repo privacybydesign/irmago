@@ -63,7 +63,7 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion) (
 	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
 
-	if session.options.BindingEnabled && session.version.Above(2, 6) {
+	if session.options.BindingMethod != irma.BindingMethodNone && session.version.Above(2, 6) {
 		session.setStatus(server.StatusBinding)
 	} else {
 		session.setStatus(server.StatusConnected)

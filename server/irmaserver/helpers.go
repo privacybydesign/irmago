@@ -57,17 +57,15 @@ func (session *session) onUpdate() {
 func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*server.SessionOptions, error) {
 	if session.status == server.StatusInitialized {
 		if request.BindingMethod == irma.BindingMethodNone {
-			session.options.BindingEnabled = false
+			session.options.BindingMethod = irma.BindingMethodNone
+			session.options.BindingCode = ""
 		} else if request.BindingMethod == irma.BindingMethodPin {
-			session.options.BindingEnabled = true
+			session.options.BindingMethod = irma.BindingMethodPin
+			session.options.BindingCode = common.NewBindingCode()
 		} else {
 			return nil, errors.New("Binding method unknown")
 		}
-		if session.options.BindingEnabled {
-			session.options.BindingCode = common.NewBindingCode()
-		} else {
-			session.options.BindingCode = ""
-		}
+
 		return &session.options, nil
 	}
 	return nil, errors.New("Frontend options cannot be updated when client is already connected")
@@ -299,7 +297,7 @@ func (session *session) getInfo() (*server.SessionInfo, *irma.RemoteError) {
 		Options:         &session.options,
 	}
 
-	if !session.options.BindingEnabled {
+	if session.options.BindingMethod == irma.BindingMethodNone {
 		request, rerr := session.getRequest()
 		if rerr != nil {
 			return nil, rerr
@@ -544,7 +542,7 @@ func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
 
-		if session.options.BindingEnabled && session.status == server.StatusBinding {
+		if session.status == server.StatusBinding {
 			server.WriteError(w, server.ErrorBindingRequired, "")
 			return
 		}

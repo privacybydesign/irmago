@@ -184,8 +184,6 @@ func serverRequest(
 		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)
-		} else if !sessionOptions.BindingEnabled {
-			return nil, errors.New("Binding is supported by server but could not be enabled for unknown reason")
 		}
 	}
 

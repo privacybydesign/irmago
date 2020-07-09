@@ -302,18 +302,23 @@ func handleBinding(options *server.SessionOptions, statusChan chan server.Status
 			} else if status == server.StatusBinding {
 				bindingStarted = true
 				go func() {
-					fmt.Println("\nBinding code:", options.BindingCode)
-					fmt.Println("Press Enter to confirm your device is connected; otherwise press Ctrl-C.")
-					_, err := bufio.NewReader(os.Stdin).ReadString('\n')
-					if err == nil {
-						err = completeBinding()
+					if options.BindingMethod == irma.BindingMethodPin {
+						fmt.Println("\nBinding code:", options.BindingCode)
+						fmt.Println("Press Enter to confirm your device is connected; otherwise press Ctrl-C.")
+						_, err := bufio.NewReader(os.Stdin).ReadString('\n')
 						if err == nil {
-							fmt.Println("Binding completed.")
+							err = completeBinding()
+							if err == nil {
+								fmt.Println("Binding completed.")
+							} else {
+								errorChan <- err
+							}
 						} else {
 							errorChan <- err
+							return
 						}
 					} else {
-						errorChan <- err
+						errorChan <- errors.Errorf("Binding method %s is not supported", options.BindingMethod)
 						return
 					}
 				}()

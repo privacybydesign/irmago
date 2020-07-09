@@ -279,7 +279,7 @@ func (session *session) getSessionInfo() {
 	}
 
 	// Check whether binding is needed, and if so, wait for it to be completed.
-	if info.Options.BindingEnabled {
+	if info.Options.BindingMethod != irma.BindingMethodNone {
 		err = session.handleBinding(info.Options.BindingCode)
 	}
 	if err != nil {
