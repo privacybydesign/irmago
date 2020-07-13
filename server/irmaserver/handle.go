@@ -34,7 +34,8 @@ func (session *session) handleDelete() {
 
 func (session *session) handleGetInfo(min, max *irma.ProtocolVersion) (
 	*server.SessionInfo, *irma.SessionRequest, *irma.RemoteError) {
-	// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
+	// Check whether session is in the right state when protocol version is below 2.7.
+	// For newer versions the authenticationMiddleware makes this extra check unnecessary.
 	if session.status != server.StatusInitialized {
 		return nil, nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}

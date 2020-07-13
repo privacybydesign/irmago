@@ -547,7 +547,8 @@ func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Add check for sessions below version 2.7, for other sessions this is checked in authenticationMiddleware.
+		// Check whether session is in the right state when protocol version is below 2.7.
+		// For newer versions the authenticationMiddleware makes this extra check unnecessary.
 		if session.status != server.StatusConnected {
 			server.WriteError(w, server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 			return
