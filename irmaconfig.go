@@ -670,9 +670,6 @@ func (conf *Configuration) CopyManagerFromAssets(scheme SchemeManagerIdentifier)
 // DownloadSchemeManager downloads and returns a scheme manager description.xml file
 // from the specified URL.
 func DownloadSchemeManager(url string) (*SchemeManager, error) {
-	if !strings.HasPrefix(url, "https://") {
-		url = "https://" + url
-	}
 	if url[len(url)-1] == '/' {
 		url = url[:len(url)-1]
 	}
