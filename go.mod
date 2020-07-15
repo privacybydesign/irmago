@@ -31,7 +31,7 @@ require (
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
-	github.com/privacybydesign/gabi v0.0.0-20200701112435-7694e5bd4c08
+	github.com/privacybydesign/gabi v0.0.0-20200714131638-e1b4e6d8c648
 	github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.0 // indirect
