@@ -1354,7 +1354,16 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 		return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
 	}
 	if err := validateDemoPrefix(cred.Name); manager.Demo && err != nil {
-		return errors.Errorf("Name of demo credential %s invalid: %s", cred.ID, err.Error())
+		return errors.Errorf("Name of demo credential %s invalid: %s", credid.String(), err.Error())
+	}
+
+	for _, url := range cred.RevocationServers {
+		if !manager.Demo && !strings.HasPrefix(url, "https://") {
+			return errors.Errorf("Revocation server of %s does not use https://", credid.String())
+		}
+		if strings.HasSuffix(url, "/") {
+			return errors.Errorf("Revocation server of %s should have no trailing /", credid.String())
+		}
 	}
 	if err := common.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
 		conf.Warnings = append(conf.Warnings, fmt.Sprintf("Credential type %s has no logo.png", credid.String()))
@@ -1434,7 +1443,13 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		name := v.Type().Field(i).Name
-		if field.Type() != reflect.TypeOf(TranslatedString{}) || name == "IssueURL" {
+		if field.Type() != reflect.TypeOf(TranslatedString{}) ||
+			name == "IssueURL" ||
+			name == "Category" ||
+			name == "FAQIntro" ||
+			name == "FAQPurpose" ||
+			name == "FAQContent" ||
+			name == "FAQHowto" {
 			continue
 		}
 		val := field.Interface().(TranslatedString)

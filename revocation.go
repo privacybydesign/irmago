@@ -714,6 +714,8 @@ func updateURL(id CredentialTypeIdentifier, conf *Configuration, rs RevocationSe
 }
 
 func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings RevocationSettings) error {
+	settings.fixCase(rs.conf)
+	settings.fixSlash()
 	var t *CredentialTypeIdentifier
 	for id, s := range settings {
 		if !s.Authority {
@@ -730,7 +732,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 			t = &id
 		}
 		if s.SSE {
-			urls, err := updateURL(id, rs.conf, rs.settings)
+			urls, err := updateURL(id, rs.conf, settings)
 			if err != nil {
 				return err
 			}
@@ -954,7 +956,7 @@ func (client RevocationClient) FetchUpdatesLatest(id CredentialTypeIdentifier, c
 func (client RevocationClient) getMultiple(urls []string, path string, dest interface{}) error {
 	var (
 		errs      multierror.Error
-		transport = client.transport(true)
+		transport = client.transport(false)
 	)
 	for _, url := range urls {
 		transport.Server = url
@@ -1112,6 +1114,22 @@ func (rs RevocationSettings) Get(id CredentialTypeIdentifier) *RevocationSetting
 		s.Tolerance = RevocationParameters.DefaultTolerance
 	}
 	return s
+}
+
+func (rs RevocationSettings) fixCase(conf *Configuration) {
+	for id := range conf.CredentialTypes {
+		idlc := NewCredentialTypeIdentifier(strings.ToLower(id.String()))
+		if settings := rs[idlc]; settings != nil {
+			delete(rs, idlc)
+			rs[id] = settings
+		}
+	}
+}
+
+func (rs RevocationSettings) fixSlash() {
+	for _, s := range rs {
+		s.RevocationServerURL = strings.TrimRight(s.RevocationServerURL, "/")
+	}
 }
 
 func (hash eventHash) Value() (driver.Value, error) {

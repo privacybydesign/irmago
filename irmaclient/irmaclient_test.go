@@ -131,6 +131,7 @@ func TestCandidates(t *testing.T) {
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
 	require.True(t, attrs[0][0].Present())
+	require.Empty(t, attrs[0][0].Value)
 
 	// If the disjunction requires our attribute to have 456 as value, which it does,
 	// then our attribute is a candidate
@@ -144,6 +145,8 @@ func TestCandidates(t *testing.T) {
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
 	require.True(t, attrs[0][0].Present())
+	require.NotNil(t, attrs[0][0].Value)
+	require.Equal(t, reqval, attrs[0][0].Value[""])
 
 	// If the disjunction requires our attribute to have a different value than it does,
 	// then it is NOT a match.
@@ -156,6 +159,8 @@ func TestCandidates(t *testing.T) {
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.False(t, attrs[0][0].Present())
+	require.NotNil(t, attrs[0][0].Value)
+	require.Equal(t, reqval, attrs[0][0].Value[""])
 
 	// A required value of nil counts as no requirement on the value, so our attribute is a candidate
 	disjunction[0][0].Value = nil
@@ -167,6 +172,7 @@ func TestCandidates(t *testing.T) {
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
 	require.True(t, attrs[0][0].Present())
+	require.Empty(t, attrs[0][0].Value)
 
 	// Require an attribute we do not have
 	disjunction[0][0] = irma.NewAttributeRequest("irma-demo.MijnOverheid.root.BSN")
@@ -176,6 +182,7 @@ func TestCandidates(t *testing.T) {
 	require.Len(t, attrs, 1)
 	require.NotNil(t, attrs[0])
 	require.False(t, attrs[0][0].Present())
+	require.Empty(t, attrs[0][0].Value)
 }
 
 func TestCandidateConjunctionOrder(t *testing.T) {

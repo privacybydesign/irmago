@@ -79,6 +79,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 		return nil, session.fail(server.ErrorRevocation, err.Error())
 	}
 	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
+		cred.RevocationSupported = cred.RevocationKey != ""
 		cred.RevocationKey = ""
 	}
 	return cpy.(*irma.IssuanceRequest), nil

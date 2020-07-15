@@ -17,7 +17,7 @@
 	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>false</ShouldBeSingleton>
 	<RevocationServers>
-		<RevocationServer>http://localhost:48683/</RevocationServer>
+		<RevocationServer>http://localhost:48683</RevocationServer>
 	</RevocationServers>
 
 	<Attributes>
