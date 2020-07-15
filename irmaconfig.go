@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/xml"
@@ -747,36 +748,12 @@ func (conf *Configuration) installSchemeManager(manager *SchemeManager, publicke
 		}
 	}
 
-	if err := conf.downloadFile(t, name, "description.xml"); err != nil {
-		return err
-	}
-	if err := conf.DownloadSchemeManagerSignature(manager); err != nil {
-		return err
-	}
 	conf.SchemeManagers[manager.Identifier()] = manager
 	if err := conf.UpdateSchemeManager(manager.Identifier(), nil); err != nil {
 		return err
 	}
 
 	return conf.ParseSchemeManagerFolder(filepath.Join(conf.Path, name), manager)
-}
-
-// DownloadSchemeManagerSignature downloads, stores and verifies the latest version
-// of the index file and signature of the specified manager.
-func (conf *Configuration) DownloadSchemeManagerSignature(manager *SchemeManager) (err error) {
-	if conf.readOnly {
-		return errors.New("cannot download into a read-only configuration")
-	}
-
-	t := NewHTTPTransport(manager.URL, true)
-	if err = conf.downloadFile(t, manager.ID, "index"); err != nil {
-		return
-	}
-	if err = conf.downloadFile(t, manager.ID, "index.sig"); err != nil {
-		return
-	}
-	err = conf.VerifySignature(manager.Identifier())
-	return
 }
 
 func (e *UnknownIdentifierError) Error() string {
@@ -1119,11 +1096,7 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	}
 
 	// Read and parse scheme manager public key
-	pkbts, err := ioutil.ReadFile(filepath.Join(dir, "pk.pem"))
-	if err != nil {
-		return err
-	}
-	pk, err := signed.UnmarshalPemPublicKey(pkbts)
+	pk, err := conf.schemePublicKey(id)
 	if err != nil {
 		return err
 	}
@@ -1137,12 +1110,73 @@ func (conf *Configuration) VerifySignature(id SchemeManagerIdentifier) (err erro
 	return signed.Verify(pk, indexbts, sig)
 }
 
+func (conf *Configuration) schemePublicKey(id SchemeManagerIdentifier) (*ecdsa.PublicKey, error) {
+	pkbts, err := ioutil.ReadFile(filepath.Join(conf.Path, id.String(), "pk.pem"))
+	if err != nil {
+		return nil, err
+	}
+	return signed.UnmarshalPemPublicKey(pkbts)
+}
+
 func (hash ConfigurationFileHash) String() string {
 	return hex.EncodeToString(hash)
 }
 
 func (hash ConfigurationFileHash) Equal(other ConfigurationFileHash) bool {
 	return bytes.Equal(hash, other)
+}
+
+func (conf *Configuration) writeIndex(id SchemeManagerIdentifier, indexbts, sigbts []byte) error {
+	dest := filepath.Join(conf.Path, id.String())
+	if err := common.EnsureDirectoryExists(dest); err != nil {
+		return err
+	}
+	if err := common.SaveFile(filepath.Join(dest, "index"), indexbts); err != nil {
+		return err
+	}
+	return common.SaveFile(filepath.Join(dest, "index.sig"), sigbts)
+}
+
+func (conf *Configuration) checkRemoteScheme(manager *SchemeManager) (
+	int64, []byte, []byte, SchemeManagerIndex, error,
+) {
+	t := NewHTTPTransport(manager.URL, true)
+	indexbts, err := t.GetBytes("index")
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+	sig, err := t.GetBytes("index.sig")
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+	timestampbts, err := t.GetBytes("timestamp")
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+	pk, err := conf.schemePublicKey(manager.Identifier())
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+
+	// Verify signature and the timestamp hash in the index
+	if err = signed.Verify(pk, indexbts, sig); err != nil {
+		return 0, nil, nil, nil, err
+	}
+	index := SchemeManagerIndex(make(map[string]ConfigurationFileHash))
+	if err = index.FromString(string(indexbts)); err != nil {
+		return 0, nil, nil, nil, err
+	}
+	sha := sha256.Sum256(timestampbts)
+	if !bytes.Equal(index[manager.ID+"/timestamp"], sha[:]) {
+		return 0, nil, nil, nil, errors.Errorf("signature over timestamp is not valid")
+	}
+
+	timestamp, err := parseTimestamp(timestampbts)
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+
+	return int64(timestamp.Sub(manager.Timestamp)), indexbts, sig, index, nil
 }
 
 // UpdateSchemeManager syncs the stored version within the irma_configuration directory
@@ -1158,43 +1192,35 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 	if !contains {
 		return errors.Errorf("Cannot update unknown scheme manager %s", id)
 	}
+	Logger.WithField("scheme", id).Info("checking for scheme updates")
 
 	// Download the new index and its signature, and check that the new index
 	// is validly signed by the new signature
-	// By aborting immediately in case of error, and restoring backup versions
-	// of the index and signature, we leave our stored copy of the scheme manager
-	// intact.
-	if err = conf.DownloadSchemeManagerSignature(manager); err != nil {
-		return
-	}
-	newIndex, err := conf.parseIndex(manager.ID, manager)
-	if err != nil {
-		return
-	}
-
-	// Check remote timestamp, verify it against the new index, and see if we have to do anything
-	transport := NewHTTPTransport(manager.URL+"/", true)
-	err = conf.downloadSignedFile(transport, manager.ID, "timestamp", newIndex[manager.ID+"/timestamp"])
+	timestampdiff, indexbts, sigbts, index, err := conf.checkRemoteScheme(manager)
 	if err != nil {
 		return err
 	}
-	timestampBts, err := ioutil.ReadFile(filepath.Join(conf.Path, manager.ID, "timestamp"))
-	if err != nil {
-		return err
-	}
-	timestamp, err := parseTimestamp(timestampBts)
-	if err != nil {
-		return err
-	}
-	if !manager.Timestamp.Before(*timestamp) {
+	if timestampdiff == 0 {
+		Logger.WithField("scheme", id).Info("scheme is up-to-date, not updating")
+		return nil
+	} else if timestampdiff < 0 {
+		Logger.WithField("scheme", id).Info("local scheme is newer than remote, not updating")
 		return nil
 	}
+	// timestampdiff > 0
+	Logger.WithField("scheme", id).Info("scheme is outdated, updating")
 
-	issPattern := regexp.MustCompile("^([^/]+)/([^/]+)/description\\.xml")
-	credPattern := regexp.MustCompile("^([^/]+)/([^/]+)/Issues/([^/]+)/description\\.xml")
+	// save the index and its signature against which we authenticated the timestamp
+	// for future use: as they are themselves not in the index, the loop below doesn't touch them
+	if err = conf.writeIndex(id, indexbts, sigbts); err != nil {
+		return err
+	}
 
 	// TODO: how to recover/fix local copy if err != nil below?
-	for filename, newHash := range newIndex {
+	transport := NewHTTPTransport(manager.URL, true)
+	issPattern := regexp.MustCompile("^([^/]+)/([^/]+)/description\\.xml")
+	credPattern := regexp.MustCompile("^([^/]+)/([^/]+)/Issues/([^/]+)/description\\.xml")
+	for filename, newHash := range index {
 		path := filepath.Join(conf.Path, filename)
 		oldHash, known := manager.index[filename]
 		var have bool
@@ -1246,7 +1272,6 @@ func (conf *Configuration) UpdateSchemes() error {
 		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
 	}
 	for id := range conf.SchemeManagers {
-		Logger.WithField("scheme", id).Info("Auto-updating scheme")
 		if err := conf.UpdateSchemeManager(id, &updated); err != nil {
 			return err
 		}

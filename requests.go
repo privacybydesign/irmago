@@ -791,6 +791,10 @@ func (t Timestamp) After(u Timestamp) bool {
 	return time.Time(t).After(time.Time(u))
 }
 
+func (t Timestamp) Sub(u Timestamp) time.Duration {
+	return time.Time(t).Sub(time.Time(u))
+}
+
 // To check whether Timestamp is uninitialized
 func (t Timestamp) IsZero() bool {
 	return time.Time(t).IsZero()
