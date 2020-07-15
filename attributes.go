@@ -99,9 +99,13 @@ func (al *AttributeList) Hash() string {
 	if al.h == "" {
 		bytes := []byte{}
 		for _, i := range al.Ints {
-			if i != nil {
-				bytes = append(bytes, i.Bytes()...)
+			// A CredentialInfo created from a CredentialRequest may contain attributes that are nil,
+			// since random blind attributes have no value yet at that point. Do not include these
+			// attributes when calculating the hash. The hash is not used.
+			if i == nil {
+				continue
 			}
+			bytes = append(bytes, i.Bytes()...)
 		}
 		shasum := sha256.Sum256(bytes)
 		al.h = hex.EncodeToString(shasum[:])
@@ -153,14 +157,13 @@ func NewTranslatedString(attr *string) TranslatedString {
 }
 
 func decodeRandomBlind(attr *big.Int) *string {
-	var s string
-	if attr == nil {
-		s = "<nil>"
-	} else {
+	if attr != nil {
+		var s string
 		enc, _ := basex.NewEncoding(alph)
 		s = enc.Encode(attr.Bytes())
+		return &s
 	}
-	return &s
+	return nil
 }
 
 func (al *AttributeList) decode(i int) *string {
