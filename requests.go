@@ -643,11 +643,7 @@ func (cr *CredentialRequest) AttributeList(
 		}
 	}
 	for i, attrtype := range credtype.AttributeTypes {
-		if attrtype.RevocationAttribute {
-			continue
-		}
-		if attrtype.RandomBlind {
-			attrs[i+1] = nil
+		if attrtype.RevocationAttribute || attrtype.RandomBlind {
 			continue
 		}
 		attrs[i+1] = new(big.Int)

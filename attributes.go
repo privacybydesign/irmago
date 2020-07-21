@@ -157,13 +157,13 @@ func NewTranslatedString(attr *string) TranslatedString {
 }
 
 func decodeRandomBlind(attr *big.Int) *string {
-	if attr != nil {
-		var s string
-		enc, _ := basex.NewEncoding(alph)
-		s = enc.Encode(attr.Bytes())
-		return &s
+	if attr == nil {
+		return nil
 	}
-	return nil
+	var s string
+	enc, _ := basex.NewEncoding(alph)
+	s = enc.Encode(attr.Bytes())
+	return &s
 }
 
 func (al *AttributeList) decode(i int) *string {

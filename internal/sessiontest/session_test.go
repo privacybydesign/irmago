@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -504,12 +505,10 @@ func TestBlindIssuanceSession(t *testing.T) {
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
 
 	require.True(t, client.Configuration.AttributeTypes[attrID2].RandomBlind, "AttributeType votingnumber is not of type random blind")
-	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 
 	// this request should give an error by the server that the random blind attribute should not be in the credentialrequest
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
-			Validity:         &expiry,
 			CredentialTypeID: credID,
 			Attributes: map[string]string{
 				"election":     "plantsoen",
@@ -518,11 +517,8 @@ func TestBlindIssuanceSession(t *testing.T) {
 		},
 	})
 
-	serverChan := make(chan *server.SessionResult)
 	StartIrmaServer(t, false, "")
-	_, _, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
-		serverChan <- result
-	})
+	_, _, err := irmaServer.StartSession(request, nil)
 	require.EqualError(t, err, "randomblind attribute cannot be set in credential request")
 	StopIrmaServer()
 
@@ -536,6 +532,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 	// we should have {metadata attribute, election, votingnumber}.
 	require.Equal(t, 3, len(attrList.Ints), "number of attributes in credential should be 3")
 	require.NotNil(t, attrList.Ints[2], "randomblind attribute should not be nil")
+	require.NotEqual(t, 0, attrList.Ints[2].Cmp(big.NewInt(0)), "random blind attribute should not equal zero")
 	require.NoError(t, client.Close())
 }
 
