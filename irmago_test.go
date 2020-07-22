@@ -3,6 +3,7 @@ package irma
 import (
 	"crypto/rand"
 	"encoding/json"
+	"io/ioutil"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -13,11 +14,13 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
 func init() {
 	common.ForceHTTPS = false // globally disable https enforcement
+	Logger.SetLevel(logrus.FatalLevel)
 }
 
 func parseConfiguration(t *testing.T) *Configuration {
@@ -156,6 +159,27 @@ func TestParseIrmaConfiguration(t *testing.T) {
 	//	"irma-demo.RU.studentCard had improper hash")
 	//require.Contains(t, conf.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
 	//	"irma-demo.MijnOverheid.root had improper hash")
+}
+
+func TestInstallScheme(t *testing.T) {
+	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
+
+	// installing a new scheme from its remote requires passing a SchemeManager instance,
+	// so retrieve that first
+	testscheme, err := DownloadSchemeManager("http://localhost:48681/irma_configuration/test")
+	require.NoError(t, err)
+
+	// setup a new empty Configuration
+	storage, err := ioutil.TempDir("", "scheme")
+	require.NoError(t, err)
+	defer test.ClearTestStorage(t, storage)
+	conf, err := NewConfiguration(storage, ConfigurationOptions{})
+	require.NoError(t, err)
+	require.NoError(t, conf.ParseFolder())
+
+	// install test scheme from remote
+	require.NoError(t, conf.DangerousTOFUInstallSchemeManager(testscheme))
 }
 
 func TestMetadataAttribute(t *testing.T) {
