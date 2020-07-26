@@ -61,7 +61,13 @@ func (client *Client) initRevocation() {
 				speed := attrs.CredentialType().RevocationUpdateSpeed * 60 * 60
 				p := probability(cred.NonRevocationWitness.Updated, speed)
 				if r < p {
-					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%s", id, attrs.Hash())
+					irma.Logger.WithFields(logrus.Fields{
+						"random":      r,
+						"prob":        p,
+						"lastupdated": time.Now().Sub(cred.NonRevocationWitness.Updated).Seconds(),
+						"credtype":    id,
+						"hash":        attrs.Hash(),
+					}).Debug("scheduling nonrevocation witness remote update")
 					id := id // copy for closure below (https://golang.org/doc/faq#closures_and_goroutines)
 					client.jobs <- func() {
 						if err = client.NonrevUpdateFromServer(id); err != nil {
@@ -121,8 +127,8 @@ func (client *Client) nonrevUpdate(id irma.CredentialTypeIdentifier, updates map
 			continue
 		}
 		pkid := cred.Pk.Counter
-		_, present := lowest[pkid]
-		if !present || cred.NonRevocationWitness.SignedAccumulator.Accumulator.Index < lowest[pkid] {
+		l, present := lowest[pkid]
+		if !present || cred.NonRevocationWitness.SignedAccumulator.Accumulator.Index < l {
 			lowest[pkid] = cred.NonRevocationWitness.SignedAccumulator.Accumulator.Index
 		}
 	}
