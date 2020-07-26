@@ -62,6 +62,7 @@ func (client *Client) initRevocation() {
 				p := probability(cred.NonRevocationWitness.Updated, speed)
 				if r < p {
 					irma.Logger.Debugf("scheduling nonrevocation witness remote update for %s-%s", id, attrs.Hash())
+					id := id // copy for closure below (https://golang.org/doc/faq#closures_and_goroutines)
 					client.jobs <- func() {
 						if err = client.NonrevUpdateFromServer(id); err != nil {
 							client.reportError(err)
