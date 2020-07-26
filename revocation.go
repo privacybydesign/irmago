@@ -883,8 +883,13 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 		return nil, err
 	}
 
+	to := acc.Index - uint64(len(update.Events))
+	if from >= to {
+		return update, err
+	}
+
 	// Fetch events not included in the response above
-	indices := binaryPartition(from, acc.Index-uint64(len(update.Events)))
+	indices := binaryPartition(from, to)
 	eventsChan := make(chan *revocation.EventList)
 	var wg sync.WaitGroup
 	var eventsList []*revocation.EventList
@@ -1157,6 +1162,8 @@ func (eventHash) GormDataType(dialect gorm.Dialect) string {
 	}
 }
 
+// binaryPartition splits the interval [from, to] into multiple adjacent intervals
+// whose union cover [from, to], and whose length is a power of two decreasing as they near 'to'.
 func binaryPartition(from, to uint64) [][2]uint64 {
 	min, max := RevocationParameters.UpdateMinCount, RevocationParameters.UpdateMaxCount
 	start := from / max * max     // round down to nearest multiple of max
