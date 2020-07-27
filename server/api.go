@@ -553,9 +553,9 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 }
 
 func (info *SessionInfo) UnmarshalJSON(data []byte) error {
-	// Marshal in alias first to prevent infinite recursion
-	type Alias SessionInfo
-	err := json.Unmarshal(data, &struct{ *Alias }{(*Alias)(info)})
+	// Unmarshal in alias first to prevent infinite recursion
+	type alias SessionInfo
+	err := json.Unmarshal(data, (*alias)(info))
 	if err == nil && info.LDContext == LDContextSessionInfo {
 		return nil
 	}
