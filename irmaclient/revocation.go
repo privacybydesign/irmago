@@ -180,6 +180,9 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		updated, err := cred.nonrevApplyUpdates(update, irma.RevocationKeys{Conf: client.Configuration})
 		if updated {
 			save = true
+			if err = client.storage.StoreSignature(cred); err != nil {
+				return err
+			}
 		}
 		if err == revocation.ErrorRevoked {
 			id := cred.CredentialType().Identifier()
