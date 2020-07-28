@@ -1261,7 +1261,7 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 	return nil
 }
 
-func (client *Client) GetSupportedVersions() (min, max *irma.ProtocolVersion) {
+func (client *Client) SupportedVersions() (min, max *irma.ProtocolVersion) {
 	return minVersion, maxVersion
 }
 

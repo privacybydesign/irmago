@@ -25,7 +25,7 @@ import (
 
 var Logger *logrus.Logger = logrus.StandardLogger()
 
-const LDContextSessionInfo = "https://irma.app/ld/request/info/v1"
+const LDContextClientRequest = "https://irma.app/ld/request/client/v1"
 const LDContextSessionOptions = "https://irma.app/ld/options/v1"
 
 type SessionPackage struct {
@@ -34,10 +34,8 @@ type SessionPackage struct {
 	FrontendToken irma.FrontendToken `json:"frontendToken"`
 }
 
-// SessionInfo contains all information irmaclient needs to know to initiate a session.
-// Session request is stored as RawMessage since it is not used internally and otherwise we would
-// have to make a manual JSON marshal function with type checking since SessionRequest is an interface.
-type SessionInfo struct {
+// ClientRequest contains all information irmaclient needs to know to initiate a session.
+type ClientRequest struct {
 	LDContext       string                `json:"@context,omitempty"`
 	ProtocolVersion *irma.ProtocolVersion `json:"protocolVersion,omitempty"`
 	Options         *SessionOptions       `json:"options,omitempty"`
@@ -552,11 +550,11 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 	}
 }
 
-func (info *SessionInfo) UnmarshalJSON(data []byte) error {
+func (info *ClientRequest) UnmarshalJSON(data []byte) error {
 	// Unmarshal in alias first to prevent infinite recursion
-	type alias SessionInfo
+	type alias ClientRequest
 	err := json.Unmarshal(data, (*alias)(info))
-	if err == nil && info.LDContext == LDContextSessionInfo {
+	if err == nil && info.LDContext == LDContextClientRequest {
 		return nil
 	}
 
@@ -565,7 +563,7 @@ func (info *SessionInfo) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	info.LDContext = LDContextSessionInfo
+	info.LDContext = LDContextClientRequest
 	info.ProtocolVersion = info.Request.Base().ProtocolVersion
 	info.Options = &SessionOptions{
 		LDContext:     LDContextSessionOptions,
