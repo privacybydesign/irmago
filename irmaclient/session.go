@@ -268,10 +268,10 @@ func (session *session) getSessionInfo() {
 	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
-	info := &server.SessionInfo{
+	info := &server.ClientRequest{
 		Request: session.request, // As request is an interface it need to be initialized with a specific instance.
 	}
-	// UnmarshalJSON of SessionInfo takes into account legacy protocols, so we do not have to check that here.
+	// UnmarshalJSON of ClientRequest takes into account legacy protocols, so we do not have to check that here.
 	err := session.transport.Get("", info)
 	if err != nil {
 		session.fail(err.(*irma.SessionError))
@@ -304,10 +304,11 @@ func (session *session) handleBinding(bindingCode string) error {
 		} else {
 			return errors.New("Server finished session without completing binding")
 		}
-	case <-errorchan:
+	case err := <-errorchan:
 		return &irma.SessionError{
 			ErrorType: irma.ErrorServerResponse,
 			Info:      "Binding aborted by server",
+			Err:       err,
 		}
 	}
 }

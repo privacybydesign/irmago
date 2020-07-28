@@ -252,7 +252,7 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 	clientAuth, _ := client.NewQrSession(qr, h)
 
 	// Binding can only be done from protocol version 2.7
-	if _, max := client.GetSupportedVersions(); max.Above(2, 6) {
+	if _, max := client.SupportedVersions(); max.Above(2, 6) {
 		enteredBindingCode := <-cBindingCode
 		require.Equal(t, bindingCode, enteredBindingCode)
 
