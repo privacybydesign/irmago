@@ -84,5 +84,5 @@ func (h *keyshareEnrollmentHandler) ClientReturnURLSet(clientReturnURL string) {
 	h.fail(errors.New("Keyshare enrollment session unexpectedly found an external return url"))
 }
 func (h *keyshareEnrollmentHandler) BindingRequired(bindingCode string) {
-	h.fail(errors.New("Keyshare enrollment session unexpectedly found an binding required"))
+	h.fail(errors.New("Keyshare enrollment session failed: session binding required"))
 }
