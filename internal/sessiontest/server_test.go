@@ -7,6 +7,7 @@ import (
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -32,6 +33,8 @@ var (
 )
 
 func init() {
+	common.ForceHTTPS = false // globally disable https enforcement
+	irma.SetLogger(logger)
 	logger.Level = logrus.FatalLevel
 	logger.Formatter = &prefixed.TextFormatter{
 		ForceFormatting: true,
@@ -144,8 +147,8 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 			},
 		},
 	},
-	ListenAddress:                  "localhost",
-	Port:                           48682,
+	ListenAddress: "localhost",
+	Port:          48682,
 	DisableRequestorAuthentication: false,
 	MaxRequestAge:                  3,
 	Permissions: requestorserver.Permissions{

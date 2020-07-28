@@ -714,8 +714,6 @@ func revocationConf(_ *testing.T) *server.Configuration {
 func startRevocationServer(t *testing.T, droptables bool) {
 	var err error
 
-	irma.SetLogger(logger)
-
 	// Connect to database and clear records from previous test runs
 	if droptables {
 		g, err := gorm.Open(revocationDbType, revocationDbStr)
