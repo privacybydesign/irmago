@@ -38,7 +38,10 @@ func TestKeyshareRegister(t *testing.T) {
 
 	require.Len(t, client.CredentialInfoList(), 1)
 
-	sessionHelper(t, getIssuanceRequest(true), "issue", client)
+	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
+
+	requestorSessionHelper(t, getIssuanceRequest(true), client, sessionOptionReuseServer)
 	keyshareSessions(t, client)
 }
 
@@ -48,6 +51,8 @@ func TestKeyshareRegister(t *testing.T) {
 func TestKeyshareSessions(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
+	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
 	keyshareSessions(t, client)
 }
 
@@ -62,30 +67,35 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
-	sessionHelper(t, issuanceRequest, "issue", client)
+	requestorSessionHelper(t, issuanceRequest, client, sessionOptionReuseServer)
 
 	disclosureRequest := getDisclosureRequest(id)
 	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	sessionHelper(t, disclosureRequest, "verification", client)
+	requestorSessionHelper(t, disclosureRequest, client, sessionOptionReuseServer)
 
 	sigRequest := getSigningRequest(id)
 	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	sessionHelper(t, sigRequest, "signature", client)
+	requestorSessionHelper(t, sigRequest, client, sessionOptionReuseServer)
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
+	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
+
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
-	sessionHelper(t, request, "issue", nil)
+	requestorSessionHelper(t, request, nil, sessionOptionReuseServer)
 
-	sessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{
+	id = irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request = irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
 			Attributes: map[string]string{
 				"email": "example@example.com",
 			},
 		},
-	}, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")), "issue", nil)
+	}, id)
+	requestorSessionHelper(t, request, nil, sessionOptionReuseServer)
 }
 
 func TestKeyshareRevocation(t *testing.T) {
