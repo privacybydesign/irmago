@@ -668,6 +668,11 @@ func panicToError(e interface{}) *irma.SessionError {
 // background jobs. This function is idempotent, doing nothing when called a second time. It
 // returns whether or not it did something.
 func (session *session) finish(delete bool) bool {
+	// In order to guarantee idempotency even if this function is simultaneously called by two threads
+	// we need to synchronize here. We do this by having the session contain a channel (done), which
+	// is initialized to buffer exactly 1 message, and is then closed. The first call to reach this if
+	// will then read that message, whilst all further calls will see the closed channel and know
+	// that no further work is needed.
 	if _, ok := <-session.done; ok {
 		// Do actual delete in background, since that can take a while in some circumstances, and
 		// precise moment of completion isn't relevant for frontend.
