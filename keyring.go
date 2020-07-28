@@ -105,7 +105,11 @@ func (_ *PrivateKeyRingFolder) parseFilename(filename string) (*IssuerIdentifier
 }
 
 func (p *PrivateKeyRingFolder) readFile(filename string, id IssuerIdentifier) (*gabi.PrivateKey, error) {
-	sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(p.path, filename))
+	scheme := p.conf.SchemeManagers[id.SchemeManagerIdentifier()]
+	if scheme == nil {
+		return nil, errors.Errorf("Private key of issuer %s belongs to unknown scheme", id.String())
+	}
+	sk, err := gabi.NewPrivateKeyFromFile(filepath.Join(p.path, filename), scheme.Demo)
 	if err != nil {
 		return nil, err
 	}
@@ -179,9 +183,14 @@ func (p *privateKeyRingScheme) counters(issuerid IssuerIdentifier) (i []uint, er
 }
 
 func (p *privateKeyRingScheme) Get(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
-	path := fmt.Sprintf(privkeyPattern, p.conf.Path, id.SchemeManagerIdentifier().Name(), id.Name())
+	schemeID := id.SchemeManagerIdentifier()
+	scheme := p.conf.SchemeManagers[schemeID]
+	if scheme == nil {
+		return nil, errors.Errorf("Private key of issuer %s belongs to unknown scheme", id.String())
+	}
+	path := fmt.Sprintf(privkeyPattern, p.conf.Path, schemeID.Name(), id.Name())
 	file := strings.Replace(path, "*", strconv.FormatUint(uint64(counter), 10), 1)
-	sk, err := gabi.NewPrivateKeyFromFile(file)
+	sk, err := gabi.NewPrivateKeyFromFile(file, scheme.Demo)
 	if err != nil {
 		return nil, err
 	}

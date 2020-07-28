@@ -13,7 +13,7 @@ require (
 	github.com/getsentry/raven-go v0.0.0-20180121060056-563b81fc02b7
 	github.com/go-chi/chi v3.3.3+incompatible
 	github.com/go-chi/cors v1.0.0
-	github.com/go-errors/errors v1.0.0
+	github.com/go-errors/errors v1.0.1
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hashicorp/go-retryablehttp v0.6.2
@@ -33,16 +33,16 @@ require (
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
-	github.com/privacybydesign/gabi v0.0.0-20200304102013-9df3e395ec4d
+	github.com/privacybydesign/gabi v0.0.0-20200729124802-5828bcd24dfd
 	github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
-	github.com/sirupsen/logrus v1.2.0
+	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.0 // indirect
 	github.com/spf13/cast v1.3.0
 	github.com/spf13/cobra v0.0.1
 	github.com/spf13/jwalterweatherman v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.4-0.20190111213756-a45bfec10d59
 	github.com/spf13/viper v1.0.1-0.20200205174444-d996804203c7
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.6.1
 	github.com/timshannon/bolthold v0.0.0-20190812165541-a85bcc049a2e // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 	github.com/x448/float16 v0.8.4 // indirect
