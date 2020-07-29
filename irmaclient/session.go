@@ -520,8 +520,6 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.finish(false)
-	session.client.nonrevRepopulateCaches(session.request)
-	session.client.StartJobs()
 	session.Handler.Success(string(messageJson))
 }
 
