@@ -431,6 +431,7 @@ func TestParallelSessions(t *testing.T) {
 	require.Equal(t, "s1234567", result.Disclosed[0][0].Value["en"])
 
 	// Two sessions should now have been done
+	time.Sleep(100 * time.Millisecond)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
