@@ -176,10 +176,11 @@ func serverRequest(
 	}
 
 	// Enable binding if necessary
-	frontendTransport := irma.NewHTTPTransport(qr.URL, false)
-	frontendTransport.SetHeader(irma.AuthorizationHeader, frontendToken)
-	sessionOptions := &server.SessionOptions{}
+	var frontendTransport *irma.HTTPTransport
+	var sessionOptions *server.SessionOptions
 	if binding {
+		frontendTransport = irma.NewHTTPTransport(qr.URL, false)
+		frontendTransport.SetHeader(irma.AuthorizationHeader, frontendToken)
 		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.BindingMethod = irma.BindingMethodPin
 		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
