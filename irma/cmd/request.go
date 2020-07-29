@@ -308,11 +308,11 @@ func handleBinding(options *server.SessionOptions, statusChan chan server.Status
 						_, err := bufio.NewReader(os.Stdin).ReadString('\n')
 						if err == nil {
 							err = completeBinding()
-							if err == nil {
-								fmt.Println("Binding completed.")
-							} else {
+							if err != nil {
 								errorChan <- err
+								return
 							}
+							fmt.Println("Binding completed.")
 						} else {
 							errorChan <- err
 							return
