@@ -210,7 +210,7 @@ func (m memRevStorage) Insert(id CredentialTypeIdentifier, update *revocation.Up
 	ours := r.Events
 	theirs := update.Events
 	theirStart, theirEnd, ourEnd := theirs[0].Index, theirs[len(theirs)-1].Index, ours[len(ours)-1].Index
-	if theirEnd <= ourEnd || ourEnd+1 < theirStart {
+	if theirEnd < ourEnd || ourEnd+1 < theirStart {
 		logger.WithFields(logrus.Fields{"theirStart": theirStart, "theirEnd": theirEnd, "ourEnd": ourEnd}).Trace("memdb: events mismatch, discarding")
 		return
 	}
