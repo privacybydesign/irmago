@@ -161,7 +161,9 @@ func (m memRevStorage) Latest(id CredentialTypeIdentifier, count uint64) map[uin
 		}
 		copy(update.Events, r.Events[offset:])
 		if len(update.Events) > 0 {
-			Logger.Tracef("memdb: get %d-%d", update.Events[0].Index, update.Events[len(update.Events)-1].Index)
+			Logger.WithFields(logrus.Fields{
+				"start": update.Events[0].Index, "end": update.Events[len(update.Events)-1].Index,
+			}).Tracef("memdb: get latest")
 		}
 		updates[r.SignedAccumulator.PKCounter] = update
 	}
@@ -178,6 +180,9 @@ func (m memRevStorage) SignedAccumulator(id CredentialTypeIdentifier, pkcounter 
 }
 
 func (m memRevStorage) Insert(id CredentialTypeIdentifier, update *revocation.Update) {
+	logger := Logger.WithFields(logrus.Fields{
+		"credtype": id, "counter": update.SignedAccumulator.PKCounter,
+	})
 	record := m.get(id)
 	if record == nil {
 		record = &memUpdateRecord{r: map[uint]*revocation.Update{}}
@@ -189,26 +194,28 @@ func (m memRevStorage) Insert(id CredentialTypeIdentifier, update *revocation.Up
 	r := record.r[update.SignedAccumulator.PKCounter]
 	if r == nil {
 		if len(update.Events) > 0 {
+			logger.Trace("memdb: inserting new record")
 			record.r[update.SignedAccumulator.PKCounter] = update
 		}
 		return
 	}
-	if len(update.Events) == 0 && r.SignedAccumulator.Accumulator.Index == update.SignedAccumulator.Accumulator.Index {
-		r.SignedAccumulator = update.SignedAccumulator
+	if len(update.Events) == 0 {
+		if r.SignedAccumulator.Accumulator.Index == update.SignedAccumulator.Accumulator.Index {
+			logger.Trace("memdb: received new accumulator")
+			r.SignedAccumulator = update.SignedAccumulator
+		}
 		return
 	}
 
 	ours := r.Events
 	theirs := update.Events
-	if len(theirs) == 0 {
-		return
-	}
 	theirStart, theirEnd, ourEnd := theirs[0].Index, theirs[len(theirs)-1].Index, ours[len(ours)-1].Index
 	if theirEnd <= ourEnd || ourEnd+1 < theirStart {
+		logger.WithFields(logrus.Fields{"theirStart": theirStart, "theirEnd": theirEnd, "ourEnd": ourEnd}).Trace("memdb: events mismatch, discarding")
 		return
 	}
 
-	Logger.Trace("memdb: inserting")
+	logger.Trace("memdb: updating")
 	offset := ourEnd + 1 - theirStart
 	r.SignedAccumulator = update.SignedAccumulator
 	r.Events = append(r.Events, theirs[offset:]...)
