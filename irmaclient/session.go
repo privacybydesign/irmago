@@ -140,7 +140,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
 			return nil
 		}
-		_, dismisser := client.NewQrSession(qr, handler)
+		dismisser := client.newQrSession(qr, handler)
 		return dismisser
 	}
 
@@ -189,20 +189,20 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 	return session
 }
 
-// NewQrSession creates and starts a new interactive IRMA session
-func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientAuthorization, *session) {
+// newQrSession creates and starts a new interactive IRMA session
+func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)
 		if err := transport.Post(qr.URL, newqr, struct{}{}); err != nil {
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorTransport, Err: errors.Wrap(err, 0)})
-			return "", nil
+			return nil
 		}
 		if newqr.Type == irma.ActionRedirect { // explicitly avoid infinite recursion
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: errors.New("infinite static QR recursion")})
-			return "", nil
+			return nil
 		}
-		return client.NewQrSession(newqr, handler)
+		return client.newQrSession(newqr, handler)
 	}
 
 	client.PauseJobs()
@@ -240,7 +240,7 @@ func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientAut
 		fallthrough
 	default:
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownAction, Info: string(session.Action)})
-		return "", nil
+		return nil
 	}
 
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
@@ -258,7 +258,7 @@ func (client *Client) NewQrSession(qr *irma.Qr, handler Handler) (irma.ClientAut
 	}
 
 	go session.getSessionInfo()
-	return clientAuth, session
+	return session
 }
 
 // Core session methods
@@ -587,7 +587,7 @@ func (session *session) sendResponse(message interface{}) {
 	session.finish(false)
 
 	if serverResponse != nil && serverResponse.NextSession != nil {
-		_, session.next = session.client.NewQrSession(serverResponse.NextSession, session.Handler)
+		session.next = session.client.newQrSession(serverResponse.NextSession, session.Handler)
 		session.next.implicitDisclosure = session.choice.Attributes
 	} else {
 		session.Handler.Success(string(messageJson))
