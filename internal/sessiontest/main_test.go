@@ -6,8 +6,10 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
+	"unsafe"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
@@ -198,33 +200,14 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 	return j
 }
 
-func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) {
-	if client == nil {
-		var handler *TestClientHandler
-		client, handler = parseStorage(t)
-		defer test.ClearTestStorage(t, handler.storage)
-	}
-
-	if TestType == "irmaserver" || TestType == "irmaserver-jwt" || TestType == "irmaserver-hmac-jwt" {
-		StartRequestorServer(JwtServerConfiguration)
-		defer StopRequestorServer()
-	}
-
-	qr, _ := startSession(t, request, sessiontype)
-
-	c := make(chan *SessionResult)
-	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
-	qrjson, err := json.Marshal(qr)
-	require.NoError(t, err)
-	client.NewSession(string(qrjson), h)
-
-	if result := <-c; result != nil {
-		require.NoError(t, result.Err)
-	}
-}
-
-func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client,
-	additionalCheck func(t *testing.T, transport *irma.HTTPTransport)) {
+func sessionHelperWithFrontendOptions(
+	t *testing.T,
+	request irma.SessionRequest,
+	sessiontype string,
+	client *irmaclient.Client,
+	frontendOptionsHandler func(handler *TestHandler),
+	bindingHandler func(handler *TestHandler),
+) {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)
@@ -237,36 +220,32 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 	}
 
 	qr, frontendToken := startSession(t, request, sessiontype)
-	frontendTransport, bindingCode := enableBinding(t, qr, frontendToken)
 
 	c := make(chan *SessionResult)
-	cBindingCode := make(chan string)
+	bindingCodeChan := make(chan string)
 	h := &TestHandler{
 		t:                  t,
 		c:                  c,
 		client:             client,
 		expectedServerName: expectedRequestorInfo(t, client.Configuration),
-		bindingCodeChan:    cBindingCode,
+		bindingCodeChan:    bindingCodeChan,
 	}
 
-	clientAuth, _ := client.NewQrSession(qr, h)
+	if frontendOptionsHandler != nil || bindingHandler != nil {
+		h.frontendTransport = irma.NewHTTPTransport(qr.URL, false)
+		h.frontendTransport.SetHeader(irma.AuthorizationHeader, frontendToken)
+	}
+	if frontendOptionsHandler != nil {
+		frontendOptionsHandler(h)
+	}
 
-	// Binding can only be done from protocol version 2.7
-	if _, max := client.SupportedVersions(); max.Above(2, 6) {
-		enteredBindingCode := <-cBindingCode
-		require.Equal(t, bindingCode, enteredBindingCode)
+	bts, err := json.Marshal(qr)
+	require.NoError(t, err)
+	dismisser := client.NewSession(string(bts), h)
 
-		// Check whether access to request endpoint is denied as long as binding is not finished
-		transport := irma.NewHTTPTransport(qr.URL, false)
-		transport.SetHeader(irma.AuthorizationHeader, clientAuth)
-		err := transport.Get("request", struct{}{})
-		require.Error(t, err)
-		require.Equal(t, 403, err.(*irma.SessionError).RemoteStatus)
-
-		additionalCheck(t, frontendTransport)
-
-		err = frontendTransport.Post("frontend/bindingcompleted", nil, nil)
-		require.NoError(t, err)
+	if bindingHandler != nil {
+		h.dismisser = &dismisser
+		bindingHandler(h)
 	}
 
 	if result := <-c; result != nil {
@@ -274,16 +253,22 @@ func sessionHelperWithBinding(t *testing.T, request irma.SessionRequest, session
 	}
 }
 
-func enableBinding(t *testing.T, qr *irma.Qr, frontendToken irma.FrontendToken) (*irma.HTTPTransport, string) {
-	optionsRequest := irma.NewOptionsRequest()
-	optionsRequest.BindingMethod = irma.BindingMethodPin
-	options := &server.SessionOptions{}
-	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.AuthorizationHeader, frontendToken)
-	err := transport.Post("frontend/options", options, optionsRequest)
+func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) {
+	sessionHelperWithFrontendOptions(t, request, sessiontype, client, nil, nil)
+}
 
-	require.NoError(t, err)
-	return transport, options.BindingCode
+func extractTransportFromDismisser(dismisser *irmaclient.SessionDismisser) *irma.HTTPTransport {
+	rct := reflect.ValueOf(dismisser).Elem().Elem().Elem().FieldByName("transport")
+	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface().(*irma.HTTPTransport)
+}
+
+func setBindingMethod(method irma.BindingMethod, handler *TestHandler) string {
+	optionsRequest := irma.NewOptionsRequest()
+	optionsRequest.BindingMethod = method
+	options := &server.SessionOptions{}
+	err := handler.frontendTransport.Post("frontend/options", options, optionsRequest)
+	require.NoError(handler.t, err)
+	return options.BindingCode
 }
 
 func expectedRequestorInfo(t *testing.T, conf *irma.Configuration) *irma.RequestorInfo {

@@ -122,7 +122,32 @@ func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
 func TestIssuanceBinding(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
-	sessionHelperWithBinding(t, request, "issue", nil, func(*testing.T, *irma.HTTPTransport) {})
+
+	var bindingCode string
+	frontendOptionsHandler := func(handler *TestHandler) {
+		bindingCode = setBindingMethod(irma.BindingMethodPin, handler)
+	}
+	bindingHandler := func(handler *TestHandler) {
+		if _, max := handler.client.SupportedVersions(); max.Above(2, 6) {
+			require.Equal(t, bindingCode, <-handler.bindingCodeChan)
+
+			// Check whether access to request endpoint is denied as long as binding is not finished
+			clientTransport := extractTransportFromDismisser(handler.dismisser)
+			err := clientTransport.Get("request", struct{}{})
+			require.Error(t, err)
+			require.Equal(t, 403, err.(*irma.SessionError).RemoteStatus)
+
+			// Check whether binding cannot be disabled again after client is connected.
+			request := irma.NewOptionsRequest()
+			result := &server.SessionOptions{}
+			err = handler.frontendTransport.Post("frontend/options", result, request)
+			require.Error(t, err)
+
+			err = handler.frontendTransport.Post("frontend/bindingcompleted", nil, nil)
+			require.NoError(handler.t, err)
+		}
+	}
+	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, bindingHandler)
 }
 
 func TestLargeAttribute(t *testing.T) {
@@ -477,7 +502,7 @@ func TestStaticQRSession(t *testing.T) {
 	c := make(chan *SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, "", nil})
+	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, "", nil, nil, nil})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
@@ -596,47 +621,12 @@ func TestPOSTSizeLimit(t *testing.T) {
 }
 
 func TestDisableBinding(t *testing.T) {
-	var handler *TestClientHandler
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-
-	StartRequestorServer(JwtServerConfiguration)
-	defer StopRequestorServer()
-
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	request := getCombinedIssuanceRequest(id)
-	qr, frontendToken := startSession(t, request, "issue")
-	transport, _ := enableBinding(t, qr, frontendToken)
-
-	// Disable binding again
-	optionsRequest := irma.NewOptionsRequest()
-	options := &server.SessionOptions{}
-	optionsRequest.BindingMethod = irma.BindingMethodNone
-	err := transport.Post("frontend/options", options, optionsRequest)
-	require.NoError(t, err)
-
-	c := make(chan *SessionResult)
-	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, request, client.Configuration)}
-	qrjson, err := json.Marshal(qr)
-	require.NoError(t, err)
-	client.NewSession(string(qrjson), h)
-
-	if result := <-c; result != nil {
-		require.NoError(t, result.Err)
-	}
-}
-
-func TestDisableBindingAfterClientConnected(t *testing.T) {
-	// When client is already connected, the frontend may not change the binding setting anymore.
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
-	check := func(t *testing.T, transport *irma.HTTPTransport) {
-		request := irma.NewOptionsRequest()
-		result := &server.SessionOptions{}
-		err := transport.Post("frontend/options", result, request)
-		require.Error(t, err)
+	frontendOptionsHandler := func(handler *TestHandler) {
+		_ = setBindingMethod(irma.BindingMethodPin, handler)
+		_ = setBindingMethod(irma.BindingMethodNone, handler)
 	}
-
-	sessionHelperWithBinding(t, request, "issue", nil, check)
+	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, nil)
 }

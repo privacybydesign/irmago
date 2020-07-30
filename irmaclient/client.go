@@ -1076,7 +1076,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	// If the session succeeds or fails, the keyshare server is stored to disk or
 	// removed from the client by the keyshareEnrollmentHandler.
 	client.keyshareServers[managerID] = kss
-	client.NewQrSession(qr, &keyshareEnrollmentHandler{
+	client.newQrSession(qr, &keyshareEnrollmentHandler{
 		client: client,
 		pin:    pin,
 		kss:    kss,

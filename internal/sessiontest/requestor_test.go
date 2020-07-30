@@ -1,10 +1,7 @@
 package sessiontest
 
 import (
-	"bytes"
 	"encoding/json"
-	"io/ioutil"
-	"net/http"
 	"reflect"
 	"testing"
 	"time"
@@ -68,16 +65,19 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	var h irmaclient.Handler
 	requestor := expectedRequestorInfo(t, client.Configuration)
 	if opts&sessionOptionUnsatisfiableRequest > 0 {
-		h = &UnsatisfiableTestHandler{TestHandler: TestHandler{t, clientChan, client, requestor, 0, "", nil}}
+		h = &UnsatisfiableTestHandler{TestHandler: TestHandler{t, clientChan, client, requestor, 0, "", nil, nil, nil}}
 	} else {
 		var wait time.Duration = 0
 		if opts&sessionOptionClientWait > 0 {
 			wait = 2 * time.Second
 		}
-		h = &TestHandler{t, clientChan, client, requestor, wait, "", nil}
+		h = &TestHandler{t, clientChan, client, requestor, wait, "", nil, nil, nil}
 	}
 
-	clientAuth, dismisser := client.NewQrSession(qr, h)
+	bts, err := json.Marshal(qr)
+	require.NoError(t, err)
+	dismisser := client.NewSession(string(bts), h)
+
 	clientResult := <-clientChan
 	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
 		require.NoError(t, clientResult.Err)
@@ -92,17 +92,9 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	require.Equal(t, backendToken, serverResult.Token)
 
 	if opts&sessionOptionRetryPost > 0 {
-		req, err := http.NewRequest(http.MethodPost,
-			qr.URL+"/proofs",
-			bytes.NewBuffer([]byte(h.(*TestHandler).result)),
-		)
-		require.NoError(t, err)
-		req.Header.Add("Content-Type", "application/json")
-		req.Header.Add(irma.AuthorizationHeader, clientAuth)
-		res, err := new(http.Client).Do(req)
-		require.NoError(t, err)
-		require.True(t, res.StatusCode < 300)
-		_, err = ioutil.ReadAll(res.Body)
+		clientTransport := extractTransportFromDismisser(&dismisser)
+		var result string
+		err := clientTransport.Post("proofs", &result, h.(*TestHandler).result)
 		require.NoError(t, err)
 	}
 
@@ -382,7 +374,7 @@ func TestClientDeveloperMode(t *testing.T) {
 	c := make(chan *SessionResult, 1)
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
-	client.NewSession(string(j), &TestHandler{t, c, client, nil, 0, "", nil})
+	client.NewSession(string(j), &TestHandler{t, c, client, nil, 0, "", nil, nil, nil})
 	result := <-c
 
 	// Check that it failed with an appropriate error message
