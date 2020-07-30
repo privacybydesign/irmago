@@ -83,6 +83,8 @@ type TestHandler struct {
 	wait               time.Duration
 	result             string
 	bindingCodeChan    chan string
+	dismisser          *irmaclient.SessionDismisser
+	frontendTransport  *irma.HTTPTransport
 }
 
 func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
@@ -152,6 +154,8 @@ func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinH
 	callback(true, "12345")
 }
 func (th TestHandler) BindingRequired(bindingCode string) {
+	// Send binding code via channel to calling test. This is done such that
+	// calling tests can detect whether this handler wasn't called.
 	if th.bindingCodeChan != nil {
 		th.bindingCodeChan <- bindingCode
 		return
