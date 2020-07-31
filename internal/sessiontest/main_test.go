@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
@@ -222,29 +221,18 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	}
 }
 
-func expectedServerName(t *testing.T, request irma.SessionRequest, conf *irma.Configuration) irma.TranslatedString {
+func expectedServerName(t *testing.T, request irma.SessionRequest, conf *irma.Configuration) *irma.RequestorInfo {
 	localhost := "localhost"
 	host := irma.NewTranslatedString(&localhost)
 
-	ir, ok := request.(*irma.IssuanceRequest)
-	if !ok {
-		return host
+	// If present in configuration, server name is expected to be
+	// value in scheme
+	if requestor, ok := conf.Requestors[localhost]; ok {
+		return requestor
 	}
 
-	// In issuance sessions, the server name is expected to be:
-	// - the name of the issuer, if there is just one issuer
-	// - the hostname as usual otherwise
-
-	var name irma.TranslatedString
-	for _, credreq := range ir.Credentials {
-		n := conf.Issuers[credreq.CredentialTypeID.IssuerIdentifier()].Name
-		if !reflect.DeepEqual(name, n) {
-			if len(name) != 0 {
-				return host
-			}
-			name = n
-		}
+	return &irma.RequestorInfo{
+		Name:      host,
+		Hostnames: []string{localhost},
 	}
-
-	return name
 }

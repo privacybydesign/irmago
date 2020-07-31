@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
@@ -258,7 +258,7 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 
 	// Trigger downloading the updated irma_configuration using a disclosure request containing the
 	// new attribute, and inform the client
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	newAttrRequest := irma.NewDisclosureRequest(attrid)
 	downloaded, err := client.Configuration.Download(newAttrRequest)
 	require.NoError(t, err)
@@ -289,7 +289,7 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
 	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
 	_, err := client.Configuration.Download(issuanceRequest)
@@ -314,7 +314,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
 	conf := irmaServerConfiguration.IrmaConfiguration
-	conf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	conf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	downloaded, err := conf.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.Equal(t, &irma.IrmaIdentifierSet{
@@ -340,7 +340,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
 	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
@@ -385,7 +385,7 @@ func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
 	delete(client.Configuration.CredentialTypes, credid)
 	require.NotContains(t, client.Configuration.CredentialTypes, credid)
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	request := getIssuanceRequest(true)
 	_, err := client.Configuration.Download(request)
 	require.NoError(t, err)
@@ -403,7 +403,7 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 	delete(client.Configuration.CredentialTypes, credid)
 	require.NotContains(t, client.Configuration.CredentialTypes, credid)
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	request := irma.NewDisclosureRequest(attrid)
 	_, err := client.Configuration.Download(request)
 	require.NoError(t, err)
@@ -468,7 +468,7 @@ func TestStaticQRSession(t *testing.T) {
 	c := make(chan *SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), &TestHandler{t, c, client, host, 0, ""})
+	client.NewSession(string(bts), &TestHandler{t, c, client, &irma.RequestorInfo{Name: host, Hostnames: []string{localhost}}, 0, ""})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}

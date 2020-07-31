@@ -2,7 +2,7 @@ package irmaclient
 
 import (
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 )
 
 // keyshareEnrollmentHandler handles the keyshare attribute issuance session
@@ -18,7 +18,7 @@ var _ Handler = (*keyshareEnrollmentHandler)(nil)
 
 // Session handlers in the order they are called
 
-func (h *keyshareEnrollmentHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName irma.TranslatedString, callback PermissionHandler) {
+func (h *keyshareEnrollmentHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
 	// Fetch the username from the credential request and save it along with the scheme manager
 	for _, attr := range request.Credentials[0].Attributes {
 		h.kss.Username = attr
@@ -56,10 +56,10 @@ func (h *keyshareEnrollmentHandler) fail(err error) {
 func (h *keyshareEnrollmentHandler) StatusUpdate(action irma.Action, status irma.Status) {}
 
 // The methods below should never be called, so we let each of them fail the session
-func (h *keyshareEnrollmentHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName irma.TranslatedString, callback PermissionHandler) {
+func (h *keyshareEnrollmentHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
 	callback(false, nil)
 }
-func (h *keyshareEnrollmentHandler) RequestSignaturePermission(request *irma.SignatureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName irma.TranslatedString, callback PermissionHandler) {
+func (h *keyshareEnrollmentHandler) RequestSignaturePermission(request *irma.SignatureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
 	callback(false, nil)
 }
 func (h *keyshareEnrollmentHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {

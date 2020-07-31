@@ -6,7 +6,7 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 )
 
 // LogEntry is a log entry of a past event.
@@ -28,7 +28,7 @@ type LogEntry struct {
 	IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
 
 	// All session types
-	ServerName irma.TranslatedString `json:",omitempty"`
+	ServerName *irma.RequestorInfo   `json:",omitempty"`
 	Version    *irma.ProtocolVersion `json:",omitempty"`
 	Disclosure *irma.Disclosure      `json:",omitempty"`
 	Request    json.RawMessage       `json:",omitempty"` // Message that started the session

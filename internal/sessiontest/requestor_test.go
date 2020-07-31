@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -154,7 +154,7 @@ func TestRequestorSignatureSession(t *testing.T) {
 
 	// Load the updated scheme in which an attribute was added to the studentCard credential type
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	require.NoError(t, client.Configuration.UpdateSchemeManager(schemeid, nil))
 	require.NoError(t, client.Configuration.ParseFolder())
 	require.Contains(t, client.Configuration.AttributeTypes, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute"))

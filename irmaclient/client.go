@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -11,7 +12,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
@@ -157,6 +158,32 @@ func New(
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		handler:               handler,
+	}
+
+	// Special case for updating irma_configuration to the new format.
+	// This needs to be done before loading from irma_configuration, so
+	// cannot use existing update mechanisms.
+	hasNewConfiguration, err := common.PathExists(filepath.Join(storagePath, "irma_configuration", "issuer_schemes"))
+	if err != nil {
+		return nil, err
+	}
+	if !hasNewConfiguration {
+		original_content, err := filepath.Glob(filepath.Join(storagePath, "irma_configuration", "*"))
+		if err != nil {
+			return nil, err
+		}
+		err = os.MkdirAll(filepath.Join(storagePath, "irma_configuration", "issuer_schemes"), os.FileMode(0700))
+		if err != nil {
+			return nil, err
+		}
+		for _, schemedir := range original_content {
+			// Move old schemes to new home
+			err = os.Rename(filepath.Join(storagePath, "irma_configuration", schemedir),
+				filepath.Join(storagePath, "irma_configuration", "issuer_schemes"))
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	client.Configuration, err = irma.NewConfiguration(
