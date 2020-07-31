@@ -1,6 +1,6 @@
 <SchemeManager version="7">
 	<Id>test</Id>
-	<Url>http://localhost:48681/irma_configuration/test</Url>
+	<Url>http://localhost:48681/irma_configuration/issuer_schemes/test</Url>
 	<Demo>true</Demo>
 	<Name>
 		<en>Test Scheme Manager</en>

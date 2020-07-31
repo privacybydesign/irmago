@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"reflect"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -44,17 +43,17 @@ type Handler interface {
 	RequestIssuancePermission(request *irma.IssuanceRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
-		ServerName irma.TranslatedString,
+		ServerName *irma.RequestorInfo,
 		callback PermissionHandler)
 	RequestVerificationPermission(request *irma.DisclosureRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
-		ServerName irma.TranslatedString,
+		ServerName *irma.RequestorInfo,
 		callback PermissionHandler)
 	RequestSignaturePermission(request *irma.SignatureRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
-		ServerName irma.TranslatedString,
+		ServerName *irma.RequestorInfo,
 		callback PermissionHandler)
 	RequestSchemeManagerPermission(manager *irma.SchemeManager,
 		callback func(proceed bool))
@@ -71,14 +70,14 @@ type session struct {
 	Action     irma.Action
 	Handler    Handler
 	Version    *irma.ProtocolVersion
-	ServerName irma.TranslatedString
+	ServerName *irma.RequestorInfo
 
 	token          string
 	choice         *irma.DisclosureChoice
 	attrIndices    irma.DisclosedAttributeIndices
 	client         *Client
 	request        irma.SessionRequest
-	done           <-chan struct{}
+	done           bool
 	prepRevocation chan error // used when nonrevocation preprocessing is done
 
 	// State for issuance sessions
@@ -155,16 +154,12 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	client.PauseJobs()
 
-	doneChannel := make(chan struct{}, 1)
-	doneChannel <- struct{}{}
-	close(doneChannel)
 	session := &session{
 		Action:         action,
 		Handler:        handler,
 		client:         client,
 		Version:        minVersion,
 		request:        request,
-		done:           doneChannel,
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
@@ -193,9 +188,6 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	client.PauseJobs()
 
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
-	doneChannel := make(chan struct{}, 1)
-	doneChannel <- struct{}{}
-	close(doneChannel)
 	session := &session{
 		ServerURL:      qr.URL,
 		Hostname:       u.Hostname(),
@@ -203,7 +195,6 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		Action:         qr.Type,
 		Handler:        handler,
 		client:         client,
-		done:           doneChannel,
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
@@ -255,24 +246,12 @@ func (session *session) getSessionInfo() {
 	session.processSessionInfo()
 }
 
-func serverName(hostname string, request irma.SessionRequest, conf *irma.Configuration) irma.TranslatedString {
-	sn := irma.NewTranslatedString(&hostname)
+func serverName(hostname string, request irma.SessionRequest, conf *irma.Configuration) *irma.RequestorInfo {
+	sn := irma.NewRequestorInfo(hostname)
 
-	if ir, ok := request.(*irma.IssuanceRequest); ok {
-		// If there is only one issuer in the current request, use its name as ServerName
-		var iss irma.TranslatedString
-		for _, credreq := range ir.Credentials {
-			credIssuer := conf.Issuers[credreq.CredentialTypeID.IssuerIdentifier()].Name
-			if !reflect.DeepEqual(credIssuer, iss) { // Can't just test pointer equality: credIssuer != iss
-				if len(iss) != 0 {
-					return sn
-				}
-				iss = credIssuer
-			}
-		}
-		if len(iss) != 0 {
-			return iss
-		}
+	if rinf, ok := conf.Requestors[hostname]; ok && (rinf.ValidUntil == nil || rinf.ValidUntil.After(irma.Timestamp(time.Now()))) {
+		// Use hostname-associated requestorinfo if available.
+		sn = rinf
 	}
 
 	return sn
@@ -686,21 +665,13 @@ func panicToError(e interface{}) *irma.SessionError {
 // background jobs. This function is idempotent, doing nothing when called a second time. It
 // returns whether or not it did something.
 func (session *session) finish(delete bool) bool {
-	// In order to guarantee idempotency even if this function is simultaneously called by two threads
-	// we need to synchronize here. We do this by having the session contain a channel (done), which
-	// is initialized to buffer exactly 1 message, and is then closed. The first call to reach this if
-	// will then read that message, whilst all further calls will see the closed channel and know
-	// that no further work is needed.
-	if _, ok := <-session.done; ok {
-		// Do actual delete in background, since that can take a while in some circumstances, and
-		// precise moment of completion isn't relevant for frontend.
-		go func() {
-			if delete && session.IsInteractive() {
-				session.transport.Delete()
-			}
-			session.client.nonrevRepopulateCaches(session.request)
-			session.client.sessions.remove(session.token)
-		}()
+	if !session.done {
+		if delete && session.IsInteractive() {
+			session.transport.Delete()
+		}
+		session.client.nonrevRepopulateCaches(session.request)
+		session.client.sessions.remove(session.token)
+		session.done = true
 		return true
 	}
 	return false

@@ -199,7 +199,7 @@ func TestInstallScheme(t *testing.T) {
 
 	// installing a new scheme from its remote requires passing a SchemeManager instance,
 	// so retrieve that first
-	testscheme, err := DownloadSchemeManager("http://localhost:48681/irma_configuration/test")
+	testscheme, err := DownloadSchemeManager("http://localhost:48681/irma_configuration/issuer_schemes/test")
 	require.NoError(t, err)
 
 	// setup a new empty Configuration

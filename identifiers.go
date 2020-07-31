@@ -20,6 +20,11 @@ func (oi metaObjectIdentifier) MarshalCBOR() (data []byte, err error) {
 	return cbor.Marshal(string(oi), cbor.EncOptions{})
 }
 
+// RequestorSchemeIdentifier identifies a requestor scheme. Equal to its ID. For example "pbdf-requestors"
+type RequestorSchemeIdentifier struct {
+	metaObjectIdentifier
+}
+
 // SchemeManagerIdentifier identifies a scheme manager. Equal to its ID. For example "irma-demo".
 type SchemeManagerIdentifier struct {
 	metaObjectIdentifier
@@ -106,6 +111,11 @@ func (oi metaObjectIdentifier) Root() string {
 	}
 }
 
+// NewRequestorIdentifier converts the specified identifier to a RequestorSchemeIdentifier.
+func NewRequestorSchemeIdentifier(id string) RequestorSchemeIdentifier {
+	return RequestorSchemeIdentifier{metaObjectIdentifier(id)}
+}
+
 // NewSchemeManagerIdentifier converts the specified identifier to a SchemeManagerIdentifier.
 func NewSchemeManagerIdentifier(id string) SchemeManagerIdentifier {
 	return SchemeManagerIdentifier{metaObjectIdentifier(id)}
@@ -163,6 +173,15 @@ func (id SchemeManagerIdentifier) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (id *SchemeManagerIdentifier) UnmarshalText(text []byte) error {
 	*id = NewSchemeManagerIdentifier(string(text))
+	return nil
+}
+
+func (id RequestorSchemeIdentifier) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+func (id *RequestorSchemeIdentifier) UnmarshalText(text []byte) error {
+	*id = NewRequestorSchemeIdentifier(string(text))
 	return nil
 }
 

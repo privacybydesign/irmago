@@ -275,7 +275,7 @@ func TestWrongSchemeManager(t *testing.T) {
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove(filepath.Join(handler.storage, "client", "irma_configuration", "irma-demo", "index")))
+	require.NoError(t, os.Remove(filepath.Join(handler.storage, "client", "irma_configuration", "issuer_schemes", "irma-demo", "index")))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)
@@ -296,7 +296,7 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/issuer_schemes/irma-demo"
 	require.NoError(t, client.Configuration.UpdateSchemeManager(schemeid, nil))
 	require.NoError(t, client.Configuration.ParseFolder())
 	require.NotNil(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid))

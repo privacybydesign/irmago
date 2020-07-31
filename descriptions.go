@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"path/filepath"
@@ -109,6 +110,62 @@ type AttributeType struct {
 	CredentialTypeID string `xml:"-"`
 	IssuerID         string `xml:"-"`
 	SchemeManagerID  string `xml:"-"`
+}
+
+// RequestorScheme describes verified requestors
+type RequestorScheme struct {
+	ID        RequestorSchemeIdentifier `json:"id"`
+	URL       string                    `json:"url"`
+	Status    SchemeManagerStatus       `json:"-"`
+	Timestamp Timestamp                 `json:"-"`
+
+	index SchemeManagerIndex
+}
+
+// RequestorInfo describes a single verified requestor
+type RequestorInfo struct {
+	Scheme     RequestorSchemeIdentifier `json:"scheme"`
+	Name       TranslatedString          `json:"name"`
+	Industry   *TranslatedString         `json:"industry"`
+	Hostnames  []string                  `json:"hostnames"`
+	Logo       *string                   `json:"logo"`
+	ValidUntil *Timestamp                `json:"valid_until"`
+}
+
+// RequestorChunk is a number of verified requestors stored together. The RequestorScheme can consist of multiple such chunks
+type RequestorChunk []*RequestorInfo
+
+// NewRequestorInfo returns a Requestor with just the given hostname
+func NewRequestorInfo(hostname string) *RequestorInfo {
+	return &RequestorInfo{
+		Name:      NewTranslatedString(&hostname),
+		Hostnames: []string{hostname},
+	}
+}
+
+func (info *RequestorInfo) UnmarshalJSON(data []byte) error {
+	var bareData struct {
+		Scheme     RequestorSchemeIdentifier `json:"scheme"`
+		Name       TranslatedString          `json:"name"`
+		Industry   *TranslatedString         `json:"industry"`
+		Hostnames  []string                  `json:"hostnames"`
+		Logo       *string                   `json:"logo"`
+		ValidUntil *Timestamp                `json:"valid_until"`
+	}
+	err := json.Unmarshal(data, &bareData)
+	if err == nil {
+		info.Scheme = bareData.Scheme
+		info.Name = bareData.Name
+		info.Industry = bareData.Industry
+		info.Hostnames = bareData.Hostnames
+		info.Logo = bareData.Logo
+		return nil
+	}
+
+	info.Industry = nil
+	info.Hostnames = nil
+	info.Logo = nil
+	return json.Unmarshal(data, &info.Name)
 }
 
 func (ad AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {

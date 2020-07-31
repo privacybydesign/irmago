@@ -59,7 +59,7 @@ func (conf *Configuration) downloadDemoPrivateKeys(scheme *SchemeManager) error 
 	Logger.Debugf("Attempting downloading of private keys of scheme %s", scheme.ID)
 	transport := NewHTTPTransport(scheme.URL, true)
 
-	err := conf.downloadFile(transport, scheme.ID, "sk.pem")
+	_, err := conf.downloadFile(transport, filepath.Join("issuer_schemes", scheme.ID), "sk.pem")
 	if err != nil { // If downloading of any of the private key fails just log it, and then continue
 		Logger.Warnf("Downloading private key of scheme %s failed ", scheme.ID)
 	}
@@ -80,7 +80,7 @@ func (conf *Configuration) downloadDemoPrivateKeys(scheme *SchemeManager) error 
 			continue
 		}
 		remote := strings.Join(parts[len(parts)-3:], "/")
-		if err = conf.downloadFile(transport, scheme.ID, remote); err != nil {
+		if _, err = conf.downloadFile(transport, filepath.Join("issuer_schemes", scheme.ID), remote); err != nil {
 			Logger.Warnf("Downloading private key %s failed: %s", skpath, err)
 		}
 	}

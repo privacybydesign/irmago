@@ -63,7 +63,7 @@ func RunVerify(path string, verbose bool) error {
 }
 
 func VerifyScheme(path string) error {
-	conf, err := irma.NewConfiguration(filepath.Dir(path), irma.ConfigurationOptions{ReadOnly: true})
+	conf, err := irma.NewConfiguration(filepath.Dir(filepath.Dir(path)), irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func VerifyScheme(path string) error {
 		return err
 	}
 
-	if err := conf.VerifySchemeManager(scheme); err != nil {
+	if err := conf.VerifySchemeManager(scheme, path); err != nil {
 		return err
 	}
 
@@ -103,7 +103,7 @@ func VerifyIrmaConfiguration(path string) error {
 	}
 
 	for _, manager := range conf.SchemeManagers {
-		if err := conf.VerifySchemeManager(manager); err != nil {
+		if err := conf.VerifySchemeManager(manager, filepath.Join(path, manager.ID)); err != nil {
 			return err
 		}
 	}
