@@ -102,6 +102,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	}
 
 	r.Use(server.SizeLimitMiddleware)
+	r.Use(server.TimeoutMiddleware([]string{"/statusevents", "/updateevents"}, server.WriteTimeout))
 
 	notfound := &irma.RemoteError{Status: 404, ErrorName: string(server.ErrorInvalidRequest.Type)}
 	notallowed := &irma.RemoteError{Status: 405, ErrorName: string(server.ErrorInvalidRequest.Type)}
