@@ -34,7 +34,7 @@ require (
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/privacybydesign/gabi v0.0.0-20200729124802-5828bcd24dfd
-	github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
+	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.0 // indirect
 	github.com/spf13/cast v1.3.0

@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
+	sseclient "github.com/sietseringers/go-sse"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 
@@ -56,6 +57,7 @@ func SetLogger(logger *logrus.Logger) {
 	gabi.Logger = Logger
 	common.Logger = Logger
 	revocation.Logger = Logger
+	sseclient.Logger = log.New(Logger.WithField("type", "sseclient").WriterLevel(logrus.TraceLevel), "", 0)
 }
 
 // NewHTTPTransport returns a new HTTPTransport.
