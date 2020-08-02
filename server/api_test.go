@@ -1,19 +1,19 @@
-package server_test
+package server
 
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/privacybydesign/irmago"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseSessionRequest(t *testing.T) {
 	requestJson := `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"M3LYmTr3CZDYZkMNK2uCCg==","protocolVersion":"2.5","disclose":[[["irma-demo.RU.studentCard.studentID"]]],"labels":{"0":null}}`
 	requestorRequestJson := fmt.Sprintf(`{"request": %s}`, requestJson)
 	t.Run("valid json string", func(t *testing.T) {
-		res, err := server.ParseSessionRequest(requestJson)
+		res, err := ParseSessionRequest(requestJson)
 		require.NoError(t, err)
 		require.Equal(t,
 			"irma-demo.RU.studentCard.studentID",
@@ -21,7 +21,7 @@ func TestParseSessionRequest(t *testing.T) {
 	})
 
 	t.Run("valid byte array", func(t *testing.T) {
-		res, err := server.ParseSessionRequest([]byte(requestJson))
+		res, err := ParseSessionRequest([]byte(requestJson))
 		require.NoError(t, err)
 		require.Equal(t,
 			"irma-demo.RU.studentCard.studentID",
@@ -31,7 +31,7 @@ func TestParseSessionRequest(t *testing.T) {
 	t.Run("valid struct", func(t *testing.T) {
 		request := &irma.DisclosureRequest{}
 		require.NoError(t, json.Unmarshal([]byte(requestJson), request))
-		res, err := server.ParseSessionRequest(request)
+		res, err := ParseSessionRequest(request)
 		require.NoError(t, err)
 		require.Equal(t,
 			"irma-demo.RU.studentCard.studentID",
@@ -39,7 +39,7 @@ func TestParseSessionRequest(t *testing.T) {
 	})
 
 	t.Run("requestor request string", func(t *testing.T) {
-		res, err := server.ParseSessionRequest(requestorRequestJson)
+		res, err := ParseSessionRequest(requestorRequestJson)
 		require.NoError(t, err)
 		require.Equal(t,
 			"irma-demo.RU.studentCard.studentID",
@@ -50,10 +50,10 @@ func TestParseSessionRequest(t *testing.T) {
 		request := &irma.DisclosureRequest{}
 		require.NoError(t, json.Unmarshal([]byte(requestJson), request))
 		sessionRequest := &irma.ServiceProviderRequest{
-			Request:              request,
+			Request: request,
 		}
 
-		res, err := server.ParseSessionRequest(sessionRequest)
+		res, err := ParseSessionRequest(sessionRequest)
 		require.NoError(t, err)
 		require.Equal(t,
 			"irma-demo.RU.studentCard.studentID",
@@ -64,12 +64,12 @@ func TestParseSessionRequest(t *testing.T) {
 	})
 
 	t.Run("invalid type", func(t *testing.T) {
-		_, err := server.ParseSessionRequest(42)
+		_, err := ParseSessionRequest(42)
 		require.Error(t, err)
 	})
 
 	t.Run("invalid string", func(t *testing.T) {
-		_, err := server.ParseSessionRequest(`{"foo": "bar"}`)
+		_, err := ParseSessionRequest(`{"foo": "bar"}`)
 		require.Error(t, err)
 	})
 }
