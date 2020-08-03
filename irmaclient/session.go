@@ -280,11 +280,10 @@ func (session *session) getSessionInfo() {
 
 	// Check whether binding is needed, and if so, wait for it to be completed.
 	if info.Options.BindingMethod != irma.BindingMethodNone {
-		err = session.handleBinding(info.Options.BindingCode)
-	}
-	if err != nil {
-		session.fail(err.(*irma.SessionError))
-		return
+		if err = session.handleBinding(info.Options.BindingCode); err != nil {
+			session.fail(err.(*irma.SessionError))
+			return
+		}
 	}
 
 	session.processSessionInfo()
@@ -302,7 +301,7 @@ func (session *session) handleBinding(bindingCode string) error {
 		if status == server.StatusConnected {
 			return session.transport.Get("request", session.request)
 		} else {
-			return errors.New("Server finished session without completing binding")
+			return &irma.SessionError{ErrorType: irma.ErrorBindingRejected}
 		}
 	case err := <-errorchan:
 		return &irma.SessionError{
