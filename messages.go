@@ -171,7 +171,7 @@ type ClientToken string
 type FrontendToken string
 
 // Authorization headers
-type ClientAuthorization = string
+type ClientAuthorization string
 
 // Statuses
 const (
