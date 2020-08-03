@@ -379,9 +379,9 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 	session.Unlock()
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
-		Arg:       session.clientToken,
+		Arg:       string(session.clientToken),
 	}))
-	if err := s.SubscribeServerSentEvents(w, r, session.clientToken, false); err != nil {
+	if err := s.SubscribeServerSentEvents(w, r, string(session.clientToken), false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}

@@ -207,7 +207,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 	}
 	return &irma.Qr{
 		Type: action,
-		URL:  s.conf.URL + "session/" + session.clientToken,
+		URL:  s.conf.URL + "session/" + string(session.clientToken),
 	}, session.backendToken, session.frontendToken, nil
 }
 
