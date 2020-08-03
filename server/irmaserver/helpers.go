@@ -45,10 +45,10 @@ func (session *session) onUpdate() {
 	if session.sse == nil {
 		return
 	}
-	session.sse.SendMessage("session/"+session.clientToken,
+	session.sse.SendMessage("session/"+string(session.clientToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
-	session.sse.SendMessage("session/"+session.backendToken,
+	session.sse.SendMessage("session/"+string(session.backendToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
 }
@@ -488,7 +488,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := chi.URLParam(r, "backendToken")
+		token := irma.ClientToken(chi.URLParam(r, "clientToken"))
 		session := s.sessions.clientGet(token)
 		if session == nil {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -509,7 +509,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				if session.status.Finished() {
 					if handler := s.handlers[result.Token]; handler != nil {
 						go handler(result)
-						delete(s.handlers, token)
+						delete(s.handlers, result.Token)
 					}
 				}
 			}

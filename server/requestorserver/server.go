@@ -202,7 +202,7 @@ func (s *Server) Handler() http.Handler {
 		// Server routes
 		r.Route("/session", func(r chi.Router) {
 			r.Post("/", s.handleCreateSession)
-			r.Route("/{token}", func(r chi.Router) {
+			r.Route("/{backendToken}", func(r chi.Router) {
 				r.Delete("/", s.handleDelete)
 				r.Get("/status", s.handleStatus)
 				r.Get("/statusevents", s.handleStatusEvents)
@@ -302,7 +302,7 @@ func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	res := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	res := s.irmaserv.GetSessionResult(irma.BackendToken(chi.URLParam(r, "backendToken")))
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -327,14 +327,14 @@ func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	err := s.irmaserv.CancelSession(chi.URLParam(r, "token"))
+	err := s.irmaserv.CancelSession(irma.BackendToken(chi.URLParam(r, "backendToken")))
 	if err != nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 	}
 }
 
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
-	res := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	res := s.irmaserv.GetSessionResult(irma.BackendToken(chi.URLParam(r, "backendToken")))
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -353,8 +353,8 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessiontoken := chi.URLParam(r, "token")
-	res := s.irmaserv.GetSessionResult(sessiontoken)
+	backendToken := irma.BackendToken(chi.URLParam(r, "backendToken"))
+	res := s.irmaserv.GetSessionResult(backendToken)
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -381,7 +381,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backendToken := chi.URLParam(r, "token")
+	backendToken := irma.BackendToken(chi.URLParam(r, "backendToken"))
 	res := s.irmaserv.GetSessionResult(backendToken)
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")

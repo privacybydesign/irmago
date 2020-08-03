@@ -23,7 +23,7 @@ type Server struct {
 	sessions         sessionStore
 	scheduler        *gocron.Scheduler
 	stopScheduler    chan bool
-	handlers         map[string]server.SessionHandler
+	handlers         map[irma.BackendToken]server.SessionHandler
 	serverSentEvents *sse.Server
 }
 
@@ -50,11 +50,11 @@ func New(conf *server.Configuration) (*Server, error) {
 		conf:      conf,
 		scheduler: gocron.NewScheduler(),
 		sessions: &memorySessionStore{
-			requestor: make(map[string]*session),
-			client:    make(map[string]*session),
+			requestor: make(map[irma.BackendToken]*session),
+			client:    make(map[irma.ClientToken]*session),
 			conf:      conf,
 		},
-		handlers:         make(map[string]server.SessionHandler),
+		handlers:         make(map[irma.BackendToken]server.SessionHandler),
 		serverSentEvents: e,
 	}
 
@@ -109,7 +109,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
-	r.Route("/session/{backendToken}", func(r chi.Router) {
+	r.Route("/session/{clientToken}", func(r chi.Router) {
 		r.Use(s.sessionMiddleware)
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)
@@ -284,10 +284,10 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
 // of the specified IRMA session.
-func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, backendToken irma.BackendToken, requestor bool) error {
-	return s.SubscribeServerSentEvents(w, r, backendToken, requestor)
+func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+	return s.SubscribeServerSentEvents(w, r, token, requestor)
 }
-func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, backendToken irma.BackendToken, requestor bool) error {
+func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
 	if !s.conf.EnableSSE {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      500,
@@ -300,15 +300,15 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 
 	var session *session
 	if requestor {
-		session = s.sessions.get(backendToken)
+		session = s.sessions.get(irma.BackendToken(token))
 	} else {
-		session = s.sessions.clientGet(backendToken)
+		session = s.sessions.clientGet(irma.ClientToken(token))
 	}
 	if session == nil {
-		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", backendToken))
+		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
 	}
 	if session.status.Finished() {
-		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", backendToken))
+		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
 	}
 
 	// The EventSource.onopen Javascript callback is not consistently called across browsers (Chrome yes, Firefox+Safari no).
@@ -319,7 +319,7 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	//   event to just the webclient currently listening. (Thus the handler of this "open" event must be idempotent.)
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		s.serverSentEvents.SendMessage("session/"+backendToken, sse.NewMessage("", "", "open"))
+		s.serverSentEvents.SendMessage("session/"+token, sse.NewMessage("", "", "open"))
 	}()
 	s.serverSentEvents.ServeHTTP(w, r)
 	return nil
