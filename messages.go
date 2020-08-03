@@ -206,6 +206,8 @@ const (
 	ErrorCrypto = ErrorType("crypto")
 	// Error involving revocation or nonrevocation proofs
 	ErrorRevocation = ErrorType("revocation")
+	// Our binding attempt was rejected by the server
+	ErrorBindingRejected = ErrorType("bindingRejected")
 	// Server rejected our response (second IRMA message)
 	ErrorRejected = ErrorType("rejected")
 	// (De)serializing of a message failed
