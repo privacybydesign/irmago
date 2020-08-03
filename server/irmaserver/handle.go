@@ -34,10 +34,10 @@ func (session *session) handleDelete() {
 }
 
 func (session *session) handleGetInfo(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization) (
-	*server.ClientRequest, *irma.SessionRequest, *irma.RemoteError) {
+	interface{}, *irma.RemoteError) {
 
 	if session.status != server.StatusInitialized {
-		return nil, nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
+		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
 
 	session.markAlive()
@@ -45,20 +45,20 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion, clientAuth
 
 	var err error
 	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
-		return nil, nil, session.fail(server.ErrorProtocolVersion, "")
+		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
 
 	// Protocol versions below 2.7 don't include an authorization header. Therefore skip the authorization
 	// header presence check if a lower version is used.
 	if clientAuth == "" && session.version.Above(2, 6) {
-		return nil, nil, server.RemoteError(server.ErrorClientUnauthorized, "No authorization header provided")
+		return nil, server.RemoteError(server.ErrorClientUnauthorized, "No authorization header provided")
 	}
 	session.clientAuth = clientAuth
 
 	// we include the latest revocation updates for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
 	if err = session.conf.IrmaConfiguration.Revocation.SetRevocationUpdates(session.request.Base()); err != nil {
-		return nil, nil, session.fail(server.ErrorRevocation, err.Error())
+		return nil, session.fail(server.ErrorRevocation, err.Error())
 	}
 
 	// Handle legacy clients that do not support condiscon, by attempting to convert the condiscon
@@ -81,16 +81,16 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion, clientAuth
 	if session.version.Below(2, 5) {
 		logger.Info("Returning legacy session format")
 		legacy.Base().ProtocolVersion = session.version
-		return nil, &legacy, nil
+		return &legacy, nil
 	}
 
 	if session.version.Below(2, 7) {
 		// These versions do not support binding, so the request is always returned immediately.
 		request, rerr := session.getRequest()
-		return nil, &request, rerr
+		return &request, rerr
 	}
 	info, rerr := session.getInfo()
-	return info, nil, rerr
+	return info, rerr
 }
 
 func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
@@ -412,12 +412,8 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
 	clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
 	// When session binding is supported by all clients, the legacy support can be removed
-	res, legacyRes, err := session.handleGetInfo(&min, &max, clientAuth)
-	if legacyRes != nil {
-		server.WriteResponse(w, legacyRes, err)
-	} else {
-		server.WriteResponse(w, res, err)
-	}
+	res, err := session.handleGetInfo(&min, &max, clientAuth)
+	server.WriteResponse(w, res, err)
 }
 
 func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request) {
