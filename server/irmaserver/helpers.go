@@ -55,20 +55,20 @@ func (session *session) onUpdate() {
 
 // Checks whether requested options are valid in the current session context.
 func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*server.SessionOptions, error) {
-	if session.status == server.StatusInitialized {
-		if request.BindingMethod == irma.BindingMethodNone {
-			session.options.BindingMethod = irma.BindingMethodNone
-			session.options.BindingCode = ""
-		} else if request.BindingMethod == irma.BindingMethodPin {
-			session.options.BindingMethod = irma.BindingMethodPin
-			session.options.BindingCode = common.NewBindingCode()
-		} else {
-			return nil, errors.New("Binding method unknown")
-		}
-
-		return &session.options, nil
+	if session.status != server.StatusInitialized {
+		return nil, errors.New("Frontend options cannot be updated when client is already connected")
 	}
-	return nil, errors.New("Frontend options cannot be updated when client is already connected")
+	if request.BindingMethod == irma.BindingMethodNone {
+		session.options.BindingMethod = irma.BindingMethodNone
+		session.options.BindingCode = ""
+	} else if request.BindingMethod == irma.BindingMethodPin {
+		session.options.BindingMethod = irma.BindingMethodPin
+		session.options.BindingCode = common.NewBindingCode()
+	} else {
+		return nil, errors.New("Binding method unknown")
+	}
+
+	return &session.options, nil
 }
 
 // Complete the binding process of frontend and irma client
