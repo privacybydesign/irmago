@@ -33,10 +33,9 @@ func (session *session) handleDelete() {
 	session.setStatus(server.StatusCancelled)
 }
 
-func (session *session) handleGetInfo(min, max *irma.ProtocolVersion) (
+func (session *session) handleGetInfo(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization) (
 	*server.ClientRequest, *irma.SessionRequest, *irma.RemoteError) {
-	// Check whether session is in the right state when protocol version is below 2.7.
-	// For newer versions the authenticationMiddleware makes this extra check unnecessary.
+
 	if session.status != server.StatusInitialized {
 		return nil, nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
@@ -44,9 +43,20 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion) (
 	session.markAlive()
 	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken})
 
+	var err error
+	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
+		return nil, nil, session.fail(server.ErrorProtocolVersion, "")
+	}
+
+	// Protocol versions below 2.7 don't include an authorization header. Therefore skip the authorization
+	// header presence check if a lower version is used.
+	if clientAuth == "" && session.version.Above(2, 6) {
+		return nil, nil, server.RemoteError(server.ErrorClientUnauthorized, "No authorization header provided")
+	}
+	session.clientAuth = clientAuth
+
 	// we include the latest revocation updates for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
-	var err error
 	if err = session.conf.IrmaConfiguration.Revocation.SetRevocationUpdates(session.request.Base()); err != nil {
 		return nil, nil, session.fail(server.ErrorRevocation, err.Error())
 	}
@@ -59,9 +69,6 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion) (
 		logger.Info("Using condiscon: backwards compatibility with legacy IRMA apps is disabled")
 	}
 
-	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
-		return nil, nil, session.fail(server.ErrorProtocolVersion, "")
-	}
 	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
 
@@ -403,8 +410,9 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Context().Value("session").(*session)
+	clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
 	// When session binding is supported by all clients, the legacy support can be removed
-	res, legacyRes, err := session.handleGetInfo(&min, &max)
+	res, legacyRes, err := session.handleGetInfo(&min, &max, clientAuth)
 	if legacyRes != nil {
 		server.WriteResponse(w, legacyRes, err)
 	} else {

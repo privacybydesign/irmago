@@ -120,7 +120,6 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			r.Post("/bindingcompleted", s.handleFrontendBindingCompleted)
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(s.authenticationMiddleware)
 			r.Use(s.cacheMiddleware)
 			r.Get("/", s.handleSessionGet)
 			r.Group(func(r chi.Router) {
