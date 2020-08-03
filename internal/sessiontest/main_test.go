@@ -233,7 +233,7 @@ func sessionHelperWithFrontendOptions(
 
 	if frontendOptionsHandler != nil || bindingHandler != nil {
 		h.frontendTransport = irma.NewHTTPTransport(qr.URL, false)
-		h.frontendTransport.SetHeader(irma.AuthorizationHeader, frontendToken)
+		h.frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendToken))
 	}
 	if frontendOptionsHandler != nil {
 		frontendOptionsHandler(h)
