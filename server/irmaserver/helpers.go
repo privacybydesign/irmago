@@ -113,7 +113,7 @@ const retryTimeLimit = 10 * time.Second
 
 // checkCache returns a previously cached response, for replaying against multiple requests from
 // irmago's retryablehttp client, if:
-// - the same was POSTed as last time
+// - the same body was POSTed to the same endpoint as last time
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
 func (session *session) checkCache(endpoint string, message []byte) (int, []byte) {
