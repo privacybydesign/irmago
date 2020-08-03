@@ -510,34 +510,6 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) authenticationMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := r.Context().Value("session").(*session)
-
-		authorization := r.Header.Get(irma.AuthorizationHeader)
-		if authorization == "" && session.version != nil {
-			// Protocol versions below 2.7 use legacy authentication handled in handleSessionGet and cacheMiddleware.
-			if session.version.Below(2, 7) {
-				next.ServeHTTP(w, r)
-			} else {
-				server.WriteError(w, server.ErrorClientUnauthorized, "No authorization header provided")
-			}
-			return
-		}
-
-		// If the client connects for the first time, we grant access and make sure
-		// only that exact client can connect to this session in future requests.
-		if session.clientAuth == "" {
-			session.clientAuth = authorization
-		} else if session.clientAuth != authorization {
-			server.WriteError(w, server.ErrorClientUnauthorized, "")
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
 func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
@@ -547,10 +519,15 @@ func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check whether session is in the right state when protocol version is below 2.7.
-		// For newer versions the authenticationMiddleware makes this extra check unnecessary.
+		// Endpoints behind the bindingMiddleware can only be accessed when the client is already connected
+		// and includes the right authorization header to prove we still talk to the same client as before.
 		if session.status != server.StatusConnected {
 			server.WriteError(w, server.ErrorUnexpectedRequest, "Session not yet started or already finished")
+			return
+		}
+		clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
+		if session.clientAuth != clientAuth {
+			server.WriteError(w, server.ErrorClientUnauthorized, "")
 			return
 		}
 
