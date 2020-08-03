@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	irma "github.com/privacybydesign/irmago"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -80,8 +81,8 @@ func StartSession(requestString *C.char) (r *C.char) {
 	}
 	// return actual results
 	result.IrmaQr = string(qrJson)
-	result.BackendToken = backendToken
-	result.FrontendToken = frontendToken
+	result.BackendToken = string(backendToken)
+	result.FrontendToken = string(frontendToken)
 	return
 }
 
@@ -93,7 +94,7 @@ func GetSessionResult(token *C.char) *C.char {
 	}
 
 	// Run the actual core function
-	result := s.GetSessionResult(C.GoString(token))
+	result := s.GetSessionResult(irma.BackendToken(C.GoString(token)))
 
 	// And properly return results
 	if result == nil {
@@ -115,7 +116,7 @@ func GetRequest(token *C.char) *C.char {
 	}
 
 	// Run the core function
-	result := s.GetRequest(C.GoString(token))
+	result := s.GetRequest(irma.BackendToken(C.GoString(token)))
 
 	// And properly return results
 	if result == nil {
@@ -137,7 +138,7 @@ func CancelSession(token *C.char) *C.char {
 	}
 
 	// Run the core function
-	err := s.CancelSession(C.GoString(token))
+	err := s.CancelSession(irma.BackendToken(C.GoString(token)))
 
 	if err != nil {
 		return C.CString(err.Error())

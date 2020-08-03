@@ -52,8 +52,8 @@ type responseCache struct {
 }
 
 type sessionStore interface {
-	get(token string) *session
-	clientGet(token string) *session
+	get(token irma.BackendToken) *session
+	clientGet(token irma.ClientToken) *session
 	add(session *session)
 	update(session *session)
 	deleteExpired()
@@ -64,8 +64,8 @@ type memorySessionStore struct {
 	sync.RWMutex
 	conf *server.Configuration
 
-	requestor map[string]*session
-	client    map[string]*session
+	requestor map[irma.BackendToken]*session
+	client    map[irma.ClientToken]*session
 }
 
 const (
@@ -77,13 +77,13 @@ var (
 	maxProtocolVersion = irma.NewVersion(2, 7)
 )
 
-func (s *memorySessionStore) get(t string) *session {
+func (s *memorySessionStore) get(t irma.BackendToken) *session {
 	s.RLock()
 	defer s.RUnlock()
 	return s.requestor[t]
 }
 
-func (s *memorySessionStore) clientGet(t string) *session {
+func (s *memorySessionStore) clientGet(t irma.ClientToken) *session {
 	s.RLock()
 	defer s.RUnlock()
 	return s.client[t]
@@ -105,8 +105,8 @@ func (s *memorySessionStore) stop() {
 	defer s.Unlock()
 	for _, session := range s.requestor {
 		if session.sse != nil {
-			session.sse.CloseChannel("session/" + session.backendToken)
-			session.sse.CloseChannel("session/" + session.clientToken)
+			session.sse.CloseChannel("session/" + string(session.backendToken))
+			session.sse.CloseChannel("session/" + string(session.clientToken))
 		}
 	}
 }
@@ -115,7 +115,7 @@ func (s *memorySessionStore) deleteExpired() {
 	// First check which sessions have expired
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
-	expired := make([]string, 0, len(s.requestor))
+	expired := make([]irma.BackendToken, 0, len(s.requestor))
 	for token, session := range s.requestor {
 		session.Lock()
 
@@ -143,8 +143,8 @@ func (s *memorySessionStore) deleteExpired() {
 	for _, token := range expired {
 		session := s.requestor[token]
 		if session.sse != nil {
-			session.sse.CloseChannel("session/" + session.backendToken)
-			session.sse.CloseChannel("session/" + session.clientToken)
+			session.sse.CloseChannel("session/" + string(session.backendToken))
+			session.sse.CloseChannel("session/" + string(session.clientToken))
 		}
 		delete(s.client, session.clientToken)
 		delete(s.requestor, token)
@@ -155,9 +155,9 @@ func (s *memorySessionStore) deleteExpired() {
 var one *big.Int = big.NewInt(1)
 
 func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
-	clientToken := common.NewSessionToken()
-	backendToken := common.NewSessionToken()
-	frontendToken := common.NewSessionToken()
+	clientToken := irma.ClientToken(common.NewSessionToken())
+	backendToken := irma.BackendToken(common.NewSessionToken())
+	frontendToken := irma.FrontendToken(common.NewSessionToken())
 
 	ses := &session{
 		action:   action,

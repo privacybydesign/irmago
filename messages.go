@@ -166,7 +166,7 @@ type Qr struct {
 }
 
 // Tokens to identify a session from the perspective of the different agents
-type BackendToken = string
+type BackendToken string
 type ClientToken = string
 type FrontendToken = string
 

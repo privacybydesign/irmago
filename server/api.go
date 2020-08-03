@@ -45,7 +45,7 @@ type ClientRequest struct {
 // SessionResult contains session information such as the session status, type, possible errors,
 // and disclosed attributes or attribute-based signature if appropriate to the session type.
 type SessionResult struct {
-	Token       string                       `json:"token"`
+	Token       irma.BackendToken            `json:"token"`
 	Status      Status                       `json:"status"`
 	Type        irma.Action                  `json:"type"`
 	ProofStatus irma.ProofStatus             `json:"proofStatus,omitempty"`
@@ -75,7 +75,7 @@ type LogOptions struct {
 
 // Remove this when dropping support for legacy pre-condiscon session requests
 type LegacySessionResult struct {
-	Token       string                     `json:"token"`
+	Token       irma.BackendToken          `json:"token"`
 	Status      Status                     `json:"status"`
 	Type        irma.Action                `json:"type"`
 	ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
