@@ -60,14 +60,13 @@ func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*se
 		return nil, errors.New("Frontend options cannot be updated when client is already connected")
 	}
 	if request.BindingMethod == irma.BindingMethodNone {
-		session.options.BindingMethod = irma.BindingMethodNone
 		session.options.BindingCode = ""
 	} else if request.BindingMethod == irma.BindingMethodPin {
-		session.options.BindingMethod = irma.BindingMethodPin
 		session.options.BindingCode = common.NewBindingCode()
 	} else {
 		return nil, errors.New("Binding method unknown")
 	}
+	session.options.BindingMethod = request.BindingMethod
 
 	return &session.options, nil
 }
