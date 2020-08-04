@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -287,50 +286,6 @@ func printQr(qr *irma.Qr, noqr bool) error {
 		})
 	}
 	return nil
-}
-
-func handleBinding(options *server.SessionOptions, statusChan chan server.Status, completeBinding func() error) (
-	server.Status, error) {
-	errorChan := make(chan error)
-	status := server.StatusInitialized
-	bindingStarted := false
-	for {
-		select {
-		case status = <-statusChan:
-			if status == server.StatusInitialized {
-				continue
-			} else if status == server.StatusBinding {
-				bindingStarted = true
-				go func() {
-					if options.BindingMethod == irma.BindingMethodPin {
-						fmt.Println("\nBinding code:", options.BindingCode)
-						fmt.Println("Press Enter to confirm your device is connected; otherwise press Ctrl-C.")
-						_, err := bufio.NewReader(os.Stdin).ReadString('\n')
-						if err == nil {
-							err = completeBinding()
-							if err != nil {
-								errorChan <- err
-								return
-							}
-							fmt.Println("Binding completed.")
-						} else {
-							errorChan <- err
-							return
-						}
-					} else {
-						errorChan <- errors.Errorf("Binding method %s is not supported", options.BindingMethod)
-						return
-					}
-				}()
-				continue
-			} else if status == server.StatusConnected && !bindingStarted {
-				fmt.Println("Binding is not supported by the connected device.")
-			}
-			return status, nil
-		case err := <-errorChan:
-			return status, err
-		}
-	}
 }
 
 func printSessionResult(result *server.SessionResult) {
