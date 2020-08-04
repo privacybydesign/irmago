@@ -117,9 +117,8 @@ func libraryRequest(
 		return nil, errors.WrapPrefix(err, "IRMA session failed", 0)
 	}
 
-	// Currently, the default session options are the same in all conditions,
-	// so do only fetch them when a change is requested
-	var sessionOptions *server.SessionOptions
+	// Enable binding if necessary
+	var sessionOptions *irma.SessionOptions
 	if binding {
 		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.BindingMethod = irma.BindingMethodPin
@@ -179,7 +178,7 @@ func serverRequest(
 
 	// Enable binding if necessary
 	var frontendTransport *irma.HTTPTransport
-	sessionOptions := &server.SessionOptions{}
+	sessionOptions := &irma.SessionOptions{}
 	if binding {
 		frontendTransport = irma.NewHTTPTransport(qr.URL, false)
 		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendToken))
@@ -292,7 +291,7 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 	return pkg.SessionPtr, pkg.FrontendToken, transport, err
 }
 
-func handleBinding(options *server.SessionOptions, statusChan chan server.Status, completeBinding func() error) (
+func handleBinding(options *irma.SessionOptions, statusChan chan server.Status, completeBinding func() error) (
 	server.Status, error) {
 	errorChan := make(chan error)
 	status := server.StatusInitialized
@@ -316,7 +315,7 @@ func handleBinding(options *server.SessionOptions, statusChan chan server.Status
 	}
 }
 
-func requestBindingPermission(options *server.SessionOptions, completeBinding func() error, errorChan chan error) {
+func requestBindingPermission(options *irma.SessionOptions, completeBinding func() error, errorChan chan error) {
 	if options.BindingMethod == irma.BindingMethodPin {
 		fmt.Println("\nBinding code:", options.BindingCode)
 		fmt.Println("Press Enter to confirm your device shows the same binding code; otherwise press Ctrl-C.")

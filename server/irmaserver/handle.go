@@ -85,7 +85,7 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion, clientAuth
 	}
 
 	if session.version.Below(2, 7) {
-		// These versions do not support binding, so the request is always returned immediately.
+		// These versions do not support the ClientRequest format, so send the SessionRequest.
 		request, rerr := session.getRequest()
 		return &request, rerr
 	}
@@ -416,7 +416,6 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 	}
 	session := r.Context().Value("session").(*session)
 	clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
-	// When session binding is supported by all clients, the legacy support can be removed
 	res, err := session.handleGetInfo(&min, &max, clientAuth)
 	server.WriteResponse(w, res, err)
 }
