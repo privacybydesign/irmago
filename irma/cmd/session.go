@@ -319,7 +319,7 @@ func handleBinding(options *server.SessionOptions, statusChan chan server.Status
 func requestBindingPermission(options *server.SessionOptions, completeBinding func() error, errorChan chan error) {
 	if options.BindingMethod == irma.BindingMethodPin {
 		fmt.Println("\nBinding code:", options.BindingCode)
-		fmt.Println("Press Enter to confirm your device is connected; otherwise press Ctrl-C.")
+		fmt.Println("Press Enter to confirm your device shows the same binding code; otherwise press Ctrl-C.")
 		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil {
 			errorChan <- err
