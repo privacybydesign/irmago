@@ -246,7 +246,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
 	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
 
-	// From protocol version 2.7 also a authorization header must be included.
+	// From protocol version 2.7 also an authorization header must be included.
 	clientAuth := ""
 	if maxVersion.Above(2, 6) {
 		clientAuth = common.NewSessionToken()
@@ -272,7 +272,7 @@ func (session *session) getSessionInfo() {
 
 	// Get the first IRMA protocol message and parse it
 	info := &irma.ClientRequest{
-		Request: session.request, // As request is an interface it need to be initialized with a specific instance.
+		Request: session.request, // As request is an interface, it need to be initialized with a specific instance.
 	}
 	// UnmarshalJSON of ClientRequest takes into account legacy protocols, so we do not have to check that here.
 	err := session.transport.Get("", info)

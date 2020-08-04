@@ -155,7 +155,7 @@ func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinH
 }
 func (th TestHandler) BindingRequired(bindingCode string) {
 	// Send binding code via channel to calling test. This is done such that
-	// calling tests can detect whether this handler wasn't called.
+	// calling tests can detect when this handler is skipped unexpectedly.
 	if th.bindingCodeChan != nil {
 		th.bindingCodeChan <- bindingCode
 		return

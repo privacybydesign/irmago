@@ -65,8 +65,8 @@ func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*ir
 	} else {
 		return nil, errors.New("Binding method unknown")
 	}
-	session.options.BindingMethod = request.BindingMethod
 
+	session.options.BindingMethod = request.BindingMethod
 	return &session.options, nil
 }
 
@@ -118,6 +118,7 @@ const retryTimeLimit = 10 * time.Second
 // checkCache returns a previously cached response, for replaying against multiple requests from
 // irmago's retryablehttp client, if:
 // - the same body was POSTed to the same endpoint as last time
+// - the body is not empty
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
 func (session *session) checkCache(endpoint string, message []byte) (int, []byte) {
@@ -532,7 +533,7 @@ func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Endpoints behind the bindingMiddleware can only be accessed when the client is already connected
-		// and includes the right authorization header to prove we still talk to the same client as before.
+		// and the request includes the right authorization header to prove we still talk to the same client as before.
 		if session.status != server.StatusConnected {
 			server.WriteError(w, server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 			return

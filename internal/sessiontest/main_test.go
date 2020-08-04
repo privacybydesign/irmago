@@ -230,9 +230,9 @@ func sessionHelperWithFrontendOptions(
 		frontendOptionsHandler(h)
 	}
 
-	bts, err := json.Marshal(sesPkg.SessionPtr)
+	qrjson, err := json.Marshal(sesPkg.SessionPtr)
 	require.NoError(t, err)
-	dismisser := client.NewSession(string(bts), h)
+	dismisser := client.NewSession(string(qrjson), h)
 
 	if bindingHandler != nil {
 		h.dismisser = &dismisser
@@ -244,7 +244,7 @@ func sessionHelperWithFrontendOptions(
 	}
 
 	var resJwt string
-	err = irma.NewHTTPTransport("http://localhost:48682/session/"+sesPkg.Token, false).Get("result-jwt", &resJwt)
+	err = irma.NewHTTPTransport("http://localhost:48682/session/"+string(sesPkg.Token), false).Get("result-jwt", &resJwt)
 	require.NoError(t, err)
 
 	return resJwt
@@ -254,7 +254,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	return sessionHelperWithFrontendOptions(t, request, sessiontype, client, nil, nil)
 }
 
-func extractTransportFromDismisser(dismisser *irmaclient.SessionDismisser) *irma.HTTPTransport {
+func extractClientTransport(dismisser *irmaclient.SessionDismisser) *irma.HTTPTransport {
 	rct := reflect.ValueOf(dismisser).Elem().Elem().Elem().FieldByName("transport")
 	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface().(*irma.HTTPTransport)
 }
