@@ -45,11 +45,12 @@ func subscribeSSE(transport *irma.HTTPTransport, statuschan chan Status, errorch
 	}()
 
 	err := sseclient.Notify(ctx, transport.Server+"statusevents", true, events)
-	if !cancelled {
-		close(events)
-		return err
+	// When sse was cancelled, an error is expected to be returned. The channels are already closed then.
+	if cancelled {
+		return nil
 	}
-	return nil
+	close(events)
+	return err
 }
 
 // poll recursively polls the session status until a final status is received.

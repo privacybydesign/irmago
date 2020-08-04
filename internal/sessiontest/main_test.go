@@ -239,9 +239,9 @@ func sessionHelperWithFrontendOptions(
 		frontendOptionsHandler(h)
 	}
 
-	bts, err := json.Marshal(qr)
+	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
-	dismisser := client.NewSession(string(bts), h)
+	dismisser := client.NewSession(string(qrjson), h)
 
 	if bindingHandler != nil {
 		h.dismisser = &dismisser
@@ -257,7 +257,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	sessionHelperWithFrontendOptions(t, request, sessiontype, client, nil, nil)
 }
 
-func extractTransportFromDismisser(dismisser *irmaclient.SessionDismisser) *irma.HTTPTransport {
+func extractClientTransport(dismisser *irmaclient.SessionDismisser) *irma.HTTPTransport {
 	rct := reflect.ValueOf(dismisser).Elem().Elem().Elem().FieldByName("transport")
 	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface().(*irma.HTTPTransport)
 }

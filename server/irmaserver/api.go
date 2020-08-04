@@ -250,8 +250,8 @@ func (s *Server) CancelSession(backendToken irma.BackendToken) error {
 }
 
 // Requests a change of the session frontend options at the server.
-// Returns the updated options struct. Frontend options can only be
-// changed the irma client has not connected yet. Otherwise an error is returned.
+// Returns the updated session options struct. Frontend options can only be
+// changed when the client is not connected yet. Otherwise an error is returned.
 // Options that are not specified in the request, keep their old value.
 func SetFrontendOptions(backendToken irma.BackendToken, request *irma.OptionsRequest) (*irma.SessionOptions, error) {
 	return s.SetFrontendOptions(backendToken, request)

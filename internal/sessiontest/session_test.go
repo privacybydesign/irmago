@@ -132,7 +132,7 @@ func TestIssuanceBinding(t *testing.T) {
 			require.Equal(t, bindingCode, <-handler.bindingCodeChan)
 
 			// Check whether access to request endpoint is denied as long as binding is not finished
-			clientTransport := extractTransportFromDismisser(handler.dismisser)
+			clientTransport := extractClientTransport(handler.dismisser)
 			err := clientTransport.Get("request", struct{}{})
 			require.Error(t, err)
 			require.Equal(t, 403, err.(*irma.SessionError).RemoteStatus)
