@@ -54,7 +54,7 @@ func (session *session) onUpdate() {
 }
 
 // Checks whether requested options are valid in the current session context.
-func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*server.SessionOptions, error) {
+func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*irma.SessionOptions, error) {
 	if session.status != server.StatusInitialized {
 		return nil, errors.New("Frontend options cannot be updated when client is already connected")
 	}
@@ -289,9 +289,9 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	return session.kssProofs[scheme], nil
 }
 
-func (session *session) getInfo() (*server.ClientRequest, *irma.RemoteError) {
-	info := server.ClientRequest{
-		LDContext:       server.LDContextClientRequest,
+func (session *session) getInfo() (*irma.ClientRequest, *irma.RemoteError) {
+	info := irma.ClientRequest{
+		LDContext:       irma.LDContextClientRequest,
 		ProtocolVersion: session.version,
 		Options:         &session.options,
 	}

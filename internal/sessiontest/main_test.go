@@ -265,7 +265,7 @@ func extractTransportFromDismisser(dismisser *irmaclient.SessionDismisser) *irma
 func setBindingMethod(method irma.BindingMethod, handler *TestHandler) string {
 	optionsRequest := irma.NewOptionsRequest()
 	optionsRequest.BindingMethod = method
-	options := &server.SessionOptions{}
+	options := &irma.SessionOptions{}
 	err := handler.frontendTransport.Post("frontend/options", options, optionsRequest)
 	require.NoError(handler.t, err)
 	return options.BindingCode

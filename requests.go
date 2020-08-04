@@ -23,6 +23,8 @@ const (
 	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
 	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
 	LDContextOptionsRequest    = "https://irma.app/ld/request/options/v1"
+	LDContextClientRequest     = "https://irma.app/ld/request/client/v1"
+	LDContextSessionOptions    = "https://irma.app/ld/options/v1"
 )
 
 // BaseRequest contains information used by all IRMA session types, such the context and nonce,
@@ -224,6 +226,20 @@ type NonRevocationRequest struct {
 }
 
 type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
+
+type SessionOptions struct {
+	LDContext     string        `json:"@context,omitempty"`
+	BindingMethod BindingMethod `json:"bindingMethod"`
+	BindingCode   string        `json:"bindingCode,omitempty"`
+}
+
+// ClientRequest contains all information irmaclient needs to know to initiate a session.
+type ClientRequest struct {
+	LDContext       string           `json:"@context,omitempty"`
+	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
+	Options         *SessionOptions  `json:"options,omitempty"`
+	Request         SessionRequest   `json:"request,omitempty"`
+}
 
 func (choice *DisclosureChoice) Validate() error {
 	if choice == nil {
@@ -1100,4 +1116,29 @@ func NewOptionsRequest() OptionsRequest {
 		LDContext:     LDContextOptionsRequest,
 		BindingMethod: BindingMethodNone,
 	}
+}
+
+func (info *ClientRequest) UnmarshalJSON(data []byte) error {
+	// Unmarshal in alias first to prevent infinite recursion
+	type alias ClientRequest
+	err := json.Unmarshal(data, (*alias)(info))
+	if err != nil {
+		return err
+	}
+	if info.LDContext == LDContextClientRequest {
+		return nil
+	}
+
+	// For legacy sessions initialize session info by hand using the fetched request
+	err = json.Unmarshal(data, info.Request)
+	if err != nil {
+		return err
+	}
+	info.LDContext = LDContextClientRequest
+	info.ProtocolVersion = info.Request.Base().ProtocolVersion
+	info.Options = &SessionOptions{
+		LDContext:     LDContextSessionOptions,
+		BindingMethod: BindingMethodNone,
+	}
+	return nil
 }

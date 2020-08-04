@@ -27,7 +27,7 @@ type session struct {
 	request          irma.SessionRequest
 	legacyCompatible bool // if the request is convertible to pre-condiscon format
 
-	options       server.SessionOptions
+	options       irma.SessionOptions
 	status        server.Status
 	prevStatus    server.Status
 	sse           *sse.Server
@@ -163,8 +163,8 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		action:   action,
 		rrequest: request,
 		request:  request.SessionRequest(),
-		options: server.SessionOptions{
-			LDContext:     server.LDContextSessionOptions,
+		options: irma.SessionOptions{
+			LDContext:     irma.LDContextSessionOptions,
 			BindingMethod: irma.BindingMethodNone,
 		},
 		lastActive:    time.Now(),

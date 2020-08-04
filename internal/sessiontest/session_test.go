@@ -139,7 +139,7 @@ func TestIssuanceBinding(t *testing.T) {
 
 			// Check whether binding cannot be disabled again after client is connected.
 			request := irma.NewOptionsRequest()
-			result := &server.SessionOptions{}
+			result := &irma.SessionOptions{}
 			err = handler.frontendTransport.Post("frontend/options", result, request)
 			require.Error(t, err)
 
