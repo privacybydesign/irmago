@@ -25,21 +25,10 @@ import (
 
 var Logger *logrus.Logger = logrus.StandardLogger()
 
-const LDContextClientRequest = "https://irma.app/ld/request/client/v1"
-const LDContextSessionOptions = "https://irma.app/ld/options/v1"
-
 type SessionPackage struct {
 	SessionPtr    *irma.Qr           `json:"sessionPtr"`
 	Token         irma.BackendToken  `json:"token"`
 	FrontendToken irma.FrontendToken `json:"frontendToken"`
-}
-
-// ClientRequest contains all information irmaclient needs to know to initiate a session.
-type ClientRequest struct {
-	LDContext       string                `json:"@context,omitempty"`
-	ProtocolVersion *irma.ProtocolVersion `json:"protocolVersion,omitempty"`
-	Options         *SessionOptions       `json:"options,omitempty"`
-	Request         irma.SessionRequest   `json:"request,omitempty"`
 }
 
 // SessionResult contains session information such as the session status, type, possible errors,
@@ -55,12 +44,6 @@ type SessionResult struct {
 	NextSession string                       `json:"nextSession,omitempty"`
 
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
-}
-
-type SessionOptions struct {
-	LDContext     string             `json:"@context,omitempty"`
-	BindingMethod irma.BindingMethod `json:"bindingMethod"`
-	BindingCode   string             `json:"bindingCode,omitempty"`
 }
 
 // SessionHandler is a function that can handle a session result
@@ -548,26 +531,4 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 			next.ServeHTTP(ww, r)
 		})
 	}
-}
-
-func (info *ClientRequest) UnmarshalJSON(data []byte) error {
-	// Unmarshal in alias first to prevent infinite recursion
-	type alias ClientRequest
-	err := json.Unmarshal(data, (*alias)(info))
-	if err == nil && info.LDContext == LDContextClientRequest {
-		return nil
-	}
-
-	// For legacy sessions initialize session info by hand using the fetched request
-	err = json.Unmarshal(data, info.Request)
-	if err != nil {
-		return err
-	}
-	info.LDContext = LDContextClientRequest
-	info.ProtocolVersion = info.Request.Base().ProtocolVersion
-	info.Options = &SessionOptions{
-		LDContext:     LDContextSessionOptions,
-		BindingMethod: irma.BindingMethodNone,
-	}
-	return nil
 }
