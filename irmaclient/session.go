@@ -137,8 +137,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
 			return nil
 		}
-		dismisser := client.newQrSession(qr, handler)
-		return dismisser
+		return client.newQrSession(qr, handler)
 	}
 
 	sigRequest := &irma.SignatureRequest{}

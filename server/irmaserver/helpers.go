@@ -290,7 +290,7 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	return session.kssProofs[scheme], nil
 }
 
-func (session *session) getInfo() (*irma.ClientRequest, *irma.RemoteError) {
+func (session *session) getClientRequest() (*irma.ClientRequest, *irma.RemoteError) {
 	info := irma.ClientRequest{
 		LDContext:       irma.LDContextClientRequest,
 		ProtocolVersion: session.version,
