@@ -436,3 +436,32 @@ func TestParallelSessions(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
 }
+
+func expireKey(t *testing.T, conf *irma.Configuration) {
+	pk, err := conf.PublicKey(irma.NewIssuerIdentifier("irma-demo.RU"), 2)
+	require.NoError(t, err)
+	pk.ExpiryDate = 1500000000
+}
+
+func TestIssueExpiredKey(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
+
+	// issuance sessions using valid, nonexpired public keys work
+	result := requestorSessionHelper(t, getIssuanceRequest(true), client, sessionOptionReuseServer)
+	require.Nil(t, result.Err)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+
+	// client aborts issuance sessions in case of expired public keys
+	expireKey(t, client.Configuration)
+	result = requestorSessionHelper(t, getIssuanceRequest(true), client, sessionOptionReuseServer, sessionOptionIgnoreError)
+	require.Nil(t, result.Err)
+	require.Equal(t, server.StatusCancelled, result.Status)
+
+	// server aborts issuance sessions in case of expired public keys
+	expireKey(t, irmaServerConfiguration.IrmaConfiguration)
+	_, _, err := irmaServer.StartSession(getIssuanceRequest(true), nil)
+	require.Error(t, err)
+}

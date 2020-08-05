@@ -278,6 +278,21 @@ func serverName(hostname string, request irma.SessionRequest, conf *irma.Configu
 	return sn
 }
 
+func checkKey(conf *irma.Configuration, issuer irma.IssuerIdentifier, counter uint) error {
+	id := fmt.Sprintf("%s-%d", issuer, counter)
+	pk, err := conf.PublicKey(issuer, counter)
+	if err != nil {
+		return err
+	}
+	if pk == nil {
+		return errors.Errorf("credential signed with unknown public key %s", id)
+	}
+	if time.Now().Unix() > pk.ExpiryDate {
+		return errors.Errorf("credential signed with expired key %s", id)
+	}
+	return nil
+}
+
 // processSessionInfo continues the session after all session state has been received:
 // it checks if the session can be performed and asks the user for consent.
 func (session *session) processSessionInfo() {
@@ -318,6 +333,11 @@ func (session *session) processSessionInfo() {
 		// Calculate singleton credentials to be removed
 		ir.RemovalCredentialInfoList = irma.CredentialInfoList{}
 		for _, credreq := range ir.Credentials {
+			err := checkKey(session.client.Configuration, credreq.CredentialTypeID.IssuerIdentifier(), credreq.KeyCounter)
+			if err != nil {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
+				return
+			}
 			preexistingCredentials := session.client.attrs(credreq.CredentialTypeID)
 			if len(preexistingCredentials) != 0 && preexistingCredentials[0].IsValid() && preexistingCredentials[0].CredentialType().IsSingleton {
 				ir.RemovalCredentialInfoList = append(ir.RemovalCredentialInfoList, preexistingCredentials[0].Info())
