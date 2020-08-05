@@ -213,16 +213,15 @@ func sessionHelperWithFrontendOptions(
 	sesPkg, frontendToken := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
-	bindingCodeChan := make(chan string)
 	h := &TestHandler{
 		t:                  t,
 		c:                  c,
 		client:             client,
 		expectedServerName: expectedRequestorInfo(t, client.Configuration),
-		bindingCodeChan:    bindingCodeChan,
 	}
 
 	if frontendOptionsHandler != nil || bindingHandler != nil {
+		h.bindingCodeChan = make(chan string)
 		h.frontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
 		h.frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendToken))
 	}

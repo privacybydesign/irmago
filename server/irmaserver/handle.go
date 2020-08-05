@@ -33,7 +33,7 @@ func (session *session) handleDelete() {
 	session.setStatus(server.StatusCancelled)
 }
 
-func (session *session) handleGetInfo(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization) (
+func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization) (
 	interface{}, *irma.RemoteError) {
 
 	if session.status != server.StatusInitialized {
@@ -89,7 +89,7 @@ func (session *session) handleGetInfo(min, max *irma.ProtocolVersion, clientAuth
 		request, rerr := session.getRequest()
 		return &request, rerr
 	}
-	info, rerr := session.getInfo()
+	info, rerr := session.getClientRequest()
 	return info, rerr
 }
 
@@ -411,7 +411,7 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 	}
 	session := r.Context().Value("session").(*session)
 	clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
-	res, err := session.handleGetInfo(&min, &max, clientAuth)
+	res, err := session.handleGetClientRequest(&min, &max, clientAuth)
 	server.WriteResponse(w, res, err)
 }
 
