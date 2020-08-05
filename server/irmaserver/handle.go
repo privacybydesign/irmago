@@ -86,11 +86,17 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 
 	if session.version.Below(2, 7) {
 		// These versions do not support the ClientRequest format, so send the SessionRequest.
-		request, rerr := session.getRequest()
-		return &request, rerr
+		request, err := session.getRequest()
+		if err != nil {
+			return nil, session.fail(server.ErrorRevocation, err.Error())
+		}
+		return &request, nil
 	}
-	info, rerr := session.getClientRequest()
-	return info, rerr
+	info, err := session.getClientRequest()
+	if err != nil {
+		return nil, session.fail(server.ErrorRevocation, err.Error())
+	}
+	return info, nil
 }
 
 func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
@@ -426,8 +432,12 @@ func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request)
 		server.WriteError(w, server.ErrorUnexpectedRequest, "Endpoint is not support in used protocol version")
 		return
 	}
+	var rerr *irma.RemoteError
 	request, err := session.getRequest()
-	server.WriteResponse(w, request, err)
+	if err != nil {
+		rerr = session.fail(server.ErrorRevocation, err.Error())
+	}
+	server.WriteResponse(w, request, rerr)
 }
 
 func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Request) {

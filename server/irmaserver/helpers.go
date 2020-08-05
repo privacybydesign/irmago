@@ -295,7 +295,7 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	return session.kssProofs[scheme], nil
 }
 
-func (session *session) getClientRequest() (*irma.ClientRequest, *irma.RemoteError) {
+func (session *session) getClientRequest() (*irma.ClientRequest, error) {
 	info := irma.ClientRequest{
 		LDContext:       irma.LDContextClientRequest,
 		ProtocolVersion: session.version,
@@ -303,16 +303,16 @@ func (session *session) getClientRequest() (*irma.ClientRequest, *irma.RemoteErr
 	}
 
 	if session.options.BindingMethod == irma.BindingMethodNone {
-		request, rerr := session.getRequest()
-		if rerr != nil {
-			return nil, rerr
+		request, err := session.getRequest()
+		if err != nil {
+			return nil, err
 		}
 		info.Request = request
 	}
 	return &info, nil
 }
 
-func (session *session) getRequest() (irma.SessionRequest, *irma.RemoteError) {
+func (session *session) getRequest() (irma.SessionRequest, error) {
 	// In case of issuance requests, strip revocation keys from []CredentialRequest
 	isreq, issuing := session.request.(*irma.IssuanceRequest)
 	if !issuing {
@@ -320,7 +320,7 @@ func (session *session) getRequest() (irma.SessionRequest, *irma.RemoteError) {
 	}
 	cpy, err := copyObject(isreq)
 	if err != nil {
-		return nil, session.fail(server.ErrorRevocation, err.Error())
+		return nil, err
 	}
 	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
 		cred.RevocationSupported = cred.RevocationKey != ""
