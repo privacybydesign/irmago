@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -137,7 +138,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Lookup("tls-cert").Header = "TLS configuration (leave empty to disable TLS)"
 
 	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
-	flags.Bool("no-email", !production, "Opt out of prodiding an email address with --email")
+	flags.Bool("no-email", !production, "Opt out of providing an email address with --email")
 	flags.Lookup("email").Header = "Email address (see README for more info)"
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
@@ -180,6 +181,9 @@ func configureServer(cmd *cobra.Command) error {
 	mode := "development"
 	if viper.GetBool("production") {
 		mode = "production"
+		viper.SetDefault("no-auth", false)
+		viper.SetDefault("no-email", false)
+		viper.SetDefault("url", "")
 	}
 	logger.WithFields(logrus.Fields{
 		"version":   irma.Version,
@@ -310,23 +314,25 @@ func handlePermission(typ string) []string {
 	return perms
 }
 
-// productionMode examines the arguments passed to the executably to see if --production is enabled.
+// productionMode examines the arguments passed to the executable to see if --production is enabled.
 // (This should really be done using viper, but when the help message is printed, viper is not yet
 // initialized.)
 func productionMode() bool {
-	for i, arg := range os.Args {
-		if arg == "--production" {
-			if len(os.Args) == i+1 || strings.HasPrefix(os.Args[i+1], "--") {
-				return true
-			}
-			if checkConfVal(os.Args[i+1]) {
-				return true
-			}
+	r := regexp.MustCompile("^--production(=(.*))?$")
+	for _, arg := range os.Args {
+		matches := r.FindStringSubmatch(arg)
+		if len(matches) != 3 {
+			continue
 		}
+		if matches[1] == "" {
+			return true
+		}
+		return checkConfVal(matches[2])
 	}
 
 	return checkConfVal(os.Getenv("IRMASERVER_PRODUCTION"))
 }
+
 func checkConfVal(val string) bool {
 	lc := strings.ToLower(val)
 	return lc == "1" || lc == "true" || lc == "yes" || lc == "t"
