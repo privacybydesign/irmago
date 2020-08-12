@@ -98,10 +98,9 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	require.Equal(t, SchemeManagerStatusInvalidSignature, smerr.Status)
 
 	// The manager should still be in conf.SchemeManagers, but also in DisabledSchemeManagers
-	require.Contains(t, conf.SchemeManagers, smerr.Manager)
-	require.Contains(t, conf.DisabledSchemeManagers, smerr.Manager)
-	require.Equal(t, SchemeManagerStatusInvalidSignature, conf.SchemeManagers[smerr.Manager].Status)
-	require.Equal(t, false, conf.SchemeManagers[smerr.Manager].Valid)
+	require.Contains(t, conf.SchemeManagers, smerr.Scheme)
+	require.Contains(t, conf.DisabledSchemeManagers, smerr.Scheme)
+	require.Equal(t, SchemeManagerStatusInvalidSignature, conf.SchemeManagers[NewSchemeManagerIdentifier(smerr.Scheme)].Status)
 }
 
 func TestRetryHTTPRequest(t *testing.T) {
@@ -197,11 +196,6 @@ func TestInstallScheme(t *testing.T) {
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
 
-	// installing a new scheme from its remote requires passing a SchemeManager instance,
-	// so retrieve that first
-	testscheme, err := DownloadSchemeManager("http://localhost:48681/irma_configuration/issuer_schemes/test")
-	require.NoError(t, err)
-
 	// setup a new empty Configuration
 	storage, err := ioutil.TempDir("", "scheme")
 	require.NoError(t, err)
@@ -211,7 +205,9 @@ func TestInstallScheme(t *testing.T) {
 	require.NoError(t, conf.ParseFolder())
 
 	// install test scheme from remote
-	require.NoError(t, conf.DangerousTOFUInstallSchemeManager(testscheme))
+	require.NoError(t, conf.DangerousTOFUInstallSchemeManager(
+		"http://localhost:48681/irma_configuration/issuer_schemes/test",
+	))
 }
 
 func TestMetadataAttribute(t *testing.T) {

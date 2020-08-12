@@ -88,11 +88,7 @@ func downloadSchemeManager(dest string, urls []string) error {
 		}
 	} else {
 		for _, u := range normalizedUrls {
-			urlparts := strings.Split(u, "/")
-			managerName := urlparts[len(urlparts)-1]
-			manager := irma.NewSchemeManager(managerName)
-			manager.URL = u
-			if err := conf.DangerousTOFUInstallSchemeManager(manager); err != nil {
+			if err := conf.DangerousTOFUInstallSchemeManager(u); err != nil {
 				return err
 			}
 		}

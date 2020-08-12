@@ -78,7 +78,7 @@ func signRequestors(privatekey *ecdsa.PrivateKey, confpath string, skipverificat
 	}
 
 	// Traverse dir and add file hashes to index
-	var index irma.SchemeManagerIndex = make(map[string]irma.ConfigurationFileHash)
+	var index irma.SchemeManagerIndex = make(map[string]irma.SchemeFileHash)
 	err := common.WalkDir(confpath, func(path string, info os.FileInfo) error {
 		return calculateRequestorFileHash(path, info, confpath, index)
 	})
@@ -126,7 +126,7 @@ func calculateRequestorFileHash(path string, info os.FileInfo, confpath string, 
 	if info.IsDir() || // Can only sign files
 		strings.HasSuffix(path, "index") || // Skip the index file itself
 		strings.Contains(filepath.ToSlash(path), "/.git/") { // No need to traverse .git dirs, can take quite long
-			return nil
+		return nil
 	}
 	// Skip everything except the stuff we do want
 	if !strings.HasSuffix(path, ".json") &&

@@ -60,20 +60,22 @@ type AttributeIdentifier struct {
 // IrmaIdentifierSet contains a set (ensured by using map[...]struct{}) of all scheme managers,
 // all issuers, all credential types, all public keys and all attribute types that are involved in an IRMA session.
 type IrmaIdentifierSet struct {
-	SchemeManagers  map[SchemeManagerIdentifier]struct{}
-	Issuers         map[IssuerIdentifier]struct{}
-	CredentialTypes map[CredentialTypeIdentifier]struct{}
-	PublicKeys      map[IssuerIdentifier][]uint
-	AttributeTypes  map[AttributeTypeIdentifier]struct{}
+	SchemeManagers   map[SchemeManagerIdentifier]struct{}
+	Issuers          map[IssuerIdentifier]struct{}
+	CredentialTypes  map[CredentialTypeIdentifier]struct{}
+	PublicKeys       map[IssuerIdentifier][]uint
+	AttributeTypes   map[AttributeTypeIdentifier]struct{}
+	RequestorSchemes map[RequestorSchemeIdentifier]struct{}
 }
 
 func newIrmaIdentifierSet() *IrmaIdentifierSet {
 	return &IrmaIdentifierSet{
-		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
-		Issuers:         map[IssuerIdentifier]struct{}{},
-		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-		PublicKeys:      map[IssuerIdentifier][]uint{},
-		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
+		SchemeManagers:   map[SchemeManagerIdentifier]struct{}{},
+		Issuers:          map[IssuerIdentifier]struct{}{},
+		CredentialTypes:  map[CredentialTypeIdentifier]struct{}{},
+		PublicKeys:       map[IssuerIdentifier][]uint{},
+		AttributeTypes:   map[AttributeTypeIdentifier]struct{}{},
+		RequestorSchemes: map[RequestorSchemeIdentifier]struct{}{},
 	}
 }
 
@@ -237,6 +239,9 @@ func (set *IrmaIdentifierSet) join(other *IrmaIdentifierSet) {
 		}
 		set.PublicKeys[issuer] = append(set.PublicKeys[issuer], other.PublicKeys[issuer]...)
 	}
+	for scheme := range other.RequestorSchemes {
+		set.RequestorSchemes[scheme] = struct{}{}
+	}
 }
 
 func (set *IrmaIdentifierSet) Distributed(conf *Configuration) bool {
@@ -275,6 +280,9 @@ func (set *IrmaIdentifierSet) String() string {
 	for s := range set.SchemeManagers {
 		builder.WriteString(s.String() + ", ")
 	}
+	for s := range set.RequestorSchemes {
+		builder.WriteString(s.String() + ", ")
+	}
 	for i := range set.Issuers {
 		builder.WriteString(i.String() + ", ")
 	}
@@ -297,7 +305,12 @@ func (set *IrmaIdentifierSet) String() string {
 }
 
 func (set *IrmaIdentifierSet) Empty() bool {
-	return len(set.SchemeManagers) == 0 && len(set.Issuers) == 0 && len(set.CredentialTypes) == 0 && len(set.PublicKeys) == 0 && len(set.AttributeTypes) == 0
+	return len(set.SchemeManagers) == 0 &&
+		len(set.Issuers) == 0 &&
+		len(set.CredentialTypes) == 0 &&
+		len(set.PublicKeys) == 0 &&
+		len(set.AttributeTypes) == 0 &&
+		len(set.RequestorSchemes) == 0
 }
 
 func (oi metaObjectIdentifier) Value() (driver.Value, error) {

@@ -60,7 +60,7 @@ func updateSchemeManager(paths []string) error {
 		if err != nil {
 			return err
 		}
-		if err := conf.ParseSchemeManagerFolder(path, irma.NewSchemeManager(manager)); err != nil {
+		if err := conf.ParseSchemeManagerFolder(path); err != nil {
 			return err
 		}
 

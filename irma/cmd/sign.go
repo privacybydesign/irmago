@@ -79,7 +79,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 	}
 
 	// Traverse dir and add file hashes to index
-	var index irma.SchemeManagerIndex = make(map[string]irma.ConfigurationFileHash)
+	var index irma.SchemeManagerIndex = make(map[string]irma.SchemeFileHash)
 	err := common.WalkDir(confpath, func(path string, info os.FileInfo) error {
 		return calculateFileHash(path, info, confpath, index)
 	})
