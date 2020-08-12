@@ -30,7 +30,6 @@ type SchemeManager struct {
 	XMLName           xml.Name `xml:"SchemeManager"`
 
 	Status SchemeManagerStatus `xml:"-"`
-	Valid  bool                `xml:"-"` // true iff Status == SchemeManagerStatusValid
 
 	Timestamp Timestamp
 
@@ -52,8 +51,6 @@ type Issuer struct {
 	ContactEMail    string
 	DeprecatedSince Timestamp
 	XMLVersion      int `xml:"version,attr"`
-
-	Valid bool `xml:"-"`
 }
 
 // CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
@@ -89,8 +86,6 @@ type CredentialType struct {
 	FAQPurpose          TranslatedString
 	FAQContent          TranslatedString
 	FAQHowto            TranslatedString
-
-	Valid bool `xml:"-"`
 }
 
 // AttributeType is a description of an attribute within a credential type.
@@ -119,7 +114,8 @@ type RequestorScheme struct {
 	Status    SchemeManagerStatus       `json:"-"`
 	Timestamp Timestamp                 `json:"-"`
 
-	index SchemeManagerIndex
+	index      SchemeManagerIndex
+	requestors []*RequestorInfo
 }
 
 // RequestorInfo describes a single verified requestor
@@ -286,18 +282,4 @@ func (id *Issuer) Identifier() IssuerIdentifier {
 
 func (id *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(id.SchemeManagerID)
-}
-
-func NewSchemeManager(name string) *SchemeManager {
-	return &SchemeManager{ID: name, Status: SchemeManagerStatusUnprocessed, Valid: false}
-}
-
-// Identifier returns the identifier of the specified scheme manager.
-func (sm *SchemeManager) Identifier() SchemeManagerIdentifier {
-	return NewSchemeManagerIdentifier(sm.ID)
-}
-
-// Distributed indicates if this scheme manager uses a keyshare server.
-func (sm *SchemeManager) Distributed() bool {
-	return len(sm.KeyshareServer) > 0
 }

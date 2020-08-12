@@ -68,16 +68,11 @@ func VerifyScheme(path string) error {
 		return err
 	}
 
-	scheme := irma.NewSchemeManager(filepath.Base(path))
-	if err = conf.ParseSchemeManagerFolder(path, scheme); err != nil {
+	if err = conf.ParseSchemeManagerFolder(path); err != nil {
 		return err
 	}
 
 	if err := conf.ValidateKeys(); err != nil {
-		return err
-	}
-
-	if err := conf.VerifySchemeManager(scheme, path); err != nil {
 		return err
 	}
 
@@ -100,12 +95,6 @@ func VerifyIrmaConfiguration(path string) error {
 	}
 	if len(conf.SchemeManagers) == 0 {
 		return errors.New("Specified folder doesn't contain any schemes")
-	}
-
-	for _, manager := range conf.SchemeManagers {
-		if err := conf.VerifySchemeManager(manager, filepath.Join(path, manager.ID)); err != nil {
-			return err
-		}
 	}
 
 	for _, warning := range conf.Warnings {

@@ -506,14 +506,7 @@ func (dr *DisclosureRequest) Disclosure() *DisclosureRequest {
 }
 
 func (dr *DisclosureRequest) identifiers() *IrmaIdentifierSet {
-	ids := &IrmaIdentifierSet{
-		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
-		Issuers:         map[IssuerIdentifier]struct{}{},
-		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-		PublicKeys:      map[IssuerIdentifier][]uint{},
-		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
-	}
-
+	ids := newIrmaIdentifierSet()
 	_ = dr.Disclose.Iterate(func(a *AttributeRequest) error {
 		attr := a.Type
 		ids.SchemeManagers[attr.CredentialTypeIdentifier().IssuerIdentifier().SchemeManagerIdentifier()] = struct{}{}
@@ -661,13 +654,7 @@ func (cr *CredentialRequest) AttributeList(
 
 func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 	if ir.ids == nil {
-		ir.ids = &IrmaIdentifierSet{
-			SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
-			Issuers:         map[IssuerIdentifier]struct{}{},
-			CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-			AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
-			PublicKeys:      map[IssuerIdentifier][]uint{},
-		}
+		ir.ids = newIrmaIdentifierSet()
 
 		for _, credreq := range ir.Credentials {
 			issuer := credreq.CredentialTypeID.IssuerIdentifier()

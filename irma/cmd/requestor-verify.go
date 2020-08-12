@@ -43,7 +43,7 @@ func VerifyRequestor(path string) error {
 		return err
 	}
 
-	if err = conf.ParseRequestorScheme(path); err != nil {
+	if err = conf.ParseRequestorSchemeFolder(path); err != nil {
 		return err
 	}
 
