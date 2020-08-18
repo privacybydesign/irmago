@@ -1,10 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-
-	"fmt"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -45,35 +44,68 @@ func RunVerify(path string, verbose bool) error {
 		return err
 	}
 
-	isScheme, err := common.PathExists(filepath.Join(path, "index"))
+	if filepath.Base(path) == "issuer_schemes" {
+		path = filepath.Dir(path)
+	} else {
+		if _, err = common.UpgradeIrmaconf(path); err != nil {
+			if err == common.ErrNonStandardIrmaconfPath {
+				return errors.New("IRMA issuer schemes are now required to be contained in a folder called \"issuer_schemes\"")
+			}
+			return err
+		}
+	}
+
+	ok, err := common.IsIrmaconfDir(path)
 	if err != nil {
 		return err
 	}
-	if !isScheme {
-		if verbose {
-			fmt.Println("No index file found; verifying subdirectories")
-		}
-		return VerifyIrmaConfiguration(path)
-	} else {
-		if verbose {
-			fmt.Println("Verifying scheme " + filepath.Base(path))
-		}
-		return VerifyScheme(path)
+	if ok {
+		return VerifyIrmaConfiguration(path, verbose)
+	}
+	return VerifyScheme(path, verbose)
+}
+
+func log(verbose bool, msg string) {
+	if verbose {
+		fmt.Println(msg)
 	}
 }
 
-func VerifyScheme(path string) error {
+func VerifyScheme(path string, verbose bool) error {
+	for _, typ := range []irma.SchemeType{irma.SchemeTypeIssuer, irma.SchemeTypeRequestor} {
+		ok, err := common.IsScheme(path, true, true, string(typ))
+		if err != nil {
+			return err
+		}
+		if ok {
+			log(verbose, "Verifying scheme "+filepath.Base(path))
+			return verifyScheme(path, typ)
+		}
+	}
+
+	return errors.New("no scheme found at specified path")
+}
+
+func verifyScheme(path string, typ irma.SchemeType) error {
 	conf, err := irma.NewConfiguration(filepath.Dir(filepath.Dir(path)), irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
 
-	if err = conf.ParseSchemeManagerFolder(path); err != nil {
-		return err
-	}
-
-	if err := conf.ValidateKeys(); err != nil {
-		return err
+	switch typ {
+	case irma.SchemeTypeIssuer:
+		if err = conf.ParseSchemeManagerFolder(path); err != nil {
+			return err
+		}
+		if err := conf.ValidateKeys(); err != nil {
+			return err
+		}
+	case irma.SchemeTypeRequestor:
+		if err = conf.ParseRequestorSchemeFolder(path); err != nil {
+			return err
+		}
+	default:
+		return errors.New("not a scheme or unsupported scheme type")
 	}
 
 	for _, warning := range conf.Warnings {
@@ -82,7 +114,8 @@ func VerifyScheme(path string) error {
 	return nil
 }
 
-func VerifyIrmaConfiguration(path string) error {
+func VerifyIrmaConfiguration(path string, verbose bool) error {
+	log(verbose, "Verifying as configuration directory")
 	conf, err := irma.NewConfiguration(path, irma.ConfigurationOptions{ReadOnly: true})
 	if err != nil {
 		return err
