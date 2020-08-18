@@ -9,6 +9,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
@@ -282,4 +284,175 @@ func NewSessionToken() string {
 		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
 	}
 	return string(b)
+}
+
+var ErrNonStandardIrmaconfPath = errors.New("can only upgrade irma_configuration folder in default location")
+
+func UpgradeIrmaconf(dir string) (bool, error) {
+	old, err := IsIrmaconfOldDir(dir)
+	if err != nil {
+		return false, err
+	}
+	if !old {
+		return false, nil
+	}
+
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		return false, err
+	}
+	defaultpath := DefaultDataPath()
+	defaultpath, err = filepath.Abs(defaultpath)
+	if err != nil {
+		return false, err
+	}
+	if !strings.HasPrefix(dir, defaultpath) {
+		return false, ErrNonStandardIrmaconfPath
+	}
+
+	contents, err := filepath.Glob(filepath.Join(dir, "*"))
+	if err != nil {
+		return true, err
+	}
+	err = os.MkdirAll(filepath.Join(dir, "issuer_schemes"), os.FileMode(0700))
+	if err != nil {
+		return true, err
+	}
+	for _, schemedir := range contents {
+		// Move old schemes to new home
+		err = os.Rename(
+			schemedir,
+			filepath.Join(dir, "issuer_schemes", filepath.Base(schemedir)),
+		)
+		if err != nil {
+			return true, err
+		}
+	}
+	return true, nil
+}
+
+func IsIrmaconfDir(dir string) (bool, error) {
+	p := filepath.Join(dir, "issuer_schemes")
+	exists, err := PathExists(p)
+	if err != nil || !exists {
+		return false, err
+	}
+	if ok, err := ContainsSchemes(p, "issuer", true); err != nil || !ok {
+		return false, err
+	}
+	return true, nil
+}
+
+func IsIrmaconfOldDir(dir string) (bool, error) {
+	if filepath.Base(dir) == "issuer_schemes" {
+		return false, nil
+	}
+	return ContainsSchemes(dir, "issuer", false)
+}
+
+// Unfortunately we cannot use irma.SchemeType for the typ parameters below as that
+// would create a cyclic import (the irma package already depends on this package).
+
+func ContainsSchemes(dir, typ string, checkpath bool) (bool, error) {
+	var (
+		hasSubdirs     bool
+		hasOnlySchemes = true
+	)
+	err := IterateSubfolders(dir, func(d string, info os.FileInfo) error {
+		if !hasOnlySchemes {
+			return nil
+		}
+		hasSubdirs = true
+		s, err := IsScheme(d, true, checkpath, typ)
+		if err != nil {
+			return err
+		}
+		hasOnlySchemes = s
+		return nil
+	})
+
+	if !hasSubdirs || !hasOnlySchemes {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func IsScheme(dir string, expectSignature, checkPath bool, typ string) (bool, error) {
+	if checkPath && filepath.Base(filepath.Dir(dir)) != typ+"_schemes" {
+		return false, nil
+	}
+	var filename string
+	switch typ {
+	case "issuer":
+		filename = "description.xml"
+	case "requestor":
+		filename = "description.json"
+	}
+	files := []string{filename}
+	if expectSignature {
+		files = append(files, "timestamp", "index", "index.sig")
+	}
+	for _, file := range files {
+		exists, err := PathExists(filepath.Join(dir, file))
+		if err != nil || !exists {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func DefaultDataPath() string {
+	candidates := make([]string, 0, 8)
+	home := os.Getenv("HOME")
+	xdgDataHome := os.Getenv("XDG_DATA_HOME")
+	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
+
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
+		if appdata != "" {
+			candidates = append(candidates, appdata)
+		}
+	}
+
+	if xdgDataHome != "" {
+		candidates = append(candidates, xdgDataHome)
+	}
+	if xdgDataHome == "" && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "share"))
+	}
+	if xdgDataDirs != "" {
+		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
+	} else {
+		candidates = append(candidates, "/usr/local/share", "/usr/share")
+	}
+	candidates = append(candidates, filepath.Join(os.TempDir()))
+
+	for i := range candidates {
+		candidates[i] = filepath.Join(candidates[i], "irma")
+	}
+
+	return firstExistingPath(candidates)
+}
+
+// DefaultSchemesPath returns the default storage path for irma_configuration,
+// namely DefaultDataPath + "/irma_configuration"
+func DefaultSchemesPath() string {
+	p := DefaultDataPath()
+	if p == "" {
+		return p
+	}
+	p = filepath.Join(p, "irma_configuration")
+	if err := EnsureDirectoryExists(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+func firstExistingPath(paths []string) string {
+	for _, p := range paths {
+		if err := EnsureDirectoryExists(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }

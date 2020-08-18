@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -775,57 +774,11 @@ func (e *RequiredAttributeMissingError) Error() string {
 //  - then the OSes temp dir (os.TempDir()),
 // returning the first of these that exists or can be created.
 func DefaultDataPath() string {
-	candidates := make([]string, 0, 8)
-	home := os.Getenv("HOME")
-	xdgDataHome := os.Getenv("XDG_DATA_HOME")
-	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
-
-	if runtime.GOOS == "windows" {
-		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
-		if appdata != "" {
-			candidates = append(candidates, appdata)
-		}
-	}
-
-	if xdgDataHome != "" {
-		candidates = append(candidates, xdgDataHome)
-	}
-	if xdgDataHome == "" && home != "" {
-		candidates = append(candidates, filepath.Join(home, ".local", "share"))
-	}
-	if xdgDataDirs != "" {
-		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
-	} else {
-		candidates = append(candidates, "/usr/local/share", "/usr/share")
-	}
-	candidates = append(candidates, filepath.Join(os.TempDir()))
-
-	for i := range candidates {
-		candidates[i] = filepath.Join(candidates[i], "irma")
-	}
-
-	return firstExistingPath(candidates)
+	return common.DefaultDataPath()
 }
 
 // DefaultSchemesPath returns the default storage path for irma_configuration,
 // namely DefaultDataPath + "/irma_configuration"
 func DefaultSchemesPath() string {
-	p := DefaultDataPath()
-	if p == "" {
-		return p
-	}
-	p = filepath.Join(p, "irma_configuration")
-	if err := common.EnsureDirectoryExists(p); err != nil {
-		return ""
-	}
-	return p
-}
-
-func firstExistingPath(paths []string) string {
-	for _, path := range paths {
-		if err := common.EnsureDirectoryExists(path); err == nil {
-			return path
-		}
-	}
-	return ""
+	return common.DefaultSchemesPath()
 }

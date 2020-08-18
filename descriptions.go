@@ -140,27 +140,15 @@ func NewRequestorInfo(hostname string) *RequestorInfo {
 }
 
 func (info *RequestorInfo) UnmarshalJSON(data []byte) error {
-	var bareData struct {
-		Scheme     RequestorSchemeIdentifier `json:"scheme"`
-		Name       TranslatedString          `json:"name"`
-		Industry   *TranslatedString         `json:"industry"`
-		Hostnames  []string                  `json:"hostnames"`
-		Logo       *string                   `json:"logo"`
-		ValidUntil *Timestamp                `json:"valid_until"`
-	}
+	type rawRequestorInfo RequestorInfo
+	var bareData rawRequestorInfo
 	err := json.Unmarshal(data, &bareData)
 	if err == nil {
-		info.Scheme = bareData.Scheme
-		info.Name = bareData.Name
-		info.Industry = bareData.Industry
-		info.Hostnames = bareData.Hostnames
-		info.Logo = bareData.Logo
+		*info = RequestorInfo(bareData)
 		return nil
 	}
 
-	info.Industry = nil
-	info.Hostnames = nil
-	info.Logo = nil
+	*info = RequestorInfo{}
 	return json.Unmarshal(data, &info.Name)
 }
 

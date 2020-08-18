@@ -22,9 +22,9 @@ import (
 var signCmd = &cobra.Command{
 	Use:   "sign [<privatekey>] [<path>]",
 	Short: "Sign a scheme directory",
-	Long: `Sign a scheme manager directory, using the specified ECDSA key. Both arguments are optional; "sk.pem" and the working directory are the defaults. Outputs an index file, signature over the index file, and the public key in the specified directory.
+	Long: `Sign a scheme directory, using the specified ECDSA key. Both arguments are optional; "sk.pem" and the working directory are the defaults. Outputs an index file, signature over the index file, and the public key in the specified directory.
 
-Careful: this command could fail and invalidate or destroy your scheme manager directory! Use this only if you can restore it from git or backups.`,
+Careful: this command could fail and invalidate or destroy your scheme directory! Use this only if you can restore it from git or backups.`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Validate arguments
@@ -58,7 +58,7 @@ Careful: this command could fail and invalidate or destroy your scheme manager d
 		if err != nil {
 			return err
 		}
-		if err := signManager(privatekey, confpath, skipverification); err != nil {
+		if err := signScheme(privatekey, confpath, skipverification); err != nil {
 			die("Failed to sign scheme", err)
 		}
 		return nil
@@ -71,17 +71,35 @@ func init() {
 	signCmd.Flags().BoolP("noverification", "n", false, "Skip verification of the scheme after signing it")
 }
 
-func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification bool) error {
+func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool) error {
+	var (
+		typ irma.SchemeType
+		ok  bool
+		err error
+	)
+	for _, typ = range []irma.SchemeType{irma.SchemeTypeIssuer, irma.SchemeTypeRequestor} {
+		ok, err = common.IsScheme(path, false, true, string(typ))
+		if err != nil {
+			return err
+		}
+		if ok {
+			break
+		}
+	}
+	if !ok {
+		return errors.New("unsupported scheme type")
+	}
+
 	// Write timestamp
 	bts := []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
-	if err := ioutil.WriteFile(filepath.Join(confpath, "timestamp"), bts, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(path, "timestamp"), bts, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write timestamp", 0)
 	}
 
 	// Traverse dir and add file hashes to index
 	var index irma.SchemeManagerIndex = make(map[string]irma.SchemeFileHash)
-	err := common.WalkDir(confpath, func(path string, info os.FileInfo) error {
-		return calculateFileHash(path, info, confpath, index)
+	err = common.WalkDir(path, func(p string, info os.FileInfo) error {
+		return calculateFileHash(p, info, path, index, typ)
 	})
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to calculate file index:", 0)
@@ -89,7 +107,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 
 	// Write index
 	bts = []byte(index.String())
-	if err := ioutil.WriteFile(filepath.Join(confpath, "index"), bts, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(path, "index"), bts, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write index", 0)
 	}
 
@@ -98,7 +116,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to serialize signature:", 0)
 	}
-	if err = ioutil.WriteFile(filepath.Join(confpath, "index.sig"), sigbytes, 0644); err != nil {
+	if err = ioutil.WriteFile(filepath.Join(path, "index.sig"), sigbytes, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write index.sig", 0)
 	}
 
@@ -107,7 +125,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to serialize public key", 0)
 	}
-	if err := ioutil.WriteFile(filepath.Join(confpath, "pk.pem"), pemEncodedPub, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(path, "pk.pem"), pemEncodedPub, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write public key", 0)
 	}
 
@@ -116,7 +134,7 @@ func signManager(privatekey *ecdsa.PrivateKey, confpath string, skipverification
 	}
 
 	// Verify that our folder is a valid scheme
-	if err := RunVerify(confpath, false); err != nil {
+	if err := verifyScheme(path, typ); err != nil {
 		die("Scheme was signed but verification failed", err)
 	}
 	return nil
@@ -130,19 +148,8 @@ func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	return signed.UnmarshalPemPrivateKey(bts)
 }
 
-func calculateFileHash(path string, info os.FileInfo, confpath string, index irma.SchemeManagerIndex) error {
-	// Skip stuff we don't want
-	if info.IsDir() || // Can only sign files
-		strings.HasSuffix(path, "index") || // Skip the index file itself
-		strings.Contains(filepath.ToSlash(path), "/.git/") || // No need to traverse .git dirs, can take quite long
-		strings.Contains(filepath.ToSlash(path), "/PrivateKeys/") { // Don't sign private keys
-		return nil
-	}
-	// Skip everything except the stuff we do want
-	if !strings.HasSuffix(path, ".xml") &&
-		!strings.HasSuffix(path, ".png") &&
-		!regexp.MustCompile("kss-\\d+\\.pem$").Match([]byte(filepath.Base(path))) &&
-		filepath.Base(path) != "timestamp" {
+func calculateFileHash(path string, info os.FileInfo, confpath string, index irma.SchemeManagerIndex, typ irma.SchemeType) error {
+	if skipSigning(path, info, typ) {
 		return nil
 	}
 
@@ -159,4 +166,32 @@ func calculateFileHash(path string, info os.FileInfo, confpath string, index irm
 	hash := sha256.Sum256(bts)
 	index[filepath.ToSlash(relativePath)] = hash[:]
 	return nil
+}
+
+func skipSigning(path string, info os.FileInfo, typ irma.SchemeType) bool {
+	// Skip stuff we don't want
+	if info.IsDir() || // Can only sign files
+		strings.HasSuffix(path, "index") || // Skip the index file itself
+		strings.Contains(filepath.ToSlash(path), "/.git/") { // No need to traverse .git dirs, can take quite long
+		return true
+	}
+
+	switch typ {
+	case irma.SchemeTypeIssuer:
+		if strings.Contains(filepath.ToSlash(path), "/PrivateKeys/") { // Don't sign private keys
+			return true
+		}
+		if !strings.HasSuffix(path, ".xml") &&
+			!strings.HasSuffix(path, ".png") &&
+			!regexp.MustCompile("kss-\\d+\\.pem$").Match([]byte(filepath.Base(path))) &&
+			filepath.Base(path) != "timestamp" {
+			return true
+		}
+	case irma.SchemeTypeRequestor:
+		if !strings.HasSuffix(path, ".json") &&
+			filepath.Base(path) != "timestamp" {
+			return true
+		}
+	}
+	return false
 }
