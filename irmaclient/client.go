@@ -161,7 +161,7 @@ func New(
 
 	client.Configuration, err = irma.NewConfiguration(
 		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath},
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	if err != nil {
 		return nil, err

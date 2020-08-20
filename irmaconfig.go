@@ -120,6 +120,7 @@ func (sme SchemeManagerError) Error() string {
 type ConfigurationOptions struct {
 	Assets              string
 	ReadOnly            bool
+	IgnorePrivateKeys   bool
 	RevocationDBConnStr string
 	RevocationDBType    string
 	RevocationSettings  RevocationSettings
@@ -209,7 +210,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 		return
 	}
 
-	if len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
+	if !conf.options.IgnorePrivateKeys && len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
 		ring, err := newPrivateKeyRingScheme(conf)
 		if err != nil {
 			return err
