@@ -4,13 +4,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
-	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
@@ -286,74 +286,38 @@ func NewSessionToken() string {
 	return string(b)
 }
 
-var ErrNonStandardIrmaconfPath = errors.New("can only upgrade irma_configuration folder in default location")
-
-func UpgradeIrmaconf(dir string) (bool, error) {
-	old, err := IsIrmaconfOldDir(dir)
-	if err != nil {
-		return false, err
-	}
-	if !old {
-		return false, nil
-	}
-
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return false, err
-	}
-	defaultpath := DefaultDataPath()
-	defaultpath, err = filepath.Abs(defaultpath)
-	if err != nil {
-		return false, err
-	}
-	if !strings.HasPrefix(dir, defaultpath) {
-		return false, ErrNonStandardIrmaconfPath
-	}
-
-	contents, err := filepath.Glob(filepath.Join(dir, "*"))
-	if err != nil {
-		return true, err
-	}
-	err = os.MkdirAll(filepath.Join(dir, "issuer_schemes"), os.FileMode(0700))
-	if err != nil {
-		return true, err
-	}
-	for _, schemedir := range contents {
-		// Move old schemes to new home
-		err = os.Rename(
-			schemedir,
-			filepath.Join(dir, "issuer_schemes", filepath.Base(schemedir)),
-		)
-		if err != nil {
-			return true, err
-		}
-	}
-	return true, nil
-}
-
 func IsIrmaconfDir(dir string) (bool, error) {
-	p := filepath.Join(dir, "issuer_schemes")
-	exists, err := PathExists(p)
-	if err != nil || !exists {
-		return false, err
-	}
-	if ok, err := ContainsSchemes(p, "issuer", true); err != nil || !ok {
+	if ok, err := containsSchemes(dir); err != nil || !ok {
 		return false, err
 	}
 	return true, nil
 }
 
-func IsIrmaconfOldDir(dir string) (bool, error) {
-	if filepath.Base(dir) == "issuer_schemes" {
-		return false, nil
+func IsScheme(dir string, expectSignature bool) (bool, error) {
+	filenames := []string{"description.xml", "description.json"}
+
+filenameloop:
+	for _, filename := range filenames {
+		files := []string{filename}
+		if expectSignature {
+			files = append(files, "timestamp", "index", "index.sig")
+		}
+		for _, file := range files {
+			exists, err := PathExists(filepath.Join(dir, file))
+			if err != nil {
+				return false, err
+			}
+			if !exists {
+				continue filenameloop
+			}
+		}
+		return true, nil
 	}
-	return ContainsSchemes(dir, "issuer", false)
+
+	return false, nil
 }
 
-// Unfortunately we cannot use irma.SchemeType for the typ parameters below as that
-// would create a cyclic import (the irma package already depends on this package).
-
-func ContainsSchemes(dir, typ string, checkpath bool) (bool, error) {
+func containsSchemes(dir string) (bool, error) {
 	var (
 		hasSubdirs     bool
 		hasOnlySchemes = true
@@ -363,7 +327,7 @@ func ContainsSchemes(dir, typ string, checkpath bool) (bool, error) {
 			return nil
 		}
 		hasSubdirs = true
-		s, err := IsScheme(d, true, checkpath, typ)
+		s, err := IsScheme(d, true)
 		if err != nil {
 			return err
 		}
@@ -377,82 +341,46 @@ func ContainsSchemes(dir, typ string, checkpath bool) (bool, error) {
 	return err == nil, err
 }
 
-func IsScheme(dir string, expectSignature, checkPath bool, typ string) (bool, error) {
-	if checkPath && filepath.Base(filepath.Dir(dir)) != typ+"_schemes" {
-		return false, nil
+func SchemeInfo(filename string, bts []byte) (string, string, error) {
+	temp := struct {
+		Type string `json:"schemetype" xml:"SchemeType"`
+		ID   string `json:"id" xml:"Id"`
+	}{}
+	if err := Unmarshal(filename, bts, &temp); err != nil {
+		return "", "", err
 	}
-	var filename string
-	switch typ {
-	case "issuer":
-		filename = "description.xml"
-	case "requestor":
-		filename = "description.json"
+	if temp.Type == "" {
+		temp.Type = "issuer"
 	}
-	files := []string{filename}
-	if expectSignature {
-		files = append(files, "timestamp", "index", "index.sig")
+
+	if temp.Type != "issuer" && temp.Type != "requestor" {
+		return "", "", errors.New("unsupported scheme type")
 	}
-	for _, file := range files {
-		exists, err := PathExists(filepath.Join(dir, file))
-		if err != nil || !exists {
-			return false, err
+	return temp.ID, temp.Type, nil
+}
+
+func Unmarshal(filename string, bts []byte, dest interface{}) error {
+	switch filepath.Ext(filename) {
+	case ".xml":
+		return xml.Unmarshal(bts, dest)
+	case ".json":
+		return json.Unmarshal(bts, dest)
+	default:
+		return errors.New("unsupported file format")
+	}
+}
+
+func SchemeFilename(dir string) (string, error) {
+	for _, filename := range SchemeFilenames {
+		exists, err := PathExists(filepath.Join(dir, filename))
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return filename, nil
 		}
 	}
-	return true, nil
+	return "", errors.New("no scheme file found")
 }
 
-func DefaultDataPath() string {
-	candidates := make([]string, 0, 8)
-	home := os.Getenv("HOME")
-	xdgDataHome := os.Getenv("XDG_DATA_HOME")
-	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
-
-	if runtime.GOOS == "windows" {
-		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
-		if appdata != "" {
-			candidates = append(candidates, appdata)
-		}
-	}
-
-	if xdgDataHome != "" {
-		candidates = append(candidates, xdgDataHome)
-	}
-	if xdgDataHome == "" && home != "" {
-		candidates = append(candidates, filepath.Join(home, ".local", "share"))
-	}
-	if xdgDataDirs != "" {
-		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
-	} else {
-		candidates = append(candidates, "/usr/local/share", "/usr/share")
-	}
-	candidates = append(candidates, filepath.Join(os.TempDir()))
-
-	for i := range candidates {
-		candidates[i] = filepath.Join(candidates[i], "irma")
-	}
-
-	return firstExistingPath(candidates)
-}
-
-// DefaultSchemesPath returns the default storage path for irma_configuration,
-// namely DefaultDataPath + "/irma_configuration"
-func DefaultSchemesPath() string {
-	p := DefaultDataPath()
-	if p == "" {
-		return p
-	}
-	p = filepath.Join(p, "irma_configuration")
-	if err := EnsureDirectoryExists(p); err != nil {
-		return ""
-	}
-	return p
-}
-
-func firstExistingPath(paths []string) string {
-	for _, p := range paths {
-		if err := EnsureDirectoryExists(p); err == nil {
-			return p
-		}
-	}
-	return ""
-}
+var SchemeFilenames = []string{"description.xml", "description.json"}

@@ -2,9 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"net/url"
-	"path/filepath"
-	"strings"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -56,27 +53,6 @@ func downloadSchemeManager(dest string, urls []string) error {
 		return errors.New("Destination does not exist")
 	}
 
-	var normalizedUrls []string
-	for _, u := range urls {
-		_, err := url.ParseRequestURI(u)
-		if err != nil {
-			return errors.Errorf("%s is not a valid URL: %s", u, err.Error())
-		}
-		// Calculate normalized scheme manager url
-		if strings.HasSuffix(u, "description.xml") {
-			u = strings.TrimRight(u, "description.xml")
-		}
-		if strings.HasSuffix(u, "/") {
-			u = strings.TrimRight(u, "/")
-		}
-		normalizedUrls = append(normalizedUrls, u)
-		urlparts := strings.Split(u, "/")
-		managerName := urlparts[len(urlparts)-1]
-		if err = common.AssertPathNotExists(filepath.Join(dest, managerName)); err != nil {
-			return errors.Errorf("Scheme manager %s already exists", managerName)
-		}
-	}
-
 	conf, err := irma.NewConfiguration(dest, irma.ConfigurationOptions{})
 	if err != nil {
 		return err
@@ -87,8 +63,8 @@ func downloadSchemeManager(dest string, urls []string) error {
 			return errors.WrapPrefix(err, "failed to download default schemes", 0)
 		}
 	} else {
-		for _, u := range normalizedUrls {
-			if err := conf.DangerousTOFUInstallSchemeManager(u); err != nil {
+		for _, u := range urls {
+			if err := conf.DangerousTOFUInstallScheme(u); err != nil {
 				return err
 			}
 		}

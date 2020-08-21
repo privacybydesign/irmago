@@ -44,8 +44,12 @@ var updateCmd = &cobra.Command{
 func updateSchemeManager(paths []string) error {
 	// Before doing anything, first check that all paths are scheme managers
 	for _, path := range paths {
-		if err := common.AssertPathExists(filepath.Join(path, "index")); err != nil {
-			return errors.Errorf("%s is not a valid scheme manager (%s)", path, err.Error())
+		isscheme, err := common.IsScheme(path, true)
+		if err != nil {
+			return err
+		}
+		if !isscheme {
+			return errors.Errorf("%s is not a scheme", path)
 		}
 	}
 
@@ -54,17 +58,15 @@ func updateSchemeManager(paths []string) error {
 		if err != nil {
 			return err
 		}
-		irmaconf, manager := filepath.Dir(path), filepath.Base(path)
-
-		conf, err := irma.NewConfiguration(irmaconf, irma.ConfigurationOptions{})
+		conf, err := irma.NewConfiguration(filepath.Dir(path), irma.ConfigurationOptions{})
 		if err != nil {
 			return err
 		}
-		if err := conf.ParseSchemeManagerFolder(path); err != nil {
+		scheme, err := conf.ParseSchemeFolder(path)
+		if err != nil {
 			return err
 		}
-
-		if err = conf.UpdateSchemeManager(irma.NewSchemeManagerIdentifier(manager), nil); err != nil {
+		if err = conf.UpdateScheme(scheme, nil); err != nil {
 			return err
 		}
 	}

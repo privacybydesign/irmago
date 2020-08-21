@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,11 +77,6 @@ type RequiredAttributeMissingError struct {
 	Missing *IrmaIdentifierSet
 }
 
-const (
-	pubkeyPattern  = "%s/issuer_schemes/%s/%s/PublicKeys/*.xml"
-	privkeyPattern = "%s/issuer_schemes/%s/%s/PrivateKeys/*.xml"
-)
-
 var (
 	validLangs = []string{"en", "nl"} // Hardcode these for now, TODO make configurable
 )
@@ -127,43 +123,38 @@ func (conf *Configuration) ParseFolder() (err error) {
 
 	// Copy any new or updated schemes out of the assets into storage
 	if conf.assets != "" {
-		for _, typ := range []SchemeType{SchemeTypeIssuer, SchemeTypeRequestor} {
-			typePath := string(typ) + "_schemes"
-			err = common.IterateSubfolders(filepath.Join(conf.assets, typePath), func(dir string, _ os.FileInfo) error {
-				uptodate, err := conf.isUpToDate(filepath.Join(typePath, filepath.Base(dir)))
-				if err != nil {
-					return err
-				}
-				if !uptodate {
-					_, err = conf.copyFromAssets(filepath.Join(typePath, filepath.Base(dir)))
-				}
-				return err
-			})
+		err = common.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
+			uptodate, err := conf.isUpToDate(filepath.Base(dir))
 			if err != nil {
 				return err
 			}
+			if !uptodate {
+				_, err = conf.copyFromAssets(filepath.Base(dir))
+			}
+			return err
+		})
+		if err != nil {
+			return err
 		}
 	}
 
 	// Parse schemes in storage
 	var mgrerr *SchemeManagerError
-	for _, typ := range []SchemeType{SchemeTypeIssuer, SchemeTypeRequestor} {
-		err = common.IterateSubfolders(filepath.Join(conf.Path, string(typ)+"_schemes"), func(dir string, _ os.FileInfo) error {
-			err := conf.parseSchemeFolder(dir, typ)
-			if err == nil {
-				return nil // OK, do next scheme folder
-			}
-			// If there is an error, and it is of type SchemeManagerError, return nil
-			// so as to continue parsing other schemes.
-			var ok bool
-			if mgrerr, ok = err.(*SchemeManagerError); ok {
-				return nil
-			}
-			return err // Not a SchemeManagerError? return it & halt parsing now
-		})
-		if err != nil {
-			return
+	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+		_, err := conf.ParseSchemeFolder(dir)
+		if err == nil {
+			return nil // OK, do next scheme folder
 		}
+		// If there is an error, and it is of type SchemeManagerError, return nil
+		// so as to continue parsing other schemes.
+		if e, ok := err.(*SchemeManagerError); ok {
+			mgrerr = e
+			return nil
+		}
+		return err // Not a SchemeManagerError? return it & halt parsing now
+	})
+	if err != nil {
+		return
 	}
 
 	if !conf.options.IgnorePrivateKeys && len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
@@ -257,7 +248,7 @@ func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIde
 
 	// Try updating them
 	for id := range allMissing.allSchemes() {
-		if err = conf.UpdateSchemeManager(id, downloaded); err != nil {
+		if err = conf.UpdateScheme(conf.SchemeManagers[id], downloaded); err != nil {
 			return
 		}
 	}
@@ -326,7 +317,8 @@ func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabi.PublicKey
 }
 
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
-	return matchKeyPattern(conf.Path, issuerid, pubkeyPattern)
+	scheme := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
+	return matchKeyPattern(filepath.Join(scheme.path(), issuerid.Name(), "PublicKeys", "*"))
 }
 
 func (conf *Configuration) ValidateKeys() error {
@@ -398,12 +390,13 @@ func (conf *Configuration) KeyshareServerKeyFunc(scheme SchemeManagerIdentifier)
 }
 
 // KeyshareServerPublicKey returns the i'th public key of the specified scheme.
-func (conf *Configuration) KeyshareServerPublicKey(scheme SchemeManagerIdentifier, i int) (*rsa.PublicKey, error) {
-	if _, contains := conf.kssPublicKeys[scheme]; !contains {
-		conf.kssPublicKeys[scheme] = make(map[int]*rsa.PublicKey)
+func (conf *Configuration) KeyshareServerPublicKey(schemeid SchemeManagerIdentifier, i int) (*rsa.PublicKey, error) {
+	if _, contains := conf.kssPublicKeys[schemeid]; !contains {
+		conf.kssPublicKeys[schemeid] = make(map[int]*rsa.PublicKey)
 	}
-	if _, contains := conf.kssPublicKeys[scheme][i]; !contains {
-		pkbts, err := ioutil.ReadFile(filepath.Join(conf.Path, "issuer_schemes", scheme.Name(), fmt.Sprintf("kss-%d.pem", i)))
+	if _, contains := conf.kssPublicKeys[schemeid][i]; !contains {
+		scheme := conf.SchemeManagers[schemeid]
+		pkbts, err := ioutil.ReadFile(filepath.Join(scheme.path(), fmt.Sprintf("kss-%d.pem", i)))
 		if err != nil {
 			return nil, err
 		}
@@ -416,9 +409,9 @@ func (conf *Configuration) KeyshareServerPublicKey(scheme SchemeManagerIdentifie
 		if !ok {
 			return nil, errors.New("Invalid keyshare server public key")
 		}
-		conf.kssPublicKeys[scheme][i] = pk
+		conf.kssPublicKeys[schemeid][i] = pk
 	}
-	return conf.kssPublicKeys[scheme][i], nil
+	return conf.kssPublicKeys[schemeid][i], nil
 }
 
 // IsInitialized indicates whether this instance has successfully been initialized.
@@ -452,10 +445,10 @@ func (conf *Configuration) hashToCredentialType(hash []byte) *CredentialType {
 
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
-	manager := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
+	scheme := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
 	conf.publicKeys[issuerid] = map[uint]*gabi.PublicKey{}
-	pathPattern := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
-	files, err := filepath.Glob(pathPattern)
+	pattern := filepath.Join(scheme.path(), issuerid.Name(), "PublicKeys", "*")
+	files, err := filepath.Glob(pattern)
 	if err != nil {
 		return err
 	}
@@ -467,12 +460,11 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(conf.Path, "issuer_schemes")
-		relativepath, err := filepath.Rel(path, file)
+		relativepath, err := filepath.Rel(scheme.path(), file)
 		if err != nil {
 			return err
 		}
-		bts, found, err := conf.readSignedFile(manager.index, path, relativepath)
+		bts, found, err := conf.readSignedFile(scheme.index, scheme.path(), relativepath)
 		if err != nil || !found {
 			return err
 		}
@@ -494,9 +486,8 @@ func sorter(ints []uint) func(i, j int) bool {
 	return func(i, j int) bool { return ints[i] < ints[j] }
 }
 
-func matchKeyPattern(path string, issuerid IssuerIdentifier, pattern string) (ints []uint, err error) {
-	pkpath := fmt.Sprintf(pattern, path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
-	files, err := filepath.Glob(pkpath)
+func matchKeyPattern(pattern string) (ints []uint, err error) {
+	files, err := filepath.Glob(pattern)
 	if err != nil {
 		return
 	}
@@ -629,11 +620,11 @@ func (conf *Configuration) checkIssuers(set *IrmaIdentifierSet, missing *IrmaIde
 	return nil
 }
 
-func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer, dir string) error {
+func (conf *Configuration) validateIssuer(scheme *SchemeManager, issuer *Issuer, dir string) error {
 	issuerid := issuer.Identifier()
 	conf.validateTranslations(fmt.Sprintf("Issuer %s", issuerid.String()), issuer)
 	// Check that the issuer has public keys
-	pkpath := fmt.Sprintf(pubkeyPattern, conf.Path, issuerid.SchemeManagerIdentifier().Name(), issuerid.Name())
+	pkpath := filepath.Join(scheme.path(), issuer.ID, "PublicKeys", "*")
 	files, err := filepath.Glob(pkpath)
 	if err != nil {
 		return err
@@ -645,10 +636,10 @@ func (conf *Configuration) validateIssuer(manager *SchemeManager, issuer *Issuer
 	if filepath.Base(dir) != issuer.ID {
 		return errors.Errorf("Issuer %s has wrong directory name %s", issuerid.String(), filepath.Base(dir))
 	}
-	if manager.ID != issuer.SchemeManagerID {
+	if scheme.ID != issuer.SchemeManagerID {
 		return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
 	}
-	if err = validateDemoPrefix(issuer.Name); manager.Demo && err != nil {
+	if err = validateDemoPrefix(issuer.Name); scheme.Demo && err != nil {
 		return errors.Errorf("Name of demo issuer %s invalid: %s", issuer.ID, err.Error())
 	}
 	if err = common.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
@@ -774,11 +765,57 @@ func (e *RequiredAttributeMissingError) Error() string {
 //  - then the OSes temp dir (os.TempDir()),
 // returning the first of these that exists or can be created.
 func DefaultDataPath() string {
-	return common.DefaultDataPath()
+	candidates := make([]string, 0, 8)
+	home := os.Getenv("HOME")
+	xdgDataHome := os.Getenv("XDG_DATA_HOME")
+	xdgDataDirs := os.Getenv("XDG_DATA_DIRS")
+
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA") // C:\Users\$user\AppData\Local
+		if appdata != "" {
+			candidates = append(candidates, appdata)
+		}
+	}
+
+	if xdgDataHome != "" {
+		candidates = append(candidates, xdgDataHome)
+	}
+	if xdgDataHome == "" && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "share"))
+	}
+	if xdgDataDirs != "" {
+		candidates = append(candidates, strings.Split(xdgDataDirs, ":")...)
+	} else {
+		candidates = append(candidates, "/usr/local/share", "/usr/share")
+	}
+	candidates = append(candidates, filepath.Join(os.TempDir()))
+
+	for i := range candidates {
+		candidates[i] = filepath.Join(candidates[i], "irma")
+	}
+
+	return firstExistingPath(candidates)
 }
 
 // DefaultSchemesPath returns the default storage path for irma_configuration,
 // namely DefaultDataPath + "/irma_configuration"
 func DefaultSchemesPath() string {
-	return common.DefaultSchemesPath()
+	p := DefaultDataPath()
+	if p == "" {
+		return p
+	}
+	p = filepath.Join(p, "irma_configuration")
+	if err := common.EnsureDirectoryExists(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+func firstExistingPath(paths []string) string {
+	for _, p := range paths {
+		if err := common.EnsureDirectoryExists(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }

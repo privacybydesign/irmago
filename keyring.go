@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -179,7 +178,8 @@ func newPrivateKeyRingScheme(conf *Configuration) (*privateKeyRingScheme, error)
 }
 
 func (p *privateKeyRingScheme) counters(issuerid IssuerIdentifier) (i []uint, err error) {
-	return matchKeyPattern(p.conf.Path, issuerid, privkeyPattern)
+	scheme := p.conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
+	return matchKeyPattern(filepath.Join(scheme.path(), issuerid.Name(), "PrivateKeys", "*"))
 }
 
 func (p *privateKeyRingScheme) Get(id IssuerIdentifier, counter uint) (*gabi.PrivateKey, error) {
@@ -188,8 +188,7 @@ func (p *privateKeyRingScheme) Get(id IssuerIdentifier, counter uint) (*gabi.Pri
 	if scheme == nil {
 		return nil, errors.Errorf("Private key of issuer %s belongs to unknown scheme", id.String())
 	}
-	path := fmt.Sprintf(privkeyPattern, p.conf.Path, schemeID.Name(), id.Name())
-	file := strings.Replace(path, "*", strconv.FormatUint(uint64(counter), 10), 1)
+	file := filepath.Join(scheme.path(), id.Name(), "PrivateKeys", strconv.FormatUint(uint64(counter), 10)+".xml")
 	sk, err := gabi.NewPrivateKeyFromFile(file, scheme.Demo)
 	if err != nil {
 		return nil, err
