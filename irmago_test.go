@@ -205,8 +205,8 @@ func TestInstallScheme(t *testing.T) {
 	require.NoError(t, conf.ParseFolder())
 
 	// install test scheme from remote
-	require.NoError(t, conf.DangerousTOFUInstallSchemeManager(
-		"http://localhost:48681/irma_configuration/issuer_schemes/test",
+	require.NoError(t, conf.DangerousTOFUInstallScheme(
+		"http://localhost:48681/irma_configuration/test",
 	))
 }
 

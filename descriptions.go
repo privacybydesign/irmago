@@ -29,11 +29,11 @@ type SchemeManager struct {
 	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
 
-	Status SchemeManagerStatus `xml:"-"`
-
+	Status    SchemeManagerStatus `xml:"-"`
 	Timestamp Timestamp
 
-	index SchemeManagerIndex
+	storagepath string
+	index       SchemeManagerIndex
 }
 
 type SchemeAppVersion struct {
@@ -114,8 +114,9 @@ type RequestorScheme struct {
 	Status    SchemeManagerStatus       `json:"-"`
 	Timestamp Timestamp                 `json:"-"`
 
-	index      SchemeManagerIndex
-	requestors []*RequestorInfo
+	storagepath string
+	index       SchemeManagerIndex
+	requestors  []*RequestorInfo
 }
 
 // RequestorInfo describes a single verified requestor
@@ -255,7 +256,8 @@ func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
 }
 
 func (ct *CredentialType) Logo(conf *Configuration) string {
-	path := filepath.Join(conf.Path, ct.SchemeManagerID, ct.IssuerID, "Issues", ct.ID, "logo.png")
+	scheme := conf.SchemeManagers[ct.SchemeManagerIdentifier()]
+	path := filepath.Join(scheme.path(), ct.IssuerID, "Issues", ct.ID, "logo.png")
 	exists, err := common.PathExists(path)
 	if err != nil || !exists {
 		return ""

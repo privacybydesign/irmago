@@ -72,26 +72,21 @@ func init() {
 }
 
 func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool) error {
-	var (
-		typ irma.SchemeType
-		ok  bool
-		err error
-	)
-	for _, typ = range []irma.SchemeType{irma.SchemeTypeIssuer, irma.SchemeTypeRequestor} {
-		ok, err = common.IsScheme(path, false, true, string(typ))
-		if err != nil {
-			return err
-		}
-		if ok {
-			break
-		}
+	filename, err := common.SchemeFilename(path)
+	if err != nil {
+		return err
 	}
-	if !ok {
-		return errors.New("unsupported scheme type")
+	bts, err := ioutil.ReadFile(filepath.Join(path, filename))
+	if err != nil {
+		return err
+	}
+	id, typ, err := common.SchemeInfo(filename, bts)
+	if err != nil {
+		return err
 	}
 
 	// Write timestamp
-	bts := []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
+	bts = []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
 	if err := ioutil.WriteFile(filepath.Join(path, "timestamp"), bts, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write timestamp", 0)
 	}
@@ -99,7 +94,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 	// Traverse dir and add file hashes to index
 	var index irma.SchemeManagerIndex = make(map[string]irma.SchemeFileHash)
 	err = common.WalkDir(path, func(p string, info os.FileInfo) error {
-		return calculateFileHash(p, info, path, index, typ)
+		return calculateFileHash(id, path, p, info, index, irma.SchemeType(typ))
 	})
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to calculate file index:", 0)
@@ -134,7 +129,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 	}
 
 	// Verify that our folder is a valid scheme
-	if err := verifyScheme(path, typ); err != nil {
+	if err := VerifyScheme(path, false); err != nil {
 		die("Scheme was signed but verification failed", err)
 	}
 	return nil
@@ -148,7 +143,7 @@ func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	return signed.UnmarshalPemPrivateKey(bts)
 }
 
-func calculateFileHash(path string, info os.FileInfo, confpath string, index irma.SchemeManagerIndex, typ irma.SchemeType) error {
+func calculateFileHash(id, confpath, path string, info os.FileInfo, index irma.SchemeManagerIndex, typ irma.SchemeType) error {
 	if skipSigning(path, info, typ) {
 		return nil
 	}
@@ -161,7 +156,7 @@ func calculateFileHash(path string, info os.FileInfo, confpath string, index irm
 	if err != nil {
 		return err
 	}
-	relativePath = filepath.Join(filepath.Base(confpath), relativePath)
+	relativePath = filepath.Join(id, relativePath)
 
 	hash := sha256.Sum256(bts)
 	index[filepath.ToSlash(relativePath)] = hash[:]
