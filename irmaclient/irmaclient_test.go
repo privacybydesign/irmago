@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -275,7 +276,8 @@ func TestWrongSchemeManager(t *testing.T) {
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
-	require.NoError(t, os.Remove(filepath.Join(handler.storage, "client", "irma_configuration", "irma-demo", "index")))
+	path := filepath.Join(handler.storage, "client", "irma_configuration", "irma-demo", "MijnOverheid", "description.xml")
+	require.NoError(t, ioutil.WriteFile(path, []byte("overwrite to invalidate file signature"), 0600))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)
@@ -296,8 +298,9 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	require.NoError(t, client.Configuration.UpdateSchemeManager(schemeid, nil))
+	scheme := client.Configuration.SchemeManagers[schemeid]
+	scheme.URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	require.NoError(t, client.Configuration.UpdateScheme(scheme, nil))
 	require.NoError(t, client.Configuration.ParseFolder())
 	require.NotNil(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid))
 

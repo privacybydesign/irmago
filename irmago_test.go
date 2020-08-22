@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -41,9 +42,9 @@ func TestConfigurationAutocopy(t *testing.T) {
 	storage := test.CreateTestStorage(t)
 	defer test.ClearTestStorage(t, storage)
 
-	path := filepath.Join("testdata", "tmp", "client", "irma_configuration")
-	require.NoError(t, common.CopyDirectory(filepath.Join("testdata", "irma_configuration"), path))
-	conf, err := NewConfiguration(path, ConfigurationOptions{Assets: filepath.Join("testdata", "irma_configuration_updated")})
+	require.NoError(t, os.Remove(filepath.Join(storage, "client")))
+	require.NoError(t, common.CopyDirectory(filepath.Join("testdata", "irma_configuration"), storage))
+	conf, err := NewConfiguration(storage, ConfigurationOptions{Assets: filepath.Join("testdata", "irma_configuration_updated")})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 
@@ -73,14 +74,14 @@ func TestUpdateConfiguration(t *testing.T) {
 	scheme.index[path][0] = ^scheme.index[path][0]
 
 	updated := newIrmaIdentifierSet()
-	require.NoError(t, conf.UpdateSchemeManager(schemeid, updated))
+	require.NoError(t, conf.UpdateScheme(scheme, updated))
 	require.Contains(t, updated.PublicKeys, issuerid)
 	require.Contains(t, updated.PublicKeys[issuerid], uint(2))
 
 	// next, update to a copy of the scheme in which a credential type was modified
 	scheme.URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
 	updated = newIrmaIdentifierSet()
-	require.NoError(t, conf.UpdateSchemeManager(schemeid, updated))
+	require.NoError(t, conf.UpdateScheme(scheme, updated))
 	require.Contains(t, updated.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 }
 
@@ -98,9 +99,10 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	require.Equal(t, SchemeManagerStatusInvalidSignature, smerr.Status)
 
 	// The manager should still be in conf.SchemeManagers, but also in DisabledSchemeManagers
-	require.Contains(t, conf.SchemeManagers, smerr.Scheme)
-	require.Contains(t, conf.DisabledSchemeManagers, smerr.Scheme)
-	require.Equal(t, SchemeManagerStatusInvalidSignature, conf.SchemeManagers[NewSchemeManagerIdentifier(smerr.Scheme)].Status)
+	id := NewSchemeManagerIdentifier(smerr.Scheme)
+	require.Contains(t, conf.SchemeManagers, id)
+	require.Contains(t, conf.DisabledSchemeManagers, id)
+	require.Equal(t, SchemeManagerStatusInvalidSignature, conf.SchemeManagers[id].Status)
 }
 
 func TestRetryHTTPRequest(t *testing.T) {
@@ -120,8 +122,9 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 
 	storage := test.CreateTestStorage(t)
 	defer test.ClearTestStorage(t, storage)
+	require.NoError(t, os.Remove(filepath.Join(storage, "client")))
 
-	conf, err := NewConfiguration(filepath.Join("testdata", "tmp", "client", "irma_configuration"), ConfigurationOptions{
+	conf, err := NewConfiguration(storage, ConfigurationOptions{
 		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
 	})
 	require.NoError(t, err)
