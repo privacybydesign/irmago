@@ -305,15 +305,14 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	defer StopIrmaServer()
 
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-
-	sk, err := irmaServerConfiguration.IrmaConfiguration.PrivateKeys.Latest(credid.IssuerIdentifier())
+	conf := irmaServerConfiguration.IrmaConfiguration
+	sk, err := conf.PrivateKeys.Latest(credid.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NotNil(t, sk)
 
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
-	conf := irmaServerConfiguration.IrmaConfiguration
 	conf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
 	downloaded, err := conf.Download(issuanceRequest)
 	require.NoError(t, err)
@@ -321,13 +320,14 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 		SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
 		Issuers:        map[irma.IssuerIdentifier]struct{}{},
 		CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
-			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"): {},
+			credid: {},
 		},
-		PublicKeys:     map[irma.IssuerIdentifier][]uint{},
-		AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{},
+		PublicKeys:       map[irma.IssuerIdentifier][]uint{},
+		AttributeTypes:   map[irma.AttributeTypeIdentifier]struct{}{},
+		RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
 	}, downloaded)
 
-	sk, err = irmaServerConfiguration.IrmaConfiguration.PrivateKeys.Latest(credid.IssuerIdentifier())
+	sk, err = conf.PrivateKeys.Latest(credid.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NotNil(t, sk)
 }
@@ -353,10 +353,11 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	expectedError := &irma.RequiredAttributeMissingError{
 		ErrorType: irma.ErrorRequiredAttributeMissing,
 		Missing: &irma.IrmaIdentifierSet{
-			SchemeManagers:  map[irma.SchemeManagerIdentifier]struct{}{},
-			Issuers:         map[irma.IssuerIdentifier]struct{}{},
-			CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{},
-			PublicKeys:      map[irma.IssuerIdentifier][]uint{},
+			SchemeManagers:   map[irma.SchemeManagerIdentifier]struct{}{},
+			RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
+			Issuers:          map[irma.IssuerIdentifier]struct{}{},
+			CredentialTypes:  map[irma.CredentialTypeIdentifier]struct{}{},
+			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
 			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
 				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"): struct{}{},
 			},
@@ -424,8 +425,9 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 	expectedErr := &irma.UnknownIdentifierError{
 		ErrorType: irma.ErrorUnknownIdentifier,
 		Missing: &irma.IrmaIdentifierSet{
-			SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
-			PublicKeys:     map[irma.IssuerIdentifier][]uint{},
+			SchemeManagers:   map[irma.SchemeManagerIdentifier]struct{}{},
+			RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
+			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
 			Issuers: map[irma.IssuerIdentifier]struct{}{
 				irma.NewIssuerIdentifier("irma-demo.baz"): struct{}{},
 			},

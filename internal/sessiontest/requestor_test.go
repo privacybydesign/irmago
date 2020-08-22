@@ -153,9 +153,9 @@ func TestRequestorSignatureSession(t *testing.T) {
 	}
 
 	// Load the updated scheme in which an attribute was added to the studentCard credential type
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	require.NoError(t, client.Configuration.UpdateSchemeManager(schemeid, nil))
+	scheme := client.Configuration.SchemeManagers[irma.NewSchemeManagerIdentifier("irma-demo")]
+	scheme.URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	require.NoError(t, client.Configuration.UpdateScheme(scheme, nil))
 	require.NoError(t, client.Configuration.ParseFolder())
 	require.Contains(t, client.Configuration.AttributeTypes, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute"))
 
