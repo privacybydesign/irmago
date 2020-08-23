@@ -137,6 +137,12 @@ type clSignatureWitness struct {
 	Witness *revocation.Witness
 }
 
+func (s *storage) StoreSignature(cred *credential) error {
+	return s.Transaction(func(tx *transaction) error {
+		return s.TxStoreSignature(tx, cred)
+	})
+}
+
 func (s *storage) TxStoreSignature(tx *transaction, cred *credential) error {
 	return s.TxStoreCLSignature(tx, cred.attrs.Hash(), &clSignatureWitness{
 		CLSignature: cred.Signature,

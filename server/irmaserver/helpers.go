@@ -200,6 +200,10 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if pubkey == nil {
 			return errors.Errorf("missing public key of issuer %s", iss.String())
 		}
+		now := time.Now()
+		if now.Unix() > pubkey.ExpiryDate {
+			return errors.Errorf("cannot issue using expired public key %s-%d", iss.String(), privatekey.Counter)
+		}
 		cred.KeyCounter = privatekey.Counter
 
 		if s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RevocationSupported() {
@@ -222,7 +226,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
-		if cred.Validity.Before(irma.Timestamp(time.Now())) {
+		if cred.Validity.Before(irma.Timestamp(now)) {
 			return errors.New("cannot issue expired credentials")
 		}
 	}

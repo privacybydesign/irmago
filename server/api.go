@@ -83,7 +83,7 @@ const (
 const (
 	PostSizeLimit = 10 << 20 // 10 MB
 	ReadTimeout   = 5 * time.Second
-	WriteTimeout  = 10 * time.Second
+	WriteTimeout  = 2 * ReadTimeout
 )
 
 // Remove this when dropping support for legacy pre-condiscon session requests
@@ -445,11 +445,26 @@ func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
 	return logger
 }
 
-var SizeLimitMiddleware = func(next http.Handler) http.Handler {
+func SizeLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, PostSizeLimit)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func TimeoutMiddleware(except []string, timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		timeoutNext := http.TimeoutHandler(next, timeout, "")
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for _, e := range except {
+				if strings.HasSuffix(r.URL.Path, e) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			timeoutNext.ServeHTTP(w, r)
+		})
+	}
 }
 
 // LogMiddleware is middleware for logging HTTP requests and responses.

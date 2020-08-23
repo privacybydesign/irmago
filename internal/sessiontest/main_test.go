@@ -12,18 +12,11 @@ import (
 
 	jwt "github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
-
-func init() {
-	common.ForceHTTPS = false // globally disable https enforcement
-	irma.Logger.SetLevel(logrus.WarnLevel)
-}
 
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers

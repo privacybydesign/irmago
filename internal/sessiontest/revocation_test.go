@@ -323,6 +323,39 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, result.Disclosed)
 	})
 
+	t.Run("UpdateSameIndex", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		StartIrmaServer(t, false, "")
+		defer StopIrmaServer()
+
+		// get current accumulator
+		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SyncDB(revKeyshareTestCred))
+		sacc, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revKeyshareTestCred, 3)
+		require.NoError(t, err)
+		accindex := sacc.Accumulator.Index
+		sacctime := sacc.Accumulator.Time
+
+		// trigger time update and update accumulator
+		time.Sleep(time.Second)
+		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
+		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SyncDB(revKeyshareTestCred))
+
+		// check that accumulator is newer
+		sacc, err = irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revKeyshareTestCred, 3)
+		require.NoError(t, err)
+		require.Equal(t, accindex, sacc.Accumulator.Index)
+		require.NotEqual(t, sacctime, sacc.Accumulator.Time)
+
+		// populate revocation data in session request and check it received the newest accumulator
+		req := getDisclosureRequest(revKeyshareTestAttr)
+		req.Revocation = irma.NonRevocationParameters{revKeyshareTestCred: {}}
+		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(req.Base()))
+		acc := req.Revocation[revKeyshareTestCred].Updates[3].SignedAccumulator.Accumulator
+		require.Equal(t, accindex, acc.Index)
+		require.NotEqual(t, sacctime, acc.Time)
+	})
+
 	t.Run("ClientAutoServerUpdate", func(t *testing.T) {
 		client, handler := revocationSetup(t) // revocation server is stopped manually below
 		defer test.ClearTestStorage(t, handler.storage)
@@ -713,8 +746,6 @@ func revocationConf(_ *testing.T) *server.Configuration {
 
 func startRevocationServer(t *testing.T, droptables bool) {
 	var err error
-
-	irma.SetLogger(logger)
 
 	// Connect to database and clear records from previous test runs
 	if droptables {

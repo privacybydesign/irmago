@@ -650,7 +650,7 @@ func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec
 
 // Misscelaneous methods
 
-func (rs *RevocationStorage) receiveUpdates() {
+func (rs *RevocationStorage) handleSSEUpdates() {
 	for {
 		select {
 		case event := <-rs.events:
@@ -661,18 +661,20 @@ func (rs *RevocationStorage) receiveUpdates() {
 			}
 			var (
 				id     = NewCredentialTypeIdentifier(segments[len(segments)-2])
+				logger = Logger.WithField("credtype", id)
 				update revocation.Update
 				err    error
 			)
 			if err = json.Unmarshal(event.Data, &update); err != nil {
-				Logger.Warn("failed to unmarshal pushed update: ", err)
+				logger.Warn("failed to unmarshal pushed update: ", err)
 			} else {
-				Logger.WithField("credtype", id).Trace("received SSE update event")
+				logger.Trace("received SSE update event")
 				if err = rs.AddUpdate(id, &update); err != nil {
-					Logger.Warn("failed to add pushed update: ", err)
+					logger.Warn("failed to add pushed update: ", err)
 				}
 			}
 		case <-rs.close:
+			Logger.Trace("stop handling SSE events")
 			return
 		}
 	}
@@ -689,6 +691,7 @@ func (rs *RevocationStorage) listenUpdates(id CredentialTypeIdentifier, url stri
 		case <-rs.close:
 			cancel()
 		case <-ctx.Done():
+			return
 		}
 	}()
 	err := sseclient.Notify(ctx, url, true, rs.events)
@@ -739,7 +742,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 			if rs.close == nil {
 				rs.close = make(chan struct{})
 				rs.events = make(chan *sseclient.Event)
-				go rs.receiveUpdates()
+				go rs.handleSSEUpdates()
 			}
 			url := fmt.Sprintf("%s/revocation/%s/updateevents", urls[0], id.String())
 			go rs.listenUpdates(id, url)
@@ -883,8 +886,13 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 		return nil, err
 	}
 
+	to := acc.Index - uint64(len(update.Events))
+	if from >= to {
+		return update, err
+	}
+
 	// Fetch events not included in the response above
-	indices := binaryPartition(from, acc.Index-uint64(len(update.Events)))
+	indices := binaryPartition(from, to)
 	eventsChan := make(chan *revocation.EventList)
 	var wg sync.WaitGroup
 	var eventsList []*revocation.EventList
@@ -1157,6 +1165,8 @@ func (eventHash) GormDataType(dialect gorm.Dialect) string {
 	}
 }
 
+// binaryPartition splits the interval [from, to] into multiple adjacent intervals
+// whose union cover [from, to], and whose length is a power of two decreasing as they near 'to'.
 func binaryPartition(from, to uint64) [][2]uint64 {
 	min, max := RevocationParameters.UpdateMinCount, RevocationParameters.UpdateMaxCount
 	start := from / max * max     // round down to nearest multiple of max

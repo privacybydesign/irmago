@@ -13,7 +13,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -78,7 +78,7 @@ type session struct {
 	attrIndices    irma.DisclosedAttributeIndices
 	client         *Client
 	request        irma.SessionRequest
-	done           bool
+	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
 
 	// State for issuance sessions
@@ -155,12 +155,16 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	client.PauseJobs()
 
+	doneChannel := make(chan struct{}, 1)
+	doneChannel <- struct{}{}
+	close(doneChannel)
 	session := &session{
 		Action:         action,
 		Handler:        handler,
 		client:         client,
 		Version:        minVersion,
 		request:        request,
+		done:           doneChannel,
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
@@ -189,6 +193,9 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	client.PauseJobs()
 
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
+	doneChannel := make(chan struct{}, 1)
+	doneChannel <- struct{}{}
+	close(doneChannel)
 	session := &session{
 		ServerURL:      qr.URL,
 		Hostname:       u.Hostname(),
@@ -196,6 +203,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		Action:         qr.Type,
 		Handler:        handler,
 		client:         client,
+		done:           doneChannel,
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
@@ -270,6 +278,21 @@ func serverName(hostname string, request irma.SessionRequest, conf *irma.Configu
 	return sn
 }
 
+func checkKey(conf *irma.Configuration, issuer irma.IssuerIdentifier, counter uint) error {
+	id := fmt.Sprintf("%s-%d", issuer, counter)
+	pk, err := conf.PublicKey(issuer, counter)
+	if err != nil {
+		return err
+	}
+	if pk == nil {
+		return errors.Errorf("credential signed with unknown public key %s", id)
+	}
+	if time.Now().Unix() > pk.ExpiryDate {
+		return errors.Errorf("credential signed with expired key %s", id)
+	}
+	return nil
+}
+
 // processSessionInfo continues the session after all session state has been received:
 // it checks if the session can be performed and asks the user for consent.
 func (session *session) processSessionInfo() {
@@ -310,6 +333,11 @@ func (session *session) processSessionInfo() {
 		// Calculate singleton credentials to be removed
 		ir.RemovalCredentialInfoList = irma.CredentialInfoList{}
 		for _, credreq := range ir.Credentials {
+			err := checkKey(session.client.Configuration, credreq.CredentialTypeID.IssuerIdentifier(), credreq.KeyCounter)
+			if err != nil {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
+				return
+			}
 			preexistingCredentials := session.client.attrs(credreq.CredentialTypeID)
 			if len(preexistingCredentials) != 0 && preexistingCredentials[0].IsValid() && preexistingCredentials[0].CredentialType().IsSingleton {
 				ir.RemovalCredentialInfoList = append(ir.RemovalCredentialInfoList, preexistingCredentials[0].Info())
@@ -512,8 +540,6 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.finish(false)
-	session.client.nonrevRepopulateCaches(session.request)
-	session.client.StartJobs()
 	session.Handler.Success(string(messageJson))
 }
 
@@ -660,13 +686,21 @@ func panicToError(e interface{}) *irma.SessionError {
 // background jobs. This function is idempotent, doing nothing when called a second time. It
 // returns whether or not it did something.
 func (session *session) finish(delete bool) bool {
-	if !session.done {
-		if delete && session.IsInteractive() {
-			session.transport.Delete()
-		}
-		session.client.nonrevRepopulateCaches(session.request)
-		session.client.sessions.remove(session.token)
-		session.done = true
+	// In order to guarantee idempotency even if this function is simultaneously called by two threads
+	// we need to synchronize here. We do this by having the session contain a channel (done), which
+	// is initialized to buffer exactly 1 message, and is then closed. The first call to reach this if
+	// will then read that message, whilst all further calls will see the closed channel and know
+	// that no further work is needed.
+	if _, ok := <-session.done; ok {
+		// Do actual delete in background, since that can take a while in some circumstances, and
+		// precise moment of completion isn't relevant for frontend.
+		go func() {
+			if delete && session.IsInteractive() {
+				session.transport.Delete()
+			}
+			session.client.nonrevRepopulateCaches(session.request)
+			session.client.sessions.remove(session.token)
+		}()
 		return true
 	}
 	return false

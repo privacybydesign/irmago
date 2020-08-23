@@ -13,7 +13,7 @@ This is required before credential types requiring revocation can be issued unde
 (New keypairs generated with "irma scheme issuer keygen" already support revocation.)`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		sk, err := gabi.NewPrivateKeyFromFile(args[0])
+		sk, err := gabi.NewPrivateKeyFromFile(args[0], false)
 		if err != nil {
 			die("failed to read private key", err)
 		}

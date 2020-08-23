@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0-rc.5] - 2020-08-11
+### Added
+* Support disabling scheme auto-updating in `irma session`
+* Support revocation in `irma session` and `irma request`
+
+### Fixed
+* Fixed bug in server configuration defaults when enabling production mode through config file
+* Fixed bug that would kill server-sent events (SSE) connections after several seconds
+* Fixed invalidation of local copy of index if local scheme is newer than the remote one
+* Ignore absence of FAQ fields and category in credentialtypes during `irma scheme verify`
+
+### Security
+* Abort issuance or disclosure in server and client in case of expired public keys
+
 ## [0.5.0-rc.4] - 2020-06-18
 ### Added
 * Support for parallel sessions (e.g. issuance of missing credentials during a disclosure session) to `irmaclient`
@@ -91,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.5.0-rc.5]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.4...v0.5.0-rc.5
 [0.5.0-rc.4]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.3...v0.5.0-rc.4
 [0.5.0-rc.3]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.2...v0.5.0-rc.3
 [0.5.0-rc.2]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.1...v0.5.0-rc.2

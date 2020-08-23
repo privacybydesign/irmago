@@ -74,7 +74,7 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.Pub
 
 // Expired returns true if any of the contained disclosure proofs is specified at the specified time,
 // or now, when the specified time is nil.
-func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
+func (pl ProofList) Expired(configuration *Configuration, t *time.Time) (bool, error) {
 	if t == nil {
 		temp := time.Now()
 		t = &temp
@@ -86,10 +86,17 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) bool {
 		}
 		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
 		if metadata.Expiry().Before(*t) {
-			return true
+			return true, nil
+		}
+		pk, err := metadata.PublicKey()
+		if err != nil {
+			return false, err
+		}
+		if metadata.SigningDate().Unix() > pk.ExpiryDate {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func extractAttribute(pl gabi.ProofList, index *DisclosedAttributeIndex, notrevoked *time.Time, conf *Configuration) (*DisclosedAttribute, *string, error) {
@@ -364,7 +371,11 @@ func (d *Disclosure) VerifyAgainstRequest(
 	}
 
 	// Check that all credentials were unexpired
-	if expired := ProofList(d.Proofs).Expired(configuration, validAt); expired {
+	expired, err := ProofList(d.Proofs).Expired(configuration, validAt)
+	if err != nil {
+		return nil, ProofStatusInvalid, err
+	}
+	if expired {
 		return list, ProofStatusExpired, nil
 	}
 

@@ -31,8 +31,8 @@ require (
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
-	github.com/privacybydesign/gabi v0.0.0-20200714131638-e1b4e6d8c648
-	github.com/sietseringers/go-sse v0.0.0-20200223201439-6cc042ab6f6d
+	github.com/privacybydesign/gabi v0.0.0-20200729124802-5828bcd24dfd
+	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.0 // indirect
 	github.com/spf13/cast v1.3.0
@@ -40,7 +40,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.4-0.20190111213756-a45bfec10d59
 	github.com/spf13/viper v1.0.1-0.20200205174444-d996804203c7
-	github.com/stretchr/testify v1.5.1
+	github.com/stretchr/testify v1.6.1
 	github.com/timshannon/bolthold v0.0.0-20190812165541-a85bcc049a2e // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 	go.etcd.io/bbolt v1.3.2

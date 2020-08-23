@@ -547,7 +547,7 @@ func (dr *DisclosureRequest) Validate() error {
 	if !dr.IsDisclosureRequest() {
 		return errors.New("Not a disclosure request")
 	}
-	if len(dr.Disclose) == 0 {
+	if len(dr.Identifiers().AttributeTypes) == 0 {
 		return errors.New("Disclosure request had no attributes")
 	}
 	var err error
@@ -792,6 +792,10 @@ func (t Timestamp) Before(u Timestamp) bool {
 
 func (t Timestamp) After(u Timestamp) bool {
 	return time.Time(t).After(time.Time(u))
+}
+
+func (t Timestamp) Sub(u Timestamp) time.Duration {
+	return time.Time(t).Sub(time.Time(u))
 }
 
 // To check whether Timestamp is uninitialized
