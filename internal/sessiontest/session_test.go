@@ -518,9 +518,9 @@ func TestBlindIssuanceSession(t *testing.T) {
 	})
 
 	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
 	_, _, err := irmaServer.StartSession(request, nil)
 	require.EqualError(t, err, "randomblind attribute cannot be set in credential request")
-	StopIrmaServer()
 
 	// Make the request valid
 	delete(request.Credentials[0].Attributes, "votingnumber")

@@ -1418,7 +1418,7 @@ func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 			revocation = true
 		}
 		if attr.RevocationAttribute && attr.RandomBlind {
-			return errors.New("attribute can not be both revocation attribute and randomblind attribute")
+			return errors.New("attribute cannot be both revocation attribute and randomblind attribute")
 		}
 	}
 	if len(indices) != count {
