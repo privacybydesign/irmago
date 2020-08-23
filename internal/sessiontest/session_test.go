@@ -503,7 +503,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
-
+	require.Truef(t, client.Configuration.ContainsAttributeType(attrID2), "AttributeType %s not found", attrID2)
 	require.True(t, client.Configuration.AttributeTypes[attrID2].RandomBlind, "AttributeType votingnumber is not of type random blind")
 
 	// this request should give an error by the server that the random blind attribute should not be in the credentialrequest
