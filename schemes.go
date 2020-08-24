@@ -1084,7 +1084,6 @@ func (scheme *RequestorScheme) path() string { return scheme.storagepath }
 func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path }
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
-	scheme.purge(conf)
 	for _, requestor := range scheme.requestors {
 		for _, hostname := range requestor.Hostnames {
 			if _, ok := conf.Requestors[hostname]; ok {
@@ -1109,10 +1108,12 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 			continue
 		}
 		var currentChunk RequestorChunk
-		path := filepath.Join(scheme.path(), file[len(scheme.id())+1:])
-		exists, err = conf.parseSchemeFile(scheme, path, &currentChunk)
-		if !exists && err != nil {
+		exists, err = conf.parseSchemeFile(scheme, file[len(scheme.id())+1:], &currentChunk)
+		if !exists {
 			return errors.Errorf("file %s of requestor scheme %s in index but not found on disk", file, scheme.ID), SchemeManagerStatusParsingError
+		}
+		if err != nil {
+			return err, SchemeManagerStatusParsingError
 		}
 		for _, v := range currentChunk {
 			if v.Scheme != scheme.ID {
@@ -1177,7 +1178,9 @@ func (scheme *RequestorScheme) handleUpdateFile(conf *Configuration, path string
 			return err
 		}
 	}
-	downloaded.RequestorSchemes[scheme.ID] = struct{}{}
+	if downloaded != nil {
+		downloaded.RequestorSchemes[scheme.ID] = struct{}{}
+	}
 	return nil
 }
 
@@ -1191,6 +1194,7 @@ func (scheme *RequestorScheme) delete(conf *Configuration) error {
 }
 
 func (scheme *RequestorScheme) add(conf *Configuration) {
+	scheme.purge(conf)
 	conf.RequestorSchemes[scheme.ID] = scheme
 }
 
