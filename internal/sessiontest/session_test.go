@@ -465,12 +465,11 @@ func TestStaticQRSession(t *testing.T) {
 	}
 	bts, err := json.Marshal(qr)
 	require.NoError(t, err)
-	localhost := "localhost"
-	host := irma.NewTranslatedString(&localhost)
+	requestor := expectedRequestorInfo(t, nil, client.Configuration)
 	c := make(chan *SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), &TestHandler{t, c, client, &irma.RequestorInfo{Name: host, Hostnames: []string{localhost}}, 0, ""})
+	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, ""})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}

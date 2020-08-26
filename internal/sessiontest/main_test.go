@@ -11,6 +11,7 @@ import (
 
 	jwt "github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
@@ -211,7 +212,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	qr := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
-	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedServerName(t, request, client.Configuration)}
+	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, request, client.Configuration)}
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(qrjson), h)
@@ -221,18 +222,10 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	}
 }
 
-func expectedServerName(t *testing.T, request irma.SessionRequest, conf *irma.Configuration) *irma.RequestorInfo {
-	localhost := "localhost"
-	host := irma.NewTranslatedString(&localhost)
-
-	// If present in configuration, server name is expected to be
-	// value in scheme
-	if requestor, ok := conf.Requestors[localhost]; ok {
-		return requestor
+func expectedRequestorInfo(t *testing.T, request irma.SessionRequest, conf *irma.Configuration) *irma.RequestorInfo {
+	if common.ForceHTTPS {
+		return irma.NewRequestorInfo("localhost")
 	}
-
-	return &irma.RequestorInfo{
-		Name:      host,
-		Hostnames: []string{localhost},
-	}
+	require.Contains(t, conf.Requestors, "localhost")
+	return conf.Requestors["localhost"]
 }

@@ -1,0 +1,12 @@
+[
+    {
+        "scheme": "test-requestors",
+        "hostnames": [
+            "localhost"
+        ],
+        "name": {
+            "en": "Local IRMA server", "nl": "Lokale IRMA server"
+        },
+        "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718"
+    }
+]
