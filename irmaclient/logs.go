@@ -127,7 +127,7 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	entry := &LogEntry{
 		Type:       session.Action,
 		Time:       irma.Timestamp(time.Now()),
-		ServerName: session.ServerName,
+		ServerName: session.RequestorInfo,
 		Version:    session.Version,
 		request:    session.request,
 	}
