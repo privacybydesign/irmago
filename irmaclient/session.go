@@ -43,17 +43,17 @@ type Handler interface {
 	RequestIssuancePermission(request *irma.IssuanceRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
-		ServerName *irma.RequestorInfo,
+		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
 	RequestVerificationPermission(request *irma.DisclosureRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
-		ServerName *irma.RequestorInfo,
+		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
 	RequestSignaturePermission(request *irma.SignatureRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
-		ServerName *irma.RequestorInfo,
+		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
 	RequestSchemeManagerPermission(manager *irma.SchemeManager,
 		callback func(proceed bool))
@@ -67,10 +67,10 @@ type SessionDismisser interface {
 }
 
 type session struct {
-	Action     irma.Action
-	Handler    Handler
-	Version    *irma.ProtocolVersion
-	ServerName *irma.RequestorInfo
+	Action        irma.Action
+	Handler       Handler
+	Version       *irma.ProtocolVersion
+	RequestorInfo *irma.RequestorInfo
 
 	token          string
 	choice         *irma.DisclosureChoice
@@ -246,15 +246,20 @@ func (session *session) getSessionInfo() {
 	session.processSessionInfo()
 }
 
-func serverName(hostname string, request irma.SessionRequest, conf *irma.Configuration) *irma.RequestorInfo {
-	sn := irma.NewRequestorInfo(hostname)
-
-	if rinf, ok := conf.Requestors[hostname]; ok && (rinf.ValidUntil == nil || rinf.ValidUntil.After(irma.Timestamp(time.Now()))) {
-		// Use hostname-associated requestorinfo if available.
-		sn = rinf
+func requestorInfo(serverURL string, request irma.SessionRequest, conf *irma.Configuration) *irma.RequestorInfo {
+	if serverURL == "" {
+		return nil
 	}
+	u, _ := url.ParseRequestURI(serverURL) // Qr validator already checked this for errors
+	hostname := u.Hostname()
+	info, present := conf.Requestors[hostname]
 
-	return sn
+	if (u.Scheme == "https" || !common.ForceHTTPS) && present &&
+		(info.ValidUntil == nil || info.ValidUntil.After(irma.Timestamp(time.Now()))) {
+		return info
+	} else {
+		return irma.NewRequestorInfo(hostname)
+	}
 }
 
 func checkKey(conf *irma.Configuration, issuer irma.IssuerIdentifier, counter uint) error {
@@ -298,7 +303,7 @@ func (session *session) processSessionInfo() {
 		baserequest.ProtocolVersion = session.Version
 	}
 
-	session.ServerName = serverName(session.Hostname, session.request, session.client.Configuration)
+	session.RequestorInfo = requestorInfo(session.ServerURL, session.request, session.client.Configuration)
 
 	if session.Action == irma.ActionIssuing {
 		ir := session.request.(*irma.IssuanceRequest)
@@ -370,13 +375,13 @@ func (session *session) requestPermission() {
 	switch session.Action {
 	case irma.ActionDisclosing:
 		session.Handler.RequestVerificationPermission(
-			session.request.(*irma.DisclosureRequest), satisfiable, candidates, session.ServerName, session.doSession)
+			session.request.(*irma.DisclosureRequest), satisfiable, candidates, session.RequestorInfo, session.doSession)
 	case irma.ActionSigning:
 		session.Handler.RequestSignaturePermission(
-			session.request.(*irma.SignatureRequest), satisfiable, candidates, session.ServerName, session.doSession)
+			session.request.(*irma.SignatureRequest), satisfiable, candidates, session.RequestorInfo, session.doSession)
 	case irma.ActionIssuing:
 		session.Handler.RequestIssuancePermission(
-			session.request.(*irma.IssuanceRequest), satisfiable, candidates, session.ServerName, session.doSession)
+			session.request.(*irma.IssuanceRequest), satisfiable, candidates, session.RequestorInfo, session.doSession)
 	default:
 		panic("Invalid session type") // does not happen, session.Action has been checked earlier
 	}
