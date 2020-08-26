@@ -51,6 +51,8 @@ func TestConfigurationAutocopy(t *testing.T) {
 	credid := NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
 	require.True(t, conf.CredentialTypes[credid].ContainsAttribute(attrid))
+	require.Contains(t, conf.RequestorSchemes, NewRequestorSchemeIdentifier("test-requestors"))
+	require.Contains(t, conf.Requestors, "localhost")
 }
 
 func TestUpdateConfiguration(t *testing.T) {
@@ -157,6 +159,8 @@ func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	require.Empty(t, conf.DisabledSchemeManagers)
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
+	require.Contains(t, conf.RequestorSchemes, NewRequestorSchemeIdentifier("test-requestors"))
+	require.Contains(t, conf.Requestors, "localhost")
 }
 
 func TestParseIrmaConfiguration(t *testing.T) {
@@ -189,10 +193,14 @@ func TestParseIrmaConfiguration(t *testing.T) {
 
 	// Hash algorithm pseudocode:
 	// Base64(SHA256("irma-demo.RU.studentCard")[0:16])
-	//require.Contains(t, conf.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
-	//	"irma-demo.RU.studentCard had improper hash")
-	//require.Contains(t, conf.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
-	//	"irma-demo.MijnOverheid.root had improper hash")
+	require.Contains(t, conf.reverseHashes, "1stqlPad5edpfS1Na1U+DA==",
+		"irma-demo.RU.studentCard had improper hash")
+	require.Contains(t, conf.reverseHashes, "CLjnADMBYlFcuGOT7Z0xRg==",
+		"irma-demo.MijnOverheid.root had improper hash")
+
+	id := NewRequestorSchemeIdentifier("test-requestors")
+	require.Contains(t, conf.RequestorSchemes, id)
+	require.Equal(t, conf.Requestors["localhost"], conf.RequestorSchemes[id].requestors[0])
 }
 
 func TestInstallScheme(t *testing.T) {
@@ -207,10 +215,18 @@ func TestInstallScheme(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 
-	// install test scheme from remote
+	// install test schemes from remote
 	require.NoError(t, conf.DangerousTOFUInstallScheme(
 		"http://localhost:48681/irma_configuration/test",
 	))
+	require.NoError(t, conf.DangerousTOFUInstallScheme(
+		"http://localhost:48681/irma_configuration/test-requestors",
+	))
+
+	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("test"))
+	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("test.test.email"))
+	require.Contains(t, conf.RequestorSchemes, NewRequestorSchemeIdentifier("test-requestors"))
+	require.Contains(t, conf.Requestors, "localhost")
 }
 
 func TestMetadataAttribute(t *testing.T) {
