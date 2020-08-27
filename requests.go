@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
-	"reflect"
 	"strconv"
 	"time"
 
@@ -88,13 +87,13 @@ type IssuanceRequest struct {
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
-	Validity            *Timestamp               `json:"validity,omitempty"`
-	KeyCounter          uint                     `json:"keyCounter,omitempty"`
-	CredentialTypeID    CredentialTypeIdentifier `json:"credential"`
-	Attributes          map[string]string        `json:"attributes"`
-	RevocationKey       string                   `json:"revocationKey,omitempty"`
-	RevocationSupported bool                     `json:"revocationSupported,omitempty"`
-	RandomBlinds        []int                    `json:"randomblinds"`
+	Validity                    *Timestamp               `json:"validity,omitempty"`
+	KeyCounter                  uint                     `json:"keyCounter,omitempty"`
+	CredentialTypeID            CredentialTypeIdentifier `json:"credential"`
+	Attributes                  map[string]string        `json:"attributes"`
+	RevocationKey               string                   `json:"revocationKey,omitempty"`
+	RevocationSupported         bool                     `json:"revocationSupported,omitempty"`
+	RandomBlindAttributeTypeIDs []string                 `json:"randomblindIDs,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -606,12 +605,26 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 		}
 	}
 
-	// Check that the indices of random blind attributes match between CredentialRequest / configuration
-	if !reflect.DeepEqual(cr.RandomBlinds, credtype.RandomBlinds()) {
-		return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("mismatch in randomblind indices between server/client")}
+	// Check that the random blind attributes match between client configuration / CredentialRequest
+	clientRandomBlindAttributeIDs := credtype.GetRandomBlindAttributeTypeIdentifers()
+	if !stringSliceEqual(clientRandomBlindAttributeIDs, cr.RandomBlindAttributeTypeIDs) {
+		return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("mismatch in randomblind attributes between server/client")}
 	}
 
 	return nil
+}
+
+// Checks for equality between two slices of strings
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, _ := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // AttributeList returns the list of attributes from this credential request.

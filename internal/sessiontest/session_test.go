@@ -537,7 +537,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 	require.NoError(t, client.Close())
 }
 
-// Tests whether the client correctly detects a mismatch in the number of attributes between client and server.
+// Tests whether the client correctly detects a mismatch in the randomblind attributes between client and server.
 // In this test we simulate a scenario where the client has an out-of-date configuration compared to the server.
 // The server has updated configuration in which two randomblind attributes are present.
 // The client has only one. The client should notice and and abort the session.
@@ -564,7 +564,7 @@ func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
 	})
 
 	res := requestorSessionHelper(t, request, client, sessionOptionUpdatedIrmaConfiguration, sessionOptionIgnoreError)
-	require.EqualError(t, res.clientResult.Err, "Error type: randomblind\nDescription: mismatch in randomblind indices between server/client\nStatus code: 0")
+	require.EqualError(t, res.clientResult.Err, "Error type: randomblind\nDescription: mismatch in randomblind attributes between server/client\nStatus code: 0")
 }
 
 func TestPOSTSizeLimit(t *testing.T) {

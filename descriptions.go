@@ -133,6 +133,21 @@ func (ct *CredentialType) RandomBlinds() []int {
 	return indices
 }
 
+func (ct *CredentialType) getAttributeTypeIdentifiers(indices []int) (ids []string) {
+	for i, at := range ct.AttributeTypes {
+		for _, j := range indices {
+			if i == j {
+				ids = append(ids, at.ID)
+			}
+		}
+	}
+	return
+}
+
+func (ct *CredentialType) GetRandomBlindAttributeTypeIdentifers() []string {
+	return ct.getAttributeTypeIdentifiers(ct.RandomBlinds())
+}
+
 func (ct *CredentialType) RevocationSupported() bool {
 	return len(ct.RevocationServers) > 0
 }
