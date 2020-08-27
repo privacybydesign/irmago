@@ -52,6 +52,38 @@ func TestConfigurationAutocopy(t *testing.T) {
 	require.True(t, conf.CredentialTypes[credid].ContainsAttribute(attrid))
 }
 
+func TestUpdateConfiguration(t *testing.T) {
+	storage := test.SetupTestStorage(t)
+	defer test.ClearTestStorage(t, storage)
+	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
+
+	conf, err := NewConfiguration(filepath.Join(storage, "client"), ConfigurationOptions{Assets: filepath.Join("testdata", "irma_configuration")})
+	require.NoError(t, err)
+	require.NoError(t, conf.ParseFolder())
+
+	// first update just a public key. We don't have such an updated scheme in the testdata
+	// so we hackily manipulate scheme state to mark it out of date.
+	issuerid := NewIssuerIdentifier("irma-demo.MijnOverheid")
+	schemeid := NewSchemeManagerIdentifier("irma-demo")
+	scheme := conf.SchemeManagers[schemeid]
+	scheme.Timestamp = Timestamp(time.Time(scheme.Timestamp).Add(-1000 * time.Hour))
+	// modify hash of a public key in the index so it will update the file
+	path := "irma-demo/MijnOverheid/PublicKeys/2.xml"
+	scheme.index[path][0] = ^scheme.index[path][0]
+
+	updated := newIrmaIdentifierSet()
+	require.NoError(t, conf.UpdateSchemeManager(schemeid, updated))
+	require.Contains(t, updated.PublicKeys, issuerid)
+	require.Contains(t, updated.PublicKeys[issuerid], uint(2))
+
+	// next, update to a copy of the scheme in which a credential type was modified
+	scheme.URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	updated = newIrmaIdentifierSet()
+	require.NoError(t, conf.UpdateSchemeManager(schemeid, updated))
+	require.Contains(t, updated.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
+}
+
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	// The description.xml of the scheme manager under this folder has been edited
 	// to invalidate the scheme manager signature

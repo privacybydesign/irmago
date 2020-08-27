@@ -1218,6 +1218,7 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 	transport := NewHTTPTransport(manager.URL, true)
 	issPattern := regexp.MustCompile("^([^/]+)/([^/]+)/description\\.xml")
 	credPattern := regexp.MustCompile("^([^/]+)/([^/]+)/Issues/([^/]+)/description\\.xml")
+	pubkeyPattern := regexp.MustCompile("^([^/]+)/([^/]+)/PublicKeys/(\\d+)\\.xml")
 	for filename, newHash := range index {
 		path := filepath.Join(conf.Path, filename)
 		oldHash, known := manager.index[filename]
@@ -1253,6 +1254,15 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 			credid := NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", matches[1], matches[2], matches[3]))
 			downloaded.CredentialTypes[credid] = struct{}{}
 		}
+		matches = pubkeyPattern.FindStringSubmatch(filepath.ToSlash(filename))
+		if len(matches) == 4 {
+			issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", matches[1], matches[2]))
+			counter, err := strconv.ParseUint(matches[3], 10, 32)
+			if err != nil {
+				return err
+			}
+			downloaded.PublicKeys[issid] = append(downloaded.PublicKeys[issid], uint(counter))
+		}
 	}
 
 	if err := conf.downloadDemoPrivateKeys(manager); err != nil {
@@ -1263,14 +1273,9 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 }
 
 func (conf *Configuration) UpdateSchemes() error {
-	updated := IrmaIdentifierSet{
-		SchemeManagers:  map[SchemeManagerIdentifier]struct{}{},
-		Issuers:         map[IssuerIdentifier]struct{}{},
-		CredentialTypes: map[CredentialTypeIdentifier]struct{}{},
-		AttributeTypes:  map[AttributeTypeIdentifier]struct{}{},
-	}
+	updated := newIrmaIdentifierSet()
 	for id := range conf.SchemeManagers {
-		if err := conf.UpdateSchemeManager(id, &updated); err != nil {
+		if err := conf.UpdateSchemeManager(id, updated); err != nil {
 			return err
 		}
 	}
