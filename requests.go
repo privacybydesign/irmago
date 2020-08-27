@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -93,6 +94,7 @@ type CredentialRequest struct {
 	Attributes          map[string]string        `json:"attributes"`
 	RevocationKey       string                   `json:"revocationKey,omitempty"`
 	RevocationSupported bool                     `json:"revocationSupported,omitempty"`
+	RandomBlinds        []int                    `json:"randomblinds"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -573,7 +575,7 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, iss
 func (cr *CredentialRequest) Validate(conf *Configuration) error {
 	credtype := conf.CredentialTypes[cr.CredentialTypeID]
 	if credtype == nil {
-		return errors.New("Credential request of unknown credential type")
+		return &SessionError{ErrorType: ErrorUnknownIdentifier, Err: errors.New("Credential request of unknown credential type")}
 	}
 
 	// Check that there are no attributes in the credential request that aren't
@@ -587,21 +589,26 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 			}
 		}
 		if !found {
-			return errors.New("Credential request contains unknown attribute")
+			return &SessionError{ErrorType: ErrorUnknownIdentifier, Err: errors.New("Credential request of unknown credential type")}
 		}
 	}
 
 	for _, attrtype := range credtype.AttributeTypes {
 		_, present := cr.Attributes[attrtype.ID]
 		if !present && !attrtype.RevocationAttribute && !attrtype.RandomBlind && attrtype.Optional != "true" {
-			return errors.New("Required attribute not present in credential request")
+			return &SessionError{ErrorType: ErrorRequiredAttributeMissing, Err: errors.New("Required attribute not present in credential request")}
 		}
 		if present && attrtype.RevocationAttribute {
-			return errors.New("revocation attribute cannot be set in credential request")
+			return &SessionError{ErrorType: ErrorRevocation, Err: errors.New("revocation attribute cannot be set in credential request")}
 		}
 		if present && attrtype.RandomBlind {
-			return errors.New("randomblind attribute cannot be set in credential request")
+			return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("randomblind attribute cannot be set in credential request")}
 		}
+	}
+
+	// Check that the indices of random blind attributes match between CredentialRequest / configuration
+	if !reflect.DeepEqual(cr.RandomBlinds, credtype.RandomBlinds()) {
+		return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("mismatch in randomblind indices between server/client")}
 	}
 
 	return nil

@@ -223,6 +223,8 @@ const (
 	ErrorInvalidRequest = ErrorType("invalidRequest")
 	// Recovered panic
 	ErrorPanic = ErrorType("panic")
+	// Error involving random blind attributes
+	ErrorRandomBlind = ErrorType("randomblind")
 )
 
 type Disclosure struct {

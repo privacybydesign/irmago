@@ -168,8 +168,15 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 	if err := s.validateRequest(request); err != nil {
 		return nil, "", err
 	}
-
 	if action == irma.ActionIssuing {
+
+		// Include the indices of random blind attributes to each CredentialRequest.
+		// This way, the client can check prematurely, i.e., before the session,
+		// if it has the random blind attributes at the same indices within the credential.
+		for _, cred := range request.(*irma.IssuanceRequest).Credentials {
+			cred.RandomBlinds = s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RandomBlinds()
+		}
+
 		if err := s.validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
 			return nil, "", err
 		}
