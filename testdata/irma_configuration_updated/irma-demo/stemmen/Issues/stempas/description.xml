@@ -41,5 +41,15 @@
         <nl>Stemnummer</nl>
       </Description>
     </Attribute>
+    <Attribute id="votingnumber2" randomblind="true">
+      <Name>
+        <en>Voting number 2</en>
+        <nl>Stemmnummer 2</nl>
+      </Name>
+      <Description>
+        <en>Another voting number</en>
+        <nl>Nog een stemnummer</nl>
+      </Description>
+    </Attribute>
   </Attributes>
 </IssueSpecification>

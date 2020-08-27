@@ -322,7 +322,8 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 		SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
 		Issuers:        map[irma.IssuerIdentifier]struct{}{},
 		CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
-			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"): {},
+			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"):  {},
+			irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"): {},
 		},
 		PublicKeys:     map[irma.IssuerIdentifier][]uint{},
 		AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{},
@@ -520,7 +521,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
 	_, _, err := irmaServer.StartSession(request, nil)
-	require.EqualError(t, err, "randomblind attribute cannot be set in credential request")
+	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
 
 	// Make the request valid
 	delete(request.Credentials[0].Attributes, "votingnumber")
@@ -534,6 +535,36 @@ func TestBlindIssuanceSession(t *testing.T) {
 	require.NotNil(t, attrList.Ints[2], "randomblind attribute should not be nil")
 	require.NotEqual(t, 0, attrList.Ints[2].Cmp(big.NewInt(0)), "random blind attribute should not equal zero")
 	require.NoError(t, client.Close())
+}
+
+// Tests whether the client correctly detects a mismatch in the number of attributes between client and server.
+// In this test we simulate a scenario where the client has an out-of-date configuration compared to the server.
+// The server has updated configuration in which two randomblind attributes are present.
+// The client has only one. The client should notice and and abort the session.
+func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
+	credID := irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas")
+	attrID1 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.election")
+	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
+
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+
+	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
+	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
+	require.Truef(t, client.Configuration.ContainsAttributeType(attrID2), "AttributeType %s not found", attrID2)
+	require.True(t, client.Configuration.AttributeTypes[attrID2].RandomBlind, "AttributeType votingnumber is not of type random blind")
+
+	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: credID,
+			Attributes: map[string]string{
+				"election": "plantsoen",
+			},
+		},
+	})
+
+	res := requestorSessionHelper(t, request, client, sessionOptionUpdatedIrmaConfiguration, sessionOptionIgnoreError)
+	require.EqualError(t, res.clientResult.Err, "Error type: randomblind\nDescription: mismatch in randomblind indices between server/client\nStatus code: 0")
 }
 
 func TestPOSTSizeLimit(t *testing.T) {
