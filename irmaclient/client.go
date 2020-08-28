@@ -644,7 +644,7 @@ func (set credCandidateSet) multiply(candidates []*credCandidate) credCandidateS
 	return result
 }
 
-func (set credCandidateSet) expand(client *Client, base *irma.BaseRequest, con irma.AttributeCon) []DisclosureCandidates {
+func (set credCandidateSet) expand(client *Client, base *irma.BaseRequest, con irma.AttributeCon) ([]DisclosureCandidates, error) {
 	var result []DisclosureCandidates
 
 	for _, s := range set {
@@ -663,7 +663,10 @@ func (set credCandidateSet) expand(client *Client, base *irma.BaseRequest, con i
 				}
 				if credopt.Present() {
 					attrlist, _ := client.attributesByHash(credopt.Hash)
-					cred, _, _ := client.credentialByHash(credopt.Hash)
+					cred, _, err := client.credentialByHash(credopt.Hash)
+					if err != nil {
+						return nil, err
+					}
 					attropt.Expired = !attrlist.IsValid()
 					attropt.Revoked = attrlist.Revoked
 					attropt.NotRevokable = cred.NonRevocationWitness == nil && base.RequestsRevocation(credopt.Type)
@@ -674,7 +677,7 @@ func (set credCandidateSet) expand(client *Client, base *irma.BaseRequest, con i
 		result = append(result, candidateSet)
 	}
 
-	return result
+	return result, nil
 }
 
 func cartesianProduct(candidates [][]*credCandidate) credCandidateSet {
@@ -725,7 +728,11 @@ func (client *Client) candidatesDisCon(base *irma.BaseRequest, discon irma.Attri
 		// is asking for, resulting in attribute sets each of which would satisfy the conjunction,
 		// and therefore the containing disjunction
 		// [ [ a.a.a.a #1, a.a.a.b #1, a.a.b.x #1 ], [ a.a.a.a #2, a.a.a.b #2, a.a.b.x #1 ] ]
-		candidates = append(candidates, c.expand(client, base, con)...)
+		expanded, err := c.expand(client, base, con)
+		if err != nil {
+			return nil, false, err
+		}
+		candidates = append(candidates, expanded...)
 	}
 
 	return
