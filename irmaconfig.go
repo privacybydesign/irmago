@@ -1136,45 +1136,45 @@ func (conf *Configuration) writeIndex(id SchemeManagerIdentifier, indexbts, sigb
 }
 
 func (conf *Configuration) checkRemoteScheme(manager *SchemeManager) (
-	int64, []byte, []byte, SchemeManagerIndex, error,
+	*Timestamp, []byte, []byte, SchemeManagerIndex, error,
 ) {
 	t := NewHTTPTransport(manager.URL, true)
 	indexbts, err := t.GetBytes("index")
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	sig, err := t.GetBytes("index.sig")
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	timestampbts, err := t.GetBytes("timestamp")
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	pk, err := conf.schemePublicKey(manager.Identifier())
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Verify signature and the timestamp hash in the index
 	if err = signed.Verify(pk, indexbts, sig); err != nil {
-		return 0, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	index := SchemeManagerIndex(make(map[string]ConfigurationFileHash))
 	if err = index.FromString(string(indexbts)); err != nil {
-		return 0, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	sha := sha256.Sum256(timestampbts)
 	if !bytes.Equal(index[manager.ID+"/timestamp"], sha[:]) {
-		return 0, nil, nil, nil, errors.Errorf("signature over timestamp is not valid")
+		return nil, nil, nil, nil, errors.Errorf("signature over timestamp is not valid")
 	}
 
 	timestamp, err := parseTimestamp(timestampbts)
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return int64(timestamp.Sub(manager.Timestamp)), indexbts, sig, index, nil
+	return timestamp, indexbts, sig, index, nil
 }
 
 // UpdateSchemeManager syncs the stored version within the irma_configuration directory
@@ -1194,10 +1194,11 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 
 	// Download the new index and its signature, and check that the new index
 	// is validly signed by the new signature
-	timestampdiff, indexbts, sigbts, index, err := conf.checkRemoteScheme(manager)
+	timestamp, indexbts, sigbts, index, err := conf.checkRemoteScheme(manager)
 	if err != nil {
 		return err
 	}
+	timestampdiff := int64(timestamp.Sub(manager.Timestamp))
 	if timestampdiff == 0 {
 		Logger.WithField("scheme", id).Info("scheme is up-to-date, not updating")
 		return nil
@@ -1264,6 +1265,9 @@ func (conf *Configuration) UpdateSchemeManager(id SchemeManagerIdentifier, downl
 			downloaded.PublicKeys[issid] = append(downloaded.PublicKeys[issid], uint(counter))
 		}
 	}
+
+	manager.index = index
+	manager.Timestamp = *timestamp
 
 	if err := conf.downloadDemoPrivateKeys(manager); err != nil {
 		return err
