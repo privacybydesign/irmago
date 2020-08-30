@@ -33,38 +33,32 @@ type Configuration struct {
 	Issuers         map[IssuerIdentifier]*Issuer
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
-
-	PrivateKeys PrivateKeyRing
-
-	Revocation *RevocationStorage `json:"-"`
-
-	Scheduler *gocron.Scheduler
-
-	// Path to the irma_configuration folder that this instance represents
-	Path string
-
-	// DisabledSchemeManagers keeps track of schemes that did not parse  succesfully
-	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
-	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
+	kssPublicKeys   map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
+	publicKeys      map[IssuerIdentifier]map[uint]*gabi.PublicKey
+	reverseHashes   map[string]CredentialTypeIdentifier
 
 	// RequestorScheme data of the currently loaded requestorscheme
 	RequestorSchemes map[RequestorSchemeIdentifier]*RequestorScheme
 	Requestors       map[string]*RequestorInfo
 
-	// RequestorSchemeError keeps track of any error of the requestorscheme if it
+	// DisabledRequestorSchemes keeps track of any error of the requestorscheme if it
 	// did not parse successfully
 	DisabledRequestorSchemes map[RequestorSchemeIdentifier]*SchemeManagerError
+	// DisabledSchemeManagers keeps track of schemes that did not parse  succesfully
+	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
+	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
 
-	Warnings []string `json:"-"`
+	// Path to the irma_configuration folder that this instance represents
+	Path        string
+	PrivateKeys PrivateKeyRing
+	Revocation  *RevocationStorage `json:"-"`
+	Scheduler   *gocron.Scheduler
+	Warnings    []string `json:"-"`
 
-	kssPublicKeys map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
-	publicKeys    map[IssuerIdentifier]map[uint]*gabi.PublicKey
-	reverseHashes map[string]CredentialTypeIdentifier
-	initialized   bool
-	assets        string
-	readOnly      bool
-
-	options ConfigurationOptions
+	options     ConfigurationOptions
+	initialized bool
+	assets      string
+	readOnly    bool
 }
 
 type UnknownIdentifierError struct {
@@ -250,11 +244,6 @@ func (conf *Configuration) Download(session SessionRequest) (downloaded *IrmaIde
 	for id := range allMissing.allSchemes() {
 		if err = conf.UpdateScheme(conf.SchemeManagers[id], downloaded); err != nil {
 			return
-		}
-	}
-	if !downloaded.Empty() {
-		if err = conf.ParseFolder(); err != nil {
-			return nil, err
 		}
 	}
 
@@ -746,6 +735,42 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
 			}
 		}
+	}
+}
+
+func (conf *Configuration) join(other *Configuration) {
+	for key, val := range other.SchemeManagers {
+		conf.SchemeManagers[key] = val
+	}
+	for key, val := range other.DisabledSchemeManagers {
+		conf.DisabledSchemeManagers[key] = val
+	}
+	for key, val := range other.Issuers {
+		conf.Issuers[key] = val
+	}
+	for key, val := range other.CredentialTypes {
+		conf.CredentialTypes[key] = val
+	}
+	for key, val := range other.reverseHashes {
+		conf.reverseHashes[key] = val
+	}
+	for key, val := range other.AttributeTypes {
+		conf.AttributeTypes[key] = val
+	}
+	for key, val := range other.kssPublicKeys {
+		conf.kssPublicKeys[key] = val
+	}
+	for key, val := range other.RequestorSchemes {
+		conf.RequestorSchemes[key] = val
+	}
+	for key, val := range other.Requestors {
+		conf.Requestors[key] = val
+	}
+	for key, val := range other.DisabledRequestorSchemes {
+		conf.DisabledRequestorSchemes[key] = val
+	}
+	for key, val := range other.publicKeys {
+		conf.publicKeys[key] = val
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/sirupsen/logrus"
 
 	"github.com/go-errors/errors"
 )
@@ -62,13 +63,14 @@ type (
 		parseContents(conf *Configuration) error
 		validate(conf *Configuration) (error, SchemeManagerStatus)
 		update(conf *Configuration) error
-		handleUpdateFile(conf *Configuration, path string, bts []byte, transport *HTTPTransport, _ *IrmaIdentifierSet) error
+		handleUpdateFile(conf *Configuration, path, filename string, bts []byte, transport *HTTPTransport, _ *IrmaIdentifierSet) error
 		delete(conf *Configuration) error
 		add(conf *Configuration)
 		addError(conf *Configuration, err error)
 		deleteError(conf *Configuration, err error)
 		present(id string, conf *Configuration) bool
 		typ() SchemeType
+		purge(conf *Configuration)
 	}
 
 	// SchemeFileHash encodes the SHA256 hash of an authenticated
@@ -150,19 +152,15 @@ func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 }
 
 func (conf *Configuration) UpdateSchemes() error {
-	updated := newIrmaIdentifierSet()
 	for _, scheme := range conf.SchemeManagers {
-		if err := conf.UpdateScheme(scheme, updated); err != nil {
+		if err := conf.UpdateScheme(scheme, nil); err != nil {
 			return err
 		}
 	}
 	for _, scheme := range conf.RequestorSchemes {
-		if err := conf.UpdateScheme(scheme, updated); err != nil {
+		if err := conf.UpdateScheme(scheme, nil); err != nil {
 			return err
 		}
-	}
-	if !updated.Empty() {
-		return conf.ParseFolder()
 	}
 	return nil
 }
@@ -171,7 +169,6 @@ func (conf *Configuration) UpdateSchemes() error {
 // with the remote version at the scheme's URL, downloading and storing
 // new and modified files, according to the index files of both versions.
 // It stores the identifiers of new or updated entities in the second parameter.
-// Note: any newly downloaded files are not yet parsed and inserted into conf.
 func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifierSet) error {
 	if conf.readOnly {
 		return errors.New("cannot update a read-only configuration")
@@ -179,10 +176,14 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	if scheme == nil {
 		return errors.Errorf("Cannot update unknown scheme")
 	}
-	typ := string(scheme.typ())
-	id := scheme.id()
-	Logger.WithField(typ+"scheme", id).Info("checking for updates", typ)
-	shouldUpdate, timestamp, index, err := conf.checkRemoteScheme(scheme)
+
+	var (
+		typ        = string(scheme.typ())
+		id         = scheme.id()
+		schemepath = scheme.path()
+	)
+	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("checking for updates", typ)
+	shouldUpdate, _, index, err := conf.checkRemoteScheme(scheme)
 	if err != nil {
 		return err
 	}
@@ -190,41 +191,49 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 		return nil
 	}
 
-	var (
-		transport = NewHTTPTransport(scheme.url(), true)
-		oldIndex  = scheme.idx()
-	)
-	for path, newHash := range index {
-		pathStripped := path[len(id)+1:] // strip scheme name
-		fullpath := filepath.Join(scheme.path(), pathStripped)
-		oldHash, known := oldIndex[path]
-		var have bool
-		have, err = common.PathExists(fullpath)
-		if err != nil {
-			return err
-		}
-		if known && have && oldHash.Equal(newHash) {
-			continue // nothing to do, we already have this file
-		}
-		// Ensure that the folder in which to write the file exists
-		if err = os.MkdirAll(filepath.Dir(fullpath), 0700); err != nil {
-			return err
-		}
-		// Download the new file, store it in our scheme
-		var bts []byte
-		if bts, err = conf.downloadSignedFile(transport, scheme.path(), pathStripped, newHash); err != nil {
-			return err
-		}
-		// handle file contents per scheme type
-		if err = scheme.handleUpdateFile(conf, path, bts, transport, downloaded); err != nil {
-			return err
-		}
+	// As long as we can write to the scheme directory, we guarantee that either
+	// - updating succeeded, and the updated scheme on disk has been verified and parsed
+	//   without error into the corrent conf instance.
+	// - if any error occurs, then neither the scheme on disk nor its data in the current
+	//   conf instance is touched.
+	// We do this by creating a temporary copy on disk of the scheme, which we then update,
+	// verify, and parse into another *Configuration instance. Only after all possible errors have
+	// occured do we modify the scheme on disk and in memory.
+
+	// copy the scheme on disk to a new temporary directory
+	dir, newschemepath, err := tempSchemeCopy(scheme)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = os.RemoveAll(dir)
+	}()
+
+	// iterate over the index and download new and changed files into the temp dir
+	if err = conf.updateSchemeFiles(scheme, index, newschemepath, downloaded); err != nil {
+		return err
 	}
 
-	scheme.setTimestamp(*timestamp)
-	scheme.setIdx(index)
+	// verify the updated scheme in the temp dir
+	var newconf *Configuration
+	if newconf, err = NewConfiguration(dir, ConfigurationOptions{}); err != nil {
+		return err
+	}
+	if scheme, err = newconf.ParseSchemeFolder(newschemepath); err != nil {
+		return err
+	}
+	if err = scheme.update(conf); err != nil {
+		return err
+	}
 
-	return scheme.update(conf)
+	// replace old scheme on disk with the new one from the temp dir
+	if err = updateSchemeDir(scheme, schemepath, newschemepath); err != nil {
+		return err
+	}
+
+	scheme.purge(conf)
+	conf.join(newconf)
+	return nil
 }
 
 func (conf *Configuration) ParseSchemeFolder(dir string) (scheme Scheme, serr error) {
@@ -275,6 +284,43 @@ func (conf *Configuration) ParseSchemeFolder(dir string) (scheme Scheme, serr er
 // is found further below as helpers on the scheme structs. This includes modifying the
 // various maps on Configuration instances.
 
+func (conf *Configuration) updateSchemeFiles(
+	scheme Scheme, index SchemeManagerIndex, newschemepath string, downloaded *IrmaIdentifierSet,
+) error {
+	var (
+		transport = NewHTTPTransport(scheme.url(), true)
+		oldIndex  = scheme.idx()
+		id        = scheme.id()
+	)
+	for path, newHash := range index {
+		pathStripped := path[len(id)+1:] // strip scheme name
+		fullpath := filepath.Join(newschemepath, pathStripped)
+		oldHash, known := oldIndex[path]
+		var have bool
+		have, err := common.PathExists(fullpath)
+		if err != nil {
+			return err
+		}
+		if known && have && oldHash.Equal(newHash) {
+			continue // nothing to do, we already have this file
+		}
+		// Ensure that the folder in which to write the file exists
+		if err = os.MkdirAll(filepath.Dir(fullpath), 0700); err != nil {
+			return err
+		}
+		// Download the new file, store it in our scheme
+		var bts []byte
+		if bts, err = downloadSignedFile(transport, newschemepath, pathStripped, newHash); err != nil {
+			return err
+		}
+		// handle file contents per scheme type
+		if err = scheme.handleUpdateFile(conf, newschemepath, pathStripped, bts, transport, downloaded); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (conf *Configuration) parseSchemeDescription(dir string) (Scheme, SchemeManagerStatus, error) {
 	filename, err := common.SchemeFilename(dir)
 	if err != nil {
@@ -323,9 +369,7 @@ func (conf *Configuration) parseSchemeDescription(dir string) (Scheme, SchemeMan
 }
 
 func (conf *Configuration) parseSchemeFile(
-	scheme Scheme,
-	path string,
-	description interface{},
+	scheme Scheme, path string, description interface{},
 ) (bool, error) {
 	abs := filepath.Join(scheme.path(), path)
 	if _, err := os.Stat(abs); err != nil {
@@ -422,7 +466,7 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 		return errors.New("cannot install scheme into a read-only configuration")
 	}
 
-	scheme, err := conf.downloadScheme(url)
+	scheme, err := downloadScheme(url)
 	if err != nil {
 		return err
 	}
@@ -442,7 +486,7 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 			return err
 		}
 	} else {
-		if _, err := conf.downloadFile(NewHTTPTransport(url, true), path, "pk.pem"); err != nil {
+		if _, err := downloadFile(NewHTTPTransport(url, true), path, "pk.pem"); err != nil {
 			return err
 		}
 	}
@@ -451,12 +495,7 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 		return errors.Errorf("scheme has id %s but expected %s", scheme.id(), id)
 	}
 	scheme.add(conf)
-	if err := conf.UpdateScheme(scheme, nil); err != nil {
-		return err
-	}
-
-	_, err = conf.ParseSchemeFolder(path)
-	return err
+	return conf.UpdateScheme(scheme, nil)
 }
 
 func (conf *Configuration) checkRemoteScheme(scheme Scheme) (bool, *Timestamp, SchemeManagerIndex, error) {
@@ -616,28 +655,6 @@ func (conf *Configuration) schemePublicKey(dir string) (*ecdsa.PublicKey, error)
 	return signed.UnmarshalPemPublicKey(pkbts)
 }
 
-func (conf *Configuration) downloadSignedFile(
-	transport *HTTPTransport, base, path string, hash SchemeFileHash,
-) ([]byte, error) {
-	b, err := transport.GetBytes(path)
-	if err != nil {
-		return nil, err
-	}
-	sha := sha256.Sum256(b)
-	if hash != nil && !bytes.Equal(hash, sha[:]) {
-		return nil, errors.Errorf("Signature over new file %s is not valid", path)
-	}
-	dest := filepath.Join(base, filepath.FromSlash(path))
-	if err = common.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
-		return nil, err
-	}
-	return b, common.SaveFile(dest, b)
-}
-
-func (conf *Configuration) downloadFile(transport *HTTPTransport, base, path string) ([]byte, error) {
-	return conf.downloadSignedFile(transport, base, path, nil)
-}
-
 // readSignedFile reads the file at the specified path
 // and verifies its authenticity by checking that the file hash
 // is present in the (signed) scheme index file.
@@ -714,27 +731,27 @@ func (conf *Configuration) checkUnsignedFiles(dir string, index SchemeManagerInd
 	})
 }
 
-var (
-	// These files never occur in a scheme's index
-	sigExceptions = []*regexp.Regexp{
-		regexp.MustCompile(`/.git(/.*)?`),
-		regexp.MustCompile(`^.*?/pk\.pem$`),
-		regexp.MustCompile(`^.*?/sk\.pem$`),
-		regexp.MustCompile(`^.*?/index`),
-		regexp.MustCompile(`^.*?/index\.sig`),
-		regexp.MustCompile(`^.*?/AUTHORS$`),
-		regexp.MustCompile(`^.*?/LICENSE$`),
-		regexp.MustCompile(`^.*?/README\.md$`),
-		regexp.MustCompile(`^.*?/.*?/PrivateKeys$`),
-		regexp.MustCompile(`^.*?/.*?/PrivateKeys/\d+.xml$`),
-		regexp.MustCompile(`^.*?/assets/?\w*(\.png)?$`),
-		regexp.MustCompile(`\.DS_Store$`),
+func downloadSignedFile(
+	transport *HTTPTransport, base, path string, hash SchemeFileHash,
+) ([]byte, error) {
+	b, err := transport.GetBytes(path)
+	if err != nil {
+		return nil, err
 	}
+	sha := sha256.Sum256(b)
+	if hash != nil && !bytes.Equal(hash, sha[:]) {
+		return nil, errors.Errorf("Signature over new file %s is not valid", path)
+	}
+	dest := filepath.Join(base, filepath.FromSlash(path))
+	if err = common.EnsureDirectoryExists(filepath.Dir(dest)); err != nil {
+		return nil, err
+	}
+	return b, common.SaveFile(dest, b)
+}
 
-	issPattern  = regexp.MustCompile("^([^/]+)/([^/]+)/description\\.xml")
-	credPattern = regexp.MustCompile("^([^/]+)/([^/]+)/Issues/([^/]+)/description\\.xml")
-	keyPattern  = regexp.MustCompile("^([^/]+)/([^/]+)/PublicKeys/(\\d+)\\.xml")
-)
+func downloadFile(transport *HTTPTransport, base, path string) ([]byte, error) {
+	return downloadSignedFile(transport, base, path, nil)
+}
 
 func dirInScheme(index SchemeManagerIndex, dir string) bool {
 	for indexpath := range index {
@@ -745,7 +762,7 @@ func dirInScheme(index SchemeManagerIndex, dir string) bool {
 	return false
 }
 
-func (conf *Configuration) downloadScheme(url string) (Scheme, error) {
+func downloadScheme(url string) (Scheme, error) {
 	if url[len(url)-1] == '/' {
 		url = url[:len(url)-1]
 	}
@@ -781,6 +798,64 @@ func (conf *Configuration) downloadScheme(url string) (Scheme, error) {
 
 	return nil, errors.New("no scheme description file found")
 }
+
+func tempSchemeCopy(scheme Scheme) (string, string, error) {
+	dir, err := ioutil.TempDir("", "tempscheme")
+	if err != nil {
+		return "", "", err
+	}
+	newschemepath := filepath.Join(dir, scheme.id())
+	if err = common.EnsureDirectoryExists(newschemepath); err != nil {
+		return "", "", err
+	}
+	if err = common.CopyDirectory(scheme.path(), newschemepath); err != nil {
+		return "", "", err
+	}
+	return dir, newschemepath, nil
+}
+
+// Move oldscheme to a temp dir; move newscheme to the location of oldscheme; and delete oldscheme.
+// If the first move works then the second one should too, so this will either entirely succeed
+// or leave the old scheme untouched.
+func updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
+	tmp, err := ioutil.TempDir("", "oldscheme")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = os.RemoveAll(tmp)
+	}()
+	if err = os.Rename(oldscheme, filepath.Join(tmp, scheme.id())); err != nil {
+		return err
+	}
+	if err = os.Rename(newscheme, oldscheme); err != nil {
+		return err
+	}
+	scheme.setPath(oldscheme)
+	return nil
+}
+
+var (
+	// These files never occur in a scheme's index
+	sigExceptions = []*regexp.Regexp{
+		regexp.MustCompile(`/.git(/.*)?`),
+		regexp.MustCompile(`^.*?/pk\.pem$`),
+		regexp.MustCompile(`^.*?/sk\.pem$`),
+		regexp.MustCompile(`^.*?/index`),
+		regexp.MustCompile(`^.*?/index\.sig`),
+		regexp.MustCompile(`^.*?/AUTHORS$`),
+		regexp.MustCompile(`^.*?/LICENSE$`),
+		regexp.MustCompile(`^.*?/README\.md$`),
+		regexp.MustCompile(`^.*?/.*?/PrivateKeys$`),
+		regexp.MustCompile(`^.*?/.*?/PrivateKeys/\d+.xml$`),
+		regexp.MustCompile(`^.*?/assets/?\w*(\.png)?$`),
+		regexp.MustCompile(`\.DS_Store$`),
+	}
+
+	issPattern  = regexp.MustCompile("^([^/]+)/description\\.xml")
+	credPattern = regexp.MustCompile("([^/]+)/Issues/([^/]+)/description\\.xml")
+	keyPattern  = regexp.MustCompile("([^/]+)/PublicKeys/(\\d+)\\.xml")
+)
 
 func newScheme(typ SchemeType) Scheme {
 	switch typ {
@@ -865,29 +940,29 @@ func (scheme *SchemeManager) validate(conf *Configuration) (error, SchemeManager
 }
 
 func (scheme *SchemeManager) update(conf *Configuration) error {
-	return scheme.downloadDemoPrivateKeys(conf)
+	return scheme.downloadDemoPrivateKeys()
 }
 
-func (scheme *SchemeManager) handleUpdateFile(conf *Configuration, filename string, _ []byte, _ *HTTPTransport, downloaded *IrmaIdentifierSet) error {
+func (scheme *SchemeManager) handleUpdateFile(conf *Configuration, _, filename string, _ []byte, _ *HTTPTransport, downloaded *IrmaIdentifierSet) error {
 	// See if the file is a credential type or issuer, and add it to the downloaded set if so
 	if downloaded == nil {
 		return nil
 	}
 	var matches []string
 	matches = issPattern.FindStringSubmatch(filepath.ToSlash(filename))
-	if len(matches) == 3 {
-		issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", matches[1], matches[2]))
+	if len(matches) == 2 {
+		issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", scheme.id(), matches[1]))
 		downloaded.Issuers[issid] = struct{}{}
 	}
 	matches = credPattern.FindStringSubmatch(filepath.ToSlash(filename))
-	if len(matches) == 4 {
-		credid := NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", matches[1], matches[2], matches[3]))
+	if len(matches) == 3 {
+		credid := NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", scheme.id(), matches[1], matches[2]))
 		downloaded.CredentialTypes[credid] = struct{}{}
 	}
 	matches = keyPattern.FindStringSubmatch(filepath.ToSlash(filename))
-	if len(matches) == 4 {
-		issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", matches[1], matches[2]))
-		counter, err := strconv.ParseUint(matches[3], 10, 32)
+	if len(matches) == 3 {
+		issid := NewIssuerIdentifier(fmt.Sprintf("%s.%s", scheme.id(), matches[1]))
+		counter, err := strconv.ParseUint(matches[2], 10, 32)
 		if err != nil {
 			return err
 		}
@@ -925,6 +1000,7 @@ func (scheme *SchemeManager) delete(conf *Configuration) error {
 }
 
 func (scheme *SchemeManager) add(conf *Configuration) {
+	scheme.purge(conf)
 	conf.SchemeManagers[scheme.Identifier()] = scheme
 }
 
@@ -956,6 +1032,34 @@ func (scheme *SchemeManager) present(id string, conf *Configuration) bool {
 }
 
 func (_ *SchemeManager) typ() SchemeType { return SchemeTypeIssuer }
+
+func (scheme *SchemeManager) purge(conf *Configuration) {
+	id := scheme.Identifier()
+	delete(conf.SchemeManagers, id)
+	delete(conf.DisabledSchemeManagers, id)
+	delete(conf.kssPublicKeys, id)
+	for issuerid, issuer := range conf.Issuers {
+		if issuer.SchemeManagerIdentifier() == id {
+			delete(conf.Issuers, issuerid)
+			delete(conf.publicKeys, issuerid)
+		}
+	}
+	for credid, cred := range conf.CredentialTypes {
+		if cred.SchemeManagerIdentifier() == id {
+			delete(conf.CredentialTypes, credid)
+		}
+	}
+	for attrid, attr := range conf.AttributeTypes {
+		if attr.SchemeManagerID == id.String() {
+			delete(conf.AttributeTypes, attrid)
+		}
+	}
+	for hash, credid := range conf.reverseHashes {
+		if credid.Root() == id.String() {
+			delete(conf.reverseHashes, hash)
+		}
+	}
+}
 
 func (scheme *SchemeManager) verifyFiles(conf *Configuration) error {
 	for file := range scheme.index {
@@ -1028,7 +1132,7 @@ func (scheme *SchemeManager) parseCredentialsFolder(conf *Configuration, issuer 
 // downloadDemoPrivateKeys attempts to download the scheme and issuer private keys, if the scheme is
 // a demo scheme and if they are not already present in the scheme, without failing if any of them
 // is not available.
-func (scheme *SchemeManager) downloadDemoPrivateKeys(conf *Configuration) error {
+func (scheme *SchemeManager) downloadDemoPrivateKeys() error {
 	if !scheme.Demo {
 		return nil
 	}
@@ -1036,7 +1140,7 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys(conf *Configuration) error 
 	Logger.Debugf("Attempting downloading of private keys of scheme %s", scheme.ID)
 	transport := NewHTTPTransport(scheme.URL, true)
 
-	_, err := conf.downloadFile(transport, scheme.path(), "sk.pem")
+	_, err := downloadFile(transport, scheme.path(), "sk.pem")
 	if err != nil { // If downloading of any of the private key fails just log it, and then continue
 		Logger.Warnf("Downloading private key of scheme %s failed ", scheme.ID)
 	}
@@ -1057,7 +1161,7 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys(conf *Configuration) error 
 			continue
 		}
 		remote := strings.Join(parts[len(parts)-3:], "/")
-		if _, err = conf.downloadFile(transport, scheme.path(), remote); err != nil {
+		if _, err = downloadFile(transport, scheme.path(), remote); err != nil {
 			Logger.Warnf("Downloading private key %s failed: %s", skpath, err)
 		}
 	}
@@ -1142,11 +1246,21 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 	return nil, SchemeManagerStatusValid
 }
 
-func (scheme *RequestorScheme) update(conf *Configuration) error { return nil }
+func (scheme *RequestorScheme) update(conf *Configuration) error {
+	for _, requestor := range scheme.requestors {
+		for _, hostname := range requestor.Hostnames {
+			if _, ok := conf.Requestors[hostname]; ok {
+				return errors.Errorf("Double occurence of hostname %s", hostname)
+			}
+		}
+	}
+	return nil
+}
 
-func (scheme *RequestorScheme) handleUpdateFile(conf *Configuration, path string, bts []byte, transport *HTTPTransport, downloaded *IrmaIdentifierSet) error {
+func (scheme *RequestorScheme) handleUpdateFile(conf *Configuration, path, filename string, bts []byte, transport *HTTPTransport, downloaded *IrmaIdentifierSet) error {
 	// Download logos if needed
-	if filepath.Base(path) == "description.json" || filepath.Base(path) == "timestamp" {
+
+	if filepath.Base(filename) == "description.json" || filepath.Base(filename) == "timestamp" {
 		return nil
 	}
 	var (
@@ -1162,7 +1276,7 @@ func (scheme *RequestorScheme) handleUpdateFile(conf *Configuration, path string
 		}
 		var ok bool
 		filename := *requestor.Logo + ".png"
-		ok, err = common.PathExists(filepath.Join(scheme.path(), "assets", filename))
+		ok, err = common.PathExists(filepath.Join(path, "assets", filename))
 		if err != nil {
 			return err
 		}
@@ -1174,7 +1288,7 @@ func (scheme *RequestorScheme) handleUpdateFile(conf *Configuration, path string
 		if err != nil {
 			return err
 		}
-		if _, err = conf.downloadSignedFile(transport, scheme.path(), filepath.Join("assets", filename), hash); err != nil {
+		if _, err = downloadSignedFile(transport, path, filepath.Join("assets", filename), hash); err != nil {
 			return err
 		}
 	}
