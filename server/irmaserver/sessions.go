@@ -28,8 +28,8 @@ type session struct {
 	legacyCompatible bool // if the request is convertible to pre-condiscon format
 
 	options       irma.SessionOptions
-	status        server.Status
-	prevStatus    server.Status
+	status        irma.ServerStatus
+	prevStatus    irma.ServerStatus
 	sse           *sse.Server
 	responseCache responseCache
 
@@ -48,7 +48,7 @@ type responseCache struct {
 	message       []byte
 	response      []byte
 	status        int
-	sessionStatus server.Status
+	sessionStatus irma.ServerStatus
 }
 
 type sessionStore interface {
@@ -120,7 +120,7 @@ func (s *memorySessionStore) deleteExpired() {
 		session.Lock()
 
 		timeout := maxSessionLifetime
-		if session.status == server.StatusInitialized && session.rrequest.Base().ClientTimeout != 0 {
+		if session.status == irma.ServerStatusInitialized && session.rrequest.Base().ClientTimeout != 0 {
 			timeout = time.Duration(session.rrequest.Base().ClientTimeout) * time.Second
 		}
 
@@ -128,7 +128,7 @@ func (s *memorySessionStore) deleteExpired() {
 			if !session.status.Finished() {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken}).Infof("Session expired")
 				session.markAlive()
-				session.setStatus(server.StatusTimeout)
+				session.setStatus(irma.ServerStatusTimeout)
 			} else {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken}).Infof("Deleting session")
 				expired = append(expired, token)
@@ -171,8 +171,8 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		backendToken:  backendToken,
 		clientToken:   clientToken,
 		frontendToken: frontendToken,
-		status:        server.StatusInitialized,
-		prevStatus:    server.StatusInitialized,
+		status:        irma.ServerStatusInitialized,
+		prevStatus:    irma.ServerStatusInitialized,
 		conf:          s.conf,
 		sessions:      s.sessions,
 		sse:           s.serverSentEvents,
@@ -180,7 +180,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 			LegacySession: request.SessionRequest().Base().Legacy(),
 			Token:         backendToken,
 			Type:          action,
-			Status:        server.StatusInitialized,
+			Status:        irma.ServerStatusInitialized,
 		},
 	}
 

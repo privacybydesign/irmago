@@ -133,9 +133,9 @@ func libraryRequest(
 
 	if binding {
 		// Listen for session status
-		statuschan := make(chan server.Status)
+		statuschan := make(chan irma.ServerStatus)
 		go func() {
-			var status server.Status
+			var status irma.ServerStatus
 			for {
 				newStatus := irmaServer.GetSessionResult(backendToken).Status
 				if newStatus != status {
@@ -195,11 +195,11 @@ func serverRequest(
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
-	statuschan := make(chan server.Status)
+	statuschan := make(chan irma.ServerStatus)
 	errorchan := make(chan error)
 	var wg sync.WaitGroup
 
-	go server.WaitStatus(transport, server.StatusInitialized, statuschan, errorchan)
+	go irma.WaitStatus(transport, irma.ServerStatusInitialized, statuschan, errorchan)
 	go func() {
 		err := <-errorchan
 		if err != nil {
@@ -211,7 +211,7 @@ func serverRequest(
 	go func() {
 		defer wg.Done()
 
-		var status server.Status
+		var status irma.ServerStatus
 		if binding {
 			status, err = handleBinding(sessionOptions, statuschan, func() error {
 				err = frontendTransport.Post("frontend/bindingcompleted", nil, nil)
@@ -227,7 +227,7 @@ func serverRequest(
 		} else {
 			// Wait until client connects if binding is disabled
 			status := <-statuschan
-			if status != server.StatusConnected {
+			if status != irma.ServerStatusConnected {
 				err = errors.Errorf("Unexpected status: %s", status)
 				return
 			}
@@ -235,7 +235,7 @@ func serverRequest(
 
 		// Wait until client finishes
 		status = <-statuschan
-		if status != server.StatusCancelled && status != server.StatusDone {
+		if status != irma.ServerStatusCancelled && status != irma.ServerStatusDone {
 			err = errors.Errorf("Unexpected status: %s", status)
 			return
 		}
@@ -290,21 +290,21 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 	return pkg.SessionPtr, pkg.FrontendToken, transport, err
 }
 
-func handleBinding(options *irma.SessionOptions, statusChan chan server.Status, completeBinding func() error) (
-	server.Status, error) {
+func handleBinding(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completeBinding func() error) (
+	irma.ServerStatus, error) {
 	errorChan := make(chan error)
-	status := server.StatusInitialized
+	status := irma.ServerStatusInitialized
 	bindingStarted := false
 	for {
 		select {
 		case status = <-statusChan:
-			if status == server.StatusInitialized {
+			if status == irma.ServerStatusInitialized {
 				continue
-			} else if status == server.StatusBinding {
+			} else if status == irma.ServerStatusBinding {
 				bindingStarted = true
 				go requestBindingPermission(options, completeBinding, errorChan)
 				continue
-			} else if status == server.StatusConnected && !bindingStarted {
+			} else if status == irma.ServerStatusConnected && !bindingStarted {
 				fmt.Println("Binding is not supported by the connected device.")
 			}
 			return status, nil

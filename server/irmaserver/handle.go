@@ -28,14 +28,14 @@ func (session *session) handleDelete() {
 	}
 	session.markAlive()
 
-	session.result = &server.SessionResult{Token: session.backendToken, Status: server.StatusCancelled, Type: session.action}
-	session.setStatus(server.StatusCancelled)
+	session.result = &server.SessionResult{Token: session.backendToken, Status: irma.ServerStatusCancelled, Type: session.action}
+	session.setStatus(irma.ServerStatusCancelled)
 }
 
 func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization) (
 	interface{}, *irma.RemoteError) {
 
-	if session.status != server.StatusInitialized {
+	if session.status != irma.ServerStatusInitialized {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
 
@@ -72,9 +72,9 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	session.request.Base().ProtocolVersion = session.version
 
 	if session.options.BindingMethod != irma.BindingMethodNone && session.version.Above(2, 6) {
-		session.setStatus(server.StatusBinding)
+		session.setStatus(irma.ServerStatusBinding)
 	} else {
-		session.setStatus(server.StatusConnected)
+		session.setStatus(irma.ServerStatusConnected)
 	}
 
 	if session.version.Below(2, 5) {
@@ -98,7 +98,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	return info, nil
 }
 
-func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
+func (session *session) handleGetStatus() (irma.ServerStatus, *irma.RemoteError) {
 	return session.status, nil
 }
 
@@ -111,7 +111,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(
 		session.conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
 	if err == nil {
-		session.setStatus(server.StatusDone)
+		session.setStatus(irma.ServerStatusDone)
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -130,7 +130,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(
 		session.conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
 	if err == nil {
-		session.setStatus(server.StatusDone)
+		session.setStatus(irma.ServerStatusDone)
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -217,7 +217,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		sigs = append(sigs, sig)
 	}
 
-	session.setStatus(server.StatusDone)
+	session.setStatus(irma.ServerStatusDone)
 	return sigs, nil
 }
 

@@ -99,7 +99,7 @@ func (th TestHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdenti
 func (th TestHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
 	th.Failure(&irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())})
 }
-func (th TestHandler) StatusUpdate(action irma.Action, status irma.Status) {}
+func (th TestHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
 func (th *TestHandler) Success(result string) {
 	th.result = result
 	th.c <- nil
@@ -209,7 +209,7 @@ type ManualTestHandler struct {
 	action irma.Action
 }
 
-func (th *ManualTestHandler) StatusUpdate(action irma.Action, status irma.Status) {
+func (th *ManualTestHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {
 	th.action = action
 }
 

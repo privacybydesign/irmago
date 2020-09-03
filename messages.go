@@ -15,8 +15,11 @@ import (
 	"github.com/privacybydesign/gabi"
 )
 
-// Status encodes the status of an IRMA session (e.g., connected).
-type Status string
+// ClientStatus encodes the client status of an IRMA session (e.g., connected).
+type ClientStatus string
+
+// ServerStatus encodes the server status of an IRMA session (e.g., CONNECTED).
+type ServerStatus string
 
 const (
 	MinVersionHeader    = "X-IRMA-MinProtocolVersion"
@@ -173,11 +176,21 @@ type FrontendToken string
 // Authorization headers
 type ClientAuthorization string
 
-// Statuses
+// Client statuses
 const (
-	StatusConnected     = Status("connected")
-	StatusCommunicating = Status("communicating")
-	StatusManualStarted = Status("manualStarted")
+	ClientStatusConnected     = ClientStatus("connected")
+	ClientStatusCommunicating = ClientStatus("communicating")
+	ClientStatusManualStarted = ClientStatus("manualStarted")
+)
+
+// Server statuses
+const (
+	ServerStatusInitialized ServerStatus = "INITIALIZED" // The session has been started and is waiting for the client
+	ServerStatusBinding     ServerStatus = "BINDING"     // The client is binding, waiting for the frontend to accept
+	ServerStatusConnected   ServerStatus = "CONNECTED"   // The client has retrieved the session request, we wait for its response
+	ServerStatusCancelled   ServerStatus = "CANCELLED"   // The session is cancelled, possibly due to an error
+	ServerStatusDone        ServerStatus = "DONE"        // The session has completed successfully
+	ServerStatusTimeout     ServerStatus = "TIMEOUT"     // Session timed out
 )
 
 // Actions
@@ -358,4 +371,8 @@ func (qr *Qr) Validate() (err error) {
 		return errors.New("unsupported session type")
 	}
 	return nil
+}
+
+func (status ServerStatus) Finished() bool {
+	return status == ServerStatusDone || status == ServerStatusCancelled || status == ServerStatusTimeout
 }

@@ -217,7 +217,7 @@ func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
 		]
 	}`), &ir))
 
-	require.Equal(t, server.StatusDone, requestorSessionHelper(t, &ir, nil).Status)
+	require.Equal(t, irma.ServerStatusDone, requestorSessionHelper(t, &ir, nil).Status)
 }
 
 func testRequestorIssuance(t *testing.T, keyshare bool, client *irmaclient.Client) {
