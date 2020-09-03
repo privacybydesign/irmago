@@ -34,7 +34,7 @@ func (session *session) markAlive() {
 	session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken}).Debugf("Session marked active, expiry delayed")
 }
 
-func (session *session) setStatus(status server.Status) {
+func (session *session) setStatus(status irma.ServerStatus) {
 	session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken, "prevStatus": session.prevStatus, "status": status}).
 		Info("Session status updated")
 	session.status = status
@@ -56,7 +56,7 @@ func (session *session) onUpdate() {
 
 // Checks whether requested options are valid in the current session context.
 func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*irma.SessionOptions, error) {
-	if session.status != server.StatusInitialized {
+	if session.status != irma.ServerStatusInitialized {
 		return nil, errors.New("Frontend options cannot be updated when client is already connected")
 	}
 	if request.BindingMethod == irma.BindingMethodNone {
@@ -73,8 +73,8 @@ func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*ir
 
 // Complete the binding process of frontend and irma client
 func (session *session) bindingCompleted() error {
-	if session.status == server.StatusBinding {
-		session.setStatus(server.StatusConnected)
+	if session.status == irma.ServerStatusBinding {
+		session.setStatus(irma.ServerStatusConnected)
 		return nil
 	}
 	return errors.New("Binding was not enabled")
@@ -82,8 +82,8 @@ func (session *session) bindingCompleted() error {
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
-	session.setStatus(server.StatusCancelled)
-	session.result = &server.SessionResult{Err: rerr, Token: session.backendToken, Status: server.StatusCancelled, Type: session.action}
+	session.setStatus(irma.ServerStatusCancelled)
+	session.result = &server.SessionResult{Err: rerr, Token: session.backendToken, Status: irma.ServerStatusCancelled, Type: session.action}
 	return rerr
 }
 
@@ -528,14 +528,14 @@ func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
 
-		if session.status == server.StatusBinding {
+		if session.status == irma.ServerStatusBinding {
 			server.WriteError(w, server.ErrorBindingRequired, "")
 			return
 		}
 
 		// Endpoints behind the bindingMiddleware can only be accessed when the client is already connected
 		// and the request includes the right authorization header to prove we still talk to the same client as before.
-		if session.status != server.StatusConnected {
+		if session.status != irma.ServerStatusConnected {
 			server.WriteError(w, server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 			return
 		}

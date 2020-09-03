@@ -35,7 +35,7 @@ type SessionPackage struct {
 // and disclosed attributes or attribute-based signature if appropriate to the session type.
 type SessionResult struct {
 	Token       irma.BackendToken            `json:"token"`
-	Status      Status                       `json:"status"`
+	Status      irma.ServerStatus            `json:"status"`
 	Type        irma.Action                  `json:"type"`
 	ProofStatus irma.ProofStatus             `json:"proofStatus,omitempty"`
 	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
@@ -50,9 +50,6 @@ type SessionResult struct {
 // once an IRMA session has completed.
 type SessionHandler func(*SessionResult)
 
-// Status is the status of an IRMA session.
-type Status string
-
 type LogOptions struct {
 	Response, Headers, From, EncodeBinary bool
 }
@@ -60,22 +57,13 @@ type LogOptions struct {
 // Remove this when dropping support for legacy pre-condiscon session requests
 type LegacySessionResult struct {
 	Token       irma.BackendToken          `json:"token"`
-	Status      Status                     `json:"status"`
+	Status      irma.ServerStatus          `json:"status"`
 	Type        irma.Action                `json:"type"`
 	ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
 	Disclosed   []*irma.DisclosedAttribute `json:"disclosed,omitempty"`
 	Signature   *irma.SignedMessage        `json:"signature,omitempty"`
 	Err         *irma.RemoteError          `json:"error,omitempty"`
 }
-
-const (
-	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
-	StatusBinding     Status = "BINDING"     // The client is binding, waiting for the frontend to accept
-	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
-	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
-	StatusDone        Status = "DONE"        // The session has completed successfully
-	StatusTimeout     Status = "TIMEOUT"     // Session timed out
-)
 
 const (
 	ComponentRevocation = "revocation"
@@ -96,10 +84,6 @@ func (r *SessionResult) Legacy() *LegacySessionResult {
 		disclosed = append(disclosed, l[0])
 	}
 	return &LegacySessionResult{r.Token, r.Status, r.Type, r.ProofStatus, disclosed, r.Signature, r.Err}
-}
-
-func (status Status) Finished() bool {
-	return status == StatusDone || status == StatusCancelled || status == StatusTimeout
 }
 
 // RemoteError converts an error and an explaining message to an *irma.RemoteError.

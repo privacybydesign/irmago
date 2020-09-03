@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/privacybydesign/irmago/server"
-
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
@@ -31,7 +29,7 @@ type PinHandler func(proceed bool, pin string)
 
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
-	StatusUpdate(action irma.Action, status irma.Status)
+	StatusUpdate(action irma.Action, status irma.ClientStatus)
 	ClientReturnURLSet(clientReturnURL string)
 	BindingRequired(bindingCode string)
 	Success(result string)
@@ -182,7 +180,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
-	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusManualStarted)
 
 	session.processSessionInfo()
 	return session
@@ -223,7 +221,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	}
 	client.sessions.add(session)
 
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 	min := minVersion
 
 	// Check if the action is one of the supported types
@@ -267,7 +265,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 func (session *session) getSessionInfo() {
 	defer session.recoverFromPanic()
 
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
 	info := &irma.ClientRequest{
@@ -294,13 +292,13 @@ func (session *session) getSessionInfo() {
 func (session *session) handleBinding(bindingCode string) error {
 	session.Handler.BindingRequired(bindingCode)
 
-	statuschan := make(chan server.Status)
+	statuschan := make(chan irma.ServerStatus)
 	errorchan := make(chan error)
 
-	go server.WaitStatusChanged(session.transport, server.StatusBinding, statuschan, errorchan)
+	go irma.WaitStatusChanged(session.transport, irma.ServerStatusBinding, statuschan, errorchan)
 	select {
 	case status := <-statuschan:
-		if status == server.StatusConnected {
+		if status == irma.ServerStatusConnected {
 			return session.transport.Get("request", session.request)
 		} else {
 			return &irma.SessionError{ErrorType: irma.ErrorBindingRejected}
@@ -439,7 +437,7 @@ func (session *session) requestPermission() {
 		return
 	}
 
-	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusConnected)
 
 	// Ask for permission to execute the session
 	switch session.Action {
@@ -478,7 +476,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorRequiredAttributeMissing, Err: err})
 		return
 	}
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 
 	// wait for revocation preparation to finish
 	err := <-session.prepRevocation
@@ -825,11 +823,11 @@ func (session *session) KeyshareError(manager *irma.SchemeManagerIdentifier, err
 }
 
 func (session *session) KeysharePin() {
-	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusConnected)
 }
 
 func (session *session) KeysharePinOK() {
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 }
 
 func (s sessions) remove(token string) {
