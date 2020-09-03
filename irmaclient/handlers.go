@@ -53,7 +53,7 @@ func (h *keyshareEnrollmentHandler) fail(err error) {
 }
 
 // Not interested, ingore
-func (h *keyshareEnrollmentHandler) StatusUpdate(action irma.Action, status irma.Status) {}
+func (h *keyshareEnrollmentHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
 
 // The methods below should never be called, so we let each of them fail the session
 func (h *keyshareEnrollmentHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {

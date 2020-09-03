@@ -393,7 +393,7 @@ func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureReq
 // Verify the attribute-based signature, optionally against a corresponding signature request. If the request is present
 // (i.e. not nil), then the first attributes in the returned result match with the disjunction list in the request
 // (that is, the i'th attribute in the result should satisfy the i'th disjunction in the request). If the request is not
-// fully satisfied in this fasion, the Status of the result is ProofStatusMissingAttributes. Any remaining attributes
+// fully satisfied in this fashion, the Status of the result is ProofStatusMissingAttributes. Any remaining attributes
 // (i.e. not asked for by the request) are also included in the result, after the attributes that match disjunctions
 // in the request.
 //
