@@ -145,7 +145,7 @@ func TestIssuanceBinding(t *testing.T) {
 		bindingCode = setBindingMethod(irma.BindingMethodPin, handler)
 	}
 	bindingHandler := func(handler *TestHandler) {
-		if _, max := handler.client.SupportedVersions(); max.Above(2, 6) {
+		if extractClientMaxVersion(handler.client).Above(2, 6) {
 			require.Equal(t, bindingCode, <-handler.bindingCodeChan)
 
 			// Check whether access to request endpoint is denied as long as binding is not finished

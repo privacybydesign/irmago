@@ -1,7 +1,6 @@
 package sessiontest
 
 import (
-	"github.com/privacybydesign/irmago/irmaclient"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -37,8 +36,11 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 }
 
 func TestWithoutBindingSupport(t *testing.T) {
-	defer irmaclient.SetMaxVersion(nil)
-	irmaclient.SetMaxVersion(&irma.ProtocolVersion{Major: 2, Minor: 6})
+	defaultMaxVersion := maxClientVersion
+	defer func() {
+		maxClientVersion = defaultMaxVersion
+	}()
+	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
 
 	t.Run("TestSigningSession", TestSigningSession)
 	t.Run("TestDisclosureSession", TestDisclosureSession)
