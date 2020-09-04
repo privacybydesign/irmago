@@ -92,7 +92,7 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	require.Equal(t, backendToken, serverResult.Token)
 
 	if opts&sessionOptionRetryPost > 0 {
-		clientTransport := extractClientTransport(&dismisser)
+		clientTransport := extractClientTransport(dismisser)
 		var result string
 		err := clientTransport.Post("proofs", &result, h.(*TestHandler).result)
 		require.NoError(t, err)
