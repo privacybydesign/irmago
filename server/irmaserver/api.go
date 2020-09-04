@@ -329,3 +329,27 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	s.serverSentEvents.ServeHTTP(w, r)
 	return nil
 }
+
+// GetSessionStatus retrieves a channel on which the current session status of the specified
+// IRMA session can be retrieved.
+func GetSessionStatus(token string, requestor bool) (chan irma.ServerStatus, error) {
+	return s.GetSessionStatus(token, requestor)
+}
+func (s *Server) GetSessionStatus(token string, requestor bool) (chan irma.ServerStatus, error) {
+	var session *session
+	if requestor {
+		session = s.sessions.get(irma.RequestorToken(token))
+	} else {
+		session = s.sessions.clientGet(irma.ClientToken(token))
+	}
+	if session == nil {
+		return nil, server.LogError(errors.Errorf("can't get session status of unknown session %s", token))
+	}
+
+	statusChan := make(chan irma.ServerStatus)
+	go func() {
+		statusChan <- session.status
+	}()
+	session.statusChannels = append(session.statusChannels, statusChan)
+	return statusChan, nil
+}

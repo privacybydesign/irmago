@@ -43,6 +43,17 @@ func (session *session) setStatus(status irma.ServerStatus) {
 }
 
 func (session *session) onUpdate() {
+	// Perform sending to channels async to make sure session handling
+	// will not hang if channel is not (immediately) read.
+	for _, statusChan := range session.statusChannels {
+		go func(statusChan chan irma.ServerStatus, status irma.ServerStatus) {
+			statusChan <- status
+			if status.Finished() {
+				close(statusChan)
+			}
+		}(statusChan, session.status)
+	}
+
 	if session.sse == nil {
 		return
 	}
