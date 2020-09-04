@@ -258,6 +258,9 @@ func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.Option
 }
 func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.OptionsRequest) (*irma.SessionOptions, error) {
 	session := s.sessions.get(requestorToken)
+	if session == nil {
+		return nil, server.LogError(errors.Errorf("can't set frontend options of unknown session %s", requestorToken))
+	}
 	return session.updateFrontendOptions(request)
 }
 
@@ -268,6 +271,9 @@ func BindingCompleted(requestorToken irma.RequestorToken) error {
 }
 func (s *Server) BindingCompleted(requestorToken irma.RequestorToken) error {
 	session := s.sessions.get(requestorToken)
+	if session == nil {
+		return server.LogError(errors.Errorf("can't complete binding of unknown session %s", requestorToken))
+	}
 	return session.bindingCompleted()
 }
 
