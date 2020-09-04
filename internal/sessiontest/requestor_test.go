@@ -57,7 +57,7 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	clientChan := make(chan *SessionResult, 2)
 	serverChan := make(chan *server.SessionResult)
 
-	qr, backendToken, _, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
+	qr, requestorToken, _, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	}
 
 	serverResult := <-serverChan
-	require.Equal(t, backendToken, serverResult.Token)
+	require.Equal(t, requestorToken, serverResult.Token)
 
 	if opts&sessionOptionRetryPost > 0 {
 		clientTransport := extractClientTransport(dismisser)

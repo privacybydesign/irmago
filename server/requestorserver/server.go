@@ -208,7 +208,7 @@ func (s *Server) Handler() http.Handler {
 		// Server routes
 		r.Route("/session", func(r chi.Router) {
 			r.Post("/", s.handleCreateSession)
-			r.Route("/{backendToken}", func(r chi.Router) {
+			r.Route("/{requestorToken}", func(r chi.Router) {
 				r.Delete("/", s.handleDelete)
 				r.Get("/status", s.handleStatus)
 				r.Get("/statusevents", s.handleStatusEvents)
@@ -308,7 +308,7 @@ func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	res := s.irmaserv.GetSessionResult(irma.BackendToken(chi.URLParam(r, "backendToken")))
+	res := s.irmaserv.GetSessionResult(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -317,13 +317,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
-	backendToken := chi.URLParam(r, "backendToken")
-	s.conf.Logger.WithFields(logrus.Fields{"session": backendToken}).Debug("new client subscribed to server sent events")
+	requestorToken := chi.URLParam(r, "requestorToken")
+	s.conf.Logger.WithFields(logrus.Fields{"session": requestorToken}).Debug("new client subscribed to server sent events")
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
-		Arg:       backendToken,
+		Arg:       requestorToken,
 	}))
-	if err := s.irmaserv.SubscribeServerSentEvents(w, r, backendToken, true); err != nil {
+	if err := s.irmaserv.SubscribeServerSentEvents(w, r, requestorToken, true); err != nil {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      server.ErrorUnsupported.Status,
 			ErrorName:   string(server.ErrorUnsupported.Type),
@@ -333,14 +333,14 @@ func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	err := s.irmaserv.CancelSession(irma.BackendToken(chi.URLParam(r, "backendToken")))
+	err := s.irmaserv.CancelSession(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
 	if err != nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 	}
 }
 
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
-	res := s.irmaserv.GetSessionResult(irma.BackendToken(chi.URLParam(r, "backendToken")))
+	res := s.irmaserv.GetSessionResult(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -359,8 +359,8 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backendToken := irma.BackendToken(chi.URLParam(r, "backendToken"))
-	res := s.irmaserv.GetSessionResult(backendToken)
+	requestorToken := irma.RequestorToken(chi.URLParam(r, "requestorToken"))
+	res := s.irmaserv.GetSessionResult(requestorToken)
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -387,8 +387,8 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backendToken := irma.BackendToken(chi.URLParam(r, "backendToken"))
-	res := s.irmaserv.GetSessionResult(backendToken)
+	requestorToken := irma.RequestorToken(chi.URLParam(r, "requestorToken"))
+	res := s.irmaserv.GetSessionResult(requestorToken)
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -413,7 +413,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		claims["iss"] = s.conf.JwtIssuer
 	}
 	claims["status"] = res.ProofStatus
-	validity := s.irmaserv.GetRequest(backendToken).Base().ResultJwtValidity
+	validity := s.irmaserv.GetRequest(requestorToken).Base().ResultJwtValidity
 	if validity != 0 {
 		claims["exp"] = time.Now().Unix() + int64(validity)
 	}
@@ -518,7 +518,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, backendToken, frontendToken, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	qr, requestorToken, frontendToken, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -526,7 +526,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 
 	server.WriteJson(w, server.SessionPackage{
 		SessionPtr:    qr,
-		Token:         backendToken,
+		Token:         requestorToken,
 		FrontendToken: frontendToken,
 	})
 }
