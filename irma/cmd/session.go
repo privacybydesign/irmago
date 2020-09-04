@@ -109,7 +109,7 @@ func libraryRequest(
 
 	// Start the session
 	resultchan := make(chan *server.SessionResult)
-	qr, backendToken, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) {
+	qr, requestorToken, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) {
 		resultchan <- r
 	})
 	if err != nil {
@@ -121,7 +121,7 @@ func libraryRequest(
 	if binding {
 		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.BindingMethod = irma.BindingMethodPin
-		if sessionOptions, err = irmaServer.SetFrontendOptions(backendToken, &optionsRequest); err != nil {
+		if sessionOptions, err = irmaServer.SetFrontendOptions(requestorToken, &optionsRequest); err != nil {
 			return nil, errors.WrapPrefix(err, "IRMA enable binding failed", 0)
 		}
 	}
@@ -137,7 +137,7 @@ func libraryRequest(
 		go func() {
 			var status irma.ServerStatus
 			for {
-				newStatus := irmaServer.GetSessionResult(backendToken).Status
+				newStatus := irmaServer.GetSessionResult(requestorToken).Status
 				if newStatus != status {
 					status = newStatus
 					statuschan <- status
@@ -150,7 +150,7 @@ func libraryRequest(
 		}()
 
 		_, err = handleBinding(sessionOptions, statuschan, func() error {
-			return irmaServer.BindingCompleted(backendToken)
+			return irmaServer.BindingCompleted(requestorToken)
 		})
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to handle binding", 0)
@@ -284,8 +284,8 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 		return nil, "", transport, err
 	}
 
-	backendToken := pkg.Token
-	transport.Server += fmt.Sprintf("session/%s/", backendToken)
+	requestorToken := pkg.Token
+	transport.Server += fmt.Sprintf("session/%s/", requestorToken)
 
 	return pkg.SessionPtr, pkg.FrontendToken, transport, err
 }

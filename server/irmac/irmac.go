@@ -50,10 +50,10 @@ func Initialize(IrmaConfiguration *C.char) *C.char {
 func StartSession(requestString *C.char) (r *C.char) {
 	// Create struct for return information
 	result := struct {
-		IrmaQr        string
-		BackendToken  string
-		FrontendToken string
-		Error         string
+		IrmaQr         string
+		RequestorToken string
+		FrontendToken  string
+		Error          string
 	}{}
 	defer func() {
 		j, _ := json.Marshal(result)
@@ -67,7 +67,7 @@ func StartSession(requestString *C.char) (r *C.char) {
 	}
 
 	// Run the actual core function
-	qr, backendToken, frontendToken, err := s.StartSession(C.GoString(requestString), nil)
+	qr, requestorToken, frontendToken, err := s.StartSession(C.GoString(requestString), nil)
 
 	// And properly return the result
 	if err != nil {
@@ -81,7 +81,7 @@ func StartSession(requestString *C.char) (r *C.char) {
 	}
 	// return actual results
 	result.IrmaQr = string(qrJson)
-	result.BackendToken = string(backendToken)
+	result.RequestorToken = string(requestorToken)
 	result.FrontendToken = string(frontendToken)
 	return
 }
@@ -94,7 +94,7 @@ func GetSessionResult(token *C.char) *C.char {
 	}
 
 	// Run the actual core function
-	result := s.GetSessionResult(irma.BackendToken(C.GoString(token)))
+	result := s.GetSessionResult(irma.RequestorToken(C.GoString(token)))
 
 	// And properly return results
 	if result == nil {
@@ -116,7 +116,7 @@ func GetRequest(token *C.char) *C.char {
 	}
 
 	// Run the core function
-	result := s.GetRequest(irma.BackendToken(C.GoString(token)))
+	result := s.GetRequest(irma.RequestorToken(C.GoString(token)))
 
 	// And properly return results
 	if result == nil {
@@ -138,7 +138,7 @@ func CancelSession(token *C.char) *C.char {
 	}
 
 	// Run the core function
-	err := s.CancelSession(irma.BackendToken(C.GoString(token)))
+	err := s.CancelSession(irma.RequestorToken(C.GoString(token)))
 
 	if err != nil {
 		return C.CString(err.Error())

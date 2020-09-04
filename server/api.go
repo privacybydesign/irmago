@@ -26,15 +26,15 @@ import (
 var Logger *logrus.Logger = logrus.StandardLogger()
 
 type SessionPackage struct {
-	SessionPtr    *irma.Qr           `json:"sessionPtr"`
-	Token         irma.BackendToken  `json:"token"`
-	FrontendToken irma.FrontendToken `json:"frontendToken"`
+	SessionPtr    *irma.Qr            `json:"sessionPtr"`
+	Token         irma.RequestorToken `json:"token"`
+	FrontendToken irma.FrontendToken  `json:"frontendToken"`
 }
 
 // SessionResult contains session information such as the session status, type, possible errors,
 // and disclosed attributes or attribute-based signature if appropriate to the session type.
 type SessionResult struct {
-	Token       irma.BackendToken            `json:"token"`
+	Token       irma.RequestorToken          `json:"token"`
 	Status      irma.ServerStatus            `json:"status"`
 	Type        irma.Action                  `json:"type"`
 	ProofStatus irma.ProofStatus             `json:"proofStatus,omitempty"`
@@ -55,7 +55,7 @@ type LogOptions struct {
 
 // Remove this when dropping support for legacy pre-condiscon session requests
 type LegacySessionResult struct {
-	Token       irma.BackendToken          `json:"token"`
+	Token       irma.RequestorToken        `json:"token"`
 	Status      irma.ServerStatus          `json:"status"`
 	Type        irma.Action                `json:"type"`
 	ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
