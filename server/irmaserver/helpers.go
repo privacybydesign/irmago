@@ -30,11 +30,11 @@ import (
 
 func (session *session) markAlive() {
 	session.lastActive = time.Now()
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken}).Debugf("Session marked active, expiry delayed")
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Debugf("Session marked active, expiry delayed")
 }
 
 func (session *session) setStatus(status irma.ServerStatus) {
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken, "prevStatus": session.prevStatus, "status": status}).
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken, "prevStatus": session.prevStatus, "status": status}).
 		Info("Session status updated")
 	session.status = status
 	session.result.Status = status
@@ -48,7 +48,7 @@ func (session *session) onUpdate() {
 	session.sse.SendMessage("session/"+string(session.clientToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
-	session.sse.SendMessage("session/"+string(session.backendToken),
+	session.sse.SendMessage("session/"+string(session.requestorToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
 }
@@ -82,7 +82,7 @@ func (session *session) bindingCompleted() error {
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
 	session.setStatus(irma.ServerStatusCancelled)
-	session.result = &server.SessionResult{Err: rerr, Token: session.backendToken, Status: irma.ServerStatusCancelled, Type: session.action}
+	session.result = &server.SessionResult{Err: rerr, Token: session.requestorToken, Status: irma.ServerStatusCancelled, Type: session.action}
 	return rerr
 }
 

@@ -29,7 +29,7 @@ func (session *session) handleDelete() {
 	}
 	session.markAlive()
 
-	session.result = &server.SessionResult{Token: session.backendToken, Status: irma.ServerStatusCancelled, Type: session.action}
+	session.result = &server.SessionResult{Token: session.requestorToken, Status: irma.ServerStatusCancelled, Type: session.action}
 	session.setStatus(irma.ServerStatusCancelled)
 }
 
@@ -41,7 +41,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	}
 
 	session.markAlive()
-	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.backendToken})
+	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken})
 
 	var err error
 	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
