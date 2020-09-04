@@ -128,24 +128,27 @@ func TestIssuanceBinding(t *testing.T) {
 		bindingCode = setBindingMethod(irma.BindingMethodPin, handler)
 	}
 	bindingHandler := func(handler *TestHandler) {
-		if extractClientMaxVersion(handler.client).Above(2, 6) {
-			require.Equal(t, bindingCode, <-handler.bindingCodeChan)
-
-			// Check whether access to request endpoint is denied as long as binding is not finished
-			clientTransport := extractClientTransport(handler.dismisser)
-			err := clientTransport.Get("request", struct{}{})
-			require.Error(t, err)
-			require.Equal(t, 403, err.(*irma.SessionError).RemoteStatus)
-
-			// Check whether binding cannot be disabled again after client is connected.
-			request := irma.NewOptionsRequest()
-			result := &irma.SessionOptions{}
-			err = handler.frontendTransport.Post("frontend/options", result, request)
-			require.Error(t, err)
-
-			err = handler.frontendTransport.Post("frontend/bindingcompleted", nil, nil)
-			require.NoError(handler.t, err)
+		// Below protocol version 2.7 binding is not supported, so then the binding stage is expected to be skipped.
+		if extractClientMaxVersion(handler.client).Below(2, 7) {
+			return
 		}
+
+		require.Equal(t, bindingCode, <-handler.bindingCodeChan)
+
+		// Check whether access to request endpoint is denied as long as binding is not finished
+		clientTransport := extractClientTransport(handler.dismisser)
+		err := clientTransport.Get("request", struct{}{})
+		require.Error(t, err)
+		require.Equal(t, 403, err.(*irma.SessionError).RemoteStatus)
+
+		// Check whether binding cannot be disabled again after client is connected.
+		request := irma.NewOptionsRequest()
+		result := &irma.SessionOptions{}
+		err = handler.frontendTransport.Post("frontend/options", result, request)
+		require.Error(t, err)
+
+		err = handler.frontendTransport.Post("frontend/bindingcompleted", nil, nil)
+		require.NoError(handler.t, err)
 	}
 	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, bindingHandler)
 }
