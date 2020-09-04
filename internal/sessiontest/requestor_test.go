@@ -451,7 +451,7 @@ func TestIssueExpiredKey(t *testing.T) {
 	expireKey(t, client.Configuration)
 	result = requestorSessionHelper(t, getIssuanceRequest(true), client, sessionOptionReuseServer, sessionOptionIgnoreError)
 	require.Nil(t, result.Err)
-	require.Equal(t, server.StatusCancelled, result.Status)
+	require.Equal(t, irma.ServerStatusCancelled, result.Status)
 
 	// server aborts issuance sessions in case of expired public keys
 	expireKey(t, irmaServerConfiguration.IrmaConfiguration)
