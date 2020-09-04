@@ -171,7 +171,7 @@ func serverRequest(
 	logger.Debug("Server URL: ", serverurl)
 
 	// Start session at server
-	qr, frontendToken, transport, err := postRequest(serverurl, request, name, authmethod, key)
+	qr, frontendAuth, transport, err := postRequest(serverurl, request, name, authmethod, key)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func serverRequest(
 	sessionOptions := &irma.SessionOptions{}
 	if binding {
 		frontendTransport = irma.NewHTTPTransport(qr.URL, false)
-		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendToken))
+		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendAuth))
 		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.BindingMethod = irma.BindingMethodPin
 		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
@@ -256,7 +256,7 @@ func serverRequest(
 }
 
 func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (
-	*irma.Qr, irma.FrontendToken, *irma.HTTPTransport, error) {
+	*irma.Qr, irma.FrontendAuthorization, *irma.HTTPTransport, error) {
 	var (
 		err       error
 		pkg       = &server.SessionPackage{}
@@ -288,7 +288,7 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 	requestorToken := pkg.Token
 	transport.Server += fmt.Sprintf("session/%s/", requestorToken)
 
-	return pkg.SessionPtr, pkg.FrontendToken, transport, err
+	return pkg.SessionPtr, pkg.FrontendAuth, transport, err
 }
 
 func handleBinding(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completeBinding func() error) (

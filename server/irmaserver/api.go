@@ -159,16 +159,16 @@ func (s *Server) Stop() {
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
 // The session requestorToken (the second return parameter) can be used in GetSessionResult()
-// and CancelSession(). The session frontendToken (the third return parameter) is needed
+// and CancelSession(). The session's frontendAuth (the third return parameter) is needed
 // by frontend clients (i.e. browser libraries) to POST to the '/options' endpoint of the IRMA protocol.
 // The request parameter can be an irma.RequestorRequest, or an irma.SessionRequest, or a
 // ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
 func StartSession(request interface{}, handler server.SessionHandler,
-) (*irma.Qr, irma.RequestorToken, irma.FrontendToken, error) {
+) (*irma.Qr, irma.RequestorToken, irma.FrontendAuthorization, error) {
 	return s.StartSession(request, handler)
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
-) (*irma.Qr, irma.RequestorToken, irma.FrontendToken, error) {
+) (*irma.Qr, irma.RequestorToken, irma.FrontendAuthorization, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", "", err
@@ -207,7 +207,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 	return &irma.Qr{
 		Type: action,
 		URL:  s.conf.URL + "session/" + string(session.clientToken),
-	}, session.requestorToken, session.frontendToken, nil
+	}, session.requestorToken, session.frontendAuth, nil
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.

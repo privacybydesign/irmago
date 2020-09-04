@@ -22,7 +22,7 @@ type session struct {
 	action             irma.Action
 	requestorToken     irma.RequestorToken
 	clientToken        irma.ClientToken
-	frontendToken      irma.FrontendToken
+	frontendAuth       irma.FrontendAuthorization
 	version            *irma.ProtocolVersion
 	rrequest           irma.RequestorRequest
 	request            irma.SessionRequest
@@ -163,7 +163,7 @@ var one *big.Int = big.NewInt(1)
 func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
 	clientToken := irma.ClientToken(common.NewSessionToken())
 	requestorToken := irma.RequestorToken(common.NewSessionToken())
-	frontendToken := irma.FrontendToken(common.NewSessionToken())
+	frontendAuth := irma.FrontendAuthorization(common.NewSessionToken())
 
 	base := request.SessionRequest().Base()
 	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
@@ -185,7 +185,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		lastActive:     time.Now(),
 		requestorToken: requestorToken,
 		clientToken:    clientToken,
-		frontendToken:  frontendToken,
+		frontendAuth:   frontendAuth,
 		status:         irma.ServerStatusInitialized,
 		prevStatus:     irma.ServerStatusInitialized,
 		conf:           s.conf,

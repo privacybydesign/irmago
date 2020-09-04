@@ -440,9 +440,9 @@ func errorWriter(err *irma.RemoteError, writer func(w http.ResponseWriter, objec
 func (s *Server) frontendMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
-		frontendToken := irma.FrontendToken(r.Header.Get(irma.AuthorizationHeader))
+		frontendAuth := irma.FrontendAuthorization(r.Header.Get(irma.AuthorizationHeader))
 
-		if frontendToken != session.frontendToken {
+		if frontendAuth != session.frontendAuth {
 			server.WriteError(w, server.ErrorUnauthorized, "")
 			return
 		}

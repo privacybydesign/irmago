@@ -518,16 +518,16 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, requestorToken, frontendToken, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	qr, requestorToken, frontendAuth, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
 	server.WriteJson(w, server.SessionPackage{
-		SessionPtr:    qr,
-		Token:         requestorToken,
-		FrontendToken: frontendToken,
+		SessionPtr:   qr,
+		Token:        requestorToken,
+		FrontendAuth: frontendAuth,
 	})
 }
 
