@@ -171,10 +171,10 @@ type Qr struct {
 // Tokens to identify a session from the perspective of the different agents
 type RequestorToken string
 type ClientToken string
-type FrontendToken string
 
 // Authorization headers
 type ClientAuthorization string
+type FrontendAuthorization string
 
 // Client statuses
 const (

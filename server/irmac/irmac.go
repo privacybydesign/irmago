@@ -52,7 +52,7 @@ func StartSession(requestString *C.char) (r *C.char) {
 	result := struct {
 		IrmaQr         string
 		RequestorToken string
-		FrontendToken  string
+		FrontendAuth   string
 		Error          string
 	}{}
 	defer func() {
@@ -67,7 +67,7 @@ func StartSession(requestString *C.char) (r *C.char) {
 	}
 
 	// Run the actual core function
-	qr, requestorToken, frontendToken, err := s.StartSession(C.GoString(requestString), nil)
+	qr, requestorToken, frontendAuth, err := s.StartSession(C.GoString(requestString), nil)
 
 	// And properly return the result
 	if err != nil {
@@ -82,7 +82,7 @@ func StartSession(requestString *C.char) (r *C.char) {
 	// return actual results
 	result.IrmaQr = string(qrJson)
 	result.RequestorToken = string(requestorToken)
-	result.FrontendToken = string(frontendToken)
+	result.FrontendAuth = string(frontendAuth)
 	return
 }
 
