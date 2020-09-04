@@ -255,19 +255,19 @@ func (session *session) getSessionInfo() {
 	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
-	info := &irma.ClientRequest{
+	cr := &irma.ClientRequest{
 		Request: session.request, // As request is an interface, it need to be initialized with a specific instance.
 	}
 	// UnmarshalJSON of ClientRequest takes into account legacy protocols, so we do not have to check that here.
-	err := session.transport.Get("", info)
+	err := session.transport.Get("", cr)
 	if err != nil {
 		session.fail(err.(*irma.SessionError))
 		return
 	}
 
 	// Check whether binding is needed, and if so, wait for it to be completed.
-	if info.Options.BindingMethod != irma.BindingMethodNone {
-		if err = session.handleBinding(info.Options.BindingCode); err != nil {
+	if cr.Options.BindingMethod != irma.BindingMethodNone {
+		if err = session.handleBinding(cr.Options.BindingCode); err != nil {
 			session.fail(err.(*irma.SessionError))
 			return
 		}
