@@ -111,16 +111,6 @@ var supportedVersions = map[int][]int{
 		7, // introduces session binding
 	},
 }
-var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
-var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
-
-func SetMaxVersion(version *irma.ProtocolVersion) {
-	if version == nil {
-		maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
-	} else {
-		maxVersion = version
-	}
-}
 
 // Session constructors
 
@@ -171,7 +161,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 		Action:         action,
 		Handler:        handler,
 		client:         client,
-		Version:        minVersion,
+		Version:        client.minVersion,
 		request:        request,
 		done:           doneChannel,
 		prepRevocation: make(chan error),
@@ -219,7 +209,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	client.sessions.add(session)
 
 	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
-	min := minVersion
+	min := client.minVersion
 
 	// Check if the action is one of the supported types
 	switch session.Action {
@@ -238,11 +228,11 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	}
 
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
-	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
+	session.transport.SetHeader(irma.MaxVersionHeader, client.maxVersion.String())
 
 	// From protocol version 2.7 also an authorization header must be included.
 	clientAuth := ""
-	if maxVersion.Above(2, 6) {
+	if client.maxVersion.Above(2, 6) {
 		clientAuth = common.NewSessionToken()
 		session.transport.SetHeader(irma.AuthorizationHeader, clientAuth)
 	}
