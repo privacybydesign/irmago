@@ -282,7 +282,7 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 	}
 
 	if err != nil {
-		return nil, "", transport, err
+		return nil, "", nil, err
 	}
 
 	requestorToken := pkg.Token
