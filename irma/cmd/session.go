@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -133,21 +132,10 @@ func libraryRequest(
 
 	if binding {
 		// Listen for session status
-		statuschan := make(chan irma.ServerStatus)
-		go func() {
-			var status irma.ServerStatus
-			for {
-				newStatus := irmaServer.GetSessionResult(requestorToken).Status
-				if newStatus != status {
-					status = newStatus
-					statuschan <- status
-					if status.Finished() {
-						return
-					}
-				}
-				time.Sleep(500 * time.Millisecond)
-			}
-		}()
+		statuschan, err := irmaServer.GetSessionStatus(string(requestorToken), true)
+		if err != nil {
+			return nil, errors.WrapPrefix(err, "Failed to start listening for session statuses", 0)
+		}
 
 		_, err = handleBinding(sessionOptions, statuschan, func() error {
 			return irmaServer.BindingCompleted(requestorToken)
@@ -309,7 +297,7 @@ func handleBinding(options *irma.SessionOptions, statusChan chan irma.ServerStat
 			}
 			return status, nil
 		case err := <-errorChan:
-			return status, err
+			return "", err
 		}
 	}
 }

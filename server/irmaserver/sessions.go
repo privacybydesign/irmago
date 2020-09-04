@@ -27,11 +27,12 @@ type session struct {
 	request          irma.SessionRequest
 	legacyCompatible bool // if the request is convertible to pre-condiscon format
 
-	options       irma.SessionOptions
-	status        irma.ServerStatus
-	prevStatus    irma.ServerStatus
-	sse           *sse.Server
-	responseCache responseCache
+	options        irma.SessionOptions
+	status         irma.ServerStatus
+	prevStatus     irma.ServerStatus
+	sse            *sse.Server
+	statusChannels []chan irma.ServerStatus
+	responseCache  responseCache
 
 	clientAuth irma.ClientAuthorization
 	lastActive time.Time
