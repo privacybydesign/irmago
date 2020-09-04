@@ -83,7 +83,7 @@ type TestHandler struct {
 	wait               time.Duration
 	result             string
 	bindingCodeChan    chan string
-	dismisser          *irmaclient.SessionDismisser
+	dismisser          irmaclient.SessionDismisser
 	frontendTransport  *irma.HTTPTransport
 }
 
