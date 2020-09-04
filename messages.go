@@ -186,7 +186,7 @@ const (
 // Server statuses
 const (
 	ServerStatusInitialized ServerStatus = "INITIALIZED" // The session has been started and is waiting for the client
-	ServerStatusBinding     ServerStatus = "BINDING"     // The client is binding, waiting for the frontend to accept
+	ServerStatusBinding     ServerStatus = "BINDING"     // The client is waiting for the frontend to give permission to connect
 	ServerStatusConnected   ServerStatus = "CONNECTED"   // The client has retrieved the session request, we wait for its response
 	ServerStatusCancelled   ServerStatus = "CANCELLED"   // The session is cancelled, possibly due to an error
 	ServerStatusDone        ServerStatus = "DONE"        // The session has completed successfully
