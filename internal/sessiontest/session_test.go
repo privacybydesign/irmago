@@ -139,7 +139,10 @@ func TestIssuanceBinding(t *testing.T) {
 		clientTransport := extractClientTransport(handler.dismisser)
 		err := clientTransport.Get("request", struct{}{})
 		require.Error(t, err)
-		require.Equal(t, 403, err.(*irma.SessionError).RemoteStatus)
+		sessionErr := err.(*irma.SessionError)
+		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
+		require.Equal(t, server.ErrorBindingRequired.Status, sessionErr.RemoteError.Status)
+		require.Equal(t, string(server.ErrorBindingRequired.Type), sessionErr.RemoteError.ErrorName)
 
 		// Check whether binding cannot be disabled again after client is connected.
 		request := irma.NewOptionsRequest()
