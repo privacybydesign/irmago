@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -1131,27 +1132,37 @@ func NewOptionsRequest() OptionsRequest {
 	}
 }
 
-func (info *ClientRequest) UnmarshalJSON(data []byte) error {
+func (cr *ClientRequest) UnmarshalJSON(data []byte) error {
 	// Unmarshal in alias first to prevent infinite recursion
 	type alias ClientRequest
-	err := json.Unmarshal(data, (*alias)(info))
+	err := json.Unmarshal(data, (*alias)(cr))
 	if err != nil {
 		return err
 	}
-	if info.LDContext == LDContextClientRequest {
+	if cr.LDContext == LDContextClientRequest {
 		return nil
 	}
 
-	// For legacy sessions initialize session info by hand using the fetched request
-	err = json.Unmarshal(data, info.Request)
+	// For legacy sessions initialize client request by hand using the fetched request
+	err = json.Unmarshal(data, cr.Request)
 	if err != nil {
 		return err
 	}
-	info.LDContext = LDContextClientRequest
-	info.ProtocolVersion = info.Request.Base().ProtocolVersion
-	info.Options = &SessionOptions{
+	cr.LDContext = LDContextClientRequest
+	cr.ProtocolVersion = cr.Request.Base().ProtocolVersion
+	cr.Options = &SessionOptions{
 		LDContext:     LDContextSessionOptions,
 		BindingMethod: BindingMethodNone,
+	}
+	return nil
+}
+
+func (cr *ClientRequest) Validate() error {
+	if cr.LDContext != LDContextClientRequest {
+		return errors.New("Not a client request")
+	}
+	if !reflect.ValueOf(cr.Request).Elem().IsZero() {
+		return cr.Request.Validate()
 	}
 	return nil
 }
