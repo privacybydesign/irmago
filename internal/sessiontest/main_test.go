@@ -20,6 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Defines the maximum protocol version of an irmaclient in tests
+var maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
 	test.StartSchemeManagerHttpServer()
@@ -46,6 +49,12 @@ func parseExistingStorage(t *testing.T, storage string) (*irmaclient.Client, *Te
 		handler,
 	)
 	require.NoError(t, err)
+
+	// Set max version we want to test on
+	version := extractClientMaxVersion(client)
+	version.Major = maxClientVersion.Major
+	version.Minor = maxClientVersion.Minor
+
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 	return client, handler
 }
@@ -256,6 +265,11 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 func extractClientTransport(dismisser *irmaclient.SessionDismisser) *irma.HTTPTransport {
 	rct := reflect.ValueOf(dismisser).Elem().Elem().Elem().FieldByName("transport")
 	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface().(*irma.HTTPTransport)
+}
+
+func extractClientMaxVersion(client *irmaclient.Client) *irma.ProtocolVersion {
+	rmv := reflect.ValueOf(client).Elem().FieldByName("maxVersion")
+	return reflect.NewAt(rmv.Type(), unsafe.Pointer(rmv.UnsafeAddr())).Elem().Interface().(*irma.ProtocolVersion)
 }
 
 func setBindingMethod(method irma.BindingMethod, handler *TestHandler) string {
