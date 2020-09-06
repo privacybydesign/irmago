@@ -80,7 +80,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	if session.version.Below(2, 5) {
 		logger.Info("Returning legacy session format")
 		legacy.Base().ProtocolVersion = session.version
-		return &legacy, nil
+		return legacy, nil
 	}
 
 	if session.version.Below(2, 7) {
@@ -89,7 +89,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 		if err != nil {
 			return nil, session.fail(server.ErrorRevocation, err.Error())
 		}
-		return &request, nil
+		return request, nil
 	}
 	info, err := session.getClientRequest()
 	if err != nil {
