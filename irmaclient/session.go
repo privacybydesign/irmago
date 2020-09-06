@@ -256,7 +256,7 @@ func (session *session) getSessionInfo() {
 
 	// Get the first IRMA protocol message and parse it
 	cr := &irma.ClientRequest{
-		Request: session.request, // As request is an interface, it need to be initialized with a specific instance.
+		Request: session.request, // As request is an interface, it needs to be initialized with a specific instance.
 	}
 	// UnmarshalJSON of ClientRequest takes into account legacy protocols, so we do not have to check that here.
 	err := session.transport.Get("", cr)
