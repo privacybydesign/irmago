@@ -50,7 +50,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	// Protocol versions below 2.7 don't include an authorization header. Therefore skip the authorization
 	// header presence check if a lower version is used.
 	if clientAuth == "" && session.version.Above(2, 6) {
-		return nil, server.RemoteError(server.ErrorClientUnauthorized, "No authorization header provided")
+		return nil, session.fail(server.ErrorClientUnauthorized, "No authorization header provided")
 	}
 	session.clientAuth = clientAuth
 
