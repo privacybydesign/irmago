@@ -1,7 +1,6 @@
 package irma
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"path/filepath"
@@ -138,19 +137,6 @@ func NewRequestorInfo(hostname string) *RequestorInfo {
 		Name:      NewTranslatedString(&hostname),
 		Hostnames: []string{hostname},
 	}
-}
-
-func (info *RequestorInfo) UnmarshalJSON(data []byte) error {
-	type rawRequestorInfo RequestorInfo
-	var bareData rawRequestorInfo
-	err := json.Unmarshal(data, &bareData)
-	if err == nil {
-		*info = RequestorInfo(bareData)
-		return nil
-	}
-
-	*info = RequestorInfo{}
-	return json.Unmarshal(data, &info.Name)
 }
 
 func (ad AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {
