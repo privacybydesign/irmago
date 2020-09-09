@@ -30,9 +30,9 @@ import (
 	"strconv"
 
 	"github.com/privacybydesign/gabi"
+	"github.com/sietseringers/cobra"
 
 	"github.com/go-errors/errors"
-	"github.com/spf13/cobra"
 )
 
 // genkeypairCmd represents the genkeypair command

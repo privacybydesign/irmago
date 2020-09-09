@@ -34,14 +34,13 @@ require (
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/privacybydesign/gabi v0.0.0-20200729124802-5828bcd24dfd
+	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
+	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819
+	github.com/sietseringers/viper v1.3.2-0.20200909194413-4120aa4ee8e8
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.0 // indirect
 	github.com/spf13/cast v1.3.0
-	github.com/spf13/cobra v0.0.1
-	github.com/spf13/jwalterweatherman v1.0.0 // indirect
-	github.com/spf13/pflag v1.0.4-0.20190111213756-a45bfec10d59
-	github.com/spf13/viper v1.0.1-0.20200205174444-d996804203c7
 	github.com/stretchr/testify v1.6.1
 	github.com/timshannon/bolthold v0.0.0-20190812165541-a85bcc049a2e // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
@@ -49,7 +48,3 @@ require (
 	go.etcd.io/bbolt v1.3.2
 	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72 // indirect
 )
-
-replace github.com/spf13/pflag => github.com/sietseringers/pflag v1.0.4-0.20190111213756-a45bfec10d59
-
-replace github.com/spf13/viper => github.com/sietseringers/viper v1.0.1-0.20200501103550-1e89975c9328

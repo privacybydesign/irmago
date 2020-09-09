@@ -9,9 +9,9 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/spf13/cobra"
+	"github.com/sietseringers/cobra"
 )
 
 // metaCmd represents the meta command

@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/spf13/cobra"
+	"github.com/sietseringers/cobra"
 )
 
 var updateCmd = &cobra.Command{

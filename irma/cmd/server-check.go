@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server/requestorserver"
-	"github.com/spf13/cobra"
+	"github.com/sietseringers/cobra"
 )
 
 var serverCheckCmd = &cobra.Command{

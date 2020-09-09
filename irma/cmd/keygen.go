@@ -11,7 +11,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/spf13/cobra"
+	"github.com/sietseringers/cobra"
 )
 
 // keygenCmd represents the keygen command

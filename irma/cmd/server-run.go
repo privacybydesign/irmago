@@ -1,8 +1,6 @@
 package cmd
 
-import (
-	"github.com/spf13/cobra"
-)
+import "github.com/sietseringers/cobra"
 
 var serverRunCmd = &cobra.Command{
 	Use:   "run",
