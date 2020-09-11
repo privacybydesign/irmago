@@ -182,7 +182,9 @@ func (transport *HTTPTransport) request(
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
 	req.Header = transport.headers.Clone()
-	req.Header.Set("User-Agent", "irmago")
+	if req.Header.Get("User-agent") == "" {
+		req.Header.Set("User-Agent", "irmago")
+	}
 	if reader != nil && contenttype != "" {
 		req.Header.Set("Content-Type", contenttype)
 	}
