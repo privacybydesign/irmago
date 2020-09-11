@@ -201,7 +201,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	// occured do we modify the scheme on disk and in memory.
 
 	// copy the scheme on disk to a new temporary directory
-	dir, newschemepath, err := tempSchemeCopy(scheme)
+	dir, newschemepath, err := conf.tempSchemeCopy(scheme)
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	}
 
 	// replace old scheme on disk with the new one from the temp dir
-	if err = updateSchemeDir(scheme, schemepath, newschemepath); err != nil {
+	if err = conf.updateSchemeDir(scheme, schemepath, newschemepath); err != nil {
 		return err
 	}
 
@@ -799,8 +799,8 @@ func downloadScheme(url string) (Scheme, error) {
 	return nil, errors.New("no scheme description file found")
 }
 
-func tempSchemeCopy(scheme Scheme) (string, string, error) {
-	dir, err := ioutil.TempDir("", "tempscheme")
+func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error) {
+	dir, err := ioutil.TempDir(conf.TempPath, "tempscheme")
 	if err != nil {
 		return "", "", err
 	}
@@ -817,8 +817,8 @@ func tempSchemeCopy(scheme Scheme) (string, string, error) {
 // Move oldscheme to a temp dir; move newscheme to the location of oldscheme; and delete oldscheme.
 // If the first move works then the second one should too, so this will either entirely succeed
 // or leave the old scheme untouched.
-func updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
-	tmp, err := ioutil.TempDir("", "oldscheme")
+func (conf *Configuration) updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
+	tmp, err := ioutil.TempDir(conf.TempPath, "oldscheme")
 	if err != nil {
 		return err
 	}
