@@ -319,17 +319,25 @@ func (conf *Configuration) verifyURL() error {
 	return nil
 }
 
+type serverInfo struct {
+	Email   string
+	Version string
+}
+
 func (conf *Configuration) verifyEmail() error {
-	if conf.Email != "" {
-		// Very basic sanity checks
-		if !strings.Contains(conf.Email, "@") || strings.Contains(conf.Email, "\n") {
-			return errors.New("Invalid email address specified")
-		}
-		t := irma.NewHTTPTransport("https://metrics.privacybydesign.foundation/history", true)
-		t.SetHeader("User-Agent", "irmaserver")
-		var x string
-		_ = t.Post("email", &x, conf.Email)
+	if conf.Email == "" || !strings.Contains(conf.Email, "@") || strings.Contains(conf.Email, "\n") {
+		return errors.New("Invalid email address specified")
 	}
+	t := irma.NewHTTPTransport("https://privacybydesign.foundation/", true)
+	t.SetHeader("User-Agent", "irmaserver")
+	var resp string
+	data := &serverInfo{Email: conf.Email, Version: irma.Version}
+
+	err := t.Post("serverinfo", &resp, data)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
