@@ -10,7 +10,6 @@ import (
 )
 
 // LogEntry is a log entry of a past event.
-// NOTE: keep this up to date with intermediate format definition used in UnmarshalJSON!
 type LogEntry struct {
 	// General info
 	ID   uint64
@@ -39,29 +38,10 @@ type LogEntry struct {
 // We need manual unmarshalling to deal with legacy log entries that have
 func (entry *LogEntry) UnmarshalJSON(b []byte) (err error) {
 	// Internal type needed for unmarshalling to delay requestorInfo unmarshalling
-	// NOTE: keep this up to date with above definition of log entry!
+	type rawLogEntry LogEntry
 	var temp struct {
-		// General info
-		ID   uint64
-		Type irma.Action
-		Time irma.Timestamp // Time at which the session was completed
-
-		// Credential removal
-		Removed map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
-
-		// Signature sessions
-		SignedMessage          []byte          `json:",omitempty"`
-		Timestamp              *atum.Timestamp `json:",omitempty"`
-		SignedMessageLDContext string          `json:",omitempty"`
-
-		// Issuance sessions
-		IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
-
-		// All session types
-		ServerName *json.RawMessage      `json:",omitempty"`
-		Version    *irma.ProtocolVersion `json:",omitempty"`
-		Disclosure *irma.Disclosure      `json:",omitempty"`
-		Request    json.RawMessage       `json:",omitempty"` // Message that started the session
+		ServerName *json.RawMessage `json:",omitempty"`
+		rawLogEntry
 	}
 
 	if err = json.Unmarshal(b, &temp); err != nil {
@@ -69,17 +49,7 @@ func (entry *LogEntry) UnmarshalJSON(b []byte) (err error) {
 	}
 
 	// Copy standard fields
-	entry.ID = temp.ID
-	entry.Type = temp.Type
-	entry.Time = temp.Time
-	entry.Removed = temp.Removed
-	entry.SignedMessage = temp.SignedMessage
-	entry.Timestamp = temp.Timestamp
-	entry.SignedMessageLDContext = temp.SignedMessageLDContext
-	entry.IssueCommitment = temp.IssueCommitment
-	entry.Version = temp.Version
-	entry.Disclosure = temp.Disclosure
-	entry.Request = temp.Request
+	*entry = LogEntry(temp.rawLogEntry)
 
 	// Nil as servername is simple
 	if temp.ServerName == nil {
