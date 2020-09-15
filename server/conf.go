@@ -325,7 +325,10 @@ type serverInfo struct {
 }
 
 func (conf *Configuration) verifyEmail() error {
-	if conf.Email == "" || !strings.Contains(conf.Email, "@") || strings.Contains(conf.Email, "\n") {
+	if conf.Email == "" {
+		return nil
+	}
+	if !strings.Contains(conf.Email, "@") || strings.Contains(conf.Email, "\n") {
 		return errors.New("Invalid email address specified")
 	}
 	t := irma.NewHTTPTransport("https://privacybydesign.foundation/", true)
