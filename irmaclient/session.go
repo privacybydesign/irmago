@@ -77,7 +77,7 @@ type session struct {
 	attrIndices    irma.DisclosedAttributeIndices
 	client         *Client
 	request        irma.SessionRequest
-	done           bool
+	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
 
 	// State for issuance sessions
@@ -154,12 +154,16 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	client.PauseJobs()
 
+	doneChannel := make(chan struct{}, 1)
+	doneChannel <- struct{}{}
+	close(doneChannel)
 	session := &session{
 		Action:         action,
 		Handler:        handler,
 		client:         client,
 		Version:        minVersion,
 		request:        request,
+		done:           doneChannel,
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
@@ -188,6 +192,9 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 	client.PauseJobs()
 
 	u, _ := url.ParseRequestURI(qr.URL) // Qr validator already checked this for errors
+	doneChannel := make(chan struct{}, 1)
+	doneChannel <- struct{}{}
+	close(doneChannel)
 	session := &session{
 		ServerURL:      qr.URL,
 		Hostname:       u.Hostname(),
@@ -195,6 +202,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 		Action:         qr.Type,
 		Handler:        handler,
 		client:         client,
+		done:           doneChannel,
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
@@ -670,13 +678,21 @@ func panicToError(e interface{}) *irma.SessionError {
 // background jobs. This function is idempotent, doing nothing when called a second time. It
 // returns whether or not it did something.
 func (session *session) finish(delete bool) bool {
-	if !session.done {
-		if delete && session.IsInteractive() {
-			session.transport.Delete()
-		}
-		session.client.nonrevRepopulateCaches(session.request)
-		session.client.sessions.remove(session.token)
-		session.done = true
+	// In order to guarantee idempotency even if this function is simultaneously called by two threads
+	// we need to synchronize here. We do this by having the session contain a channel (done), which
+	// is initialized to buffer exactly 1 message, and is then closed. The first call to reach this if
+	// will then read that message, whilst all further calls will see the closed channel and know
+	// that no further work is needed.
+	if _, ok := <-session.done; ok {
+		// Do actual delete in background, since that can take a while in some circumstances, and
+		// precise moment of completion isn't relevant for frontend.
+		go func() {
+			if delete && session.IsInteractive() {
+				session.transport.Delete()
+			}
+			session.client.nonrevRepopulateCaches(session.request)
+			session.client.sessions.remove(session.token)
+		}()
 		return true
 	}
 	return false
