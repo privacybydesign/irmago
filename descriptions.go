@@ -133,7 +133,7 @@ func (ct *CredentialType) RandomBlinds() []int {
 	return indices
 }
 
-func (ct *CredentialType) getAttributeTypeIdentifiers(indices []int) (ids []string) {
+func (ct *CredentialType) attributeTypeIdentifiers(indices []int) (ids []string) {
 	for i, at := range ct.AttributeTypes {
 		for _, j := range indices {
 			if i == j {
@@ -144,8 +144,8 @@ func (ct *CredentialType) getAttributeTypeIdentifiers(indices []int) (ids []stri
 	return
 }
 
-func (ct *CredentialType) GetRandomBlindAttributeTypeIdentifers() []string {
-	return ct.getAttributeTypeIdentifiers(ct.RandomBlinds())
+func (ct *CredentialType) RandomBlindAttributeTypeIdentifers() []string {
+	return ct.attributeTypeIdentifiers(ct.RandomBlinds())
 }
 
 func (ct *CredentialType) RevocationSupported() bool {

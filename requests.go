@@ -606,7 +606,7 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 	}
 
 	// Check that the random blind attributes match between client configuration / CredentialRequest
-	clientRandomBlindAttributeIDs := credtype.GetRandomBlindAttributeTypeIdentifers()
+	clientRandomBlindAttributeIDs := credtype.RandomBlindAttributeTypeIdentifers()
 	if !stringSliceEqual(clientRandomBlindAttributeIDs, cr.RandomBlindAttributeTypeIDs) {
 		return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("mismatch in randomblind attributes between server/client")}
 	}
