@@ -1148,6 +1148,10 @@ func (cr *ClientRequest) Validate() error {
 	if cr.LDContext != LDContextClientRequest {
 		return errors.New("Not a client request")
 	}
+	// The 'Request' field is not required. When this field is empty, we have to skip the validation.
+	// In Go empty structs are automatically populated with default values and we cannot solve this
+	// by using a pointer because SessionRequest is an interface. Therefore we use reflection to
+	// check whether the struct that implements the interface is empty.
 	if !reflect.ValueOf(cr.Request).Elem().IsZero() {
 		return cr.Request.Validate()
 	}
