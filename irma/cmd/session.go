@@ -132,7 +132,7 @@ func libraryRequest(
 
 	if binding {
 		// Listen for session status
-		statuschan, err := irmaServer.GetSessionStatus(string(requestorToken), true)
+		statuschan, err := irmaServer.GetSessionStatus(requestorToken)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to start listening for session statuses", 0)
 		}
