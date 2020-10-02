@@ -589,13 +589,23 @@ func (client *Client) credCandidates(request irma.SessionRequest, con irma.Attri
 			// then the entire conjunction is unsatisfiable
 			satisfiable = false
 		}
-		if len(c) == 0 {
-			if client.addCredSuggestion(request, credTypeID) {
-				// No acceptable credentials found. Excluding some nonsensical cases,
-				// add an "empty" credential (i.e. without hash) as a suggestion to the user
-				c = append(c, &credCandidate{Type: credTypeID})
+		// Determine whether the session request forces an attribute value for any attribute requested from this credential.
+		fixedAttrValue := false
+		for _, attr := range con {
+			if attr.Type.CredentialTypeIdentifier() != credTypeID {
+				continue
 			}
+			if attr.Value != nil {
+				fixedAttrValue = true
+			}
+		}
+		if len(c) == 0 {
 			satisfiable = false
+		}
+		if client.addCredSuggestion(request, credTypeID, fixedAttrValue, len(c) != 0) {
+			// When there are no candidates or when the credential is non-singleton, excluding some nonsensical cases,
+			// add an "empty" credential (i.e. without hash) as a suggestion to the user
+			c = append(c, &credCandidate{Type: credTypeID})
 		}
 		candidates = append(candidates, c)
 	}
@@ -606,6 +616,7 @@ func (client *Client) credCandidates(request irma.SessionRequest, con irma.Attri
 // (i.e. without hash) with the disclosure candidates to the user as a suggestion.
 func (client *Client) addCredSuggestion(
 	request irma.SessionRequest, credTypeID irma.CredentialTypeIdentifier,
+	haveFixedAttrValue, haveCandidates bool,
 ) bool {
 	credType := client.Configuration.CredentialTypes[credTypeID]
 	credDeprecatedSince := credType.DeprecatedSince
@@ -614,6 +625,15 @@ func (client *Client) addCredSuggestion(
 
 	if (!credDeprecatedSince.IsZero() && credDeprecatedSince.Before(now)) ||
 		(!issuerDeprecatedSince.IsZero() && issuerDeprecatedSince.Before(now)) {
+		return false
+	}
+
+	// Show option to add extra cards of non-singleton
+	if len(credType.IssueURL) != 0 && !credType.IsSingleton && !haveFixedAttrValue {
+		return true
+	}
+
+	if haveCandidates {
 		return false
 	}
 
