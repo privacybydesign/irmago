@@ -456,10 +456,11 @@ func (cdc AttributeConDisCon) Satisfy(disclosure *Disclosure, revocation map[int
 
 func (cdc AttributeConDisCon) Iterate(f func(attr *AttributeRequest) error) error {
 	var err error
-	for _, discon := range cdc {
-		for _, con := range discon {
-			for _, attr := range con {
-				if err = f(&attr); err != nil {
+	// Iterate by reference since this function is also used to modify requests.
+	for i := range cdc {
+		for j := range cdc[i] {
+			for k := range cdc[i][j] {
+				if err = f(&(cdc[i][j][k])); err != nil {
 					return err
 				}
 			}
