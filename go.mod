@@ -6,9 +6,9 @@ require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/alexandrevicenzi/go-sse v1.3.1-0.20200117161408-7b23d5ff7420
 	github.com/bwesterb/go-atum v1.0.0
-	github.com/bwesterb/go-exptable v1.0.0 // indirect
 	github.com/certifi/gocertifi v0.0.0-20180118203423-deb3ae2ef261 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/eknkc/basex v1.0.0
 	github.com/fxamacker/cbor v1.5.0
 	github.com/getsentry/raven-go v0.0.0-20180121060056-563b81fc02b7
 	github.com/go-chi/chi v3.3.3+incompatible
@@ -26,15 +26,13 @@ require (
 	github.com/mattn/go-isatty v0.0.4 // indirect
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
-	github.com/minio/sha256-simd v0.1.1 // indirect
 	github.com/mitchellh/mapstructure v1.1.2
-	github.com/multiformats/go-multihash v0.0.11 // indirect
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
-	github.com/privacybydesign/gabi v0.0.0-20200805114803-588904629b25
+	github.com/privacybydesign/gabi v0.0.0-20200823153621-467696543652
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819
 	github.com/sietseringers/viper v1.3.2-0.20200909194413-4120aa4ee8e8
@@ -44,7 +42,6 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/timshannon/bolthold v0.0.0-20190812165541-a85bcc049a2e // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
-	github.com/x448/float16 v0.8.4 // indirect
 	go.etcd.io/bbolt v1.3.2
 	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72 // indirect
 )

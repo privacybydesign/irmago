@@ -31,8 +31,9 @@ const (
 
 type requestorSessionResult struct {
 	*server.SessionResult
-	Missing   [][]irmaclient.DisclosureCandidates
-	Dismisser irmaclient.SessionDismisser
+	clientResult *SessionResult
+	Missing      [][]irmaclient.DisclosureCandidates
+	Dismisser    irmaclient.SessionDismisser
 }
 
 func processOptions(options ...sessionOption) sessionOption {
@@ -86,7 +87,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 
 	if opts&sessionOptionUnsatisfiableRequest > 0 && opts&sessionOptionWait == 0 {
 		require.NotNil(t, clientResult)
-		return &requestorSessionResult{nil, clientResult.Missing, dismisser}
+		return &requestorSessionResult{nil, nil, clientResult.Missing, dismisser}
 	}
 
 	serverResult := <-serverChan
@@ -106,7 +107,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 		require.NoError(t, err)
 	}
 
-	return &requestorSessionResult{serverResult, nil, dismisser}
+	return &requestorSessionResult{serverResult, clientResult, nil, dismisser}
 }
 
 // Check that nonexistent IRMA identifiers in the session request fail the session

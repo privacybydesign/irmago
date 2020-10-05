@@ -6,16 +6,19 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/eknkc/basex"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-
-	"github.com/go-errors/errors"
 )
 
 const (
 	// ExpiryFactor is the precision for the expiry attribute. Value is one week.
 	ExpiryFactor   = 60 * 60 * 24 * 7
 	metadataLength = 1 + 3 + 2 + 2 + 16
+
+	// Alphabet for base-62 encoding
+	alph = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
 var (
@@ -96,6 +99,12 @@ func (al *AttributeList) Hash() string {
 	if al.h == "" {
 		bytes := []byte{}
 		for _, i := range al.Ints {
+			// A CredentialInfo created from a CredentialRequest may contain attributes that are nil,
+			// since random blind attributes have no value yet at that point. Do not include these
+			// attributes when calculating the hash. The hash is not used.
+			if i == nil {
+				continue
+			}
 			bytes = append(bytes, i.Bytes()...)
 		}
 		shasum := sha256.Sum256(bytes)
@@ -147,8 +156,21 @@ func NewTranslatedString(attr *string) TranslatedString {
 	}
 }
 
+func decodeRandomBlind(attr *big.Int) *string {
+	if attr == nil {
+		return nil
+	}
+	var s string
+	enc, _ := basex.NewEncoding(alph)
+	s = enc.Encode(attr.Bytes())
+	return &s
+}
+
 func (al *AttributeList) decode(i int) *string {
 	attr := al.Ints[i+1]
+	if al.CredentialType().AttributeTypes[i].RandomBlind {
+		return decodeRandomBlind(attr)
+	}
 	metadataVersion := al.MetadataAttribute.Version()
 	return decodeAttribute(attr, metadataVersion)
 }

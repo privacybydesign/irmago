@@ -318,7 +318,11 @@ func (session *session) processSessionInfo() {
 		issuedAt := time.Now()
 		_, err := ir.GetCredentialInfoList(session.client.Configuration, session.Version, issuedAt)
 		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownIdentifier, Err: err})
+			if err, ok := err.(*irma.SessionError); ok {
+				session.fail(err)
+			} else {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownIdentifier, Err: err})
+			}
 			return
 		}
 

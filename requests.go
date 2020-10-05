@@ -87,12 +87,13 @@ type IssuanceRequest struct {
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
-	Validity            *Timestamp               `json:"validity,omitempty"`
-	KeyCounter          uint                     `json:"keyCounter,omitempty"`
-	CredentialTypeID    CredentialTypeIdentifier `json:"credential"`
-	Attributes          map[string]string        `json:"attributes"`
-	RevocationKey       string                   `json:"revocationKey,omitempty"`
-	RevocationSupported bool                     `json:"revocationSupported,omitempty"`
+	Validity                    *Timestamp               `json:"validity,omitempty"`
+	KeyCounter                  uint                     `json:"keyCounter,omitempty"`
+	CredentialTypeID            CredentialTypeIdentifier `json:"credential"`
+	Attributes                  map[string]string        `json:"attributes"`
+	RevocationKey               string                   `json:"revocationKey,omitempty"`
+	RevocationSupported         bool                     `json:"revocationSupported,omitempty"`
+	RandomBlindAttributeTypeIDs []string                 `json:"randomblindIDs,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -566,7 +567,7 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, iss
 func (cr *CredentialRequest) Validate(conf *Configuration) error {
 	credtype := conf.CredentialTypes[cr.CredentialTypeID]
 	if credtype == nil {
-		return errors.New("Credential request of unknown credential type")
+		return &SessionError{ErrorType: ErrorUnknownIdentifier, Err: errors.New("Credential request of unknown credential type")}
 	}
 
 	// Check that there are no attributes in the credential request that aren't
@@ -580,21 +581,43 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 			}
 		}
 		if !found {
-			return errors.New("Credential request contains unknown attribute")
+			return &SessionError{ErrorType: ErrorUnknownIdentifier, Err: errors.New("Credential request of unknown credential type")}
 		}
 	}
 
 	for _, attrtype := range credtype.AttributeTypes {
 		_, present := cr.Attributes[attrtype.ID]
-		if !present && !attrtype.RevocationAttribute && attrtype.Optional != "true" {
-			return errors.New("Required attribute not present in credential request")
+		if !present && !attrtype.RevocationAttribute && !attrtype.RandomBlind && attrtype.Optional != "true" {
+			return &SessionError{ErrorType: ErrorRequiredAttributeMissing, Err: errors.New("Required attribute not present in credential request")}
 		}
 		if present && attrtype.RevocationAttribute {
-			return errors.New("revocation attribute cannot be set in credential request")
+			return &SessionError{ErrorType: ErrorRevocation, Err: errors.New("revocation attribute cannot be set in credential request")}
+		}
+		if present && attrtype.RandomBlind {
+			return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("randomblind attribute cannot be set in credential request")}
 		}
 	}
 
+	// Check that the random blind attributes match between client configuration / CredentialRequest
+	clientRandomBlindAttributeIDs := credtype.RandomBlindAttributeTypeIdentifers()
+	if !stringSliceEqual(clientRandomBlindAttributeIDs, cr.RandomBlindAttributeTypeIDs) {
+		return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("mismatch in randomblind attributes between server/client")}
+	}
+
 	return nil
+}
+
+// Checks for equality between two slices of strings
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, _ := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // AttributeList returns the list of attributes from this credential request.
@@ -633,7 +656,7 @@ func (cr *CredentialRequest) AttributeList(
 		}
 	}
 	for i, attrtype := range credtype.AttributeTypes {
-		if attrtype.RevocationAttribute {
+		if attrtype.RevocationAttribute || attrtype.RandomBlind {
 			continue
 		}
 		attrs[i+1] = new(big.Int)

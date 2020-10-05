@@ -254,6 +254,7 @@ func parseCredentials(
 		if credtype.RevocationSupported() {
 			attrcount -= 1
 		}
+		attrcount -= len(credtype.RandomBlinds())
 		if len(attrsSlice) != attrcount {
 			return nil, errors.Errorf("%d attributes required but %d provided for %s", attrcount, len(attrsSlice), credIdStr)
 		}
@@ -261,7 +262,7 @@ func parseCredentials(
 		attrs := make(map[string]string, len(attrsSlice))
 		i := 0
 		for _, typ := range credtype.AttributeTypes {
-			if typ.RevocationAttribute {
+			if typ.RevocationAttribute || typ.RandomBlind {
 				continue
 			}
 			attrs[typ.ID] = attrsSlice[i]
