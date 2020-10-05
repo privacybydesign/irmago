@@ -151,7 +151,7 @@ func (ad AttributeType) IsOptional() bool {
 
 // Returns indices of random blind attributes within this credentialtype
 // The indices coincide with indices of an AttributeList (metadataAttribute at index 0)
-func (ct *CredentialType) RandomBlinds() []int {
+func (ct *CredentialType) RandomBlindAttributeIndices() []int {
 	indices := []int{}
 	for i, at := range ct.AttributeTypes {
 		if at.RandomBlind {
@@ -172,8 +172,8 @@ func (ct *CredentialType) attributeTypeIdentifiers(indices []int) (ids []string)
 	return
 }
 
-func (ct *CredentialType) RandomBlindAttributeTypeIdentifers() []string {
-	return ct.attributeTypeIdentifiers(ct.RandomBlinds())
+func (ct *CredentialType) RandomBlindAttributeNames() []string {
+	return ct.attributeTypeIdentifiers(ct.RandomBlindAttributeIndices())
 }
 
 func (ct *CredentialType) RevocationSupported() bool {

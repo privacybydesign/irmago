@@ -254,7 +254,7 @@ func parseCredentials(
 		if credtype.RevocationSupported() {
 			attrcount -= 1
 		}
-		attrcount -= len(credtype.RandomBlinds())
+		attrcount -= len(credtype.RandomBlindAttributeIndices())
 		if len(attrsSlice) != attrcount {
 			return nil, errors.Errorf("%d attributes required but %d provided for %s", attrcount, len(attrsSlice), credIdStr)
 		}

@@ -206,7 +206,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
 		}
-		rb := session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RandomBlinds()
+		rb := session.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RandomBlindAttributeIndices()
 		sig, err := issuer.IssueSignature(proof.U, attrs, witness, commitments.Nonce2, rb)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error())
