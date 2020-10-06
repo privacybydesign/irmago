@@ -19,6 +19,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.6.2
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/jasonlvhit/gocron v0.0.0-20180312192515-54194c9749d4
 	github.com/jinzhu/gorm v1.9.12
 	github.com/lib/pq v1.3.0 // indirect
