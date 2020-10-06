@@ -155,7 +155,7 @@ func TestIssuanceBinding(t *testing.T) {
 		require.Equal(t, string(server.ErrorUnexpectedRequest.Type), sessionErr.RemoteError.ErrorName)
 
 		err = handler.frontendTransport.Post("frontend/bindingcompleted", nil, nil)
-		require.NoError(handler.t, err)
+		require.NoError(t, err)
 	}
 	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, bindingHandler)
 }
