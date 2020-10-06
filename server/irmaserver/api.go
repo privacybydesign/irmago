@@ -341,10 +341,8 @@ func (s *Server) GetSessionStatus(requestorToken irma.RequestorToken) (chan irma
 		return nil, server.LogError(errors.Errorf("can't get session status of unknown session %s", requestorToken))
 	}
 
-	statusChan := make(chan irma.ServerStatus)
-	go func() {
-		statusChan <- session.status
-	}()
+	statusChan := make(chan irma.ServerStatus, 4)
+	statusChan <- session.status
 	session.statusChannels = append(session.statusChannels, statusChan)
 	return statusChan, nil
 }
