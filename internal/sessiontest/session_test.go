@@ -166,6 +166,10 @@ func TestIssuanceBinding(t *testing.T) {
 		result := &irma.SessionOptions{}
 		err = handler.frontendTransport.Post("frontend/options", result, request)
 		require.Error(t, err)
+		sessionErr = err.(*irma.SessionError)
+		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
+		require.Equal(t, server.ErrorUnexpectedRequest.Status, sessionErr.RemoteError.Status)
+		require.Equal(t, string(server.ErrorUnexpectedRequest.Type), sessionErr.RemoteError.ErrorName)
 
 		err = handler.frontendTransport.Post("frontend/bindingcompleted", nil, nil)
 		require.NoError(handler.t, err)
