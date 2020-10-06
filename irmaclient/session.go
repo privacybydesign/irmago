@@ -234,9 +234,8 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	session.transport.SetHeader(irma.MaxVersionHeader, client.maxVersion.String())
 
 	// From protocol version 2.7 also an authorization header must be included.
-	clientAuth := ""
 	if client.maxVersion.Above(2, 6) {
-		clientAuth = common.NewSessionToken()
+		clientAuth := common.NewSessionToken()
 		session.transport.SetHeader(irma.AuthorizationHeader, clientAuth)
 	}
 
