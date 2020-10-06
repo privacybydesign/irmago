@@ -77,7 +77,6 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
 	dismisser := client.NewSession(string(j), h)
-
 	clientResult := <-clientChan
 	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
 		require.NoError(t, clientResult.Err)

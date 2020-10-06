@@ -54,26 +54,24 @@ func subscribeSSE(transport *HTTPTransport, statuschan chan ServerStatus, errorc
 
 // poll recursively polls the session status until a final status is received.
 func poll(transport *HTTPTransport, initialStatus ServerStatus, statuschan chan ServerStatus, errorchan chan error) {
-	go func() {
-		status := initialStatus
-		for {
-			statuschanPolling := make(chan ServerStatus)
-			errorchanPolling := make(chan error)
-			go pollUntilChange(transport, status, statuschanPolling, errorchanPolling)
-			select {
-			case status = <-statuschanPolling:
-				statuschan <- status
-				if status.Finished() {
-					errorchan <- nil
-					return
-				}
-				break
-			case err := <-errorchanPolling:
-				errorchan <- err
+	status := initialStatus
+	statuschanPolling := make(chan ServerStatus)
+	errorchanPolling := make(chan error)
+	for {
+		go pollUntilChange(transport, status, statuschanPolling, errorchanPolling)
+		select {
+		case status = <-statuschanPolling:
+			statuschan <- status
+			if status.Finished() {
+				errorchan <- nil
 				return
 			}
+			break
+		case err := <-errorchanPolling:
+			errorchan <- err
+			return
 		}
-	}()
+	}
 }
 
 func pollUntilChange(transport *HTTPTransport, initialStatus ServerStatus, statuschan chan ServerStatus, errorchan chan error) {

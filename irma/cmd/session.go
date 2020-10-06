@@ -122,7 +122,7 @@ func libraryRequest(
 		optionsRequest := irma.NewOptionsRequest()
 		optionsRequest.BindingMethod = irma.BindingMethodPin
 		if sessionOptions, err = irmaServer.SetFrontendOptions(requestorToken, &optionsRequest); err != nil {
-			return nil, errors.WrapPrefix(err, "IRMA enable binding failed", 0)
+			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)
 		}
 	}
 
@@ -273,20 +273,17 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 		return nil, "", nil, err
 	}
 
-	requestorToken := pkg.Token
-	transport.Server += fmt.Sprintf("session/%s/", requestorToken)
-
+	transport.Server += fmt.Sprintf("session/%s/", pkg.Token)
 	return pkg.SessionPtr, pkg.FrontendAuth, transport, err
 }
 
 func handleBinding(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completeBinding func() error) (
 	irma.ServerStatus, error) {
 	errorChan := make(chan error)
-	status := irma.ServerStatusInitialized
 	bindingStarted := false
 	for {
 		select {
-		case status = <-statusChan:
+		case status := <-statusChan:
 			if status == irma.ServerStatusInitialized {
 				continue
 			} else if status == irma.ServerStatusBinding {
