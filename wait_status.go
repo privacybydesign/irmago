@@ -57,8 +57,8 @@ func poll(transport *HTTPTransport, initialStatus ServerStatus, statuschan chan 
 	status := initialStatus
 	statuschanPolling := make(chan ServerStatus)
 	errorchanPolling := make(chan error)
+	go pollUntilChange(transport, status, statuschanPolling, errorchanPolling)
 	for {
-		go pollUntilChange(transport, status, statuschanPolling, errorchanPolling)
 		select {
 		case status = <-statuschanPolling:
 			statuschan <- status
@@ -68,8 +68,11 @@ func poll(transport *HTTPTransport, initialStatus ServerStatus, statuschan chan 
 			}
 			break
 		case err := <-errorchanPolling:
-			errorchan <- err
-			return
+			if err != nil {
+				errorchan <- err
+				return
+			}
+			go pollUntilChange(transport, status, statuschanPolling, errorchanPolling)
 		}
 	}
 }
