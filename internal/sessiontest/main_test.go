@@ -265,13 +265,16 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 }
 
 func extractClientTransport(dismisser irmaclient.SessionDismisser) *irma.HTTPTransport {
-	rct := reflect.ValueOf(dismisser).Elem().FieldByName("transport")
-	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface().(*irma.HTTPTransport)
+	return extractPrivateField(dismisser, "transport").(*irma.HTTPTransport)
 }
 
 func extractClientMaxVersion(client *irmaclient.Client) *irma.ProtocolVersion {
-	rmv := reflect.ValueOf(client).Elem().FieldByName("maxVersion")
-	return reflect.NewAt(rmv.Type(), unsafe.Pointer(rmv.UnsafeAddr())).Elem().Interface().(*irma.ProtocolVersion)
+	return extractPrivateField(client, "maxVersion").(*irma.ProtocolVersion)
+}
+
+func extractPrivateField(i interface{}, field string) interface{} {
+	rct := reflect.ValueOf(i).Elem().FieldByName(field)
+	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface()
 }
 
 func setBindingMethod(method irma.BindingMethod, handler *TestHandler) string {
