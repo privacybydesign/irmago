@@ -688,6 +688,7 @@ func (session *session) finish(delete bool) bool {
 	// will then read that message, whilst all further calls will see the closed channel and know
 	// that no further work is needed.
 	if _, ok := <-session.done; ok {
+		session.client.sessions.remove(session.token)
 		// Do actual delete in background, since that can take a while in some circumstances, and
 		// precise moment of completion isn't relevant for frontend.
 		go func() {
@@ -695,7 +696,6 @@ func (session *session) finish(delete bool) bool {
 				session.transport.Delete()
 			}
 			session.client.nonrevRepopulateCaches(session.request)
-			session.client.sessions.remove(session.token)
 		}()
 		return true
 	}
