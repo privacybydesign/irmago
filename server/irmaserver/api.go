@@ -330,12 +330,12 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
-// GetSessionStatus retrieves a channel on which the current session status of the specified
+// SessionStatus retrieves a channel on which the current session status of the specified
 // IRMA session can be retrieved.
-func GetSessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
-	return s.GetSessionStatus(requestorToken)
+func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
+	return s.SessionStatus(requestorToken)
 }
-func (s *Server) GetSessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
+func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
 	session := s.sessions.get(requestorToken)
 	if session == nil {
 		return nil, server.LogError(errors.Errorf("can't get session status of unknown session %s", requestorToken))
