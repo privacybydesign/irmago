@@ -66,7 +66,7 @@ func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *i
 	require.NoError(t, err)
 
 	var h irmaclient.Handler
-	requestor := expectedRequestorInfo(t, request, client.Configuration)
+	requestor := expectedRequestorInfo(t, client.Configuration)
 	if opts&sessionOptionUnsatisfiableRequest > 0 {
 		h = &UnsatisfiableTestHandler{TestHandler: TestHandler{t, clientChan, client, requestor, 0, ""}}
 	} else {

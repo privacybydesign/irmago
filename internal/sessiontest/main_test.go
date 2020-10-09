@@ -213,7 +213,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	qr := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
-	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, request, client.Configuration)}
+	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
 	client.NewSession(string(qrjson), h)
@@ -223,7 +223,7 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 	}
 }
 
-func expectedRequestorInfo(t *testing.T, request irma.SessionRequest, conf *irma.Configuration) *irma.RequestorInfo {
+func expectedRequestorInfo(t *testing.T, conf *irma.Configuration) *irma.RequestorInfo {
 	if common.ForceHTTPS {
 		return irma.NewRequestorInfo("localhost")
 	}

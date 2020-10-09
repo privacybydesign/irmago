@@ -467,7 +467,7 @@ func TestStaticQRSession(t *testing.T) {
 	}
 	bts, err := json.Marshal(qr)
 	require.NoError(t, err)
-	requestor := expectedRequestorInfo(t, nil, client.Configuration)
+	requestor := expectedRequestorInfo(t, client.Configuration)
 	c := make(chan *SessionResult)
 
 	// Perform session
