@@ -227,6 +227,15 @@ func TestInstallScheme(t *testing.T) {
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("test.test.email"))
 	require.Contains(t, conf.RequestorSchemes, NewRequestorSchemeIdentifier("test-requestors"))
 	require.Contains(t, conf.Requestors, "localhost")
+
+	require.NoError(t, conf.DangerousTOFUInstallScheme(
+		"http://localhost:48681/irma_configuration/irma-demo",
+	))
+	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
+	require.Contains(t, conf.Issuers, NewIssuerIdentifier("irma-demo.MijnOverheid"))
+	sk, err := conf.PrivateKeys.Get(NewIssuerIdentifier("irma-demo.MijnOverheid"), 2)
+	require.NoError(t, err)
+	require.NotNil(t, sk)
 }
 
 func TestMetadataAttribute(t *testing.T) {

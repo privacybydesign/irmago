@@ -1145,7 +1145,7 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys() error {
 		Logger.Warnf("Downloading private key of scheme %s failed ", scheme.ID)
 	}
 
-	pkpath := filepath.Join(scheme.path(), "PublicKeys", "*")
+	pkpath := filepath.Join(scheme.path(), "*", "PublicKeys", "*")
 	files, err := filepath.Glob(pkpath)
 	if err != nil {
 		return err
