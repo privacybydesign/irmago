@@ -122,6 +122,7 @@ func TestCandidates(t *testing.T) {
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	// If the disjunction contains no required values at all, then our attribute is a candidate
+	// but we should also get the option to get another value
 	request := irma.NewDisclosureRequest(attrtype)
 	disjunction := request.Disclose[0]
 	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
@@ -129,11 +130,14 @@ func TestCandidates(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
-	require.Len(t, attrs, 1)
+	require.Len(t, attrs, 2)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
 	require.True(t, attrs[0][0].Present())
 	require.Empty(t, attrs[0][0].Value)
+	require.Equal(t, attrs[1][0].Type, attrtype)
+	require.False(t, attrs[1][0].Present())
+	require.Empty(t, attrs[1][0].Value)
 
 	// If the disjunction requires our attribute to have 456 as value, which it does,
 	// then our attribute is a candidate
@@ -165,16 +169,20 @@ func TestCandidates(t *testing.T) {
 	require.Equal(t, reqval, attrs[0][0].Value[""])
 
 	// A required value of nil counts as no requirement on the value, so our attribute is a candidate
+	// and we should also get the option to get another value
 	disjunction[0][0].Value = nil
 	attrs, satisfiable, err = client.candidatesDisCon(request, disjunction)
 	require.NoError(t, err)
 	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
-	require.Len(t, attrs, 1)
+	require.Len(t, attrs, 2)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
 	require.True(t, attrs[0][0].Present())
 	require.Empty(t, attrs[0][0].Value)
+	require.Equal(t, attrs[1][0].Type, attrtype)
+	require.False(t, attrs[1][0].Present())
+	require.Empty(t, attrs[1][0].Value)
 
 	// Require an attribute we do not have: a "non-present" credential (i.e. without hash)
 	// is included with the candidates as suggestion to the user
