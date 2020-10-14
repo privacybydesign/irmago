@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2020-10-14
+### Added
+* Support for session binding to prevent shoulder surfing (i.e. make it impossible for someone in close physical proximity to a user to scan the QR code that was meant for the user)
+  * Introduced new frontend endpoints to manage session binding
+  * Introduced `irmaclient` protocol version 2.7 including the necessary protocol changes
+  * The API of the `requestorserver` package has two new functions `SetFrontendOptions` and `BindingCompleted`
+  * A new server status `"BINDING"` is introduced
+* A new function `SessionStatus` is available in the API of the `requestorserver` to get a channel with status updates of an IRMA session
+
+### Changes
+* The `irma.SessionPackage` struct now contains an extra field `FrontendAuth`
+* The `StartSession` function from the API of the `requestorserver` package now returns three values: the session pointer (type *irma.QR), the requestor token (type irma.RequestorToken) and the frontend authorization token (type irma.FrontendAuthorization)
+* The `token` parameter, as used by most functions in the API of the `requestorserver` package, now has the type `irma.RequestorToken`
+* The `server.Status` type has been moved to `irma.ServerStatus`; the related constants are also moved, e.g. from `server.StatusInitialized` to `irma.ServerStatusInitialized`
+
 ## [0.5.0] - 2020-09-03
 ### Fixed
 * Bug in scheme update mechanism leading to `UNKNOWN_PUBLIC_KEY` errors when new public keys have been added to the scheme
@@ -110,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.6.0]: https://github.com/privacybydesign/irmago/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.5...v0.5.0
 [0.5.0-rc.5]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.4...v0.5.0-rc.5
 [0.5.0-rc.4]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.3...v0.5.0-rc.4
