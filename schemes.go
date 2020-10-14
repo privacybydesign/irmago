@@ -107,7 +107,7 @@ const (
 func (conf *Configuration) DownloadDefaultSchemes() error {
 	Logger.Info("downloading default schemes (may take a while)")
 	for _, s := range DefaultSchemes {
-		Logger.Debugf("Downloading %s scheme at %s", s.Type, s.URL)
+		Logger.WithFields(logrus.Fields{"url": s.URL}).Debugf("Downloading scheme")
 		if err := conf.installScheme(s.URL, s.Publickey, ""); err != nil {
 			return err
 		}
@@ -182,7 +182,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 		id         = scheme.id()
 		schemepath = scheme.path()
 	)
-	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("checking for updates", typ)
+	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("checking for updates")
 	shouldUpdate, _, index, err := conf.checkRemoteScheme(scheme)
 	if err != nil {
 		return err
@@ -507,14 +507,14 @@ func (conf *Configuration) checkRemoteScheme(scheme Scheme) (bool, *Timestamp, S
 	typ := string(scheme.typ())
 	timestampdiff := int64(timestamp.Sub(scheme.timestamp()))
 	if timestampdiff == 0 {
-		Logger.WithField(typ+"scheme", id).Info("scheme is up-to-date, not updating")
+		Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("scheme is up-to-date, not updating")
 		return false, nil, index, nil
 	} else if timestampdiff < 0 {
-		Logger.WithField(typ+"scheme", id).Info("local scheme is newer than remote, not updating")
+		Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("local scheme is newer than remote, not updating")
 		return false, nil, index, nil
 	}
 	// timestampdiff > 0
-	Logger.WithField(typ+"scheme", id).Info("scheme is outdated, updating")
+	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("scheme is outdated, updating")
 
 	// save the index and its signature against which we authenticated the timestamp
 	// for future use: as they are themselves not in the index, the loop below doesn't touch them
@@ -1137,12 +1137,12 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys() error {
 		return nil
 	}
 
-	Logger.Debugf("Attempting downloading of private keys of scheme %s", scheme.ID)
+	Logger.WithField("scheme", scheme.ID).Debugf("Attempting downloading of private keys")
 	transport := NewHTTPTransport(scheme.URL, true)
 
 	_, err := downloadFile(transport, scheme.path(), "sk.pem")
 	if err != nil { // If downloading of any of the private key fails just log it, and then continue
-		Logger.Warnf("Downloading private key of scheme %s failed ", scheme.ID)
+		Logger.WithField("scheme", scheme.ID).Warnf("Downloading scheme private key failed")
 	}
 
 	pkpath := filepath.Join(scheme.path(), "*", "PublicKeys", "*")
@@ -1162,7 +1162,8 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys() error {
 		}
 		remote := strings.Join(parts[len(parts)-3:], "/")
 		if _, err = downloadFile(transport, scheme.path(), remote); err != nil {
-			Logger.Warnf("Downloading private key %s failed: %s", skpath, err)
+			Logger.WithFields(logrus.Fields{"scheme": scheme.ID, "path": skpath}).
+				Warnf("Downloading issuer private key failed: %s", err)
 		}
 	}
 
