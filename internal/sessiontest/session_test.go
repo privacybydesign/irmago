@@ -579,6 +579,7 @@ func TestPOSTSizeLimit(t *testing.T) {
 	)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	http.DefaultClient.Timeout = 30 * time.Second
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	bts, err := ioutil.ReadAll(res.Body)
