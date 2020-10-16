@@ -762,8 +762,6 @@ func (session *session) KeyshareError(manager *irma.SchemeManagerIdentifier, err
 	var ok bool
 	if serr, ok = err.(*irma.SessionError); !ok {
 		serr = &irma.SessionError{ErrorType: irma.ErrorKeyshare, Err: err}
-	} else {
-		serr.ErrorType = irma.ErrorKeyshare
 	}
 	session.fail(serr)
 }
