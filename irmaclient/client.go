@@ -616,7 +616,7 @@ func (client *Client) credCandidates(request irma.SessionRequest, con irma.Attri
 // (i.e. without hash) with the disclosure candidates to the user as a suggestion.
 func (client *Client) addCredSuggestion(
 	request irma.SessionRequest, credTypeID irma.CredentialTypeIdentifier,
-	haveFixedAttrValue, haveCandidates bool,
+	fixedAttrValue, haveCandidates bool,
 ) bool {
 	credType := client.Configuration.CredentialTypes[credTypeID]
 	credDeprecatedSince := credType.DeprecatedSince
@@ -629,7 +629,7 @@ func (client *Client) addCredSuggestion(
 	}
 
 	// Show option to add extra cards of non-singleton
-	if len(credType.IssueURL) != 0 && !credType.IsSingleton && !haveFixedAttrValue {
+	if len(credType.IssueURL) != 0 && !credType.IsSingleton && !fixedAttrValue {
 		return true
 	}
 
