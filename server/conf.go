@@ -320,8 +320,8 @@ func (conf *Configuration) verifyURL() error {
 }
 
 type serverInfo struct {
-	Email   string
-	Version string
+	Email   string `json:"email"`
+	Version string `json:"version"`
 }
 
 func (conf *Configuration) verifyEmail() error {
