@@ -54,7 +54,7 @@ func StartRequestorServer(configuration *requestorserver.Configuration) {
 			panic("Starting server failed: " + err.Error())
 		}
 	}()
-	time.Sleep(100 * time.Millisecond) // Give server time to start
+	time.Sleep(200 * time.Millisecond) // Give server time to start
 }
 
 func StopRequestorServer() {
@@ -147,8 +147,8 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 			},
 		},
 	},
-	ListenAddress: "localhost",
-	Port:          48682,
+	ListenAddress:                  "localhost",
+	Port:                           48682,
 	DisableRequestorAuthentication: false,
 	MaxRequestAge:                  3,
 	Permissions: requestorserver.Permissions{
