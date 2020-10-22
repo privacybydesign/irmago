@@ -335,7 +335,14 @@ func (conf *Configuration) verifyEmail() error {
 	t.SetHeader("User-Agent", "irmaserver")
 	data := &serverInfo{Email: conf.Email, Version: irma.Version}
 
-	return t.Post("serverinfo", nil, data)
+	err := t.Post("serverinfo", nil, data)
+	if err != nil {
+		if sessErr, ok := err.(*irma.SessionError); ok {
+			conf.Logger.Trace("Failed to send email and version number, status:", sessErr.RemoteStatus)
+		}
+	}
+
+	return nil
 }
 
 func (conf *Configuration) verifyJwtPrivateKey() error {
