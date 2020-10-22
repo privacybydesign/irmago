@@ -333,15 +333,9 @@ func (conf *Configuration) verifyEmail() error {
 	}
 	t := irma.NewHTTPTransport("https://privacybydesign.foundation/", true)
 	t.SetHeader("User-Agent", "irmaserver")
-	var resp string
 	data := &serverInfo{Email: conf.Email, Version: irma.Version}
 
-	err := t.Post("serverinfo", &resp, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return t.Post("serverinfo", nil, data)
 }
 
 func (conf *Configuration) verifyJwtPrivateKey() error {
