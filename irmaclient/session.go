@@ -290,6 +290,9 @@ func (session *session) handleBinding(bindingCode string) error {
 			return &irma.SessionError{ErrorType: irma.ErrorBindingRejected}
 		}
 	case err := <-errorchan:
+		if serr, ok := err.(*irma.SessionError); ok {
+			return serr
+		}
 		return &irma.SessionError{
 			ErrorType: irma.ErrorServerResponse,
 			Info:      "Binding aborted by server",
