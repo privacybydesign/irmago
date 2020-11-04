@@ -623,8 +623,8 @@ func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Keyshare", func(t *testing.T) {
 		startRevocationServer(t, true)
 		defer stopRevocationServer()
-		test.StartKeyshareServer(t)
-		defer test.StopKeyshareServer(t)
+		testkeyshare.StartKeyshareServer(t)
+		defer testkeyshare.StopKeyshareServer(t)
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
 
