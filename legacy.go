@@ -237,7 +237,7 @@ func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 			BaseRequest
 			Disclose AttributeConDisCon       `json:"disclose"`
 			Labels   map[int]TranslatedString `json:"labels"`
-			Message  string                   `json"string"`
+			Message  string                   `json:"message"`
 		}
 		if err = json.Unmarshal(bts, &req); err != nil {
 			return err
