@@ -34,7 +34,7 @@ type (
 	RevocationStorage struct {
 		conf     *Configuration
 		sqldb    sqlRevStorage
-		memdb    memRevStorage
+		memdb    *memRevStorage
 		sqlMode  bool
 		settings RevocationSettings
 

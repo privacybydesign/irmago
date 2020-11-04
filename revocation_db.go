@@ -129,19 +129,19 @@ func (s sqlRevStorage) Latest(dest interface{}, count uint64, query interface{},
 		Find(dest).Error
 }
 
-func newMemStorage() memRevStorage {
-	return memRevStorage{
+func newMemStorage() *memRevStorage {
+	return &memRevStorage{
 		records: make(map[CredentialTypeIdentifier]*memUpdateRecord),
 	}
 }
 
-func (m memRevStorage) get(id CredentialTypeIdentifier) *memUpdateRecord {
+func (m *memRevStorage) get(id CredentialTypeIdentifier) *memUpdateRecord {
 	m.Lock()
 	defer m.Unlock()
 	return m.records[id]
 }
 
-func (m memRevStorage) Latest(id CredentialTypeIdentifier, count uint64) map[uint]*revocation.Update {
+func (m *memRevStorage) Latest(id CredentialTypeIdentifier, count uint64) map[uint]*revocation.Update {
 	record := m.get(id)
 	if record == nil {
 		return nil
@@ -171,7 +171,7 @@ func (m memRevStorage) Latest(id CredentialTypeIdentifier, count uint64) map[uin
 	return updates
 }
 
-func (m memRevStorage) SignedAccumulator(id CredentialTypeIdentifier, pkcounter uint) *revocation.SignedAccumulator {
+func (m *memRevStorage) SignedAccumulator(id CredentialTypeIdentifier, pkcounter uint) *revocation.SignedAccumulator {
 	updates := m.Latest(id, 0)
 	if update := updates[pkcounter]; update != nil {
 		return update.SignedAccumulator
@@ -179,7 +179,7 @@ func (m memRevStorage) SignedAccumulator(id CredentialTypeIdentifier, pkcounter 
 	return nil
 }
 
-func (m memRevStorage) Insert(id CredentialTypeIdentifier, update *revocation.Update) {
+func (m *memRevStorage) Insert(id CredentialTypeIdentifier, update *revocation.Update) {
 	logger := Logger.WithFields(logrus.Fields{
 		"credtype": id, "counter": update.SignedAccumulator.PKCounter,
 	})

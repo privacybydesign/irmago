@@ -722,7 +722,7 @@ func revokeMultiple(t *testing.T, sk *revocation.PrivateKey, update *revocation.
 	return update
 }
 
-func retrieve(t *testing.T, pk *revocation.PublicKey, db memRevStorage, count uint64, expectedIndex uint64) {
+func retrieve(t *testing.T, pk *revocation.PublicKey, db *memRevStorage, count uint64, expectedIndex uint64) {
 	var updates map[uint]*revocation.Update
 	var err error
 	for i := uint64(0); i <= count; i++ {
