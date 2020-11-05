@@ -117,13 +117,13 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		r.Route("/frontend", func(r chi.Router) {
 			r.Use(s.frontendMiddleware)
 			r.Post("/options", s.handleFrontendOptionsPost)
-			r.Post("/bindingcompleted", s.handleFrontendBindingCompleted)
+			r.Post("/pairingcompleted", s.handleFrontendPairingCompleted)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.cacheMiddleware)
 			r.Get("/", s.handleSessionGet)
 			r.Group(func(r chi.Router) {
-				r.Use(s.bindingMiddleware)
+				r.Use(s.pairingMiddleware)
 				r.Get("/request", s.handleSessionGetRequest)
 				r.Post("/commitments", s.handleSessionCommitments)
 				r.Post("/proofs", s.handleSessionProofs)
@@ -264,17 +264,17 @@ func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request 
 	return session.updateFrontendOptions(request)
 }
 
-// Complete binding between the irma client and the frontend. Returns
+// Complete pairing between the irma client and the frontend. Returns
 // an error when no client is actually connected.
-func BindingCompleted(requestorToken irma.RequestorToken) error {
-	return s.BindingCompleted(requestorToken)
+func PairingCompleted(requestorToken irma.RequestorToken) error {
+	return s.PairingCompleted(requestorToken)
 }
-func (s *Server) BindingCompleted(requestorToken irma.RequestorToken) error {
+func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
 	session := s.sessions.get(requestorToken)
 	if session == nil {
-		return server.LogError(errors.Errorf("can't complete binding of unknown session %s", requestorToken))
+		return server.LogError(errors.Errorf("can't complete pairing of unknown session %s", requestorToken))
 	}
-	return session.bindingCompleted()
+	return session.pairingCompleted()
 }
 
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server

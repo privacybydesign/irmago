@@ -19,8 +19,8 @@ var (
 	ErrorAttributesWrong           Error = Error{Type: "ATTRIBUTES_WRONG", Status: 400, Description: "Specified attribute(s) do not belong to this credential type or missing attributes"}
 	ErrorCannotIssue               Error = Error{Type: "CANNOT_ISSUE", Status: 500, Description: "Cannot issue this credential"}
 
-	ErrorClientUnauthorized   Error = Error{Type: "UNAUTHORIZED", Status: 403, Description: "You are not authorized to access the session"}
-	ErrorBindingRequired      Error = Error{Type: "BINDING_REQUIRED", Status: 403, Description: "Binding is required first"}
+	ErrorIrmaUnauthorized     Error = Error{Type: "UNAUTHORIZED", Status: 403, Description: "You are not authorized to access the session"}
+	ErrorPairingRequired      Error = Error{Type: "PAIRING_REQUIRED", Status: 403, Description: "Pairing is required first"}
 	ErrorIssuanceFailed       Error = Error{Type: "ISSUANCE_FAILED", Status: 500, Description: "Failed to create credential(s)"}
 	ErrorInvalidProofs        Error = Error{Type: "INVALID_PROOFS", Status: 400, Description: "Invalid secret key commitments and/or disclosure proofs"}
 	ErrorAttributesMissing    Error = Error{Type: "ATTRIBUTES_MISSING", Status: 400, Description: "Not all requested-for attributes were present"}

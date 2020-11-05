@@ -82,7 +82,7 @@ type TestHandler struct {
 	expectedServerName *irma.RequestorInfo
 	wait               time.Duration
 	result             string
-	bindingCodeChan    chan string
+	pairingCodeChan    chan string
 	dismisser          irmaclient.SessionDismisser
 	frontendTransport  *irma.HTTPTransport
 }
@@ -153,14 +153,14 @@ func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager
 func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	callback(true, "12345")
 }
-func (th TestHandler) BindingRequired(bindingCode string) {
-	// Send binding code via channel to calling test. This is done such that
+func (th TestHandler) PairingRequired(pairingCode string) {
+	// Send pairing code via channel to calling test. This is done such that
 	// calling tests can detect it when this handler is skipped unexpectedly.
-	if th.bindingCodeChan != nil {
-		th.bindingCodeChan <- bindingCode
+	if th.pairingCodeChan != nil {
+		th.pairingCodeChan <- pairingCode
 		return
 	}
-	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Binding required")})
+	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Pairing required")})
 }
 
 type SessionResult struct {

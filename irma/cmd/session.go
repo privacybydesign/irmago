@@ -62,7 +62,7 @@ irma session --server http://localhost:8088 --authmethod token --key mytoken --d
 		url, _ := cmd.Flags().GetString("url")
 		serverurl, _ := cmd.Flags().GetString("server")
 		noqr, _ := cmd.Flags().GetBool("noqr")
-		binding, _ := cmd.Flags().GetBool("binding")
+		pairing, _ := cmd.Flags().GetBool("pairing")
 
 		if url != defaulturl && serverurl != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
@@ -72,12 +72,12 @@ irma session --server http://localhost:8088 --authmethod token --key mytoken --d
 			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
 			verbosity, _ := cmd.Flags().GetCount("verbose")
-			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity, binding)
+			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity, pairing)
 		} else {
 			authmethod, _ := flags.GetString("authmethod")
 			key, _ := flags.GetString("key")
 			name, _ := flags.GetString("name")
-			result, err = serverRequest(request, serverurl, authmethod, key, name, noqr, binding)
+			result, err = serverRequest(request, serverurl, authmethod, key, name, noqr, pairing)
 		}
 		if err != nil {
 			die("Session failed", err)
@@ -100,7 +100,7 @@ func libraryRequest(
 	privatekeysPath string,
 	noqr bool,
 	verbosity int,
-	binding bool,
+	pairing bool,
 ) (*server.SessionResult, error) {
 	if err := configureSessionServer(url, port, privatekeysPath, irmaconfig, verbosity); err != nil {
 		return nil, err
@@ -116,13 +116,13 @@ func libraryRequest(
 		return nil, errors.WrapPrefix(err, "IRMA session failed", 0)
 	}
 
-	// Enable binding if necessary
+	// Enable pairing if necessary
 	var sessionOptions *irma.SessionOptions
-	if binding {
+	if pairing {
 		optionsRequest := irma.NewOptionsRequest()
-		optionsRequest.BindingMethod = irma.BindingMethodPin
+		optionsRequest.PairingMethod = irma.PairingMethodPin
 		if sessionOptions, err = irmaServer.SetFrontendOptions(requestorToken, &optionsRequest); err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)
+			return nil, errors.WrapPrefix(err, "Failed to enable pairing", 0)
 		}
 	}
 
@@ -131,18 +131,18 @@ func libraryRequest(
 		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
-	if binding {
+	if pairing {
 		// Listen for session status
 		statuschan, err := irmaServer.SessionStatus(requestorToken)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to start listening for session statuses", 0)
 		}
 
-		_, err = handleBinding(sessionOptions, statuschan, func() error {
-			return irmaServer.BindingCompleted(requestorToken)
+		_, err = handlePairing(sessionOptions, statuschan, func() error {
+			return irmaServer.PairingCompleted(requestorToken)
 		})
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to handle binding", 0)
+			return nil, errors.WrapPrefix(err, "Failed to handle pairing", 0)
 		}
 	}
 
@@ -154,7 +154,7 @@ func serverRequest(
 	request irma.RequestorRequest,
 	serverurl, authmethod, key, name string,
 	noqr bool,
-	binding bool,
+	pairing bool,
 ) (*server.SessionResult, error) {
 	logger.Debug("Server URL: ", serverurl)
 
@@ -164,17 +164,17 @@ func serverRequest(
 		return nil, err
 	}
 
-	// Enable binding if necessary
+	// Enable pairing if necessary
 	var frontendTransport *irma.HTTPTransport
 	sessionOptions := &irma.SessionOptions{}
-	if binding {
+	if pairing {
 		frontendTransport = irma.NewHTTPTransport(qr.URL, false)
 		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendAuth))
 		optionsRequest := irma.NewOptionsRequest()
-		optionsRequest.BindingMethod = irma.BindingMethodPin
+		optionsRequest.PairingMethod = irma.PairingMethodPin
 		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to enable binding", 0)
+			return nil, errors.WrapPrefix(err, "Failed to enable pairing", 0)
 		}
 	}
 
@@ -201,20 +201,20 @@ func serverRequest(
 		defer wg.Done()
 
 		var status irma.ServerStatus
-		if binding {
-			status, err = handleBinding(sessionOptions, statuschan, func() error {
-				err = frontendTransport.Post("frontend/bindingcompleted", nil, nil)
+		if pairing {
+			status, err = handlePairing(sessionOptions, statuschan, func() error {
+				err = frontendTransport.Post("frontend/pairingcompleted", nil, nil)
 				if err != nil {
-					return errors.WrapPrefix(err, "Failed to complete binding", 0)
+					return errors.WrapPrefix(err, "Failed to complete pairing", 0)
 				}
 				return nil
 			})
 			if err != nil {
-				err = errors.WrapPrefix(err, "Failed to handle binding", 0)
+				err = errors.WrapPrefix(err, "Failed to handle pairing", 0)
 				return
 			}
 		} else {
-			// Wait until client connects if binding is disabled
+			// Wait until client connects if pairing is disabled
 			status := <-statuschan
 			if status != irma.ServerStatusConnected {
 				err = errors.Errorf("Unexpected status: %s", status)
@@ -277,21 +277,21 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 	return pkg.SessionPtr, pkg.FrontendAuth, transport, err
 }
 
-func handleBinding(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completeBinding func() error) (
+func handlePairing(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completePairing func() error) (
 	irma.ServerStatus, error) {
 	errorChan := make(chan error)
-	bindingStarted := false
+	pairingStarted := false
 	for {
 		select {
 		case status := <-statusChan:
 			if status == irma.ServerStatusInitialized {
 				continue
-			} else if status == irma.ServerStatusBinding {
-				bindingStarted = true
-				go requestBindingPermission(options, completeBinding, errorChan)
+			} else if status == irma.ServerStatusPairing {
+				pairingStarted = true
+				go requestPairingPermission(options, completePairing, errorChan)
 				continue
-			} else if status == irma.ServerStatusConnected && !bindingStarted {
-				fmt.Println("Binding is not supported by the connected device.")
+			} else if status == irma.ServerStatusConnected && !pairingStarted {
+				fmt.Println("Pairing is not supported by the connected device.")
 			}
 			return status, nil
 		case err := <-errorChan:
@@ -300,24 +300,24 @@ func handleBinding(options *irma.SessionOptions, statusChan chan irma.ServerStat
 	}
 }
 
-func requestBindingPermission(options *irma.SessionOptions, completeBinding func() error, errorChan chan error) {
-	if options.BindingMethod == irma.BindingMethodPin {
-		fmt.Println("\nBinding code:", options.BindingCode)
-		fmt.Println("Press Enter to confirm your device shows the same binding code; otherwise press Ctrl-C.")
+func requestPairingPermission(options *irma.SessionOptions, completePairing func() error, errorChan chan error) {
+	if options.PairingMethod == irma.PairingMethodPin {
+		fmt.Println("\nPairing code:", options.PairingCode)
+		fmt.Println("Press Enter to confirm your device shows the same pairing code; otherwise press Ctrl-C.")
 		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil {
 			errorChan <- err
 			return
 		}
-		if err = completeBinding(); err != nil {
+		if err = completePairing(); err != nil {
 			errorChan <- err
 			return
 		}
-		fmt.Println("Binding completed.")
+		fmt.Println("Pairing completed.")
 		errorChan <- nil
 		return
 	}
-	errorChan <- errors.Errorf("Binding method %s is not supported", options.BindingMethod)
+	errorChan <- errors.Errorf("Pairing method %s is not supported", options.PairingMethod)
 }
 
 // Configuration functions
@@ -370,7 +370,7 @@ func init() {
 	flags.StringP("url", "u", defaulturl, "external URL to which IRMA app connects (when not using --server), \":port\" being replaced by --port value")
 	flags.IntP("port", "p", 48680, "port to listen at (when not using --server)")
 	flags.Bool("noqr", false, "Print JSON instead of draw QR")
-	flags.Bool("binding", false, "Enable explicit binding between server and IRMA app")
+	flags.Bool("pairing", false, "Let IRMA app first pair, by entering the pairing code, before it can access the session")
 	flags.StringP("request", "r", "", "JSON session request")
 	flags.StringP("privkeys", "k", "", "path to private keys")
 	flags.Bool("disable-schemes-update", false, "disable scheme updates")

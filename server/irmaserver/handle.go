@@ -51,7 +51,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	// Protocol versions below 2.7 don't include an authorization header. Therefore skip the authorization
 	// header presence check if a lower version is used.
 	if clientAuth == "" && session.version.Above(2, 6) {
-		return nil, session.fail(server.ErrorClientUnauthorized, "No authorization header provided")
+		return nil, session.fail(server.ErrorIrmaUnauthorized, "No authorization header provided")
 	}
 	session.clientAuth = clientAuth
 
@@ -72,8 +72,8 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
 
-	if session.options.BindingMethod != irma.BindingMethodNone && session.version.Above(2, 6) {
-		session.setStatus(irma.ServerStatusBinding)
+	if session.options.PairingMethod != irma.PairingMethodNone && session.version.Above(2, 6) {
+		session.setStatus(irma.ServerStatusPairing)
 	} else {
 		session.setStatus(irma.ServerStatusConnected)
 	}
@@ -462,9 +462,9 @@ func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Reques
 	server.WriteResponse(w, res, nil)
 }
 
-func (s *Server) handleFrontendBindingCompleted(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleFrontendPairingCompleted(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	if err := session.bindingCompleted(); err != nil {
+	if err := session.pairingCompleted(); err != nil {
 		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
 		return
 	}
