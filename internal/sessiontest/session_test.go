@@ -136,32 +136,32 @@ func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
-func TestIssuanceBinding(t *testing.T) {
+func TestIssuancePairing(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
-	var bindingCode string
+	var pairingCode string
 	frontendOptionsHandler := func(handler *TestHandler) {
-		bindingCode = setBindingMethod(irma.BindingMethodPin, handler)
+		pairingCode = setPairingMethod(irma.PairingMethodPin, handler)
 	}
-	bindingHandler := func(handler *TestHandler) {
-		// Below protocol version 2.7 binding is not supported, so then the binding stage is expected to be skipped.
+	pairingHandler := func(handler *TestHandler) {
+		// Below protocol version 2.7 pairing is not supported, so then the pairing stage is expected to be skipped.
 		if extractClientMaxVersion(handler.client).Below(2, 7) {
 			return
 		}
 
-		require.Equal(t, bindingCode, <-handler.bindingCodeChan)
+		require.Equal(t, pairingCode, <-handler.pairingCodeChan)
 
-		// Check whether access to request endpoint is denied as long as binding is not finished
+		// Check whether access to request endpoint is denied as long as pairing is not finished
 		clientTransport := extractClientTransport(handler.dismisser)
 		err := clientTransport.Get("request", struct{}{})
 		require.Error(t, err)
 		sessionErr := err.(*irma.SessionError)
 		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
-		require.Equal(t, server.ErrorBindingRequired.Status, sessionErr.RemoteError.Status)
-		require.Equal(t, string(server.ErrorBindingRequired.Type), sessionErr.RemoteError.ErrorName)
+		require.Equal(t, server.ErrorPairingRequired.Status, sessionErr.RemoteError.Status)
+		require.Equal(t, string(server.ErrorPairingRequired.Type), sessionErr.RemoteError.ErrorName)
 
-		// Check whether binding cannot be disabled again after client is connected.
+		// Check whether pairing cannot be disabled again after client is connected.
 		request := irma.NewOptionsRequest()
 		result := &irma.SessionOptions{}
 		err = handler.frontendTransport.Post("frontend/options", result, request)
@@ -171,10 +171,10 @@ func TestIssuanceBinding(t *testing.T) {
 		require.Equal(t, server.ErrorUnexpectedRequest.Status, sessionErr.RemoteError.Status)
 		require.Equal(t, string(server.ErrorUnexpectedRequest.Type), sessionErr.RemoteError.ErrorName)
 
-		err = handler.frontendTransport.Post("frontend/bindingcompleted", nil, nil)
+		err = handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
 		require.NoError(t, err)
 	}
-	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, bindingHandler)
+	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, pairingHandler)
 }
 
 func TestLargeAttribute(t *testing.T) {
@@ -671,13 +671,13 @@ func TestChainedSessions(t *testing.T) {
 	require.NoError(t, errors.New("newly issued credential not found in client"))
 }
 
-func TestDisableBinding(t *testing.T) {
+func TestDisablePairing(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
 	frontendOptionsHandler := func(handler *TestHandler) {
-		_ = setBindingMethod(irma.BindingMethodPin, handler)
-		_ = setBindingMethod(irma.BindingMethodNone, handler)
+		_ = setPairingMethod(irma.PairingMethodPin, handler)
+		_ = setPairingMethod(irma.PairingMethodNone, handler)
 	}
 	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, nil)
 }

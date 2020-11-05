@@ -206,7 +206,7 @@ func sessionHelperWithFrontendOptions(
 	sessiontype string,
 	client *irmaclient.Client,
 	frontendOptionsHandler func(handler *TestHandler),
-	bindingHandler func(handler *TestHandler),
+	pairingHandler func(handler *TestHandler),
 ) string {
 	if client == nil {
 		var handler *TestClientHandler
@@ -229,8 +229,8 @@ func sessionHelperWithFrontendOptions(
 		expectedServerName: expectedRequestorInfo(t, client.Configuration),
 	}
 
-	if frontendOptionsHandler != nil || bindingHandler != nil {
-		h.bindingCodeChan = make(chan string)
+	if frontendOptionsHandler != nil || pairingHandler != nil {
+		h.pairingCodeChan = make(chan string)
 		h.frontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
 		h.frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendAuth))
 	}
@@ -242,8 +242,8 @@ func sessionHelperWithFrontendOptions(
 	require.NoError(t, err)
 	h.dismisser = client.NewSession(string(qrjson), h)
 
-	if bindingHandler != nil {
-		bindingHandler(h)
+	if pairingHandler != nil {
+		pairingHandler(h)
 	}
 
 	if result := <-c; result != nil {
@@ -274,13 +274,13 @@ func extractPrivateField(i interface{}, field string) interface{} {
 	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface()
 }
 
-func setBindingMethod(method irma.BindingMethod, handler *TestHandler) string {
+func setPairingMethod(method irma.PairingMethod, handler *TestHandler) string {
 	optionsRequest := irma.NewOptionsRequest()
-	optionsRequest.BindingMethod = method
+	optionsRequest.PairingMethod = method
 	options := &irma.SessionOptions{}
 	err := handler.frontendTransport.Post("frontend/options", options, optionsRequest)
 	require.NoError(handler.t, err)
-	return options.BindingCode
+	return options.PairingCode
 }
 
 func expectedRequestorInfo(t *testing.T, conf *irma.Configuration) *irma.RequestorInfo {
