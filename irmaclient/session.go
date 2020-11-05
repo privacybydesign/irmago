@@ -31,7 +31,7 @@ type PinHandler func(proceed bool, pin string)
 type Handler interface {
 	StatusUpdate(action irma.Action, status irma.ClientStatus)
 	ClientReturnURLSet(clientReturnURL string)
-	BindingRequired(bindingCode string)
+	PairingRequired(pairingCode string)
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
@@ -108,7 +108,7 @@ var supportedVersions = map[int][]int{
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
 		6, // introduces nonrevocation proofs
-		7, // introduces session binding
+		7, // introduces pairing feature
 	},
 }
 
@@ -247,7 +247,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisse
 // Core session methods
 
 // getSessionInfo retrieves the first message in the IRMA protocol (only in interactive sessions)
-// If needed, it also handles binding.
+// If needed, it also handles pairing.
 func (session *session) getSessionInfo() {
 	defer session.recoverFromPanic()
 
@@ -264,9 +264,9 @@ func (session *session) getSessionInfo() {
 		return
 	}
 
-	// Check whether binding is needed, and if so, wait for it to be completed.
-	if cr.Options.BindingMethod != irma.BindingMethodNone {
-		if err = session.handleBinding(cr.Options.BindingCode); err != nil {
+	// Check whether pairing is needed, and if so, wait for it to be completed.
+	if cr.Options.PairingMethod != irma.PairingMethodNone {
+		if err = session.handlePairing(cr.Options.PairingCode); err != nil {
 			session.fail(err.(*irma.SessionError))
 			return
 		}
@@ -275,19 +275,19 @@ func (session *session) getSessionInfo() {
 	session.processSessionInfo()
 }
 
-func (session *session) handleBinding(bindingCode string) error {
-	session.Handler.BindingRequired(bindingCode)
+func (session *session) handlePairing(pairingCode string) error {
+	session.Handler.PairingRequired(pairingCode)
 
 	statuschan := make(chan irma.ServerStatus)
 	errorchan := make(chan error)
 
-	go irma.WaitStatusChanged(session.transport, irma.ServerStatusBinding, statuschan, errorchan)
+	go irma.WaitStatusChanged(session.transport, irma.ServerStatusPairing, statuschan, errorchan)
 	select {
 	case status := <-statuschan:
 		if status == irma.ServerStatusConnected {
 			return session.transport.Get("request", session.request)
 		} else {
-			return &irma.SessionError{ErrorType: irma.ErrorBindingRejected}
+			return &irma.SessionError{ErrorType: irma.ErrorPairingRejected}
 		}
 	case err := <-errorchan:
 		if serr, ok := err.(*irma.SessionError); ok {
@@ -295,7 +295,7 @@ func (session *session) handleBinding(bindingCode string) error {
 		}
 		return &irma.SessionError{
 			ErrorType: irma.ErrorServerResponse,
-			Info:      "Binding aborted by server",
+			Info:      "Pairing aborted by server",
 			Err:       err,
 		}
 	}

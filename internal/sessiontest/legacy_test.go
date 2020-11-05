@@ -35,7 +35,7 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	sessionHelper(t, getDisclosureRequest(idRoot), "verification", client)
 }
 
-func TestWithoutBindingSupport(t *testing.T) {
+func TestWithoutPairingSupport(t *testing.T) {
 	defaultMaxVersion := maxClientVersion
 	defer func() {
 		maxClientVersion = defaultMaxVersion
@@ -53,7 +53,7 @@ func TestWithoutBindingSupport(t *testing.T) {
 	t.Run("TestIssuanceOptionalZeroLengthAttributes", TestIssuanceOptionalZeroLengthAttributes)
 	t.Run("TestIssuanceOptionalSetAttributes", TestIssuanceOptionalSetAttributes)
 	t.Run("TestIssuanceSameAttributesNotSingleton", TestIssuanceSameAttributesNotSingleton)
-	t.Run("TestIssuanceBinding", TestIssuanceBinding)
+	t.Run("TestIssuancePairing", TestIssuancePairing)
 	t.Run("TestLargeAttribute", TestLargeAttribute)
 	t.Run("TestIssuanceSingletonCredential", TestIssuanceSingletonCredential)
 	t.Run("TestUnsatisfiableDisclosureSession", TestUnsatisfiableDisclosureSession)
@@ -68,5 +68,5 @@ func TestWithoutBindingSupport(t *testing.T) {
 	t.Run("TestStaticQRSession", TestStaticQRSession)
 	t.Run("TestIssuedCredentialIsStored", TestIssuedCredentialIsStored)
 	t.Run("TestPOSTSizeLimit", TestPOSTSizeLimit)
-	t.Run("TestDisableBinding", TestDisableBinding)
+	t.Run("TestDisablePairing", TestDisablePairing)
 }

@@ -186,7 +186,7 @@ const (
 // Server statuses
 const (
 	ServerStatusInitialized ServerStatus = "INITIALIZED" // The session has been started and is waiting for the client
-	ServerStatusBinding     ServerStatus = "BINDING"     // The client is waiting for the frontend to give permission to connect
+	ServerStatusPairing     ServerStatus = "PAIRING"     // The client is waiting for the frontend to give permission to connect
 	ServerStatusConnected   ServerStatus = "CONNECTED"   // The client has retrieved the session request, we wait for its response
 	ServerStatusCancelled   ServerStatus = "CANCELLED"   // The session is cancelled, possibly due to an error
 	ServerStatusDone        ServerStatus = "DONE"        // The session has completed successfully
@@ -219,8 +219,8 @@ const (
 	ErrorCrypto = ErrorType("crypto")
 	// Error involving revocation or nonrevocation proofs
 	ErrorRevocation = ErrorType("revocation")
-	// Our binding attempt was rejected by the server
-	ErrorBindingRejected = ErrorType("bindingRejected")
+	// Our pairing attempt was rejected by the server
+	ErrorPairingRejected = ErrorType("pairingRejected")
 	// Server rejected our response (second IRMA message)
 	ErrorRejected = ErrorType("rejected")
 	// (De)serializing of a message failed

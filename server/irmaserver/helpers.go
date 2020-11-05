@@ -66,25 +66,25 @@ func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*ir
 	if session.status != irma.ServerStatusInitialized {
 		return nil, errors.New("Frontend options cannot be updated when client is already connected")
 	}
-	if request.BindingMethod == irma.BindingMethodNone {
-		session.options.BindingCode = ""
-	} else if request.BindingMethod == irma.BindingMethodPin {
-		session.options.BindingCode = common.NewBindingCode()
+	if request.PairingMethod == irma.PairingMethodNone {
+		session.options.PairingCode = ""
+	} else if request.PairingMethod == irma.PairingMethodPin {
+		session.options.PairingCode = common.NewPairingCode()
 	} else {
-		return nil, errors.New("Binding method unknown")
+		return nil, errors.New("Pairing method unknown")
 	}
 
-	session.options.BindingMethod = request.BindingMethod
+	session.options.PairingMethod = request.PairingMethod
 	return &session.options, nil
 }
 
-// Complete the binding process of frontend and irma client
-func (session *session) bindingCompleted() error {
-	if session.status == irma.ServerStatusBinding {
+// Complete the pairing process of frontend and irma client
+func (session *session) pairingCompleted() error {
+	if session.status == irma.ServerStatusPairing {
 		session.setStatus(irma.ServerStatusConnected)
 		return nil
 	}
-	return errors.New("Binding was not enabled")
+	return errors.New("Pairing was not enabled")
 }
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
@@ -305,7 +305,7 @@ func (session *session) getClientRequest() (*irma.ClientRequest, error) {
 		Options:         &session.options,
 	}
 
-	if session.options.BindingMethod == irma.BindingMethodNone {
+	if session.options.PairingMethod == irma.PairingMethodNone {
 		request, err := session.getRequest()
 		if err != nil {
 			return nil, err
@@ -437,7 +437,7 @@ func (s *Server) frontendMiddleware(next http.Handler) http.Handler {
 		frontendAuth := irma.FrontendAuthorization(r.Header.Get(irma.AuthorizationHeader))
 
 		if frontendAuth != session.frontendAuth {
-			server.WriteError(w, server.ErrorUnauthorized, "")
+			server.WriteError(w, server.ErrorIrmaUnauthorized, "")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -518,16 +518,16 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
+func (s *Server) pairingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
 
-		if session.status == irma.ServerStatusBinding {
-			server.WriteError(w, server.ErrorBindingRequired, "")
+		if session.status == irma.ServerStatusPairing {
+			server.WriteError(w, server.ErrorPairingRequired, "")
 			return
 		}
 
-		// Endpoints behind the bindingMiddleware can only be accessed when the client is already connected
+		// Endpoints behind the pairingMiddleware can only be accessed when the client is already connected
 		// and the request includes the right authorization header to prove we still talk to the same client as before.
 		if session.status != irma.ServerStatusConnected {
 			server.WriteError(w, server.ErrorUnexpectedRequest, "Session not yet started or already finished")
@@ -535,7 +535,7 @@ func (s *Server) bindingMiddleware(next http.Handler) http.Handler {
 		}
 		clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
 		if session.clientAuth != clientAuth {
-			server.WriteError(w, server.ErrorClientUnauthorized, "")
+			server.WriteError(w, server.ErrorIrmaUnauthorized, "")
 			return
 		}
 

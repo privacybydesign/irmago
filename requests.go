@@ -201,17 +201,17 @@ type AttributeRequest struct {
 	NotNull bool                    `json:"notNull,omitempty"`
 }
 
-type BindingMethod string
+type PairingMethod string
 
 const (
-	BindingMethodNone = "none"
-	BindingMethodPin  = "pin"
+	PairingMethodNone = "none"
+	PairingMethodPin  = "pin"
 )
 
 // An OptionsRequest asks for a options change of a particular session.
 type OptionsRequest struct {
 	LDContext     string        `json:"@context,omitempty"`
-	BindingMethod BindingMethod `json:"bindingMethod"`
+	PairingMethod PairingMethod `json:"pairingMethod"`
 }
 
 type RevocationRequest struct {
@@ -230,8 +230,8 @@ type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
 
 type SessionOptions struct {
 	LDContext     string        `json:"@context,omitempty"`
-	BindingMethod BindingMethod `json:"bindingMethod"`
-	BindingCode   string        `json:"bindingCode,omitempty"`
+	PairingMethod PairingMethod `json:"pairingMethod"`
+	PairingCode   string        `json:"pairingCode,omitempty"`
 }
 
 // ClientRequest contains all information irmaclient needs to know to initiate a session.
@@ -1115,7 +1115,7 @@ func NewAttributeRequest(attr string) AttributeRequest {
 func NewOptionsRequest() OptionsRequest {
 	return OptionsRequest{
 		LDContext:     LDContextOptionsRequest,
-		BindingMethod: BindingMethodNone,
+		PairingMethod: PairingMethodNone,
 	}
 }
 
@@ -1139,7 +1139,7 @@ func (cr *ClientRequest) UnmarshalJSON(data []byte) error {
 	cr.ProtocolVersion = cr.Request.Base().ProtocolVersion
 	cr.Options = &SessionOptions{
 		LDContext:     LDContextSessionOptions,
-		BindingMethod: BindingMethodNone,
+		PairingMethod: PairingMethodNone,
 	}
 	return nil
 }

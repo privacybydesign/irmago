@@ -6,11 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - 2020-10-14
 ### Added
-* Support for session binding to prevent shoulder surfing (i.e. make it impossible for someone in close physical proximity to a user to scan the QR code that was meant for the user)
-  * Introduced new frontend endpoints to manage session binding
+* Support for device pairing to prevent shoulder surfing (i.e. make it impossible for someone in close physical proximity to a user to scan the QR code that was meant for the user)
+  * Introduced new frontend endpoints to manage device pairing
   * Introduced `irmaclient` protocol version 2.7 including the necessary protocol changes
-  * The API of the `requestorserver` package has two new functions `SetFrontendOptions` and `BindingCompleted`
-  * A new server status `"BINDING"` is introduced
+  * The API of the `requestorserver` package has two new functions `SetFrontendOptions` and `PairingCompleted`
+  * A new server status `"PAIRING"` is introduced
 * A new function `SessionStatus` is available in the API of the `requestorserver` to get a channel with status updates of an IRMA session
 
 ### Changes
