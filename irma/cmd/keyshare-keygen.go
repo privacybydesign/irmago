@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"encoding/binary"
-	"os"
+	"io/ioutil"
 
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/sietseringers/cobra"
@@ -31,15 +31,7 @@ var keyshareKeygen = &cobra.Command{
 		binary.LittleEndian.PutUint32(keydata, counter)
 		copy(keydata[4:], key[:])
 
-		file, err := os.Create(filename)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		_, err = file.Write(keydata)
-
-		return err
+		return ioutil.WriteFile(filename, keydata, 0600)
 	},
 }
 

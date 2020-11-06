@@ -40,19 +40,19 @@ func TestServerLoginEmail(t *testing.T) {
 	res, err := http.Post("http://localhost:8080/login/email", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 204, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`{"email": "test@test.com", "language":"en"}`)
 	res, err = http.Post("http://localhost:8080/login/email", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 204, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`{"email": "test@test.com", "language":"dne"}`)
 	res, err = http.Post("http://localhost:8080/login/email", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 204, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
@@ -64,16 +64,16 @@ func TestServerLoginEmail(t *testing.T) {
 	res, err = client.Post("http://localhost:8080/login/token", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 204, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("test@test.com")
 	res, err = client.Post("http://localhost:8080/email/remove", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 204, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	res, err = client.Post("http://localhost:8080/user/delete", "", nil)
 	require.NoError(t, err)
 	require.Equal(t, 204, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 }

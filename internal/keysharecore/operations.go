@@ -225,7 +225,10 @@ func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessTok
 
 	// Generate commitment id
 	var commitId uint64
-	binary.Read(rand.Reader, binary.LittleEndian, &commitId)
+	err = binary.Read(rand.Reader, binary.LittleEndian, &commitId)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// Store commit in backing storage
 	c.commitmentMutex.Lock()

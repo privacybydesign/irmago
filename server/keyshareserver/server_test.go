@@ -25,37 +25,37 @@ func TestServerInvalidMessage(t *testing.T) {
 	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/change/pin", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("[]")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 }
 
 func TestServerHandleRegister(t *testing.T) {
@@ -85,18 +85,20 @@ func TestServerHandleRegister(t *testing.T) {
 
 func TestServerHandleValidate(t *testing.T) {
 	db := NewMemoryDatabase()
-	db.NewUser(KeyshareUserData{
+	_, err := db.NewUser(KeyshareUserData{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
+	require.NoError(t, err)
 	var ep keysharecore.EncryptedKeysharePacket
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	db.NewUser(KeyshareUserData{
+	_, err = db.NewUser(KeyshareUserData{
 		Username: "testusername",
 		Coredata: ep,
 	})
+	require.NoError(t, err)
 	StartKeyshareServer(t, db, "")
 	defer StopKeyshareServer(t)
 
@@ -156,18 +158,20 @@ func TestServerHandleValidate(t *testing.T) {
 
 func TestPinTries(t *testing.T) {
 	db := NewMemoryDatabase()
-	db.NewUser(KeyshareUserData{
+	_, err := db.NewUser(KeyshareUserData{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
+	require.NoError(t, err)
 	var ep keysharecore.EncryptedKeysharePacket
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	db.NewUser(KeyshareUserData{
+	_, err = db.NewUser(KeyshareUserData{
 		Username: "testusername",
 		Coredata: ep,
 	})
+	require.NoError(t, err)
 	StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t)
 
@@ -199,18 +203,20 @@ func TestPinTries(t *testing.T) {
 
 func TestPinWait(t *testing.T) {
 	db := NewMemoryDatabase()
-	db.NewUser(KeyshareUserData{
+	_, err := db.NewUser(KeyshareUserData{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
+	require.NoError(t, err)
 	var ep keysharecore.EncryptedKeysharePacket
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	db.NewUser(KeyshareUserData{
+	_, err = db.NewUser(KeyshareUserData{
 		Username: "testusername",
 		Coredata: ep,
 	})
+	require.NoError(t, err)
 	StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 0, wait: 5, err: nil}, "")
 	defer StopKeyshareServer(t)
 
@@ -242,18 +248,20 @@ func TestPinWait(t *testing.T) {
 
 func TestPinWaitRefused(t *testing.T) {
 	db := NewMemoryDatabase()
-	db.NewUser(KeyshareUserData{
+	_, err := db.NewUser(KeyshareUserData{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
+	require.NoError(t, err)
 	var ep keysharecore.EncryptedKeysharePacket
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	db.NewUser(KeyshareUserData{
+	_, err = db.NewUser(KeyshareUserData{
 		Username: "testusername",
 		Coredata: ep,
 	})
+	require.NoError(t, err)
 	StartKeyshareServer(t, &testDB{db: db, ok: false, tries: 0, wait: 5, err: nil}, "")
 	defer StopKeyshareServer(t)
 
@@ -295,19 +303,19 @@ func TestMissingUser(t *testing.T) {
 	res, err := client.Do(req)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData := bytes.NewBufferString(`{"id":"doesnotexist","pin":"bla"}`)
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`{"id":"doesnotexist","oldpin":"old","newpin":"new"}`)
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/change/pin", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`["test.test-3"]`)
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", reqData)
@@ -318,7 +326,7 @@ func TestMissingUser(t *testing.T) {
 	res, err = client.Do(req)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("123456789")
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", reqData)
@@ -328,23 +336,25 @@ func TestMissingUser(t *testing.T) {
 	res, err = client.Do(req)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 }
 
 func TestInvalidKeyshareSessions(t *testing.T) {
 	db := NewMemoryDatabase()
-	db.NewUser(KeyshareUserData{
+	_, err := db.NewUser(KeyshareUserData{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
+	require.NoError(t, err)
 	var ep keysharecore.EncryptedKeysharePacket
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	db.NewUser(KeyshareUserData{
+	_, err = db.NewUser(KeyshareUserData{
 		Username: "testusername",
 		Coredata: ep,
 	})
+	require.NoError(t, err)
 	StartKeyshareServer(t, db, "")
 	defer StopKeyshareServer(t)
 
@@ -371,7 +381,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	res, err = client.Do(req)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`["test.test-3"]`)
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", reqData)
@@ -382,7 +392,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	res, err = client.Do(req)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`["test.test-3"]`)
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", reqData)
@@ -393,7 +403,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	res, err = client.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("12345678")
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", reqData)
@@ -404,7 +414,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	res, err = client.Do(req)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`["test.test-3"]`)
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", reqData)
@@ -415,7 +425,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	res, err = client.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("12345678")
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", reqData)
@@ -426,7 +436,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	res, err = client.Do(req)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, res.StatusCode)
-	res.Body.Close()
+	_ = res.Body.Close()
 }
 
 var keyshareServ *http.Server
