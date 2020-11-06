@@ -58,6 +58,31 @@ func TestServerInvalidMessage(t *testing.T) {
 	res.Body.Close()
 }
 
+func TestServerHandleRegister(t *testing.T) {
+	StartKeyshareServer(t, NewMemoryDatabase(), "")
+	defer StopKeyshareServer(t)
+
+	reqData := bytes.NewBufferString(`{"pin":"testpin","email":"test@test.com","language":"en"}`)
+	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
+
+	reqData = bytes.NewBufferString(`{"pin":"testpin","email":"test@test.com","language":"dne"}`)
+	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
+
+	reqData = bytes.NewBufferString(`{"pin":"testpin","language":"en"}`)
+	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
+
+	reqData = bytes.NewBufferString(`{"pin":"testpin","language":"dne"}`)
+	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
+}
+
 func TestServerHandleValidate(t *testing.T) {
 	db := NewMemoryDatabase()
 	db.NewUser(KeyshareUserData{
@@ -410,6 +435,7 @@ func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
 		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 		URL:                   "http://localhost:8080/irma_keyshare_server/api/v1/",
 		DB:                    db,
 		JwtKeyId:              0,

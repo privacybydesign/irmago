@@ -23,4 +23,14 @@ func TestServerRegistrationWithEmail(t *testing.T) {
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, res.StatusCode)
+
+	reqData = bytes.NewBufferString(`{"pin":"testpin","language":"en"}`)
+	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
+
+	reqData = bytes.NewBufferString(`{"pin":"testpin","language":"dne"}`)
+	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/client/register", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
 }
