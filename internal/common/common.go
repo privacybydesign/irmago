@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -384,3 +385,8 @@ func SchemeFilename(dir string) (string, error) {
 }
 
 var SchemeFilenames = []string{"description.xml", "description.json"}
+
+// Helper for absorbing errors in the `defer x.Close()` pattern
+func Close(o io.Closer) {
+	_ = o.Close()
+}

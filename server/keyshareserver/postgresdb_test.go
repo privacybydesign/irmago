@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -104,7 +105,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 func RunScriptOnDB(t *testing.T, filename string) {
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
-	defer db.Close()
+	defer common.Close(db)
 	scriptData, err := ioutil.ReadFile(filename)
 	require.NoError(t, err)
 	_, err = db.Exec(string(scriptData))

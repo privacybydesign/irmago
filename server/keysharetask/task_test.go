@@ -34,11 +34,11 @@ func TestCleanupEmails(t *testing.T) {
 
 	res, err := db.Query("SELECT COUNT(*) FROM irma.emails")
 	require.NoError(t, err)
-	defer res.Close()
 	require.True(t, res.Next())
 	var count int
 	require.NoError(t, res.Scan(&count))
 	assert.Equal(t, 2, count)
+	_ = res.Close()
 }
 
 func TestCleanupTokens(t *testing.T) {
@@ -61,18 +61,18 @@ func TestCleanupTokens(t *testing.T) {
 
 	res, err := db.Query("SELECT COUNT(*) FROM irma.email_verification_tokens")
 	require.NoError(t, err)
-	defer res.Close()
 	require.True(t, res.Next())
 	var count int
 	require.NoError(t, res.Scan(&count))
 	assert.Equal(t, 1, count)
+	_ = res.Close()
 
 	res, err = db.Query("SELECT COUNT(*) FROM irma.email_login_tokens")
 	require.NoError(t, err)
-	defer res.Close()
 	require.True(t, res.Next())
 	require.NoError(t, res.Scan(&count))
 	assert.Equal(t, 1, count)
+	_ = res.Close()
 }
 
 func TestCleanupAccounts(t *testing.T) {
@@ -91,11 +91,11 @@ func TestCleanupAccounts(t *testing.T) {
 
 	res, err := db.Query("SELECT COUNT(*) FROM irma.users")
 	require.NoError(t, err)
-	defer res.Close()
 	require.True(t, res.Next())
 	var count int
 	require.NoError(t, res.Scan(&count))
 	assert.Equal(t, 2, count)
+	_ = res.Close()
 }
 
 func TestExpireAccounts(t *testing.T) {
@@ -130,21 +130,21 @@ func TestExpireAccounts(t *testing.T) {
 
 	res, err := db.Query("SELECT COUNT(*) FROM irma.users WHERE delete_on IS NOT NULL")
 	require.NoError(t, err)
-	defer res.Close()
 	require.True(t, res.Next())
 	var count int
 	require.NoError(t, res.Scan(&count))
 	assert.Equal(t, 1, count)
+	_ = res.Close()
 }
 
 func RunScriptOnDB(t *testing.T, filename string) {
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
-	defer db.Close()
 	scriptData, err := ioutil.ReadFile(filename)
 	require.NoError(t, err)
 	_, err = db.Exec(string(scriptData))
 	require.NoError(t, err)
+	_ = db.Close()
 }
 
 func SetupDatabase(t *testing.T) {

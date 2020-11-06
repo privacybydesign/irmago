@@ -6,6 +6,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/stdlib"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -85,7 +86,7 @@ func (t *TaskHandler) ExpireAccounts() {
 		t.conf.Logger.WithField("error", err).Error("Could not query for accounts that have expired")
 		return
 	}
-	defer res.Close()
+	defer common.Close(res)
 
 	// Send emails and mark for deletion each of the found inactive accounts.
 	for res.Next() {

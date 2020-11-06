@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-errors/errors"
 	_ "github.com/jackc/pgx/stdlib"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -33,7 +34,7 @@ func (db *myirmaPostgresDB) GetUserID(username string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	if !res.Next() {
 		return 0, ErrUserNotFound
 	}
@@ -47,7 +48,7 @@ func (db *myirmaPostgresDB) VerifyEmailToken(token string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	if !res.Next() {
 		return 0, ErrUserNotFound
 	}
@@ -105,7 +106,7 @@ func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 	if err != nil {
 		return err
 	}
-	defer eres.Close()
+	defer common.Close(eres)
 	if !eres.Next() {
 		return ErrUserNotFound
 	}
@@ -138,7 +139,7 @@ func (db *myirmaPostgresDB) LoginTokenGetCandidates(token string) ([]LoginCandid
 	if err != nil {
 		return nil, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	candidates := []LoginCandidate{}
 	for res.Next() {
 		candidate := LoginCandidate{}
@@ -159,7 +160,7 @@ func (db *myirmaPostgresDB) LoginTokenGetEmail(token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	if !res.Next() {
 		return "", ErrUserNotFound
 	}
@@ -176,7 +177,7 @@ func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	if !res.Next() {
 		return false, ErrUserNotFound
 	}
@@ -204,7 +205,7 @@ func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error
 	if err != nil {
 		return UserInformation{}, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	if !res.Next() {
 		return UserInformation{}, ErrUserNotFound
 	}
@@ -219,7 +220,7 @@ func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error
 	if err != nil {
 		return UserInformation{}, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	for rese.Next() {
 		var email UserEmail
 		err = rese.Scan(&email.Email, &email.DeleteInProgress)
@@ -238,7 +239,7 @@ func (db *myirmaPostgresDB) GetLogs(id int64, offset, ammount int) ([]LogEntry, 
 	if err != nil {
 		return nil, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	var result []LogEntry
 	for res.Next() {
 		var curEntry LogEntry

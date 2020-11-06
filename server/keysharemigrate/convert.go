@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/sirupsen/logrus"
 )
@@ -26,7 +27,7 @@ func (c *Converter) ConvertUsers() {
 		c.logger.WithField("error", err).Fatal("Could not query database for users")
 	}
 
-	defer users.Close()
+	defer common.Close(users)
 
 	for users.Next() {
 		var source_id int
@@ -86,7 +87,7 @@ func (c *Converter) ConvertUsers() {
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Problem creating user in new database")
 		}
-		defer create_res.Close()
+		defer common.Close(create_res)
 
 		if !create_res.Next() {
 			c.logger.WithField("error", create_res.Err()).Fatal("Could not retrieve ID of created user")
@@ -101,7 +102,7 @@ func (c *Converter) ConvertUsers() {
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not retrieve user email addresses")
 		}
-		defer emails.Close()
+		defer common.Close(emails)
 
 		for emails.Next() {
 			var email string
@@ -126,7 +127,7 @@ func (c *Converter) ConvertUsers() {
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not retrieve user email addresses")
 		}
-		defer logs.Close()
+		defer common.Close(logs)
 
 		for logs.Next() {
 			var time int64
@@ -169,7 +170,7 @@ func (c *Converter) ConvertUsers() {
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not fetch email verification records")
 		}
-		defer emver.Close()
+		defer common.Close(emver)
 
 		for emver.Next() {
 			var expiry int64

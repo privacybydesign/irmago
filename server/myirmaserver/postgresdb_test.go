@@ -194,11 +194,11 @@ func TestPostgresDBUserInfo(t *testing.T) {
 func RunScriptOnDB(t *testing.T, filename string) {
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
-	defer db.Close()
 	scriptData, err := ioutil.ReadFile(filename)
 	require.NoError(t, err)
 	_, err = db.Exec(string(scriptData))
 	require.NoError(t, err)
+	_ = db.Close()
 }
 
 func SetupDatabase(t *testing.T) {
