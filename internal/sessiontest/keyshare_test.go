@@ -11,7 +11,7 @@ import (
 )
 
 func TestManualKeyshareSession(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
@@ -23,13 +23,13 @@ func TestManualKeyshareSession(t *testing.T) {
 }
 
 func TestRequestorIssuanceKeyshareSession(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	testRequestorIssuance(t, true, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -54,7 +54,7 @@ func TestKeyshareRegister(t *testing.T) {
 // in a keyshare session of each session type.
 // Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -88,7 +88,7 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
-	testkeyshare.StartKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
