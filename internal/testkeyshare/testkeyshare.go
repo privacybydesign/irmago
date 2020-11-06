@@ -11,13 +11,14 @@ import (
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server/keyshareserver"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 var keyshareServ *http.Server
 
-func StartKeyshareServer(t *testing.T) {
+func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 	db := keyshareserver.NewMemoryDatabase()
 	_, err := db.NewUser(keyshareserver.KeyshareUserData{
 		Username: "",
@@ -45,6 +46,7 @@ func StartKeyshareServer(t *testing.T) {
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+		Logger:                l,
 	})
 	require.NoError(t, err)
 

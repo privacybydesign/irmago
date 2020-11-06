@@ -11,7 +11,7 @@ import (
 
 // Test pinchange interaction
 func TestKeyshareChangePin(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t)
+	testkeyshare.StartKeyshareServer(t, irma.Logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
