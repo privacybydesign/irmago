@@ -79,7 +79,10 @@ var keysharedCmd = &cobra.Command{
 			select {
 			case <-interrupt:
 				confKeysharePhone.Logger.Debug("Caught interrupt")
-				serv.Shutdown(context.Background())
+				err = serv.Shutdown(context.Background())
+				if err != nil {
+					_ = server.LogError(err)
+				}
 				keyshareServer.Stop()
 				confKeysharePhone.Logger.Debug("Sent stop signal to server")
 			case <-stopped:

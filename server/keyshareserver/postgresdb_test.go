@@ -5,7 +5,6 @@ package keyshareserver
 import (
 	"database/sql"
 	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -106,10 +105,7 @@ func RunScriptOnDB(t *testing.T, filename string) {
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
 	defer db.Close()
-	script, err := os.Open(filename)
-	require.NoError(t, err)
-	defer script.Close()
-	scriptData, err := ioutil.ReadAll(script)
+	scriptData, err := ioutil.ReadFile(filename)
 	require.NoError(t, err)
 	_, err = db.Exec(string(scriptData))
 	require.NoError(t, err)

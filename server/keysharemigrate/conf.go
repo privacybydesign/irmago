@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io/ioutil"
-	"os"
 
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
@@ -18,12 +17,7 @@ type Configuration struct {
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {
-	keyFile, err := os.Open(filename)
-	if err != nil {
-		return 0, keysharecore.AesKey{}, err
-	}
-	defer keyFile.Close()
-	keyData, err := ioutil.ReadAll(keyFile)
+	keyData, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return 0, keysharecore.AesKey{}, err
 	}

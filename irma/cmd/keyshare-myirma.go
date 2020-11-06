@@ -79,7 +79,10 @@ var myirmadCmd = &cobra.Command{
 			select {
 			case <-interrupt:
 				confKeyshareMyirma.Logger.Debug("Caught interrupt")
-				serv.Shutdown(context.Background())
+				err = serv.Shutdown(context.Background())
+				if err != nil {
+					_ = server.LogError(err)
+				}
 				myirmaServer.Stop()
 				confKeyshareMyirma.Logger.Debug("Sent stop signal to server")
 			case <-stopped:

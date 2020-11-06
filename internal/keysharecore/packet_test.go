@@ -17,7 +17,8 @@ func TestPacketAccess(t *testing.T) {
 
 	var p unencryptedKeysharePacket
 	p.setPin(testPassword)
-	p.setKeyshareSecret(testSecret)
+	err = p.setKeyshareSecret(testSecret)
+	require.NoError(t, err)
 	assert.Equal(t, testPassword, p.getPin(), "password doesn't match")
 	assert.Equal(t, 0, p.getKeyshareSecret().Cmp(testSecret), "keyshare secret doesn't match")
 }

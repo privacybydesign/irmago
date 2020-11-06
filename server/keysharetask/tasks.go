@@ -131,13 +131,17 @@ func (t *TaskHandler) ExpireAccounts() {
 			}
 
 			// And send
-			server.SendHTMLMail(
+			err = server.SendHTMLMail(
 				t.conf.EmailServer,
 				t.conf.EmailAuth,
 				t.conf.EmailFrom,
 				email,
 				subject,
 				emsg.Bytes())
+			if err != nil {
+				t.conf.Logger.WithField("error", err).Error("Could not send email")
+				return
+			}
 		}
 
 		// Finally, do marking for deletion

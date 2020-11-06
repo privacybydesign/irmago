@@ -66,16 +66,16 @@ func (db *myirmaPostgresDB) VerifyEmailToken(token string) (int64, error) {
 	// Beyond this point, errors are no longer relevant for frontend, so only log
 	delres, err := db.db.Exec("DELETE FROM irma.email_verification_tokens WHERE token = $1", token)
 	if err != nil {
-		server.LogError(err)
+		_ = server.LogError(err)
 		return id, nil
 	}
 	aff, err := delres.RowsAffected()
 	if err != nil {
-		server.LogError(err)
+		_ = server.LogError(err)
 		return id, nil
 	}
 	if aff != 1 {
-		server.LogError(errors.Errorf("Unexpected number of deleted records %d for token", aff))
+		_ = server.LogError(errors.Errorf("Unexpected number of deleted records %d for token", aff))
 		return id, nil
 	}
 	return id, nil

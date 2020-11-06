@@ -5,7 +5,6 @@ import (
 	"html/template"
 	"io/ioutil"
 	"net/smtp"
-	"os"
 	"strings"
 
 	"github.com/privacybydesign/irmago/internal/common"
@@ -94,12 +93,7 @@ type Configuration struct {
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {
-	keyFile, err := os.Open(filename)
-	if err != nil {
-		return 0, keysharecore.AesKey{}, err
-	}
-	defer keyFile.Close()
-	keyData, err := ioutil.ReadAll(keyFile)
+	keyData, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return 0, keysharecore.AesKey{}, err
 	}
