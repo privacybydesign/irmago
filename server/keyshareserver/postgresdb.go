@@ -6,6 +6,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/stdlib"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // postgresDB provides a postgres-backed implementation of KeyshareDB
@@ -49,7 +50,7 @@ func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) (KeyshareUser
 	if err != nil {
 		return nil, err
 	}
-	defer res.Close()
+	defer common.Close(res)
 	if !res.Next() {
 		return nil, ErrUserAlreadyExists
 	}
@@ -66,7 +67,7 @@ func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer common.Close(rows)
 	if !rows.Next() {
 		return nil, ErrUserNotFound
 	}
@@ -123,7 +124,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	if err != nil {
 		return false, 0, 0, err
 	}
-	defer uprows.Close()
+	defer common.Close(uprows)
 
 	// Check whether we have results
 	if !uprows.Next() {
@@ -133,7 +134,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 		if err != nil {
 			return false, 0, 0, err
 		}
-		defer pinrows.Close()
+		defer common.Close(pinrows)
 		if !pinrows.Next() {
 			return false, 0, 0, ErrUserNotFound
 		}

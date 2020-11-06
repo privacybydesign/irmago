@@ -106,13 +106,13 @@ func TestServerHandleValidate(t *testing.T) {
 	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	var jwtMsg keysharePinStatus
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "success", jwtMsg.Status)
+	_ = res.Body.Close()
 
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized", nil)
@@ -120,7 +120,6 @@ func TestServerHandleValidate(t *testing.T) {
 	req.Header.Add("Authorization", jwtMsg.Message)
 	res, err = client.Do(req)
 	require.NoError(t, err)
-	defer res.Body.Close()
 	assert.Equal(t, 200, res.StatusCode)
 	var msg keyshareAuthorization
 	resTxt, err := ioutil.ReadAll(res.Body)
@@ -128,32 +127,33 @@ func TestServerHandleValidate(t *testing.T) {
 	err = json.Unmarshal(resTxt, &msg)
 	assert.NoError(t, err)
 	assert.Equal(t, "authorized", msg.Status)
+	_ = res.Body.Close()
 
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized", nil)
 	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
 	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
 	res, err = client.Do(req)
 	require.NoError(t, err)
-	defer res.Body.Close()
 	assert.Equal(t, 200, res.StatusCode)
 	resTxt, err = ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	err = json.Unmarshal(resTxt, &msg)
 	assert.NoError(t, err)
 	assert.Equal(t, "authorized", msg.Status)
+	_ = res.Body.Close()
 
 	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized", nil)
 	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
 	req.Header.Add("Authorization", "eyalksjdf.aljsdklfesdfhas.asdfhasdf")
 	res, err = client.Do(req)
 	require.NoError(t, err)
-	defer res.Body.Close()
 	assert.Equal(t, 200, res.StatusCode)
 	resTxt, err = ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	err = json.Unmarshal(resTxt, &msg)
 	assert.NoError(t, err)
 	assert.Equal(t, "expired", msg.Status)
+	_ = res.Body.Close()
 }
 
 func TestPinTries(t *testing.T) {
@@ -179,7 +179,6 @@ func TestPinTries(t *testing.T) {
 	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	var jwtMsg keysharePinStatus
@@ -187,18 +186,19 @@ func TestPinTries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "failure", jwtMsg.Status)
 	require.Equal(t, "1", jwtMsg.Message)
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`{"id":"testusername","oldpin":"puZGbaLDmFywGhFDi4vW2G87Zh","newpin":"ljaksdfj;alkf"}`)
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/change/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err = ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "failure", jwtMsg.Status)
 	require.Equal(t, "1", jwtMsg.Message)
+	_ = res.Body.Close()
 }
 
 func TestPinWait(t *testing.T) {
@@ -224,7 +224,6 @@ func TestPinWait(t *testing.T) {
 	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	var jwtMsg keysharePinStatus
@@ -232,18 +231,19 @@ func TestPinWait(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "error", jwtMsg.Status)
 	require.Equal(t, "5", jwtMsg.Message)
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`{"id":"testusername","oldpin":"puZGbaLDmFywGhFDi4vW2G87Zh","newpin":"ljaksdfj;alkf"}`)
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/change/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err = ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "error", jwtMsg.Status)
 	require.Equal(t, "5", jwtMsg.Message)
+	_ = res.Body.Close()
 }
 
 func TestPinWaitRefused(t *testing.T) {
@@ -269,7 +269,6 @@ func TestPinWaitRefused(t *testing.T) {
 	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	var jwtMsg keysharePinStatus
@@ -277,18 +276,19 @@ func TestPinWaitRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "error", jwtMsg.Status)
 	require.Equal(t, "5", jwtMsg.Message)
+	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString(`{"id":"testusername","oldpin":"puZGbaLDmFywGhFDi4vW2G87Zh","newpin":"ljaksdfj;alkf"}`)
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/change/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err = ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "error", jwtMsg.Status)
 	require.Equal(t, "5", jwtMsg.Message)
+	_ = res.Body.Close()
 }
 
 func TestMissingUser(t *testing.T) {
@@ -362,13 +362,13 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-	defer res.Body.Close()
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	var jwtMsg keysharePinStatus
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "success", jwtMsg.Status)
+	_ = res.Body.Close()
 
 	client := &http.Client{}
 
