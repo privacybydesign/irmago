@@ -5,7 +5,6 @@ import (
 )
 
 type keyshareEnrollment struct {
-	Username string  `json:"username"`
 	Pin      string  `json:"pin"`
 	Email    *string `json:"email"`
 	Language string  `json:"language"`
