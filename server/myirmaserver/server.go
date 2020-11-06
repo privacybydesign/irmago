@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/jasonlvhit/gocron"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 
 	irma "github.com/privacybydesign/irmago"
@@ -222,7 +223,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := server.NewSessionToken()
+	token := common.NewSessionToken()
 	err = s.db.AddEmailLoginToken(request.Email, token)
 	if err == ErrUserNotFound {
 		server.WriteError(w, server.ErrorUserNotRegistered, "")

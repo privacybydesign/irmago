@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 )
 
@@ -42,7 +43,7 @@ func NewMemorySessionStore(sessionLifetime time.Duration) SessionStore {
 func (s *MemorySessionStore) create() *Sessiondata {
 	s.Lock()
 	defer s.Unlock()
-	token := server.NewSessionToken()
+	token := common.NewSessionToken()
 	s.data[token] = &Sessiondata{
 		token:  token,
 		expiry: time.Now().Add(s.sessionLifetime),
