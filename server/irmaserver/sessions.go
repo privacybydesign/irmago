@@ -151,8 +151,8 @@ func (s *memorySessionStore) deleteExpired() {
 var one *big.Int = big.NewInt(1)
 
 func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
-	token := server.NewSessionToken()
-	clientToken := server.NewSessionToken()
+	token := common.NewSessionToken()
+	clientToken := common.NewSessionToken()
 
 	ses := &session{
 		action:      action,

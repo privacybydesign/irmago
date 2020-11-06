@@ -18,6 +18,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
 
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -521,7 +522,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Generate token
-		token := server.NewSessionToken()
+		token := common.NewSessionToken()
 
 		// Add it to the database
 		err = s.db.AddEmailVerification(user, *msg.Email, token)
