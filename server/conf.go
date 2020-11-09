@@ -336,7 +336,7 @@ func (conf *Configuration) verifyEmail() error {
 	data := &serverInfo{Email: conf.Email, Version: irma.Version}
 
 	go func() {
-		err := t.Post("serverinfo", nil, data)
+		err := t.Post("serverinfo/", nil, data)
 		if err != nil {
 			conf.Logger.Trace("Failed to send email and version number:", err)
 		}
