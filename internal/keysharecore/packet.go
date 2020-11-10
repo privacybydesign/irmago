@@ -24,7 +24,7 @@ var (
 	NoSuchKey                 = errors.New("Key identifier unknown")
 )
 
-func (p *unencryptedKeysharePacket) getPin() [64]byte {
+func (p *unencryptedKeysharePacket) pin() [64]byte {
 	var result [64]byte
 	copy(result[:], p[0:64])
 	return result
@@ -34,7 +34,7 @@ func (p *unencryptedKeysharePacket) setPin(pw [64]byte) {
 	copy(p[0:64], pw[:])
 }
 
-func (p *unencryptedKeysharePacket) getKeyshareSecret() *big.Int {
+func (p *unencryptedKeysharePacket) keyshareSecret() *big.Int {
 	result := new(big.Int)
 	return result.SetBytes(p[64:128])
 }
@@ -57,7 +57,7 @@ func (p *unencryptedKeysharePacket) setKeyshareSecret(val *big.Int) error {
 	return nil
 }
 
-func (p *unencryptedKeysharePacket) ID() [32]byte {
+func (p *unencryptedKeysharePacket) id() [32]byte {
 	var result [32]byte
 	copy(result[:], p[128:160])
 	return result

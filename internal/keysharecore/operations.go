@@ -92,13 +92,13 @@ func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, userI
 	}
 
 	// verify pin
-	refPin := p.getPin()
+	refPin := p.pin()
 	if !hmac.Equal(refPin[:], paddedPin[:]) {
 		return "", ErrInvalidPin
 	}
 
 	// Generate jwt token
-	id := p.ID()
+	id := p.id()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":      "keyshare_server",
 		"sub":      "auth_tok",
@@ -135,7 +135,7 @@ func (c *KeyshareCore) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRa
 	}
 
 	// verify
-	refPin := p.getPin()
+	refPin := p.pin()
 	// use hmac equal to make this constant time
 	if !hmac.Equal(refPin[:], oldpin[:]) {
 		return EncryptedKeysharePacket{}, ErrInvalidPin
@@ -190,7 +190,7 @@ func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string)
 	if err != nil {
 		return unencryptedKeysharePacket{}, err
 	}
-	refId := p.ID()
+	refId := p.id()
 
 	if !hmac.Equal(refId[:], tokenID) {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
@@ -218,7 +218,7 @@ func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessTok
 	}
 
 	// Generate commitment
-	commitSecret, commitments, err := gabi.NewKeyshareCommitments(p.getKeyshareSecret(), keyList)
+	commitSecret, commitments, err := gabi.NewKeyshareCommitments(p.keyshareSecret(), keyList)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -266,7 +266,7 @@ func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken 
 
 	// Generate response
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": gabi.KeyshareResponse(p.getKeyshareSecret(), commit, challenge, key),
+		"ProofP": gabi.KeyshareResponse(p.keyshareSecret(), commit, challenge, key),
 		"iat":    time.Now().Unix(),
 		"sub":    "ProofP",
 		"iss":    "keyshare_server",

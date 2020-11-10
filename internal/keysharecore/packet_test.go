@@ -19,8 +19,8 @@ func TestPacketAccess(t *testing.T) {
 	p.setPin(testPassword)
 	err = p.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
-	assert.Equal(t, testPassword, p.getPin(), "password doesn't match")
-	assert.Equal(t, 0, p.getKeyshareSecret().Cmp(testSecret), "keyshare secret doesn't match")
+	assert.Equal(t, testPassword, p.pin(), "password doesn't match")
+	assert.Equal(t, 0, p.keyshareSecret().Cmp(testSecret), "keyshare secret doesn't match")
 }
 
 func TestPacketEncryptDecrypt(t *testing.T) {
@@ -48,8 +48,8 @@ func TestPacketEncryptDecrypt(t *testing.T) {
 	// Decrypt and test values
 	p_after, err := c.decryptPacket(p_encypted)
 	require.NoError(t, err)
-	assert.Equal(t, testPassword, p_after.getPin(), "passwords don't match")
-	assert.Equal(t, 0, p_after.getKeyshareSecret().Cmp(testSecret), "keyshare secrets don't match")
+	assert.Equal(t, testPassword, p_after.pin(), "passwords don't match")
+	assert.Equal(t, 0, p_after.keyshareSecret().Cmp(testSecret), "keyshare secrets don't match")
 }
 
 func TestPacketAuthentication(t *testing.T) {

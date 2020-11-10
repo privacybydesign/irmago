@@ -27,7 +27,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	_, err = pdb.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, expiry, user_id) VALUES ('testtoken', 'test@test.com', $1, 15)", time.Now().Unix())
 	require.NoError(t, err)
 
-	id, err := db.GetUserID("testuser")
+	id, err := db.UserID("testuser")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
@@ -38,7 +38,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	_, err = db.VerifyEmailToken("testtoken")
 	assert.Error(t, err)
 
-	_, err = db.GetUserID("DNE")
+	_, err = db.UserID("DNE")
 	assert.Error(t, err)
 
 	err = db.SetSeen(15)
@@ -75,18 +75,18 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	err = db.AddEmailLoginToken("test@test.com", "testtoken")
 	require.NoError(t, err)
 
-	cand, err := db.LoginTokenGetCandidates("testtoken")
+	cand, err := db.LoginTokenCandidates("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []LoginCandidate{LoginCandidate{Username: "testuser", LastActive: 0}}, cand)
 
-	_, err = db.LoginTokenGetCandidates("DNE")
+	_, err = db.LoginTokenCandidates("DNE")
 	assert.Error(t, err)
 
-	email, err := db.LoginTokenGetEmail("testtoken")
+	email, err := db.LoginTokenEmail("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, "test@test.com", email)
 
-	_, err = db.LoginTokenGetEmail("DNE")
+	_, err = db.LoginTokenEmail("DNE")
 	assert.Error(t, err)
 
 	_, err = db.TryUserLoginToken("testtoken", "DNE")
@@ -120,20 +120,20 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	_, err = pdb.db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES (110, 'test', '', 15), (120, 'test2', '15', 15)")
 	require.NoError(t, err)
 
-	info, err := db.GetUserInformation(15)
+	info, err := db.UserInformation(15)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", info.Username)
 	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
 
-	info, err = db.GetUserInformation(17)
+	info, err = db.UserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, "noemail", info.Username)
 	assert.Equal(t, []UserEmail(nil), info.Emails)
 
-	_, err = db.GetUserInformation(1231)
+	_, err = db.UserInformation(1231)
 	assert.Error(t, err)
 
-	entries, err := db.GetLogs(15, 0, 2)
+	entries, err := db.Logs(15, 0, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, []LogEntry{
 		LogEntry{
@@ -148,26 +148,26 @@ func TestPostgresDBUserInfo(t *testing.T) {
 		},
 	}, entries)
 
-	entries, err = db.GetLogs(15, 0, 1)
+	entries, err = db.Logs(15, 0, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(entries))
 
-	entries, err = db.GetLogs(15, 1, 15)
+	entries, err = db.Logs(15, 1, 15)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(entries))
 
-	entries, err = db.GetLogs(15, 100, 20)
+	entries, err = db.Logs(15, 100, 20)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(entries))
 
-	entries, err = db.GetLogs(20, 100, 20)
+	entries, err = db.Logs(20, 100, 20)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(entries))
 
 	err = db.AddEmail(17, "test@test.com")
 	assert.NoError(t, err)
 
-	info, err = db.GetUserInformation(17)
+	info, err = db.UserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
 
@@ -180,7 +180,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	// Need sleep here to ensure time has passed since delete
 	time.Sleep(1 * time.Second)
 
-	info, err = db.GetUserInformation(17)
+	info, err = db.UserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(info.Emails))
 
