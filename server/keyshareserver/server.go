@@ -28,7 +28,7 @@ import (
 )
 
 type SessionData struct {
-	LastKeyid    irma.PublicKeyIdentifier // last used key, used in signing the issuance message
+	LastKeyID    irma.PublicKeyIdentifier // last used key, used in signing the issuance message
 	LastCommitID uint64
 	expiry       time.Time
 }
@@ -72,7 +72,7 @@ func New(conf *Configuration) (*Server, error) {
 		conf.ServerConfiguration.IrmaConfiguration.UpdateListeners,
 		s.LoadIdemixKeys)
 
-	// Setup irma session server
+	// Setup IRMA session server
 	s.sessionserver, err = irmaserver.New(conf.ServerConfiguration)
 	if err != nil {
 		return nil, err
@@ -120,24 +120,24 @@ func (s *Server) Handler() http.Handler {
 	router.Post("/prove/getCommitments", s.handleCommitments)
 	router.Post("/prove/getResponse", s.handleResponse)
 
-	// Irma server for issuing myirma credential during registration
+	// IRMA server for issuing myirma credential during registration
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
 	return router
 }
 
 // On configuration changes, inform the keyshare core of any
-// new irma issuer public keys.
+// new IRMA issuer public keys.
 func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
 	for _, issuer := range conf.Issuers {
-		keyIds, err := conf.PublicKeyIndices(issuer.Identifier())
+		keyIDs, err := conf.PublicKeyIndices(issuer.Identifier())
 		if err != nil {
-			s.conf.Logger.WithFields(logrus.Fields{"issuer": issuer, "error": err}).Warn("Could not find key ids for issuer")
+			s.conf.Logger.WithFields(logrus.Fields{"issuer": issuer, "error": err}).Warn("Could not find keyIDs for issuer")
 			continue
 		}
-		for _, id := range keyIds {
+		for _, id := range keyIDs {
 			key, err := conf.PublicKey(issuer.Identifier(), id)
 			if err != nil {
-				s.conf.Logger.WithFields(logrus.Fields{"keyid": id, "error": err}).Warn("Could not fetch public key for issuer")
+				s.conf.Logger.WithFields(logrus.Fields{"keyID": id, "error": err}).Warn("Could not fetch public key for issuer")
 				continue
 			}
 			s.core.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: issuer.Identifier(), Counter: uint(id)}, key)
@@ -183,7 +183,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate commitments
-	commitments, commitId, err := s.core.GenerateCommitments(user.Data().Coredata, authorization, keys)
+	commitments, commitID, err := s.core.GenerateCommitments(user.Data().Coredata, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -192,14 +192,14 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 
 	// Prepare output message format
 	mappedCommitments := map[string]*gabi.ProofPCommitment{}
-	for i, keyid := range keys {
-		keyidV, err := keyid.MarshalText()
+	for i, keyID := range keys {
+		keyIDV, err := keyID.MarshalText()
 		if err != nil {
-			s.conf.Logger.WithFields(logrus.Fields{"keyid": keyid, "error": err}).Error("Could not convert key identifier to string")
+			s.conf.Logger.WithFields(logrus.Fields{"keyid": keyID, "error": err}).Error("Could not convert key identifier to string")
 			server.WriteError(w, server.ErrorInternal, err.Error())
 			return
 		}
-		mappedCommitments[string(keyidV)] = commitments[i]
+		mappedCommitments[string(keyIDV)] = commitments[i]
 	}
 
 	// Store needed data for later requests.
@@ -207,8 +207,8 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.sessions[username]; !ok {
 		s.sessions[username] = &SessionData{}
 	}
-	s.sessions[username].LastCommitID = commitId
-	s.sessions[username].LastKeyid = keys[0]
+	s.sessions[username].LastCommitID = commitID
+	s.sessions[username].LastKeyID = keys[0]
 	s.sessions[username].expiry = time.Now().Add(10 * time.Second)
 	s.sessionLock.Unlock()
 
@@ -281,7 +281,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, sessionData.LastCommitID, challenge, sessionData.LastKeyid)
+	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, sessionData.LastCommitID, challenge, sessionData.LastKeyID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -415,7 +415,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
 		return
 	}
-	var msg keyshareChangepin
+	var msg keyshareChangePin
 	err = json.Unmarshal(body, &msg)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")

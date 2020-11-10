@@ -29,7 +29,7 @@ var confKeyshareMyirma *myirmaserver.Configuration
 
 var myirmadCmd = &cobra.Command{
 	Use:   "myirma",
-	Short: "Irma keyshare server myirma component",
+	Short: "IRMA keyshare server myirma component",
 	Run: func(command *cobra.Command, args []string) {
 		configureMyirmad(command)
 
@@ -120,7 +120,7 @@ func init() {
 
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
 	flags.StringSlice("email-attributes", nil, "Attributes allowed for adding email addresses")
-	flags.Lookup("keyshare-attributes").Header = `Irma session configuration`
+	flags.Lookup("keyshare-attributes").Header = `IRMA session configuration`
 
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
@@ -218,8 +218,8 @@ func configureMyirmad(cmd *cobra.Command) {
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),
 
-		DbType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
-		DbConnstring: viper.GetString("db"),
+		DBType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
+		DBConnstring: viper.GetString("db"),
 
 		KeyshareAttributeNames: viper.GetStringSlice("keyshare-attributes"),
 		EmailAttributeNames:    viper.GetStringSlice("email-attributes"),

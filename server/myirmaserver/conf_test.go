@@ -16,7 +16,7 @@ func TestConfValidation(t *testing.T) {
 	_, err := New(&Configuration{
 		SchemesPath:            filepath.Join(testdataPath, "irma_configuration"),
 		URL:                    "http://localhost:8000/",
-		DbType:                 DatabaseTypeMemory,
+		DBType:                 DatabaseTypeMemory,
 		SessionLifetime:        60,
 		KeyshareAttributeNames: []string{"test.test.mijnirma.email"},
 		EmailAttributeNames:    []string{"test.test.email.email"},
@@ -26,7 +26,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
 		URL:                "http://localhost:8000/",
-		DbType:             DatabaseTypeMemory,
+		DBType:             DatabaseTypeMemory,
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -36,7 +36,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
 		URL:                "http://localhost:8000/",
-		DbType:             DatabaseTypeMemory,
+		DBType:             DatabaseTypeMemory,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
 	})
@@ -45,8 +45,8 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
 		URL:                "http://localhost:8000/",
-		DbType:             DatabaseTypePostgres,
-		DbConnstring:       "postgresql://localhost:5432/test/",
+		DBType:             DatabaseTypePostgres,
+		DBConnstring:       "postgresql://localhost:5432/test/",
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
 	})
@@ -55,7 +55,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
 		URL:                "http://localhost:8000",
-		DbType:             DatabaseTypeMemory,
+		DBType:             DatabaseTypeMemory,
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -65,7 +65,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:     filepath.Join(testdataPath, "irma_configuration"),
 		URL:             "http://localhost:8000/",
-		DbType:          DatabaseTypeMemory,
+		DBType:          DatabaseTypeMemory,
 		SessionLifetime: 60,
 		EmailAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
 	})
@@ -74,7 +74,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
 		URL:                "http://localhost:8000/",
-		DbType:             DatabaseTypeMemory,
+		DBType:             DatabaseTypeMemory,
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 	})
@@ -83,7 +83,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:        filepath.Join(testdataPath, "irma_configuration"),
 		URL:                "http://localhost:8000",
-		DbType:             "UNKNOWN",
+		DBType:             "UNKNOWN",
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -93,7 +93,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:          filepath.Join(testdataPath, "irma_configuration"),
 		URL:                  "http://localhost:8000/",
-		DbType:               DatabaseTypeMemory,
+		DBType:               DatabaseTypeMemory,
 		SessionLifetime:      60,
 		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -112,7 +112,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:          filepath.Join(testdataPath, "irma_configuration"),
 		URL:                  "http://localhost:8000/",
-		DbType:               DatabaseTypeMemory,
+		DBType:               DatabaseTypeMemory,
 		SessionLifetime:      60,
 		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -131,7 +131,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:          filepath.Join(testdataPath, "irma_configuration"),
 		URL:                  "http://localhost:8000/",
-		DbType:               DatabaseTypeMemory,
+		DBType:               DatabaseTypeMemory,
 		SessionLifetime:      60,
 		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -150,7 +150,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:          filepath.Join(testdataPath, "irma_configuration"),
 		URL:                  "http://localhost:8000/",
-		DbType:               DatabaseTypeMemory,
+		DBType:               DatabaseTypeMemory,
 		SessionLifetime:      60,
 		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -169,7 +169,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:          filepath.Join(testdataPath, "irma_configuration"),
 		URL:                  "http://localhost:8000/",
-		DbType:               DatabaseTypeMemory,
+		DBType:               DatabaseTypeMemory,
 		SessionLifetime:      60,
 		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -188,7 +188,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:          filepath.Join(testdataPath, "irma_configuration"),
 		URL:                  "http://localhost:8000/",
-		DbType:               DatabaseTypeMemory,
+		DBType:               DatabaseTypeMemory,
 		SessionLifetime:      60,
 		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
@@ -207,7 +207,7 @@ func TestConfValidation(t *testing.T) {
 	_, err = New(&Configuration{
 		SchemesPath:          filepath.Join(testdataPath, "irma_configuration"),
 		URL:                  "http://localhost:8000/",
-		DbType:               DatabaseTypeMemory,
+		DBType:               DatabaseTypeMemory,
 		SessionLifetime:      60,
 		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},

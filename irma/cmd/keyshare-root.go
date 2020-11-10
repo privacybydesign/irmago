@@ -4,7 +4,7 @@ import "github.com/sietseringers/cobra"
 
 var keyshareRoot = &cobra.Command{
 	Use:   "keyshare",
-	Short: "Irma keyshare server",
+	Short: "IRMA keyshare server",
 }
 
 func init() {

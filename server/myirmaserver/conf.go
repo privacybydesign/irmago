@@ -22,7 +22,7 @@ const (
 
 // Configuration contains configuration for the irmaserver library and irmad.
 type Configuration struct {
-	// Irma server configuration. If not given, this will be populated using information here
+	// IRMA server configuration. If not given, this will be populated using information here
 	ServerConfiguration *server.Configuration `json:"-"`
 	// Path to IRMA schemes to parse into server configuration (only used if ServerConfiguration == nil).
 	// If left empty, default value is taken using DefaultSchemesPath().
@@ -47,8 +47,8 @@ type Configuration struct {
 	StaticPrefix string
 
 	// Database configuration (ignored when database is provided)
-	DbType       DatabaseType `json:"db_type" mapstructure:"db_type"`
-	DbConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
+	DBType       DatabaseType `json:"db_type" mapstructure:"db_type"`
+	DBConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
 	DeleteDelay  int          `json:"delete_delay" mapstructure:"delete_delay"`
 	// Provide a prepared database (useful for testing)
 	DB MyirmaDB `json:"-"`
@@ -113,7 +113,7 @@ func processConfiguration(conf *Configuration) error {
 		}
 	}
 
-	// Force loggers to match (TODO: reevaluate once logging is reworked in irma server)
+	// Force loggers to match (TODO: reevaluate once logging is reworked in IRMA server)
 	conf.ServerConfiguration.Logger = conf.Logger
 
 	// Force production status to match
@@ -204,10 +204,10 @@ func processConfiguration(conf *Configuration) error {
 
 	// Setup database
 	if conf.DB == nil {
-		switch conf.DbType {
+		switch conf.DBType {
 		case DatabaseTypePostgres:
 			var err error
-			conf.DB, err = NewPostgresDatabase(conf.DbConnstring, conf.DeleteDelay)
+			conf.DB, err = NewPostgresDatabase(conf.DBConnstring, conf.DeleteDelay)
 			if err != nil {
 				return err
 			}

@@ -12,7 +12,7 @@ import (
 
 type Configuration struct {
 	// Database configuration
-	DbConnstring string
+	DBConnstring string
 
 	// Configuration for deleting expired accounts
 	ExpiryDelay int

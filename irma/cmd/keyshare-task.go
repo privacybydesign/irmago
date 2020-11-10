@@ -18,7 +18,7 @@ var confKeyshareTask *keysharetask.Configuration
 
 var keyshareTaskCmd = &cobra.Command{
 	Use:   "task",
-	Short: "Irma keyshare server background tasks",
+	Short: "IRMA keyshare server background tasks",
 	Run: func(command *cobra.Command, args []string) {
 		configureKeyshareTask(command)
 
@@ -121,7 +121,7 @@ func configureKeyshareTask(cmd *cobra.Command) {
 	}
 
 	confKeyshareTask = &keysharetask.Configuration{
-		DbConnstring: viper.GetString("db"),
+		DBConnstring: viper.GetString("db"),
 
 		ExpiryDelay: viper.GetInt("expiry-delay"),
 		DeleteDelay: viper.GetInt("delete-delay"),

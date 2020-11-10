@@ -48,7 +48,7 @@ func (c *KeyshareCore) GenerateKeyshareSecret(pinRaw string) (EncryptedKeyshareP
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
-	p.setId(id)
+	p.setID(id)
 
 	// And encrypt
 	return c.encryptPacket(p)
@@ -72,14 +72,14 @@ func (c *KeyshareCore) DangerousBuildKeyshareSecret(pinRaw string, secret *big.I
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
-	p.setId(id)
+	p.setID(id)
 
 	return c.encryptPacket(p)
 }
 
 // Check pin for validity, and generate jwt for future access
 //  userid is an extra field added to the jwt for
-func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, userid string) (string, error) {
+func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, userID string) (string, error) {
 	paddedPin, err := padPin(pin)
 	if err != nil {
 		return "", err
@@ -98,16 +98,16 @@ func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, useri
 	}
 
 	// Generate jwt token
-	id := p.getId()
+	id := p.ID()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":      "keyshare_server",
 		"sub":      "auth_tok",
 		"iat":      time.Now().Unix(),
 		"exp":      time.Now().Add(3 * time.Minute).Unix(),
-		"user_id":  userid,
+		"user_id":  userID,
 		"token_id": base64.StdEncoding.EncodeToString(id[:]),
 	})
-	token.Header["kid"] = c.signKeyId
+	token.Header["kid"] = c.signKeyID
 	return token.SignedString(c.signKey)
 }
 
@@ -148,7 +148,7 @@ func (c *KeyshareCore) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRa
 		return EncryptedKeysharePacket{}, err
 	}
 	p.setPin(newpin)
-	p.setId(id)
+	p.setID(id)
 	return c.encryptPacket(p)
 }
 
@@ -177,11 +177,11 @@ func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string)
 	if _, present := claims["token_id"]; !present {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
-	tokenIdB64, ok := claims["token_id"].(string)
+	tokenIDB64, ok := claims["token_id"].(string)
 	if !ok {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
-	tokenId, err := base64.StdEncoding.DecodeString(tokenIdB64)
+	tokenID, err := base64.StdEncoding.DecodeString(tokenIDB64)
 	if err != nil {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
@@ -190,9 +190,9 @@ func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string)
 	if err != nil {
 		return unencryptedKeysharePacket{}, err
 	}
-	refId := p.getId()
+	refId := p.ID()
 
-	if !hmac.Equal(refId[:], tokenId) {
+	if !hmac.Equal(refId[:], tokenID) {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
 
@@ -200,15 +200,15 @@ func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string)
 }
 
 // Get keyshare commitment usign given idemix public key(s)
-func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyids []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
+func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
-	var keylist []*gabi.PublicKey
-	for _, keyid := range keyids {
-		key, ok := c.trustedKeys[keyid]
+	var keyList []*gabi.PublicKey
+	for _, keyID := range keyIDs {
+		key, ok := c.trustedKeys[keyID]
 		if !ok {
 			return nil, 0, ErrKeyNotFound
 		}
-		keylist = append(keylist, key)
+		keyList = append(keyList, key)
 	}
 
 	// verify access and decrypt
@@ -218,33 +218,33 @@ func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessTok
 	}
 
 	// Generate commitment
-	commitSecret, commitments, err := gabi.NewKeyshareCommitments(p.getKeyshareSecret(), keylist)
+	commitSecret, commitments, err := gabi.NewKeyshareCommitments(p.getKeyshareSecret(), keyList)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// Generate commitment id
-	var commitId uint64
-	err = binary.Read(rand.Reader, binary.LittleEndian, &commitId)
+	var commitID uint64
+	err = binary.Read(rand.Reader, binary.LittleEndian, &commitID)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// Store commit in backing storage
 	c.commitmentMutex.Lock()
-	c.commitmentData[commitId] = commitSecret
+	c.commitmentData[commitID] = commitSecret
 	c.commitmentMutex.Unlock()
 
-	return commitments, commitId, nil
+	return commitments, commitID, nil
 }
 
 // Generate response for zero-knowledge proof of keyshare secret, for a given previous commit and challenge
-func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitId uint64, challenge *big.Int, keyid irma.PublicKeyIdentifier) (string, error) {
+func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Validate request
 	if uint(challenge.BitLen()) > gabi.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
 		return "", ErrInvalidChallenge
 	}
-	key, ok := c.trustedKeys[keyid]
+	key, ok := c.trustedKeys[keyID]
 	if !ok {
 		return "", ErrKeyNotFound
 	}
@@ -257,8 +257,8 @@ func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken 
 
 	// Fetch commit
 	c.commitmentMutex.Lock()
-	commit, ok := c.commitmentData[commitId]
-	delete(c.commitmentData, commitId)
+	commit, ok := c.commitmentData[commitID]
+	delete(c.commitmentData, commitID)
 	c.commitmentMutex.Unlock()
 	if !ok {
 		return "", ErrUnknownCommit
@@ -271,7 +271,7 @@ func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken 
 		"sub":    "ProofP",
 		"iss":    "keyshare_server",
 	})
-	token.Header["kid"] = c.signKeyId
+	token.Header["kid"] = c.signKeyID
 	return token.SignedString(c.signKey)
 }
 

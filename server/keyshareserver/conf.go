@@ -28,7 +28,7 @@ const (
 
 // Configuration contains configuration for the irmaserver library and irmad.
 type Configuration struct {
-	// Irma server configuration. If not given, this will be populated using information here
+	// IRMA server configuration. If not given, this will be populated using information here
 	ServerConfiguration *server.Configuration `json:"-"`
 	// Path to IRMA schemes to parse into server configuration (only used if ServerConfiguration == nil).
 	// If left empty, default value is taken using DefaultSchemesPath().
@@ -51,14 +51,14 @@ type Configuration struct {
 	DisableTLS bool `json:"no_tls" mapstructure:"no_tls"`
 
 	// Database configuration (ignored when database is provided)
-	DbType       DatabaseType `json:"db_type" mapstructure:"db_type"`
-	DbConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
+	DBType       DatabaseType `json:"db_type" mapstructure:"db_type"`
+	DBConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
 	// Provide a prepared database (useful for testing)
 	DB KeyshareDB `json:"-"`
 
 	// Configuration of secure Core
 	// Private key used to sign JWTs with
-	JwtKeyId          int    `json:"jwt_key_id" mapstructure:"jwt_key_id"`
+	JwtKeyID          int    `json:"jwt_key_id" mapstructure:"jwt_key_id"`
 	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 	// Decryption keys used for keyshare packets
@@ -128,7 +128,7 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 		}
 	}
 
-	// Force loggers to match (TODO: reevaluate once logging is reworked in irma server)
+	// Force loggers to match (TODO: reevaluate once logging is reworked in IRMA server)
 	conf.ServerConfiguration.Logger = conf.Logger
 
 	// Force production status to match
@@ -188,12 +188,12 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 
 	// Setup database
 	if conf.DB == nil {
-		switch conf.DbType {
+		switch conf.DBType {
 		case DatabaseTypeMemory:
 			conf.DB = NewMemoryDatabase()
 		case DatabaseTypePostgres:
 			var err error
-			conf.DB, err = NewPostgresDatabase(conf.DbConnstring)
+			conf.DB, err = NewPostgresDatabase(conf.DBConnstring)
 			if err != nil {
 				return nil, server.LogError(err)
 			}
@@ -234,12 +234,12 @@ func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, erro
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
 	}
-	core.SetSignKey(jwtPrivateKey, conf.JwtKeyId)
-	encId, encKey, err := readAESKey(conf.StoragePrimaryKeyFile)
+	core.SetSignKey(jwtPrivateKey, conf.JwtKeyID)
+	encID, encKey, err := readAESKey(conf.StoragePrimaryKeyFile)
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to load primary storage key", 0))
 	}
-	core.DangerousSetAESEncryptionKey(encId, encKey)
+	core.DangerousSetAESEncryptionKey(encID, encKey)
 	for _, keyFile := range conf.StorageFallbackKeyFiles {
 		id, key, err := readAESKey(keyFile)
 		if err != nil {

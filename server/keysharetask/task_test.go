@@ -27,7 +27,7 @@ func TestCleanupEmails(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), (15, 'test2@test.com', $1), (15, 'test3@test.com', 0)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
-	th, err := New(&Configuration{DbConnstring: postgresTestUrl})
+	th, err := New(&Configuration{DBConnstring: postgresTestUrl})
 	require.NoError(t, err)
 
 	th.CleanupEmails()
@@ -54,7 +54,7 @@ func TestCleanupTokens(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ('t1', 't1@test.com', 0), ('t2', 't2@test.com', $1)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
-	th, err := New(&Configuration{DbConnstring: postgresTestUrl})
+	th, err := New(&Configuration{DBConnstring: postgresTestUrl})
 	require.NoError(t, err)
 
 	th.CleanupTokens()
@@ -84,7 +84,7 @@ func TestCleanupAccounts(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.users (id, username, language, coredata, pin_counter, pin_block_date, last_seen, delete_on) VALUES (15, 'testuser', '', '', 0,0, 0, NULL), (16, 't2', '', '', 0, 0, 0, $1-3600), (17, 't3', '', '', 0, 0, $1, $1-3600), (18, 't4', '', NULL, 0, 0, $1, $1-3600)", time.Now().Unix())
 	require.NoError(t, err)
 
-	th, err := New(&Configuration{DbConnstring: postgresTestUrl})
+	th, err := New(&Configuration{DBConnstring: postgresTestUrl})
 	require.NoError(t, err)
 
 	th.CleanupAccounts()
@@ -111,7 +111,7 @@ func TestExpireAccounts(t *testing.T) {
 	require.NoError(t, err)
 
 	th, err := New(&Configuration{
-		DbConnstring:    postgresTestUrl,
+		DBConnstring:    postgresTestUrl,
 		DeleteDelay:     30,
 		ExpiryDelay:     1,
 		EmailServer:     "localhost:1025",

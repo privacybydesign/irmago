@@ -79,7 +79,7 @@ func (s *Server) Handler() http.Handler {
 	router.Post("/email/add", s.handleAddEmail)
 	router.Post("/email/remove", s.handleRemoveEmail)
 
-	// Irma session server
+	// IRMA session server
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
 
 	if s.conf.StaticPath != "" {
@@ -366,7 +366,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 		func(result *server.SessionResult) {
 			session := s.store.get(sessiontoken)
 			if session == nil {
-				s.conf.Logger.Info("User session expired during irma session")
+				s.conf.Logger.Info("User session expired during IRMA session")
 				return
 			}
 			session.Lock()
@@ -384,7 +384,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 				session.pendingErrorMessage = ""
 				return
 			} else if err != nil {
-				s.conf.Logger.WithField("error", err).Error("Error during processing of login irma session result")
+				s.conf.Logger.WithField("error", err).Error("Error during processing of login IRMA session result")
 				session.pendingError = &server.ErrorInternal
 				session.pendingErrorMessage = err.Error()
 				return
@@ -401,7 +401,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 		})
 
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Error during startup of irma session for login")
+		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for login")
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
@@ -668,7 +668,7 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 		func(result *server.SessionResult) {
 			session := s.store.get(sessiontoken)
 			if session == nil {
-				s.conf.Logger.Info("User session expired during irma session")
+				s.conf.Logger.Info("User session expired during IRMA session")
 				return
 			}
 			session.Lock()
@@ -694,7 +694,7 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 		})
 
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Error during startup of irma session for adding email address")
+		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for adding email address")
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}

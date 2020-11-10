@@ -20,7 +20,7 @@ func New(conf *Configuration) (*TaskHandler, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("pgx", conf.DbConnstring)
+	db, err := sql.Open("pgx", conf.DBConnstring)
 	if err != nil {
 		return nil, err
 	}
@@ -100,16 +100,16 @@ func (t *TaskHandler) ExpireAccounts() {
 		}
 
 		// Fetch user's email addresses
-		emailres, err := t.db.Query("SELECT email FROM irma.emails WHERE user_id = $1", id)
+		emailRes, err := t.db.Query("SELECT email FROM irma.emails WHERE user_id = $1", id)
 		if err != nil {
 			t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
 			return
 		}
 
 		// And send emails to each of them.
-		for emailres.Next() {
+		for emailRes.Next() {
 			var email string
-			err = emailres.Scan(&email)
+			err = emailRes.Scan(&email)
 			if err != nil {
 				t.conf.Logger.WithField("error", err).Error("Could not retrieve email address")
 				return
