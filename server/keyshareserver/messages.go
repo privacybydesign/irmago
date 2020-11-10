@@ -10,7 +10,7 @@ type keyshareEnrollment struct {
 	Language string  `json:"language"`
 }
 
-type keyshareChangepin struct {
+type keyshareChangePin struct {
 	Username string `json:"id"`
 	OldPin   string `json:"oldpin"`
 	NewPin   string `json:"newpin"`

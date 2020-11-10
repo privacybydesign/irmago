@@ -30,14 +30,14 @@ func (c *Converter) ConvertUsers() {
 	defer common.Close(users)
 
 	for users.Next() {
-		var source_id int
+		var sourceID int
 		var username, pin, keyshare string
 		var language *string
-		var lastseen, pinBlockDate, expiryWarning *int64
+		var lastSeen, pinBlockDate, expiryWarning *int64
 		var pinCounter *int
 		var enrolled, enabled bool
 
-		err = users.Scan(&source_id, &username, &lastseen, &pin, &pinCounter, &pinBlockDate, &keyshare, &enrolled, &enabled, &language, &expiryWarning)
+		err = users.Scan(&sourceID, &username, &lastSeen, &pin, &pinCounter, &pinBlockDate, &keyshare, &enrolled, &enabled, &language, &expiryWarning)
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not scan user row")
 		}
@@ -54,9 +54,9 @@ func (c *Converter) ConvertUsers() {
 		}
 
 		// Ensure we start with a 0 value for lastseen if not provided (we special-case on this later)
-		if lastseen == nil {
-			lastseen = new(int64)
-			*lastseen = 0
+		if lastSeen == nil {
+			lastSeen = new(int64)
+			*lastSeen = 0
 		}
 
 		// Ensure pinCounter and pinBlockData have values
@@ -82,23 +82,23 @@ func (c *Converter) ConvertUsers() {
 		coredata, err := c.core.DangerousBuildKeyshareSecret(pin, secret)
 
 		// create user
-		var target_id int64
-		create_res, err := c.target_db.Query("INSERT INTO irma.users (username, language, coredata, last_seen, pin_counter, pin_block_date, delete_on) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING irma.users.id", username, *language, coredata[:], *lastseen, *pinCounter, *pinBlockDate, expiryWarning)
+		var targetID int64
+		createRes, err := c.target_db.Query("INSERT INTO irma.users (username, language, coredata, last_seen, pin_counter, pin_block_date, delete_on) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING irma.users.id", username, *language, coredata[:], *lastSeen, *pinCounter, *pinBlockDate, expiryWarning)
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Problem creating user in new database")
 		}
-		defer common.Close(create_res)
+		defer common.Close(createRes)
 
-		if !create_res.Next() {
-			c.logger.WithField("error", create_res.Err()).Fatal("Could not retrieve ID of created user")
+		if !createRes.Next() {
+			c.logger.WithField("error", createRes.Err()).Fatal("Could not retrieve ID of created user")
 		}
-		err = create_res.Scan(&target_id)
+		err = createRes.Scan(&targetID)
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not retrieve ID of created user")
 		}
 
 		// Convert emails
-		emails, err := c.source_db.Query("SELECT email FROM irma.email_addresses WHERE user_id = $1", source_id)
+		emails, err := c.source_db.Query("SELECT email FROM irma.email_addresses WHERE user_id = $1", sourceID)
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not retrieve user email addresses")
 		}
@@ -111,7 +111,7 @@ func (c *Converter) ConvertUsers() {
 				c.logger.WithField("error", err).Fatal("Could not scan user email row")
 			}
 
-			_, err := c.target_db.Exec("INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", target_id, email)
+			_, err := c.target_db.Exec("INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", targetID, email)
 			if err != nil {
 				c.logger.WithField("error", err).Fatal("Could not add email address to user")
 			}
@@ -123,7 +123,7 @@ func (c *Converter) ConvertUsers() {
 		}
 
 		// Convert log entries
-		logs, err := c.source_db.Query("SELECT time, event, param FROM irma.log_entry_records WHERE user_id = $1", source_id)
+		logs, err := c.source_db.Query("SELECT time, event, param FROM irma.log_entry_records WHERE user_id = $1", sourceID)
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not retrieve user email addresses")
 		}
@@ -139,13 +139,13 @@ func (c *Converter) ConvertUsers() {
 				c.logger.WithField("error", err).Fatal("Error scanning log entry row")
 			}
 
-			if *lastseen < time {
-				*lastseen = time
+			if *lastSeen < time {
+				*lastSeen = time
 			}
 
 			params := fmt.Sprintf("%v", param)
 
-			_, err = c.target_db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES ($1, $2, $3, $4)", time, event, params, target_id)
+			_, err = c.target_db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES ($1, $2, $3, $4)", time, event, params, targetID)
 			if err != nil {
 				c.logger.WithField("error", err).Fatal("Error storing log entry in new database")
 			}
@@ -157,16 +157,16 @@ func (c *Converter) ConvertUsers() {
 		}
 
 		// update lastseen
-		if *lastseen == 0 {
-			*lastseen = time.Now().Unix()
+		if *lastSeen == 0 {
+			*lastSeen = time.Now().Unix()
 		}
-		_, err = c.target_db.Exec("UPDATE irma.users SET last_seen = $1 WHERE id = $2", *lastseen, target_id)
+		_, err = c.target_db.Exec("UPDATE irma.users SET last_seen = $1 WHERE id = $2", *lastSeen, targetID)
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not update lastseen of user")
 		}
 
 		// Convert email verification records
-		emver, err := c.source_db.Query("SELECT (time_created+timeout) AS expiry_time, email, token FROM irma.email_verification_records WHERE user_id = $1 AND time_verified IS NULL", source_id)
+		emver, err := c.source_db.Query("SELECT (time_created+timeout) AS expiry_time, email, token FROM irma.email_verification_records WHERE user_id = $1 AND time_verified IS NULL", sourceID)
 		if err != nil {
 			c.logger.WithField("error", err).Fatal("Could not fetch email verification records")
 		}
@@ -180,7 +180,7 @@ func (c *Converter) ConvertUsers() {
 				c.logger.WithField("error", err).Fatal("Error scanning email verification record row")
 			}
 
-			_, err = c.target_db.Exec("INSERT INTO irma.email_verification_tokens (expiry, email, token, user_id) VALUES ($1, $2, $3, $4)", expiry, email, token, source_id)
+			_, err = c.target_db.Exec("INSERT INTO irma.email_verification_tokens (expiry, email, token, user_id) VALUES ($1, $2, $3, $4)", expiry, email, token, sourceID)
 			if err != nil {
 				c.logger.WithField("error", err).Fatal("Could not create email verification record for user")
 			}

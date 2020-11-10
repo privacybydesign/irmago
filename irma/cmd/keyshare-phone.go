@@ -29,7 +29,7 @@ var confKeysharePhone *keyshareserver.Configuration
 
 var keysharedCmd = &cobra.Command{
 	Use:   "phone",
-	Short: "Irma keyshare server phone component",
+	Short: "IRMA keyshare server phone component",
 	Run: func(command *cobra.Command, args []string) {
 		configureKeyshared(command)
 
@@ -217,10 +217,10 @@ func configureKeyshared(cmd *cobra.Command) {
 		URL:                   string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 		DisableTLS:            viper.GetBool("no-tls"),
 
-		DbType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
-		DbConnstring: viper.GetString("db"),
+		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
+		DBConnstring: viper.GetString("db"),
 
-		JwtKeyId:                viper.GetInt("jwt-privkey-id"),
+		JwtKeyID:                viper.GetInt("jwt-privkey-id"),
 		JwtPrivateKey:           viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:       viper.GetString("jwt-privkey-file"),
 		StoragePrimaryKeyFile:   viper.GetString("storage-primary-keyfile"),

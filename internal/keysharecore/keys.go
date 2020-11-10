@@ -21,7 +21,7 @@ type (
 
 		// Key used to sign keyshare protocol messages
 		signKey   *rsa.PrivateKey
-		signKeyId int
+		signKeyID int
 
 		// Commit values generated in first step of keyshare protocol
 		commitmentData  map[uint64]*big.Int
@@ -49,26 +49,26 @@ func GenerateAESKey() (AesKey, error) {
 
 // Add an aes key for decryption, with identifier keyid
 // Calling this will cause all keyshare packets generated with the key to be trusted
-func (c *KeyshareCore) DangerousAddAESKey(keyid uint32, key AesKey) {
-	c.decryptionKeys[keyid] = key
+func (c *KeyshareCore) DangerousAddAESKey(keyID uint32, key AesKey) {
+	c.decryptionKeys[keyID] = key
 }
 
 // Set the aes key for encrypting new/changed keyshare data
 // with identifier keyid
 // Calling this wil also cause all keyshare packets generated with the key to be trusted
-func (c *KeyshareCore) DangerousSetAESEncryptionKey(keyid uint32, key AesKey) {
-	c.decryptionKeys[keyid] = key
+func (c *KeyshareCore) DangerousSetAESEncryptionKey(keyID uint32, key AesKey) {
+	c.decryptionKeys[keyID] = key
 	c.encryptionKey = key
-	c.encryptionKeyID = keyid
+	c.encryptionKeyID = keyID
 }
 
 // Set key used to sign keyshare protocol messages
 func (c *KeyshareCore) SetSignKey(key *rsa.PrivateKey, id int) {
 	c.signKey = key
-	c.signKeyId = id
+	c.signKeyID = id
 }
 
 // Add public key as trusted by keyshareCore. Calling this on incorrectly generated key material WILL compromise keyshare secrets!
-func (c *KeyshareCore) DangerousAddTrustedPublicKey(keyid irma.PublicKeyIdentifier, key *gabi.PublicKey) {
-	c.trustedKeys[keyid] = key
+func (c *KeyshareCore) DangerousAddTrustedPublicKey(keyID irma.PublicKeyIdentifier, key *gabi.PublicKey) {
+	c.trustedKeys[keyID] = key
 }

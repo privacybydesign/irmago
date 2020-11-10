@@ -91,14 +91,14 @@ func TestVerifyAccess(t *testing.T) {
 	// Test incorrectly constructed jwts
 	p, err := c.verifyAccess(ep1, jwtt)
 	require.NoError(t, err)
-	id := p.getId()
-	tokenId := base64.StdEncoding.EncodeToString(id[:])
+	id := p.ID()
+	tokenID := base64.StdEncoding.EncodeToString(id[:])
 
 	// incorrect exp
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":      time.Now().Add(-6 * time.Minute).Unix(),
 		"exp":      time.Now().Add(-3 * time.Minute).Unix(),
-		"token_id": tokenId,
+		"token_id": tokenID,
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestVerifyAccess(t *testing.T) {
 	// missing exp
 	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":      time.Now().Unix(),
-		"token_id": tokenId,
+		"token_id": tokenID,
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestVerifyAccess(t *testing.T) {
 	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat":      time.Now().Unix(),
 		"exp":      "test",
-		"token_id": tokenId,
+		"token_id": tokenID,
 	})
 	jwtt, err = token.SignedString(c.signKey)
 	require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestVerifyAccess(t *testing.T) {
 	token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"iat":      time.Now().Unix(),
 		"exp":      time.Now().Add(3 * time.Minute).Unix(),
-		"token_id": tokenId,
+		"token_id": tokenID,
 	})
 	jwtt, err = token.SignedString([]byte("bla"))
 	require.NoError(t, err)

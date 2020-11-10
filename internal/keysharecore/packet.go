@@ -57,13 +57,13 @@ func (p *unencryptedKeysharePacket) setKeyshareSecret(val *big.Int) error {
 	return nil
 }
 
-func (p *unencryptedKeysharePacket) getId() [32]byte {
+func (p *unencryptedKeysharePacket) ID() [32]byte {
 	var result [32]byte
 	copy(result[:], p[128:160])
 	return result
 }
 
-func (p *unencryptedKeysharePacket) setId(id [32]byte) {
+func (p *unencryptedKeysharePacket) setID(id [32]byte) {
 	copy(p[128:160], id[:])
 }
 
