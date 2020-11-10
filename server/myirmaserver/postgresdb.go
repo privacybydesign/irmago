@@ -29,7 +29,7 @@ func NewPostgresDatabase(connstring string, deleteDelay int) (MyirmaDB, error) {
 	}, nil
 }
 
-func (db *myirmaPostgresDB) GetUserID(username string) (int64, error) {
+func (db *myirmaPostgresDB) UserID(username string) (int64, error) {
 	res, err := db.db.Query("SELECT id FROM irma.users WHERE username = $1", username)
 	if err != nil {
 		return 0, err
@@ -131,7 +131,7 @@ func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 	return nil
 }
 
-func (db *myirmaPostgresDB) LoginTokenGetCandidates(token string) ([]LoginCandidate, error) {
+func (db *myirmaPostgresDB) LoginTokenCandidates(token string) ([]LoginCandidate, error) {
 	res, err := db.db.Query(`SELECT username, last_seen FROM irma.users WHERE id IN
 							     (SELECT user_id FROM irma.emails WHERE (delete_on >= $2 OR delete_on is NULL) AND
 									 emails.email = (SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2))`,
@@ -155,7 +155,7 @@ func (db *myirmaPostgresDB) LoginTokenGetCandidates(token string) ([]LoginCandid
 	return candidates, nil
 }
 
-func (db *myirmaPostgresDB) LoginTokenGetEmail(token string) (string, error) {
+func (db *myirmaPostgresDB) LoginTokenEmail(token string) (string, error) {
 	res, err := db.db.Query("SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2", token, time.Now().Unix())
 	if err != nil {
 		return "", err
@@ -197,7 +197,7 @@ func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (bool, err
 	return true, nil
 }
 
-func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error) {
+func (db *myirmaPostgresDB) UserInformation(id int64) (UserInformation, error) {
 	var result UserInformation
 
 	// fetch username
@@ -233,7 +233,7 @@ func (db *myirmaPostgresDB) GetUserInformation(id int64) (UserInformation, error
 	return result, nil
 }
 
-func (db *myirmaPostgresDB) GetLogs(id int64, offset, ammount int) ([]LogEntry, error) {
+func (db *myirmaPostgresDB) Logs(id int64, offset, ammount int) ([]LogEntry, error) {
 	res, err := db.db.Query("SELECT time, event, param FROM irma.log_entry_records WHERE user_id = $1 ORDER BY time DESC OFFSET $2 LIMIT $3",
 		id, offset, ammount)
 	if err != nil {

@@ -21,7 +21,7 @@ func TestMemoryDBUserManagement(t *testing.T) {
 		},
 	}
 
-	id, err := db.GetUserID("testuser")
+	id, err := db.UserID("testuser")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
@@ -32,7 +32,7 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	_, err = db.VerifyEmailToken("testtoken")
 	assert.Error(t, err)
 
-	_, err = db.GetUserID("DNE")
+	_, err = db.UserID("DNE")
 	assert.Error(t, err)
 
 	err = db.SetSeen(15)
@@ -46,7 +46,7 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	err = db.RemoveUser(15)
 	assert.NoError(t, err)
 
-	_, err = db.GetUserID("testuser")
+	_, err = db.UserID("testuser")
 	assert.Error(t, err)
 
 	err = db.RemoveUser(15)
@@ -75,18 +75,18 @@ func TestMemoryDBLoginToken(t *testing.T) {
 	err = db.AddEmailLoginToken("test@test.com", "testtoken")
 	require.NoError(t, err)
 
-	cand, err := db.LoginTokenGetCandidates("testtoken")
+	cand, err := db.LoginTokenCandidates("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []LoginCandidate{LoginCandidate{Username: "testuser", LastActive: 0}}, cand)
 
-	_, err = db.LoginTokenGetCandidates("DNE")
+	_, err = db.LoginTokenCandidates("DNE")
 	assert.Error(t, err)
 
-	email, err := db.LoginTokenGetEmail("testtoken")
+	email, err := db.LoginTokenEmail("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, "test@test.com", email)
 
-	_, err = db.LoginTokenGetEmail("DNE")
+	_, err = db.LoginTokenEmail("DNE")
 	assert.Error(t, err)
 
 	_, err = db.TryUserLoginToken("testtoken", "DNE")
@@ -132,20 +132,20 @@ func TestMemoryDBUserInfo(t *testing.T) {
 		},
 	}
 
-	info, err := db.GetUserInformation(15)
+	info, err := db.UserInformation(15)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", info.Username)
 	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
 
-	info, err = db.GetUserInformation(17)
+	info, err = db.UserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, "noemail", info.Username)
 	assert.Equal(t, []UserEmail(nil), info.Emails)
 
-	_, err = db.GetUserInformation(1231)
+	_, err = db.UserInformation(1231)
 	assert.Error(t, err)
 
-	entries, err := db.GetLogs(15, 0, 2)
+	entries, err := db.Logs(15, 0, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, []LogEntry{
 		LogEntry{
@@ -160,25 +160,25 @@ func TestMemoryDBUserInfo(t *testing.T) {
 		},
 	}, entries)
 
-	entries, err = db.GetLogs(15, 0, 1)
+	entries, err = db.Logs(15, 0, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(entries))
 
-	entries, err = db.GetLogs(15, 1, 15)
+	entries, err = db.Logs(15, 1, 15)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(entries))
 
-	entries, err = db.GetLogs(15, 100, 20)
+	entries, err = db.Logs(15, 100, 20)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(entries))
 
-	_, err = db.GetLogs(20, 100, 20)
+	_, err = db.Logs(20, 100, 20)
 	assert.Error(t, err)
 
 	err = db.AddEmail(17, "test@test.com")
 	assert.NoError(t, err)
 
-	info, err = db.GetUserInformation(17)
+	info, err = db.UserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
 
@@ -188,7 +188,7 @@ func TestMemoryDBUserInfo(t *testing.T) {
 	err = db.RemoveEmail(17, "test@test.com")
 	assert.NoError(t, err)
 
-	info, err = db.GetUserInformation(17)
+	info, err = db.UserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(info.Emails))
 

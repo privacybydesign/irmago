@@ -28,7 +28,7 @@ func NewMyirmaMemoryDB() MyirmaDB {
 	}
 }
 
-func (db *MyirmaMemoryDB) GetUserID(username string) (int64, error) {
+func (db *MyirmaMemoryDB) UserID(username string) (int64, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	data, ok := db.UserData[username]
@@ -89,7 +89,7 @@ func (db *MyirmaMemoryDB) AddEmailLoginToken(email, token string) error {
 	return nil
 }
 
-func (db *MyirmaMemoryDB) LoginTokenGetCandidates(token string) ([]LoginCandidate, error) {
+func (db *MyirmaMemoryDB) LoginTokenCandidates(token string) ([]LoginCandidate, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -110,7 +110,7 @@ func (db *MyirmaMemoryDB) LoginTokenGetCandidates(token string) ([]LoginCandidat
 	return result, nil
 }
 
-func (db *MyirmaMemoryDB) LoginTokenGetEmail(token string) (string, error) {
+func (db *MyirmaMemoryDB) LoginTokenEmail(token string) (string, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -144,7 +144,7 @@ func (db *MyirmaMemoryDB) TryUserLoginToken(token, username string) (bool, error
 	return false, nil
 }
 
-func (db *MyirmaMemoryDB) GetUserInformation(id int64) (UserInformation, error) {
+func (db *MyirmaMemoryDB) UserInformation(id int64) (UserInformation, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.UserData {
@@ -174,7 +174,7 @@ func min(a, b int) int {
 	}
 }
 
-func (db *MyirmaMemoryDB) GetLogs(id int64, offset, ammount int) ([]LogEntry, error) {
+func (db *MyirmaMemoryDB) Logs(id int64, offset, ammount int) ([]LogEntry, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for _, user := range db.UserData {

@@ -91,7 +91,7 @@ func TestVerifyAccess(t *testing.T) {
 	// Test incorrectly constructed jwts
 	p, err := c.verifyAccess(ep1, jwtt)
 	require.NoError(t, err)
-	id := p.ID()
+	id := p.id()
 	tokenID := base64.StdEncoding.EncodeToString(id[:])
 
 	// incorrect exp

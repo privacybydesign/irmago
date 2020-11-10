@@ -139,7 +139,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	// First, send all emails
 	if s.conf.EmailServer != "" {
-		userData, err := s.db.GetUserInformation(*session.userID)
+		userData, err := s.db.UserInformation(*session.userID)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not fetch user information")
 			server.WriteError(w, server.ErrorInternal, err.Error())
@@ -281,7 +281,7 @@ func (s *Server) handleGetCandidates(w http.ResponseWriter, r *http.Request) {
 
 	token := string(requestData)
 
-	candidates, err := s.db.LoginTokenGetCandidates(token)
+	candidates, err := s.db.LoginTokenCandidates(token)
 	if err == ErrUserNotFound {
 		server.WriteError(w, server.ErrorInvalidRequest, "token invalid")
 		return
@@ -333,7 +333,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 
 	session := s.store.create()
 	session.userID = new(int64)
-	*session.userID, err = s.db.GetUserID(request.Username) // username is trusted, since it was validated by s.db.TryUserLoginToken
+	*session.userID, err = s.db.UserID(request.Username) // username is trusted, since it was validated by s.db.TryUserLoginToken
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not fetch userid for username validated in earlier step")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -378,7 +378,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 			}
 
 			username := *result.Disclosed[0][0].RawValue
-			id, err := s.db.GetUserID(username)
+			id, err := s.db.UserID(username)
 			if err == ErrUserNotFound {
 				session.pendingError = &server.ErrorUserNotRegistered
 				session.pendingErrorMessage = ""
@@ -489,7 +489,7 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userinfo, err := s.db.GetUserInformation(*session.userID)
+	userinfo, err := s.db.UserInformation(*session.userID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem fetching user information from database")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -534,7 +534,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := s.db.GetLogs(*session.userID, offset, 11)
+	entries, err := s.db.Logs(*session.userID, offset, 11)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not load log entries")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -578,7 +578,7 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := s.db.GetUserInformation(*session.userID)
+	info, err := s.db.UserInformation(*session.userID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error checking whether email address can be removed")
 		server.WriteError(w, server.ErrorInternal, err.Error())

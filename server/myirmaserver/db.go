@@ -9,17 +9,17 @@ var (
 )
 
 type MyirmaDB interface {
-	GetUserID(username string) (int64, error)
+	UserID(username string) (int64, error)
 	VerifyEmailToken(token string) (int64, error)
 	RemoveUser(id int64) error
 
 	AddEmailLoginToken(email, token string) error
-	LoginTokenGetCandidates(token string) ([]LoginCandidate, error)
-	LoginTokenGetEmail(token string) (string, error)
+	LoginTokenCandidates(token string) ([]LoginCandidate, error)
+	LoginTokenEmail(token string) (string, error)
 	TryUserLoginToken(token, username string) (bool, error)
 
-	GetUserInformation(id int64) (UserInformation, error)
-	GetLogs(id int64, offset int, ammount int) ([]LogEntry, error)
+	UserInformation(id int64) (UserInformation, error)
+	Logs(id int64, offset int, ammount int) ([]LogEntry, error)
 	AddEmail(id int64, email string) error
 	RemoveEmail(id int64, email string) error
 
