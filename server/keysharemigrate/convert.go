@@ -15,7 +15,7 @@ type Converter struct {
 	source_db *sql.DB
 	target_db *sql.DB
 
-	core *keysharecore.KeyshareCore
+	core *keysharecore.Core
 
 	logger *logrus.Logger
 }

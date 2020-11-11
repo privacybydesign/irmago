@@ -67,7 +67,7 @@ func (p *unencryptedKeysharePacket) setID(id [32]byte) {
 	copy(p[128:160], id[:])
 }
 
-func (c *KeyshareCore) encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePacket, error) {
+func (c *Core) encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePacket, error) {
 	var result EncryptedKeysharePacket
 
 	// Store key id
@@ -93,7 +93,7 @@ func (c *KeyshareCore) encryptPacket(p unencryptedKeysharePacket) (EncryptedKeys
 	return result, nil
 }
 
-func (c *KeyshareCore) decryptPacket(p EncryptedKeysharePacket) (unencryptedKeysharePacket, error) {
+func (c *Core) decryptPacket(p EncryptedKeysharePacket) (unencryptedKeysharePacket, error) {
 	// determine key id
 	id := binary.LittleEndian.Uint32(p[0:])
 
