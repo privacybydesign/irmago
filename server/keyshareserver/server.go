@@ -37,7 +37,7 @@ type Server struct {
 	conf *Configuration
 
 	// external components
-	core          *keysharecore.KeyshareCore
+	core          *keysharecore.Core
 	sessionserver *irmaserver.Server
 	db            KeyshareDB
 

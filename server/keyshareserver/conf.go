@@ -107,7 +107,7 @@ func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {
 
 // Process a passed configuration to ensure all field values are valid and initialized
 // as required by the rest of this keyshare server component.
-func processConfiguration(conf *Configuration) (*keysharecore.KeyshareCore, error) {
+func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	// Setup log
 	if conf.Logger == nil {
 		conf.Logger = server.NewLogger(conf.Verbose, conf.Quiet, conf.LogJSON)

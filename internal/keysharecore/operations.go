@@ -24,7 +24,7 @@ var (
 )
 
 // Generate a new keyshare secret, secured with the given pin
-func (c *KeyshareCore) GenerateKeyshareSecret(pinRaw string) (EncryptedKeysharePacket, error) {
+func (c *Core) GenerateKeyshareSecret(pinRaw string) (EncryptedKeysharePacket, error) {
 	pin, err := padPin(pinRaw)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
@@ -54,7 +54,7 @@ func (c *KeyshareCore) GenerateKeyshareSecret(pinRaw string) (EncryptedKeyshareP
 	return c.encryptPacket(p)
 }
 
-func (c *KeyshareCore) DangerousBuildKeyshareSecret(pinRaw string, secret *big.Int) (EncryptedKeysharePacket, error) {
+func (c *Core) DangerousBuildKeyshareSecret(pinRaw string, secret *big.Int) (EncryptedKeysharePacket, error) {
 	pin, err := padPin(pinRaw)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
@@ -79,7 +79,7 @@ func (c *KeyshareCore) DangerousBuildKeyshareSecret(pinRaw string, secret *big.I
 
 // Check pin for validity, and generate jwt for future access
 //  userid is an extra field added to the jwt for
-func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, userID string) (string, error) {
+func (c *Core) ValidatePin(ep EncryptedKeysharePacket, pin string, userID string) (string, error) {
 	paddedPin, err := padPin(pin)
 	if err != nil {
 		return "", err
@@ -112,13 +112,13 @@ func (c *KeyshareCore) ValidatePin(ep EncryptedKeysharePacket, pin string, userI
 }
 
 // Check whether the given JWT is currently valid as an access token for operations on the provided encrypted keyshare packet
-func (c *KeyshareCore) ValidateJWT(ep EncryptedKeysharePacket, jwt string) error {
+func (c *Core) ValidateJWT(ep EncryptedKeysharePacket, jwt string) error {
 	_, err := c.verifyAccess(ep, jwt)
 	return err
 }
 
 // Change pin in an encrypted keyshare packet to a new value, after validating that the old value is known by caller.
-func (c *KeyshareCore) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRaw string) (EncryptedKeysharePacket, error) {
+func (c *Core) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRaw string) (EncryptedKeysharePacket, error) {
 	oldpin, err := padPin(oldpinRaw)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
@@ -154,7 +154,7 @@ func (c *KeyshareCore) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRa
 
 // Verify that a given access jwt is valid, and if so, return decrypted keyshare packet
 //  Note: Although this is an internal function, it is tested directly
-func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencryptedKeysharePacket, error) {
+func (c *Core) verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencryptedKeysharePacket, error) {
 	// Verify token validity
 	token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != jwt.SigningMethodRS256 {
@@ -200,7 +200,7 @@ func (c *KeyshareCore) verifyAccess(ep EncryptedKeysharePacket, jwtToken string)
 }
 
 // Get keyshare commitment usign given idemix public key(s)
-func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
+func (c *Core) GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
 	var keyList []*gabi.PublicKey
 	for _, keyID := range keyIDs {
@@ -239,7 +239,7 @@ func (c *KeyshareCore) GenerateCommitments(ep EncryptedKeysharePacket, accessTok
 }
 
 // Generate response for zero-knowledge proof of keyshare secret, for a given previous commit and challenge
-func (c *KeyshareCore) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
+func (c *Core) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Validate request
 	if uint(challenge.BitLen()) > gabi.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
 		return "", ErrInvalidChallenge
