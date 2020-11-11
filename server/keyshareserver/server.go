@@ -2,6 +2,7 @@ package keyshareserver
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -30,6 +31,12 @@ type SessionData struct {
 	LastKeyID    irma.PublicKeyIdentifier // last used key, used in signing the issuance message
 	LastCommitID uint64
 	expiry       time.Time
+}
+
+// Used to provide context in protocol sessions
+type requestAuthorization struct {
+	user                  KeyshareUser
+	hasValidAuthorization bool
 }
 
 type Server struct {
@@ -115,14 +122,18 @@ func (s *Server) Handler() http.Handler {
 	// Registration
 	router.Post("/client/register", s.handleRegister)
 
-	// Pin and login
-	router.Post("/users/isAuthorized", s.handleValidate)
+	// Pin logic
 	router.Post("/users/verify/pin", s.handleVerifyPin)
 	router.Post("/users/change/pin", s.handleChangePin)
 
 	// Keyshare sessions
-	router.Post("/prove/getCommitments", s.handleCommitments)
-	router.Post("/prove/getResponse", s.handleResponse)
+	router.Group(func(router chi.Router) {
+		router.Use(s.userMiddleware)
+		router.Use(s.authorizationMiddleware)
+		router.Post("/users/isAuthorized", s.handleValidate)
+		router.Post("/prove/getCommitments", s.handleCommitments)
+		router.Post("/prove/getResponse", s.handleResponse)
+	})
 
 	// IRMA server for issuing myirma credential during registration
 	router.Mount("/irma/", s.sessionserver.HandlerFunc())
@@ -151,6 +162,10 @@ func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
 
 // /prove/getCommitments
 func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(KeyshareUser)
+	authorization := r.Context().Value("authorization").(string)
+
 	// Read keys
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -172,26 +187,26 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract username and authorization from request
-	username := r.Header.Get("X-IRMA-Keyshare-Username")
-	authorization := r.Header.Get("Authorization")
-	if strings.HasPrefix(authorization, "Bearer ") {
-		authorization = authorization[7:]
+	commitments, err := s.generateCommitments(user, authorization, keys)
+	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
 	}
-
-	user, err := s.db.User(username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("User not found in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, err.Error())
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
 
+	server.WriteJson(w, commitments)
+}
+
+func (s *Server) generateCommitments(user KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (proofPCommitmentMap, error) {
 	// Generate commitments
 	commitments, commitID, err := s.core.GenerateCommitments(user.Data().Coredata, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
+		return proofPCommitmentMap{}, err
 	}
 
 	// Prepare output message format
@@ -200,13 +215,13 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 		keyIDV, err := keyID.MarshalText()
 		if err != nil {
 			s.conf.Logger.WithFields(logrus.Fields{"keyid": keyID, "error": err}).Error("Could not convert key identifier to string")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
+			return proofPCommitmentMap{}, err
 		}
 		mappedCommitments[string(keyIDV)] = commitments[i]
 	}
 
 	// Store needed data for later requests.
+	username := user.Data().Username
 	s.sessionLock.Lock()
 	if _, ok := s.sessions[username]; !ok {
 		s.sessions[username] = &SessionData{}
@@ -217,11 +232,16 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	s.sessionLock.Unlock()
 
 	// And send response
-	server.WriteJson(w, proofPCommitmentMap{Commitments: mappedCommitments})
+	return proofPCommitmentMap{Commitments: mappedCommitments}, nil
 }
 
 // /prove/getResponse
 func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(KeyshareUser)
+	username := user.Data().Username
+	authorization := r.Context().Value("authorization").(string)
+
 	// Read challenge
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -237,34 +257,11 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract username and authorization from request
-	username := r.Header.Get("X-IRMA-Keyshare-Username")
-	authorization := r.Header.Get("Authorization")
-	if strings.HasPrefix(authorization, "Bearer ") {
-		authorization = authorization[7:]
-	}
-
-	// Fetch user
-	user, err := s.db.User(username)
-	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, err.Error())
+	// verify access (avoids leaking whether there is a session ongoing to unauthorized callers)
+	if !r.Context().Value("hasValidAuthorization").(bool) {
+		s.conf.Logger.Warn("Could not generate keyshare response due to invalid authorization")
+		server.WriteError(w, server.ErrorInvalidRequest, "Invalid authorization")
 		return
-	}
-
-	// verify access (avoids leaking information to unauthorized callers)
-	err = s.core.ValidateJWT(user.Data().Coredata, authorization)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Warn("Could not generate keyshare response")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
-
-	// Indicate activity on user account
-	err = s.db.SetSeen(user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not mark user as seen recently")
-		// Do not send to user
 	}
 
 	// Get data from session
@@ -277,47 +274,51 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Make log entry
-	err = s.db.AddLog(user, IrmaSession, nil)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-		server.WriteError(w, server.ErrorInternal, err.Error())
+	// And do the actual responding
+	proofResponse, err := s.doGenerateResponses(user, authorization, challenge, sessionData.LastCommitID, sessionData.LastKeyID)
+	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-
-	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, sessionData.LastCommitID, challenge, sessionData.LastKeyID)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
 
 	server.WriteString(w, proofResponse)
 }
 
+func (s *Server) doGenerateResponses(user KeyshareUser, authorization string, challenge *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
+	// Indicate activity on user account
+	err := s.db.SetSeen(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not mark user as seen recently")
+		// Do not send to user
+	}
+
+	// Make log entry
+	err = s.db.AddLog(user, IrmaSession, nil)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+		return "", err
+	}
+
+	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, commitID, challenge, keyID)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
+		return "", err
+	}
+
+	return proofResponse, nil
+}
+
 // /users/isAuthorized
 func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
-	// Extract username and authorization from request
-	username := r.Header.Get("X-IRMA-Keyshare-Username")
-	authorization := r.Header.Get("Authorization")
-	if strings.HasPrefix(authorization, "Bearer ") {
-		authorization = authorization[7:]
-	}
-
-	// Fetch user
-	user, err := s.db.User(username)
-	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, err.Error())
-		return
-	}
-
-	// Validate jwt
-	err = s.core.ValidateJWT(user.Data().Coredata, authorization)
-	if err != nil {
-		server.WriteJson(w, &keyshareAuthorization{Status: "expired", Candidates: []string{"pin"}})
-	} else {
+	if r.Context().Value("hasValidAuthorization").(bool) {
 		server.WriteJson(w, &keyshareAuthorization{Status: "authorized", Candidates: []string{"pin"}})
+	} else {
+		server.WriteJson(w, &keyshareAuthorization{Status: "expired", Candidates: []string{"pin"}})
 	}
 }
 
@@ -346,68 +347,77 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// And verify pin (checking that we are allowed to do this)
+	// and verify pin
+	result, err := s.doVerifyPin(user, msg.Username, msg.Pin)
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, result)
+}
+
+func (s *Server) doVerifyPin(user KeyshareUser, username, pin string) (keysharePinStatus, error) {
+	// Check whether timing allows this pin to be checked
 	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
-		server.WriteError(w, server.ErrorInternal, err.Error())
-		return
+		return keysharePinStatus{}, nil
 	}
 	if !ok {
 		err = s.db.AddLog(user, PinCheckRefused, nil)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
+			return keysharePinStatus{}, err
 		}
-		server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
-		return
+		return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
-	jwtt, err := s.core.ValidatePin(user.Data().Coredata, msg.Pin, msg.Username)
+	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
+	jwtt, err := s.core.ValidatePin(user.Data().Coredata, pin, username)
+	if err != nil && err != keysharecore.ErrInvalidPin {
+		// Errors other than invalid pin are real errors
+		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
+		return keysharePinStatus{}, err
+	}
+
 	if err == keysharecore.ErrInvalidPin {
+		// Handle invalid pin
 		err = s.db.AddLog(user, PinCheckFailed, tries)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
+			return keysharePinStatus{}, err
 		}
 		if tries == 0 {
 			err = s.db.AddLog(user, PinCheckBlocked, wait)
 			if err != nil {
 				s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-				server.WriteError(w, server.ErrorInternal, err.Error())
-				return
+				return keysharePinStatus{}, err
 			}
-			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
+			return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 		} else {
-			server.WriteJson(w, keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)})
+			return keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
 		}
-	} else if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
-		server.WriteError(w, server.ErrorInternal, err.Error())
-	} else {
-		err = s.db.ClearPincheck(user)
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
-			// Do not send to user
-		}
-
-		// Indicate activity on user account
-		err = s.db.SetSeen(user)
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not indicate user activity")
-			// Do not send to user
-		}
-
-		err = s.db.AddLog(user, PinCheckSuccess, nil)
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
-		}
-
-		server.WriteJson(w, keysharePinStatus{Status: "success", Message: jwtt})
 	}
+
+	// Handle success
+	err = s.db.ClearPincheck(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
+		// Do not send to user
+	}
+	err = s.db.SetSeen(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not indicate user activity")
+		// Do not send to user
+	}
+	err = s.db.AddLog(user, PinCheckSuccess, nil)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+		return keysharePinStatus{}, err
+	}
+
+	return keysharePinStatus{Status: "success", Message: jwtt}, err
 }
 
 // /users/change/pin
@@ -435,30 +445,40 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// And change pin, checking that we are allowed to do this
+	result, err := s.doUpdatePin(user, msg.OldPin, msg.NewPin)
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+	server.WriteJson(w, result)
+}
+
+func (s *Server) doUpdatePin(user KeyshareUser, oldPin, newPin string) (keysharePinStatus, error) {
+	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
-		server.WriteError(w, server.ErrorInternal, err.Error())
-		return
+		return keysharePinStatus{}, err
 	}
 	if !ok {
-		server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
-		return
+		return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
-	user.Data().Coredata, err = s.core.ChangePin(user.Data().Coredata, msg.OldPin, msg.NewPin)
+
+	// Try to do the update
+	user.Data().Coredata, err = s.core.ChangePin(user.Data().Coredata, oldPin, newPin)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
-			server.WriteJson(w, keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)})
+			return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 		} else {
-			server.WriteJson(w, keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)})
+			return keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
 		}
-		return
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not change pin")
-		server.WriteError(w, server.ErrorInternal, err.Error())
-		return
+		return keysharePinStatus{}, nil
 	}
+
+	// Mark pincheck as success, resetting users wait and count
 	err = s.db.ClearPincheck(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
@@ -469,12 +489,10 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	err = s.db.UpdateUser(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
-		server.WriteError(w, server.ErrorInternal, err.Error())
-		return
+		return keysharePinStatus{}, err
 	}
 
-	// And return success
-	server.WriteJson(w, keysharePinStatus{Status: "success"})
+	return keysharePinStatus{Status: "success"}, nil
 }
 
 // /client/register
@@ -494,70 +512,40 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sessionptr, err := s.doRegistration(msg)
+	if err == keysharecore.ErrPinTooLong {
+		// Too long pin is not an internal error
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// Already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+	server.WriteJson(w, sessionptr)
+}
+
+func (s *Server) doRegistration(msg keyshareEnrollment) (*irma.Qr, error) {
 	// Generate keyshare server account
 	username := generateUsername()
 	coredata, err := s.core.GenerateKeyshareSecret(msg.Pin)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not register user")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
+		return nil, err
 	}
 	user, err := s.db.NewUser(KeyshareUserData{Username: username, Language: msg.Language, Coredata: coredata})
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
-		server.WriteError(w, server.ErrorInternal, err.Error())
-		return
+		return nil, err
 	}
 
 	// Send email if user specified email address
 	if msg.Email != nil && *msg.Email != "" && s.conf.EmailServer != "" {
-		// Fetch template and configuration data for users language, falling back if needed
-		template, ok := s.conf.RegistrationEmailTemplates[msg.Language]
-		if !ok {
-			template = s.conf.RegistrationEmailTemplates[s.conf.DefaultLanguage]
-		}
-		verificationBaseURL, ok := s.conf.VerificationURL[msg.Language]
-		if !ok {
-			verificationBaseURL = s.conf.VerificationURL[s.conf.DefaultLanguage]
-		}
-		subject, ok := s.conf.RegistrationEmailSubject[msg.Language]
-		if !ok {
-			subject = s.conf.RegistrationEmailSubject[s.conf.DefaultLanguage]
-		}
-
-		// Generate token
-		token := common.NewSessionToken()
-
-		// Add it to the database
-		err = s.db.AddEmailVerification(user, *msg.Email, token)
+		err = s.sendRegistrationEmail(user, msg.Language, *msg.Email)
 		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not add email verification record to user")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
-		}
-
-		// Build message
-		var emsg bytes.Buffer
-		err = template.Execute(&emsg, map[string]string{"VerificationURL": verificationBaseURL + token})
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not generate email verifcation mail")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
-		}
-
-		// And send it
-		err = server.SendHTMLMail(
-			s.conf.EmailServer,
-			s.conf.EmailAuth,
-			s.conf.EmailFrom,
-			*msg.Email,
-			subject,
-			emsg.Bytes())
-
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not send email verifiation mail")
-			server.WriteError(w, server.ErrorInternal, err.Error())
-			return
+			// already logged in sendRegistrationEmail
+			return nil, err
 		}
 	}
 
@@ -572,10 +560,59 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	sessionptr, _, err := s.sessionserver.StartSession(request, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not start keyshare credential issuance sessions")
-		server.WriteError(w, server.ErrorInternal, err.Error())
-		return
+		return nil, err
 	}
-	server.WriteResponse(w, sessionptr, nil)
+	return sessionptr, nil
+}
+
+func (s *Server) sendRegistrationEmail(user KeyshareUser, language, email string) error {
+	// Fetch template and configuration data for users language, falling back if needed
+	template, ok := s.conf.RegistrationEmailTemplates[language]
+	if !ok {
+		template = s.conf.RegistrationEmailTemplates[s.conf.DefaultLanguage]
+	}
+	verificationBaseURL, ok := s.conf.VerificationURL[language]
+	if !ok {
+		verificationBaseURL = s.conf.VerificationURL[s.conf.DefaultLanguage]
+	}
+	subject, ok := s.conf.RegistrationEmailSubject[language]
+	if !ok {
+		subject = s.conf.RegistrationEmailSubject[s.conf.DefaultLanguage]
+	}
+
+	// Generate token
+	token := common.NewSessionToken()
+
+	// Add it to the database
+	err := s.db.AddEmailVerification(user, email, token)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not generate email verifiation mail record")
+		return err
+	}
+
+	// Build message
+	var msg bytes.Buffer
+	err = template.Execute(&msg, map[string]string{"VerificationURL": verificationBaseURL + token})
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not generate email verifiation mail")
+		return err
+	}
+
+	// And send it
+	err = server.SendHTMLMail(
+		s.conf.EmailServer,
+		s.conf.EmailAuth,
+		s.conf.EmailFrom,
+		email,
+		subject,
+		msg.Bytes())
+
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not send email verifiation mail")
+		return err
+	}
+
+	return nil
 }
 
 // Generate a base62 "username".
@@ -598,4 +635,43 @@ func generateUsername() string {
 			""),
 		"=",
 		"")
+}
+
+func (s *Server) userMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract username from request
+		username := r.Header.Get("X-IRMA-Keyshare-Username")
+
+		// and fetch its information
+		user, err := s.db.User(username)
+		if err != nil {
+			s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+			server.WriteError(w, server.ErrorUserNotRegistered, err.Error())
+			return
+		}
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "user", user)))
+	})
+}
+
+func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract authorization from request
+		authorization := r.Header.Get("Authorization")
+		if strings.HasPrefix(authorization, "Bearer ") {
+			authorization = authorization[7:]
+		}
+
+		// verify access
+		ctx := r.Context()
+		err := s.core.ValidateJWT(ctx.Value("user").(KeyshareUser).Data().Coredata, authorization)
+		hasValidAuthorization := (err == nil)
+
+		// Construct new context with both authorization and its validity
+		nextContext := context.WithValue(
+			context.WithValue(ctx, "authorization", authorization),
+			"hasValidAuthorization", hasValidAuthorization)
+
+		next.ServeHTTP(w, r.WithContext(nextContext))
+	})
 }

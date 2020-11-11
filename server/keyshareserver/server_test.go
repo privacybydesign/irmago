@@ -11,11 +11,17 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	irma.Logger.SetLevel(logrus.FatalLevel)
+}
 
 func TestServerInvalidMessage(t *testing.T) {
 	StartKeyshareServer(t, NewMemoryDatabase(), "")
@@ -42,19 +48,19 @@ func TestServerInvalidMessage(t *testing.T) {
 	reqData = bytes.NewBufferString("asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", "application/json", reqData)
 	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
+	assert.Equal(t, 403, res.StatusCode)
 	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("[]")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", "application/json", reqData)
 	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
+	assert.Equal(t, 403, res.StatusCode)
 	_ = res.Body.Close()
 
 	reqData = bytes.NewBufferString("asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", "application/json", reqData)
 	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
+	assert.Equal(t, 403, res.StatusCode)
 	_ = res.Body.Close()
 }
 
@@ -465,6 +471,7 @@ func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
 		VerificationURL: map[string]string{
 			"en": "http://example.com/verify/",
 		},
+		Logger: irma.Logger,
 	})
 	require.NoError(t, err)
 

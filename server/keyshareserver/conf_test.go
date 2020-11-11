@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,19 @@ func TestConfInvalidAESKey(t *testing.T) {
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+	})
+	assert.NoError(t, err)
+
+	_, err = New(&Configuration{
+		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
+		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		DBType:                DatabaseTypeMemory,
+		JwtKeyID:              0,
+		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
+		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
+		KeyshareCredential:    "test.test.mijnirma",
+		KeyshareAttribute:     "email",
+		Logger:                irma.Logger,
 	})
 	assert.NoError(t, err)
 
