@@ -24,7 +24,6 @@ import (
 	"github.com/privacybydesign/irmago/server/irmaserver"
 
 	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
 )
 
 type SessionData struct {
@@ -107,7 +106,12 @@ func (s *Server) clearSessions() {
 
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
-	router.Use(middleware.Logger)
+
+	if s.conf.Verbose >= 2 {
+		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
+		router.Use(server.LogMiddleware("keyshare-app", opts))
+	}
+
 	// Registration
 	router.Post("/client/register", s.handleRegister)
 
