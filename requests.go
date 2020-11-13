@@ -1132,6 +1132,13 @@ func NewOptionsRequest() OptionsRequest {
 	}
 }
 
+func (or *OptionsRequest) Validate() error {
+	if or.LDContext != LDContextOptionsRequest {
+		return errors.New("Not an options request")
+	}
+	return nil
+}
+
 func (cr *ClientRequest) UnmarshalJSON(data []byte) error {
 	// Unmarshal in alias first to prevent infinite recursion
 	type alias ClientRequest
