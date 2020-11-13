@@ -66,15 +66,16 @@ func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*ir
 	if session.status != irma.ServerStatusInitialized {
 		return nil, errors.New("Frontend options cannot be updated when client is already connected")
 	}
-	if request.PairingMethod == irma.PairingMethodNone {
-		session.options.PairingCode = ""
-	} else if request.PairingMethod == irma.PairingMethodPin {
-		session.options.PairingCode = common.NewPairingCode()
-	} else {
-		return nil, errors.New("Pairing method unknown")
+	if request.PairingMethod != "" {
+		if request.PairingMethod == irma.PairingMethodNone {
+			session.options.PairingCode = ""
+		} else if request.PairingMethod == irma.PairingMethodPin {
+			session.options.PairingCode = common.NewPairingCode()
+		} else {
+			return nil, errors.New("Pairing method unknown")
+		}
+		session.options.PairingMethod = request.PairingMethod
 	}
-
-	session.options.PairingMethod = request.PairingMethod
 	return &session.options, nil
 }
 
