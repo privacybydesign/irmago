@@ -814,11 +814,14 @@ func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error)
 	return dir, newschemepath, nil
 }
 
-// Move oldscheme to a temp dir; move newscheme to the location of oldscheme; and delete oldscheme.
+// Move oldscheme to a temp dir in the same directory als oldscheme;
+// move newscheme to the location of oldscheme; and delete oldscheme.
 // If the first move works then the second one should too, so this will either entirely succeed
 // or leave the old scheme untouched.
 func (conf *Configuration) updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
-	tmp, err := ioutil.TempDir(conf.TempPath, "oldscheme")
+	// Create a directory in the same directory as oldscheme,
+	// this is to make sure os.Rename does not fail with an "invalid cross-device link" error.
+	tmp, err := ioutil.TempDir(filepath.Dir(oldscheme), "oldscheme")
 	if err != nil {
 		return err
 	}
