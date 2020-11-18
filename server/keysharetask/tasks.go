@@ -62,6 +62,56 @@ func (t *TaskHandler) CleanupAccounts() {
 	}
 }
 
+func (t *TaskHandler) sendExpiryEmails(id int64, username, lang string) error {
+	// Fetch user's email addresses
+	emailRes, err := t.db.Query("SELECT email FROM irma.emails WHERE user_id = $1", id)
+	if err != nil {
+		t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
+		return err
+	}
+
+	// And send emails to each of them.
+	for emailRes.Next() {
+		var email string
+		err = emailRes.Scan(&email)
+		if err != nil {
+			t.conf.Logger.WithField("error", err).Error("Could not retrieve email address")
+			return err
+		}
+
+		// Prepare email body
+		template, ok := t.conf.DeleteExpiredAccountTemplate[lang]
+		if !ok {
+			template = t.conf.DeleteExpiredAccountTemplate[t.conf.DefaultLanguage]
+		}
+		subject, ok := t.conf.DeleteExpiredAccountSubject[lang]
+		if !ok {
+			subject = t.conf.DeleteExpiredAccountSubject[t.conf.DefaultLanguage]
+		}
+		var emsg bytes.Buffer
+		err = template.Execute(&emsg, map[string]string{"Username": username, "Email": email})
+		if err != nil {
+			t.conf.Logger.WithField("error", err).Error("Could not render email")
+			return err
+		}
+
+		// And send
+		err = server.SendHTMLMail(
+			t.conf.EmailServer,
+			t.conf.EmailAuth,
+			t.conf.EmailFrom,
+			email,
+			subject,
+			emsg.Bytes())
+		if err != nil {
+			t.conf.Logger.WithField("error", err).Error("Could not send email")
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Mark old unused accounts for deletion, and inform their owners.
 func (t *TaskHandler) ExpireAccounts() {
 	// Disable this task when email server is not given
@@ -99,50 +149,11 @@ func (t *TaskHandler) ExpireAccounts() {
 			return
 		}
 
-		// Fetch user's email addresses
-		emailRes, err := t.db.Query("SELECT email FROM irma.emails WHERE user_id = $1", id)
+		// Send emails
+		err = t.sendExpiryEmails(id, username, lang)
 		if err != nil {
-			t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
+			// already logged, just abort
 			return
-		}
-
-		// And send emails to each of them.
-		for emailRes.Next() {
-			var email string
-			err = emailRes.Scan(&email)
-			if err != nil {
-				t.conf.Logger.WithField("error", err).Error("Could not retrieve email address")
-				return
-			}
-
-			// Prepare email body
-			template, ok := t.conf.DeleteExpiredAccountTemplate[lang]
-			if !ok {
-				template = t.conf.DeleteExpiredAccountTemplate[t.conf.DefaultLanguage]
-			}
-			subject, ok := t.conf.DeleteExpiredAccountSubject[lang]
-			if !ok {
-				subject = t.conf.DeleteExpiredAccountSubject[t.conf.DefaultLanguage]
-			}
-			var emsg bytes.Buffer
-			err = template.Execute(&emsg, map[string]string{"Username": username, "Email": email})
-			if err != nil {
-				t.conf.Logger.WithField("error", err).Error("Could not render email")
-				return
-			}
-
-			// And send
-			err = server.SendHTMLMail(
-				t.conf.EmailServer,
-				t.conf.EmailAuth,
-				t.conf.EmailFrom,
-				email,
-				subject,
-				emsg.Bytes())
-			if err != nil {
-				t.conf.Logger.WithField("error", err).Error("Could not send email")
-				return
-			}
 		}
 
 		// Finally, do marking for deletion
