@@ -12,6 +12,10 @@ import (
 
 type (
 	// Contains pin (bytes 0-63), secret (bytes 64-127), and identifier (bytes 128-159)
+	//  The binary structure of this packet can have security implications through its interaction with the
+	//  encryption layer applied before storing it. As such, we keep it here more explicit than
+	//  is standard in go. When modifying this structure, analyse whether such changes can have a
+	//  security impact through error side channels.
 	unencryptedKeysharePacket [64 + 64 + 32]byte
 
 	// Size is that of unencrypted packet + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID
