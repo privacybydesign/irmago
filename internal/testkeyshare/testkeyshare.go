@@ -10,7 +10,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/server/keyshareserver"
+	"github.com/privacybydesign/irmago/server/keyshare/app"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,8 +19,8 @@ import (
 var keyshareServ *http.Server
 
 func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
-	db := keyshareserver.NewMemoryDatabase()
-	_, err := db.NewUser(keyshareserver.KeyshareUserData{
+	db := app.NewMemoryDatabase()
+	_, err := db.NewUser(app.KeyshareUserData{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
@@ -29,14 +29,14 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	_, err = db.NewUser(keyshareserver.KeyshareUserData{
+	_, err = db.NewUser(app.KeyshareUserData{
 		Username: "testusername",
 		Coredata: ep,
 	})
 	require.NoError(t, err)
 
 	testdataPath := test.FindTestdataFolder(t)
-	s, err := keyshareserver.New(&keyshareserver.Configuration{
+	s, err := app.New(&app.Configuration{
 		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 		URL:                   "http://localhost:8080/irma_keyshare_server/api/v1/",
