@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/privacybydesign/irmago/server/keysharemigrate"
+	"github.com/privacybydesign/irmago/server/keyshare/migrate"
 	"github.com/sietseringers/cobra"
 )
 
@@ -22,13 +22,13 @@ var keyshareConvert = &cobra.Command{
 			return err
 		}
 
-		conf := &keysharemigrate.Configuration{
+		conf := &migrate.Configuration{
 			SourceConn:            source,
 			DestConn:              target,
 			StoragePrimaryKeyFile: key,
 		}
 
-		converter := keysharemigrate.New(conf)
+		converter := migrate.New(conf)
 		converter.ConvertUsers()
 
 		return nil

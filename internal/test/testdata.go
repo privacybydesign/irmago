@@ -73,7 +73,7 @@ func StopBadHttpServer() {
 func FindTestdataFolder(t *testing.T) string {
 	path := "testdata"
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		exists, err := common.PathExists(path)
 		checkError(t, err)
 		if exists {
