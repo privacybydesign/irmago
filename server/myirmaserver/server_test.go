@@ -12,10 +12,16 @@ import (
 	"time"
 
 	"github.com/go-chi/chi"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	irma.Logger.SetLevel(logrus.FatalLevel)
+}
 
 func TestServerInvalidMessage(t *testing.T) {
 	StartKeyshareServer(t, NewMyirmaMemoryDB(), "localhost:1025")
@@ -420,6 +426,7 @@ func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 		DeleteAccountSubject: map[string]string{
 			"en": "testsubject",
 		},
+		Logger: irma.Logger,
 	})
 	require.NoError(t, err)
 
