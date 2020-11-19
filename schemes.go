@@ -800,7 +800,7 @@ func downloadScheme(url string) (Scheme, error) {
 }
 
 func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error) {
-	dir, err := ioutil.TempDir(conf.TempPath, "tempscheme")
+	dir, err := ioutil.TempDir(filepath.Dir(scheme.path()), "tempscheme")
 	if err != nil {
 		return "", "", err
 	}
