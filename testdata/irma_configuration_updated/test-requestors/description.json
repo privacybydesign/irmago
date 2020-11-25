@@ -1,0 +1,5 @@
+{
+    "id": "test-requestors",
+    "schemetype": "requestor",
+    "url": "http://localhost:48681/irma_configuration/test-requestors"
+}
