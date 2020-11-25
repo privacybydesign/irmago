@@ -14,8 +14,9 @@ irma scheme sign ${dir}/irma_configuration/irma-demo/sk.pem ${dir}/irma_configur
 # ensure the changed schemes receive a higher timestamp
 sleep 1
 
-# restore changes to studentCard credtype, then resign
+# restore changes to studentCard and stempas credtype, then resign
 git checkout -- ${dir}/irma_configuration_updated/irma-demo/RU/Issues/studentCard/description.xml
+git checkout -- ${dir}/irma_configuration_updated/irma-demo/stemmen/Issues/stempas/description.xml
 irma scheme sign ${dir}/irma_configuration/irma-demo/sk.pem ${dir}/irma_configuration_updated/irma-demo
 
 # restore changes to requestor scheme, then resign

@@ -1,0 +1,45 @@
+<IssueSpecification version="4">
+  <Name>
+    <en>Demo Voting Card</en>
+    <nl>Demo Stempas</nl>
+  </Name>
+  <ShortName>
+    <en>Demo Voting Card</en>
+    <nl>Demo Stempas</nl>
+  </ShortName>
+  <SchemeManager>irma-demo</SchemeManager>
+  <IssuerID>stemmen</IssuerID>
+  <CredentialID>stempas</CredentialID>
+  <Description>
+    <en>Your voting card</en>
+    <nl>Uw stempas</nl>
+  </Description>
+  <IssueURL>
+    <en></en>
+    <nl></nl>
+  </IssueURL>
+  <ShouldBeSingleton>true</ShouldBeSingleton>
+
+  <Attributes>
+    <Attribute id="election">
+      <Name>
+        <en>Election</en>
+        <nl>Verkiezing</nl>
+      </Name>
+      <Description>
+        <en>Election</en>
+        <nl>Verkiezing</nl>
+      </Description>
+    </Attribute>
+    <Attribute id="votingnumber" randomblind="true">
+      <Name>
+        <en>Voting number</en>
+        <nl>Stemnummer</nl>
+      </Name>
+      <Description>
+        <en>Voting number</en>
+        <nl>Stemnummer</nl>
+      </Description>
+    </Attribute>
+  </Attributes>
+</IssueSpecification>

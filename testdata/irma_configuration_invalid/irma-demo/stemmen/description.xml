@@ -1,0 +1,15 @@
+<Issuer version="4">
+  <ID>stemmen</ID>
+  <ShortName>
+    <en>Demo Voting Card Issuer</en>
+    <nl>Demo Stempas Issuer</nl>
+  </ShortName>
+  <Name>
+    <en>Demo Voting Card Issuer</en>
+    <nl>Demo Stempas Issuer</nl>
+  </Name>
+  <SchemeManager>irma-demo</SchemeManager>
+  <ContactAddress>https://example.org</ContactAddress>
+  <ContactEMail>example@example.org</ContactEMail>
+  <baseURL></baseURL>
+</Issuer>
