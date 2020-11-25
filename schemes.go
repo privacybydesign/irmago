@@ -62,7 +62,7 @@ type (
 		setPath(path string)
 		parseContents(conf *Configuration) error
 		validate(conf *Configuration) (error, SchemeManagerStatus)
-		update(conf *Configuration) error
+		update() error
 		handleUpdateFile(conf *Configuration, path, filename string, bts []byte, transport *HTTPTransport, _ *IrmaIdentifierSet) error
 		delete(conf *Configuration) error
 		add(conf *Configuration)
@@ -222,7 +222,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	if scheme, err = newconf.ParseSchemeFolder(newschemepath); err != nil {
 		return err
 	}
-	if err = scheme.update(conf); err != nil {
+	if err = scheme.update(); err != nil {
 		return err
 	}
 
@@ -939,7 +939,7 @@ func (scheme *SchemeManager) validate(conf *Configuration) (error, SchemeManager
 	return nil, SchemeManagerStatusValid
 }
 
-func (scheme *SchemeManager) update(conf *Configuration) error {
+func (scheme *SchemeManager) update() error {
 	return scheme.downloadDemoPrivateKeys()
 }
 
@@ -1247,14 +1247,7 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 	return nil, SchemeManagerStatusValid
 }
 
-func (scheme *RequestorScheme) update(conf *Configuration) error {
-	for _, requestor := range scheme.requestors {
-		for _, hostname := range requestor.Hostnames {
-			if _, ok := conf.Requestors[hostname]; ok {
-				return errors.Errorf("Double occurence of hostname %s", hostname)
-			}
-		}
-	}
+func (scheme *RequestorScheme) update() error {
 	return nil
 }
 

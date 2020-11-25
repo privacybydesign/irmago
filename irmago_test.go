@@ -85,6 +85,13 @@ func TestUpdateConfiguration(t *testing.T) {
 	updated = newIrmaIdentifierSet()
 	require.NoError(t, conf.UpdateScheme(scheme, updated))
 	require.Contains(t, updated.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
+
+	updated = newIrmaIdentifierSet()
+	requestorschemeid := NewRequestorSchemeIdentifier("test-requestors")
+	requestorscheme := conf.RequestorSchemes[requestorschemeid]
+	requestorscheme.URL = "http://localhost:48681/irma_configuration_updated/test-requestors"
+	require.NoError(t, conf.UpdateScheme(requestorscheme, updated))
+	require.Contains(t, updated.RequestorSchemes, requestorschemeid)
 }
 
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
