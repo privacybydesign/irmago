@@ -187,7 +187,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commitments, err := s.generateCommitments(user, authorization, keys)
+	commitments, err := s.generateOldCommitments(user, authorization, keys)
 	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -203,7 +203,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) generateCommitments(user KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
 	// Generate commitments
-	commitments, commitID, err := s.core.GenerateCommitments(user.Data().Coredata, authorization, keys)
+	commitments, commitID, err := s.core.GenerateOldCommitments(user.Data().Coredata, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
 		return nil, err
@@ -303,7 +303,7 @@ func (s *Server) doGenerateResponses(user KeyshareUser, authorization string, ch
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, commitID, challenge, keyID)
+	proofResponse, err := s.core.GenerateProofP(user.Data().Coredata, authorization, commitID, challenge, keyID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err

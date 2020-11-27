@@ -350,7 +350,7 @@ func (ks *keyshareSession) GetCommitments() {
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
 func (ks *keyshareSession) GetProofPs() {
 	_, issig := ks.session.(*irma.SignatureRequest)
-	challenge := ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), issig)
+	challenge := ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), nil, issig)
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[irma.SchemeManagerIdentifier]string{}

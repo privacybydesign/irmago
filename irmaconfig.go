@@ -477,6 +477,7 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 			return errors.Errorf("Public key %s of issuer %s has wrong <Counter>", file, issuerid.String())
 		}
 		pk.Issuer = issuerid.String()
+		pk.KeyID = fmt.Sprintf("%s-%d", issuerid.String(), i)
 		conf.publicKeys[issuerid][uint(i)] = pk
 	}
 

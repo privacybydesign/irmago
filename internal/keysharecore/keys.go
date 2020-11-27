@@ -13,6 +13,11 @@ import (
 type (
 	AesKey [32]byte
 
+	commitData struct {
+		commit    *big.Int
+		challenge *big.Int
+	}
+
 	Core struct {
 		// Keys used for storage encryption/decryption
 		decryptionKeys  map[uint32]AesKey
@@ -24,7 +29,7 @@ type (
 		signKeyID int
 
 		// Commit values generated in first step of keyshare protocol
-		commitmentData  map[uint64]*big.Int
+		commitmentData  map[uint64]commitData
 		commitmentMutex sync.Mutex
 
 		// IRMA issuer keys that are allowed to be used in keyshare
@@ -36,7 +41,7 @@ type (
 func NewKeyshareCore() *Core {
 	return &Core{
 		decryptionKeys: map[uint32]AesKey{},
-		commitmentData: map[uint64]*big.Int{},
+		commitmentData: map[uint64]commitData{},
 		trustedKeys:    map[irma.PublicKeyIdentifier]*gabi.PublicKey{},
 	}
 }

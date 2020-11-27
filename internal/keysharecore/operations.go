@@ -199,8 +199,28 @@ func (c *Core) verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencr
 	return p, nil
 }
 
+func (c *Core) KeyshareP(ep EncryptedKeysharePacket, accessToken string, keyIDs []irma.PublicKeyIdentifier) (map[string]*big.Int, error) {
+	// Validate input request and build key list
+	var keyList []*gabi.PublicKey
+	for _, keyID := range keyIDs {
+		key, ok := c.trustedKeys[keyID]
+		if !ok {
+			return nil, ErrKeyNotFound
+		}
+		keyList = append(keyList, key)
+	}
+
+	// verify access and decrypt
+	p, err := c.verifyAccess(ep, accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	return gabi.KeysharePs(p.keyshareSecret(), keyList), nil
+}
+
 // Get keyshare commitment usign given idemix public key(s)
-func (c *Core) GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
+func (c *Core) GenerateOldCommitments(ep EncryptedKeysharePacket, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
 	var keyList []*gabi.PublicKey
 	for _, keyID := range keyIDs {
@@ -218,7 +238,7 @@ func (c *Core) GenerateCommitments(ep EncryptedKeysharePacket, accessToken strin
 	}
 
 	// Generate commitment
-	commitSecret, commitments, err := gabi.NewKeyshareCommitments(p.keyshareSecret(), keyList)
+	commitSecret, commitments, err := gabi.NewProofPCommitments(p.keyshareSecret(), keyList)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -232,14 +252,81 @@ func (c *Core) GenerateCommitments(ep EncryptedKeysharePacket, accessToken strin
 
 	// Store commit in backing storage
 	c.commitmentMutex.Lock()
-	c.commitmentData[commitID] = commitSecret
+	c.commitmentData[commitID] = commitData{commit: commitSecret}
 	c.commitmentMutex.Unlock()
 
 	return commitments, commitID, nil
 }
 
+func (c *Core) GenerateCommitments(keyIDs []irma.PublicKeyIdentifier, userPartChallenge *big.Int) (map[string]*big.Int, uint64, error) {
+	// Validate input request and build key list
+	var keyList []*gabi.PublicKey
+	for _, keyID := range keyIDs {
+		key, ok := c.trustedKeys[keyID]
+		if !ok {
+			return nil, 0, ErrKeyNotFound
+		}
+		keyList = append(keyList, key)
+	}
+
+	// Generate commitment
+	commitSecret, commitments, err := gabi.NewKeyshareCommitments(keyList)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// and the challenge
+	challenge := gabi.KeyshareChallenge(userPartChallenge, commitments)
+
+	// Generate commitment id
+	var commitID uint64
+	err = binary.Read(rand.Reader, binary.LittleEndian, &commitID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Store commit in backing storage
+	c.commitmentMutex.Lock()
+	c.commitmentData[commitID] = commitData{commit: commitSecret, challenge: challenge}
+	c.commitmentMutex.Unlock()
+
+	return commitments, commitID, nil
+}
+
+func (c *Core) GenerateContribution(ep EncryptedKeysharePacket, accessToken string, commitID uint64, userS *big.Int) (string, error) {
+	// verify access and decrypt
+	p, err := c.verifyAccess(ep, accessToken)
+	if err != nil {
+		return "", err
+	}
+
+	// Fetch commit
+	c.commitmentMutex.Lock()
+	commit, ok := c.commitmentData[commitID]
+	delete(c.commitmentData, commitID)
+	c.commitmentMutex.Unlock()
+	if !ok {
+		return "", ErrUnknownCommit
+	}
+
+	// Check commit type
+	if commit.challenge == nil {
+		return "", ErrUnknownCommit
+	}
+
+	// Generate response
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"Contribution": gabi.KeyshareResponse(userS, p.keyshareSecret(), commit.commit, commit.challenge),
+		"iat":          time.Now().Unix(),
+		"sub":          "KeyshareContribution",
+		"iss":          "keyshare_server",
+	})
+	token.Header["kid"] = c.signKeyID
+	return token.SignedString(c.signKey)
+}
+
 // Generate response for zero-knowledge proof of keyshare secret, for a given previous commit and challenge
-func (c *Core) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
+func (c *Core) GenerateProofP(ep EncryptedKeysharePacket, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Validate request
 	if uint(challenge.BitLen()) > gabi.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
 		return "", ErrInvalidChallenge
@@ -264,9 +351,14 @@ func (c *Core) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, 
 		return "", ErrUnknownCommit
 	}
 
+	// Check commit type
+	if commit.challenge != nil {
+		return "", ErrUnknownCommit
+	}
+
 	// Generate response
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": gabi.KeyshareResponse(p.keyshareSecret(), commit, challenge, key),
+		"ProofP": gabi.KeyshareProofP(p.keyshareSecret(), commit.commit, challenge, key),
 		"iat":    time.Now().Unix(),
 		"sub":    "ProofP",
 		"iss":    "keyshare_server",

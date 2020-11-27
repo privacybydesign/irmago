@@ -147,17 +147,13 @@ func (pl ProofList) VerifyProofs(
 	}
 
 	// Compute slice to inform gabi of which proofs should be verified to share the same secret key
-	keyshareServers := make([]string, len(pl))
+	keyshareServers := make([]bool, len(pl))
 	for i := range pl {
 		schemeID := NewIssuerIdentifier(publickeys[i].Issuer).SchemeManagerIdentifier()
-		if !configuration.SchemeManagers[schemeID].Distributed() {
-			keyshareServers[i] = "." // dummy value: no IRMA scheme will ever have this name
-		} else {
-			keyshareServers[i] = schemeID.Name()
-		}
+		keyshareServers[i] = configuration.SchemeManagers[schemeID].Distributed()
 	}
 
-	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers) {
+	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers, nil, nil) {
 		return false, nil, nil
 	}
 

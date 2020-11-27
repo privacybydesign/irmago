@@ -893,7 +893,7 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.Session
 
 	_, issig := request.(*irma.SignatureRequest)
 	return &irma.Disclosure{
-		Proofs:  builders.BuildProofList(request.Base().GetContext(), request.GetNonce(timestamp), issig),
+		Proofs:  builders.BuildProofList(request.Base().GetContext(), request.GetNonce(timestamp), nil, issig),
 		Indices: choices,
 	}, timestamp, nil
 }
@@ -943,7 +943,7 @@ func (client *Client) IssueCommitments(request *irma.IssuanceRequest, choice *ir
 	}
 	return &irma.IssueCommitmentMessage{
 		IssueCommitmentMessage: &gabi.IssueCommitmentMessage{
-			Proofs: builders.BuildProofList(request.GetContext(), request.GetNonce(nil), false),
+			Proofs: builders.BuildProofList(request.GetContext(), request.GetNonce(nil), nil, false),
 			Nonce2: issuerProofNonce,
 		},
 		Indices: choices,
