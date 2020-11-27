@@ -119,6 +119,8 @@ func (s *Server) Handler() http.Handler {
 		router.Use(server.LogMiddleware("keyshare-app", opts))
 	}
 
+	router.Use(s.versionMiddleware)
+
 	// Registration
 	router.Post("/client/register", s.handleRegister)
 
@@ -131,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 		router.Use(s.userMiddleware)
 		router.Use(s.authorizationMiddleware)
 		router.Post("/users/isAuthorized", s.handleValidate)
+		router.Post("/prove/getP", s.handleP)
 		router.Post("/prove/getCommitments", s.handleCommitments)
 		router.Post("/prove/getResponse", s.handleResponse)
 	})
@@ -160,8 +163,122 @@ func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
 	}
 }
 
+// /prove/getP
+func (s *Server) handleP(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(KeyshareUser)
+	authorization := r.Context().Value("authorization").(string)
+
+	// Read keys
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	var keys []irma.PublicKeyIdentifier
+	err = json.Unmarshal(body, &keys)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+		s.conf.Logger.WithField("body", body).Debug("Malformed request data")
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if len(keys) == 0 {
+		s.conf.Logger.Info("Malformed request: no keys specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		return
+	}
+
+	// Provide Ps
+	Ps, err := s.core.KeyshareP(user.Data().Coredata, authorization, keys)
+	if err == keysharecore.ErrInvalidJWT {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, Ps)
+}
+
 // /prove/getCommitments
 func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
+	// Fallback if needed
+	if r.Context().Value("oldprotocol").(bool) {
+		s.handleOldCommitments(w, r)
+		return
+	}
+
+	// Validate authorization
+	if !r.Context().Value("hasValidAuthorization").(bool) {
+		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
+		return
+	}
+
+	// Fetch from context
+	user := r.Context().Value("user").(KeyshareUser)
+
+	// Read request
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	var request irma.KeyshareCommitmentRequest
+	err = json.Unmarshal(body, &request)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+		s.conf.Logger.WithField("body", body).Debug("Malformed request data")
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if len(request.Keys) == 0 {
+		s.conf.Logger.Info("Malformed request: no keys over which to commit specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		return
+	}
+	if request.UserK == nil {
+		s.conf.Logger.Info("Malformed request: no user contribution to challenge specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "Missing UserK")
+		return
+	}
+
+	commitments, err := s.generateCommitments(user, request)
+	if err != nil {
+		// Already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+	server.WriteJson(w, commitments)
+}
+
+func (s *Server) generateCommitments(user KeyshareUser, request irma.KeyshareCommitmentRequest) (map[string]*big.Int, error) {
+	commitments, commitID, err := s.core.GenerateCommitments(request.Keys, request.UserK)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not generate commitments")
+		return nil, err
+	}
+
+	// Store needed data for later requests.
+	username := user.Data().Username
+	s.sessionLock.Lock()
+	if _, ok := s.sessions[username]; !ok {
+		s.sessions[username] = &SessionData{}
+	}
+	s.sessions[username].LastCommitID = commitID
+	s.sessions[username].expiry = time.Now().Add(10 * time.Second)
+	s.sessionLock.Unlock()
+
+	// And send response
+	return commitments, nil
+}
+
+// /prove/getCommitments (old protocol)
+func (s *Server) handleOldCommitments(w http.ResponseWriter, r *http.Request) {
 	// Fetch from context
 	user := r.Context().Value("user").(KeyshareUser)
 	authorization := r.Context().Value("authorization").(string)
@@ -201,7 +318,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, commitments)
 }
 
-func (s *Server) generateCommitments(user KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
+func (s *Server) generateOldCommitments(user KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
 	// Generate commitments
 	commitments, commitID, err := s.core.GenerateOldCommitments(user.Data().Coredata, authorization, keys)
 	if err != nil {
@@ -274,7 +391,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// And do the actual responding
-	proofResponse, err := s.doGenerateResponses(user, authorization, challenge, sessionData.LastCommitID, sessionData.LastKeyID)
+	proofResponse, err := s.doGenerateResponses(r.Context().Value("oldprotocol").(bool), user, authorization, challenge, sessionData.LastCommitID, sessionData.LastKeyID)
 	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -288,7 +405,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	server.WriteString(w, proofResponse)
 }
 
-func (s *Server) doGenerateResponses(user KeyshareUser, authorization string, challenge *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
+func (s *Server) doGenerateResponses(oldprotocol bool, user KeyshareUser, authorization string, sessionInput *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Indicate activity on user account
 	err := s.db.SetSeen(user)
 	if err != nil {
@@ -303,7 +420,12 @@ func (s *Server) doGenerateResponses(user KeyshareUser, authorization string, ch
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateProofP(user.Data().Coredata, authorization, commitID, challenge, keyID)
+	var proofResponse string
+	if oldprotocol {
+		proofResponse, err = s.core.GenerateProofP(user.Data().Coredata, authorization, commitID, sessionInput, keyID)
+	} else {
+		proofResponse, err = s.core.GenerateContribution(user.Data().Coredata, authorization, commitID, sessionInput)
+	}
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err
@@ -634,6 +756,14 @@ func generateUsername() string {
 			""),
 		"=",
 		"")
+}
+
+func (s *Server) versionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract header from request
+		version := r.Header.Get("X-IRMA-Keyshare-ProtocolVersion")
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "oldprotocol", version != "3")))
+	})
 }
 
 func (s *Server) userMiddleware(next http.Handler) http.Handler {

@@ -13,6 +13,7 @@ import (
 	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 )
 
 // Status encodes the status of an IRMA session (e.g., connected).
@@ -278,6 +279,11 @@ type KeysharePinMessage struct {
 type KeysharePinStatus struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
+}
+
+type KeyshareCommitmentRequest struct {
+	Keys  []PublicKeyIdentifier `json:"keys"`
+	UserK *big.Int              `json:"userK"`
 }
 
 type ProofPCommitmentMap struct {

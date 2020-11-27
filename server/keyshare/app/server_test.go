@@ -45,6 +45,12 @@ func TestServerInvalidMessage(t *testing.T) {
 	assert.Equal(t, 400, res.StatusCode)
 	_ = res.Body.Close()
 
+	reqData = bytes.NewBufferString("ajdfs;lkja;lsfd vsa  sa")
+	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getP", "application/json", reqData)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, res.StatusCode)
+	_ = res.Body.Close()
+
 	reqData = bytes.NewBufferString("asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr")
 	res, err = http.Post("http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", "application/json", reqData)
 	assert.NoError(t, err)
@@ -345,6 +351,60 @@ func TestMissingUser(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestKeyshareGetP(t *testing.T) {
+	db := NewMemoryDatabase()
+	_, err := db.NewUser(KeyshareUserData{
+		Username: "",
+		Coredata: keysharecore.EncryptedKeysharePacket{},
+	})
+	require.NoError(t, err)
+	var ep keysharecore.EncryptedKeysharePacket
+	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
+	require.NoError(t, err)
+	copy(ep[:], p)
+	_, err = db.NewUser(KeyshareUserData{
+		Username: "testusername",
+		Coredata: ep,
+	})
+	require.NoError(t, err)
+	StartKeyshareServer(t, db, "")
+	defer StopKeyshareServer(t)
+
+	reqData := bytes.NewBufferString(`{"id":"testusername","pin":"puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}`)
+	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+	jwtTxt, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+	var jwtMsg irma.KeysharePinStatus
+	err = json.Unmarshal(jwtTxt, &jwtMsg)
+	require.NoError(t, err)
+	require.Equal(t, "success", jwtMsg.Status)
+	_ = res.Body.Close()
+
+	client := &http.Client{}
+
+	reqData = bytes.NewBuffer([]byte(`["test.test-3"]`))
+	req, err := http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getP", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
+	res, err = client.Do(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
+
+	reqData = bytes.NewBuffer([]byte(`test.dne-1"]`))
+	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getP", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
+	res, err = client.Do(req)
+	assert.NoError(t, err)
+	assert.NotEqual(t, 200, res.StatusCode)
+}
+
 func TestInvalidKeyshareSessions(t *testing.T) {
 	db := NewMemoryDatabase()
 	_, err := db.NewUser(KeyshareUserData{
@@ -438,6 +498,112 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	require.NoError(t, err)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
+	res, err = client.Do(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, res.StatusCode)
+	_ = res.Body.Close()
+}
+
+func TestInvalidNewKeyshareSessions(t *testing.T) {
+	db := NewMemoryDatabase()
+	_, err := db.NewUser(KeyshareUserData{
+		Username: "",
+		Coredata: keysharecore.EncryptedKeysharePacket{},
+	})
+	require.NoError(t, err)
+	var ep keysharecore.EncryptedKeysharePacket
+	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
+	require.NoError(t, err)
+	copy(ep[:], p)
+	_, err = db.NewUser(KeyshareUserData{
+		Username: "testusername",
+		Coredata: ep,
+	})
+	require.NoError(t, err)
+	StartKeyshareServer(t, db, "")
+	defer StopKeyshareServer(t)
+
+	reqData := bytes.NewBufferString(`{"id":"testusername","pin":"puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}`)
+	res, err := http.Post("http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin", "application/json", reqData)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+	jwtTxt, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+	var jwtMsg irma.KeysharePinStatus
+	err = json.Unmarshal(jwtTxt, &jwtMsg)
+	require.NoError(t, err)
+	require.Equal(t, "success", jwtMsg.Status)
+	_ = res.Body.Close()
+
+	client := &http.Client{}
+
+	reqData = bytes.NewBufferString("12345678")
+	req, err := http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("X-IRMA-Keyshare-ProtocolVersion", "3")
+	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
+	res, err = client.Do(req)
+	assert.NoError(t, err)
+	assert.NotEqual(t, 200, res.StatusCode)
+	_ = res.Body.Close()
+
+	reqData = bytes.NewBufferString(`{"keys": ["test.test-3"], "userK": 5}`)
+	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("X-IRMA-Keyshare-ProtocolVersion", "3")
+	req.Header.Add("Authorization", "fakeauthorization")
+	res, err = client.Do(req)
+	assert.NoError(t, err)
+	assert.NotEqual(t, 200, res.StatusCode)
+	_ = res.Body.Close()
+
+	reqData = bytes.NewBufferString(`{"keys": ["test.test-3"], "userK": 5}`)
+	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("X-IRMA-Keyshare-ProtocolVersion", "3")
+	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
+	res, err = client.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+	_ = res.Body.Close()
+
+	reqData = bytes.NewBufferString("12345678")
+	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("X-IRMA-Keyshare-ProtocolVersion", "3")
+	req.Header.Add("Authorization", "fakeauthorization")
+	res, err = client.Do(req)
+	assert.NoError(t, err)
+	assert.NotEqual(t, 200, res.StatusCode)
+	_ = res.Body.Close()
+
+	reqData = bytes.NewBufferString(`{"keys": ["test.test-3"], "userK": 5}`)
+	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getCommitments", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("X-IRMA-Keyshare-ProtocolVersion", "3")
+	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
+	res, err = client.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+	_ = res.Body.Close()
+
+	reqData = bytes.NewBufferString("12345678")
+	req, err = http.NewRequest("POST", "http://localhost:8080/irma_keyshare_server/api/v1/prove/getResponse", reqData)
+	require.NoError(t, err)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-IRMA-Keyshare-Username", "testusername")
+	req.Header.Add("X-IRMA-Keyshare-ProtocolVersion", "3")
 	req.Header.Add("Authorization", "Bearer "+jwtMsg.Message)
 	res, err = client.Do(req)
 	assert.NoError(t, err)
