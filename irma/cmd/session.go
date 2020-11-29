@@ -22,8 +22,9 @@ const pollInterval = 1000 * time.Millisecond
 var (
 	httpServer *http.Server
 	irmaServer *irmaserver.Server
-	logger     *logrus.Logger
 	defaulturl string
+
+	logger = logrus.New()
 )
 
 // sessionCmd represents the session command
@@ -243,7 +244,6 @@ func configureSession(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configur
 func init() {
 	RootCmd.AddCommand(sessionCmd)
 
-	logger = logrus.New()
 	logger.Formatter = &prefixed.TextFormatter{FullTimestamp: true}
 
 	var err error
