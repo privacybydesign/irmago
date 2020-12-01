@@ -114,7 +114,7 @@ func TestServerHandleValidate(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
-	var jwtMsg keysharePinStatus
+	var jwtMsg irma.KeysharePinStatus
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "success", jwtMsg.Status)
@@ -127,7 +127,7 @@ func TestServerHandleValidate(t *testing.T) {
 	res, err = client.Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, 200, res.StatusCode)
-	var msg keyshareAuthorization
+	var msg irma.KeyshareAuthorization
 	resTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
 	err = json.Unmarshal(resTxt, &msg)
@@ -187,7 +187,7 @@ func TestPinTries(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
-	var jwtMsg keysharePinStatus
+	var jwtMsg irma.KeysharePinStatus
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "failure", jwtMsg.Status)
@@ -232,7 +232,7 @@ func TestPinWait(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
-	var jwtMsg keysharePinStatus
+	var jwtMsg irma.KeysharePinStatus
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "error", jwtMsg.Status)
@@ -277,7 +277,7 @@ func TestPinWaitRefused(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
-	var jwtMsg keysharePinStatus
+	var jwtMsg irma.KeysharePinStatus
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "error", jwtMsg.Status)
@@ -370,7 +370,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 	jwtTxt, err := ioutil.ReadAll(res.Body)
 	require.NoError(t, err)
-	var jwtMsg keysharePinStatus
+	var jwtMsg irma.KeysharePinStatus
 	err = json.Unmarshal(jwtTxt, &jwtMsg)
 	require.NoError(t, err)
 	require.Equal(t, "success", jwtMsg.Status)

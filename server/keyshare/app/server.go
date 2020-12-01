@@ -201,23 +201,22 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, commitments)
 }
 
-func (s *Server) generateCommitments(user KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (proofPCommitmentMap, error) {
+func (s *Server) generateCommitments(user KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
 	// Generate commitments
 	commitments, commitID, err := s.core.GenerateCommitments(user.Data().Coredata, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
-		return proofPCommitmentMap{}, err
+		return nil, err
 	}
 
 	// Prepare output message format
-	mappedCommitments := map[string]*gabi.ProofPCommitment{}
+	mappedCommitments := map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment{}
 	for i, keyID := range keys {
-		keyIDV, err := keyID.MarshalText()
 		if err != nil {
 			s.conf.Logger.WithFields(logrus.Fields{"keyid": keyID, "error": err}).Error("Could not convert key identifier to string")
-			return proofPCommitmentMap{}, err
+			return nil, err
 		}
-		mappedCommitments[string(keyIDV)] = commitments[i]
+		mappedCommitments[keyID] = commitments[i]
 	}
 
 	// Store needed data for later requests.
@@ -232,7 +231,7 @@ func (s *Server) generateCommitments(user KeyshareUser, authorization string, ke
 	s.sessionLock.Unlock()
 
 	// And send response
-	return proofPCommitmentMap{Commitments: mappedCommitments}, nil
+	return &irma.ProofPCommitmentMap{Commitments: mappedCommitments}, nil
 }
 
 // /prove/getResponse
@@ -316,9 +315,9 @@ func (s *Server) doGenerateResponses(user KeyshareUser, authorization string, ch
 // /users/isAuthorized
 func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Value("hasValidAuthorization").(bool) {
-		server.WriteJson(w, &keyshareAuthorization{Status: "authorized", Candidates: []string{"pin"}})
+		server.WriteJson(w, &irma.KeyshareAuthorization{Status: "authorized", Candidates: []string{"pin"}})
 	} else {
-		server.WriteJson(w, &keyshareAuthorization{Status: "expired", Candidates: []string{"pin"}})
+		server.WriteJson(w, &irma.KeyshareAuthorization{Status: "expired", Candidates: []string{"pin"}})
 	}
 }
 
@@ -331,7 +330,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-	var msg keysharePinMessage
+	var msg irma.KeysharePinMessage
 	err = json.Unmarshal(body, &msg)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"error": err}).Info("Malformed request: could not parse request body")
@@ -358,27 +357,27 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) doVerifyPin(user KeyshareUser, username, pin string) (keysharePinStatus, error) {
+func (s *Server) doVerifyPin(user KeyshareUser, username, pin string) (irma.KeysharePinStatus, error) {
 	// Check whether timing allows this pin to be checked
 	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
-		return keysharePinStatus{}, nil
+		return irma.KeysharePinStatus{}, nil
 	}
 	if !ok {
 		err = s.db.AddLog(user, PinCheckRefused, nil)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-			return keysharePinStatus{}, err
+			return irma.KeysharePinStatus{}, err
 		}
-		return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
+		return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
 	jwtt, err := s.core.ValidatePin(user.Data().Coredata, pin, username)
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors
 		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
-		return keysharePinStatus{}, err
+		return irma.KeysharePinStatus{}, err
 	}
 
 	if err == keysharecore.ErrInvalidPin {
@@ -386,17 +385,17 @@ func (s *Server) doVerifyPin(user KeyshareUser, username, pin string) (keyshareP
 		err = s.db.AddLog(user, PinCheckFailed, tries)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-			return keysharePinStatus{}, err
+			return irma.KeysharePinStatus{}, err
 		}
 		if tries == 0 {
 			err = s.db.AddLog(user, PinCheckBlocked, wait)
 			if err != nil {
 				s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-				return keysharePinStatus{}, err
+				return irma.KeysharePinStatus{}, err
 			}
-			return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
+			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 		} else {
-			return keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
+			return irma.KeysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
 		}
 	}
 
@@ -414,10 +413,10 @@ func (s *Server) doVerifyPin(user KeyshareUser, username, pin string) (keyshareP
 	err = s.db.AddLog(user, PinCheckSuccess, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-		return keysharePinStatus{}, err
+		return irma.KeysharePinStatus{}, err
 	}
 
-	return keysharePinStatus{Status: "success", Message: jwtt}, err
+	return irma.KeysharePinStatus{Status: "success", Message: jwtt}, err
 }
 
 // /users/change/pin
@@ -429,7 +428,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
 		return
 	}
-	var msg keyshareChangePin
+	var msg irma.KeyshareChangePin
 	err = json.Unmarshal(body, &msg)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
@@ -454,28 +453,28 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) doUpdatePin(user KeyshareUser, oldPin, newPin string) (keysharePinStatus, error) {
+func (s *Server) doUpdatePin(user KeyshareUser, oldPin, newPin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
-		return keysharePinStatus{}, err
+		return irma.KeysharePinStatus{}, err
 	}
 	if !ok {
-		return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
+		return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
 
 	// Try to do the update
 	user.Data().Coredata, err = s.core.ChangePin(user.Data().Coredata, oldPin, newPin)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
-			return keysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
+			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 		} else {
-			return keysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
+			return irma.KeysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
 		}
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not change pin")
-		return keysharePinStatus{}, nil
+		return irma.KeysharePinStatus{}, nil
 	}
 
 	// Mark pincheck as success, resetting users wait and count
@@ -489,10 +488,10 @@ func (s *Server) doUpdatePin(user KeyshareUser, oldPin, newPin string) (keyshare
 	err = s.db.UpdateUser(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
-		return keysharePinStatus{}, err
+		return irma.KeysharePinStatus{}, err
 	}
 
-	return keysharePinStatus{Status: "success"}, nil
+	return irma.KeysharePinStatus{Status: "success"}, nil
 }
 
 // /client/register
@@ -504,7 +503,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
 		return
 	}
-	var msg keyshareEnrollment
+	var msg irma.KeyshareEnrollment
 	err = json.Unmarshal(body, &msg)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
@@ -526,7 +525,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, sessionptr)
 }
 
-func (s *Server) doRegistration(msg keyshareEnrollment) (*irma.Qr, error) {
+func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	// Generate keyshare server account
 	username := generateUsername()
 	coredata, err := s.core.GenerateKeyshareSecret(msg.Pin)
