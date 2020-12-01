@@ -1078,7 +1078,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	if err != nil {
 		return err
 	}
-	message := keyshareEnrollment{
+	message := irma.KeyshareEnrollment{
 		Email:    email,
 		Pin:      kss.HashedPin(pin),
 		Language: lang,
@@ -1139,13 +1139,13 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 	}
 
 	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer, !client.Preferences.DeveloperMode)
-	message := keyshareChangepin{
+	message := irma.KeyshareChangePin{
 		Username: kss.Username,
 		OldPin:   kss.HashedPin(oldPin),
 		NewPin:   kss.HashedPin(newPin),
 	}
 
-	res := &keysharePinStatus{}
+	res := &irma.KeysharePinStatus{}
 	err := transport.Post("users/change/pin", res, message)
 	if err != nil {
 		return err

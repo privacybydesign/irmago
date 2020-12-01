@@ -249,6 +249,62 @@ type IssueCommitmentMessage struct {
 	Indices DisclosedAttributeIndices `json:"indices,omitempty"`
 }
 
+//
+// Keyshare messages
+//
+
+type KeyshareEnrollment struct {
+	Pin      string  `json:"pin"`
+	Email    *string `json:"email"`
+	Language string  `json:"language"`
+}
+
+type KeyshareChangePin struct {
+	Username string `json:"id"`
+	OldPin   string `json:"oldpin"`
+	NewPin   string `json:"newpin"`
+}
+
+type KeyshareAuthorization struct {
+	Status     string   `json:"status"`
+	Candidates []string `json:"candidates"`
+}
+
+type KeysharePinMessage struct {
+	Username string `json:"id"`
+	Pin      string `json:"pin"`
+}
+
+type KeysharePinStatus struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type ProofPCommitmentMap struct {
+	Commitments map[PublicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
+}
+
+func (ppcm *ProofPCommitmentMap) MarshalJSON() ([]byte, error) {
+	var encPPCM struct {
+		Commitments map[string]*gabi.ProofPCommitment `json:"c"`
+	}
+	encPPCM.Commitments = make(map[string]*gabi.ProofPCommitment)
+
+	for pki, v := range ppcm.Commitments {
+		pkiBytes, err := pki.MarshalText()
+		if err != nil {
+			return nil, err
+		}
+		encPPCM.Commitments[string(pkiBytes)] = v
+	}
+
+	return json.Marshal(encPPCM)
+}
+
+//
+// Errors
+//
+
 func (err ErrorType) Error() string {
 	return string(err)
 }
