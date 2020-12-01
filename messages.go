@@ -348,3 +348,13 @@ func (qr *Qr) Validate() (err error) {
 	}
 	return nil
 }
+
+type ServerSessionResponse struct {
+	ProofStatus     ProofStatus                   `json:"proofStatus"`
+	IssueSignatures []*gabi.IssueSignatureMessage `json:"sigs"`
+	NextSession     *Qr                           `json:"nextSession"`
+
+	// needed for legacy (un)marshaling
+	ProtocolVersion *ProtocolVersion `json:"-"`
+	SessionType     Action           `json:"-"`
+}

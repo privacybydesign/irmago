@@ -44,7 +44,7 @@ func processOptions(options ...sessionOption) sessionOption {
 	return opts
 }
 
-func requestorSessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
+func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)

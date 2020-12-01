@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -588,4 +590,30 @@ func TestPOSTSizeLimit(t *testing.T) {
 	var rerr irma.RemoteError
 	require.NoError(t, json.Unmarshal(bts, &rerr))
 	require.Equal(t, "http: request body too large", rerr.Message)
+}
+
+func TestChainedSessions(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	StartNextRequestServer(t)
+	defer StopNextRequestServer()
+
+	var request irma.ServiceProviderRequest
+	require.NoError(t, irma.NewHTTPTransport("http://localhost:48686", false).Get("1", &request))
+	requestorSessionHelper(t, &request, client)
+
+	// check that our credential instance is new
+	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
+	cred := clientFindCred(t, client, id)
+	require.True(t, cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1*irma.ExpiryFactor*time.Second))))
+}
+
+func clientFindCred(t *testing.T, client *irmaclient.Client, id irma.CredentialTypeIdentifier) *irma.CredentialInfo {
+	for _, cred := range client.CredentialInfoList() {
+		if id == irma.NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", cred.SchemeManagerID, cred.IssuerID, cred.ID)) {
+			return cred
+		}
+	}
+	require.NoError(t, errors.New("not found"))
+	return nil
 }

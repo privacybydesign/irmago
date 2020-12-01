@@ -80,6 +80,9 @@ type session struct {
 	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
 
+	next               *session
+	implicitDisclosure [][]*irma.AttributeIdentifier
+
 	// State for issuance sessions
 	issuerProofNonce *big.Int
 	builders         gabi.ProofBuilderList
@@ -107,6 +110,7 @@ var supportedVersions = map[int][]int{
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
 		6, // introduces nonrevocation proofs
+		7, // introduces chained sessions
 	},
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
@@ -174,7 +178,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 }
 
 // newQrSession creates and starts a new interactive IRMA session
-func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
+func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)
@@ -408,6 +412,12 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		session.cancel()
 		return
 	}
+
+	// If this is a session in a chain of sessions, also disclose all attributes disclosed in previous sessions
+	if session.implicitDisclosure != nil {
+		choice.Attributes = append(choice.Attributes, session.implicitDisclosure...)
+	}
+
 	session.choice = choice
 	if err := session.choice.Validate(); err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorRequiredAttributeMissing, Err: err})
@@ -458,6 +468,7 @@ func (session *session) sendResponse(message interface{}) {
 	var log *LogEntry
 	var err error
 	var messageJson []byte
+	response := &irma.ServerSessionResponse{ProtocolVersion: session.Version, SessionType: session.Action}
 
 	switch session.Action {
 	case irma.ActionSigning:
@@ -474,13 +485,12 @@ func (session *session) sendResponse(message interface{}) {
 		}
 
 		if session.IsInteractive() {
-			var response disclosureResponse
 			if err = session.transport.Post("proofs", &response, irmaSignature); err != nil {
 				session.fail(err.(*irma.SessionError))
 				return
 			}
-			if response != "VALID" {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
+			if response.ProofStatus != "VALID" {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response.ProofStatus)})
 				return
 			}
 		}
@@ -496,13 +506,12 @@ func (session *session) sendResponse(message interface{}) {
 			return
 		}
 		if session.IsInteractive() {
-			var response disclosureResponse
 			if err = session.transport.Post("proofs", &response, message); err != nil {
 				session.fail(err.(*irma.SessionError))
 				return
 			}
-			if response != "VALID" {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
+			if response.ProofStatus != "VALID" {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response.ProofStatus)})
 				return
 			}
 		}
@@ -512,12 +521,15 @@ func (session *session) sendResponse(message interface{}) {
 			session.client.reportError(err)
 		}
 	case irma.ActionIssuing:
-		response := []*gabi.IssueSignatureMessage{}
 		if err = session.transport.Post("commitments", &response, message); err != nil {
 			session.fail(err.(*irma.SessionError))
 			return
 		}
-		if err = session.client.ConstructCredentials(response, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+		if response.ProofStatus != "VALID" {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response.ProofStatus)})
+			return
+		}
+		if err = session.client.ConstructCredentials(response.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 			return
 		}
@@ -535,7 +547,13 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.finish(false)
-	session.Handler.Success(string(messageJson))
+
+	if response != nil && response.NextSession != nil {
+		session.next = session.client.newQrSession(response.NextSession, session.Handler)
+		session.next.implicitDisclosure = session.choice.Attributes
+	} else {
+		session.Handler.Success(string(messageJson))
+	}
 }
 
 // Response calculation methods
@@ -716,7 +734,11 @@ func (session *session) cancel() {
 }
 
 func (session *session) Dismiss() {
-	session.cancel()
+	if session.next != nil {
+		session.next.Dismiss()
+	} else {
+		session.cancel()
+	}
 }
 
 // Keyshare session handler methods

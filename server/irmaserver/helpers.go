@@ -70,6 +70,10 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 	if len(session.request.Base().Revocation) > 0 {
 		minServer = &irma.ProtocolVersion{2, 6}
 	}
+	// Set minimum to 2.7 if chained session are used
+	if session.rrequest.Base().NextSessionURL != "" {
+		minServer = &irma.ProtocolVersion{2, 7}
+	}
 
 	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {
 		err := errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minServer.String(), maxProtocolVersion.String())
