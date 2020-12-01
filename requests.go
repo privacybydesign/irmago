@@ -757,13 +757,15 @@ func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp 
 		nonce = bigZero
 	}
 	return &SignedMessage{
-		LDContext: LDContextSignedMessage,
-		Signature: signature.Proofs,
-		Indices:   signature.Indices,
-		Nonce:     nonce,
-		Context:   sr.GetContext(),
-		Message:   sr.Message,
-		Timestamp: timestamp,
+		LDContext:            LDContextSignedMessage,
+		Signature:            signature.Proofs,
+		KeyshareWs:           signature.KeyshareWs,
+		KeyshareContribution: signature.KeyshareContribution,
+		Indices:              signature.Indices,
+		Nonce:                nonce,
+		Context:              sr.GetContext(),
+		Message:              sr.Message,
+		Timestamp:            timestamp,
 	}, nil
 }
 

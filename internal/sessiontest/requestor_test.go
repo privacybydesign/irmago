@@ -162,7 +162,7 @@ func TestRequestorSignatureSession(t *testing.T) {
 	require.Contains(t, client.Configuration.AttributeTypes, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute"))
 
 	// Check that the just created credential is still valid after the new attribute has been added
-	_, status, err := serverResult.Signature.Verify(client.Configuration, nil)
+	_, status, err := serverResult.Signature.Verify(client.Configuration, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, irma.ProofStatusValid, status)
 }

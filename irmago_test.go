@@ -284,7 +284,7 @@ func TestVerifyValidSig(t *testing.T) {
 	err := json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
 	require.NoError(t, err)
 
-	attrs, status, err := irmaSignedMessage.Verify(conf, nil)
+	attrs, status, err := irmaSignedMessage.Verify(conf, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, ProofStatusValid, status)
 	require.Len(t, attrs, 1)
@@ -300,7 +300,7 @@ func TestVerifyInValidSig(t *testing.T) {
 	err := json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage)
 	require.NoError(t, err)
 
-	_, status, err := irmaSignedMessage.Verify(conf, nil)
+	_, status, err := irmaSignedMessage.Verify(conf, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 }
@@ -313,14 +313,14 @@ func TestVerifyInValidNonce(t *testing.T) {
 	irmaSignedMessage := &SignedMessage{}
 	require.NoError(t, json.Unmarshal([]byte(irmaSignedMessageJson), irmaSignedMessage))
 
-	_, status, err := irmaSignedMessage.Verify(conf, nil)
+	_, status, err := irmaSignedMessage.Verify(conf, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, status, ProofStatusInvalid)
 }
 
 func TestEmptySignature(t *testing.T) {
 	msg := &SignedMessage{}
-	_, status, _ := msg.Verify(&Configuration{}, nil)
+	_, status, _ := msg.Verify(&Configuration{}, nil, false)
 	require.NotEqual(t, ProofStatusValid, status)
 }
 
@@ -618,7 +618,7 @@ func parseDisclosure(t *testing.T) (*Configuration, *DisclosureRequest, *Disclos
 func TestVerify(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		conf, request, disclosure := parseDisclosure(t)
-		attr, status, err := disclosure.Verify(conf, request)
+		attr, status, err := disclosure.Verify(conf, request, false)
 		require.NoError(t, err)
 		require.Equal(t, ProofStatusValid, status)
 		require.Equal(t, "456", *attr[0][0].RawValue)
@@ -627,7 +627,7 @@ func TestVerify(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		conf, request, disclosure := parseDisclosure(t)
 		disclosure.Proofs[0].(*gabi.ProofD).AResponses[0] = big.NewInt(100)
-		_, status, err := disclosure.Verify(conf, request)
+		_, status, err := disclosure.Verify(conf, request, false)
 		require.NoError(t, err)
 		require.Equal(t, ProofStatusInvalid, status)
 	})
@@ -635,7 +635,7 @@ func TestVerify(t *testing.T) {
 	t.Run("wrong attribute", func(t *testing.T) {
 		conf, request, disclosure := parseDisclosure(t)
 		request.Disclose[0][0][0].Type = NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
-		_, status, err := disclosure.Verify(conf, request)
+		_, status, err := disclosure.Verify(conf, request, false)
 		require.NoError(t, err)
 		require.Equal(t, ProofStatusMissingAttributes, status)
 	})
@@ -643,7 +643,7 @@ func TestVerify(t *testing.T) {
 	t.Run("wrong nonce", func(t *testing.T) {
 		conf, request, disclosure := parseDisclosure(t)
 		request.Nonce = big.NewInt(100)
-		_, status, err := disclosure.Verify(conf, request)
+		_, status, err := disclosure.Verify(conf, request, false)
 		require.NoError(t, err)
 		require.Equal(t, ProofStatusInvalid, status)
 	})

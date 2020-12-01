@@ -70,7 +70,7 @@ const (
 
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
-	maxProtocolVersion = irma.NewVersion(2, 6)
+	maxProtocolVersion = irma.NewVersion(2, 7)
 )
 
 func (s *memorySessionStore) get(t string) *session {

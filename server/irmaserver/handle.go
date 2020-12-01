@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -99,7 +99,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	var rerr *irma.RemoteError
 	session.result.Signature = signature
 	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(
-		session.conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
+		session.conf.IrmaConfiguration, session.request.(*irma.SignatureRequest), session.version.Above(2, 6))
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
@@ -121,7 +121,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 	var err error
 	var rerr *irma.RemoteError
 	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(
-		session.conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
+		session.conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest), session.version.Above(2, 6))
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
@@ -159,23 +159,25 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		pubkeys = append(pubkeys, pubkey)
 	}
 
-	// Verify and merge keyshare server proofs, if any
-	for i, proof := range commitments.Proofs {
-		pubkey := pubkeys[i]
-		schemeid := irma.NewIssuerIdentifier(pubkey.Issuer).SchemeManagerIdentifier()
-		if session.conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
-			proofP, err := session.getProofP(commitments, schemeid)
-			if err != nil {
-				return nil, session.fail(server.ErrorKeyshareProofMissing, err.Error())
+	// Verify and merge keyshare server proofs, if any and needed for session version
+	if session.version.Below(2, 7) {
+		for i, proof := range commitments.Proofs {
+			pubkey := pubkeys[i]
+			schemeid := irma.NewIssuerIdentifier(pubkey.Issuer).SchemeManagerIdentifier()
+			if session.conf.IrmaConfiguration.SchemeManagers[schemeid].Distributed() {
+				proofP, err := session.getProofP(commitments, schemeid)
+				if err != nil {
+					return nil, session.fail(server.ErrorKeyshareProofMissing, err.Error())
+				}
+				proof.MergeProofP(proofP, pubkey)
 			}
-			proof.MergeProofP(proofP, pubkey)
 		}
 	}
 
 	// Verify all proofs and check disclosed attributes, if any, against request
 	now := time.Now()
 	session.result.Disclosed, session.result.ProofStatus, err = commitments.Disclosure().VerifyAgainstRequest(
-		session.conf.IrmaConfiguration, request, request.GetContext(), request.GetNonce(nil), pubkeys, &now, false,
+		session.conf.IrmaConfiguration, request, request.GetContext(), request.GetNonce(nil), pubkeys, session.version.Above(2, 6), &now, false,
 	)
 	if err != nil {
 		if err == irma.ErrMissingPublicKey {

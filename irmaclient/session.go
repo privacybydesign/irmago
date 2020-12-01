@@ -107,6 +107,7 @@ var supportedVersions = map[int][]int{
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
 		6, // introduces nonrevocation proofs
+		7, // new keyshare protocol
 	},
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
@@ -439,6 +440,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		}
 		startKeyshareSession(
 			session,
+			session.Version.Below(2, 7),
 			session.Handler,
 			session.builders,
 			session.request,
@@ -722,14 +724,16 @@ func (session *session) Dismiss() {
 
 // Keyshare session handler methods
 
-func (session *session) KeyshareDone(message interface{}) {
+func (session *session) KeyshareDone(message interface{}, keyshareWs map[string]*big.Int, keyshareContribution string) {
 	switch session.Action {
 	case irma.ActionSigning:
 		fallthrough
 	case irma.ActionDisclosing:
 		session.sendResponse(&irma.Disclosure{
-			Proofs:  message.(gabi.ProofList),
-			Indices: session.attrIndices,
+			Proofs:               message.(gabi.ProofList),
+			Indices:              session.attrIndices,
+			KeyshareWs:           keyshareWs,
+			KeyshareContribution: keyshareContribution,
 		})
 	case irma.ActionIssuing:
 		session.sendResponse(&irma.IssueCommitmentMessage{

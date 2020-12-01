@@ -126,6 +126,9 @@ func (pl ProofList) VerifyProofs(
 	request SessionRequest,
 	context *big.Int, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
+	keyshareWs map[string]*big.Int,
+	keyshareContribution string,
+	forceNewProtocol bool,
 	validAt *time.Time,
 	isSig bool,
 ) (bool, map[int]*time.Time, error) {
@@ -147,13 +150,46 @@ func (pl ProofList) VerifyProofs(
 	}
 
 	// Compute slice to inform gabi of which proofs should be verified to share the same secret key
+	// At the same time, determine which (if any) keyshare server is involved with this particular session
 	keyshareServers := make([]bool, len(pl))
+	var keyshareManager SchemeManagerIdentifier
+	isDistributed := false
 	for i := range pl {
 		schemeID := NewIssuerIdentifier(publickeys[i].Issuer).SchemeManagerIdentifier()
 		keyshareServers[i] = configuration.SchemeManagers[schemeID].Distributed()
+		if configuration.SchemeManagers[schemeID].Distributed() {
+			keyshareManager = schemeID
+			isDistributed = true
+		}
 	}
 
-	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers, nil, nil) {
+	// Check that new protocol was used if forced
+	if isDistributed && forceNewProtocol {
+		if len(keyshareWs) == 0 || keyshareContribution == "" {
+			return false, nil, nil
+		}
+	}
+
+	// Check and parse keyshare server info if needed
+	var parsedContribution *gabi.KeyshareContribution
+	if isDistributed && keyshareContribution != "" {
+		claims := struct {
+			jwt.StandardClaims
+			Contribution *gabi.KeyshareContribution
+		}{}
+		// We dont care when keyshare server was involved, just that it was
+		parser := new(jwt.Parser)
+		parser.SkipClaimsValidation = true // no need to abort due to clock drift issues
+		if _, err := parser.ParseWithClaims(keyshareContribution, &claims, configuration.KeyshareServerKeyFunc(keyshareManager)); err != nil {
+			return false, nil, nil
+		}
+		if claims.Contribution == nil {
+			return false, nil, nil
+		}
+		parsedContribution = claims.Contribution
+	}
+
+	if !gabi.ProofList(pl).Verify(publickeys, context, nonce, isSig, keyshareServers, keyshareWs, parsedContribution) {
 		return false, nil, nil
 	}
 
@@ -342,11 +378,22 @@ func (d *Disclosure) VerifyAgainstRequest(
 	request SessionRequest,
 	context, nonce *big.Int,
 	publickeys []*gabi.PublicKey,
+	forceNewProtocol bool,
 	validAt *time.Time,
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {
 	// Cryptographically verify all included IRMA proofs
-	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(configuration, request, context, nonce, publickeys, validAt, issig)
+	valid, revtimes, err := ProofList(d.Proofs).VerifyProofs(
+		configuration,
+		request,
+		context,
+		nonce,
+		publickeys,
+		d.KeyshareWs,
+		d.KeyshareContribution,
+		forceNewProtocol,
+		validAt,
+		issig)
 	if !valid || err != nil {
 		return nil, ProofStatusInvalid, err
 	}
@@ -378,8 +425,8 @@ func (d *Disclosure) VerifyAgainstRequest(
 	return list, ProofStatusValid, nil
 }
 
-func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
-	return d.VerifyAgainstRequest(configuration, request, request.GetContext(), request.GetNonce(nil), nil, nil, false)
+func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureRequest, forceNewProtocol bool) ([][]*DisclosedAttribute, ProofStatus, error) {
+	return d.VerifyAgainstRequest(configuration, request, request.GetContext(), request.GetNonce(nil), nil, forceNewProtocol, nil, false)
 }
 
 // Verify the attribute-based signature, optionally against a corresponding signature request. If the request is present
@@ -391,7 +438,7 @@ func (d *Disclosure) Verify(configuration *Configuration, request *DisclosureReq
 //
 // The signature request is optional; if it is nil then the attribute-based signature is still verified, and all
 // containing attributes returned in the result.
-func (sm *SignedMessage) Verify(configuration *Configuration, request *SignatureRequest) ([][]*DisclosedAttribute, ProofStatus, error) {
+func (sm *SignedMessage) Verify(configuration *Configuration, request *SignatureRequest, forceNewProtocol bool) ([][]*DisclosedAttribute, ProofStatus, error) {
 	var message string
 
 	if len(sm.Signature) == 0 {
@@ -425,7 +472,7 @@ func (sm *SignedMessage) Verify(configuration *Configuration, request *Signature
 	if request != nil {
 		r = request
 	}
-	return sm.Disclosure().VerifyAgainstRequest(configuration, r, sm.Context, sm.GetNonce(), nil, &t, true)
+	return sm.Disclosure().VerifyAgainstRequest(configuration, r, sm.Context, sm.GetNonce(), nil, forceNewProtocol, &t, true)
 }
 
 // ExpiredError indicates that something (e.g. a JWT) has expired.

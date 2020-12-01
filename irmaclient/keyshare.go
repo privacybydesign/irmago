@@ -26,7 +26,7 @@ type KeysharePinRequestor interface {
 }
 
 type keyshareSessionHandler interface {
-	KeyshareDone(message interface{})
+	KeyshareDone(message interface{}, keyshareWs map[string]*big.Int, keyshareContribution string)
 	KeyshareCancelled()
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -38,18 +38,22 @@ type keyshareSessionHandler interface {
 }
 
 type keyshareSession struct {
-	sessionHandler   keyshareSessionHandler
-	pinRequestor     KeysharePinRequestor
-	builders         gabi.ProofBuilderList
-	session          irma.SessionRequest
-	conf             *irma.Configuration
-	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
-	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
-	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
-	issuerProofNonce *big.Int
-	timestamp        *atum.Timestamp
-	pinCheck         bool
-	preferences      Preferences
+	sessionHandler        keyshareSessionHandler
+	useOldProtocol        bool
+	pinRequestor          KeysharePinRequestor
+	builders              gabi.ProofBuilderList
+	session               irma.SessionRequest
+	conf                  *irma.Configuration
+	keyshareServers       map[irma.SchemeManagerIdentifier]*keyshareServer
+	keyshareServer        *keyshareServer // The one keyshare server in use in case of issuance
+	transports            map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
+	issuerProofNonce      *big.Int
+	intermediateChallenge *big.Int
+	keyshareWs            map[string]*big.Int
+	proofs                gabi.ProofList
+	timestamp             *atum.Timestamp
+	pinCheck              bool
+	preferences           Preferences
 }
 
 type keyshareServer struct {
@@ -94,6 +98,7 @@ func (ks *keyshareServer) HashedPin(pin string) string {
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
 func startKeyshareSession(
 	sessionHandler keyshareSessionHandler,
+	useOldProtocol bool,
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
 	session irma.SessionRequest,
@@ -114,14 +119,15 @@ func startKeyshareSession(
 			}
 		}
 	}
-	if _, issuing := session.(*irma.IssuanceRequest); issuing && ksscount > 1 {
-		err := errors.New("Issuance session involving more than one keyshare servers are not supported")
+	if ksscount > 1 {
+		err := errors.New("Sessions involving more than one keyshare servers are not supported")
 		sessionHandler.KeyshareError(nil, err)
 		return
 	}
 
 	ks := &keyshareSession{
 		session:          session,
+		useOldProtocol:   useOldProtocol,
 		builders:         builders,
 		sessionHandler:   sessionHandler,
 		transports:       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
@@ -144,7 +150,11 @@ func startKeyshareSession(
 		transport := irma.NewHTTPTransport(scheme.KeyshareServer, !ks.preferences.DeveloperMode)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
-		transport.SetHeader(kssVersionHeader, "2")
+		if useOldProtocol {
+			transport.SetHeader(kssVersionHeader, "2")
+		} else {
+			transport.SetHeader(kssVersionHeader, "3")
+		}
 		ks.transports[managerID] = transport
 
 		// Try to parse token as a jwt to see if it is still valid; if so we don't need to ask for the PIN
@@ -282,10 +292,94 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 	return
 }
 
+func (ks *keyshareSession) getPs(pkids []irma.PublicKeyIdentifier) {
+	transport := ks.transports[ks.keyshareServer.SchemeManagerIdentifier]
+	Ps := map[string]*big.Int{}
+	err := transport.Post("prove/getP", &Ps, pkids)
+	if err != nil {
+		if err.(*irma.SessionError).RemoteError != nil &&
+			err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
+			// JWT may be out of date due to clock drift; request pin and try again
+			// (but only if we did not ask for a PIN earlier)
+			ks.pinCheck = false
+			ks.sessionHandler.KeysharePin()
+			ks.VerifyPin(-1)
+			return
+		}
+		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
+		return
+	}
+
+	// Merge Ps
+	for _, builder := range ks.builders {
+		pk := builder.PublicKey()
+		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
+			continue
+		}
+		builder.MergeKeyshareP(Ps[pk.KeyID])
+	}
+}
+
+// GetCommitments gets the commitments (first message in Schnorr zero-knowledge protocol)
+// of all keyshare servers of their part of the private key. For issuance, it also
+// gets the Keyshare contributions to U (keysharePs) and merges these.
+func (ks *keyshareSession) GetCommitments() {
+	// Fall back to old protocol if needed
+	if ks.useOldProtocol {
+		ks.GetOldCommitments()
+		return
+	}
+
+	pkids := []irma.PublicKeyIdentifier{}
+
+	// Build a list of public keys that we will use in the keyshare protocol.
+	for _, builder := range ks.builders {
+		pk := builder.PublicKey()
+		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
+			continue
+		}
+		pkids = append(pkids, irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter})
+	}
+
+	if _, isIssuance := ks.session.(*irma.IssuanceRequest); isIssuance {
+		//We will also need Keyshare P values
+		ks.getPs(pkids)
+	}
+
+	// Prepare the intermediate challenge
+	_, issig := ks.session.(*irma.SignatureRequest)
+	ks.intermediateChallenge = ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), nil, issig)
+
+	// Fetch the needed commitments
+	transport := ks.transports[ks.keyshareServer.SchemeManagerIdentifier]
+	request := &irma.KeyshareCommitmentRequest{
+		Keys:  pkids,
+		UserK: ks.intermediateChallenge,
+	}
+	err := transport.Post("prove/getCommitments", &ks.keyshareWs, request)
+	if err != nil {
+		if err.(*irma.SessionError).RemoteError != nil &&
+			err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
+			// JWT may be out of date due to clock drift; request pin and try again
+			// (but only if we did not ask for a PIN earlier)
+			ks.pinCheck = false
+			ks.sessionHandler.KeysharePin()
+			ks.VerifyPin(-1)
+			return
+		}
+		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
+		return
+	}
+
+	ks.BuildProofs()
+}
+
 // GetCommitments gets the commitments (first message in Schnorr zero-knowledge protocol)
 // of all keyshare servers of their part of the private key, and merges these commitments
 // in our own proof builders.
-func (ks *keyshareSession) GetCommitments() {
+func (ks *keyshareSession) GetOldCommitments() {
 	pkids := map[irma.SchemeManagerIdentifier][]*irma.PublicKeyIdentifier{}
 	commitments := map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment{}
 
@@ -345,6 +439,71 @@ func (ks *keyshareSession) GetCommitments() {
 	ks.GetProofPs()
 }
 
+// BuildProofs uses the combined commitments to calculate the challenge, then builds a prooflist,
+// and uses our s response to ask the keyshare server for its contribution to the proofs
+func (ks *keyshareSession) BuildProofs() {
+	challenge := gabi.KeyshareChallenge(ks.intermediateChallenge, ks.keyshareWs)
+	var err error
+
+	// Build proofs
+	ks.proofs, err = ks.builders.BuildDistributedProofList(challenge, nil)
+	if err != nil {
+		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
+		return
+	}
+
+	// Get user S
+	var userS *big.Int
+	for i, builder := range ks.builders {
+		pk := builder.PublicKey()
+		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
+			continue
+		}
+		userS = ks.proofs[i].SecretKeyResponse()
+	}
+
+	// Request keyshare response
+	var KeyshareContribution string
+	transport := ks.transports[ks.keyshareServer.SchemeManagerIdentifier]
+	err = transport.Post("prove/getResponse", &KeyshareContribution, userS)
+	if err != nil {
+		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
+		return
+	}
+
+	// And parse and merge it
+	claims := struct {
+		jwt.StandardClaims
+		Contribution *gabi.KeyshareContribution
+	}{}
+	parser := new(jwt.Parser)
+	parser.SkipClaimsValidation = true // no need to abort due to clock drift issues
+	if _, err := parser.ParseWithClaims(KeyshareContribution, &claims, ks.conf.KeyshareServerKeyFunc(ks.keyshareServer.SchemeManagerIdentifier)); err != nil {
+		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
+		return
+	}
+	for i, builder := range ks.builders {
+		pk := builder.PublicKey()
+		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
+		if !ks.conf.SchemeManagers[managerID].Distributed() {
+			continue
+		}
+		ks.proofs[i].MergeKeyshareContribution(claims.Contribution)
+	}
+
+	if _, isIssuance := ks.session.(*irma.IssuanceRequest); isIssuance {
+		ks.sessionHandler.KeyshareDone(&gabi.IssueCommitmentMessage{
+			Proofs:               ks.proofs,
+			Nonce2:               ks.issuerProofNonce,
+			KeyshareWs:           ks.keyshareWs,
+			KeyshareContribution: KeyshareContribution,
+		}, nil, "")
+	} else {
+		ks.sessionHandler.KeyshareDone(ks.proofs, ks.keyshareWs, KeyshareContribution)
+	}
+}
+
 // GetProofPs uses the combined commitments of all keyshare servers and ourself
 // to calculate the challenge, which is sent to the keyshare servers in order to
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
@@ -394,7 +553,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 		for manager, response := range responses {
 			message.ProofPjwts[manager.String()] = response
 		}
-		ks.sessionHandler.KeyshareDone(message)
+		ks.sessionHandler.KeyshareDone(message, nil, "")
 	}
 }
 
@@ -425,5 +584,5 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		ks.sessionHandler.KeyshareError(nil, err)
 		return
 	}
-	ks.sessionHandler.KeyshareDone(list)
+	ks.sessionHandler.KeyshareDone(list, nil, "")
 }

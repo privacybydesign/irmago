@@ -6,7 +6,7 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
@@ -43,7 +43,7 @@ func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestH
 	switch h.action {
 	case irma.ActionDisclosing:
 		r, _ := verifyAs.(*irma.DisclosureRequest)
-		list, status, err := result.DisclosureResult.Verify(client.Configuration, r)
+		list, status, err := result.DisclosureResult.Verify(client.Configuration, r, false)
 		require.NoError(t, err)
 		return list, status
 	case irma.ActionSigning:
@@ -53,7 +53,7 @@ func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestH
 			i.Add(i, big.NewInt(16))
 		}
 		r, _ := verifyAs.(*irma.SignatureRequest)
-		list, status, err := result.SignatureResult.Verify(client.Configuration, r)
+		list, status, err := result.SignatureResult.Verify(client.Configuration, r, false)
 		require.NoError(t, err)
 		return list, status
 	default:

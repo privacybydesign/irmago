@@ -3,7 +3,7 @@ package sessiontest
 import (
 	"testing"
 
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
@@ -95,7 +95,7 @@ func TestLogging(t *testing.T) {
 	sig, err := entry.GetSignedMessage()
 	require.NoError(t, err)
 	require.NotNil(t, sig)
-	attrs, status, err := sig.Verify(client.Configuration, nil)
+	attrs, status, err := sig.Verify(client.Configuration, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.NotEmpty(t, attrs)

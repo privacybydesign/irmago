@@ -149,11 +149,11 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, result.Disclosed)
 		require.NotNil(t, result.Signature)
 
-		_, status, err := result.Signature.Verify(client.Configuration, request)
+		_, status, err := result.Signature.Verify(client.Configuration, request, false)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusValid, status)
 
-		_, status, err = result.Signature.Verify(client.Configuration, nil)
+		_, status, err = result.Signature.Verify(client.Configuration, nil, false)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusValid, status)
 	})
@@ -166,7 +166,7 @@ func TestRevocationAll(t *testing.T) {
 
 		sig := &irma.SignedMessage{}
 		require.NoError(t, json.Unmarshal([]byte(j), sig))
-		_, status, err := sig.Verify(client.Configuration, nil)
+		_, status, err := sig.Verify(client.Configuration, nil, false)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusValid, status)
 	})
@@ -268,7 +268,7 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, uint64(1), events[len(events)-1].Index)
 
 		// Try to verify against updated session request
-		_, status, err := disclosure.Verify(client.Configuration, request)
+		_, status, err := disclosure.Verify(client.Configuration, request, false)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusInvalid, status)
 
@@ -291,7 +291,7 @@ func TestRevocationAll(t *testing.T) {
 		// Check that the nonrevocation proof which uses a newer accumulator than ours verifies
 		events = request.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(1), events[len(events)-1].Index)
-		_, status, err = disclosure.Verify(client.Configuration, request)
+		_, status, err = disclosure.Verify(client.Configuration, request, false)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusValid, status)
 
@@ -301,7 +301,7 @@ func TestRevocationAll(t *testing.T) {
 		disclosure, _, err = client.Proofs(choice, newrequest)
 		require.NoError(t, err)
 		// verify disclosure against request that still requests nonrevocation proofs
-		_, status, err = disclosure.Verify(client.Configuration, request)
+		_, status, err = disclosure.Verify(client.Configuration, request, false)
 		require.NoError(t, err)
 		require.Equal(t, irma.ProofStatusInvalid, status)
 	})

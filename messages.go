@@ -229,8 +229,10 @@ const (
 )
 
 type Disclosure struct {
-	Proofs  gabi.ProofList            `json:"proofs"`
-	Indices DisclosedAttributeIndices `json:"indices"`
+	Proofs               gabi.ProofList            `json:"proofs"`
+	KeyshareWs           map[string]*big.Int       `json:"keyshareWs,omitempty"`
+	KeyshareContribution string                    `json:"keyshare_contribution,omitemtpy"`
+	Indices              DisclosedAttributeIndices `json:"indices"`
 }
 
 // DisclosedAttributeIndices contains, for each conjunction of an attribute disclosure request,
@@ -358,8 +360,10 @@ func (e *SessionError) Stack() string {
 
 func (i *IssueCommitmentMessage) Disclosure() *Disclosure {
 	return &Disclosure{
-		Proofs:  i.Proofs,
-		Indices: i.Indices,
+		Proofs:               i.Proofs,
+		Indices:              i.Indices,
+		KeyshareWs:           i.KeyshareWs,
+		KeyshareContribution: i.KeyshareContribution,
 	}
 }
 

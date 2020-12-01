@@ -16,13 +16,15 @@ const LDContextSignedMessage = "https://irma.app/ld/signature/v2"
 // SignedMessage is a message signed with an attribute-based signature
 // The 'realnonce' will be calculated as: SigRequest.GetNonce() = ASN1(nonce, SHA256(message), timestampSignature)
 type SignedMessage struct {
-	LDContext string                    `json:"@context"`
-	Signature gabi.ProofList            `json:"signature"`
-	Indices   DisclosedAttributeIndices `json:"indices"`
-	Nonce     *big.Int                  `json:"nonce"`
-	Context   *big.Int                  `json:"context"`
-	Message   string                    `json:"message"`
-	Timestamp *atum.Timestamp           `json:"timestamp"`
+	LDContext            string                    `json:"@context"`
+	Signature            gabi.ProofList            `json:"signature"`
+	KeyshareWs           map[string]*big.Int       `json:"keyshareWs,omitempty"`
+	KeyshareContribution string                    `json:"keyshareContribution,omitempty"`
+	Indices              DisclosedAttributeIndices `json:"indices"`
+	Nonce                *big.Int                  `json:"nonce"`
+	Context              *big.Int                  `json:"context"`
+	Message              string                    `json:"message"`
+	Timestamp            *atum.Timestamp           `json:"timestamp"`
 }
 
 func (sm *SignedMessage) Version() int {
@@ -43,8 +45,10 @@ func (sm *SignedMessage) MatchesNonceAndContext(request *SignatureRequest) bool 
 
 func (sm *SignedMessage) Disclosure() *Disclosure {
 	return &Disclosure{
-		Proofs:  sm.Signature,
-		Indices: sm.Indices,
+		Proofs:               sm.Signature,
+		KeyshareWs:           sm.KeyshareWs,
+		KeyshareContribution: sm.KeyshareContribution,
+		Indices:              sm.Indices,
 	}
 }
 
