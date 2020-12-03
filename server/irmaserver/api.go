@@ -193,6 +193,22 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 		}
 	}
 
+	pairingRecommended := false
+	if action == irma.ActionDisclosing {
+		err := request.Disclosure().Disclose.Iterate(func(attr *irma.AttributeRequest) error {
+			if attr.Value != nil {
+				pairingRecommended = true
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, "", "", err
+		}
+	} else {
+		// For issuing and signing actions, we always recommend pairing.
+		pairingRecommended = true
+	}
+
 	request.Base().DevelopmentMode = !s.conf.Production
 	session := s.newSession(action, rrequest)
 	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.requestorToken}).Infof("Session started")
@@ -205,8 +221,9 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 		s.handlers[session.requestorToken] = handler
 	}
 	return &irma.Qr{
-		Type: action,
-		URL:  s.conf.URL + "session/" + string(session.clientToken),
+		Type:               action,
+		URL:                s.conf.URL + "session/" + string(session.clientToken),
+		PairingRecommended: pairingRecommended,
 	}, session.requestorToken, session.frontendAuth, nil
 }
 
