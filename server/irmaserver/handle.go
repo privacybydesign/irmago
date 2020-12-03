@@ -251,8 +251,21 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 		return nil, nil, errors.New("session in invalid state")
 	}
 
+	var res interface{}
+	var err error
+	if session.conf.JwtRSAPrivateKey != nil {
+		res, err = server.ResultJwt(
+			session.result,
+			session.conf.JwtIssuer,
+			session.rrequest.Base().ResultJwtValidity,
+			session.conf.JwtRSAPrivateKey,
+		)
+	} else {
+		res = session.result
+	}
+
 	var reqbts json.RawMessage
-	err := irma.NewHTTPTransport("", false).Post(url, &reqbts, session.result)
+	err = irma.NewHTTPTransport("", false).Post(url, &reqbts, res)
 	if err != nil {
 		return nil, nil, err
 	}
