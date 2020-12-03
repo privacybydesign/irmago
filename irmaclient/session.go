@@ -468,7 +468,9 @@ func (session *session) sendResponse(message interface{}) {
 	var log *LogEntry
 	var err error
 	var messageJson []byte
-	response := &irma.ServerSessionResponse{ProtocolVersion: session.Version, SessionType: session.Action}
+	var path string
+	var ourResponse interface{}
+	serverResponse := &irma.ServerSessionResponse{ProtocolVersion: session.Version, SessionType: session.Action}
 
 	switch session.Action {
 	case irma.ActionSigning:
@@ -477,69 +479,49 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
 			return
 		}
-
 		messageJson, err = json.Marshal(irmaSignature)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
 			return
 		}
-
-		if session.IsInteractive() {
-			if err = session.transport.Post("proofs", &response, irmaSignature); err != nil {
-				session.fail(err.(*irma.SessionError))
-				return
-			}
-			if response.ProofStatus != "VALID" {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response.ProofStatus)})
-				return
-			}
-		}
-		log, err = session.createLogEntry(message)
-		if err != nil {
-			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			session.client.reportError(err)
-		}
+		ourResponse = irmaSignature
+		path = "proofs"
 	case irma.ActionDisclosing:
 		messageJson, err = json.Marshal(message)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
 			return
 		}
-		if session.IsInteractive() {
-			if err = session.transport.Post("proofs", &response, message); err != nil {
-				session.fail(err.(*irma.SessionError))
-				return
-			}
-			if response.ProofStatus != "VALID" {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response.ProofStatus)})
-				return
-			}
-		}
-		log, err = session.createLogEntry(message)
-		if err != nil {
-			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			session.client.reportError(err)
-		}
+		ourResponse = message
+		path = "proofs"
 	case irma.ActionIssuing:
-		if err = session.transport.Post("commitments", &response, message); err != nil {
+		ourResponse = message
+		path = "commitments"
+	}
+
+	if session.IsInteractive() {
+		if err = session.transport.Post(path, &serverResponse, ourResponse); err != nil {
 			session.fail(err.(*irma.SessionError))
 			return
 		}
-		if response.ProofStatus != "VALID" {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response.ProofStatus)})
+		if serverResponse.ProofStatus != irma.ProofStatusValid {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(serverResponse.ProofStatus)})
 			return
-		}
-		if err = session.client.ConstructCredentials(response.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-			return
-		}
-		log, err = session.createLogEntry(message)
-		if err != nil {
-			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			session.client.reportError(err)
 		}
 	}
 
+	if session.Action == irma.ActionIssuing {
+		if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
+		}
+	}
+
+	log, err = session.createLogEntry(message)
+	if err != nil {
+		irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
+		session.client.reportError(err)
+	}
 	if err = session.client.storage.AddLogEntry(log); err != nil {
 		irma.Logger.Warn(errors.WrapPrefix(err, "Failed to write log entry", 0).ErrorStack())
 	}
@@ -548,8 +530,8 @@ func (session *session) sendResponse(message interface{}) {
 	}
 	session.finish(false)
 
-	if response != nil && response.NextSession != nil {
-		session.next = session.client.newQrSession(response.NextSession, session.Handler)
+	if serverResponse != nil && serverResponse.NextSession != nil {
+		session.next = session.client.newQrSession(serverResponse.NextSession, session.Handler)
 		session.next.implicitDisclosure = session.choice.Attributes
 	} else {
 		session.Handler.Success(string(messageJson))
