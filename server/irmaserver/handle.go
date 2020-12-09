@@ -247,7 +247,9 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 	if url == "" {
 		return nil, nil, nil
 	}
-	if session.result.Status != server.StatusDone && session.result.ProofStatus != irma.ProofStatusValid {
+	if session.result.Status != server.StatusDone ||
+		session.result.ProofStatus != irma.ProofStatusValid ||
+		session.result.Err != nil {
 		return nil, nil, errors.New("session in invalid state")
 	}
 
