@@ -115,7 +115,7 @@ func chainedServerHandler(t *testing.T) http.Handler {
 		request := &irma.ServiceProviderRequest{
 			Request: getDisclosureRequest(id),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSessionURL: "http://localhost:48686/2",
+				NextSession: irma.NextSessionData{URL: "http://localhost:48686/2"},
 			},
 		}
 		bts, err := json.Marshal(request)

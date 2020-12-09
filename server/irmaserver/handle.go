@@ -243,7 +243,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 }
 
 func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConDisCon, error) {
-	url := session.rrequest.Base().NextSessionURL
+	url := session.rrequest.Base().NextSession.URL
 	if url == "" {
 		return nil, nil, nil
 	}

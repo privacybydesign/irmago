@@ -120,10 +120,14 @@ type ServerJwt struct {
 // RequestorBaseRequest contains fields present in all RequestorRequest types
 // with which the requestor configures an IRMA session.
 type RequestorBaseRequest struct {
-	ResultJwtValidity int    `json:"validity,omitempty"`       // Validity of session result JWT in seconds
-	ClientTimeout     int    `json:"timeout,omitempty"`        // Wait this many seconds for the IRMA app to connect before the session times out
-	CallbackURL       string `json:"callbackUrl,omitempty"`    // URL to post session result to
-	NextSessionURL    string `json:"nextSessionUrl,omitempty"` // URL from which to get the next session after this one
+	ResultJwtValidity int             `json:"validity,omitempty"`    // Validity of session result JWT in seconds
+	ClientTimeout     int             `json:"timeout,omitempty"`     // Wait this many seconds for the IRMA app to connect before the session times out
+	CallbackURL       string          `json:"callbackUrl,omitempty"` // URL to post session result to
+	NextSession       NextSessionData `json:"nextSession,omitempty"`
+}
+
+type NextSessionData struct {
+	URL string `json:"url"` // URL from which to get the next session after this one
 }
 
 // RequestorRequest is the message with which requestors start an IRMA session. It contains a
