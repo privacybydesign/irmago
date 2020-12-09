@@ -62,7 +62,8 @@ func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeLi
 	idx := credtype.RevocationIndex + 1
 	var rev bool
 	if credtype != nil {
-		rev = len(ints) > idx && ints[idx] != nil && ints[idx].Cmp(bigZero) != 0
+		rev = credtype.RevocationSupported() &&
+			len(ints) > idx && ints[idx] != nil && ints[idx].Cmp(bigZero) != 0
 	}
 	return &AttributeList{
 		Ints:                ints,
