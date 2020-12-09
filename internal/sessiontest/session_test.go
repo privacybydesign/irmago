@@ -604,16 +604,13 @@ func TestChainedSessions(t *testing.T) {
 
 	// check that our credential instance is new
 	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
-	cred := clientFindCred(t, client, id)
-	require.True(t, cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1*irma.ExpiryFactor*time.Second))))
-}
 
-func clientFindCred(t *testing.T, client *irmaclient.Client, id irma.CredentialTypeIdentifier) *irma.CredentialInfo {
 	for _, cred := range client.CredentialInfoList() {
-		if id == irma.NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", cred.SchemeManagerID, cred.IssuerID, cred.ID)) {
-			return cred
+		if id.String() == fmt.Sprintf("%s.%s.%s", cred.SchemeManagerID, cred.IssuerID, cred.ID) &&
+			cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1*irma.ExpiryFactor*time.Second))) {
+			return
 		}
 	}
-	require.NoError(t, errors.New("not found"))
-	return nil
+
+	require.NoError(t, errors.New("newly issued credential not found in client"))
 }

@@ -111,6 +111,11 @@ func chainedServerHandler(t *testing.T) http.Handler {
 	mux := http.NewServeMux()
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
+	// Note: these chained session requests just serve to test the full functionality of this
+	// feature, and don't necessarily represent a chain of sessions that would be sensible or
+	// desirable in production settings; probably a chain should not be longer than two sessions,
+	// with an issuance session at the end.
+
 	mux.HandleFunc("/1", func(w http.ResponseWriter, r *http.Request) {
 		request := &irma.ServiceProviderRequest{
 			Request: getDisclosureRequest(id),
@@ -124,6 +129,7 @@ func chainedServerHandler(t *testing.T) http.Handler {
 		require.NoError(t, err)
 	})
 
+	var attr *string
 	mux.HandleFunc("/2", func(w http.ResponseWriter, r *http.Request) {
 		bts, err := ioutil.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -134,22 +140,41 @@ func chainedServerHandler(t *testing.T) http.Handler {
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.Len(t, result.Disclosed, 1)
 		require.Len(t, result.Disclosed[0], 1)
-		require.NotNil(t, result.Disclosed[0][0].RawValue)
-		require.Equal(t, "456", *result.Disclosed[0][0].RawValue)
+		attr = result.Disclosed[0][0].RawValue
+		require.NotNil(t, attr)
 
 		cred := &irma.CredentialRequest{
 			CredentialTypeID: id.CredentialTypeIdentifier(),
 			Attributes: map[string]string{
-				"level":             "42",
-				"studentCardNumber": "123",
-				"studentID":         "456",
-				"university":        "Radboud",
+				"level":             *attr,
+				"studentCardNumber": *attr,
+				"studentID":         *attr,
+				"university":        *attr,
 			},
 		}
-		bts, err = json.Marshal(irma.NewIssuanceRequest([]*irma.CredentialRequest{cred}))
+
+		bts, err = json.Marshal(irma.IdentityProviderRequest{
+			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{cred}),
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				NextSession: irma.NextSessionData{URL: "http://localhost:48686/3"},
+			},
+		})
 		require.NoError(t, err)
 
-		logger.Trace("next request: ", string(bts))
+		logger.Trace("2nd request: ", string(bts))
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
+	mux.HandleFunc("/3", func(w http.ResponseWriter, r *http.Request) {
+		request := irma.NewDisclosureRequest()
+		request.Disclose = irma.AttributeConDisCon{{{{
+			Type:  irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"),
+			Value: attr,
+		}}}}
+		bts, err := json.Marshal(request)
+		require.NoError(t, err)
+		logger.Trace("3rd request: ", string(bts))
 		_, err = w.Write(bts)
 		require.NoError(t, err)
 	})
