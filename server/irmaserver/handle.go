@@ -287,7 +287,6 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 		}
 		disclosed = append(disclosed, irma.AttributeDisCon{con})
 	}
-	disclosed = append(session.implicitDisclosure, disclosed...)
 
 	return req, disclosed, nil
 }
