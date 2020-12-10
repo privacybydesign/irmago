@@ -220,11 +220,16 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 	if handler != nil {
 		s.handlers[session.requestorToken] = handler
 	}
-	return &irma.Qr{
-		Type:               action,
-		URL:                s.conf.URL + "session/" + string(session.clientToken),
-		PairingRecommended: pairingRecommended,
-	}, session.requestorToken, session.frontendAuth, nil
+
+	qr := &irma.Qr{
+		Type: action,
+		URL:  s.conf.URL + "session/" + string(session.clientToken),
+	}
+
+	if pairingRecommended {
+		qr.PairingRecommended = &pairingRecommended
+	}
+	return qr, session.requestorToken, session.frontendAuth, nil
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
