@@ -167,7 +167,7 @@ type Qr struct {
 	// Session type (disclosing, signing, issuing)
 	Type Action `json:"irmaqr"`
 	// Indicator to the frontend that shows whether pairing is recommended when starting the session
-	PairingRecommended *bool `json:"pairingHint,omitempty"`
+	PairingRecommended bool `json:"pairingHint,omitempty"`
 }
 
 // Tokens to identify a session from the perspective of the different agents
