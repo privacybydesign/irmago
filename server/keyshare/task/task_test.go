@@ -9,12 +9,18 @@ import (
 	"testing"
 	"time"
 
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const postgresTestUrl = "postgresql://localhost:5432/test"
+
+func init() {
+	irma.Logger.SetLevel(logrus.FatalLevel)
+}
 
 func TestCleanupEmails(t *testing.T) {
 	SetupDatabase(t)
@@ -27,7 +33,7 @@ func TestCleanupEmails(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), (15, 'test2@test.com', $1), (15, 'test3@test.com', 0)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
-	th, err := New(&Configuration{DBConnstring: postgresTestUrl})
+	th, err := New(&Configuration{DBConnstring: postgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
 	th.CleanupEmails()
@@ -54,7 +60,7 @@ func TestCleanupTokens(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ('t1', 't1@test.com', 0), ('t2', 't2@test.com', $1)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
-	th, err := New(&Configuration{DBConnstring: postgresTestUrl})
+	th, err := New(&Configuration{DBConnstring: postgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
 	th.CleanupTokens()
@@ -84,7 +90,7 @@ func TestCleanupAccounts(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.users (id, username, language, coredata, pin_counter, pin_block_date, last_seen, delete_on) VALUES (15, 'testuser', '', '', 0,0, 0, NULL), (16, 't2', '', '', 0, 0, 0, $1-3600), (17, 't3', '', '', 0, 0, $1, $1-3600), (18, 't4', '', NULL, 0, 0, $1, $1-3600)", time.Now().Unix())
 	require.NoError(t, err)
 
-	th, err := New(&Configuration{DBConnstring: postgresTestUrl})
+	th, err := New(&Configuration{DBConnstring: postgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
 	th.CleanupAccounts()
@@ -123,6 +129,7 @@ func TestExpireAccounts(t *testing.T) {
 		DeleteExpiredAccountSubject: map[string]string{
 			"en": "testsubject",
 		},
+		Logger: irma.Logger,
 	})
 	require.NoError(t, err)
 

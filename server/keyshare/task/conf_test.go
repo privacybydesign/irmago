@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/assert"
 )
@@ -11,7 +12,7 @@ import (
 func TestConfiguration(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 
-	err := processConfiguration(&Configuration{})
+	err := processConfiguration(&Configuration{Logger: irma.Logger})
 	assert.NoError(t, err)
 
 	err = processConfiguration(&Configuration{
@@ -24,6 +25,7 @@ func TestConfiguration(t *testing.T) {
 		DeleteExpiredAccountSubject: map[string]string{
 			"en": "testsubject",
 		},
+		Logger: irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -36,6 +38,7 @@ func TestConfiguration(t *testing.T) {
 		DeleteExpiredAccountSubject: map[string]string{
 			"en": "testsubject",
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -46,6 +49,7 @@ func TestConfiguration(t *testing.T) {
 		DeleteExpiredAccountSubject: map[string]string{
 			"en": "testsubject",
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -56,6 +60,7 @@ func TestConfiguration(t *testing.T) {
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 }

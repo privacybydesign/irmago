@@ -23,6 +23,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+		Logger:                irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -48,6 +49,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -60,6 +62,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey-does-not-exist"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -72,6 +75,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -84,6 +88,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
+		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -104,6 +109,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -128,6 +134,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -148,6 +155,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		RegistrationEmailSubject: map[string]string{
 			"en": "testsubject",
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -171,6 +179,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
+		Logger: irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -194,6 +203,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -217,6 +227,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
+		Logger: irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -240,6 +251,7 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
+		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 }

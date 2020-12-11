@@ -20,6 +20,7 @@ func TestConfValidation(t *testing.T) {
 		SessionLifetime:        60,
 		KeyshareAttributeNames: []string{"test.test.mijnirma.email"},
 		EmailAttributeNames:    []string{"test.test.email.email"},
+		Logger:                 irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -30,6 +31,7 @@ func TestConfValidation(t *testing.T) {
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		Logger:             irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -39,6 +41,7 @@ func TestConfValidation(t *testing.T) {
 		DBType:             DatabaseTypeMemory,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		Logger:             irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -49,6 +52,7 @@ func TestConfValidation(t *testing.T) {
 		DBConnstring:       "postgresql://localhost:5432/test/",
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		Logger:             irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -59,6 +63,7 @@ func TestConfValidation(t *testing.T) {
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		Logger:             irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -68,6 +73,7 @@ func TestConfValidation(t *testing.T) {
 		DBType:          DatabaseTypeMemory,
 		SessionLifetime: 60,
 		EmailAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		Logger:          irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -77,6 +83,7 @@ func TestConfValidation(t *testing.T) {
 		DBType:             DatabaseTypeMemory,
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		Logger:             irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -87,6 +94,7 @@ func TestConfValidation(t *testing.T) {
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		Logger:             irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -106,6 +114,7 @@ func TestConfValidation(t *testing.T) {
 		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
 		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		DeleteAccountSubject: map[string]string{"en": "testsubject"},
+		Logger:               irma.Logger,
 	})
 	assert.NoError(t, err)
 
@@ -125,6 +134,7 @@ func TestConfValidation(t *testing.T) {
 		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
 		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		DeleteAccountSubject: map[string]string{"en": "testsubject"},
+		Logger:               irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -144,6 +154,7 @@ func TestConfValidation(t *testing.T) {
 		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
 		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		DeleteAccountSubject: map[string]string{"en": "testsubject"},
+		Logger:               irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -163,6 +174,7 @@ func TestConfValidation(t *testing.T) {
 		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
 		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		DeleteAccountSubject: map[string]string{"en": "testsubject"},
+		Logger:               irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -182,6 +194,7 @@ func TestConfValidation(t *testing.T) {
 		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
 		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		DeleteAccountSubject: map[string]string{"en": "testsubject"},
+		Logger:               irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -201,6 +214,7 @@ func TestConfValidation(t *testing.T) {
 		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
 		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		DeleteAccountSubject: map[string]string{"en": "testsubject"},
+		Logger:               irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -220,6 +234,7 @@ func TestConfValidation(t *testing.T) {
 		DeleteEmailSubject:   map[string]string{"de": "testsubject"},
 		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
 		DeleteAccountSubject: map[string]string{"en": "testsubject"},
+		Logger:               irma.Logger,
 	})
 	assert.Error(t, err)
 }
