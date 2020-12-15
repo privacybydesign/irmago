@@ -10,11 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Introduced new frontend endpoints to manage device pairing
   * The API of the `irmaserver` package has two new functions `SetFrontendOptions` and `PairingCompleted`
   * A new server status `"PAIRING"` is introduced
-  * The `Qr` struct now contains an optional field `PairingRecommended` (named `pairingHint` when being marshalled to JSON) that is set to true when pairing is recommended for that session, as indication to the frontend
-* A new function `SessionStatus` is available in the API of the `requestorserver` to get a channel with status updates of an IRMA session
+* A new function `SessionStatus` is available in the API of the `irmaserver` to get a channel with status updates of an IRMA session
 
 ### Changes
-* The `irma.SessionPackage` struct now contains an extra field `FrontendAuth`
+* The `server.SessionPackage` struct now contains an extra field `FrontendAuth`
+* The `irma.Qr` struct now contains an optional field `PairingRecommended` (named `pairingHint` when being marshalled to JSON) that is set to true when pairing is recommended for that session, as indication to the frontend
 * The `StartSession` function from the API of the `irmaserver` package now returns three values: the session pointer (type *irma.QR), the requestor token (type irma.RequestorToken) and the frontend authorization token (type irma.FrontendAuthorization)
 * The `token` parameter, as used by most functions in the API of the `irmaserver` package, now has the type `irma.RequestorToken`
 * The `server.Status` type has been moved to `irma.ServerStatus`; the related constants are also moved, e.g. from `server.StatusInitialized` to `irma.ServerStatusInitialized`
