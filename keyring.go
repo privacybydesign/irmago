@@ -288,7 +288,12 @@ func validatePrivateKey(issuerid IssuerIdentifier, sk *gabi.PrivateKey, conf *Co
 		return errors.Errorf("Private key %d of issuer %s does not belong to corresponding public key", sk.Counter, issuerid.String())
 	}
 	if sk.RevocationSupported() != pk.RevocationSupported() {
-		return errors.Errorf("revocation support of private key %d of issuer %s is not consistent with corresponding public key", sk.Counter, issuerid.String())
+		msg := fmt.Sprintf("revocation support of private key %d of issuer %s is not consistent with corresponding public key", sk.Counter, issuerid.String())
+		if conf.SchemeManagers[issuerid.SchemeManagerIdentifier()].Demo {
+			Logger.Warn(msg)
+		} else {
+			return errors.Errorf(msg)
+		}
 	}
 	return nil
 }
