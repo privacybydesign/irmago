@@ -189,8 +189,8 @@ func TestParseIrmaConfiguration(t *testing.T) {
 		conf.Issuers[NewIssuerIdentifier("irma-demo.RU")].Name["en"],
 		"irma-demo.RU issuer has unexpected name")
 	require.Equal(t,
-		"Student Card",
-		conf.CredentialTypes[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].ShortName["en"],
+		"Demo Student Card",
+		conf.CredentialTypes[NewCredentialTypeIdentifier("irma-demo.RU.studentCard")].Name["en"],
 		"irma-demo.RU.studentCard has unexpected name")
 
 	require.Equal(t,

@@ -3,10 +3,6 @@
 		<en>Demo Root</en>
 		<nl>Demo Root</nl>
 	</Name>
-	<ShortName>
-		<en>Root</en>
-		<nl>Root</nl>
-	</ShortName>
 	<SchemeManager>irma-demo</SchemeManager>
 	<IssuerID>MijnOverheid</IssuerID>
 	<CredentialID>root</CredentialID>

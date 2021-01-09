@@ -3,10 +3,6 @@
 		<en>Demo MyIRMA login</en>
 		<nl>Demo MijnIRMA login</nl>
 	</Name>
-	<ShortName>
-		<en>MyIRMA</en>
-		<nl>MijnIRMA</nl>
-	</ShortName>
 	<SchemeManager>test</SchemeManager>
 	<IssuerID>test</IssuerID>
 	<CredentialID>mijnirma</CredentialID>

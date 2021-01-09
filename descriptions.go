@@ -44,7 +44,6 @@ type SchemeAppVersion struct {
 type Issuer struct {
 	ID              string           `xml:"ID"`
 	Name            TranslatedString `xml:"Name"`
-	ShortName       TranslatedString `xml:"ShortName"`
 	SchemeManagerID string           `xml:"SchemeManager"`
 	ContactAddress  string
 	ContactEMail    string
@@ -56,7 +55,6 @@ type Issuer struct {
 type CredentialType struct {
 	ID                    string           `xml:"CredentialID"`
 	Name                  TranslatedString `xml:"Name"`
-	ShortName             TranslatedString `xml:"ShortName"`
 	IssuerID              string           `xml:"IssuerID"`
 	SchemeManagerID       string           `xml:"SchemeManager"`
 	IsSingleton           bool             `xml:"ShouldBeSingleton"`
