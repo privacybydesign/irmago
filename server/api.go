@@ -414,10 +414,8 @@ func LogResponse(url string, status int, duration time.Duration, binary bool, re
 	l := Logger.WithFields(fields)
 	if status < 400 {
 		l.Trace("<= response")
-	} else if status == 404 {
-		l.WithField("url", url).Warn("<= response")
 	} else {
-		l.Warn("<= response")
+		l.WithField("url", url).Warn("<= response")
 	}
 }
 
