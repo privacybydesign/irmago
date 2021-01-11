@@ -399,7 +399,7 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 	Logger.WithFields(fields).Tracef("=> request")
 }
 
-func LogResponse(status int, duration time.Duration, binary bool, response []byte) {
+func LogResponse(url string, status int, duration time.Duration, binary bool, response []byte) {
 	fields := logrus.Fields{
 		"status":   status,
 		"duration": duration.String(),
@@ -414,6 +414,8 @@ func LogResponse(status int, duration time.Duration, binary bool, response []byt
 	l := Logger.WithFields(fields)
 	if status < 400 {
 		l.Trace("<= response")
+	} else if status == 404 {
+		l.WithField("url", url).Warn("<= response")
 	} else {
 		l.Warn("<= response")
 	}
@@ -516,7 +518,7 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 				if opts.EncodeBinary && ww.Header().Get("Content-Type") != "application/json" {
 					hexencode = true
 				}
-				LogResponse(ww.Status(), time.Since(start), hexencode, resp)
+				LogResponse(r.URL.String(), ww.Status(), time.Since(start), hexencode, resp)
 			}()
 
 			// start timer and preform request
