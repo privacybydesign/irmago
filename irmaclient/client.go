@@ -142,7 +142,6 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
-	tempPath string,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
@@ -162,7 +161,7 @@ func New(
 
 	client.Configuration, err = irma.NewConfiguration(
 		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath, TempPath: tempPath, IgnorePrivateKeys: true},
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	if err != nil {
 		return nil, err

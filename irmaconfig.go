@@ -55,9 +55,6 @@ type Configuration struct {
 	Scheduler   *gocron.Scheduler
 	Warnings    []string `json:"-"`
 
-	// Path to temp directory if different than default (needed on android)
-	TempPath string
-
 	options     ConfigurationOptions
 	initialized bool
 	assets      string
@@ -80,7 +77,6 @@ var (
 
 type ConfigurationOptions struct {
 	Assets              string
-	TempPath            string
 	ReadOnly            bool
 	IgnorePrivateKeys   bool
 	RevocationDBConnStr string
@@ -92,7 +88,6 @@ type ConfigurationOptions struct {
 // ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configuration, err error) {
 	conf = &Configuration{
-		TempPath: opts.TempPath,
 		Path:     path,
 		assets:   opts.Assets,
 		readOnly: opts.ReadOnly,
