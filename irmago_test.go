@@ -3,6 +3,7 @@ package irma
 import (
 	"crypto/rand"
 	"encoding/json"
+	"encoding/xml"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -797,4 +798,229 @@ func TestPrivateKeyRings(t *testing.T) {
 	require.NoError(t, err)
 	_, err = mergedring.Latest(ru)
 	require.NoError(t, err)
+}
+
+// Helper functions for wizard tests below
+func credid(s string) CredentialTypeIdentifier {
+	return NewCredentialTypeIdentifier(s)
+}
+func credidptr(s string) *CredentialTypeIdentifier {
+	id := credid(s)
+	return &id
+}
+func credinfo(id string) *CredentialInfo {
+	i := credid(id)
+	return &CredentialInfo{
+		SchemeManagerID: i.Root(),
+		IssuerID:        i.IssuerIdentifier().Name(),
+		ID:              i.Name(),
+	}
+}
+func credtype(id string, deps ...string) *CredentialType {
+	i := credid(id)
+	d := CredentialDependencies{{{}}}
+	for _, dep := range deps {
+		d[0][0] = append(d[0][0], credid(dep))
+	}
+	return &CredentialType{
+		SchemeManagerID: i.Root(),
+		IssuerID:        i.IssuerIdentifier().Name(),
+		ID:              i.Name(),
+		Dependencies:    d,
+	}
+}
+func credwizarditem(id string) IssueWizardItem {
+	return IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: credidptr(id)}
+}
+
+func TestWizardDependencies(t *testing.T) {
+	dependencies := CredentialDependencies{
+		{
+			{credid("a.a.a"), credid("a.a.b")},
+			{credid("a.b.a")},
+		},
+		{
+			{credid("b.a.a")},
+			{credid("b.b.a"), credid("b.b.b")},
+		},
+	}
+
+	wizardcontents := dependencies.WizardContents()
+	require.Equal(t,
+		IssueWizardContents{
+			{
+				{credwizarditem("a.a.a"), credwizarditem("a.a.b")},
+				{credwizarditem("a.b.a")},
+			},
+			{
+				{credwizarditem("b.a.a")},
+				{credwizarditem("b.b.a"), credwizarditem("b.b.b")},
+			},
+		},
+		wizardcontents,
+	)
+
+	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
+	for _, discon := range dependencies {
+		for _, con := range discon {
+			for _, cred := range con {
+				conf.CredentialTypes[cred] = credtype(cred.String())
+			}
+		}
+	}
+	tests := []struct {
+		creds  map[CredentialTypeIdentifier]struct{}
+		wizard []IssueWizardItem
+	}{
+		{
+			creds: nil,
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("a.a.a"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("a.b.a"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.b.a"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("b.b.a"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("b.b.a"): {}, credid("b.b.b"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.b.a"), credwizarditem("b.b.b"),
+			},
+		},
+	}
+
+	for _, tst := range tests {
+		require.Equal(t, tst.wizard, wizardcontents.Choose(conf, tst.creds))
+	}
+}
+
+func TestWizardConstructed(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: "testwizard",
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.e"),
+				Text:       &TranslatedString{"en": "custom description of credential e"},
+			}}},
+			{{{
+				Type: IssueWizardItemTypeWebsite,
+				URL:  &TranslatedString{"en": "https://example.com"},
+			}}},
+		},
+	}
+
+	contents, err := wizard.Choose(conf, nil)
+	require.NoError(t, err)
+	require.Equal(t,
+		[]IssueWizardItem{
+			credwizarditem("scheme.issuer.a"),
+			credwizarditem("scheme.issuer.b"),
+			credwizarditem("scheme.issuer.d"),
+			credwizarditem("scheme.issuer.c"),
+			wizard.Contents[1][0][0],
+			wizard.Contents[2][0][0],
+		},
+		contents,
+	)
+}
+
+func TestWizardFromScheme(t *testing.T) {
+	conf := parseConfiguration(t)
+	wizard := conf.Requestors["localhost"].Wizards["testwizard"]
+
+	var expected []IssueWizardItem
+	require.NoError(t, json.Unmarshal(
+		[]byte(`[{"type":"credential","credential":"irma-demo.MijnOverheid.fullName","header":{"en":"Full name","nl":"Volledige naam"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get name data","nl":"Haal naamgegevens op"}},{"type":"credential","credential":"irma-demo.MijnOverheid.singleton"},{"type":"session","credential":"irma-demo.RU.studentCard","header":{"en":"Student Card","nl":"Studentpas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Student Card","nl":"Haal studentpas op"},"sessionUrl":"https://example.com/getsession"},{"type":"website","credential":"irma-demo.stemmen.stempas","header":{"en":"Voting Card","nl":"Stempas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Voting Card","nl":"Haal stempas op"},"url":{"en":"https://example.com/en","nl":"https://example.com/nl"},"inapp":true}]`),
+		&expected,
+	))
+
+	contents, err := wizard.Choose(conf, nil)
+	require.NoError(t, err)
+	require.Equal(t, expected, contents)
+
+	True := true
+	wizard.ExpandDependencies = &True
+	contents, err = wizard.Choose(conf, nil)
+	require.NoError(t, err)
+	require.Equal(t,
+		append([]IssueWizardItem{credwizarditem("irma-demo.MijnOverheid.root")}, expected...),
+		contents,
+	)
+}
+
+func TestCredentialDependencies_UnmarshalXML(t *testing.T) {
+	xmlbts := []byte(`<Dependencies>
+		<And>
+			<Or>
+				<CredentialType>a</CredentialType>
+				<CredentialType>b</CredentialType>
+			</Or>
+			<Or>
+				<CredentialType>c</CredentialType>
+			</Or>
+		</And>
+		<And>
+			<Or>
+				<CredentialType>d</CredentialType>
+			</Or>
+			<Or>
+				<CredentialType>e</CredentialType>
+				<CredentialType>f</CredentialType>
+			</Or>
+		</And>
+	</Dependencies>`)
+
+	var deps CredentialDependencies
+	require.NoError(t, xml.Unmarshal(xmlbts, &deps))
+
+	require.Equal(t,
+		CredentialDependencies{
+			{
+				{credid("a"), credid("b")},
+				{credid("c")},
+			},
+			{
+				{credid("d")},
+				{credid("e"), credid("f")},
+			},
+		},
+		deps,
+	)
 }

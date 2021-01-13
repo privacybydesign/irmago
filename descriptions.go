@@ -73,6 +73,8 @@ type CredentialType struct {
 
 	DeprecatedSince Timestamp
 
+	Dependencies CredentialDependencies
+
 	ForegroundColor         string
 	BackgroundGradientStart string
 	BackgroundGradientEnd   string
@@ -83,6 +85,7 @@ type CredentialType struct {
 	FAQPurpose          TranslatedString
 	FAQContent          TranslatedString
 	FAQHowto            TranslatedString
+	FAQSummary          *TranslatedString
 }
 
 // AttributeType is a description of an attribute within a credential type.
@@ -106,6 +109,8 @@ type AttributeType struct {
 	SchemeManagerID  string `xml:"-"`
 }
 
+type CredentialDependencies [][][]CredentialTypeIdentifier
+
 // RequestorScheme describes verified requestors
 type RequestorScheme struct {
 	ID        RequestorSchemeIdentifier `json:"id"`
@@ -126,10 +131,254 @@ type RequestorInfo struct {
 	Hostnames  []string                  `json:"hostnames"`
 	Logo       *string                   `json:"logo"`
 	ValidUntil *Timestamp                `json:"valid_until"`
+	Wizards    map[string]*IssueWizard   `json:"wizards"`
 }
 
 // RequestorChunk is a number of verified requestors stored together. The RequestorScheme can consist of multiple such chunks
 type RequestorChunk []*RequestorInfo
+
+type (
+	IssueWizard struct {
+		ID       string                    `json:"id"`
+		Title    TranslatedString          `json:"title"`
+		Logo     *string                   `json:"logo,omitempty"`
+		LogoPath *string                   `json:"logoPath,omitempty"`
+		Issues   *CredentialTypeIdentifier `json:"issues,omitempty"`
+
+		Info *TranslatedString `json:"info,omitempty"`
+		FAQ  []IssueWizardQA   `json:"faq,omitempty"`
+
+		Intro              *TranslatedString   `json:"intro,omitempty"`
+		SuccessHeader      *TranslatedString   `json:"successHeader,omitempty"`
+		SuccessText        *TranslatedString   `json:"successText,omitempty"`
+		ExpandDependencies *bool               `json:"expandDependencies,omitempty"`
+		Contents           IssueWizardContents `json:"contents"`
+	}
+
+	IssueWizardQA struct {
+		Question TranslatedString `json:"question"`
+		Answer   TranslatedString `json:"answer"`
+	}
+
+	IssueWizardContents [][][]IssueWizardItem
+
+	IssueWizardItem struct {
+		Type       IssueWizardItemType       `json:"type"`
+		Credential *CredentialTypeIdentifier `json:"credential,omitempty"`
+		Header     *TranslatedString         `json:"header,omitempty"`
+		Text       *TranslatedString         `json:"text,omitempty"`
+		Label      *TranslatedString         `json:"label,omitempty"`
+		SessionURL *string                   `json:"sessionUrl,omitempty"`
+		URL        *TranslatedString         `json:"url,omitempty"`
+		InApp      *bool                     `json:"inapp,omitempty"`
+	}
+
+	IssueWizardItemType string
+)
+
+const (
+	IssueWizardItemTypeCredential IssueWizardItemType = "credential"
+	IssueWizardItemTypeSession    IssueWizardItemType = "session"
+	IssueWizardItemTypeWebsite    IssueWizardItemType = "website"
+)
+
+// Choose from the wizard a list of items.
+//
+// If the ExpandDependencies boolean is set to false, the result of IssueWizardContents.Choose
+// is returned. If not set or set to true, this is augmented with all dependencies of all items
+// in an executable order.
+func (wizard IssueWizard) Choose(conf *Configuration, creds CredentialInfoList) ([]IssueWizardItem, error) {
+	// convert creds slice to map for easy lookup
+	credsmap := map[CredentialTypeIdentifier]struct{}{}
+	for _, cred := range creds {
+		credsmap[cred.Identifier()] = struct{}{}
+	}
+
+	contents := wizard.Contents.Choose(conf, credsmap)
+	if wizard.ExpandDependencies != nil && !*wizard.ExpandDependencies {
+		return contents, nil
+	}
+
+	// Each item in contents refers to a credential type that has dependencies, which may themselves
+	// have dependencies. So each item has a tree of dependencies. We must return a list
+	// containing all dependencies of each item in an executable order, i.e. item n in the
+	// list depends only on items < n in the list. We do this as follows:
+	// - by considering element n in items to be dependendent on element n-1, we join all
+	//   dependency trees into one
+	// - of that tree, starting at the leaf nodes and iterating downwards toward the root,
+	//   we put all items in the result list.
+
+	// Fist reverse the array, as we must start iterating at the root (having no dependants)
+	reversed := make([]IssueWizardItem, 0, len(contents))
+	byID := map[CredentialTypeIdentifier]IssueWizardItem{}
+	skipped := 0
+	for i := len(contents) - 1; i >= 0; i-- {
+		item := contents[i]
+		if item.Credential == nil {
+			skipped++
+			continue
+		}
+		reversed = append(reversed, contents[i])
+		byID[*contents[i].Credential] = contents[i]
+	}
+
+	// Build a map containing per level of the dependency tree the (deduplicated) nodes at that level
+	// (root = level 0, its dependencies = level 1, their dependencies = level 2, etc).
+	deps := credentialDependencies{}
+	bylevel := map[int]map[CredentialTypeIdentifier]struct{}{}
+	for i, item := range reversed {
+		if err := wizardItemVisit(bylevel, i, *item.Credential, conf, deps, credsmap); err != nil {
+			return nil, err
+		}
+	}
+
+	// Scanning horizontally, i.e. per level, we iterate across the tree, putting all
+	// credential types that we come across in the result slice. This starts at the leaf nodes
+	// that have no dependencies, and after that across the intermediate nodes whose dependencies
+	// have been put in the result slice in previous iterations.
+	var result []IssueWizardItem                         // to return
+	resultmap := map[CredentialTypeIdentifier]struct{}{} // to keep track of credentials already put in the result slice
+	for i := len(bylevel) - 1; i >= 0; i-- {
+		for id := range bylevel[i] {
+			if _, ok := resultmap[id]; ok {
+				continue
+			}
+			resultmap[id] = struct{}{}
+			if item, present := byID[id]; present {
+				result = append(result, item)
+			} else {
+				current := id // create copy of loop variable to take address of
+				result = append(result, IssueWizardItem{
+					Type:       IssueWizardItemTypeCredential,
+					Credential: &current,
+				})
+			}
+		}
+	}
+
+	result = append(result, contents[len(contents)-skipped:]...)
+	return result, nil
+}
+
+type credentialDependencies map[CredentialTypeIdentifier][]IssueWizardItem
+
+// wizardItemVisit is a recursive function that populates a map containing per level of a tree the
+// (deduplicated) nodes at that level.
+func wizardItemVisit(
+	bylevel map[int]map[CredentialTypeIdentifier]struct{},
+	level int,
+	id CredentialTypeIdentifier,
+	conf *Configuration,
+	deps credentialDependencies,
+	creds map[CredentialTypeIdentifier]struct{},
+) error {
+	if level == 25 {
+		return errors.New("issue wizard: level limit exceeded, probably due to circular dependency")
+	}
+
+	if bylevel[level] == nil {
+		bylevel[level] = map[CredentialTypeIdentifier]struct{}{}
+	}
+	bylevel[level][id] = struct{}{}
+
+	for _, child := range deps.get(id, conf, creds) {
+		if err := wizardItemVisit(bylevel, level+1, *child.Credential, conf, deps, creds); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (deps credentialDependencies) get(id CredentialTypeIdentifier, conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) []IssueWizardItem {
+	if _, present := deps[id]; !present {
+		deps[id] = conf.CredentialTypes[id].Dependencies.WizardContents().Choose(conf, creds)
+	}
+	return deps[id]
+}
+
+// Process the wizard contents given the list of present credentials. Of each disjunction,
+// either the first contained inner conjunction that is satisfied by the credential list is chosen;
+// or if no such conjunction exists in the disjunction, the first conjunction is chosen.
+// The result of doing this for all outer conjunctions is flattened and returned.
+func (contents IssueWizardContents) Choose(conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) []IssueWizardItem {
+
+	var choice []IssueWizardItem
+	for _, discon := range contents {
+		disconSatisfied := false
+		for _, con := range discon {
+			conSatisfied := true
+			for _, item := range con {
+				if item.Credential == nil {
+					conSatisfied = false
+					break
+				}
+				if _, present := creds[*item.Credential]; !present {
+					conSatisfied = false
+					break
+				}
+			}
+			if conSatisfied {
+				choice = append(choice, con...)
+				disconSatisfied = true
+				break
+			}
+		}
+		if !disconSatisfied {
+			choice = append(choice, discon[0]...)
+		}
+	}
+
+	return choice
+}
+
+func (wizard *IssueWizard) Validate(conf *Configuration) error {
+	conf.validateTranslations(fmt.Sprintf("issue wizard %s", wizard.ID), wizard)
+
+	if (wizard.SuccessHeader == nil) != (wizard.SuccessText == nil) {
+		return errors.New("wizard contents must have success header and text either both specified, or both empty")
+	}
+	for i, outer := range wizard.Contents {
+		for j, middle := range outer {
+			for k, item := range middle {
+				if err := item.Validate(conf); err != nil {
+					return errors.Errorf("item %d.%d.%d of issue wizard %s: %w", i, j, k, wizard.ID, err)
+				}
+				conf.validateTranslations(fmt.Sprintf("item %d.%d.%d of issue wizard %s", i, j, k, wizard.ID), item)
+			}
+		}
+	}
+	conf.validateTranslations(fmt.Sprintf("issue wizard %s", wizard.ID), wizard)
+	for i, qa := range wizard.FAQ {
+		conf.validateTranslations(fmt.Sprintf("QA %d of issue wizard %s", i, wizard.ID), qa)
+	}
+
+	return nil
+}
+
+func (item *IssueWizardItem) Validate(conf *Configuration) error {
+	if item.Type != IssueWizardItemTypeCredential &&
+		item.Type != IssueWizardItemTypeSession &&
+		item.Type != IssueWizardItemTypeWebsite {
+		return errors.New("unsupported wizard item type")
+	}
+	if item.Type == IssueWizardItemTypeCredential {
+		if item.Credential == nil {
+			return errors.New("wizard item has type credential, but no credential specified")
+		}
+	} else {
+		if item.Header == nil || item.Label == nil || item.Text == nil {
+			return errors.New("wizard item missing required information")
+		}
+	}
+	if item.Type == IssueWizardItemTypeSession && item.SessionURL == nil {
+		return errors.New("wizard item has type session, but no session URL specified")
+	}
+	if item.Type == IssueWizardItemTypeWebsite && item.URL == nil {
+		return errors.New("wizard item has type website, but no session URL specified")
+	}
+
+	return nil
+}
 
 // NewRequestorInfo returns a Requestor with just the given hostname
 func NewRequestorInfo(hostname string) *RequestorInfo {
@@ -250,6 +499,43 @@ func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	}
 	for _, translation := range temp.Translations {
 		(*ts)[translation.XMLName.Local] = translation.Text
+	}
+	return nil
+}
+
+func (deps CredentialDependencies) WizardContents() IssueWizardContents {
+	var contents IssueWizardContents
+	for _, credDiscon := range deps {
+		discon := make([][]IssueWizardItem, 0, len(credDiscon))
+		for _, credCon := range credDiscon {
+			con := make([]IssueWizardItem, 0, len(credCon))
+			for i := range credCon {
+				con = append(con, IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &(credCon[i])})
+			}
+			discon = append(discon, con)
+		}
+		contents = append(contents, discon)
+	}
+	return contents
+}
+
+func (deps *CredentialDependencies) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var temp struct {
+		And []struct {
+			Or []struct {
+				Con []CredentialTypeIdentifier `xml:"CredentialType"`
+			}
+		}
+	}
+	if err := d.DecodeElement(&temp, &start); err != nil {
+		return err
+	}
+	for _, discon := range temp.And {
+		t := make([][]CredentialTypeIdentifier, 0, len(discon.Or))
+		for _, con := range discon.Or {
+			t = append(t, con.Con)
+		}
+		*deps = append(*deps, t)
 	}
 	return nil
 }

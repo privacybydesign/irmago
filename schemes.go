@@ -1199,6 +1199,12 @@ func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 			}
 			conf.Requestors[hostname] = requestor
 		}
+		for id, wizard := range requestor.Wizards {
+			if _, ok := conf.IssueWizards[id]; ok {
+				return errors.Errorf("Double occurence of issue wizard %s", id)
+			}
+			conf.IssueWizards[id] = wizard
+		}
 	}
 	return nil
 }
@@ -1232,22 +1238,49 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 		requestors = append(requestors, currentChunk...)
 	}
 
-	// Verify all referenced logos
+	// Verify all requestors
+	wizardIDs := map[string]struct{}{}
 	for _, requestor := range requestors {
-		if requestor.Logo == nil {
-			continue
+		if requestor.Logo != nil {
+			if err, status := scheme.checkLogo(conf, *requestor.Logo); err != nil {
+				return err, status
+			}
 		}
-		var hash []byte
-		hash, err = hex.DecodeString(*requestor.Logo)
-		if err != nil {
-			return err, SchemeManagerStatusParsingError
-		}
-		if _, err = conf.readHashedFile(filepath.Join(scheme.path(), "assets", *requestor.Logo+".png"), hash); err != nil {
-			return err, SchemeManagerStatusInvalidSignature
+		for id, wizard := range requestor.Wizards {
+			if id != wizard.ID {
+				return errors.Errorf("issue wizard %s has incorrect ID", id), SchemeManagerStatusParsingError
+			}
+			if _, found := wizardIDs[id]; found {
+				return errors.Errorf("issue wizard ID %s already found", id), SchemeManagerStatusParsingError
+			}
+			wizardIDs[id] = struct{}{}
+			if err = wizard.Validate(conf); err != nil {
+				return errors.Errorf("issue wizard %s: %w", id, err), SchemeManagerStatusParsingError
+			}
+			if wizard.Logo != nil {
+				if err, status := scheme.checkLogo(conf, *wizard.Logo); err != nil {
+					return err, status
+				}
+				path := filepath.Join(scheme.path(), "assets", *wizard.Logo+".png")
+				wizard.LogoPath = &path
+			}
 		}
 	}
 	scheme.requestors = requestors
+
 	return nil, SchemeManagerStatusValid
+}
+
+func (scheme *RequestorScheme) checkLogo(conf *Configuration, logo string) (error, SchemeManagerStatus) {
+	var hash []byte
+	hash, err := hex.DecodeString(logo)
+	if err != nil {
+		return err, SchemeManagerStatusParsingError
+	}
+	if _, err = conf.readHashedFile(filepath.Join(scheme.path(), "assets", logo+".png"), hash); err != nil {
+		return err, SchemeManagerStatusInvalidSignature
+	}
+	return nil, ""
 }
 
 func (scheme *RequestorScheme) update() error {

@@ -41,6 +41,8 @@ type Configuration struct {
 	RequestorSchemes map[RequestorSchemeIdentifier]*RequestorScheme
 	Requestors       map[string]*RequestorInfo
 
+	IssueWizards map[string]*IssueWizard
+
 	// DisabledRequestorSchemes keeps track of any error of the requestorscheme if it
 	// did not parse successfully
 	DisabledRequestorSchemes map[RequestorSchemeIdentifier]*SchemeManagerError
@@ -500,6 +502,7 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.RequestorSchemes = make(map[RequestorSchemeIdentifier]*RequestorScheme)
 	conf.Requestors = make(map[string]*RequestorInfo)
+	conf.IssueWizards = make(map[string]*IssueWizard)
 	conf.DisabledRequestorSchemes = make(map[RequestorSchemeIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
@@ -723,7 +726,8 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		name := v.Type().Field(i).Name
-		if field.Type() != reflect.TypeOf(TranslatedString{}) ||
+		translatedString := TranslatedString{}
+		if (field.Type() != reflect.TypeOf(translatedString) && field.Type() != reflect.TypeOf(&translatedString)) ||
 			name == "IssueURL" ||
 			name == "Category" ||
 			name == "FAQIntro" ||
@@ -732,7 +736,16 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 			name == "FAQHowto" {
 			continue
 		}
-		val := field.Interface().(TranslatedString)
+		var val TranslatedString
+		if field.Type() == reflect.TypeOf(&translatedString) {
+			tmp := field.Interface().(*TranslatedString)
+			if tmp == nil {
+				return
+			}
+			val = *tmp
+		} else {
+			val = field.Interface().(TranslatedString)
+		}
 		for _, lang := range validLangs {
 			if _, exists := val[lang]; !exists {
 				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
@@ -768,6 +781,9 @@ func (conf *Configuration) join(other *Configuration) {
 	}
 	for key, val := range other.Requestors {
 		conf.Requestors[key] = val
+	}
+	for key, val := range other.IssueWizards {
+		conf.IssueWizards[key] = val
 	}
 	for key, val := range other.DisabledRequestorSchemes {
 		conf.DisabledRequestorSchemes[key] = val

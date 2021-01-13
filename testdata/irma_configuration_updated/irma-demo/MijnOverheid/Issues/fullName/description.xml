@@ -12,6 +12,14 @@
 	</Description>
 	<IssueURL><en></en><nl></nl></IssueURL>
 
+	<Dependencies>
+		<And>
+			<Or>
+				<CredentialType>irma-demo.MijnOverheid.root</CredentialType>
+			</Or>
+		</And>
+	</Dependencies>
+
 	<Attributes>
 		<Attribute id="firstnames">
 			<Name>
