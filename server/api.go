@@ -189,13 +189,23 @@ func WriteString(w http.ResponseWriter, str string) {
 //  - SessionRequest instances (DisclosureRequest, SignatureRequest, IssuanceRequest)
 //  - JSON representations ([]byte or string) of any of the above.
 func ParseSessionRequest(request interface{}) (irma.RequestorRequest, error) {
+	rr, e := ParseInput(request)
+	if e != nil {
+		return nil, e
+	}
+	rr.Base().SetDefaultsIfNecessary()
+
+	return rr, e
+}
+
+func ParseInput(request interface{}) (irma.RequestorRequest, error) {
 	switch r := request.(type) {
 	case irma.RequestorRequest:
 		return r, nil
 	case irma.SessionRequest:
 		return wrapSessionRequest(r)
 	case string:
-		return ParseSessionRequest([]byte(r))
+		return ParseInput([]byte(r))
 	case []byte:
 		var attempts = []irma.Validator{&irma.ServiceProviderRequest{}, &irma.SignatureRequestorRequest{}, &irma.IdentityProviderRequest{}}
 		t, err := tryUnmarshalJson(r, attempts)

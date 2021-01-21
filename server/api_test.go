@@ -43,6 +43,12 @@ func TestParseSessionRequest(t *testing.T) {
 			res.SessionRequest().Disclosure().Disclose[0][0][0].Type.String())
 	})
 
+	t.Run("correct default validity", func(t *testing.T) {
+		res, err := ParseSessionRequest(requestJson)
+		require.NoError(t, err)
+		require.Equal(t, 120, res.Base().ResultJwtValidity)
+	})
+
 	t.Run("requestor request string", func(t *testing.T) {
 		res, err := ParseSessionRequest(requestorRequestJson)
 		require.NoError(t, err)

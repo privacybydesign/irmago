@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/dgrijalva/jwt-go"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -28,7 +29,15 @@ func TestSigningSession(t *testing.T) {
 func TestDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
-	sessionHelper(t, request, "verification", nil)
+	responseString := sessionHelper(t, request, "verification", nil)
+
+	// Check default JWT validity
+	claims := jwt.MapClaims{}
+	jwt.ParseWithClaims(responseString, claims, nil)
+
+	iat := claims["iat"].(float64)
+	exp := claims["exp"].(float64)
+	require.True(t, iat+120000 == exp)
 }
 
 func TestNoAttributeDisclosureSession(t *testing.T) {
