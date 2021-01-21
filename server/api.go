@@ -295,7 +295,7 @@ func ResultJwt(sessionresult *SessionResult, issuer string, validity int, privat
 		IssuedAt: time.Now().Unix(),
 		Subject:  string(sessionresult.Type) + "_result",
 	}
-	standardclaims.ExpiresAt = time.Now().Unix() + int64(validity)
+	standardclaims.ExpiresAt = standardclaims.IssuedAt + int64(validity)*1000
 
 	var claims jwt.Claims
 	if sessionresult.LegacySession {
