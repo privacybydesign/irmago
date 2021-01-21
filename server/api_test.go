@@ -46,7 +46,7 @@ func TestParseSessionRequest(t *testing.T) {
 	t.Run("correct default validity", func(t *testing.T) {
 		res, err := ParseSessionRequest(requestJson)
 		require.NoError(t, err)
-		require.Equal(t, 120, res.Base().ResultJwtValidity)
+		require.Equal(t, irma.DefaultJwtValidity, res.Base().ResultJwtValidity)
 	})
 
 	t.Run("requestor request string", func(t *testing.T) {
