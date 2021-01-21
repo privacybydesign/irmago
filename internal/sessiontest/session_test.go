@@ -31,13 +31,18 @@ func TestDisclosureSession(t *testing.T) {
 	request := getDisclosureRequest(id)
 	responseString := sessionHelper(t, request, "verification", nil)
 
-	// Check default JWT validity
-	claims := jwt.MapClaims{}
-	jwt.ParseWithClaims(responseString, claims, nil)
+	// Validate JWT
+	claims := struct {
+		jwt.StandardClaims
+		*server.SessionResult
+	}{}
+	_, err := jwt.ParseWithClaims(responseString, &claims, func(token *jwt.Token) (interface{}, error) {
+		return &JwtServerConfiguration.JwtRSAPrivateKey.PublicKey, nil
+	})
+	require.NoError(t, err)
 
-	iat := claims["iat"].(float64)
-	exp := claims["exp"].(float64)
-	require.True(t, iat+120000 == exp)
+	// Check default expiration time
+	require.True(t, claims.IssuedAt+irma.DefaultJwtValidity == claims.ExpiresAt)
 }
 
 func TestNoAttributeDisclosureSession(t *testing.T) {
