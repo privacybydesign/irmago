@@ -127,9 +127,6 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 	)
 
 	switch TestType {
-	case "apiserver":
-		url := "http://localhost:8088/irma_api_server/api/v2/" + sessiontype
-		err = irma.NewHTTPTransport(url, false).Post("", new(irma.Qr), getJwt(t, request, sessiontype, jwt.SigningMethodNone))
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
