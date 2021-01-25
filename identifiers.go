@@ -148,6 +148,10 @@ func (id CredentialTypeIdentifier) IssuerIdentifier() IssuerIdentifier {
 	return NewIssuerIdentifier(id.Parent())
 }
 
+func (id CredentialTypeIdentifier) SchemeManagerIdentifier() SchemeManagerIdentifier {
+	return NewSchemeManagerIdentifier(id.Root())
+}
+
 // CredentialTypeIdentifier returns the CredentialTypeIdentifier of the attribute identifier.
 func (id AttributeTypeIdentifier) CredentialTypeIdentifier() CredentialTypeIdentifier {
 	if id.IsCredential() {

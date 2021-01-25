@@ -395,6 +395,15 @@ func (item *IssueWizardItem) Validate(conf *Configuration) error {
 	if item.Type == IssueWizardItemTypeWebsite && item.URL == nil {
 		return errors.New("wizard item has type website, but no session URL specified")
 	}
+	if item.Credential != nil {
+		// In `irma scheme verify` is run on a single requestor scheme, we cannot expect mentioned
+		// credential types from other schemes to exist. So only require mentioned credential types
+		// to exist if their containing scheme also exists
+		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil &&
+			conf.CredentialTypes[*item.Credential] == nil {
+			return errors.New("nonexisting credential type")
+		}
+	}
 
 	return nil
 }
