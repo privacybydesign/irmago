@@ -109,6 +109,8 @@ type AttributeType struct {
 	SchemeManagerID  string `xml:"-"`
 }
 
+// CredentialDependencies contains dependencies on credential types, using condiscon:
+// a conjunction of disjunctions of conjunctions of credential types.
 type CredentialDependencies [][][]CredentialTypeIdentifier
 
 // RequestorScheme describes verified requestors
@@ -141,8 +143,8 @@ type (
 	IssueWizard struct {
 		ID       string                    `json:"id"`
 		Title    TranslatedString          `json:"title"`
-		Logo     *string                   `json:"logo,omitempty"`
-		LogoPath *string                   `json:"logoPath,omitempty"`
+		Logo     *string                   `json:"logo,omitempty"`     // SHA256 of the logo contents (which is the filename on disk)
+		LogoPath *string                   `json:"logoPath,omitempty"` // Full path to the logo set automatically during scheme parsing
 		Issues   *CredentialTypeIdentifier `json:"issues,omitempty"`
 
 		Info *TranslatedString `json:"info,omitempty"`
@@ -160,6 +162,9 @@ type (
 		Answer   TranslatedString `json:"answer"`
 	}
 
+	// IssueWizardContents contains a condiscon (conjunction of disjunctions of conjunctions)
+	// of issue wizard items, making it possible to present the user with different options
+	// to complete the wizard.
 	IssueWizardContents [][][]IssueWizardItem
 
 	IssueWizardItem struct {
@@ -208,7 +213,7 @@ func (wizard IssueWizard) Choose(conf *Configuration, creds CredentialInfoList) 
 	// - of that tree, starting at the leaf nodes and iterating downwards toward the root,
 	//   we put all items in the result list.
 
-	// Fist reverse the array, as we must start iterating at the root (having no dependants)
+	// First reverse the array, as we must start iterating at the root (having no dependants)
 	reversed := make([]IssueWizardItem, 0, len(contents))
 	byID := map[CredentialTypeIdentifier]IssueWizardItem{}
 	skipped := 0
@@ -301,7 +306,6 @@ func (deps credentialDependencies) get(id CredentialTypeIdentifier, conf *Config
 // or if no such conjunction exists in the disjunction, the first conjunction is chosen.
 // The result of doing this for all outer conjunctions is flattened and returned.
 func (contents IssueWizardContents) Choose(conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) []IssueWizardItem {
-
 	var choice []IssueWizardItem
 	for _, discon := range contents {
 		disconSatisfied := false
@@ -309,6 +313,10 @@ func (contents IssueWizardContents) Choose(conf *Configuration, creds map[Creden
 			conSatisfied := true
 			for _, item := range con {
 				if item.Credential == nil {
+					// If it is not known what credential this item will issue (if any), then we cannot
+					// compare that credential to the list of present credentials to establish whether
+					// or not this item is completed. So we cannot consider the item to be completed,
+					// thus neither can we consider the containing conjunction as completed.
 					conSatisfied = false
 					break
 				}
