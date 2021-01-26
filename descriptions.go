@@ -529,8 +529,8 @@ func (deps CredentialDependencies) WizardContents() IssueWizardContents {
 
 func (deps *CredentialDependencies) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var temp struct {
-		And []struct {
-			Or []struct {
+		Or []struct {
+			And []struct {
 				Con []CredentialTypeIdentifier `xml:"CredentialType"`
 			}
 		}
@@ -538,9 +538,9 @@ func (deps *CredentialDependencies) UnmarshalXML(d *xml.Decoder, start xml.Start
 	if err := d.DecodeElement(&temp, &start); err != nil {
 		return err
 	}
-	for _, discon := range temp.And {
-		t := make([][]CredentialTypeIdentifier, 0, len(discon.Or))
-		for _, con := range discon.Or {
+	for _, discon := range temp.Or {
+		t := make([][]CredentialTypeIdentifier, 0, len(discon.And))
+		for _, con := range discon.And {
 			t = append(t, con.Con)
 		}
 		*deps = append(*deps, t)

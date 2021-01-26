@@ -13,11 +13,11 @@
 	<IssueURL><en></en><nl></nl></IssueURL>
 
 	<Dependencies>
-		<And>
-			<Or>
+		<Or>
+			<And>
 				<CredentialType>irma-demo.MijnOverheid.root</CredentialType>
-			</Or>
-		</And>
+			</And>
+		</Or>
 	</Dependencies>
 
 	<Attributes>

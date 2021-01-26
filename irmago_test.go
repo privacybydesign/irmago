@@ -987,24 +987,24 @@ func TestWizardFromScheme(t *testing.T) {
 
 func TestCredentialDependencies_UnmarshalXML(t *testing.T) {
 	xmlbts := []byte(`<Dependencies>
-		<And>
-			<Or>
+		<Or>
+			<And>
 				<CredentialType>a</CredentialType>
 				<CredentialType>b</CredentialType>
-			</Or>
-			<Or>
+			</And>
+			<And>
 				<CredentialType>c</CredentialType>
-			</Or>
-		</And>
-		<And>
-			<Or>
+			</And>
+		</Or>
+		<Or>
+			<And>
 				<CredentialType>d</CredentialType>
-			</Or>
-			<Or>
+			</And>
+			<And>
 				<CredentialType>e</CredentialType>
 				<CredentialType>f</CredentialType>
-			</Or>
-		</And>
+			</And>
+		</Or>
 	</Dependencies>`)
 
 	var deps CredentialDependencies
