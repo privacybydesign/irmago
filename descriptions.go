@@ -213,13 +213,22 @@ func (wizard IssueWizard) Choose(conf *Configuration, creds CredentialInfoList) 
 	// - of that tree, starting at the leaf nodes and iterating downwards toward the root,
 	//   we put all items in the result list.
 
-	// First reverse the array, as we must start iterating at the root (having no dependants)
+	// We assume here that if one wizard item depends on another, and that dependency is not defined
+	// in the corresponding credential type issuer scheme, then they are put in the correct order in
+	// the wizard in the requestor scheme: first a credential not depending on any other item in the
+	// wizard, then an item that may depend on the first item, etc.
+	// Below we iterate per level over the tree (root = level 0, its dependencies = level 1, their
+	// dependencies = level 2, etc). Before that iteration, we don't yet know how many levels there
+	// are. So the only logical starting point for this iteration is level 0, the root - i.e., the
+	// last item of the contents slice. So we first reverse contents.
 	reversed := make([]IssueWizardItem, 0, len(contents))
 	byID := map[CredentialTypeIdentifier]IssueWizardItem{}
 	skipped := 0
 	for i := len(contents) - 1; i >= 0; i-- {
 		item := contents[i]
 		if item.Credential == nil {
+			// If an item does not denote what credential it issues, we cannot take it into account -
+			// just ignore it here and append it back to the end of the wizard just before returning.
 			skipped++
 			continue
 		}
@@ -228,7 +237,6 @@ func (wizard IssueWizard) Choose(conf *Configuration, creds CredentialInfoList) 
 	}
 
 	// Build a map containing per level of the dependency tree the (deduplicated) nodes at that level
-	// (root = level 0, its dependencies = level 1, their dependencies = level 2, etc).
 	deps := credentialDependencies{}
 	bylevel := map[int]map[CredentialTypeIdentifier]struct{}{}
 	for i, item := range reversed {
