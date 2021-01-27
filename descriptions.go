@@ -294,6 +294,9 @@ func wizardItemVisit(
 	return nil
 }
 
+// get returns the credential dependencies of the specified credential. If not present in the map
+// it caches them before returning; on later invocations for the same credential the cached output
+// is returned.
 func (deps credentialDependencies) get(id CredentialTypeIdentifier, conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) []IssueWizardItem {
 	if _, present := deps[id]; !present {
 		deps[id] = conf.CredentialTypes[id].Dependencies.WizardContents().Choose(conf, creds)
