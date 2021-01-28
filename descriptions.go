@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -402,6 +403,53 @@ func (item *IssueWizardItem) Validate(conf *Configuration) error {
 		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil &&
 			conf.CredentialTypes[*item.Credential] == nil {
 			return errors.New("nonexisting credential type")
+		}
+		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil && conf.CredentialTypes[*item.Credential].Dependencies != nil {
+			// TODO: bla?
+			if err := validateDependencies(conf, conf.CredentialTypes[*item.Credential].Dependencies, []string{"bla"}); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateDependencies(conf *Configuration, dependencies CredentialDependencies, validatedDeps []string) error {
+	if len(validatedDeps) == 25 {
+		return errors.New("dependency tree too complex")
+	}
+	for _, outer := range dependencies {
+		for _, middle := range outer {
+			for _, item := range middle {
+				for _, checkedIds := range validatedDeps {
+					if checkedIds == item.Name() {
+						return errors.New("circular dependency")
+					}
+				}
+
+				if err := validateFAQSummary(conf.CredentialTypes[item].FAQSummary, append(validatedDeps, item.Name())); err != nil {
+					return err
+				}
+
+				if conf.CredentialTypes[item].Dependencies != nil {
+					return validateDependencies(conf, conf.CredentialTypes[item].Dependencies, append(validatedDeps, item.Name()))
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateFAQSummary(faqSummary *TranslatedString, tree []string) error {
+	if faqSummary == nil {
+		return errors.New("FAQSummary incomplete for chain " + strings.Join(tree, ", "))
+	}
+	for _, lang := range validLangs {
+		if text, exists := (*faqSummary)[lang]; !exists || text == "" {
+			return errors.New("FAQSummary incomplete for chain " + strings.Join(tree, ", "))
 		}
 	}
 
