@@ -284,9 +284,6 @@ func wizardItemVisit(
 	deps credentialDependencies,
 	creds map[CredentialTypeIdentifier]struct{},
 ) error {
-	if level == 25 {
-		return errors.New("issue wizard: level limit exceeded, probably due to circular dependency")
-	}
 
 	if bylevel[level] == nil {
 		bylevel[level] = map[CredentialTypeIdentifier]struct{}{}
