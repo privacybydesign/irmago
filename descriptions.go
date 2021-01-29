@@ -184,6 +184,8 @@ const (
 	IssueWizardItemTypeCredential IssueWizardItemType = "credential"
 	IssueWizardItemTypeSession    IssueWizardItemType = "session"
 	IssueWizardItemTypeWebsite    IssueWizardItemType = "website"
+
+	maxDepComplexity = 25
 )
 
 // Choose from the wizard a list of items.
@@ -400,7 +402,8 @@ func (item *IssueWizardItem) Validate(conf *Configuration) error {
 			return errors.New("nonexisting credential type " + item.Credential.Name())
 		}
 		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil && conf.CredentialTypes[*item.Credential].Dependencies != nil {
-			if err := validateDependencies(conf, conf.CredentialTypes[*item.Credential].Dependencies, []CredentialTypeIdentifier{conf.CredentialTypes[*item.Credential].Identifier()}); err != nil {
+			depChain := []CredentialTypeIdentifier{conf.CredentialTypes[*item.Credential].Identifier()}
+			if err := validateDependencies(conf, *item.Credential, depChain); err != nil {
 				return err
 			}
 		}
@@ -409,11 +412,11 @@ func (item *IssueWizardItem) Validate(conf *Configuration) error {
 	return nil
 }
 
-func validateDependencies(conf *Configuration, dependencies CredentialDependencies, validatedDeps []CredentialTypeIdentifier) error {
-	if len(validatedDeps) == 25 {
+func validateDependencies(conf *Configuration, cred CredentialTypeIdentifier, validatedDeps []CredentialTypeIdentifier) error {
+	if len(validatedDeps) >= maxDepComplexity {
 		return errors.New("dependency tree too complex: " + ToString(validatedDeps))
 	}
-	for _, outer := range dependencies {
+	for _, outer := range conf.CredentialTypes[cred].Dependencies {
 		for _, middle := range outer {
 			for _, item := range middle {
 				if err := validateCircularity(item, validatedDeps); err != nil {
@@ -424,9 +427,8 @@ func validateDependencies(conf *Configuration, dependencies CredentialDependenci
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					return validateDependencies(conf, conf.CredentialTypes[item].Dependencies, append(validatedDeps, item))
+					return validateDependencies(conf, item, append(validatedDeps, item))
 				}
-
 			}
 		}
 	}
@@ -444,10 +446,10 @@ func ToString(arr []CredentialTypeIdentifier) string {
 	return ret
 }
 
-func validateCircularity(item CredentialTypeIdentifier, validatedDeps []CredentialTypeIdentifier) error {
+func validateCircularity(cred CredentialTypeIdentifier, validatedDeps []CredentialTypeIdentifier) error {
 	for _, checkedIds := range validatedDeps {
-		if checkedIds == item {
-			return errors.New("circular dependency " + item.String() + " found in: " + ToString(validatedDeps))
+		if checkedIds == cred {
+			return errors.New("circular dependency " + cred.String() + " found in: " + ToString(validatedDeps))
 		}
 	}
 
