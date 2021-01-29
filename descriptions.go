@@ -3,11 +3,9 @@ package irma
 import (
 	"encoding/xml"
 	"fmt"
-	"path/filepath"
-	"strings"
-
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
+	"path/filepath"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -402,11 +400,10 @@ func (item *IssueWizardItem) Validate(conf *Configuration) error {
 		// to exist if their containing scheme also exists
 		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil &&
 			conf.CredentialTypes[*item.Credential] == nil {
-			return errors.New("nonexisting credential type")
+			return errors.New("nonexisting credential type " + item.Credential.Name())
 		}
 		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil && conf.CredentialTypes[*item.Credential].Dependencies != nil {
-			// TODO: bla?
-			if err := validateDependencies(conf, conf.CredentialTypes[*item.Credential].Dependencies, []string{"bla"}); err != nil {
+			if err := validateDependencies(conf, conf.CredentialTypes[*item.Credential].Dependencies, []CredentialTypeIdentifier{conf.CredentialTypes[*item.Credential].Identifier()}); err != nil {
 				return err
 			}
 		}
@@ -415,25 +412,22 @@ func (item *IssueWizardItem) Validate(conf *Configuration) error {
 	return nil
 }
 
-func validateDependencies(conf *Configuration, dependencies CredentialDependencies, validatedDeps []string) error {
+func validateDependencies(conf *Configuration, dependencies CredentialDependencies, validatedDeps []CredentialTypeIdentifier) error {
 	if len(validatedDeps) == 25 {
-		return errors.New("dependency tree too complex")
+		return errors.New("dependency tree too complex: " + ToString(validatedDeps))
 	}
 	for _, outer := range dependencies {
 		for _, middle := range outer {
 			for _, item := range middle {
-				for _, checkedIds := range validatedDeps {
-					if checkedIds == item.Name() {
-						return errors.New("circular dependency")
-					}
+				if err := validateCircularity(item, validatedDeps); err != nil {
+					return err
 				}
-
-				if err := validateFAQSummary(conf.CredentialTypes[item].FAQSummary, append(validatedDeps, item.Name())); err != nil {
+				if err := validateFAQSummary(conf.CredentialTypes[item].FAQSummary, append(validatedDeps, item)); err != nil {
 					return err
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					return validateDependencies(conf, conf.CredentialTypes[item].Dependencies, append(validatedDeps, item.Name()))
+					return validateDependencies(conf, conf.CredentialTypes[item].Dependencies, append(validatedDeps, item))
 				}
 
 			}
@@ -443,13 +437,33 @@ func validateDependencies(conf *Configuration, dependencies CredentialDependenci
 	return nil
 }
 
-func validateFAQSummary(faqSummary *TranslatedString, tree []string) error {
+// TODO: abstract to take interface []T which contains String() method?
+// TODO: move this closer to struct definition and evaluate if the method needs to be exported
+func ToString(arr []CredentialTypeIdentifier) string {
+	ret := ""
+	for _, elem := range arr {
+		ret += ", " + elem.String()
+	}
+	return ret
+}
+
+func validateCircularity(item CredentialTypeIdentifier, validatedDeps []CredentialTypeIdentifier) error {
+	for _, checkedIds := range validatedDeps {
+		if checkedIds == item {
+			return errors.New("circular dependency " + item.String() + " found in: " + ToString(validatedDeps))
+		}
+	}
+
+	return nil
+}
+
+func validateFAQSummary(faqSummary *TranslatedString, chain []CredentialTypeIdentifier) error {
 	if faqSummary == nil {
-		return errors.New("FAQSummary incomplete for chain " + strings.Join(tree, ", "))
+		return errors.New("FAQSummary missing for last item in chain: " + ToString(chain))
 	}
 	for _, lang := range validLangs {
 		if text, exists := (*faqSummary)[lang]; !exists || text == "" {
-			return errors.New("FAQSummary incomplete for chain " + strings.Join(tree, ", "))
+			return errors.New("FAQSummary incomplete for last item in chain: " + ToString(chain))
 		}
 	}
 
