@@ -985,6 +985,84 @@ func TestWizardFromScheme(t *testing.T) {
 	)
 }
 
+func TestValidateIssueWizard(t *testing.T) {
+	dependencies := CredentialDependencies{
+		{
+			{credid("a.a.a"), credid("a.a.b")},
+			{credid("a.b.a")},
+		},
+		{
+			{credid("b.a.a")},
+			{credid("b.b.a"), credid("b.b.b")},
+		},
+	}
+
+	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
+	for _, discon := range dependencies {
+		for _, con := range discon {
+			for _, cred := range con {
+				conf.CredentialTypes[cred] = credtype(cred.String())
+			}
+		}
+	}
+
+	credTypId := NewCredentialTypeIdentifier("a.a.a")
+	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypId}
+	schemeMan := SchemeManager{}
+	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypId.SchemeManagerIdentifier(): &schemeMan}
+
+	credTypId2 := credid("a.b.a")
+	conf.CredentialTypes[credTypId].Dependencies = CredentialDependencies{
+		{
+			{credTypId2},
+		},
+	}
+
+	translation := trivialTranslation("Age limit")
+	conf.CredentialTypes[credTypId2].FAQSummary = &translation
+
+	require.Equal(t, nil, tester.validate(conf))
+}
+
+func TestValidateIssueWizardErrors(t *testing.T) {
+	dependencies := CredentialDependencies{
+		{
+			{credid("a.a.a"), credid("a.a.b")},
+			{credid("a.b.a")},
+		},
+		{
+			{credid("b.a.a")},
+			{credid("b.b.a"), credid("b.b.b")},
+		},
+	}
+
+	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
+	for _, discon := range dependencies {
+		for _, con := range discon {
+			for _, cred := range con {
+				conf.CredentialTypes[cred] = credtype(cred.String())
+			}
+		}
+	}
+
+	credTypId := NewCredentialTypeIdentifier("a.a.a")
+	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypId}
+	schemeMan := SchemeManager{}
+	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypId.SchemeManagerIdentifier(): &schemeMan}
+
+	// test case circularity
+	conf.CredentialTypes[credTypId].Dependencies = dependencies
+	require.Equal(t, "circular dependency a.a.a found in: a.a.a", tester.validate(conf).Error())
+
+	// test case FAQSummary
+	conf.CredentialTypes[credTypId].Dependencies = CredentialDependencies{
+		{
+			{credid("a.b.a")},
+		},
+	}
+	require.Equal(t, "FAQSummary missing for last item in chain: a.a.a, a.b.a", tester.validate(conf).Error())
+}
+
 func TestCredentialDependencies_UnmarshalXML(t *testing.T) {
 	xmlbts := []byte(`<Dependencies>
 		<Or>

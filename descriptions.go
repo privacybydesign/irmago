@@ -6,6 +6,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
 	"path/filepath"
+	"strings"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -357,7 +358,7 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	for i, outer := range wizard.Contents {
 		for j, middle := range outer {
 			for k, item := range middle {
-				if err := item.Validate(conf); err != nil {
+				if err := item.validate(conf); err != nil {
 					return errors.Errorf("item %d.%d.%d of issue wizard %s: %w", i, j, k, wizard.ID, err)
 				}
 				conf.validateTranslations(fmt.Sprintf("item %d.%d.%d of issue wizard %s", i, j, k, wizard.ID), item)
@@ -372,7 +373,7 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	return nil
 }
 
-func (item *IssueWizardItem) Validate(conf *Configuration) error {
+func (item *IssueWizardItem) validate(conf *Configuration) error {
 	if item.Type != IssueWizardItemTypeCredential &&
 		item.Type != IssueWizardItemTypeSession &&
 		item.Type != IssueWizardItemTypeWebsite {
@@ -439,11 +440,7 @@ func validateDependencies(conf *Configuration, cred CredentialTypeIdentifier, va
 // TODO: abstract to take interface []T which contains String() method?
 // TODO: move this closer to struct definition and evaluate if the method needs to be exported
 func ToString(arr []CredentialTypeIdentifier) string {
-	ret := ""
-	for _, elem := range arr {
-		ret += ", " + elem.String()
-	}
-	return ret
+	return strings.Replace(strings.Trim(fmt.Sprint(arr), "[]"), " ", ", ", -1)
 }
 
 func validateCircularity(cred CredentialTypeIdentifier, validatedDeps []CredentialTypeIdentifier) error {
