@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"io/ioutil"
@@ -97,7 +98,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 		return calculateFileHash(id, path, p, info, index, irma.SchemeType(typ))
 	})
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to calculate file index:", 0)
+		return errors.WrapPrefix(err, "Failed to calculate file index", 0)
 	}
 
 	// Write index
@@ -152,11 +153,19 @@ func calculateFileHash(id, confpath, path string, info os.FileInfo, index irma.S
 	if err != nil {
 		return err
 	}
+
 	relativePath, err := filepath.Rel(confpath, path)
 	if err != nil {
 		return err
 	}
 	relativePath = filepath.Join(id, relativePath)
+
+	ext := filepath.Ext(path)
+	if ext != ".png" && ext != ".sig" {
+		if bytes.Contains(bts, []byte("\r\n")) {
+			return errors.Errorf("%s contains CRLF (Windows) line endings, please convert to LF", relativePath)
+		}
+	}
 
 	hash := sha256.Sum256(bts)
 	index[filepath.ToSlash(relativePath)] = hash[:]
