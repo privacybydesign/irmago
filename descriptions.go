@@ -113,6 +113,8 @@ type AttributeType struct {
 // a conjunction of disjunctions of conjunctions of credential types.
 type CredentialDependencies [][][]CredentialTypeIdentifier
 
+type CredentialDependenciesList []CredentialTypeIdentifier
+
 // RequestorScheme describes verified requestors
 type RequestorScheme struct {
 	ID        RequestorSchemeIdentifier `json:"id"`
@@ -403,8 +405,8 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 			return errors.New("nonexisting credential type " + item.Credential.Name())
 		}
 		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil && conf.CredentialTypes[*item.Credential].Dependencies != nil {
-			depChain := []CredentialTypeIdentifier{conf.CredentialTypes[*item.Credential].Identifier()}
-			if err := validateDependencies(conf, *item.Credential, depChain); err != nil {
+			depChain := CredentialDependenciesList{conf.CredentialTypes[*item.Credential].Identifier()}
+			if err := validateFAQSummary(conf, *item.Credential, depChain); err != nil {
 				return err
 			}
 		}
@@ -413,22 +415,24 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 	return nil
 }
 
-func validateDependencies(conf *Configuration, cred CredentialTypeIdentifier, validatedDeps []CredentialTypeIdentifier) error {
-	if len(validatedDeps) >= maxDepComplexity {
-		return errors.New("dependency tree too complex: " + ToString(validatedDeps))
-	}
+func validateFAQSummary(conf *Configuration, cred CredentialTypeIdentifier, validatedDeps CredentialDependenciesList) error {
 	for _, outer := range conf.CredentialTypes[cred].Dependencies {
 		for _, middle := range outer {
 			for _, item := range middle {
-				if err := validateCircularity(item, validatedDeps); err != nil {
-					return err
+				faqSummary := conf.CredentialTypes[item].FAQSummary
+				updatedDeps := append(validatedDeps, item)
+
+				if faqSummary == nil {
+					return errors.New("FAQSummary missing for last item in chain: " + updatedDeps.String())
 				}
-				if err := validateFAQSummary(conf.CredentialTypes[item].FAQSummary, append(validatedDeps, item)); err != nil {
-					return err
+				for _, lang := range validLangs {
+					if text, exists := (*faqSummary)[lang]; !exists || text == "" {
+						return errors.New("FAQSummary incomplete for last item in chain: " + updatedDeps.String())
+					}
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					return validateDependencies(conf, item, append(validatedDeps, item))
+					return validateFAQSummary(conf, item, append(validatedDeps, item))
 				}
 			}
 		}
@@ -437,33 +441,12 @@ func validateDependencies(conf *Configuration, cred CredentialTypeIdentifier, va
 	return nil
 }
 
-// TODO: abstract to take interface []T which contains String() method?
-// TODO: move this closer to struct definition and evaluate if the method needs to be exported
-func ToString(arr []CredentialTypeIdentifier) string {
-	return strings.Replace(strings.Trim(fmt.Sprint(arr), "[]"), " ", ", ", -1)
-}
-
-func validateCircularity(cred CredentialTypeIdentifier, validatedDeps []CredentialTypeIdentifier) error {
-	for _, checkedIds := range validatedDeps {
-		if checkedIds == cred {
-			return errors.New("circular dependency " + cred.String() + " found in: " + ToString(validatedDeps))
-		}
+func (arr CredentialDependenciesList) String() string {
+	strkeys := make([]string, len(arr))
+	for i := 0; i < len(arr); i++ {
+		strkeys[i] = arr[i].String()
 	}
-
-	return nil
-}
-
-func validateFAQSummary(faqSummary *TranslatedString, chain []CredentialTypeIdentifier) error {
-	if faqSummary == nil {
-		return errors.New("FAQSummary missing for last item in chain: " + ToString(chain))
-	}
-	for _, lang := range validLangs {
-		if text, exists := (*faqSummary)[lang]; !exists || text == "" {
-			return errors.New("FAQSummary incomplete for last item in chain: " + ToString(chain))
-		}
-	}
-
-	return nil
+	return strings.Join(strkeys, ", ")
 }
 
 // NewRequestorInfo returns a Requestor with just the given hostname

@@ -1024,7 +1024,7 @@ func TestValidateIssueWizard(t *testing.T) {
 	require.Equal(t, nil, tester.validate(conf))
 }
 
-func TestValidateIssueWizardErrors(t *testing.T) {
+func TestValidateIssueWizardFAQSummaries(t *testing.T) {
 	dependencies := CredentialDependencies{
 		{
 			{credid("a.a.a"), credid("a.a.b")},
@@ -1050,11 +1050,6 @@ func TestValidateIssueWizardErrors(t *testing.T) {
 	schemeMan := SchemeManager{}
 	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypId.SchemeManagerIdentifier(): &schemeMan}
 
-	// test case circularity
-	conf.CredentialTypes[credTypId].Dependencies = dependencies
-	require.Equal(t, "circular dependency a.a.a found in: a.a.a", tester.validate(conf).Error())
-
-	// test case FAQSummary
 	conf.CredentialTypes[credTypId].Dependencies = CredentialDependencies{
 		{
 			{credid("a.b.a")},
