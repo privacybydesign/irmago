@@ -160,11 +160,8 @@ func calculateFileHash(id, confpath, path string, info os.FileInfo, index irma.S
 	}
 	relativePath = filepath.Join(id, relativePath)
 
-	ext := filepath.Ext(path)
-	if ext != ".png" && ext != ".sig" {
-		if bytes.Contains(bts, []byte("\r\n")) {
-			return errors.Errorf("%s contains CRLF (Windows) line endings, please convert to LF", relativePath)
-		}
+	if filepath.Ext(path) != ".png" && bytes.Contains(bts, []byte("\r\n")) {
+		return errors.Errorf("%s contains CRLF (Windows) line endings, please convert to LF", relativePath)
 	}
 
 	hash := sha256.Sum256(bts)
