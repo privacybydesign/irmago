@@ -57,6 +57,9 @@ type Configuration struct {
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 	// Parsed JWT private key
 	JwtRSAPrivateKey *rsa.PrivateKey `json:"-"`
+	// Whether to allow callbackUrl to be set in session requests when no JWT privatekey is installed
+	// (which is potentially unsafe depending on the setup)
+	AllowUnsignedCallbacks bool
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`

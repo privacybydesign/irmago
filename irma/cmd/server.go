@@ -124,6 +124,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("jwt-privkey", "", "JWT private key")
 	flags.String("jwt-privkey-file", "", "path to JWT private key")
 	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
+	flags.Bool("allow-unsigned-callbacks", false, "Allow callbackUrl in session requests when no JWT privatekey is installed (potentially unsafe)")
 	flags.Lookup("jwt-issuer").Header = `JWT configuration`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
@@ -205,26 +206,27 @@ func configureServer(cmd *cobra.Command) error {
 	// Read configuration from flags and/or environmental variables
 	conf = &requestorserver.Configuration{
 		Configuration: &server.Configuration{
-			SchemesPath:           viper.GetString("schemes-path"),
-			SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
-			SchemesUpdateInterval: viper.GetInt("schemes-update"),
-			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
-			IssuerPrivateKeysPath: viper.GetString("privkeys"),
-			RevocationDBType:      viper.GetString("revocation-db-type"),
-			RevocationDBConnStr:   viper.GetString("revocation-db-str"),
-			RevocationSettings:    irma.RevocationSettings{},
-			URL:                   viper.GetString("url"),
-			DisableTLS:            viper.GetBool("no-tls"),
-			Email:                 viper.GetString("email"),
-			EnableSSE:             viper.GetBool("sse"),
-			Verbose:               viper.GetInt("verbose"),
-			Quiet:                 viper.GetBool("quiet"),
-			LogJSON:               viper.GetBool("log-json"),
-			Logger:                logger,
-			Production:            viper.GetBool("production"),
-			JwtIssuer:             viper.GetString("jwt-issuer"),
-			JwtPrivateKey:         viper.GetString("jwt-privkey"),
-			JwtPrivateKeyFile:     viper.GetString("jwt-privkey-file"),
+			SchemesPath:            viper.GetString("schemes-path"),
+			SchemesAssetsPath:      viper.GetString("schemes-assets-path"),
+			SchemesUpdateInterval:  viper.GetInt("schemes-update"),
+			DisableSchemesUpdate:   viper.GetInt("schemes-update") == 0,
+			IssuerPrivateKeysPath:  viper.GetString("privkeys"),
+			RevocationDBType:       viper.GetString("revocation-db-type"),
+			RevocationDBConnStr:    viper.GetString("revocation-db-str"),
+			RevocationSettings:     irma.RevocationSettings{},
+			URL:                    viper.GetString("url"),
+			DisableTLS:             viper.GetBool("no-tls"),
+			Email:                  viper.GetString("email"),
+			EnableSSE:              viper.GetBool("sse"),
+			Verbose:                viper.GetInt("verbose"),
+			Quiet:                  viper.GetBool("quiet"),
+			LogJSON:                viper.GetBool("log-json"),
+			Logger:                 logger,
+			Production:             viper.GetBool("production"),
+			JwtIssuer:              viper.GetString("jwt-issuer"),
+			JwtPrivateKey:          viper.GetString("jwt-privkey"),
+			JwtPrivateKeyFile:      viper.GetString("jwt-privkey-file"),
+			AllowUnsignedCallbacks: viper.GetBool("allow-unsigned-callbacks"),
 		},
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),

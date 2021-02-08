@@ -490,9 +490,9 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 			return
 		}
 	}
-	if rrequest.Base().CallbackURL != "" && s.conf.JwtRSAPrivateKey == nil {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed")
-		server.WriteError(w, server.ErrorUnsupported, "")
+	if rrequest.Base().CallbackURL != "" && s.conf.JwtRSAPrivateKey == nil && !s.conf.AllowUnsignedCallbacks {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration")
+		server.WriteError(w, server.ErrorUnsupported, "callbackUrl provided but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration")
 		return
 	}
 
