@@ -130,6 +130,9 @@ func (conf *Configuration) HavePrivateKeys() bool {
 
 func (conf *Configuration) verifyStaticSessions() error {
 	conf.StaticSessionRequests = make(map[string]irma.RequestorRequest)
+	if len(conf.StaticSessions) > 0 && conf.JwtRSAPrivateKey == nil && !conf.AllowUnsignedCallbacks {
+		return errors.New("static sessions configured but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration")
+	}
 	for name, r := range conf.StaticSessions {
 		if !regexp.MustCompile("^[a-zA-Z0-9_]+$").MatchString(name) {
 			return errors.Errorf("static session name %s not allowed, must be alphanumeric", name)
