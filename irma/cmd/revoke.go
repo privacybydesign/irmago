@@ -90,5 +90,5 @@ func init() {
 	flags.String("name", "", "Requestor name")
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 
-	revocationCmd.AddCommand(revokeCmd)
+	issuerCmd.AddCommand(revokeCmd)
 }

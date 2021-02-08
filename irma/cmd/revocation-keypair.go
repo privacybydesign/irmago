@@ -6,7 +6,7 @@ import (
 )
 
 var revokeKeypairCmd = &cobra.Command{
-	Use:   "keypair <privatekey> <publickey>",
+	Use:   "revocation-keypair <privatekey> <publickey>",
 	Short: "Augment an IRMA private-public keypair with revocation key material",
 	Long: `Augment an IRMA private-public keypair with newly generated revocation key material.
 This is required before credential types requiring revocation can be issued under this keypair.
@@ -44,5 +44,5 @@ This is required before credential types requiring revocation can be issued unde
 }
 
 func init() {
-	revocationCmd.AddCommand(revokeKeypairCmd)
+	issuerCmd.AddCommand(revokeKeypairCmd)
 }
