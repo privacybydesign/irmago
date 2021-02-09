@@ -154,6 +154,14 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	token := common.NewSessionToken()
 	clientToken := common.NewSessionToken()
 
+	if s.conf.AugmentClientReturnURL && request.SessionRequest().Base().AugmentReturnURL && request.SessionRequest().Base().ClientReturnURL != "" {
+		if strings.Contains(request.SessionRequest().Base().ClientReturnURL, "?") {
+			request.SessionRequest().Base().ClientReturnURL += "&token=" + token
+		} else {
+			request.SessionRequest().Base().ClientReturnURL += "?token=" + token
+		}
+	}
+
 	ses := &session{
 		action:      action,
 		rrequest:    request,

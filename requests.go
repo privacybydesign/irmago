@@ -45,7 +45,8 @@ type BaseRequest struct {
 	Type            Action `json:"type,omitempty"` // Session type, only used in legacy code
 	DevelopmentMode bool   `json:"devMode,omitempty"`
 
-	ClientReturnURL string `json:"clientReturnUrl,omitempty"` // URL to proceed to when IRMA session is completed
+	ClientReturnURL  string `json:"clientReturnUrl,omitempty"`  // URL to proceed to when IRMA session is completed
+	AugmentReturnURL bool   `json:"augmentReturnUrl,omitempty"` // Whether to augment the return url with the server session token
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.

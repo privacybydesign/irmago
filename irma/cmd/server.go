@@ -125,6 +125,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("jwt-privkey-file", "", "path to JWT private key")
 	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
 	flags.Bool("allow-unsigned-callbacks", false, "Allow callbackUrl in session requests when no JWT privatekey is installed (potentially unsafe)")
+	flags.Bool("augment-client-return-url", false, "Augment the client return url with the server session token if present")
 	flags.Lookup("jwt-issuer").Header = `JWT configuration`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
@@ -227,6 +228,7 @@ func configureServer(cmd *cobra.Command) error {
 			JwtPrivateKey:          viper.GetString("jwt-privkey"),
 			JwtPrivateKeyFile:      viper.GetString("jwt-privkey-file"),
 			AllowUnsignedCallbacks: viper.GetBool("allow-unsigned-callbacks"),
+			AugmentClientReturnURL: viper.GetBool("augment-client-return-url"),
 		},
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),

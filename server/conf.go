@@ -60,6 +60,9 @@ type Configuration struct {
 	// Whether to allow callbackUrl to be set in session requests when no JWT privatekey is installed
 	// (which is potentially unsafe depending on the setup)
 	AllowUnsignedCallbacks bool
+	// Whether to augment the clientreturnurl with the server token of the request (this allows for stateless
+	// requestor servers more easily)
+	AugmentClientReturnURL bool
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
