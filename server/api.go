@@ -18,7 +18,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
@@ -333,7 +333,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 		logger.Debug("POSTing session result")
 	}
 
-	var res string
+	var res interface{}
 	if privatekey != nil {
 		var err error
 		res, err = ResultJwt(result, issuer, validity, privatekey)
@@ -342,12 +342,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 			return
 		}
 	} else {
-		bts, err := json.Marshal(result)
-		if err != nil {
-			_ = LogError(errors.WrapPrefix(err, "Failed to marshal session result for result callback", 0))
-			return
-		}
-		res = string(bts)
+		res = result
 	}
 
 	var x string // dummy for the server's return value that we don't care about
