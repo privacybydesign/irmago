@@ -1,0 +1,15 @@
+<Issuer version="4">
+	<ID>chipsoft</ID>
+	<ShortName>
+		<en>Demo ChipSoft</en>
+		<nl>Demo ChipSoft</nl>
+	</ShortName>
+	<Name>
+		<en>Demo ChipSoft</en>
+		<nl>Demo ChipSoft</nl>
+	</Name>
+	<SchemeManager>irma-demo</SchemeManager>
+	<ContactAddress>https://example.org</ContactAddress>
+	<ContactEMail>example@example.org</ContactEMail>
+	<baseURL></baseURL>
+</Issuer>

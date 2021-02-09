@@ -1,0 +1,15 @@
+<Issuer version="4">
+	<ID>alliander</ID>
+	<Name>
+		<en>Demo Alliander</en>
+		<nl>Demo Alliander</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Alliander</en>
+		<nl>Demo Alliander</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<ContactAddress>https://www.alliander.com</ContactAddress>
+	<ContactEMail>info@alliander.com</ContactEMail>
+	<baseURL></baseURL>
+</Issuer>

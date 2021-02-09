@@ -187,6 +187,8 @@ const (
 	IssueWizardItemTypeCredential IssueWizardItemType = "credential"
 	IssueWizardItemTypeSession    IssueWizardItemType = "session"
 	IssueWizardItemTypeWebsite    IssueWizardItemType = "website"
+
+	maxWizardComplexity = 10
 )
 
 // Choose from the wizard a list of items.
@@ -204,13 +206,17 @@ func (wizard IssueWizard) Choose(conf *Configuration, creds CredentialInfoList) 
 	contents := wizard.Contents.Choose(conf, credsmap)
 	if wizard.ExpandDependencies != nil && !*wizard.ExpandDependencies {
 		return contents, nil
+	} else {
+		return buildDependencyTree(contents, conf, credsmap)
 	}
+}
 
+func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsmap map[CredentialTypeIdentifier]struct{}) ([]IssueWizardItem, error) {
 	// Each item in contents refers to a credential type that has dependencies, which may themselves
 	// have dependencies. So each item has a tree of dependencies. We must return a list
 	// containing all dependencies of each item in an executable order, i.e. item n in the
 	// list depends only on items < n in the list. We do this as follows:
-	// - by considering element n in items to be dependendent on element n-1, we join all
+	// - by considering element n in items to be dependent on element n-1, we join all
 	//   dependency trees into one
 	// - of that tree, starting at the leaf nodes and iterating downwards toward the root,
 	//   we put all items in the result list.
@@ -287,7 +293,6 @@ func wizardItemVisit(
 	deps credentialDependencies,
 	creds map[CredentialTypeIdentifier]struct{},
 ) error {
-
 	if bylevel[level] == nil {
 		bylevel[level] = map[CredentialTypeIdentifier]struct{}{}
 	}
@@ -355,6 +360,28 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	if (wizard.SuccessHeader == nil) != (wizard.SuccessText == nil) {
 		return errors.New("wizard contents must have success header and text either both specified, or both empty")
 	}
+	// validate that no possible content graph is too complex
+	allRelevantPaths := wizard.Contents.buildValidationPaths(conf, map[CredentialTypeIdentifier]struct{}{})
+	for _, contents := range allRelevantPaths {
+		// validate expanded dependency tree if ExpandDependencies flag is set to true; otherwise validate current length
+		if wizard.ExpandDependencies == nil || *wizard.ExpandDependencies {
+			result, error := buildDependencyTree(contents, conf, map[CredentialTypeIdentifier]struct{}{})
+
+			if error != nil {
+				return error
+			}
+
+			if len(result) >= maxWizardComplexity {
+				return errors.Errorf("wizard too complex")
+			}
+		} else {
+			if len(contents) >= maxWizardComplexity {
+				return errors.Errorf("wizard too complex")
+			}
+		}
+	}
+
+	// validate translations, IssueWizardItems and FAQSummaries of dependencies
 	for i, outer := range wizard.Contents {
 		for j, middle := range outer {
 			for k, item := range middle {
@@ -371,6 +398,89 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	}
 
 	return nil
+}
+
+func (contents IssueWizardContents) buildValidationPaths(conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) [][]IssueWizardItem {
+	var all [][]IssueWizardItem
+	var choice []IssueWizardItem
+	for _, discon := range contents {
+		disconSatisfied := false
+
+		for i, con := range discon {
+			if i > 0 {
+				if !userHasCreds(discon[i], creds) {
+					// Copy from the original creds map to the target updatedCreds map
+					updatedCreds := map[CredentialTypeIdentifier]struct{}{}
+					for key, value := range creds {
+						updatedCreds[key] = value
+					}
+
+					// check the scenario where the user already has the cards from this discon
+					for _, item := range discon[i] {
+						updatedCreds[*item.Credential] = struct{}{}
+					}
+
+					// append both [][]IssueWizardItem lists
+					for _, val := range contents.buildValidationPaths(conf, updatedCreds) {
+						all = append(all, val)
+					}
+				}
+			}
+
+			conSatisfied := true
+			for _, item := range con {
+				if item.Credential == nil {
+					// If it is not known what credential this item will issue (if any), then we cannot
+					// compare that credential to the list of present credentials to establish whether
+					// or not this item is completed. So we cannot consider the item to be completed,
+					// thus neither can we consider the containing conjunction as completed.
+					conSatisfied = false
+					break
+				}
+				if _, present := creds[*item.Credential]; !present {
+					conSatisfied = false
+					break
+				}
+			}
+			if conSatisfied {
+				choice = appendItems(choice, con)
+				disconSatisfied = true
+				break
+			}
+		}
+		if !disconSatisfied {
+			choice = appendItems(choice, discon[0])
+		}
+	}
+
+	all = append(all, choice)
+
+	return all
+}
+
+func userHasCreds(items []IssueWizardItem, creds map[CredentialTypeIdentifier]struct{}) bool {
+	for _, val := range items {
+		if _, ok := creds[*val.Credential]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// appendItems appends IssueWizardItems to IssueWizardItems and deduplicates
+func appendItems(existing []IssueWizardItem, toBeAdded []IssueWizardItem) []IssueWizardItem {
+	allAsMap := make(map[IssueWizardItem]int)
+	withDuplicates := append(existing, toBeAdded...)
+	new := make([]IssueWizardItem, 0)
+	for _, val := range withDuplicates {
+		allAsMap[val] = 1
+	}
+
+	for letter, _ := range allAsMap {
+		new = append(new, letter)
+	}
+
+	return new
 }
 
 func (item *IssueWizardItem) validate(conf *Configuration) error {

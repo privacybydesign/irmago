@@ -1,0 +1,15 @@
+<Issuer version="4">
+	<ID>belastingdienst</ID>
+	<ShortName>
+		<en>Demo Belastingdienst</en>
+		<nl>Demo Belastingdienst</nl>
+	</ShortName>
+	<Name>
+		<en>Demo Belastingdienst</en>
+		<nl>Demo Belastingdienst</nl>
+	</Name>
+	<SchemeManager>irma-demo</SchemeManager>
+	<ContactAddress>https://example.org</ContactAddress>
+	<ContactEMail>example@example.org</ContactEMail>
+	<baseURL></baseURL>
+</Issuer>

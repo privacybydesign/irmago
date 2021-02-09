@@ -1,0 +1,102 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Address</en>
+		<nl>Demo Adres</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Address</en>
+		<nl>Demo Adres</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>digidproef</IssuerID>
+	<CredentialID>address</CredentialID>
+	<Description>
+		<en>Your address, from the Dutch population register</en>
+		<nl>Uw adres, afkomstig uit de Nederlandse Basisregistratie Persoonsgegevens</nl>
+	</Description>
+	<IssueURL>
+		<en>https://mmi-mul-ota.azurewebsites.net/acc</en>
+		<nl>https://mmi-mul-ota.azurewebsites.net/acc</nl>
+	</IssueURL>
+	<IsULIssueURL>true</IsULIssueURL>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+	<ForegroundColor>#ffffff</ForegroundColor>
+	<BackgroundGradientStart>#014483</BackgroundGradientStart>
+	<BackgroundGradientEnd>#2574A6</BackgroundGradientEnd>
+	<IsInCredentialStore>false</IsInCredentialStore>
+
+	<Category>
+		<en>Personal data</en>
+		<nl>Persoonsgegevens</nl>
+	</Category>
+	<FAQIntro>
+		<en></en>
+		<nl>Zet je adres uit de basisregistratie personen (BRP) in je IRMA-app.</nl>
+	</FAQIntro>
+	<FAQPurpose>
+		<en></en>
+		<nl>Met jouw adres in de IRMA-app kun jij bewijzen waar je woont.\nDan kun je bijvoorbeeld bewijzen in welke gemeente je woont zonder je exacte adres prijs te geven.</nl>
+	</FAQPurpose>
+	<FAQContent>
+		<en></en>
+		<nl>Je haalt de volgende gegevens op:\n• straat\n• huisnummer\n• postcode\n• plaats\n• gemeente</nl>
+	</FAQContent>
+	<FAQHowto>
+		<en></en>
+		<nl>Doorloop de volgende stappen:\n1. Open de Sesam ID-app en voer je pincode in.\n2. Kies in de Sesam ID-app voor 'Gegevens delen' en kies voor 'IRMA'.\n3. Bevestig het overzetten van je gegevens naar je IRMA-app.\n\nJe ontvangt twee kaartjes:\n• een kaartje met je adres\n• een kaartje met je persoonsgegevens</nl>
+	</FAQHowto>
+
+	<Attributes>
+		<Attribute id="street" displayIndex="0">
+			<Name>
+				<en>Street</en>
+				<nl>Straat</nl>
+			</Name>
+			<Description>
+				<en>Your street</en>
+				<nl>Uw straat</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="houseNumber" optional="true" displayIndex="1">
+			<Name>
+				<en>House number</en>
+				<nl>Huisnummer</nl>
+			</Name>
+			<Description>
+				<en>Your house number, letter and/or addition</en>
+				<nl>Uw huisnummer, letter en/of toevoeging</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="zipcode" displayIndex="2">
+			<Name>
+				<en>Zip code</en>
+				<nl>Postcode</nl>
+			</Name>
+			<Description>
+				<en>Your zip code</en>
+				<nl>Uw postcode</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="municipality" displayIndex="4">
+			<Name>
+				<en>Municipality</en>
+				<nl>Gemeente</nl>
+			</Name>
+			<Description>
+				<en>Your municipality</en>
+				<nl>Uw gemeente</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="city" displayIndex="3">
+			<Name>
+				<en>City</en>
+				<nl>Plaats</nl>
+			</Name>
+			<Description>
+				<en>Your city of residence</en>
+				<nl>Uw plaats</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

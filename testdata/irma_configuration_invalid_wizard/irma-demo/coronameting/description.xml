@@ -1,0 +1,15 @@
+<Issuer version="4">
+  <ID>coronameting</ID>
+  <Name>
+    <en>Demo Corona Meting</en>
+    <nl>Demo Corona Meting</nl>
+  </Name>
+  <ShortName>
+    <en>Demo Corona Meting</en>
+    <nl>Demo Corona Meting</nl>
+  </ShortName>
+  <SchemeManager>irma-demo</SchemeManager>
+  <ContactAddress>https://www.coronameting.nl/</ContactAddress>
+  <ContactEMail>info@coronameting.nl</ContactEMail>
+  <baseURL></baseURL>
+</Issuer>

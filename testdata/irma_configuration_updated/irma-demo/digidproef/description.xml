@@ -1,0 +1,15 @@
+<Issuer version="4">
+	<ID>digidproef</ID>
+	<ShortName>
+		<en>Demo Rijksoverheid DigiD Proef</en>
+		<nl>Demo Rijksoverheid DigiD Proef</nl>
+	</ShortName>
+	<Name>
+		<en>Demo Rijksoverheid DigiD Proef</en>
+		<nl>Demo Rijksoverheid DigiD Proef</nl>
+	</Name>
+	<SchemeManager>irma-demo</SchemeManager>
+	<ContactAddress>https://example.org</ContactAddress>
+	<ContactEMail>example@example.org</ContactEMail>
+	<baseURL></baseURL>
+</Issuer>

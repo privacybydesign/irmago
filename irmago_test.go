@@ -985,6 +985,15 @@ func TestWizardFromScheme(t *testing.T) {
 	)
 }
 
+func TestWizardComplexityError(t *testing.T) {
+	conf, err := NewConfiguration("testdata/irma_configuration_invalid_wizard", ConfigurationOptions{})
+	require.NoError(t, err)
+
+	e := conf.ParseFolder()
+
+	require.Equal(t, "Error parsing scheme manager test-requestors: issue wizard testwizard: wizard too complex", e.Error())
+}
+
 func TestValidateIssueWizard(t *testing.T) {
 	dependencies := CredentialDependencies{
 		{

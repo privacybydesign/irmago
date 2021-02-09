@@ -1,0 +1,55 @@
+<IssueSpecification version="4">
+  <Name>
+    <en>Demo ChipSoft user code</en>
+    <nl>Demo ChipSoft gebruikerscode</nl>
+  </Name>
+  <ShortName>
+    <en>ChipSoft user code</en>
+    <nl>ChipSoft gebruikerscode</nl>
+  </ShortName>
+  <SchemeManager>irma-demo</SchemeManager>
+  <IssuerID>chipsoft</IssuerID>
+  <CredentialID>hix</CredentialID>
+  <Description>
+    <en>Your user code for HiX at ChipSoft</en>
+    <nl>Je gebruikerscode voor HiX bij ChipSoft</nl>
+  </Description>
+  <ShouldBeSingleton>false</ShouldBeSingleton>
+  <IssueURL>
+    <en>https://privacybydesign.foundation/attribute-index/en/irma-demo.chipsoft.hix.html</en>
+    <nl>https://privacybydesign.foundation/attribute-index/nl/irma-demo.chipsoft.hix.html</nl>
+  </IssueURL>
+
+  <Attributes>
+    <Attribute id="usertype" displayIndex="0">
+      <Name>
+        <en>User type</en>
+        <nl>Gebruikerstype</nl>
+      </Name>
+      <Description>
+        <en>Your user type</en>
+        <nl>Je gebuikerstype</nl>
+      </Description>
+    </Attribute>
+    <Attribute id="usercode" displayIndex="1">
+      <Name>
+        <en>User code</en>
+        <nl>Gebruikerscode</nl>
+      </Name>
+      <Description>
+        <en>User code that uniquely identifies you</en>
+        <nl>Gebruikerscode die jou uniek identificeert</nl>
+      </Description>
+    </Attribute>
+    <Attribute id="issuenumber" displayIndex="2">
+      <Name>
+        <en>Issue number</en>
+        <nl>Uitgiftenummer</nl>
+      </Name>
+      <Description>
+        <en>The issue number of this card</en>
+        <nl>Het uitgiftenummer van dit kaartje</nl>
+      </Description>
+    </Attribute>
+  </Attributes>
+</IssueSpecification>

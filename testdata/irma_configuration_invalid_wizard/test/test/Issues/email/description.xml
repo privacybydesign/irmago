@@ -1,0 +1,32 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Email address</en>
+		<nl>Demo E-mailadres</nl>
+	</Name>
+	<SchemeManager>test</SchemeManager>
+	<IssuerID>test</IssuerID>
+	<CredentialID>email</CredentialID>
+	<Description>
+		<en>Your verified email address</en>
+		<nl>Uw geverifiëerde e-mailadres</nl>
+	</Description>
+	<IssueURL><en></en><nl></nl></IssueURL>
+	<ShouldBeSingleton>false</ShouldBeSingleton>
+	<RevocationServers>
+		<RevocationServer>http://localhost:48683</RevocationServer>
+	</RevocationServers>
+
+	<Attributes>
+		<Attribute id="email">
+			<Name>
+				<en>Email address</en>
+				<nl>E-mailadres</nl>
+			</Name>
+			<Description>
+				<en>Your verified email address</en>
+				<nl>Uw geverifiëerde e-mailadres</nl>
+			</Description>
+		</Attribute>
+		<Attribute revocation="true" />
+	</Attributes>
+</IssueSpecification>

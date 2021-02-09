@@ -1,0 +1,85 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Total year income</en>
+		<nl>Demo Verzamelinkomen</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Total year income</en>
+		<nl>Demo Verzamelinkomen</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>belastingdienst</IssuerID>
+	<CredentialID>verzamelinkomen</CredentialID>
+	<Description>
+		<en>Your total year income from the 3 tax 'boxes' and resulting income thresholds, as known by the Dutch tax office</en>
+		<nl>Het totaal van uw verzamelinkomen uit de 3 'boxen' en daaruit afgeleide inkomensgrenzen van de Belastingdienst</nl>
+	</Description>
+	<IssueURL>
+		<en>https://privacybydesign.foundation/attribute-index/en/irma-demo.belastingdienst.verzamelinkomen.html</en>
+		<nl>https://privacybydesign.foundation/attribute-index/nl/irma-demo.belastingdienst.verzamelinkomen.html</nl>
+	</IssueURL>
+	<ShouldBeSingleton>false</ShouldBeSingleton>
+
+	<Attributes>
+		<Attribute id="year">
+			<Name>
+				<en>Year</en>
+				<nl>Jaar</nl>
+			</Name>
+			<Description>
+				<en>The tax year</en>
+				<nl>Het belastingjaar</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="totalincome">
+			<Name>
+				<en>Total year income</en>
+				<nl>Totale verzamelinkomen</nl>
+			</Name>
+			<Description>
+				<en>Your total year income</en>
+				<nl>Uw totale verzamelinkomen</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="box1">
+			<Name>
+				<en>Box 1</en>
+				<nl>Box 1</nl>
+			</Name>
+			<Description>
+				<en>Box 1: Income from work, or social security benefits and owned house</en>
+				<nl>Box 1: Inkomsten uit werk, of een uitkering, en de eigen woning</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="box2">
+			<Name>
+				<en>Box 2</en>
+				<nl>Box 2</nl>
+			</Name>
+			<Description>
+				<en>Box 2: Income from stocks and dividends</en>
+				<nl>Box 2: Inkomsten uit aandelen en dividenden</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="box3">
+                        <Name>
+                                <en>Box 3</en>
+                                <nl>Box 3</nl>
+                        </Name>
+                        <Description>
+                                <en>Box 3: Yields from savings and investments</en>
+                                <nl>Box 3: Opbrengsten uit sparen en beleggen</nl>
+                        </Description>
+		</Attribute>
+		<Attribute id="incomelevel">
+                        <Name>
+				<en>level of income</en>
+                                <nl>Inkomensniveau</nl>
+                        </Name>
+                        <Description>
+                                <en>Your level of income relative to the general population.</en>
+                                <nl>Uw inkomensniveau, relatief aan het gemiddelde inkomen.</nl>
+                        </Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

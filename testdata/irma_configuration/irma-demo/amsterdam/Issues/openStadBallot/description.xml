@@ -1,0 +1,35 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo OpenStad ballot</en>
+		<nl>Demo OpenStad stembiljet</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Ballot</en>
+		<nl>Demo Stembiljet</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>amsterdam</IssuerID>
+	<CredentialID>openStadBallot</CredentialID>
+	<Description>
+		<en>Your right to vote with OpenStad supplied by Gemeente Amsterdam</en>
+		<nl>Uw recht om te stemmen met OpenStad uitgegeven door Gemeente Amsterdam</nl>
+	</Description>
+	<IssueURL>
+		<en>https://privacybydesign.foundation/attribute-index/en/irma-demo.amsterdam.openStadBallot.html</en>
+		<nl>https://privacybydesign.foundation/attribute-index/nl/irma-demo.amsterdam.openStadBallot.html</nl>
+	</IssueURL>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+	<Attributes>
+		<Attribute id="ballot">
+			<Name>
+				<en>Ballot</en>
+				<nl>Stembiljet</nl>
+			</Name>
+			<Description>
+				<en>The right to vote</en>
+				<nl>Het recht om te stemmen</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

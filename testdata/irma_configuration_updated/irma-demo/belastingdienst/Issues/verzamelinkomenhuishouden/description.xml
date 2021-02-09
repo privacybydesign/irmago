@@ -1,0 +1,65 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Yearly income houshold</en>
+		<nl>Demo Verzamelinkomen huishouden</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Yearly income household</en>
+		<nl>Demo Verzamelinkomen huishouden</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>belastingdienst</IssuerID>
+	<CredentialID>verzamelinkomenhuishouden</CredentialID>
+	<Description>
+		<en>The total year income of your household, as known by the Dutch tax office</en>
+		<nl>Het verzamelinkomen van uw huishouden, zoals bekend bij de Belastingdienst</nl>
+	</Description>
+	<IssueURL>
+		<en>https://privacybydesign.foundation/attribute-index/en/irma-demo.belastingdienst.verzamelinkomenhuishouden.html</en>
+		<nl>https://privacybydesign.foundation/attribute-index/nl/irma-demo.belastingdienst.verzamelinkomenhuishouden.html</nl>
+	</IssueURL>
+	<ShouldBeSingleton>false</ShouldBeSingleton>
+
+	<Attributes>
+		<Attribute id="year">
+			<Name>
+				<en>Year</en>
+				<nl>Jaar</nl>
+			</Name>
+			<Description>
+				<en>The tax year</en>
+				<nl>Het belastingjaar</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="totalincome">
+			<Name>
+				<en>Total year income houshold</en>
+				<nl>Totale verzamelinkomen huishouden</nl>
+			</Name>
+			<Description>
+				<en>Your household's total year income</en>
+				<nl>Het totale verzamelinkomen van uw huishouden</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="belowsocialhousing">
+                        <Name>
+				<en>Below social housing threshold</en>
+                                <nl>Onder inkomensgrens Sociale Huurwoning</nl>
+                        </Name>
+                        <Description>
+				<en>Is your household's total year income below the social housing threshold?</en>
+                                <nl>Valt het totale jaarinkomen van uw huishouden onder de inkomensgrens Sociale Huurwoning?</nl>
+                        </Description>
+		</Attribute>
+		<Attribute id="belowexceptionsocialhousing">
+                        <Name>
+                                <en>Below social housing exception threshold</en>
+                                <nl>Onder uitzonderingsgrens Sociale Huurwoning</nl>
+                        </Name>
+                        <Description>
+                                <en>Is your household's total year income below the exception threshold for social housing?</en>
+                                <nl>Valt het totale jaarinkomen van uw huishouden onder de uitzonderingsgrens Sociale Huurwoning?</nl>
+                        </Description>
+                </Attribute>
+	</Attributes>
+</IssueSpecification>

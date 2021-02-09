@@ -1,0 +1,15 @@
+<Issuer version="4">
+	<ID>amsterdam</ID>
+	<ShortName>
+		<en>Demo Amsterdam</en>
+		<nl>Demo Amsterdam</nl>
+	</ShortName>
+	<Name>
+		<en>Demo Municipality of Amsterdam</en>
+		<nl>Demo Gemeente Amsterdam</nl>
+	</Name>
+	<SchemeManager>irma-demo</SchemeManager>
+	<ContactAddress>https://amsterdam.nl</ContactAddress>
+	<ContactEMail>info@amsterdam.nl</ContactEMail>
+	<baseURL></baseURL>
+</Issuer>

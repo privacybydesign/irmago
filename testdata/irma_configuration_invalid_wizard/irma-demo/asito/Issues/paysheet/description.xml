@@ -1,0 +1,104 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Paysheet Asito</en>
+		<nl>Demo Loonstaat Asito</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Paysheet Asito</en>
+		<nl>Demo Loonstaat Asito</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>asito</IssuerID>
+	<CredentialID>paysheet</CredentialID>
+	<Description>
+		<en>Paysheet attributes for i4Sociaal Pilot Bijstand Aanvaarden Werk - Enschede</en>
+		<nl>Loonstaat attributen voor i4Sociaal Pilot Bijstand Aanvaarden Werk - Enschede</nl>
+	</Description>
+	<IssueURL>
+		<en>https://privacybydesign.foundation/attribute-index/en/irma-demo.asito.paysheet.html</en>
+		<nl>https://privacybydesign.foundation/attribute-index/nl/irma-demo.asito.paysheet.html</nl>
+	</IssueURL>
+
+	<Attributes>
+		<Attribute id="grossSalary">
+			<Name>
+				<en>Gross salary</en>
+				<nl>Brutoloon</nl>
+			</Name>
+			<Description>
+				<en>Gross salary</en>
+				<nl>Brutoloon</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="grossSalaryComponents">
+			<Name>
+				<en>Gross salary components</en>
+				<nl>Bruto componenten</nl>
+			</Name>
+			<Description>
+				<en>Gross salary components</en>
+				<nl>Bruto componenten</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="wnPremium">
+			<Name>
+				<en>WN premium</en>
+				<nl>WN premie</nl>
+			</Name>
+			<Description>
+				<en>WN premium</en>
+				<nl>WN premie</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="employeePremium">
+			<Name>
+				<en>Employee premium</en>
+				<nl>Werknemers premie</nl>
+			</Name>
+			<Description>
+				<en>Employee premium</en>
+				<nl>Werknemers premie</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="netSalaryAllocations">
+			<Name>
+				<en>Net salary allocations</en>
+				<nl>Netto toekenningen</nl>
+			</Name>
+			<Description>
+				<en>Net salary allocations</en>
+				<nl>Netto toekenningen</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="netSalaryDeductions">
+			<Name>
+				<en>Net salary deductions</en>
+				<nl>Netto inhoudingen</nl>
+			</Name>
+			<Description>
+				<en>Net salary deductions</en>
+				<nl>Netto inhoudingen</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="vtEmployer">
+			<Name>
+				<en>Vacation allowance employer</en>
+				<nl>Vakantie Toeslag werkgever</nl>
+			</Name>
+			<Description>
+				<en>Vacation allowance employer</en>
+				<nl>Vakantie Toeslag werkgever</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="solidarityContribution">
+			<Name>
+				<en>Solidarity contribution</en>
+				<nl>Solidariteitsbijdrage</nl>
+			</Name>
+			<Description>
+				<en>Solidarity contribution</en>
+				<nl>Solidariteitsbijdrage</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

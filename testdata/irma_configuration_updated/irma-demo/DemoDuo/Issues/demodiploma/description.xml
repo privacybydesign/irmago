@@ -1,0 +1,135 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Diploma</en>
+		<nl>Demo Diploma</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Diploma</en>
+		<nl>Demo Diploma</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>DemoDuo</IssuerID>
+	<CredentialID>demodiploma</CredentialID>
+	<Description>
+		<en>Data extracted from your diploma provided by DUO</en>
+		<nl>Gegevens uit uw diploma, verkregen via DUO</nl>
+	</Description>
+	<ShouldBeSingleton>false</ShouldBeSingleton>
+	<IssueURL>
+		<en>demouitgifte.en</en>
+		<nl>demouitgifte.nl</nl>
+	</IssueURL>
+
+	<Attributes>
+		<Attribute id="firstname">
+			<Name>
+				<en>First name</en>
+				<nl>Voornaam</nl>
+			</Name>
+			<Description>
+				<en>Your first name from your diploma</en>
+				<nl>Uw voornaam uit uw diploma</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="prefix" optional="true">
+			<Name>
+				<en>Prefix</en>
+				<nl>Tussenvoegsel</nl>
+			</Name>
+			<Description>
+				<en>Your family name prefix from your diploma</en>
+				<nl>Uw tussenvoegsel uit uw diploma</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="familyname">
+			<Name>
+				<en>Family name</en>
+				<nl>Achternaam</nl>
+			</Name>
+			<Description>
+				<en>Your family name from your diploma</en>
+				<nl>Uw achternaam uit uw diploma</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="dateofbirth">
+			<Name>
+				<en>Date of birth</en>
+				<nl>Geboortedatum</nl>
+			</Name>
+			<Description>
+				<en>Your date of birth from your diploma</en>
+				<nl>Uw geboortedatum uit uw diploma</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="gender">
+			<Name>
+				<en>Gender</en>
+				<nl>Geslacht</nl>
+			</Name>
+			<Description>
+				<en>Your gender from your diploma</en>
+				<nl>Uw geslacht uit uw diploma</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="education">
+			<Name>
+				<en>Education</en>
+				<nl>Opleiding</nl>
+			</Name>
+			<Description>
+				<en>Completed education</en>
+				<nl>Voltooide opleiding</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="degree" optional="true">
+			<Name>
+				<en>Degree</en>
+				<nl>Opleiding</nl>
+			</Name>
+			<Description>
+				<en>Type of education</en>
+				<nl>Soort opleiding</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="profile" optional="true">
+			<Name>
+				<en>Profile</en>
+				<nl>Profiel</nl>
+			</Name>
+			<Description>
+				<en>Education profile</en>
+				<nl>Opleidingsprofiel</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="achieved">
+			<Name>
+				<en>Achieved in</en>
+				<nl>Behaald in</nl>
+			</Name>
+			<Description>
+				<en>Month of achieving this diploma</en>
+				<nl>Maand waarin dit diploma behaald is</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="institute">
+			<Name>
+				<en>Institute</en>
+				<nl>Instituut</nl>
+			</Name>
+			<Description>
+				<en>The institute where this degree has been achieved</en>
+				<nl>De instantie waar dit diploma behaald is</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="city">
+			<Name>
+				<en>City</en>
+				<nl>Stad</nl>
+			</Name>
+			<Description>
+				<en>The city of the institute where this degree has been achieved</en>
+				<nl>De stad van de instantie waar dit diploma behaald is</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

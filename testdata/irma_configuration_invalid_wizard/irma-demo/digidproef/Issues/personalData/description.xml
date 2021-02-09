@@ -1,0 +1,222 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Personal data</en>
+		<nl>Demo Persoonsgegevens</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Personal data</en>
+		<nl>Demo Persoonsgegevens</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>digidproef</IssuerID>
+	<CredentialID>personalData</CredentialID>
+	<Description>
+		<en>Your personal data, from the Dutch population register</en>
+		<nl>Uw persoonsgegevens, afkomstig uit de Nederlandse Basisregistratie Persoonsgegevens</nl>
+	</Description>
+	<IssueURL>
+		<en>https://mmi-mul-ota.azurewebsites.net/acc</en>
+		<nl>https://mmi-mul-ota.azurewebsites.net/acc</nl>
+	</IssueURL>
+	<IsULIssueURL>true</IsULIssueURL>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+	<ForegroundColor>#ffffff</ForegroundColor>
+	<BackgroundGradientStart>#014483</BackgroundGradientStart>
+	<BackgroundGradientEnd>#2574A6</BackgroundGradientEnd>
+	<IsInCredentialStore>false</IsInCredentialStore>
+	
+	<Category>
+		<en>Personal data</en>
+		<nl>Persoonsgegevens</nl>
+	</Category>
+	<FAQIntro>
+		<en></en>
+		<nl>Zet je persoonsgegevens uit de basisregistratie personen (BRP) in je IRMA-app.</nl>
+	</FAQIntro>
+	<FAQPurpose>
+		<en></en>
+		<nl>Met jouw persoonsgegevens in de IRMA-app kun jij jezelf online bekendmaken.\nDan kun je bijvoorbeeld bewijzen dat je ouder bent dan 18 jaar, zonder je geboortedatum prijs te geven.</nl>
+	</FAQPurpose>
+	<FAQContent>
+		<en></en>
+		<nl>Je haalt de volgende gegevens op:\n• volledige naam\n• voorletters\n• voornamen\n• achternaam\n• geslacht\n• geboortedatum\n• leeftijd (ouder dan 12, 16, 18, 21 of 65)\n• nationaliteit\n• geboorteland\n• burgerservicenummer (BSN)</nl>
+	</FAQContent>
+	<FAQHowto>
+		<en></en>
+		<nl>Doorloop de volgende stappen:\n1. Open de Sesam ID-app en voer je pincode in.\n2. Kies in de Sesam ID-app voor 'Gegevens delen' en kies voor 'IRMA'.\n3. Bevestig het overzetten van je gegevens naar je IRMA-app.\n\nJe ontvangt twee kaartjes:\n• een kaartje met je persoonsgegevens\n• een een kaartje met je adres</nl>
+	</FAQHowto>
+
+	<Attributes>
+		<Attribute id="initials" displayIndex="1">
+			<Name>
+				<en>Initials</en>
+				<nl>Voorletters</nl>
+			</Name>
+			<Description>
+				<en>Your initials, abbreviating your first names</en>
+				<nl>Uw voorletters, een afkorting van uw voornamen</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="firstnames" displayIndex="2">
+			<Name>
+				<en>First names</en>
+				<nl>Voornamen</nl>
+			</Name>
+			<Description>
+				<en>Your first names</en>
+				<nl>Uw voornamen</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="prefix" optional="true" displayIndex="3">
+			<Name>
+				<en>Prefix</en>
+				<nl>Voorvoegsel</nl>
+			</Name>
+			<Description>
+				<en>Prefix of your family name</en>
+				<nl>Voorvoegsel van uw achternaam</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="familyname" displayIndex="4">
+			<Name>
+				<en>Family name</en>
+				<nl>Achternaam</nl>
+			</Name>
+			<Description>
+				<en>Your family name, as given to you at birth</en>
+				<nl>Uw achternaam, zoals aan u toegekend bij uw geboorte</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="fullname" optional="true" displayIndex="0">
+			<Name>
+				<en>Full name</en>
+				<nl>Volledige naam</nl>
+			</Name>
+			<Description>
+				<en>Your full name</en>
+				<nl>Uw volledige naam</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="gender" displayIndex="5">
+			<Name>
+				<en>Gender</en>
+				<nl>Geslacht</nl>
+			</Name>
+			<Description>
+				<en>Your gender</en>
+				<nl>Uw geslacht</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="nationality" optional="true" displayIndex="12">
+			<Name>
+				<en>Dutch nationality</en>
+				<nl>Nederlandse nationaliteit</nl>
+			</Name>
+			<Description>
+				<en>Whether you have the dutch nationality</en>
+				<nl>Of u de Nederlandse nationaliteit bezit</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="dateofbirth" displayIndex="6">
+			<Name>
+				<en>Date of birth</en>
+				<nl>Geboortedatum</nl>
+			</Name>
+			<Description>
+				<en>Your date of birth</en>
+				<nl>Uw geboortedatum</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="countryofbirth" displayIndex="14">
+			<Name>
+				<en>Country of birth</en>
+				<nl>Geboorteland</nl>
+			</Name>
+			<Description>
+				<en>Your country of birth</en>
+				<nl>Uw geboorteland</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over12" displayIndex="7" displayHint="yesno">
+			<Name>
+				<en>Over 12</en>
+				<nl>Ouder dan 12</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 12</en>
+				<nl>Of u ouder dan 12 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over16" displayIndex="8" displayHint="yesno">
+			<Name>
+				<en>Over 16</en>
+				<nl>Ouder dan 16</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 16</en>
+				<nl>Of u ouder dan 16 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over18" displayIndex="9" displayHint="yesno">
+			<Name>
+				<en>Over 18</en>
+				<nl>Ouder dan 18</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 18</en>
+				<nl>Of u ouder dan 18 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over21" displayIndex="10" displayHint="yesno">
+			<Name>
+				<en>Over 21</en>
+				<nl>Ouder dan 21</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 21</en>
+				<nl>Of u ouder dan 21 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over65" displayIndex="11" displayHint="yesno">
+			<Name>
+				<en>Over 65</en>
+				<nl>Ouder dan 65</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 65</en>
+				<nl>Of u ouder dan 65 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="bsn" displayIndex="15" displayHint="sensitive">
+			<Name>
+				<en>BSN</en>
+				<nl>BSN</nl>
+			</Name>
+			<Description>
+				<en>Your Dutch Citizen service number (BSN)</en>
+				<nl>Uw Burgerservicenummer (BSN)</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="photo" displayIndex="16" displayHint="portraitPhoto">
+			<Name>
+				<en>Photo</en>
+				<nl>Foto</nl>
+			</Name>
+			<Description>
+				<en></en>
+				<nl></nl>
+			</Description>
+		</Attribute>
+		<Attribute id="cityofbirth" optional="true" displayIndex="13">
+			<Name>
+				<en>City of birth</en>
+				<nl>Geboortestad</nl>
+			</Name>
+			<Description>
+				<en>Your city of birth</en>
+				<nl>Uw geboortestad</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

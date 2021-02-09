@@ -1,0 +1,28 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo MyIRMA login</en>
+		<nl>Demo MijnIRMA login</nl>
+	</Name>
+	<SchemeManager>test</SchemeManager>
+	<IssuerID>test</IssuerID>
+	<CredentialID>mijnirma</CredentialID>
+	<Description>
+		<en>Your MyIRMA login credential</en>
+		<nl>Uw MijnIRMA login credential</nl>
+	</Description>
+	<IssueURL><en></en><nl></nl></IssueURL>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+	<Attributes>
+		<Attribute id="email">
+			<Name>
+				<en>Username</en>
+				<nl>Gebruikersnaam</nl>
+			</Name>
+			<Description>
+				<en>Your MyIRMA username</en>
+				<nl>Uw MijnIRMA-gebruikersnaam</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

@@ -1,0 +1,150 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Citizen data</en>
+		<nl>Demo Persoonsgegevens</nl>
+	</Name>
+	<ShortName>
+		<en>Demo Citizen data</en>
+		<nl>Demo Persoonsgegevens</nl>
+	</ShortName>
+	<SchemeManager>irma-demo</SchemeManager>
+	<IssuerID>digidproef</IssuerID>
+	<CredentialID>basicPersonalData</CredentialID>
+	<Description>
+		<en>Your personal data, from the Dutch population register</en>
+		<nl>Uw persoonsgegevens, afkomstig uit de Nederlandse Basisregistratie Persoonsgegevens</nl>
+	</Description>
+	<IssueURL>
+		<en>https://mul-mmi.belastingdienst.nl/ont</en>
+		<nl>https://mul-mmi.belastingdienst.nl/ont</nl>
+	</IssueURL>
+	<IsULIssueURL>true</IsULIssueURL>
+	<ShouldBeSingleton>true</ShouldBeSingleton>
+
+	<ForegroundColor>#000000</ForegroundColor>
+	<BackgroundGradientStart>#FFFFFF</BackgroundGradientStart>
+	<BackgroundGradientEnd>#FFFFFF</BackgroundGradientEnd>
+
+	<Attributes>
+		<Attribute id="firstnames">
+			<Name>
+				<en>First names</en>
+				<nl>Voornamen</nl>
+			</Name>
+			<Description>
+				<en>Your first names</en>
+				<nl>Uw voornamen</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="surname">
+			<Name>
+				<en>Surname</en>
+				<nl>Achternaam</nl>
+			</Name>
+			<Description>
+				<en>Your full family name: your family name or (a combination with) that of your partner</en>
+				<nl>Uw volledige achternaam: uw geslachtsnaam of (een combinatie met) die van uw partner</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="gender">
+			<Name>
+				<en>Gender</en>
+				<nl>Geslacht</nl>
+			</Name>
+			<Description>
+				<en>Your gender</en>
+				<nl>Uw geslacht</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="nationality">
+			<Name>
+				<en>Dutch nationality</en>
+				<nl>Nederlandse nationaliteit</nl>
+			</Name>
+			<Description>
+				<en>Whether you have the dutch nationality</en>
+				<nl>Of u de Nederlandse nationaliteit bezit</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="dateofbirth">
+			<Name>
+				<en>Date of birth</en>
+				<nl>Geboortedatum</nl>
+			</Name>
+			<Description>
+				<en>Your date of birth</en>
+				<nl>Uw geboortedatum</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over12">
+			<Name>
+				<en>Over 12</en>
+				<nl>Ouder dan 12</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 12</en>
+				<nl>Of u ouder dan 12 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over16">
+			<Name>
+				<en>Over 16</en>
+				<nl>Ouder dan 16</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 16</en>
+				<nl>Of u ouder dan 16 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over18">
+			<Name>
+				<en>Over 18</en>
+				<nl>Ouder dan 18</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 18</en>
+				<nl>Of u ouder dan 18 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over21">
+			<Name>
+				<en>Over 21</en>
+				<nl>Ouder dan 21</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 21</en>
+				<nl>Of u ouder dan 21 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over65">
+			<Name>
+				<en>Over 65</en>
+				<nl>Ouder dan 65</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 65</en>
+				<nl>Of u ouder dan 65 bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="bsn">
+			<Name>
+				<en>BSN</en>
+				<nl>BSN</nl>
+			</Name>
+			<Description>
+				<en>Your Dutch Citizen service number (BSN)</en>
+				<nl>Uw Burgerservicenummer (BSN)</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="photo" displayHint="portraitPhoto">
+			<Name>
+				<en>Photo</en>
+				<nl>Foto</nl>
+			</Name>
+			<Description>
+				<en></en>
+				<nl></nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>
