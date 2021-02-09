@@ -104,6 +104,8 @@ const (
 
 	SchemeTypeIssuer    = SchemeType("issuer")
 	SchemeTypeRequestor = SchemeType("requestor")
+
+	maxDepComplexity = 25
 )
 
 func (conf *Configuration) DownloadDefaultSchemes() error {

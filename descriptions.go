@@ -187,8 +187,6 @@ const (
 	IssueWizardItemTypeCredential IssueWizardItemType = "credential"
 	IssueWizardItemTypeSession    IssueWizardItemType = "session"
 	IssueWizardItemTypeWebsite    IssueWizardItemType = "website"
-
-	maxDepComplexity = 25
 )
 
 // Choose from the wizard a list of items.
