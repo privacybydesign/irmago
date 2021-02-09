@@ -929,7 +929,7 @@ func TestWizardConstructed(t *testing.T) {
 	}
 
 	wizard := IssueWizard{
-		ID: "testwizard",
+		ID: NewIssueWizardIdentifier("test-requestors.test-requestor.testwizard"),
 		Contents: IssueWizardContents{
 			{{
 				credwizarditem("scheme.issuer.c"),
@@ -963,7 +963,8 @@ func TestWizardConstructed(t *testing.T) {
 
 func TestWizardFromScheme(t *testing.T) {
 	conf := parseConfiguration(t)
-	wizard := conf.Requestors["localhost"].Wizards["testwizard"]
+	id := NewIssueWizardIdentifier("test-requestors.test-requestor.testwizard")
+	wizard := conf.Requestors["localhost"].Wizards[id]
 
 	var expected []IssueWizardItem
 	require.NoError(t, json.Unmarshal(

@@ -1239,21 +1239,19 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 	}
 
 	// Verify all requestors
-	wizardIDs := map[string]struct{}{}
 	for _, requestor := range requestors {
+		if requestor.ID.RequestorSchemeIdentifier() != scheme.ID {
+			return errors.Errorf("requestor scheme %s has incorrect ID", requestor.ID), SchemeManagerStatusParsingError
+		}
 		if requestor.Logo != nil {
 			if err, status := scheme.checkLogo(conf, *requestor.Logo); err != nil {
 				return err, status
 			}
 		}
 		for id, wizard := range requestor.Wizards {
-			if id != wizard.ID {
+			if id != wizard.ID || id.RequestorIdentifier() != requestor.ID {
 				return errors.Errorf("issue wizard %s has incorrect ID", id), SchemeManagerStatusParsingError
 			}
-			if _, found := wizardIDs[id]; found {
-				return errors.Errorf("issue wizard ID %s already found", id), SchemeManagerStatusParsingError
-			}
-			wizardIDs[id] = struct{}{}
 			if err = wizard.Validate(conf); err != nil {
 				return errors.Errorf("issue wizard %s: %w", id, err), SchemeManagerStatusParsingError
 			}

@@ -127,13 +127,14 @@ type RequestorScheme struct {
 
 // RequestorInfo describes a single verified requestor
 type RequestorInfo struct {
-	Scheme     RequestorSchemeIdentifier `json:"scheme"`
-	Name       TranslatedString          `json:"name"`
-	Industry   *TranslatedString         `json:"industry"`
-	Hostnames  []string                  `json:"hostnames"`
-	Logo       *string                   `json:"logo"`
-	ValidUntil *Timestamp                `json:"valid_until"`
-	Wizards    map[string]*IssueWizard   `json:"wizards"`
+	ID         RequestorIdentifier                    `json:"id"`
+	Scheme     RequestorSchemeIdentifier              `json:"scheme"`
+	Name       TranslatedString                       `json:"name"`
+	Industry   *TranslatedString                      `json:"industry"`
+	Hostnames  []string                               `json:"hostnames"`
+	Logo       *string                                `json:"logo"`
+	ValidUntil *Timestamp                             `json:"valid_until"`
+	Wizards    map[IssueWizardIdentifier]*IssueWizard `json:"wizards"`
 }
 
 // RequestorChunk is a number of verified requestors stored together. The RequestorScheme can consist of multiple such chunks
@@ -141,7 +142,7 @@ type RequestorChunk []*RequestorInfo
 
 type (
 	IssueWizard struct {
-		ID       string                    `json:"id"`
+		ID       IssueWizardIdentifier     `json:"id"`
 		Title    TranslatedString          `json:"title"`
 		Logo     *string                   `json:"logo,omitempty"`     // SHA256 of the logo contents (which is the filename on disk)
 		LogoPath *string                   `json:"logoPath,omitempty"` // Full path to the logo set automatically during scheme parsing

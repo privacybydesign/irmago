@@ -41,7 +41,7 @@ type Configuration struct {
 	RequestorSchemes map[RequestorSchemeIdentifier]*RequestorScheme
 	Requestors       map[string]*RequestorInfo
 
-	IssueWizards map[string]*IssueWizard
+	IssueWizards map[IssueWizardIdentifier]*IssueWizard
 
 	// DisabledRequestorSchemes keeps track of any error of the requestorscheme if it
 	// did not parse successfully
@@ -502,7 +502,7 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.RequestorSchemes = make(map[RequestorSchemeIdentifier]*RequestorScheme)
 	conf.Requestors = make(map[string]*RequestorInfo)
-	conf.IssueWizards = make(map[string]*IssueWizard)
+	conf.IssueWizards = make(map[IssueWizardIdentifier]*IssueWizard)
 	conf.DisabledRequestorSchemes = make(map[RequestorSchemeIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)

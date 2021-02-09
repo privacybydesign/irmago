@@ -1,6 +1,7 @@
 [
     {
         "scheme": "test-requestors",
+        "id": "test-requestors.test-requestor",
         "hostnames": [
             "localhost"
         ],
@@ -9,8 +10,8 @@
         },
         "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
         "wizards": {
-            "testwizard": {
-                "id": "testwizard",
+            "test-requestors.test-requestor.testwizard": {
+                "id": "test-requestors.test-requestor.testwizard",
                 "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
                 "title": {
                     "nl": "Test",
@@ -130,6 +131,7 @@
     },
     {
         "scheme": "test-requestors",
+        "id": "test-requestors.example",
         "hostnames": [
             "example.com"
         ],
