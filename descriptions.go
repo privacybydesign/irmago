@@ -126,6 +126,7 @@ type RequestorInfo struct {
 	Hostnames  []string                  `json:"hostnames"`
 	Logo       *string                   `json:"logo"`
 	ValidUntil *Timestamp                `json:"valid_until"`
+	Unverified bool                      `json:"unverified"`
 }
 
 // RequestorChunk is a number of verified requestors stored together. The RequestorScheme can consist of multiple such chunks
@@ -134,8 +135,9 @@ type RequestorChunk []*RequestorInfo
 // NewRequestorInfo returns a Requestor with just the given hostname
 func NewRequestorInfo(hostname string) *RequestorInfo {
 	return &RequestorInfo{
-		Name:      NewTranslatedString(&hostname),
-		Hostnames: []string{hostname},
+		Name:       NewTranslatedString(&hostname),
+		Hostnames:  []string{hostname},
+		Unverified: true,
 	}
 }
 
