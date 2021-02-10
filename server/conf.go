@@ -96,8 +96,8 @@ func (conf *Configuration) Check() error {
 		conf.verifyURL,
 		conf.verifyEmail,
 		conf.verifyRevocation,
-		conf.verifyStaticSessions,
 		conf.verifyJwtPrivateKey,
+		conf.verifyStaticSessions,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
