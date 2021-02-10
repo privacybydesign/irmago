@@ -19,14 +19,27 @@ irma scheme sign ${dir}/irma_configuration/test-requestors/sk.pem ${dir}/irma_co
 sleep 1
 
 # restore changes to studentCard and stempas credtype, then resign
-git checkout -- ${dir}/irma_configuration_updated/irma-demo/RU/Issues/studentCard/description.xml
-git checkout -- ${dir}/irma_configuration_updated/irma-demo/stemmen/Issues/stempas/description.xml
+git diff \
+  HEAD:testdata/irma_configuration/irma-demo/RU/Issues/studentCard/description.xml \
+  HEAD:testdata/irma_configuration_updated/irma-demo/RU/Issues/studentCard/description.xml \
+   | git apply -p3 --directory "testdata/irma_configuration_updated"
+git diff \
+  HEAD:testdata/irma_configuration/irma-demo/stemmen/Issues/stempas/description.xml \
+  HEAD:testdata/irma_configuration_updated/irma-demo/stemmen/Issues/stempas/description.xml \
+   | git apply -p3 --directory "testdata/irma_configuration_updated"
 irma scheme sign ${dir}/irma_configuration_updated/irma-demo/sk.pem ${dir}/irma_configuration_updated/irma-demo
 
 # restore changes to requestor scheme, then resign
-git checkout -- ${dir}/irma_configuration_updated/test-requestors/requestors.json
+git diff \
+  HEAD:testdata/irma_configuration/test-requestors/requestors.json \
+  HEAD:testdata/irma_configuration_updated/test-requestors/requestors.json \
+   | git apply -p3 --directory "testdata/irma_configuration_updated"
 irma scheme sign ${dir}/irma_configuration_updated/test-requestors/sk.pem ${dir}/irma_configuration_updated/test-requestors
 
 # resign, then restore changes to studentCard credtype, invalidating the scheme
 irma scheme sign ${dir}/irma_configuration_invalid/irma-demo/sk.pem ${dir}/irma_configuration_invalid/irma-demo
-git checkout -- ${dir}/irma_configuration_invalid/irma-demo/RU/Issues/studentCard/description.xml
+git diff \
+  HEAD:testdata/irma_configuration/irma-demo/RU/Issues/studentCard/description.xml \
+  HEAD:testdata/irma_configuration_invalid/irma-demo/RU/Issues/studentCard/description.xml \
+   | git apply -p3 --directory "testdata/irma_configuration_invalid"
+
