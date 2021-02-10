@@ -117,6 +117,7 @@ type CredentialDependencies [][][]CredentialTypeIdentifier
 type RequestorScheme struct {
 	ID        RequestorSchemeIdentifier `json:"id"`
 	URL       string                    `json:"url"`
+	Demo      bool                      `json:"demo"`
 	Status    SchemeManagerStatus       `json:"-"`
 	Timestamp Timestamp                 `json:"-"`
 
