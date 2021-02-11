@@ -994,7 +994,170 @@ func TestWizardComplexityError(t *testing.T) {
 	require.Equal(t, "Error parsing scheme manager test-requestors: issue wizard testwizard: wizard too complex", e.Error())
 }
 
-func TestValidateIssueWizard(t *testing.T) {
+func TestWizardValidation(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: "testwizard",
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.e"),
+				Text:       &TranslatedString{"en": "custom description of credential e"},
+			}}},
+			{{{
+				Type:   IssueWizardItemTypeWebsite,
+				Header: &TranslatedString{"en": "header"},
+				Label:  &TranslatedString{"en": "label"},
+				Text:   &TranslatedString{"en": "text"},
+				URL:    &TranslatedString{"en": "https://example.com"},
+			}}},
+		},
+	}
+
+	err := wizard.Validate(conf)
+	require.NoError(t, err)
+}
+
+func TestWizardIncorrectContentsOrder(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: "testwizard",
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{{
+				Type:   IssueWizardItemTypeWebsite,
+				Header: &TranslatedString{"en": "header"},
+				Label:  &TranslatedString{"en": "label"},
+				Text:   &TranslatedString{"en": "text"},
+				URL:    &TranslatedString{"en": "https://example.com"},
+			}}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.e"),
+				Text:       &TranslatedString{"en": "custom description of credential e"},
+			}}},
+		},
+	}
+
+	err := wizard.Validate(conf)
+	require.Equal(t, "non-credential types in wizard should come last", err.Error())
+}
+
+func TestWizardComplexity(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e"),
+			credid("scheme.issuer.f"): credtype("scheme.issuer.f",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.g"): credtype("scheme.issuer.g",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.h"): credtype("scheme.issuer.h",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.i"): credtype("scheme.issuer.i",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: "testwizard",
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.d"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.e"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.f"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.g"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.h"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.i"),
+			}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.e"),
+				Text:       &TranslatedString{"en": "custom description of credential e"},
+			}}},
+			{{{
+				Type:   IssueWizardItemTypeWebsite,
+				Header: &TranslatedString{"en": "header"},
+				Label:  &TranslatedString{"en": "label"},
+				Text:   &TranslatedString{"en": "text"},
+				URL:    &TranslatedString{"en": "https://example.com"},
+			}}},
+		},
+	}
+
+	err := wizard.Validate(conf)
+	require.Equal(t, "wizard too complex", err.Error())
+}
+
+func TestIssueWizardItemValidation(t *testing.T) {
 	dependencies := CredentialDependencies{
 		{
 			{credid("a.a.a"), credid("a.a.b")},
@@ -1033,7 +1196,7 @@ func TestValidateIssueWizard(t *testing.T) {
 	require.Equal(t, nil, tester.validate(conf))
 }
 
-func TestValidateIssueWizardFAQSummaries(t *testing.T) {
+func TestIssueWizardFAQSummariesValidation(t *testing.T) {
 	dependencies := CredentialDependencies{
 		{
 			{credid("a.a.a"), credid("a.a.b")},

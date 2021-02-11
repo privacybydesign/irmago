@@ -382,9 +382,19 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	}
 
 	// validate translations, IssueWizardItems and FAQSummaries of dependencies
+	shouldBeLast := false
 	for i, outer := range wizard.Contents {
 		for j, middle := range outer {
 			for k, item := range middle {
+				// validate all non-credential-items of a wizard are at the end
+				if item.Type != "credential" {
+					shouldBeLast = true
+				} else {
+					if shouldBeLast {
+						return errors.Errorf("non-credential types in wizard should come last")
+					}
+				}
+
 				if err := item.validate(conf); err != nil {
 					return errors.Errorf("item %d.%d.%d of issue wizard %s: %w", i, j, k, wizard.ID, err)
 				}
