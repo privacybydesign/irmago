@@ -1157,9 +1157,9 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys() error {
 	// For each public key, attempt to download a corresponding private key
 	for _, file := range files {
 		i := strings.LastIndex(pkpath, "PublicKeys")
-		skpath := file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1)
-		parts := strings.Split(skpath, "/")
-		exists, err := common.PathExists(filepath.FromSlash(skpath))
+		skpath := filepath.FromSlash(file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1))
+		parts := strings.Split(skpath, string(filepath.Separator))
+		exists, err := common.PathExists(skpath)
 		if exists || err != nil {
 			continue
 		}
