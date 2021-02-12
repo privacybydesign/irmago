@@ -1230,6 +1230,125 @@ func TestIssueWizardFAQSummariesValidation(t *testing.T) {
 	require.Equal(t, "FAQSummary missing for last item in chain: a.a.a, a.b.a", tester.validate(conf).Error())
 }
 
+func TestCircularDependenciesValidation(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	err := credtype("scheme.issuer.a").validateDependencies(conf, []CredentialTypeIdentifier{})
+	require.NoError(t, err)
+}
+
+func TestCircularDependenciesError(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a",
+				"scheme.issuer.b"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+		},
+	}
+
+	err := credtype("scheme.issuer.a").validateDependencies(conf, []CredentialTypeIdentifier{})
+	require.Equal(t, "circular dependency scheme.issuer.b found in: scheme.issuer.b, scheme.issuer.a", err.Error())
+}
+
+func TestDependencyOfOtherSchemeError(t *testing.T) {
+	newCred := credtype("otherScheme.someIssuer.x", "scheme.issuer.a")
+
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"):          credtype("scheme.issuer.a"),
+			credid("otherScheme.someIssuer.x"): newCred,
+		},
+	}
+
+	err := newCred.validateDependencies(conf, []CredentialTypeIdentifier{})
+	require.Equal(t, "credential type otherScheme.someIssuer.x in scheme otherScheme has dependency outside the scheme: scheme.issuer.a", err.Error())
+}
+
+func TestDependencyComplexityError(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a"),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.b"),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.c"),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d"),
+			credid("scheme.issuer.f"): credtype("scheme.issuer.f",
+				"scheme.issuer.e"),
+			credid("scheme.issuer.g"): credtype("scheme.issuer.g",
+				"scheme.issuer.f"),
+			credid("scheme.issuer.h"): credtype("scheme.issuer.h",
+				"scheme.issuer.g"),
+			credid("scheme.issuer.i"): credtype("scheme.issuer.i",
+				"scheme.issuer.h"),
+			credid("scheme.issuer.j"): credtype("scheme.issuer.j",
+				"scheme.issuer.i"),
+			credid("scheme.issuer.k"): credtype("scheme.issuer.k",
+				"scheme.issuer.j"),
+			credid("scheme.issuer.l"): credtype("scheme.issuer.l",
+				"scheme.issuer.k"),
+			credid("scheme.issuer.m"): credtype("scheme.issuer.m",
+				"scheme.issuer.l"),
+			credid("scheme.issuer.n"): credtype("scheme.issuer.n",
+				"scheme.issuer.m"),
+			credid("scheme.issuer.o"): credtype("scheme.issuer.o",
+				"scheme.issuer.n"),
+			credid("scheme.issuer.p"): credtype("scheme.issuer.p",
+				"scheme.issuer.o"),
+			credid("scheme.issuer.q"): credtype("scheme.issuer.q",
+				"scheme.issuer.p"),
+			credid("scheme.issuer.r"): credtype("scheme.issuer.r",
+				"scheme.issuer.q"),
+			credid("scheme.issuer.s"): credtype("scheme.issuer.s",
+				"scheme.issuer.r"),
+			credid("scheme.issuer.t"): credtype("scheme.issuer.t",
+				"scheme.issuer.s"),
+			credid("scheme.issuer.u"): credtype("scheme.issuer.u",
+				"scheme.issuer.t"),
+			credid("scheme.issuer.v"): credtype("scheme.issuer.v",
+				"scheme.issuer.u"),
+			credid("scheme.issuer.w"): credtype("scheme.issuer.w",
+				"scheme.issuer.v"),
+			credid("scheme.issuer.x"): credtype("scheme.issuer.x",
+				"scheme.issuer.w"),
+			credid("scheme.issuer.y"): credtype("scheme.issuer.y",
+				"scheme.issuer.x"),
+			credid("scheme.issuer.z"): credtype("scheme.issuer.z",
+				"scheme.issuer.y"),
+		},
+	}
+
+	err := credtype("scheme.issuer.z",
+		"scheme.issuer.y").validateDependencies(conf, []CredentialTypeIdentifier{})
+	require.Equal(t, "dependency tree too complex: scheme.issuer.y, "+
+		"scheme.issuer.x, scheme.issuer.w, scheme.issuer.v, scheme.issuer.u, scheme.issuer.t, "+
+		"scheme.issuer.s, scheme.issuer.r, scheme.issuer.q, scheme.issuer.p, scheme.issuer.o, "+
+		"scheme.issuer.n, scheme.issuer.m, scheme.issuer.l, scheme.issuer.k, scheme.issuer.j, "+
+		"scheme.issuer.i, scheme.issuer.h, scheme.issuer.g, scheme.issuer.f, scheme.issuer.e, "+
+		"scheme.issuer.d, scheme.issuer.c, scheme.issuer.b, scheme.issuer.a", err.Error())
+}
+
 func TestCredentialDependencies_UnmarshalXML(t *testing.T) {
 	xmlbts := []byte(`<Dependencies>
 		<Or>

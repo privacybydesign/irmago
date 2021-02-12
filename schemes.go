@@ -92,7 +92,7 @@ type (
 	SchemeType string
 )
 
-type DependencyMap map[CredentialTypeIdentifier]struct{}
+type DependencyChain []CredentialTypeIdentifier
 
 const (
 	SchemeManagerStatusValid               = SchemeManagerStatus("Valid")
@@ -941,8 +941,7 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 
 	// validate that there are no circular dependencies
 	for _, item := range allCredTypesForScheme {
-		validatedDeps := map[CredentialTypeIdentifier]struct{}{}
-		if err := validateDependencies(conf, item, validatedDeps); err != nil {
+		if err := item.validateDependencies(conf, []CredentialTypeIdentifier{}); err != nil {
 			return err
 		}
 	}
@@ -950,25 +949,25 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 	return nil
 }
 
-func validateDependencies(conf *Configuration, cred CredentialType, validatedDeps DependencyMap) error {
+func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps DependencyChain) error {
 	if len(validatedDeps) >= maxDepComplexity {
 		return errors.New("dependency tree too complex: " + validatedDeps.String())
 	}
-	for _, outer := range conf.CredentialTypes[cred.Identifier()].Dependencies {
+	for _, outer := range conf.CredentialTypes[ct.Identifier()].Dependencies {
 		for _, middle := range outer {
 			for _, item := range middle {
-				if conf.CredentialTypes[item].SchemeManagerID != cred.SchemeManagerID {
-					return errors.New("credential type " + item.Name() + " in scheme " + cred.SchemeManagerID +
-						" has dependency outside the scheme: " + conf.CredentialTypes[item].SchemeManagerID)
+				if conf.CredentialTypes[item].SchemeManagerID != ct.SchemeManagerID {
+					return errors.New("credential type " + ct.Identifier().String() + " in scheme " + ct.SchemeManagerID +
+						" has dependency outside the scheme: " + conf.CredentialTypes[item].Identifier().String())
 				}
 
-				if _, ok := validatedDeps[item]; ok {
+				if ok := validatedDeps.contains(item); ok {
 					return errors.New("circular dependency " + item.String() + " found in: " + validatedDeps.String())
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					validatedDeps[item] = struct{}{}
-					return validateDependencies(conf, *conf.CredentialTypes[item], validatedDeps)
+					validatedDeps = append(validatedDeps, item)
+					return conf.CredentialTypes[item].validateDependencies(conf, validatedDeps)
 				}
 			}
 		}
@@ -977,13 +976,21 @@ func validateDependencies(conf *Configuration, cred CredentialType, validatedDep
 	return nil
 }
 
-func (m DependencyMap) String() string {
-	keys := reflect.ValueOf(m).MapKeys()
-	strkeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strkeys[i] = keys[i].String()
+func (d DependencyChain) contains(item CredentialTypeIdentifier) bool {
+	for _, dep := range d {
+		if dep == item {
+			return true
+		}
 	}
-	return strings.Join(strkeys, ", ")
+	return false
+}
+
+func (d DependencyChain) String() string {
+	deps := make([]string, len(d))
+	for i := 0; i < len(d); i++ {
+		deps[i] = d[i].String()
+	}
+	return strings.Join(deps, ", ")
 }
 
 func (scheme *SchemeManager) validate(conf *Configuration) (error, SchemeManagerStatus) {
