@@ -125,6 +125,7 @@ type RequestorInfo struct {
 	Industry   *TranslatedString         `json:"industry"`
 	Hostnames  []string                  `json:"hostnames"`
 	Logo       *string                   `json:"logo"`
+	LogoPath   *string                   `json:"logoPath,omitempty"`
 	ValidUntil *Timestamp                `json:"valid_until"`
 	Unverified bool                      `json:"unverified"`
 }

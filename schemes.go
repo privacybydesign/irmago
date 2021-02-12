@@ -1193,6 +1193,13 @@ func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path 
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {
+		if requestor.Logo != nil {
+			logoPath := filepath.Join(scheme.path(), "assets", *requestor.Logo+".png")
+			if exists, _ := common.PathExists(logoPath); !exists {
+				return errors.Errorf("Asset could not be found for logo %s", requestor.Logo)
+			}
+			requestor.LogoPath = &logoPath
+		}
 		for _, hostname := range requestor.Hostnames {
 			if _, ok := conf.Requestors[hostname]; ok {
 				return errors.Errorf("Double occurence of hostname %s", hostname)
