@@ -351,8 +351,8 @@ func (qr *Qr) Validate() (err error) {
 
 type ServerSessionResponse struct {
 	ProofStatus     ProofStatus                   `json:"proofStatus"`
-	IssueSignatures []*gabi.IssueSignatureMessage `json:"sigs"`
-	NextSession     *Qr                           `json:"nextSession"`
+	IssueSignatures []*gabi.IssueSignatureMessage `json:"sigs,omitempty"`
+	NextSession     *Qr                           `json:"nextSession,omitempty"`
 
 	// needed for legacy (un)marshaling
 	ProtocolVersion *ProtocolVersion `json:"-"`

@@ -120,7 +120,7 @@ func chainedServerHandler(t *testing.T) http.Handler {
 		request := &irma.ServiceProviderRequest{
 			Request: getDisclosureRequest(id),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: irma.NextSessionData{URL: "http://localhost:48686/2"},
+				NextSession: &irma.NextSessionData{URL: "http://localhost:48686/2"},
 			},
 		}
 		bts, err := json.Marshal(request)
@@ -156,7 +156,7 @@ func chainedServerHandler(t *testing.T) http.Handler {
 		bts, err = json.Marshal(irma.IdentityProviderRequest{
 			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{cred}),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: irma.NextSessionData{URL: "http://localhost:48686/3"},
+				NextSession: &irma.NextSessionData{URL: "http://localhost:48686/3"},
 			},
 		})
 		require.NoError(t, err)
@@ -239,8 +239,8 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 			},
 		},
 	},
-	ListenAddress: "localhost",
-	Port:          48682,
+	ListenAddress:                  "localhost",
+	Port:                           48682,
 	DisableRequestorAuthentication: false,
 	MaxRequestAge:                  3,
 	Permissions: requestorserver.Permissions{

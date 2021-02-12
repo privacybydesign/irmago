@@ -143,7 +143,8 @@ func (conf *Configuration) verifyStaticSessions() error {
 		if action != irma.ActionDisclosing && action != irma.ActionSigning {
 			return errors.Errorf("static session %s must be either a disclosing or signing session", name)
 		}
-		if rrequest.Base().CallbackURL == "" && rrequest.Base().NextSession.URL == "" {
+		base := rrequest.Base()
+		if base.CallbackURL == "" && (base.NextSession == nil || base.NextSession.URL == "") {
 			return errors.Errorf("static session %s has no callback URL or next session URL", name)
 		}
 		conf.StaticSessionRequests[name] = rrequest

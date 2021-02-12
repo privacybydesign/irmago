@@ -20,7 +20,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -71,7 +71,7 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 		minServer = &irma.ProtocolVersion{2, 6}
 	}
 	// Set minimum to 2.7 if chained session are used
-	if session.rrequest.Base().NextSession.URL != "" {
+	if session.rrequest.Base().NextSession != nil {
 		minServer = &irma.ProtocolVersion{2, 7}
 	}
 

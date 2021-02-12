@@ -13,7 +13,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -243,10 +243,11 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 }
 
 func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConDisCon, error) {
-	url := session.rrequest.Base().NextSession.URL
-	if url == "" {
+	base := session.rrequest.Base()
+	if base.NextSession == nil {
 		return nil, nil, nil
 	}
+	url := base.NextSession.URL
 	if session.result.Status != server.StatusDone ||
 		session.result.ProofStatus != irma.ProofStatusValid ||
 		session.result.Err != nil {
@@ -259,7 +260,7 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 		res, err = server.ResultJwt(
 			session.result,
 			session.conf.JwtIssuer,
-			session.rrequest.Base().ResultJwtValidity,
+			base.ResultJwtValidity,
 			session.conf.JwtRSAPrivateKey,
 		)
 	} else {
