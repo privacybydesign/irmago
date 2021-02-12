@@ -967,7 +967,7 @@ func TestWizardFromScheme(t *testing.T) {
 
 	var expected []IssueWizardItem
 	require.NoError(t, json.Unmarshal(
-		[]byte(`[{"type":"credential","credential":"irma-demo.MijnOverheid.fullName","header":{"en":"Full name","nl":"Volledige naam"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get name data","nl":"Haal naamgegevens op"}},{"type":"credential","credential":"irma-demo.MijnOverheid.singleton"},{"type":"session","credential":"irma-demo.RU.studentCard","header":{"en":"Student Card","nl":"Studentpas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Student Card","nl":"Haal studentpas op"},"sessionUrl":"https://example.com/getsession"},{"type":"website","credential":"irma-demo.stemmen.stempas","header":{"en":"Voting Card","nl":"Stempas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Voting Card","nl":"Haal stempas op"},"url":{"en":"https://example.com/en","nl":"https://example.com/nl"},"inapp":true}]`),
+		[]byte(`[{"type":"credential","credential":"irma-demo.MijnOverheid.fullName","header":{"en":"Full name","nl":"Volledige naam"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get name data","nl":"Haal naamgegevens op"}},{"type":"credential","credential":"irma-demo.MijnOverheid.singleton","text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."}},{"type":"session","credential":"irma-demo.RU.studentCard","header":{"en":"Student Card","nl":"Studentpas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Student Card","nl":"Haal studentpas op"},"sessionUrl":"https://example.com/getsession"},{"type":"website","credential":"irma-demo.stemmen.stempas","header":{"en":"Voting Card","nl":"Stempas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Voting Card","nl":"Haal stempas op"},"url":{"en":"https://example.com/en","nl":"https://example.com/nl"},"inapp":true}]`),
 		&expected,
 	))
 
@@ -983,15 +983,6 @@ func TestWizardFromScheme(t *testing.T) {
 		append([]IssueWizardItem{credwizarditem("irma-demo.MijnOverheid.root")}, expected...),
 		contents,
 	)
-}
-
-func TestWizardComplexityError(t *testing.T) {
-	conf, err := NewConfiguration("testdata/irma_configuration_invalid_wizard", ConfigurationOptions{})
-	require.NoError(t, err)
-
-	e := conf.ParseFolder()
-
-	require.Equal(t, "Error parsing scheme manager test-requestors: issue wizard testwizard: wizard too complex", e.Error())
 }
 
 func TestWizardValidation(t *testing.T) {
@@ -1179,7 +1170,7 @@ func TestIssueWizardItemValidation(t *testing.T) {
 	}
 
 	credTypId := NewCredentialTypeIdentifier("a.a.a")
-	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypId}
+	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypId, Text: &TranslatedString{"en": "text", "nl": "tekst"}}
 	schemeMan := SchemeManager{}
 	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypId.SchemeManagerIdentifier(): &schemeMan}
 
@@ -1222,6 +1213,16 @@ func TestIssueWizardFAQSummariesValidation(t *testing.T) {
 	schemeMan := SchemeManager{}
 	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypId.SchemeManagerIdentifier(): &schemeMan}
 
+	require.Equal(t, "FAQSummary missing for wizard item with credential type: a.a.a", tester.validate(conf).Error())
+
+	tester.Text = &TranslatedString{"en": "text"}
+	require.Equal(t, "Wizard item text field incomplete for item with credential type: a.a.a", tester.validate(conf).Error())
+
+	tester.Text = nil
+	conf.CredentialTypes[credTypId].FAQSummary = &TranslatedString{"en": "text"}
+	require.Equal(t, "FAQSummary missing for: a.a.a", tester.validate(conf).Error())
+
+	tester.Text = &TranslatedString{"en": "text", "nl": "tekst"}
 	conf.CredentialTypes[credTypId].Dependencies = CredentialDependencies{
 		{
 			{credid("a.b.a")},

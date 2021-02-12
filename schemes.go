@@ -271,7 +271,6 @@ func (conf *Configuration) ParseSchemeFolder(dir string) (scheme Scheme, serr er
 		serr = &SchemeManagerError{Scheme: id, Status: status, Err: err}
 		return
 	}
-	// deed deze nou meer dan parsen?
 	err = scheme.parseContents(conf)
 	if err != nil {
 		serr = &SchemeManagerError{Scheme: id, Err: err, Status: SchemeManagerStatusContentParsingError}

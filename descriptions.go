@@ -6,7 +6,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
 	"path/filepath"
-	"strings"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -112,8 +111,6 @@ type AttributeType struct {
 // CredentialDependencies contains dependencies on credential types, using condiscon:
 // a conjunction of disjunctions of conjunctions of credential types.
 type CredentialDependencies [][][]CredentialTypeIdentifier
-
-type CredentialDependenciesList []CredentialTypeIdentifier
 
 // RequestorScheme describes verified requestors
 type RequestorScheme struct {
@@ -515,17 +512,35 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 		return errors.New("wizard item has type website, but no session URL specified")
 	}
 	if item.Credential != nil {
-		// In `irma scheme verify` is run on a single requestor scheme, we cannot expect mentioned
-		// credential types from other schemes to exist. So only require mentioned credential types
-		// to exist if their containing scheme also exists
-		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil &&
-			conf.CredentialTypes[*item.Credential] == nil {
-			return errors.New("nonexisting credential type " + item.Credential.Name())
-		}
-		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil && conf.CredentialTypes[*item.Credential].Dependencies != nil {
-			depChain := CredentialDependenciesList{conf.CredentialTypes[*item.Credential].Identifier()}
-			if err := validateFAQSummary(conf, *item.Credential, depChain); err != nil {
-				return err
+		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil {
+			// In `irma scheme verify` is run on a single requestor scheme, we cannot expect mentioned
+			// credential types from other schemes to exist. So only require mentioned credential types
+			// to exist if their containing scheme also exists
+			if conf.CredentialTypes[*item.Credential] == nil {
+				return errors.New("nonexisting credential type " + item.Credential.Name())
+			}
+
+			// The wizard item itself must either contain a text field or their its credential type must have a FAQSummary
+			if item.Text != nil {
+				if e := item.Text.validate("Wizard item text field incomplete for item with credential type: " + item.Credential.String()); e != nil {
+					return e
+				}
+			} else {
+				faqSummary := conf.CredentialTypes[*item.Credential].FAQSummary
+				if faqSummary == nil {
+					return errors.New("FAQSummary missing for wizard item with credential type: " + item.Credential.String())
+				}
+				if e := faqSummary.validate("FAQSummary missing for: " + item.Credential.String()); e != nil {
+					return e
+				}
+			}
+
+			// All dependencies of the the item and their dependencies must contain FAQSummaries
+			if conf.CredentialTypes[*item.Credential].Dependencies != nil {
+				depChain := DependencyChain{conf.CredentialTypes[*item.Credential].Identifier()}
+				if err := validateFAQSummary(*item.Credential, conf, depChain); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -533,7 +548,7 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 	return nil
 }
 
-func validateFAQSummary(conf *Configuration, cred CredentialTypeIdentifier, validatedDeps CredentialDependenciesList) error {
+func validateFAQSummary(cred CredentialTypeIdentifier, conf *Configuration, validatedDeps DependencyChain) error {
 	for _, outer := range conf.CredentialTypes[cred].Dependencies {
 		for _, middle := range outer {
 			for _, item := range middle {
@@ -543,28 +558,19 @@ func validateFAQSummary(conf *Configuration, cred CredentialTypeIdentifier, vali
 				if faqSummary == nil {
 					return errors.New("FAQSummary missing for last item in chain: " + updatedDeps.String())
 				}
-				for _, lang := range validLangs {
-					if text, exists := (*faqSummary)[lang]; !exists || text == "" {
-						return errors.New("FAQSummary incomplete for last item in chain: " + updatedDeps.String())
-					}
+
+				if e := faqSummary.validate("FAQSummary incomplete for last item in chain: " + updatedDeps.String()); e != nil {
+					return e
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					return validateFAQSummary(conf, item, append(validatedDeps, item))
+					return validateFAQSummary(item, conf, append(validatedDeps, item))
 				}
 			}
 		}
 	}
 
 	return nil
-}
-
-func (arr CredentialDependenciesList) String() string {
-	strkeys := make([]string, len(arr))
-	for i := 0; i < len(arr); i++ {
-		strkeys[i] = arr[i].String()
-	}
-	return strings.Join(strkeys, ", ")
 }
 
 // NewRequestorInfo returns a Requestor with just the given hostname
@@ -686,6 +692,15 @@ func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	}
 	for _, translation := range temp.Translations {
 		(*ts)[translation.XMLName.Local] = translation.Text
+	}
+	return nil
+}
+
+func (ts *TranslatedString) validate(errorMsg string) error {
+	for _, lang := range validLangs {
+		if text, exists := (*ts)[lang]; !exists || text == "" {
+			return errors.New(errorMsg)
+		}
 	}
 	return nil
 }
