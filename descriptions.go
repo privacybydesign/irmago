@@ -11,7 +11,7 @@ import (
 // This file contains data types for scheme managers, issuers, credential types
 // matching the XML files in irma_configuration.
 
-// SchemeManager describes a scheme manager.
+// SchemeManager describes an issuer scheme and is the issuer equivalent to the RequestorScheme. The naming is legacy.
 type SchemeManager struct {
 	ID                string           `xml:"Id"`
 	Name              TranslatedString `xml:"Name"`
@@ -188,19 +188,18 @@ const (
 	maxWizardComplexity = 10
 )
 
-// Choose from the wizard a list of items.
-//
-// If the ExpandDependencies boolean is set to false, the result of IssueWizardContents.Choose
+// GetPath returns a list of IssueWizardItems to be used as the wizard item order.
+// If the ExpandDependencies boolean is set to false, the result of IssueWizardContents.ChoosePath
 // is returned. If not set or set to true, this is augmented with all dependencies of all items
 // in an executable order.
-func (wizard IssueWizard) Choose(conf *Configuration, creds CredentialInfoList) ([]IssueWizardItem, error) {
+func (wizard IssueWizard) GetPath(conf *Configuration, creds CredentialInfoList) ([]IssueWizardItem, error) {
 	// convert creds slice to map for easy lookup
 	credsmap := map[CredentialTypeIdentifier]struct{}{}
 	for _, cred := range creds {
 		credsmap[cred.Identifier()] = struct{}{}
 	}
 
-	contents := wizard.Contents.Choose(conf, credsmap)
+	contents := wizard.Contents.ChoosePath(conf, credsmap)
 	if wizard.ExpandDependencies != nil && !*wizard.ExpandDependencies {
 		return contents, nil
 	} else {
@@ -242,12 +241,9 @@ func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsm
 	}
 
 	// Build a map containing per level of the dependency tree the (deduplicated) nodes at that level
-	deps := credentialDependencies{}
-	bylevel := map[int]map[CredentialTypeIdentifier]struct{}{}
+	depTree := map[int]map[CredentialTypeIdentifier]struct{}{}
 	for i, item := range reversed {
-		if err := wizardItemVisit(bylevel, i, *item.Credential, conf, deps, credsmap); err != nil {
-			return nil, err
-		}
+		populateDepTree(depTree, i, *item.Credential, conf, credentialDependencies{}, credsmap)
 	}
 
 	// Scanning horizontally, i.e. per level, we iterate across the tree, putting all
@@ -255,13 +251,13 @@ func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsm
 	// that have no dependencies, and after that across the intermediate nodes whose dependencies
 	// have been put in the result slice in previous iterations.
 	var result []IssueWizardItem                         // to return
-	resultmap := map[CredentialTypeIdentifier]struct{}{} // to keep track of credentials already put in the result slice
-	for i := len(bylevel) - 1; i >= 0; i-- {
-		for id := range bylevel[i] {
-			if _, ok := resultmap[id]; ok {
+	resultMap := map[CredentialTypeIdentifier]struct{}{} // to keep track of credentials already put in the result slice
+	for i := len(depTree) - 1; i >= 0; i-- {
+		for id := range depTree[i] {
+			if _, ok := resultMap[id]; ok {
 				continue
 			}
-			resultmap[id] = struct{}{}
+			resultMap[id] = struct{}{}
 			if item, present := byID[id]; present {
 				result = append(result, item)
 			} else {
@@ -280,27 +276,24 @@ func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsm
 
 type credentialDependencies map[CredentialTypeIdentifier][]IssueWizardItem
 
-// wizardItemVisit is a recursive function that populates a map containing per level of a tree the
+// populateDepTree is a recursive function that populates a map containing per level of a tree the
 // (deduplicated) nodes at that level.
-func wizardItemVisit(
-	bylevel map[int]map[CredentialTypeIdentifier]struct{},
+func populateDepTree(
+	depTree map[int]map[CredentialTypeIdentifier]struct{},
 	level int,
 	id CredentialTypeIdentifier,
 	conf *Configuration,
 	deps credentialDependencies,
 	creds map[CredentialTypeIdentifier]struct{},
-) error {
-	if bylevel[level] == nil {
-		bylevel[level] = map[CredentialTypeIdentifier]struct{}{}
+) {
+	if depTree[level] == nil {
+		depTree[level] = map[CredentialTypeIdentifier]struct{}{}
 	}
-	bylevel[level][id] = struct{}{}
+	depTree[level][id] = struct{}{}
 
 	for _, child := range deps.get(id, conf, creds) {
-		if err := wizardItemVisit(bylevel, level+1, *child.Credential, conf, deps, creds); err != nil {
-			return err
-		}
+		populateDepTree(depTree, level+1, *child.Credential, conf, deps, creds)
 	}
-	return nil
 }
 
 // get returns the credential dependencies of the specified credential. If not present in the map
@@ -308,16 +301,16 @@ func wizardItemVisit(
 // is returned.
 func (deps credentialDependencies) get(id CredentialTypeIdentifier, conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) []IssueWizardItem {
 	if _, present := deps[id]; !present {
-		deps[id] = conf.CredentialTypes[id].Dependencies.WizardContents().Choose(conf, creds)
+		deps[id] = conf.CredentialTypes[id].Dependencies.WizardContents().ChoosePath(conf, creds)
 	}
 	return deps[id]
 }
 
-// Process the wizard contents given the list of present credentials. Of each disjunction,
+// ChoosePath processes the wizard contents given the list of present credentials. Of each disjunction,
 // either the first contained inner conjunction that is satisfied by the credential list is chosen;
 // or if no such conjunction exists in the disjunction, the first conjunction is chosen.
 // The result of doing this for all outer conjunctions is flattened and returned.
-func (contents IssueWizardContents) Choose(conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) []IssueWizardItem {
+func (contents IssueWizardContents) ChoosePath(conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) []IssueWizardItem {
 	var choice []IssueWizardItem
 	for _, discon := range contents {
 		disconSatisfied := false
