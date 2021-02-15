@@ -1193,11 +1193,7 @@ func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path 
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {
-		if requestor.Logo != nil {
-			logoPath := filepath.Join(scheme.path(), "assets", *requestor.Logo+".png")
-			if exists, _ := common.PathExists(logoPath); !exists {
-				return errors.Errorf("Asset could not be found for logo %s", requestor.Logo)
-			}
+		if logoPath := requestor.logoPath(scheme); logoPath != "" {
 			requestor.LogoPath = &logoPath
 		}
 		for _, hostname := range requestor.Hostnames {
@@ -1249,7 +1245,7 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 		if err != nil {
 			return err, SchemeManagerStatusParsingError
 		}
-		if _, err = conf.readHashedFile(filepath.Join(scheme.path(), "assets", *requestor.Logo+".png"), hash); err != nil {
+		if _, err = conf.readHashedFile(requestor.logoPath(scheme), hash); err != nil {
 			return err, SchemeManagerStatusInvalidSignature
 		}
 	}

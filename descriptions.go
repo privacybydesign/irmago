@@ -289,3 +289,13 @@ func (id *Issuer) Identifier() IssuerIdentifier {
 func (id *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(id.SchemeManagerID)
 }
+
+func (ri *RequestorInfo) logoPath(scheme *RequestorScheme) string {
+	if ri.Logo != nil {
+		logoPath := filepath.Join(scheme.path(), "assets", *ri.Logo+".png")
+		if exists, _ := common.PathExists(logoPath); exists {
+			return logoPath
+		}
+	}
+	return ""
+}
