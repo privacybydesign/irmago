@@ -369,11 +369,11 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 			}
 
 			if len(result) >= maxWizardComplexity {
-				return errors.Errorf("wizard too complex")
+				return errors.Errorf("wizard with wizard ID " + wizard.ID + " too complex")
 			}
 		} else {
 			if len(contents) >= maxWizardComplexity {
-				return errors.Errorf("wizard too complex")
+				return errors.Errorf("wizard with wizard ID " + wizard.ID + " too complex")
 			}
 		}
 	}
@@ -388,7 +388,7 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 					shouldBeLast = true
 				} else {
 					if shouldBeLast {
-						return errors.Errorf("non-credential types in wizard should come last")
+						return errors.Errorf("non-credential types in wizard " + wizard.ID + " should come last")
 					}
 				}
 
