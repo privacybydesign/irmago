@@ -1232,9 +1232,11 @@ func TestIssueWizardFAQSummariesValidation(t *testing.T) {
 }
 
 func TestCircularDependenciesValidation(t *testing.T) {
+	credTypeIdA := credid("scheme.issuer.a")
+	credTypeA := credtype("scheme.issuer.a")
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
-			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credTypeIdA: credTypeA,
 			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
 				"scheme.issuer.a",
 			),
@@ -1250,40 +1252,44 @@ func TestCircularDependenciesValidation(t *testing.T) {
 		},
 	}
 
-	err := credtype("scheme.issuer.a").validateDependencies(conf, []CredentialTypeIdentifier{})
+	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdA)
 	require.NoError(t, err)
 }
 
 func TestCircularDependenciesError(t *testing.T) {
+	credTypeIdA := credid("scheme.issuer.a")
+	credTypeA := credtype("scheme.issuer.a", "scheme.issuer.b")
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
-			credid("scheme.issuer.a"): credtype("scheme.issuer.a",
-				"scheme.issuer.b"),
+			credTypeIdA: credTypeA,
 			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
 				"scheme.issuer.a",
 			),
 		},
 	}
 
-	err := credtype("scheme.issuer.a").validateDependencies(conf, []CredentialTypeIdentifier{})
-	require.Equal(t, "circular dependency scheme.issuer.b found in: scheme.issuer.b, scheme.issuer.a", err.Error())
+	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdA)
+	require.Equal(t, "No valid dependency branch could be built. There might be a circular dependency.", err.Error())
 }
 
 func TestDependencyOfOtherSchemeError(t *testing.T) {
-	newCred := credtype("otherScheme.someIssuer.x", "scheme.issuer.a")
+	credTypeIdX := credid("otherScheme.someIssuer.x")
+	credTypeX := credtype("otherScheme.someIssuer.x", "scheme.issuer.a")
 
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
-			credid("scheme.issuer.a"):          credtype("scheme.issuer.a"),
-			credid("otherScheme.someIssuer.x"): newCred,
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credTypeIdX:               credTypeX,
 		},
 	}
 
-	err := newCred.validateDependencies(conf, []CredentialTypeIdentifier{})
+	err := credTypeX.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdX)
 	require.Equal(t, "credential type otherScheme.someIssuer.x in scheme otherScheme has dependency outside the scheme: scheme.issuer.a", err.Error())
 }
 
 func TestDependencyComplexityError(t *testing.T) {
+	credTypeIdZ := credid("scheme.issuer.z")
+	credTypeZ := credtype("scheme.issuer.z", "scheme.issuer.y")
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
 			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
@@ -1335,13 +1341,11 @@ func TestDependencyComplexityError(t *testing.T) {
 				"scheme.issuer.w"),
 			credid("scheme.issuer.y"): credtype("scheme.issuer.y",
 				"scheme.issuer.x"),
-			credid("scheme.issuer.z"): credtype("scheme.issuer.z",
-				"scheme.issuer.y"),
+			credTypeIdZ: credTypeZ,
 		},
 	}
 
-	err := credtype("scheme.issuer.z",
-		"scheme.issuer.y").validateDependencies(conf, []CredentialTypeIdentifier{})
+	err := credTypeZ.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdZ)
 	require.Equal(t, "dependency tree too complex: scheme.issuer.y, "+
 		"scheme.issuer.x, scheme.issuer.w, scheme.issuer.v, scheme.issuer.u, scheme.issuer.t, "+
 		"scheme.issuer.s, scheme.issuer.r, scheme.issuer.q, scheme.issuer.p, scheme.issuer.o, "+

@@ -933,7 +933,7 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 	// validate that there are no circular dependencies
 	for _, credType := range conf.CredentialTypes {
 		if credType.SchemeManagerID == scheme.ID {
-			if err := credType.validateDependencies(conf, []CredentialTypeIdentifier{}); err != nil {
+			if err := credType.validateDependencies(conf, []CredentialTypeIdentifier{}, credType.Identifier()); err != nil {
 				return err
 			}
 		}
@@ -942,27 +942,46 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 	return nil
 }
 
-func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps DependencyChain) error {
+func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps DependencyChain, toBeChecked CredentialTypeIdentifier) error {
 	if len(validatedDeps) >= maxDepComplexity {
 		return errors.New("dependency tree too complex: " + validatedDeps.String())
 	}
 	for _, outer := range conf.CredentialTypes[ct.Identifier()].Dependencies {
+		// at least one middle needs to be valid
+		atLeastOneInnerConSatisfied := false
 		for _, middle := range outer {
+			innerConSatisfied := true
+
 			for _, item := range middle {
 				if conf.CredentialTypes[item].SchemeManagerID != ct.SchemeManagerID {
 					return errors.Errorf("credential type %s in scheme %s has dependency outside the scheme: %s",
 						ct.Identifier().String(), ct.SchemeManagerID, conf.CredentialTypes[item].Identifier().String())
 				}
 
-				if ok := validatedDeps.contains(item); ok {
-					return errors.Errorf("circular dependency %s found in: %s", item.String(), validatedDeps.String())
+				// all items need to be valid for middle to be valid
+				if toBeChecked == item {
+					innerConSatisfied = false
+					break
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					validatedDeps = append(validatedDeps, item)
-					return conf.CredentialTypes[item].validateDependencies(conf, validatedDeps)
+					if e := conf.CredentialTypes[item].validateDependencies(conf, append(validatedDeps, item), toBeChecked); e != nil {
+						if e.Error() == "No valid dependency branch could be built. There might be a circular dependency." {
+							innerConSatisfied = false
+						} else {
+							return e
+						}
+					}
 				}
 			}
+
+			if innerConSatisfied {
+				atLeastOneInnerConSatisfied = true
+			}
+		}
+
+		if !atLeastOneInnerConSatisfied {
+			return errors.Errorf("No valid dependency branch could be built. There might be a circular dependency.")
 		}
 	}
 
