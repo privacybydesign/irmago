@@ -1025,8 +1025,7 @@ func TestWizardValidation(t *testing.T) {
 		},
 	}
 
-	err := wizard.Validate(conf)
-	require.NoError(t, err)
+	require.NoError(t, wizard.Validate(conf))
 }
 
 func TestWizardIncorrectContentsOrder(t *testing.T) {
@@ -1070,7 +1069,7 @@ func TestWizardIncorrectContentsOrder(t *testing.T) {
 	}
 
 	err := wizard.Validate(conf)
-	require.Equal(t, "non-credential types in wizard testwizard should come last", err.Error())
+	require.EqualError(t, err, "non-credential types in wizard testwizard should come last")
 }
 
 func TestWizardComplexity(t *testing.T) {
@@ -1089,7 +1088,6 @@ func TestWizardComplexity(t *testing.T) {
 			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
 				"scheme.issuer.d",
 			),
-			credid("scheme.issuer.e"): credtype("scheme.issuer.e"),
 			credid("scheme.issuer.f"): credtype("scheme.issuer.f",
 				"scheme.issuer.a",
 			),
@@ -1145,98 +1143,67 @@ func TestWizardComplexity(t *testing.T) {
 	}
 
 	err := wizard.Validate(conf)
-	require.Equal(t, "wizard with wizard ID testwizard too complex", err.Error())
+	require.EqualError(t, err, "wizard with wizard ID testwizard too complex")
 }
 
 func TestIssueWizardItemValidation(t *testing.T) {
-	dependencies := CredentialDependencies{
-		{
-			{credid("a.a.a"), credid("a.a.b")},
-			{credid("a.b.a")},
-		},
-		{
-			{credid("b.a.a")},
-			{credid("b.b.a"), credid("b.b.b")},
-		},
-	}
-
 	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
-	for _, discon := range dependencies {
-		for _, con := range discon {
-			for _, cred := range con {
-				conf.CredentialTypes[cred] = credtype(cred.String())
-			}
-		}
-	}
 
-	credTypId := NewCredentialTypeIdentifier("a.a.a")
-	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypId, Text: &TranslatedString{"en": "text", "nl": "tekst"}}
+	credTypeID := credid("a.a.a")
+	conf.CredentialTypes[credTypeID] = credtype(credTypeID.String())
+	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypeID, Text: &TranslatedString{"en": "text", "nl": "tekst"}}
 	schemeMan := SchemeManager{}
-	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypId.SchemeManagerIdentifier(): &schemeMan}
+	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypeID.SchemeManagerIdentifier(): &schemeMan}
 
-	credTypId2 := credid("a.b.a")
-	conf.CredentialTypes[credTypId].Dependencies = CredentialDependencies{
+	credTypeID2 := credid("a.b.a")
+	conf.CredentialTypes[credTypeID2] = credtype(credTypeID2.String())
+	conf.CredentialTypes[credTypeID].Dependencies = CredentialDependencies{
 		{
-			{credTypId2},
+			{credTypeID2},
 		},
 	}
 
 	translation := trivialTranslation("Age limit")
-	conf.CredentialTypes[credTypId2].FAQSummary = &translation
+	conf.CredentialTypes[credTypeID2].FAQSummary = &translation
 
-	require.Equal(t, nil, tester.validate(conf))
+	require.NoError(t, tester.validate(conf))
 }
 
 func TestIssueWizardFAQSummariesValidation(t *testing.T) {
-	dependencies := CredentialDependencies{
-		{
-			{credid("a.a.a"), credid("a.a.b")},
-			{credid("a.b.a")},
-		},
-		{
-			{credid("b.a.a")},
-			{credid("b.b.a"), credid("b.b.b")},
-		},
-	}
-
 	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
-	for _, discon := range dependencies {
-		for _, con := range discon {
-			for _, cred := range con {
-				conf.CredentialTypes[cred] = credtype(cred.String())
-			}
-		}
-	}
 
-	credTypId := NewCredentialTypeIdentifier("a.a.a")
-	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypId}
+	credTypeID := credid("a.a.a")
+	credTypeID2 := credid("a.b.a")
+	conf.CredentialTypes[credTypeID] = credtype(credTypeID.String())
+	conf.CredentialTypes[credTypeID2] = credtype(credTypeID2.String())
+	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypeID}
 	schemeMan := SchemeManager{}
-	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypId.SchemeManagerIdentifier(): &schemeMan}
+	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypeID.SchemeManagerIdentifier(): &schemeMan}
 
-	require.Equal(t, "FAQSummary missing for wizard item with credential type: a.a.a", tester.validate(conf).Error())
+	require.EqualError(t, tester.validate(conf), "FAQSummary missing for wizard item with credential type: a.a.a")
 
 	tester.Text = &TranslatedString{"en": "text"}
-	require.Equal(t, "Wizard item text field incomplete for item with credential type: a.a.a", tester.validate(conf).Error())
+	require.EqualError(t, tester.validate(conf), "Wizard item text field incomplete for item with credential type: a.a.a")
 
 	tester.Text = nil
-	conf.CredentialTypes[credTypId].FAQSummary = &TranslatedString{"en": "text"}
-	require.Equal(t, "FAQSummary missing for: a.a.a", tester.validate(conf).Error())
+	conf.CredentialTypes[credTypeID].FAQSummary = &TranslatedString{"en": "text"}
+	require.EqualError(t, tester.validate(conf), "FAQSummary missing for: a.a.a")
 
 	tester.Text = &TranslatedString{"en": "text", "nl": "tekst"}
-	conf.CredentialTypes[credTypId].Dependencies = CredentialDependencies{
+	conf.CredentialTypes[credTypeID].Dependencies = CredentialDependencies{
 		{
 			{credid("a.b.a")},
 		},
 	}
-	require.Equal(t, "FAQSummary missing for last item in chain: a.a.a, a.b.a", tester.validate(conf).Error())
+	require.EqualError(t, tester.validate(conf), "FAQSummary missing for last item in chain: a.a.a, a.b.a")
 }
 
 func TestCircularDependenciesValidation(t *testing.T) {
-	credTypeIdA := credid("scheme.issuer.a")
+	credTypeIDA := credid("scheme.issuer.a")
 	credTypeA := credtype("scheme.issuer.a")
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
-			credTypeIdA: credTypeA,
+			credTypeIDA: credTypeA,
 			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
 				"scheme.issuer.a",
 			),
@@ -1252,43 +1219,43 @@ func TestCircularDependenciesValidation(t *testing.T) {
 		},
 	}
 
-	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdA)
+	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDA)
 	require.NoError(t, err)
 }
 
 func TestCircularDependenciesError(t *testing.T) {
-	credTypeIdA := credid("scheme.issuer.a")
+	credTypeIDA := credid("scheme.issuer.a")
 	credTypeA := credtype("scheme.issuer.a", "scheme.issuer.b")
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
-			credTypeIdA: credTypeA,
+			credTypeIDA: credTypeA,
 			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
 				"scheme.issuer.a",
 			),
 		},
 	}
 
-	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdA)
-	require.Equal(t, "No valid dependency branch could be built. There might be a circular dependency.", err.Error())
+	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDA)
+	require.EqualError(t, err, "No valid dependency branch could be built. There might be a circular dependency.")
 }
 
 func TestDependencyOfOtherSchemeError(t *testing.T) {
-	credTypeIdX := credid("otherScheme.someIssuer.x")
+	credTypeIDX := credid("otherScheme.someIssuer.x")
 	credTypeX := credtype("otherScheme.someIssuer.x", "scheme.issuer.a")
 
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
 			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
-			credTypeIdX:               credTypeX,
+			credTypeIDX:               credTypeX,
 		},
 	}
 
-	err := credTypeX.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdX)
-	require.Equal(t, "credential type otherScheme.someIssuer.x in scheme otherScheme has dependency outside the scheme: scheme.issuer.a", err.Error())
+	err := credTypeX.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDX)
+	require.EqualError(t, err, "credential type otherScheme.someIssuer.x in scheme otherScheme has dependency outside the scheme: scheme.issuer.a")
 }
 
 func TestDependencyComplexityError(t *testing.T) {
-	credTypeIdZ := credid("scheme.issuer.z")
+	credTypeIDZ := credid("scheme.issuer.z")
 	credTypeZ := credtype("scheme.issuer.z", "scheme.issuer.y")
 	conf := &Configuration{
 		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
@@ -1341,17 +1308,17 @@ func TestDependencyComplexityError(t *testing.T) {
 				"scheme.issuer.w"),
 			credid("scheme.issuer.y"): credtype("scheme.issuer.y",
 				"scheme.issuer.x"),
-			credTypeIdZ: credTypeZ,
+			credTypeIDZ: credTypeZ,
 		},
 	}
 
-	err := credTypeZ.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIdZ)
-	require.Equal(t, "dependency tree too complex: scheme.issuer.y, "+
+	err := credTypeZ.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDZ)
+	require.EqualError(t, err, "dependency tree too complex: scheme.issuer.y, "+
 		"scheme.issuer.x, scheme.issuer.w, scheme.issuer.v, scheme.issuer.u, scheme.issuer.t, "+
 		"scheme.issuer.s, scheme.issuer.r, scheme.issuer.q, scheme.issuer.p, scheme.issuer.o, "+
 		"scheme.issuer.n, scheme.issuer.m, scheme.issuer.l, scheme.issuer.k, scheme.issuer.j, "+
 		"scheme.issuer.i, scheme.issuer.h, scheme.issuer.g, scheme.issuer.f, scheme.issuer.e, "+
-		"scheme.issuer.d, scheme.issuer.c, scheme.issuer.b, scheme.issuer.a", err.Error())
+		"scheme.issuer.d, scheme.issuer.c, scheme.issuer.b, scheme.issuer.a")
 }
 
 func TestCredentialDependencies_UnmarshalXML(t *testing.T) {
