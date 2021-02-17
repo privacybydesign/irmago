@@ -369,11 +369,11 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 			}
 
 			if len(result) >= maxWizardComplexity {
-				return errors.Errorf("wizard with wizard ID " + wizard.ID + " too complex")
+				return errors.Errorf("wizard with wizard ID %s too complex", wizard.ID)
 			}
 		} else {
 			if len(contents) >= maxWizardComplexity {
-				return errors.Errorf("wizard with wizard ID " + wizard.ID + " too complex")
+				return errors.Errorf("wizard with wizard ID %s too complex", wizard.ID)
 			}
 		}
 	}
@@ -388,7 +388,7 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 					shouldBeLast = true
 				} else {
 					if shouldBeLast {
-						return errors.Errorf("non-credential types in wizard " + wizard.ID + " should come last")
+						return errors.Errorf("non-credential types in wizard %s should come last", wizard.ID)
 					}
 				}
 
@@ -427,10 +427,7 @@ func (contents IssueWizardContents) buildValidationPaths(conf *Configuration, cr
 						updatedCreds[*item.Credential] = struct{}{}
 					}
 
-					// append both [][]IssueWizardItem lists
-					for _, val := range contents.buildValidationPaths(conf, updatedCreds) {
-						all = append(all, val)
-					}
+					all = append(all, contents.buildValidationPaths(conf, updatedCreds)...)
 				}
 			}
 
@@ -467,8 +464,10 @@ func (contents IssueWizardContents) buildValidationPaths(conf *Configuration, cr
 
 func userHasCreds(items []IssueWizardItem, creds map[CredentialTypeIdentifier]struct{}) bool {
 	for _, val := range items {
-		if _, ok := creds[*val.Credential]; !ok {
-			return false
+		if val.Credential != nil {
+			if _, ok := creds[*val.Credential]; !ok {
+				return false
+			}
 		}
 	}
 	return true
@@ -478,16 +477,16 @@ func userHasCreds(items []IssueWizardItem, creds map[CredentialTypeIdentifier]st
 func appendItems(existing []IssueWizardItem, toBeAdded []IssueWizardItem) []IssueWizardItem {
 	allAsMap := make(map[IssueWizardItem]int)
 	withDuplicates := append(existing, toBeAdded...)
-	new := make([]IssueWizardItem, 0)
+	var updated []IssueWizardItem
 	for _, val := range withDuplicates {
 		allAsMap[val] = 1
 	}
 
-	for letter, _ := range allAsMap {
-		new = append(new, letter)
+	for letter := range allAsMap {
+		updated = append(updated, letter)
 	}
 
-	return new
+	return updated
 }
 
 func (item *IssueWizardItem) validate(conf *Configuration) error {
@@ -522,16 +521,16 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 
 			// The wizard item itself must either contain a text field or their its credential type must have a FAQSummary
 			if item.Text != nil {
-				if e := item.Text.validate("Wizard item text field incomplete for item with credential type: " + item.Credential.String()); e != nil {
-					return e
+				if l := item.Text.validate(); len(l) > 0 {
+					return errors.New("Wizard item text field incomplete for item with credential type: " + item.Credential.String())
 				}
 			} else {
 				faqSummary := conf.CredentialTypes[*item.Credential].FAQSummary
 				if faqSummary == nil {
 					return errors.New("FAQSummary missing for wizard item with credential type: " + item.Credential.String())
 				}
-				if e := faqSummary.validate("FAQSummary missing for: " + item.Credential.String()); e != nil {
-					return e
+				if l := faqSummary.validate(); len(l) > 0 {
+					return errors.New("FAQSummary missing for: " + item.Credential.String())
 				}
 			}
 
@@ -559,12 +558,12 @@ func validateFAQSummary(cred CredentialTypeIdentifier, conf *Configuration, vali
 					return errors.New("FAQSummary missing for last item in chain: " + updatedDeps.String())
 				}
 
-				if e := faqSummary.validate("FAQSummary incomplete for last item in chain: " + updatedDeps.String()); e != nil {
-					return e
+				if l := faqSummary.validate(); len(l) > 0 {
+					return errors.New("FAQSummary incomplete for last item in chain: " + updatedDeps.String())
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					return validateFAQSummary(item, conf, append(validatedDeps, item))
+					return validateFAQSummary(item, conf, updatedDeps)
 				}
 			}
 		}
@@ -696,13 +695,15 @@ func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	return nil
 }
 
-func (ts *TranslatedString) validate(errorMsg string) error {
+func (ts *TranslatedString) validate() []string {
+	var invalidLangs []string
 	for _, lang := range validLangs {
 		if text, exists := (*ts)[lang]; !exists || text == "" {
-			return errors.New(errorMsg)
+			invalidLangs = append(invalidLangs, lang)
+
 		}
 	}
-	return nil
+	return invalidLangs
 }
 
 func (deps CredentialDependencies) WizardContents() IssueWizardContents {

@@ -765,9 +765,11 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 		} else {
 			val = field.Interface().(TranslatedString)
 		}
-		for _, lang := range validLangs {
-			if _, exists := val[lang]; !exists {
-				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
+
+		// assuming that translations also never should be empty
+		if l := val.validate(); len(l) > 0 {
+			for _, invalidLang := range l {
+				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, invalidLang, name))
 			}
 		}
 	}

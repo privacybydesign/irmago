@@ -930,18 +930,12 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 		return err
 	}
 
-	// get a map of CredentialTypes of the current scheme
-	allCredTypesForScheme := map[CredentialTypeIdentifier]CredentialType{}
+	// validate that there are no circular dependencies
 	for _, credType := range conf.CredentialTypes {
 		if credType.SchemeManagerID == scheme.ID {
-			allCredTypesForScheme[credType.Identifier()] = *credType
-		}
-	}
-
-	// validate that there are no circular dependencies
-	for _, item := range allCredTypesForScheme {
-		if err := item.validateDependencies(conf, []CredentialTypeIdentifier{}); err != nil {
-			return err
+			if err := credType.validateDependencies(conf, []CredentialTypeIdentifier{}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -956,12 +950,12 @@ func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps
 		for _, middle := range outer {
 			for _, item := range middle {
 				if conf.CredentialTypes[item].SchemeManagerID != ct.SchemeManagerID {
-					return errors.New("credential type " + ct.Identifier().String() + " in scheme " + ct.SchemeManagerID +
-						" has dependency outside the scheme: " + conf.CredentialTypes[item].Identifier().String())
+					return errors.Errorf("credential type %s in scheme %s has dependency outside the scheme: %s",
+						ct.Identifier().String(), ct.SchemeManagerID, conf.CredentialTypes[item].Identifier().String())
 				}
 
 				if ok := validatedDeps.contains(item); ok {
-					return errors.New("circular dependency " + item.String() + " found in: " + validatedDeps.String())
+					return errors.Errorf("circular dependency %s found in: %s", item.String(), validatedDeps.String())
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
