@@ -475,15 +475,17 @@ func userHasCreds(items []IssueWizardItem, creds map[CredentialTypeIdentifier]st
 
 // appendItems appends IssueWizardItems to IssueWizardItems and deduplicates
 func appendItems(existing []IssueWizardItem, toBeAdded []IssueWizardItem) []IssueWizardItem {
-	allAsMap := make(map[IssueWizardItem]int)
+	allAsMap := make(map[*CredentialTypeIdentifier]IssueWizardItem)
 	withDuplicates := append(existing, toBeAdded...)
 	var updated []IssueWizardItem
 	for _, val := range withDuplicates {
-		allAsMap[val] = 1
+		if _, exists := allAsMap[val.Credential]; !exists {
+			allAsMap[val.Credential] = val
+		}
 	}
 
-	for letter := range allAsMap {
-		updated = append(updated, letter)
+	for _, item := range allAsMap {
+		updated = append(updated, item)
 	}
 
 	return updated
@@ -510,37 +512,38 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 	if item.Type == IssueWizardItemTypeWebsite && item.URL == nil {
 		return errors.New("wizard item has type website, but no session URL specified")
 	}
-	if item.Credential != nil {
-		if conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] != nil {
-			// In `irma scheme verify` is run on a single requestor scheme, we cannot expect mentioned
-			// credential types from other schemes to exist. So only require mentioned credential types
-			// to exist if their containing scheme also exists
-			if conf.CredentialTypes[*item.Credential] == nil {
-				return errors.New("nonexisting credential type " + item.Credential.Name())
-			}
 
-			// The wizard item itself must either contain a text field or their its credential type must have a FAQSummary
-			if item.Text != nil {
-				if l := item.Text.validate(); len(l) > 0 {
-					return errors.New("Wizard item text field incomplete for item with credential type: " + item.Credential.String())
-				}
-			} else {
-				faqSummary := conf.CredentialTypes[*item.Credential].FAQSummary
-				if faqSummary == nil {
-					return errors.New("FAQSummary missing for wizard item with credential type: " + item.Credential.String())
-				}
-				if l := faqSummary.validate(); len(l) > 0 {
-					return errors.New("FAQSummary missing for: " + item.Credential.String())
-				}
-			}
+	if item.Credential == nil || conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] == nil {
+		return nil
+	}
 
-			// All dependencies of the the item and their dependencies must contain FAQSummaries
-			if conf.CredentialTypes[*item.Credential].Dependencies != nil {
-				depChain := DependencyChain{conf.CredentialTypes[*item.Credential].Identifier()}
-				if err := validateFAQSummary(*item.Credential, conf, depChain); err != nil {
-					return err
-				}
-			}
+	// In `irma scheme verify` is run on a single requestor scheme, we cannot expect mentioned
+	// credential types from other schemes to exist. So only require mentioned credential types
+	// to exist if their containing scheme also exists
+	if conf.CredentialTypes[*item.Credential] == nil {
+		return errors.New("nonexisting credential type " + item.Credential.Name())
+	}
+
+	// The wizard item itself must either contain a text field or their its credential type must have a FAQSummary
+	if item.Text != nil {
+		if l := item.Text.validate(); len(l) > 0 {
+			return errors.New("Wizard item text field incomplete for item with credential type: " + item.Credential.String())
+		}
+	} else {
+		faqSummary := conf.CredentialTypes[*item.Credential].FAQSummary
+		if faqSummary == nil {
+			return errors.New("FAQSummary missing for wizard item with credential type: " + item.Credential.String())
+		}
+		if l := faqSummary.validate(); len(l) > 0 {
+			return errors.New("FAQSummary missing for: " + item.Credential.String())
+		}
+	}
+
+	// All dependencies of the the item and their dependencies must contain FAQSummaries
+	if conf.CredentialTypes[*item.Credential].Dependencies != nil {
+		depChain := DependencyChain{*item.Credential}
+		if err := validateFAQSummary(*item.Credential, conf, depChain); err != nil {
+			return err
 		}
 	}
 
