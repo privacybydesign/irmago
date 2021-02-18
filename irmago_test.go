@@ -1100,6 +1100,7 @@ func TestWizardComplexity(t *testing.T) {
 			credid("scheme.issuer.i"): credtype("scheme.issuer.i",
 				"scheme.issuer.d",
 			),
+			credid("scheme.issuer.j"): credtype("scheme.issuer.j"),
 		},
 	}
 
@@ -1129,8 +1130,8 @@ func TestWizardComplexity(t *testing.T) {
 			}},
 			{{{
 				Type:       IssueWizardItemTypeCredential,
-				Credential: credidptr("scheme.issuer.e"),
-				Text:       &TranslatedString{"en": "custom description of credential e"},
+				Credential: credidptr("scheme.issuer.j"),
+				Text:       &TranslatedString{"en": "custom description of credential j"},
 			}}},
 			{{{
 				Type:   IssueWizardItemTypeWebsite,

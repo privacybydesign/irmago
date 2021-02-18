@@ -475,18 +475,22 @@ func userHasCreds(items []IssueWizardItem, creds map[CredentialTypeIdentifier]st
 
 // appendItems appends IssueWizardItems to IssueWizardItems and deduplicates
 func appendItems(existing []IssueWizardItem, toBeAdded []IssueWizardItem) []IssueWizardItem {
-	allAsMap := make(map[*CredentialTypeIdentifier]IssueWizardItem)
 	withDuplicates := append(existing, toBeAdded...)
-	var updated []IssueWizardItem
-	for _, val := range withDuplicates {
-		if _, exists := allAsMap[val.Credential]; !exists {
-			allAsMap[val.Credential] = val
+	credsItemMap := make(map[*CredentialTypeIdentifier]IssueWizardItem)
+	var itemsNoCreds []IssueWizardItem
+	for _, i := range withDuplicates {
+		if i.Credential != nil {
+			credsItemMap[i.Credential] = i
+		} else {
+			itemsNoCreds = append(itemsNoCreds, i)
 		}
 	}
 
-	for _, item := range allAsMap {
-		updated = append(updated, item)
+	var updated []IssueWizardItem
+	for _, i := range credsItemMap {
+		updated = append(updated, i)
 	}
+	updated = append(updated, itemsNoCreds...)
 
 	return updated
 }
