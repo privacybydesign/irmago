@@ -942,17 +942,20 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 	return nil
 }
 
+var (
+	errCircDep = errors.Errorf("No valid dependency branch could be built. There might be a circular dependency.")
+)
+
 func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps DependencyChain, toBeChecked CredentialTypeIdentifier) error {
 	if len(validatedDeps) >= maxDepComplexity {
 		return errors.New("dependency tree too complex: " + validatedDeps.String())
 	}
-	for _, outer := range conf.CredentialTypes[ct.Identifier()].Dependencies {
-		// at least one middle needs to be valid
-		atLeastOneInnerConSatisfied := false
-		for _, middle := range outer {
-			innerConSatisfied := true
+	for _, discon := range conf.CredentialTypes[ct.Identifier()].Dependencies {
+		disconSatisfied := false
+		for _, con := range discon {
+			conSatisfied := true
 
-			for _, item := range middle {
+			for _, item := range con {
 				if conf.CredentialTypes[item].SchemeManagerID != ct.SchemeManagerID {
 					return errors.Errorf("credential type %s in scheme %s has dependency outside the scheme: %s",
 						ct.Identifier().String(), ct.SchemeManagerID, conf.CredentialTypes[item].Identifier().String())
@@ -960,28 +963,28 @@ func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps
 
 				// all items need to be valid for middle to be valid
 				if toBeChecked == item {
-					innerConSatisfied = false
+					conSatisfied = false
 					break
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
 					if e := conf.CredentialTypes[item].validateDependencies(conf, append(validatedDeps, item), toBeChecked); e != nil {
-						if e.Error() == "No valid dependency branch could be built. There might be a circular dependency." {
-							innerConSatisfied = false
+						if e == errCircDep {
+							conSatisfied = false
+							break
 						} else {
 							return e
 						}
 					}
 				}
 			}
-
-			if innerConSatisfied {
-				atLeastOneInnerConSatisfied = true
+			if conSatisfied {
+				disconSatisfied = true
 			}
 		}
 
-		if !atLeastOneInnerConSatisfied {
-			return errors.Errorf("No valid dependency branch could be built. There might be a circular dependency.")
+		if !disconSatisfied {
+			return errCircDep
 		}
 	}
 
