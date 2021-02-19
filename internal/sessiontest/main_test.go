@@ -120,36 +120,28 @@ func getMultipleIssuanceRequest() *irma.IssuanceRequest {
 
 var TestType = "irmaserver-jwt"
 
-func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *irma.Qr {
+func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *server.SessionPackage {
 	var (
-		qr     *irma.Qr = new(irma.Qr)
 		sesPkg server.SessionPackage
 		err    error
 	)
 
 	switch TestType {
-	case "apiserver":
-		url := "http://localhost:8088/irma_api_server/api/v2/" + sessiontype
-		err = irma.NewHTTPTransport(url, false).Post("", qr, getJwt(t, request, sessiontype, jwt.SigningMethodNone))
-		qr.URL = url + "/" + qr.URL
 	case "irmaserver-jwt":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
-		qr = sesPkg.SessionPtr
 	case "irmaserver-hmac-jwt":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
-		qr = sesPkg.SessionPtr
 	case "irmaserver":
 		url := "http://localhost:48682"
 		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, request)
-		qr = sesPkg.SessionPtr
 	default:
 		t.Fatal("Invalid TestType")
 	}
 
 	require.NoError(t, err)
-	return qr
+	return &sesPkg
 }
 
 func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg jwt.SigningMethod) string {
@@ -197,7 +189,7 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 	return j
 }
 
-func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) {
+func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) string {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)
@@ -209,17 +201,23 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		defer StopRequestorServer()
 	}
 
-	qr := startSession(t, request, sessiontype)
+	sesPkg := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
 	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
-	qrjson, err := json.Marshal(qr)
+	qrjson, err := json.Marshal(sesPkg.SessionPtr)
 	require.NoError(t, err)
 	client.NewSession(string(qrjson), h)
 
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
+
+	var resJwt string
+	err = irma.NewHTTPTransport("http://localhost:48682/session/"+sesPkg.Token, false).Get("result-jwt", &resJwt)
+	require.NoError(t, err)
+
+	return resJwt
 }
 
 func expectedRequestorInfo(t *testing.T, conf *irma.Configuration) *irma.RequestorInfo {

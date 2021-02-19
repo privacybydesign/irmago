@@ -134,7 +134,9 @@ type RequestorInfo struct {
 	Industry   *TranslatedString                      `json:"industry"`
 	Hostnames  []string                               `json:"hostnames"`
 	Logo       *string                                `json:"logo"`
+	LogoPath   *string                                `json:"logoPath,omitempty"`
 	ValidUntil *Timestamp                             `json:"valid_until"`
+	Unverified bool                                   `json:"unverified"`
 	Wizards    map[IssueWizardIdentifier]*IssueWizard `json:"wizards"`
 }
 
@@ -578,8 +580,9 @@ func validateFAQSummary(cred CredentialTypeIdentifier, conf *Configuration, vali
 // NewRequestorInfo returns a Requestor with just the given hostname
 func NewRequestorInfo(hostname string) *RequestorInfo {
 	return &RequestorInfo{
-		Name:      NewTranslatedString(&hostname),
-		Hostnames: []string{hostname},
+		Name:       NewTranslatedString(&hostname),
+		Hostnames:  []string{hostname},
+		Unverified: true,
 	}
 }
 
@@ -777,4 +780,14 @@ func (id *Issuer) Identifier() IssuerIdentifier {
 
 func (id *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(id.SchemeManagerID)
+}
+
+func (ri *RequestorInfo) logoPath(scheme *RequestorScheme) string {
+	if ri.Logo != nil {
+		logoPath := filepath.Join(scheme.path(), "assets", *ri.Logo+".png")
+		if exists, _ := common.PathExists(logoPath); exists {
+			return logoPath
+		}
+	}
+	return ""
 }

@@ -14,10 +14,12 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
+
+	"github.com/dgrijalva/jwt-go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +32,20 @@ func TestSigningSession(t *testing.T) {
 func TestDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
-	sessionHelper(t, request, "verification", nil)
+	responseString := sessionHelper(t, request, "verification", nil)
+
+	// Validate JWT
+	claims := struct {
+		jwt.StandardClaims
+		*server.SessionResult
+	}{}
+	_, err := jwt.ParseWithClaims(responseString, &claims, func(token *jwt.Token) (interface{}, error) {
+		return &JwtServerConfiguration.JwtRSAPrivateKey.PublicKey, nil
+	})
+	require.NoError(t, err)
+
+	// Check default expiration time
+	require.True(t, claims.IssuedAt+irma.DefaultJwtValidity == claims.ExpiresAt)
 }
 
 func TestNoAttributeDisclosureSession(t *testing.T) {

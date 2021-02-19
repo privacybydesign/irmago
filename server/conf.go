@@ -57,6 +57,9 @@ type Configuration struct {
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 	// Parsed JWT private key
 	JwtRSAPrivateKey *rsa.PrivateKey `json:"-"`
+	// Whether to allow callbackUrl to be set in session requests when no JWT privatekey is installed
+	// (which is potentially unsafe depending on the setup)
+	AllowUnsignedCallbacks bool
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
@@ -93,8 +96,8 @@ func (conf *Configuration) Check() error {
 		conf.verifyURL,
 		conf.verifyEmail,
 		conf.verifyRevocation,
-		conf.verifyStaticSessions,
 		conf.verifyJwtPrivateKey,
+		conf.verifyStaticSessions,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
@@ -127,6 +130,9 @@ func (conf *Configuration) HavePrivateKeys() bool {
 
 func (conf *Configuration) verifyStaticSessions() error {
 	conf.StaticSessionRequests = make(map[string]irma.RequestorRequest)
+	if len(conf.StaticSessions) > 0 && conf.JwtRSAPrivateKey == nil && !conf.AllowUnsignedCallbacks {
+		return errors.New("static sessions configured but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration")
+	}
 	for name, r := range conf.StaticSessions {
 		if !regexp.MustCompile("^[a-zA-Z0-9_]+$").MatchString(name) {
 			return errors.Errorf("static session name %s not allowed, must be alphanumeric", name)

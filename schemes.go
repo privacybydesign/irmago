@@ -1242,9 +1242,9 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys() error {
 	// For each public key, attempt to download a corresponding private key
 	for _, file := range files {
 		i := strings.LastIndex(pkpath, "PublicKeys")
-		skpath := file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1)
-		parts := strings.Split(skpath, "/")
-		exists, err := common.PathExists(filepath.FromSlash(skpath))
+		skpath := filepath.FromSlash(file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1))
+		parts := strings.Split(skpath, string(filepath.Separator))
+		exists, err := common.PathExists(skpath)
 		if exists || err != nil {
 			continue
 		}
@@ -1278,6 +1278,9 @@ func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path 
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {
+		if logoPath := requestor.logoPath(scheme); logoPath != "" {
+			requestor.LogoPath = &logoPath
+		}
 		for _, hostname := range requestor.Hostnames {
 			if _, ok := conf.Requestors[hostname]; ok {
 				return errors.Errorf("Double occurence of hostname %s", hostname)
