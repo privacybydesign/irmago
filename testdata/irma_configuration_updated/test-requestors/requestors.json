@@ -85,7 +85,11 @@
                     }]],
                     [[{
                         "type": "credential",
-                        "credential": "irma-demo.MijnOverheid.singleton"
+                        "credential": "irma-demo.MijnOverheid.singleton",
+                        "text": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        }
                     }]],
                     [[{
                         "type": "session",

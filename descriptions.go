@@ -3,10 +3,9 @@ package irma
 import (
 	"encoding/xml"
 	"fmt"
-	"path/filepath"
-
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
+	"path/filepath"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -187,6 +186,8 @@ const (
 	IssueWizardItemTypeCredential IssueWizardItemType = "credential"
 	IssueWizardItemTypeSession    IssueWizardItemType = "session"
 	IssueWizardItemTypeWebsite    IssueWizardItemType = "website"
+
+	maxWizardComplexity = 10
 )
 
 // Choose from the wizard a list of items.
@@ -204,13 +205,17 @@ func (wizard IssueWizard) Choose(conf *Configuration, creds CredentialInfoList) 
 	contents := wizard.Contents.Choose(conf, credsmap)
 	if wizard.ExpandDependencies != nil && !*wizard.ExpandDependencies {
 		return contents, nil
+	} else {
+		return buildDependencyTree(contents, conf, credsmap)
 	}
+}
 
+func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsmap map[CredentialTypeIdentifier]struct{}) ([]IssueWizardItem, error) {
 	// Each item in contents refers to a credential type that has dependencies, which may themselves
 	// have dependencies. So each item has a tree of dependencies. We must return a list
 	// containing all dependencies of each item in an executable order, i.e. item n in the
 	// list depends only on items < n in the list. We do this as follows:
-	// - by considering element n in items to be dependendent on element n-1, we join all
+	// - by considering element n in items to be dependent on element n-1, we join all
 	//   dependency trees into one
 	// - of that tree, starting at the leaf nodes and iterating downwards toward the root,
 	//   we put all items in the result list.
@@ -287,10 +292,6 @@ func wizardItemVisit(
 	deps credentialDependencies,
 	creds map[CredentialTypeIdentifier]struct{},
 ) error {
-	if level == 25 {
-		return errors.New("issue wizard: level limit exceeded, probably due to circular dependency")
-	}
-
 	if bylevel[level] == nil {
 		bylevel[level] = map[CredentialTypeIdentifier]struct{}{}
 	}
@@ -358,10 +359,42 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	if (wizard.SuccessHeader == nil) != (wizard.SuccessText == nil) {
 		return errors.New("wizard contents must have success header and text either both specified, or both empty")
 	}
+	// validate that no possible content graph is too complex
+	allRelevantPaths := wizard.Contents.buildValidationPaths(conf, map[CredentialTypeIdentifier]struct{}{})
+	for _, contents := range allRelevantPaths {
+		// validate expanded dependency tree if ExpandDependencies flag is set to true; otherwise validate current length
+		if wizard.ExpandDependencies == nil || *wizard.ExpandDependencies {
+			result, error := buildDependencyTree(contents, conf, map[CredentialTypeIdentifier]struct{}{})
+
+			if error != nil {
+				return error
+			}
+
+			if len(result) >= maxWizardComplexity {
+				return errors.Errorf("wizard with wizard ID %s too complex", wizard.ID)
+			}
+		} else {
+			if len(contents) >= maxWizardComplexity {
+				return errors.Errorf("wizard with wizard ID %s too complex", wizard.ID)
+			}
+		}
+	}
+
+	// validate translations, IssueWizardItems and FAQSummaries of dependencies
+	shouldBeLast := false
 	for i, outer := range wizard.Contents {
 		for j, middle := range outer {
 			for k, item := range middle {
-				if err := item.Validate(conf); err != nil {
+				// validate all non-credential-items of a wizard are at the end
+				if item.Type != "credential" {
+					shouldBeLast = true
+				} else {
+					if shouldBeLast {
+						return errors.Errorf("non-credential types in wizard %s should come last", wizard.ID)
+					}
+				}
+
+				if err := item.validate(conf); err != nil {
 					return errors.Errorf("item %d.%d.%d of issue wizard %s: %w", i, j, k, wizard.ID, err)
 				}
 				conf.validateTranslations(fmt.Sprintf("item %d.%d.%d of issue wizard %s", i, j, k, wizard.ID), item)
@@ -376,7 +409,95 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	return nil
 }
 
-func (item *IssueWizardItem) Validate(conf *Configuration) error {
+func (contents IssueWizardContents) buildValidationPaths(conf *Configuration, creds map[CredentialTypeIdentifier]struct{}) [][]IssueWizardItem {
+	var all [][]IssueWizardItem
+	var choice []IssueWizardItem
+	for _, discon := range contents {
+		disconSatisfied := false
+
+		for i, con := range discon {
+			if i > 0 {
+				if !userHasCreds(discon[i], creds) {
+					// Copy from the original creds map to the target updatedCreds map
+					updatedCreds := map[CredentialTypeIdentifier]struct{}{}
+					for key, value := range creds {
+						updatedCreds[key] = value
+					}
+
+					// check the scenario where the user already has the cards from this discon
+					for _, item := range discon[i] {
+						updatedCreds[*item.Credential] = struct{}{}
+					}
+
+					all = append(all, contents.buildValidationPaths(conf, updatedCreds)...)
+				}
+			}
+
+			conSatisfied := true
+			for _, item := range con {
+				if item.Credential == nil {
+					// If it is not known what credential this item will issue (if any), then we cannot
+					// compare that credential to the list of present credentials to establish whether
+					// or not this item is completed. So we cannot consider the item to be completed,
+					// thus neither can we consider the containing conjunction as completed.
+					conSatisfied = false
+					break
+				}
+				if _, present := creds[*item.Credential]; !present {
+					conSatisfied = false
+					break
+				}
+			}
+			if conSatisfied {
+				choice = appendItems(choice, con)
+				disconSatisfied = true
+				break
+			}
+		}
+		if !disconSatisfied {
+			choice = appendItems(choice, discon[0])
+		}
+	}
+
+	all = append(all, choice)
+
+	return all
+}
+
+func userHasCreds(items []IssueWizardItem, creds map[CredentialTypeIdentifier]struct{}) bool {
+	for _, val := range items {
+		if val.Credential != nil {
+			if _, ok := creds[*val.Credential]; !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// appendItems appends IssueWizardItems to IssueWizardItems and deduplicates
+func appendItems(existing []IssueWizardItem, toBeAdded []IssueWizardItem) []IssueWizardItem {
+	withDuplicates := append(existing, toBeAdded...)
+	credsItemMap := make(map[*CredentialTypeIdentifier]IssueWizardItem)
+	var itemsNoCreds []IssueWizardItem
+	for _, i := range withDuplicates {
+		if i.Credential != nil {
+			credsItemMap[i.Credential] = i
+		} else {
+			itemsNoCreds = append(itemsNoCreds, i)
+		}
+	}
+
+	var updated []IssueWizardItem
+	for _, i := range credsItemMap {
+		updated = append(updated, i)
+	}
+	updated = append(updated, itemsNoCreds...)
+
+	return updated
+}
+
+func (item *IssueWizardItem) validate(conf *Configuration) error {
 	if item.Type != IssueWizardItemTypeCredential &&
 		item.Type != IssueWizardItemTypeSession &&
 		item.Type != IssueWizardItemTypeWebsite {
@@ -396,6 +517,65 @@ func (item *IssueWizardItem) Validate(conf *Configuration) error {
 	}
 	if item.Type == IssueWizardItemTypeWebsite && item.URL == nil {
 		return errors.New("wizard item has type website, but no session URL specified")
+	}
+
+	if item.Credential == nil || conf.SchemeManagers[item.Credential.SchemeManagerIdentifier()] == nil {
+		return nil
+	}
+
+	// In `irma scheme verify` is run on a single requestor scheme, we cannot expect mentioned
+	// credential types from other schemes to exist. So only require mentioned credential types
+	// to exist if their containing scheme also exists
+	if conf.CredentialTypes[*item.Credential] == nil {
+		return errors.New("nonexisting credential type " + item.Credential.Name())
+	}
+
+	// The wizard item itself must either contain a text field or their its credential type must have a FAQSummary
+	if item.Text != nil {
+		if l := item.Text.validate(); len(l) > 0 {
+			return errors.New("Wizard item text field incomplete for item with credential type: " + item.Credential.String())
+		}
+	} else {
+		faqSummary := conf.CredentialTypes[*item.Credential].FAQSummary
+		if faqSummary == nil {
+			return errors.New("FAQSummary missing for wizard item with credential type: " + item.Credential.String())
+		}
+		if l := faqSummary.validate(); len(l) > 0 {
+			return errors.New("FAQSummary missing for: " + item.Credential.String())
+		}
+	}
+
+	// All dependencies of the the item and their dependencies must contain FAQSummaries
+	if conf.CredentialTypes[*item.Credential].Dependencies != nil {
+		depChain := DependencyChain{*item.Credential}
+		if err := validateFAQSummary(*item.Credential, conf, depChain); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateFAQSummary(cred CredentialTypeIdentifier, conf *Configuration, validatedDeps DependencyChain) error {
+	for _, outer := range conf.CredentialTypes[cred].Dependencies {
+		for _, middle := range outer {
+			for _, item := range middle {
+				faqSummary := conf.CredentialTypes[item].FAQSummary
+				updatedDeps := append(validatedDeps, item)
+
+				if faqSummary == nil {
+					return errors.New("FAQSummary missing for last item in chain: " + updatedDeps.String())
+				}
+
+				if l := faqSummary.validate(); len(l) > 0 {
+					return errors.New("FAQSummary incomplete for last item in chain: " + updatedDeps.String())
+				}
+
+				if conf.CredentialTypes[item].Dependencies != nil {
+					return validateFAQSummary(item, conf, updatedDeps)
+				}
+			}
+		}
 	}
 
 	return nil
@@ -522,6 +702,17 @@ func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 		(*ts)[translation.XMLName.Local] = translation.Text
 	}
 	return nil
+}
+
+func (ts *TranslatedString) validate() []string {
+	var invalidLangs []string
+	for _, lang := range validLangs {
+		if text, exists := (*ts)[lang]; !exists || text == "" {
+			invalidLangs = append(invalidLangs, lang)
+
+		}
+	}
+	return invalidLangs
 }
 
 func (deps CredentialDependencies) WizardContents() IssueWizardContents {

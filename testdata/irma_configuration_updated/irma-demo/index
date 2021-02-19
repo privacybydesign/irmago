@@ -1,6 +1,6 @@
 80376f36a90fa91129cd122276cd6632358f380da60fb764b929ae073b08407a irma-demo/MijnOverheid/Issues/fullName/description.xml
 61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718 irma-demo/MijnOverheid/Issues/fullName/logo.png
-5ad7960446797d74557fbbda578a5f276b343bf61ad3d68d6f74de6341ef7e93 irma-demo/MijnOverheid/Issues/root/description.xml
+0c8aa6699df883d148a05c68d2c4c9b3f9307d7be6b5020e1e7a1e005c3457ba irma-demo/MijnOverheid/Issues/root/description.xml
 61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718 irma-demo/MijnOverheid/Issues/root/logo.png
 dc0bc65ddfa91f55b4b5d46cc2a143f6026fefe1f780fbd1670017a142069532 irma-demo/MijnOverheid/Issues/singleton/description.xml
 61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718 irma-demo/MijnOverheid/Issues/singleton/logo.png
@@ -22,4 +22,8 @@ bda92554305aaa5a442032bfbe95b4cc30d4c8cd3b682f11380a1e18deef6d22 irma-demo/stemm
 7657171e97f6c327ba6e4040c291e014258dfb720050e195f6acb95b14582bb5 irma-demo/stemmen/PublicKeys/0.xml
 611a4d2a9e858b5b76ff3642ac9f67ed21121d6fc4ec0df802186b0c6e6d5c5b irma-demo/stemmen/description.xml
 1a1078dcd7d22e4a30ab34d53a7509256196a470baa883a92c99c073c40690af irma-demo/stemmen/logo.png
+<<<<<<< HEAD
 d3b6c9d69f25594f53c21ab360a2816bb39007ea8f1b0fccc51be15c06533be5 irma-demo/timestamp
+=======
+1c9e033751e6c177da2bca2da7ed5367aef751b568d1432253cab31b985762c7 irma-demo/timestamp
+>>>>>>> wizard-verification

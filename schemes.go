@@ -92,6 +92,8 @@ type (
 	SchemeType string
 )
 
+type DependencyChain []CredentialTypeIdentifier
+
 const (
 	SchemeManagerStatusValid               = SchemeManagerStatus("Valid")
 	SchemeManagerStatusUnprocessed         = SchemeManagerStatus("Unprocessed")
@@ -102,6 +104,8 @@ const (
 
 	SchemeTypeIssuer    = SchemeType("issuer")
 	SchemeTypeRequestor = SchemeType("requestor")
+
+	maxDepComplexity = 25
 )
 
 func (conf *Configuration) DownloadDefaultSchemes() error {
@@ -900,7 +904,7 @@ func (scheme *SchemeManager) path() string { return scheme.storagepath }
 func (scheme *SchemeManager) setPath(path string) { scheme.storagepath = path }
 
 func (scheme *SchemeManager) parseContents(conf *Configuration) error {
-	return common.IterateSubfolders(scheme.path(), func(dir string, _ os.FileInfo) error {
+	err := common.IterateSubfolders(scheme.path(), func(dir string, _ os.FileInfo) error {
 		issuer := &Issuer{}
 
 		exists, err := conf.parseSchemeFile(scheme, filepath.Join(filepath.Base(dir), "description.xml"), issuer)
@@ -921,6 +925,87 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 		conf.Issuers[issuer.Identifier()] = issuer
 		return scheme.parseCredentialsFolder(conf, issuer, filepath.Join(dir, "Issues"))
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// validate that there are no circular dependencies
+	for _, credType := range conf.CredentialTypes {
+		if credType.SchemeManagerID == scheme.ID {
+			if err := credType.validateDependencies(conf, []CredentialTypeIdentifier{}, credType.Identifier()); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+var (
+	errCircDep = errors.Errorf("No valid dependency branch could be built. There might be a circular dependency.")
+)
+
+func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps DependencyChain, toBeChecked CredentialTypeIdentifier) error {
+	if len(validatedDeps) >= maxDepComplexity {
+		return errors.New("dependency tree too complex: " + validatedDeps.String())
+	}
+	for _, discon := range conf.CredentialTypes[ct.Identifier()].Dependencies {
+		disconSatisfied := false
+		for _, con := range discon {
+			conSatisfied := true
+
+			for _, item := range con {
+				if conf.CredentialTypes[item].SchemeManagerID != ct.SchemeManagerID {
+					return errors.Errorf("credential type %s in scheme %s has dependency outside the scheme: %s",
+						ct.Identifier().String(), ct.SchemeManagerID, conf.CredentialTypes[item].Identifier().String())
+				}
+
+				// all items need to be valid for middle to be valid
+				if toBeChecked == item {
+					conSatisfied = false
+					break
+				}
+
+				if conf.CredentialTypes[item].Dependencies != nil {
+					if e := conf.CredentialTypes[item].validateDependencies(conf, append(validatedDeps, item), toBeChecked); e != nil {
+						if e == errCircDep {
+							conSatisfied = false
+							break
+						} else {
+							return e
+						}
+					}
+				}
+			}
+			if conSatisfied {
+				disconSatisfied = true
+			}
+		}
+
+		if !disconSatisfied {
+			return errCircDep
+		}
+	}
+
+	return nil
+}
+
+func (d DependencyChain) contains(item CredentialTypeIdentifier) bool {
+	for _, dep := range d {
+		if dep == item {
+			return true
+		}
+	}
+	return false
+}
+
+func (d DependencyChain) String() string {
+	deps := make([]string, len(d))
+	for i := 0; i < len(d); i++ {
+		deps[i] = d[i].String()
+	}
+	return strings.Join(deps, ", ")
 }
 
 func (scheme *SchemeManager) validate(conf *Configuration) (error, SchemeManagerStatus) {
