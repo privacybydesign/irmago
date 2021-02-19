@@ -3,9 +3,10 @@ package irma
 import (
 	"encoding/xml"
 	"fmt"
+	"path/filepath"
+
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
-	"path/filepath"
 )
 
 // This file contains data types for scheme managers, issuers, credential types
@@ -188,11 +189,11 @@ const (
 	maxWizardComplexity = 10
 )
 
-// GetPath returns a list of IssueWizardItems to be used as the wizard item order.
+// Path returns a list of IssueWizardItems to be used as the wizard item order.
 // If the ExpandDependencies boolean is set to false, the result of IssueWizardContents.ChoosePath
 // is returned. If not set or set to true, this is augmented with all dependencies of all items
 // in an executable order.
-func (wizard IssueWizard) GetPath(conf *Configuration, creds CredentialInfoList) ([]IssueWizardItem, error) {
+func (wizard IssueWizard) Path(conf *Configuration, creds CredentialInfoList) ([]IssueWizardItem, error) {
 	// convert creds slice to map for easy lookup
 	credsmap := map[CredentialTypeIdentifier]struct{}{}
 	for _, cred := range creds {

@@ -946,7 +946,7 @@ func TestWizardConstructed(t *testing.T) {
 		},
 	}
 
-	contents, err := wizard.GetPath(conf, nil)
+	contents, err := wizard.Path(conf, nil)
 	require.NoError(t, err)
 	require.Equal(t,
 		[]IssueWizardItem{
@@ -971,13 +971,13 @@ func TestWizardFromScheme(t *testing.T) {
 		&expected,
 	))
 
-	contents, err := wizard.GetPath(conf, nil)
+	contents, err := wizard.Path(conf, nil)
 	require.NoError(t, err)
 	require.Equal(t, expected, contents)
 
 	True := true
 	wizard.ExpandDependencies = &True
-	contents, err = wizard.GetPath(conf, nil)
+	contents, err = wizard.Path(conf, nil)
 	require.NoError(t, err)
 	require.Equal(t,
 		append([]IssueWizardItem{credwizarditem("irma-demo.MijnOverheid.root")}, expected...),
