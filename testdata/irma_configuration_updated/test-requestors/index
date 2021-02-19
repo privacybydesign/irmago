@@ -1,8 +1,3 @@
 0215060c1369c868e1dd86481337e7e0a9eea78a53645cac3102bd6d7b2b0336 test-requestors/description.json
-<<<<<<< HEAD
-7fbe431492bd4555f59fce6489f2e609bf1bf76f1a2cf9a7efc95aa6c47b8987 test-requestors/requestors.json
-1840ac53943c112970ab539c35eb0e84e78046a1719e31e9679423be27c6e37e test-requestors/timestamp
-=======
-033abd4fdc452d1fe57677e559a3e20024a82b67b8bebd587e4ff50ee4c2aa0c test-requestors/requestors.json
-9d83afd4af2a042af0ad8e88489d2d069880fb3b2d50060797eafa1bc0920a24 test-requestors/timestamp
->>>>>>> wizard-verification
+607af0b6bce715135ae8dae85a4ce9cf3a5ffaff2edb4cddbef21f0c0da8271c test-requestors/requestors.json
+135a0228f367444ca0025f5299599dc4a23867c4e570c19aebed09ab2dc4e84d test-requestors/timestamp
