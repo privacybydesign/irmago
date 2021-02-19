@@ -1193,9 +1193,6 @@ func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path 
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {
-		if scheme.Demo && len(requestor.Hostnames) > 0 {
-			return errors.New("Demo requestor scheme has hostnames: only allowed for non-demo schemes")
-		}
 		for _, hostname := range requestor.Hostnames {
 			if _, ok := conf.Requestors[hostname]; ok {
 				return errors.Errorf("Double occurence of hostname %s", hostname)
@@ -1243,6 +1240,9 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 
 	// Verify all requestors
 	for _, requestor := range requestors {
+		if scheme.Demo && len(requestor.Hostnames) > 0 {
+			return errors.New("Demo requestor scheme has hostnames: only allowed for non-demo schemes"), SchemeManagerStatusParsingError
+		}
 		if requestor.ID.RequestorSchemeIdentifier() != scheme.ID {
 			return errors.Errorf("requestor scheme %s has incorrect ID", requestor.ID), SchemeManagerStatusParsingError
 		}

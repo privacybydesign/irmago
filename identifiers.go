@@ -131,7 +131,7 @@ func NewRequestorIdentifier(id string) RequestorIdentifier {
 	return RequestorIdentifier{metaObjectIdentifier(id)}
 }
 
-// NewNewIssueWizardIdentifier converts the specified identifier to a NewIssueWizardIdentifier.
+// NewIssueWizardIdentifier converts the specified identifier to a NewIssueWizardIdentifier.
 func NewIssueWizardIdentifier(id string) IssueWizardIdentifier {
 	return IssueWizardIdentifier{metaObjectIdentifier(id)}
 }
