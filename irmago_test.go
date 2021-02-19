@@ -1006,7 +1006,7 @@ func TestWizardValidation(t *testing.T) {
 	}
 
 	wizard := IssueWizard{
-		ID: "testwizard",
+		ID: NewIssueWizardIdentifier("testwizard"),
 		Contents: IssueWizardContents{
 			{{
 				credwizarditem("scheme.issuer.c"),
@@ -1049,7 +1049,7 @@ func TestWizardIncorrectContentsOrder(t *testing.T) {
 	}
 
 	wizard := IssueWizard{
-		ID: "testwizard",
+		ID: NewIssueWizardIdentifier("testwizard"),
 		Contents: IssueWizardContents{
 			{{
 				credwizarditem("scheme.issuer.c"),
@@ -1106,7 +1106,7 @@ func TestWizardComplexity(t *testing.T) {
 	}
 
 	wizard := IssueWizard{
-		ID: "testwizard",
+		ID: NewIssueWizardIdentifier("testwizard"),
 		Contents: IssueWizardContents{
 			{{
 				credwizarditem("scheme.issuer.c"),
