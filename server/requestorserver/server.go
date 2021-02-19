@@ -18,7 +18,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -480,6 +480,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 			return
 		}
 	}
+
 	condiscon := request.Disclosure().Disclose
 	if len(condiscon) > 0 {
 		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), condiscon)
@@ -490,10 +491,24 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 			return
 		}
 	}
-	if rrequest.Base().CallbackURL != "" && s.conf.JwtRSAPrivateKey == nil && !s.conf.AllowUnsignedCallbacks {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("Requestor provided callbackUrl but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration")
-		server.WriteError(w, server.ErrorUnsupported, "callbackUrl provided but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration")
-		return
+
+	if rrequest.Base().NextSession != nil && rrequest.Base().NextSession.URL == "" {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("nextSession provided with empty URL")
+		server.WriteError(w, server.ErrorInvalidRequest, "nextSession provided with empty URL")
+	}
+	if s.conf.JwtRSAPrivateKey == nil && !s.conf.AllowUnsignedCallbacks {
+		var field string
+		if rrequest.Base().CallbackURL != "" {
+			field = "callbackUrl"
+		} else if rrequest.Base().NextSession != nil {
+			field = "nextSession"
+		}
+		if field != "" {
+			errormsg := field + " provided but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration"
+			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn(errormsg)
+			server.WriteError(w, server.ErrorUnsupported, errormsg)
+			return
+		}
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
