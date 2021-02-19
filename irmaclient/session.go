@@ -508,12 +508,11 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(serverResponse.ProofStatus)})
 			return
 		}
-	}
-
-	if session.Action == irma.ActionIssuing {
-		if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-			return
+		if session.Action == irma.ActionIssuing {
+			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+				return
+			}
 		}
 	}
 
