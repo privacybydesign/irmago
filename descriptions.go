@@ -145,11 +145,12 @@ type RequestorChunk []*RequestorInfo
 
 type (
 	IssueWizard struct {
-		ID       IssueWizardIdentifier     `json:"id"`
-		Title    TranslatedString          `json:"title"`
-		Logo     *string                   `json:"logo,omitempty"`     // SHA256 of the logo contents (which is the filename on disk)
-		LogoPath *string                   `json:"logoPath,omitempty"` // Full path to the logo set automatically during scheme parsing
-		Issues   *CredentialTypeIdentifier `json:"issues,omitempty"`
+		ID                   IssueWizardIdentifier     `json:"id"`
+		Title                TranslatedString          `json:"title"`
+		Logo                 *string                   `json:"logo,omitempty"`     // SHA256 of the logo contents (which is the filename on disk)
+		LogoPath             *string                   `json:"logoPath,omitempty"` // Full path to the logo set automatically during scheme parsing
+		Issues               *CredentialTypeIdentifier `json:"issues,omitempty"`
+		AllowOtherRequestors bool                      `json:"allowOtherRequestors"`
 
 		Info *TranslatedString `json:"info,omitempty"`
 		FAQ  []IssueWizardQA   `json:"faq,omitempty"`
