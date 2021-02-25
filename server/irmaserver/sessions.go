@@ -1,13 +1,14 @@
 package irmaserver
 
 import (
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 
@@ -154,11 +155,12 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	token := common.NewSessionToken()
 	clientToken := common.NewSessionToken()
 
-	if s.conf.AugmentClientReturnURL && request.SessionRequest().Base().AugmentReturnURL && request.SessionRequest().Base().ClientReturnURL != "" {
-		if strings.Contains(request.SessionRequest().Base().ClientReturnURL, "?") {
-			request.SessionRequest().Base().ClientReturnURL += "&token=" + token
+	base := request.SessionRequest().Base()
+	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
+		if strings.Contains(base.ClientReturnURL, "?") {
+			base.ClientReturnURL += "&token=" + token
 		} else {
-			request.SessionRequest().Base().ClientReturnURL += "?token=" + token
+			base.ClientReturnURL += "?token=" + token
 		}
 	}
 
@@ -184,8 +186,8 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.token}).Debug("New session started")
 	nonce := common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabi.DefaultSystemParameters[2048].Lstatzk))
-	ses.request.Base().Nonce = nonce
-	ses.request.Base().Context = one
+	base.Nonce = nonce
+	base.Context = one
 	s.sessions.add(ses)
 
 	return ses
