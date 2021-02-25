@@ -20,7 +20,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -281,8 +281,17 @@ func (s *Server) validateRequest(request irma.SessionRequest) error {
 	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
 		return err
 	}
-	if err := request.Base().Validate(s.conf.IrmaConfiguration); err != nil {
+	base := request.Base()
+	if err := base.Validate(s.conf.IrmaConfiguration); err != nil {
 		return err
+	}
+	if base.AugmentReturnURL {
+		if !s.conf.AugmentClientReturnURL {
+			return errors.New("augmenting client return url not enabled in server configuration")
+		}
+		if base.ClientReturnURL == "" {
+			return errors.New("cannot augment empty client return url")
+		}
 	}
 	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
 }
