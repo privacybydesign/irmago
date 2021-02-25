@@ -59,7 +59,7 @@ type Configuration struct {
 	JwtRSAPrivateKey *rsa.PrivateKey `json:"-"`
 	// Whether to allow callbackUrl to be set in session requests when no JWT privatekey is installed
 	// (which is potentially unsafe depending on the setup)
-	AllowUnsignedCallbacks bool
+	AllowUnsignedCallbacks bool `json:"allow_unsigned_callbacks" mapstructure:"allow_unsigned_callbacks"`
 	// Whether to augment the clientreturnurl with the server token of the request (this allows for stateless
 	// requestor servers more easily)
 	AugmentClientReturnURL bool `json:"augment_client_return_url" mapstructure:"augment_client_return_url"`
