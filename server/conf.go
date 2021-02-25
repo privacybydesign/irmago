@@ -62,7 +62,7 @@ type Configuration struct {
 	AllowUnsignedCallbacks bool
 	// Whether to augment the clientreturnurl with the server token of the request (this allows for stateless
 	// requestor servers more easily)
-	AugmentClientReturnURL bool
+	AugmentClientReturnURL bool `json:"augment_client_return_url" mapstructure:"augment_client_return_url"`
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
