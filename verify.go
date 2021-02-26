@@ -326,7 +326,11 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 		attrval = &p
 	} else {
 		attrid = credtype.AttributeTypes[index-2].GetAttributeTypeIdentifier()
-		attrval = decodeAttribute(attr, metadata.Version())
+		if credtype.AttributeTypes[index-2].RandomBlind {
+			attrval = decodeRandomBlind(attr)
+		} else {
+			attrval = decodeAttribute(attr, metadata.Version())
+		}
 	}
 	status := AttributeProofStatusPresent
 	if attrval == nil {
