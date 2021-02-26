@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -254,7 +254,13 @@ func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token str
 }
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
 	if !s.conf.EnableSSE {
-		return errors.New("Server sent events disabled")
+		server.WriteResponse(w, nil, &irma.RemoteError{
+			Status:      500,
+			Description: "Server sent events disabled",
+			ErrorName:   "SSE_DISABLED",
+		})
+		s.conf.Logger.Info("GET /statusevents: endpoint disabled (see --sse in irma server -h)")
+		return nil
 	}
 
 	var session *session
