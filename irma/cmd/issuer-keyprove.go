@@ -192,15 +192,6 @@ The keyprove command generates a proof that an issuer key was generated correctl
 			privkeyfile = filepath.Join(path, "PrivateKeys", strconv.Itoa(int(counter))+".xml")
 		}
 
-		// Prepare storage for proof if needed
-		if prooffile == "" {
-			proofpath := filepath.Join(path, "Proofs")
-			if err = common.EnsureDirectoryExists(proofpath); err != nil {
-				return errors.WrapPrefix(err, "Failed to create"+proofpath, 0)
-			}
-			prooffile = filepath.Join(proofpath, strconv.Itoa(int(counter))+".json.gz")
-		}
-
 		// Try to read public key
 		pk, err := gabi.NewPublicKeyFromFile(pubkeyfile)
 		if err != nil {
@@ -229,6 +220,15 @@ The keyprove command generates a proof that an issuer key was generated correctl
 			PPrimeMod.Cmp(ConstOne) == 0 || QPrimeMod.Cmp(ConstOne) == 0 ||
 			PMod.Cmp(QMod) == 0 || PPrimeMod.Cmp(QPrimeMod) == 0 {
 			return errors.New("Private key not amenable to proving")
+		}
+
+		// Prepare storage for proof if needed
+		if prooffile == "" {
+			proofpath := filepath.Join(path, "Proofs")
+			if err = common.EnsureDirectoryExists(proofpath); err != nil {
+				return errors.WrapPrefix(err, "Failed to create"+proofpath, 0)
+			}
+			prooffile = filepath.Join(proofpath, strconv.Itoa(int(counter))+".json.gz")
 		}
 
 		// Open proof file for writing
