@@ -50,10 +50,6 @@ func (l *logFollower) Tick() {
 	l.tickEvents <- tickMessage{}
 }
 
-func (l *logFollower) Quit() {
-	l.quitEvents <- quitMessage{}
-}
-
 func printProofStatus(status string, count, limit int, done bool) {
 	var tail string
 	if done {
