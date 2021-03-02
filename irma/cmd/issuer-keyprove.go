@@ -228,11 +228,11 @@ The keyprove command generates a proof that an issuer key was generated correctl
 		if err != nil {
 			die("Error opening proof file for writing", err)
 		}
-		defer proofOut.Close()
+		defer closeCloser(proofOut)
 
 		// Wrap it for gzip compression
 		proofWriter := gzip.NewWriter(proofOut)
-		defer proofWriter.Close()
+		defer closeCloser(proofWriter)
 
 		// Start log follower
 		follower := startLogFollower()

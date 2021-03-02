@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -78,13 +79,13 @@ The keyverify command verifies proofs of validity for IRMA issuer keys. By defau
 			follower.StepDone()
 			die("Error opening proof", err)
 		}
-		defer proofFile.Close()
+		defer closeCloser(proofFile)
 		proofGzip, err := gzip.NewReader(proofFile)
 		if err != nil {
 			follower.StepDone()
 			die("Error reading proof data", err)
 		}
-		defer proofGzip.Close()
+		defer closeCloser(proofGzip)
 		proofDecoder := json.NewDecoder(proofGzip)
 		var proof keyproof.ValidKeyProof
 		err = proofDecoder.Decode(&proof)
@@ -104,6 +105,12 @@ The keyverify command verifies proofs of validity for IRMA issuer keys. By defau
 			follower.finalEvents <- setFinalMessage{"Proof is valid"}
 		}
 	},
+}
+
+func closeCloser(c io.Closer) {
+	if err := c.Close(); err != nil {
+		die("", err)
+	}
 }
 
 func lastPrivateKeyIndex(path string) (counter int) {
