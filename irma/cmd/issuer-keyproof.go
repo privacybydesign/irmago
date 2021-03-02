@@ -1,20 +1,20 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"time"
-	"path/filepath"
-	"strconv"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/keyproof"
-	"github.com/privacybydesign/irmago/internal/fs"
-	"github.com/spf13/cobra"
+	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/sietseringers/cobra"
 )
 
 type stepStartMessage struct {
@@ -150,7 +150,7 @@ func startLogFollower() *logFollower {
 var issuerKeyproofCmd = &cobra.Command{
 	Use:   "keyproof [path]",
 	Short: "Generate proof of correct generation for an IRMA issuer keypair",
-	Long:  `Generate proof of correct generation for an IRMA issuer keypair
+	Long: `Generate proof of correct generation for an IRMA issuer keypair
 
 The keyproof command generates a proof that an issuer key was generated correctly. By default, it generates a proof for the newest private key in the PrivateKeys folder, and then stores the proof in the Proofs folder.`,
 	Args: cobra.MaximumNArgs(1),
@@ -173,7 +173,7 @@ The keyproof command generates a proof that an issuer key was generated correctl
 				return err
 			}
 		}
-		if err = fs.AssertPathExists(path); err != nil {
+		if err = common.AssertPathExists(path); err != nil {
 			return errors.WrapPrefix(err, "Nonexisting path specified", 0)
 		}
 
@@ -195,7 +195,7 @@ The keyproof command generates a proof that an issuer key was generated correctl
 		// Prepare storage for proof if needed
 		if prooffile == "" {
 			proofpath := filepath.Join(path, "Proofs")
-			if err = fs.EnsureDirectoryExists(proofpath); err != nil {
+			if err = common.EnsureDirectoryExists(proofpath); err != nil {
 				return errors.WrapPrefix(err, "Failed to create"+proofpath, 0)
 			}
 			prooffile = filepath.Join(proofpath, strconv.Itoa(int(counter))+".json.gz")
@@ -208,7 +208,7 @@ The keyproof command generates a proof that an issuer key was generated correctl
 		}
 
 		// Try to read private key
-		sk, err := gabi.NewPrivateKeyFromFile(privkeyfile)
+		sk, err := gabi.NewPrivateKeyFromFile(privkeyfile, false)
 		if err != nil {
 			return errors.WrapPrefix(err, "Could not read private key", 0)
 		}
@@ -217,7 +217,7 @@ The keyproof command generates a proof that an issuer key was generated correctl
 		if pk.N.Cmp(new(big.Int).Mul(sk.P, sk.Q)) != 0 {
 			return errors.New("Private and public key do not match")
 		}
-		
+
 		// Validate that the key is amenable to proving
 		ConstEight := big.NewInt(8)
 		ConstOne := big.NewInt(1)
@@ -230,25 +230,25 @@ The keyproof command generates a proof that an issuer key was generated correctl
 			PMod.Cmp(QMod) == 0 || PPrimeMod.Cmp(QPrimeMod) == 0 {
 			return errors.New("Private key not amenable to proving")
 		}
-		
+
 		// Open proof file for writing
 		proofOut, err := os.Create(prooffile)
 		if err != nil {
 			return errors.WrapPrefix(err, "Error opening proof file for writing", 0)
 		}
 		defer proofOut.Close()
-		
+
 		// Wrap it for gzip compression
 		proofWriter := gzip.NewWriter(proofOut)
 		defer proofWriter.Close()
-		
+
 		// Start log follower
 		follower := startLogFollower()
 		defer func() {
 			follower.quitEvents <- quitMessage{}
 			<-follower.finished
 		}()
-		
+
 		// Build the proof
 		s := keyproof.NewValidKeyProofStructure(pk.N, pk.Z, pk.S, pk.R)
 		proof := s.BuildProof(sk.PPrime, sk.QPrime)
@@ -261,7 +261,7 @@ The keyproof command generates a proof that an issuer key was generated correctl
 		if err != nil {
 			return errors.WrapPrefix(err, "Could not write proof", 0)
 		}
-		
+
 		return nil
 	},
 }
@@ -269,7 +269,7 @@ The keyproof command generates a proof that an issuer key was generated correctl
 var issuerKeyvalidCmd = &cobra.Command{
 	Use:   "keyvalid [path]",
 	Short: "Verify validity proof for an IRMA issuer key",
-	Long:  `Verify the proof that an IRMA issuer key is valid.
+	Long: `Verify the proof that an IRMA issuer key is valid.
 
 The keyvalid command verifies proofs of validity for IRMA issuer keys. By default, it verifies the newest proof in the Proofs folder, matching it to the corresponding key in PublicKeys.`,
 	Args: cobra.MaximumNArgs(1),
@@ -278,7 +278,7 @@ The keyvalid command verifies proofs of validity for IRMA issuer keys. By defaul
 		counter, _ := flags.GetUint("index")
 		pubkeyfile, _ := flags.GetString("publickey")
 		prooffile, _ := flags.GetString("proof")
-		
+
 		var err error
 
 		// Determine path for key
@@ -291,7 +291,7 @@ The keyvalid command verifies proofs of validity for IRMA issuer keys. By defaul
 				return err
 			}
 		}
-		if err = fs.AssertPathExists(path); err != nil {
+		if err = common.AssertPathExists(path); err != nil {
 			return errors.WrapPrefix(err, "Nonexisting path specified", 0)
 		}
 
@@ -299,7 +299,7 @@ The keyvalid command verifies proofs of validity for IRMA issuer keys. By defaul
 		if !flags.Changed("index") {
 			counter = uint(lastProofIndex(path))
 		}
-		
+
 		// Fill in pubkey if needed
 		if pubkeyfile == "" {
 			pubkeyfile = filepath.Join(path, "PublicKeys", strconv.Itoa(int(counter))+".xml")
@@ -309,20 +309,20 @@ The keyvalid command verifies proofs of validity for IRMA issuer keys. By defaul
 		if prooffile == "" {
 			prooffile = filepath.Join(path, "Proofs", strconv.Itoa(int(counter))+".json.gz")
 		}
-		
+
 		// Try to read public key
 		pk, err := gabi.NewPublicKeyFromFile(pubkeyfile)
 		if err != nil {
 			return errors.WrapPrefix(err, "Error reading public key", 0)
 		}
-		
+
 		// Start log follower
 		follower := startLogFollower()
 		defer func() {
 			follower.quitEvents <- quitMessage{}
 			<-follower.finished
 		}()
-		
+
 		// Try to read proof
 		follower.StepStart("Reading proofdata", 0)
 		proofFile, err := os.Open(prooffile)
@@ -345,17 +345,17 @@ The keyvalid command verifies proofs of validity for IRMA issuer keys. By defaul
 			return errors.WrapPrefix(err, "Error reading proof data", 0)
 		}
 		follower.StepDone()
-		
+
 		// Construct proof structure
 		s := keyproof.NewValidKeyProofStructure(pk.N, pk.Z, pk.S, pk.R)
-		
+
 		// And use it to validate the proof
 		if !s.VerifyProof(proof) {
 			return errors.New("Proof is invalid!")
 		} else {
 			follower.finalEvents <- setFinalMessage{"Proof is valid"}
 		}
-		
+
 		return nil
 	},
 }
@@ -394,14 +394,14 @@ func lastProofIndex(path string) (counter int) {
 
 func init() {
 	issuerCmd.AddCommand(issuerKeyproofCmd)
-	
+
 	issuerKeyproofCmd.Flags().StringP("privatekey", "s", "", `File to get private key from (default "PrivateKeys/$index.xml")`)
 	issuerKeyproofCmd.Flags().StringP("publickey", "p", "", `File to get public key from (default "PublicKeys/$index.xml")`)
 	issuerKeyproofCmd.Flags().StringP("proof", "o", "", `File to write proof to (default "Proofs/$index.json.gz")`)
 	issuerKeyproofCmd.Flags().UintP("index", "i", 0, "Key index of key to prove (default to latest)")
-	
+
 	issuerCmd.AddCommand(issuerKeyvalidCmd)
-	
+
 	issuerKeyvalidCmd.Flags().StringP("publickey", "p", "", `File of public key to verify (default "PublicKeys/$index.xml")`)
 	issuerKeyvalidCmd.Flags().StringP("proof", "o", "", `File of proof to verify (default "Proofs/$index.json.gz")`)
 	issuerKeyvalidCmd.Flags().UintP("index", "i", 0, "Key index of key to prove (default to latest with proof)")
