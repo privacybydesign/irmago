@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -69,11 +70,7 @@ func printProofStatus(status string, count, limit int, done bool) {
 		tlen = 4
 	}
 
-	fmt.Printf("\r%s", status)
-	for i := 0; i < 60-len(status)-tlen; i++ {
-		fmt.Printf(".")
-	}
-	fmt.Printf("%s", tail)
+	fmt.Printf("\r%s%s%s", status, strings.Repeat(".", 60-len(status)-tlen), tail)
 }
 
 func startLogFollower() *logFollower {
