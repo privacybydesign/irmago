@@ -147,16 +147,16 @@ func startLogFollower() *logFollower {
 	return result
 }
 
-var issuerKeyproofCmd = &cobra.Command{
-	Use:   "keyproof [path]",
+var issuerKeyproveCmd = &cobra.Command{
+	Use:   "keyprove [path]",
 	Short: "Generate proof of correct generation for an IRMA issuer keypair",
-	Long: `Generate proof of correct generation for an IRMA issuer keypair
+	Long: `Generate proof of correct generation for an IRMA issuer keypair.
 
-The keyproof command generates a proof that an issuer key was generated correctly. By default, it generates a proof for the newest private key in the PrivateKeys folder, and then stores the proof in the Proofs folder.`,
+The keyprove command generates a proof that an issuer key was generated correctly. By default, it generates a proof for the newest private key in the PrivateKeys folder, and then stores the proof in the Proofs folder.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		flags := cmd.Flags()
-		counter, _ := flags.GetUint("index")
+		counter, _ := flags.GetUint("counter")
 		pubkeyfile, _ := flags.GetString("publickey")
 		privkeyfile, _ := flags.GetString("privatekey")
 		prooffile, _ := flags.GetString("proof")
@@ -178,7 +178,7 @@ The keyproof command generates a proof that an issuer key was generated correctl
 		}
 
 		// Determine counter if needed
-		if !flags.Changed("index") {
+		if !flags.Changed("counter") {
 			counter = uint(lastPrivateKeyIndex(path))
 		}
 
@@ -266,143 +266,11 @@ The keyproof command generates a proof that an issuer key was generated correctl
 	},
 }
 
-var issuerKeyvalidCmd = &cobra.Command{
-	Use:   "keyvalid [path]",
-	Short: "Verify validity proof for an IRMA issuer key",
-	Long: `Verify the proof that an IRMA issuer key is valid.
-
-The keyvalid command verifies proofs of validity for IRMA issuer keys. By default, it verifies the newest proof in the Proofs folder, matching it to the corresponding key in PublicKeys.`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		flags := cmd.Flags()
-		counter, _ := flags.GetUint("index")
-		pubkeyfile, _ := flags.GetString("publickey")
-		prooffile, _ := flags.GetString("proof")
-
-		var err error
-
-		// Determine path for key
-		var path string
-		if len(args) != 0 {
-			path = args[0]
-		} else {
-			path, err = os.Getwd()
-			if err != nil {
-				return err
-			}
-		}
-		if err = common.AssertPathExists(path); err != nil {
-			return errors.WrapPrefix(err, "Nonexisting path specified", 0)
-		}
-
-		// Determine counter if needed
-		if !flags.Changed("index") {
-			counter = uint(lastProofIndex(path))
-		}
-
-		// Fill in pubkey if needed
-		if pubkeyfile == "" {
-			pubkeyfile = filepath.Join(path, "PublicKeys", strconv.Itoa(int(counter))+".xml")
-		}
-
-		// Fill in proof if needed
-		if prooffile == "" {
-			prooffile = filepath.Join(path, "Proofs", strconv.Itoa(int(counter))+".json.gz")
-		}
-
-		// Try to read public key
-		pk, err := gabi.NewPublicKeyFromFile(pubkeyfile)
-		if err != nil {
-			return errors.WrapPrefix(err, "Error reading public key", 0)
-		}
-
-		// Start log follower
-		follower := startLogFollower()
-		defer func() {
-			follower.quitEvents <- quitMessage{}
-			<-follower.finished
-		}()
-
-		// Try to read proof
-		follower.StepStart("Reading proofdata", 0)
-		proofFile, err := os.Open(prooffile)
-		if err != nil {
-			follower.StepDone()
-			return errors.WrapPrefix(err, "Error opening proof", 0)
-		}
-		defer proofFile.Close()
-		proofGzip, err := gzip.NewReader(proofFile)
-		if err != nil {
-			follower.StepDone()
-			return errors.WrapPrefix(err, "Error reading proof data", 0)
-		}
-		defer proofGzip.Close()
-		proofDecoder := json.NewDecoder(proofGzip)
-		var proof keyproof.ValidKeyProof
-		err = proofDecoder.Decode(&proof)
-		if err != nil {
-			follower.StepDone()
-			return errors.WrapPrefix(err, "Error reading proof data", 0)
-		}
-		follower.StepDone()
-
-		// Construct proof structure
-		s := keyproof.NewValidKeyProofStructure(pk.N, pk.Z, pk.S, pk.R)
-
-		// And use it to validate the proof
-		if !s.VerifyProof(proof) {
-			return errors.New("Proof is invalid!")
-		} else {
-			follower.finalEvents <- setFinalMessage{"Proof is valid"}
-		}
-
-		return nil
-	},
-}
-
-func lastPrivateKeyIndex(path string) (counter int) {
-	matches, _ := filepath.Glob(filepath.Join(path, "PrivateKeys", "*.xml"))
-	for _, match := range matches {
-		filename := filepath.Base(match)
-		c, err := strconv.Atoi(filename[:len(filename)-4])
-		if err != nil {
-			fmt.Println(err.Error())
-			continue
-		}
-		if c > counter {
-			counter = c
-		}
-	}
-	return
-}
-
-func lastProofIndex(path string) (counter int) {
-	matches, _ := filepath.Glob(filepath.Join(path, "Proofs", "*.json.gz"))
-	for _, match := range matches {
-		filename := filepath.Base(match)
-		c, err := strconv.Atoi(filename[:len(filename)-4])
-		if err != nil {
-			fmt.Println(err.Error())
-			continue
-		}
-		if c > counter {
-			counter = c
-		}
-	}
-	return
-}
-
 func init() {
-	issuerCmd.AddCommand(issuerKeyproofCmd)
+	issuerCmd.AddCommand(issuerKeyproveCmd)
 
-	issuerKeyproofCmd.Flags().StringP("privatekey", "s", "", `File to get private key from (default "PrivateKeys/$index.xml")`)
-	issuerKeyproofCmd.Flags().StringP("publickey", "p", "", `File to get public key from (default "PublicKeys/$index.xml")`)
-	issuerKeyproofCmd.Flags().StringP("proof", "o", "", `File to write proof to (default "Proofs/$index.json.gz")`)
-	issuerKeyproofCmd.Flags().UintP("index", "i", 0, "Key index of key to prove (default to latest)")
-
-	issuerCmd.AddCommand(issuerKeyvalidCmd)
-
-	issuerKeyvalidCmd.Flags().StringP("publickey", "p", "", `File of public key to verify (default "PublicKeys/$index.xml")`)
-	issuerKeyvalidCmd.Flags().StringP("proof", "o", "", `File of proof to verify (default "Proofs/$index.json.gz")`)
-	issuerKeyvalidCmd.Flags().UintP("index", "i", 0, "Key index of key to prove (default to latest with proof)")
+	issuerKeyproveCmd.Flags().StringP("privatekey", "s", "", `File to get private key from (default "PrivateKeys/$counter.xml")`)
+	issuerKeyproveCmd.Flags().StringP("publickey", "p", "", `File to get public key from (default "PublicKeys/$counter.xml")`)
+	issuerKeyproveCmd.Flags().StringP("proof", "o", "", `File to write proof to (default "Proofs/$index.json.gz")`)
+	issuerKeyproveCmd.Flags().UintP("counter", "c", 0, "Counter of key to prove (default to latest)")
 }
