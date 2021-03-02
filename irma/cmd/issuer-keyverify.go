@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/keyproof"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -22,7 +21,7 @@ var issuerKeyverifyCmd = &cobra.Command{
 
 The keyverify command verifies proofs of validity for IRMA issuer keys. By default, it verifies the newest proof in the Proofs folder, matching it to the corresponding key in PublicKeys.`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
 		counter, _ := flags.GetUint("counter")
 		pubkeyfile, _ := flags.GetString("publickey")
@@ -37,11 +36,11 @@ The keyverify command verifies proofs of validity for IRMA issuer keys. By defau
 		} else {
 			path, err = os.Getwd()
 			if err != nil {
-				return err
+				die("", err)
 			}
 		}
 		if err = common.AssertPathExists(path); err != nil {
-			return errors.WrapPrefix(err, "Nonexisting path specified", 0)
+			die("Nonexisting path specified", err)
 		}
 
 		// Determine counter if needed
@@ -62,7 +61,7 @@ The keyverify command verifies proofs of validity for IRMA issuer keys. By defau
 		// Try to read public key
 		pk, err := gabi.NewPublicKeyFromFile(pubkeyfile)
 		if err != nil {
-			return errors.WrapPrefix(err, "Error reading public key", 0)
+			die("Error reading public key", err)
 		}
 
 		// Start log follower
@@ -77,13 +76,13 @@ The keyverify command verifies proofs of validity for IRMA issuer keys. By defau
 		proofFile, err := os.Open(prooffile)
 		if err != nil {
 			follower.StepDone()
-			return errors.WrapPrefix(err, "Error opening proof", 0)
+			die("Error opening proof", err)
 		}
 		defer proofFile.Close()
 		proofGzip, err := gzip.NewReader(proofFile)
 		if err != nil {
 			follower.StepDone()
-			return errors.WrapPrefix(err, "Error reading proof data", 0)
+			die("Error reading proof data", err)
 		}
 		defer proofGzip.Close()
 		proofDecoder := json.NewDecoder(proofGzip)
@@ -91,7 +90,7 @@ The keyverify command verifies proofs of validity for IRMA issuer keys. By defau
 		err = proofDecoder.Decode(&proof)
 		if err != nil {
 			follower.StepDone()
-			return errors.WrapPrefix(err, "Error reading proof data", 0)
+			die("Error reading proof data", err)
 		}
 		follower.StepDone()
 
@@ -100,12 +99,10 @@ The keyverify command verifies proofs of validity for IRMA issuer keys. By defau
 
 		// And use it to validate the proof
 		if !s.VerifyProof(proof) {
-			return errors.New("Proof is invalid!")
+			die("Proof is invalid!", nil)
 		} else {
 			follower.finalEvents <- setFinalMessage{"Proof is valid"}
 		}
-
-		return nil
 	},
 }
 

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/keyproof"
@@ -151,7 +150,7 @@ var issuerKeyproveCmd = &cobra.Command{
 
 The keyprove command generates a proof that an issuer key was generated correctly. By default, it generates a proof for the newest private key in the PrivateKeys folder, and then stores the proof in the Proofs folder.`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
 		counter, _ := flags.GetUint("counter")
 		pubkeyfile, _ := flags.GetString("publickey")
@@ -167,11 +166,11 @@ The keyprove command generates a proof that an issuer key was generated correctl
 		} else {
 			path, err = os.Getwd()
 			if err != nil {
-				return err
+				die("", err)
 			}
 		}
 		if err = common.AssertPathExists(path); err != nil {
-			return errors.WrapPrefix(err, "Nonexisting path specified", 0)
+			die("Nonexisting path specified", err)
 		}
 
 		// Determine counter if needed
@@ -192,18 +191,18 @@ The keyprove command generates a proof that an issuer key was generated correctl
 		// Try to read public key
 		pk, err := gabi.NewPublicKeyFromFile(pubkeyfile)
 		if err != nil {
-			return errors.WrapPrefix(err, "Could not read public key", 0)
+			die("Could not read public key", err)
 		}
 
 		// Try to read private key
 		sk, err := gabi.NewPrivateKeyFromFile(privkeyfile, false)
 		if err != nil {
-			return errors.WrapPrefix(err, "Could not read private key", 0)
+			die("Could not read private key", err)
 		}
 
 		// Validate that they match
 		if pk.N.Cmp(new(big.Int).Mul(sk.P, sk.Q)) != 0 {
-			return errors.New("Private and public key do not match")
+			die("Private and public key do not match", nil)
 		}
 
 		// Validate that the key is amenable to proving
@@ -216,14 +215,14 @@ The keyprove command generates a proof that an issuer key was generated correctl
 		if PMod.Cmp(ConstOne) == 0 || QMod.Cmp(ConstOne) == 0 ||
 			PPrimeMod.Cmp(ConstOne) == 0 || QPrimeMod.Cmp(ConstOne) == 0 ||
 			PMod.Cmp(QMod) == 0 || PPrimeMod.Cmp(QPrimeMod) == 0 {
-			return errors.New("Private key not amenable to proving")
+			die("Private key not amenable to proving", nil)
 		}
 
 		// Prepare storage for proof if needed
 		if prooffile == "" {
 			proofpath := filepath.Join(path, "Proofs")
 			if err = common.EnsureDirectoryExists(proofpath); err != nil {
-				return errors.WrapPrefix(err, "Failed to create"+proofpath, 0)
+				die("Failed to create"+proofpath, err)
 			}
 			prooffile = filepath.Join(proofpath, strconv.Itoa(int(counter))+".json.gz")
 		}
@@ -231,7 +230,7 @@ The keyprove command generates a proof that an issuer key was generated correctl
 		// Open proof file for writing
 		proofOut, err := os.Create(prooffile)
 		if err != nil {
-			return errors.WrapPrefix(err, "Error opening proof file for writing", 0)
+			die("Error opening proof file for writing", err)
 		}
 		defer proofOut.Close()
 
@@ -256,10 +255,8 @@ The keyprove command generates a proof that an issuer key was generated correctl
 		err = proofEncoder.Encode(proof)
 		follower.StepDone()
 		if err != nil {
-			return errors.WrapPrefix(err, "Could not write proof", 0)
+			die("Could not write proof", err)
 		}
-
-		return nil
 	},
 }
 
