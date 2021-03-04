@@ -430,7 +430,7 @@ func (conf *Configuration) reinstallSchemeFromRemote(scheme Scheme) error {
 	if err = scheme.delete(conf); err != nil {
 		return err
 	}
-	return conf.installScheme(scheme.url(), pkbts, scheme.path())
+	return conf.installScheme(scheme.url(), pkbts, filepath.Base(scheme.path()))
 }
 
 // newSchemeDir returns the name of a newly created directory into which a scheme can be installed:
@@ -1329,10 +1329,10 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 	// Verify all requestors
 	for _, requestor := range requestors {
 		if scheme.Demo && len(requestor.Hostnames) > 0 {
-			return errors.New("Demo requestor scheme has hostnames: only allowed for non-demo schemes"), SchemeManagerStatusParsingError
+			return errors.New("Demo requestor has hostnames: only allowed for non-demo schemes"), SchemeManagerStatusParsingError
 		}
 		if requestor.ID.RequestorSchemeIdentifier() != scheme.ID {
-			return errors.Errorf("requestor scheme %s has incorrect ID", requestor.ID), SchemeManagerStatusParsingError
+			return errors.Errorf("requestor %s has incorrect ID", requestor.ID), SchemeManagerStatusParsingError
 		}
 		if requestor.Logo != nil {
 			if err, status := scheme.checkLogo(conf, *requestor.Logo); err != nil {

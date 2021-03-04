@@ -139,9 +139,18 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// check that restoring works
 	err = conf.ParseOrRestoreFolder()
 	require.NoError(t, err)
 	require.Empty(t, conf.DisabledSchemeManagers)
+
+	// switch to correct assets, and parse again to check that ParseOrRestoreFolder
+	// left the folder in a consistent state
+	conf.assets = filepath.Join("testdata", "irma_configuration")
+	err = conf.ParseFolder()
+	require.NoError(t, err)
+	require.Empty(t, conf.DisabledSchemeManagers)
+
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 }
@@ -165,6 +174,12 @@ func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	err = conf.ParseOrRestoreFolder()
 	require.NoError(t, err)
 	require.Empty(t, conf.DisabledSchemeManagers)
+
+	// parse again to check that ParseOrRestoreFolder left the folder in a consistent state
+	err = conf.ParseFolder()
+	require.NoError(t, err)
+	require.Empty(t, conf.DisabledSchemeManagers)
+
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 	require.Contains(t, conf.RequestorSchemes, NewRequestorSchemeIdentifier("test-requestors"))
