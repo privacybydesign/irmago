@@ -18,11 +18,14 @@ import (
 )
 
 var issuerKeyproveCmd = &cobra.Command{
-	Use:   "keyprove [path]",
-	Short: "Generate proof of correct generation for an IRMA issuer keypair",
-	Long: `Generate proof of correct generation for an IRMA issuer keypair.
+	Use:   "keyprove [<path>]",
+	Short: "Generate validity proof for an IRMA issuer keypair",
+	Long: `Generate validity proof for an IRMA issuer keypair.
 
-The keyprove command generates a proof that an issuer key was generated correctly. By default, it generates a proof for the newest private key in the PrivateKeys folder, and then stores the proof in the Proofs folder.`,
+The keyprove command generates a proof that an issuer private/public keypair was generated
+correctly. By default, it acts on the newest keypair in the <path>/PrivateKeys and <path>/PublicKeys
+folders, and then stores the proof in the <path>/Proofs folder. If not specified, <path> is taken to
+be the current working directory.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
@@ -137,10 +140,10 @@ The keyprove command generates a proof that an issuer key was generated correctl
 func init() {
 	issuerCmd.AddCommand(issuerKeyproveCmd)
 
-	issuerKeyproveCmd.Flags().StringP("privatekey", "s", "", `File to get private key from (default "PrivateKeys/$counter.xml")`)
-	issuerKeyproveCmd.Flags().StringP("publickey", "p", "", `File to get public key from (default "PublicKeys/$counter.xml")`)
-	issuerKeyproveCmd.Flags().StringP("proof", "o", "", `File to write proof to (default "Proofs/$index.json.gz")`)
-	issuerKeyproveCmd.Flags().UintP("counter", "c", 0, "Counter of key to prove (default to latest)")
+	issuerKeyproveCmd.Flags().StringP("privatekey", "s", "", `File to get private key from (default "<path>/PrivateKeys/$counter.xml")`)
+	issuerKeyproveCmd.Flags().StringP("publickey", "p", "", `File to get public key from (default "<path>/PublicKeys/$counter.xml")`)
+	issuerKeyproveCmd.Flags().StringP("proof", "o", "", `File to write proof to (default "<path>/Proofs/$index.json.gz")`)
+	issuerKeyproveCmd.Flags().UintP("counter", "c", 0, "Counter of key to prove (defaults to latest)")
 }
 
 func lastPrivateKeyIndex(path string) (counter int) {

@@ -16,11 +16,13 @@ import (
 )
 
 var issuerKeyverifyCmd = &cobra.Command{
-	Use:   "keyverify [path]",
+	Use:   "keyverify [<path>]",
 	Short: "Verify validity proof for an IRMA issuer keypair",
 	Long: `Verify validity proof for an IRMA issuer keypair.
 
-The keyverify command verifies proofs of validity for IRMA issuer keys. By default, it verifies the newest proof in the Proofs folder, matching it to the corresponding key in PublicKeys.`,
+The keyverify command verifies a proof of validity for an IRMA issuer private/public keypair. By
+default, it verifies the newest proof in the <path>/Proofs folder, matching it to the corresponding
+key in <path>/PublicKeys. If not specified, <path> is taken to be the current working directory.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
@@ -132,7 +134,7 @@ func lastProofIndex(path string) (counter int) {
 func init() {
 	issuerCmd.AddCommand(issuerKeyverifyCmd)
 
-	issuerKeyverifyCmd.Flags().StringP("publickey", "p", "", `File of public key to verify (default "PublicKeys/$index.xml")`)
-	issuerKeyverifyCmd.Flags().StringP("proof", "o", "", `File of proof to verify (default "Proofs/$counter.json.gz")`)
-	issuerKeyverifyCmd.Flags().UintP("counter", "c", 0, "Counter of key to verify (default to latest with proof)")
+	issuerKeyverifyCmd.Flags().StringP("publickey", "p", "", `File of public key to verify (default "<path>/PublicKeys/$index.xml")`)
+	issuerKeyverifyCmd.Flags().StringP("proof", "o", "", `File of proof to verify (default "<path>/Proofs/$counter.json.gz")`)
+	issuerKeyverifyCmd.Flags().UintP("counter", "c", 0, "Counter of key to verify (defaults to latest with proof)")
 }
