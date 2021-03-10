@@ -17,128 +17,6 @@ import (
 	"github.com/sietseringers/cobra"
 )
 
-type stepStartMessage struct {
-	desc          string
-	intermediates int
-}
-type stepDoneMessage struct{}
-type tickMessage struct{}
-type quitMessage struct{}
-type finishMessage struct{}
-type setFinalMessage struct {
-	message string
-}
-
-type logFollower struct {
-	stepStartEvents chan<- stepStartMessage
-	stepDoneEvents  chan<- stepDoneMessage
-	tickEvents      chan<- tickMessage
-	quitEvents      chan<- quitMessage
-	finalEvents     chan<- setFinalMessage
-	finished        <-chan finishMessage
-}
-
-func (l *logFollower) StepStart(desc string, intermediates int) {
-	l.stepStartEvents <- stepStartMessage{desc, intermediates}
-}
-
-func (l *logFollower) StepDone() {
-	l.stepDoneEvents <- stepDoneMessage{}
-}
-
-func (l *logFollower) Tick() {
-	l.tickEvents <- tickMessage{}
-}
-
-func printProofStatus(status string, count, limit int, done bool) {
-	var tail string
-	if done {
-		tail = "done"
-	} else if limit > 0 {
-		tail = fmt.Sprintf("%v/%v", count, limit)
-	} else {
-		tail = ""
-	}
-
-	tlen := len(tail)
-	if tlen == 0 {
-		tlen = 4
-	}
-
-	fmt.Printf("\r%s%s%s", status, strings.Repeat(".", 60-len(status)-tlen), tail)
-}
-
-func startLogFollower() *logFollower {
-	var result = new(logFollower)
-
-	starts := make(chan stepStartMessage)
-	dones := make(chan stepDoneMessage)
-	ticks := make(chan tickMessage)
-	quit := make(chan quitMessage)
-	finished := make(chan finishMessage)
-	finalmessage := make(chan setFinalMessage)
-
-	result.stepStartEvents = starts
-	result.stepDoneEvents = dones
-	result.tickEvents = ticks
-	result.quitEvents = quit
-	result.finished = finished
-	result.finalEvents = finalmessage
-
-	go func() {
-		doneMissing := 0
-		curStatus := ""
-		curCount := 0
-		curLimit := 0
-		curDone := true
-		finalMessage := ""
-		ticker := time.NewTicker(time.Second / 4)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticks:
-				curCount++
-			case <-dones:
-				if doneMissing > 0 {
-					doneMissing--
-					continue // Swallow quietly
-				} else {
-					curDone = true
-					printProofStatus(curStatus, curCount, curLimit, true)
-					fmt.Printf("\n")
-				}
-			case stepstart := <-starts:
-				if !curDone {
-					printProofStatus(curStatus, curCount, curLimit, true)
-					fmt.Printf("\n")
-					doneMissing++
-				}
-				curDone = false
-				curCount = 0
-				curLimit = stepstart.intermediates
-				curStatus = stepstart.desc
-			case messageevent := <-finalmessage:
-				finalMessage = messageevent.message
-			case <-quit:
-				if finalMessage != "" {
-					fmt.Printf("%s\n", finalMessage)
-				}
-				finished <- finishMessage{}
-				return
-			case <-ticker.C:
-				if !curDone {
-					printProofStatus(curStatus, curCount, curLimit, false)
-				}
-			}
-		}
-	}()
-
-	keyproof.Follower = result
-
-	return result
-}
-
 var issuerKeyproveCmd = &cobra.Command{
 	Use:   "keyprove [path]",
 	Short: "Generate proof of correct generation for an IRMA issuer keypair",
@@ -263,4 +141,142 @@ func init() {
 	issuerKeyproveCmd.Flags().StringP("publickey", "p", "", `File to get public key from (default "PublicKeys/$counter.xml")`)
 	issuerKeyproveCmd.Flags().StringP("proof", "o", "", `File to write proof to (default "Proofs/$index.json.gz")`)
 	issuerKeyproveCmd.Flags().UintP("counter", "c", 0, "Counter of key to prove (default to latest)")
+}
+
+func lastPrivateKeyIndex(path string) (counter int) {
+	matches, _ := filepath.Glob(filepath.Join(path, "PrivateKeys", "*.xml"))
+	for _, match := range matches {
+		filename := filepath.Base(match)
+		c, err := strconv.Atoi(filename[:len(filename)-4])
+		if err != nil {
+			fmt.Println(err.Error())
+			continue
+		}
+		if c > counter {
+			counter = c
+		}
+	}
+	return
+}
+
+type stepStartMessage struct {
+	desc          string
+	intermediates int
+}
+type stepDoneMessage struct{}
+type tickMessage struct{}
+type quitMessage struct{}
+type finishMessage struct{}
+type setFinalMessage struct {
+	message string
+}
+
+type logFollower struct {
+	stepStartEvents chan<- stepStartMessage
+	stepDoneEvents  chan<- stepDoneMessage
+	tickEvents      chan<- tickMessage
+	quitEvents      chan<- quitMessage
+	finalEvents     chan<- setFinalMessage
+	finished        <-chan finishMessage
+}
+
+func (l *logFollower) StepStart(desc string, intermediates int) {
+	l.stepStartEvents <- stepStartMessage{desc, intermediates}
+}
+
+func (l *logFollower) StepDone() {
+	l.stepDoneEvents <- stepDoneMessage{}
+}
+
+func (l *logFollower) Tick() {
+	l.tickEvents <- tickMessage{}
+}
+
+func printProofStatus(status string, count, limit int, done bool) {
+	var tail string
+	if done {
+		tail = "done"
+	} else if limit > 0 {
+		tail = fmt.Sprintf("%v/%v", count, limit)
+	} else {
+		tail = ""
+	}
+
+	tlen := len(tail)
+	if tlen == 0 {
+		tlen = 4
+	}
+
+	fmt.Printf("\r%s%s%s", status, strings.Repeat(".", 60-len(status)-tlen), tail)
+}
+
+func startLogFollower() *logFollower {
+	var result = new(logFollower)
+
+	starts := make(chan stepStartMessage)
+	dones := make(chan stepDoneMessage)
+	ticks := make(chan tickMessage)
+	quit := make(chan quitMessage)
+	finished := make(chan finishMessage)
+	finalmessage := make(chan setFinalMessage)
+
+	result.stepStartEvents = starts
+	result.stepDoneEvents = dones
+	result.tickEvents = ticks
+	result.quitEvents = quit
+	result.finished = finished
+	result.finalEvents = finalmessage
+
+	go func() {
+		doneMissing := 0
+		curStatus := ""
+		curCount := 0
+		curLimit := 0
+		curDone := true
+		finalMessage := ""
+		ticker := time.NewTicker(time.Second / 4)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticks:
+				curCount++
+			case <-dones:
+				if doneMissing > 0 {
+					doneMissing--
+					continue // Swallow quietly
+				} else {
+					curDone = true
+					printProofStatus(curStatus, curCount, curLimit, true)
+					fmt.Printf("\n")
+				}
+			case stepstart := <-starts:
+				if !curDone {
+					printProofStatus(curStatus, curCount, curLimit, true)
+					fmt.Printf("\n")
+					doneMissing++
+				}
+				curDone = false
+				curCount = 0
+				curLimit = stepstart.intermediates
+				curStatus = stepstart.desc
+			case messageevent := <-finalmessage:
+				finalMessage = messageevent.message
+			case <-quit:
+				if finalMessage != "" {
+					fmt.Printf("%s\n", finalMessage)
+				}
+				finished <- finishMessage{}
+				return
+			case <-ticker.C:
+				if !curDone {
+					printProofStatus(curStatus, curCount, curLimit, false)
+				}
+			}
+		}
+	}()
+
+	keyproof.Follower = result
+
+	return result
 }

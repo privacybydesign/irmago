@@ -113,22 +113,6 @@ func closeCloser(c io.Closer) {
 	}
 }
 
-func lastPrivateKeyIndex(path string) (counter int) {
-	matches, _ := filepath.Glob(filepath.Join(path, "PrivateKeys", "*.xml"))
-	for _, match := range matches {
-		filename := filepath.Base(match)
-		c, err := strconv.Atoi(filename[:len(filename)-4])
-		if err != nil {
-			fmt.Println(err.Error())
-			continue
-		}
-		if c > counter {
-			counter = c
-		}
-	}
-	return
-}
-
 func lastProofIndex(path string) (counter int) {
 	matches, _ := filepath.Glob(filepath.Join(path, "Proofs", "*.json.gz"))
 	for _, match := range matches {
