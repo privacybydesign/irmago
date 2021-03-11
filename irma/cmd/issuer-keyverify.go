@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/keyproof"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sietseringers/cobra"
@@ -98,7 +99,14 @@ key in <path>/PublicKeys. If not specified, <path> is taken to be the current wo
 		follower.StepDone()
 
 		// Construct proof structure
-		s := keyproof.NewValidKeyProofStructure(pk.N, pk.Z, pk.S, pk.R)
+		bases := append([]*big.Int{pk.Z, pk.S})
+		if pk.G != nil {
+			bases = append(bases, pk.G)
+		}
+		if pk.H != nil {
+			bases = append(bases, pk.H)
+		}
+		s := keyproof.NewValidKeyProofStructure(pk.N, append(bases, pk.R...))
 
 		// And use it to validate the proof
 		if !s.VerifyProof(proof) {

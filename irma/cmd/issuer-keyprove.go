@@ -123,7 +123,14 @@ be the current working directory.`,
 		}()
 
 		// Build the proof
-		s := keyproof.NewValidKeyProofStructure(pk.N, pk.Z, pk.S, pk.R)
+		bases := append([]*big.Int{pk.Z, pk.S})
+		if pk.G != nil {
+			bases = append(bases, pk.G)
+		}
+		if pk.H != nil {
+			bases = append(bases, pk.H)
+		}
+		s := keyproof.NewValidKeyProofStructure(pk.N, append(bases, pk.R...))
 		proof := s.BuildProof(sk.PPrime, sk.QPrime)
 
 		// And write it to file
