@@ -82,17 +82,9 @@ be the current working directory.`,
 			die("Private and public key do not match", nil)
 		}
 
-		// Validate that the key is amenable to proving
-		ConstEight := big.NewInt(8)
-		ConstOne := big.NewInt(1)
-		PMod := new(big.Int).Mod(sk.P, ConstEight)
-		QMod := new(big.Int).Mod(sk.Q, ConstEight)
-		PPrimeMod := new(big.Int).Mod(sk.PPrime, ConstEight)
-		QPrimeMod := new(big.Int).Mod(sk.QPrime, ConstEight)
-		if PMod.Cmp(ConstOne) == 0 || QMod.Cmp(ConstOne) == 0 ||
-			PPrimeMod.Cmp(ConstOne) == 0 || QPrimeMod.Cmp(ConstOne) == 0 ||
-			PMod.Cmp(QMod) == 0 || PPrimeMod.Cmp(QPrimeMod) == 0 {
-			die("Private key not amenable to proving", nil)
+		// Validate that the key is eligble to proving
+		if !keyproof.CanProve(sk.PPrime, sk.QPrime) {
+			die("Private key not eligible to proving", nil)
 		}
 
 		// Prepare storage for proof if needed
