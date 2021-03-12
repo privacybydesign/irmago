@@ -23,7 +23,10 @@ var issuerKeyverifyCmd = &cobra.Command{
 
 The keyverify command verifies a proof of validity for an IRMA issuer private/public keypair. By
 default, it verifies the newest proof in the <path>/Proofs folder, matching it to the corresponding
-key in <path>/PublicKeys. If not specified, <path> is taken to be the current working directory.`,
+key in <path>/PublicKeys. If not specified, <path> is taken to be the current working directory.
+
+On machines of 2 - 3 GHz verification will take some 5 - 15 minutes, during which CPU usage will be
+100% most of the time. Up to 8 GB RAM may be used.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()

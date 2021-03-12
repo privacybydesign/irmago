@@ -25,7 +25,11 @@ var issuerKeyproveCmd = &cobra.Command{
 The keyprove command generates a proof that an issuer private/public keypair was generated
 correctly. By default, it acts on the newest keypair in the <path>/PrivateKeys and <path>/PublicKeys
 folders, and then stores the proof in the <path>/Proofs folder. If not specified, <path> is taken to
-be the current working directory.`,
+be the current working directory.
+
+For 2048 bit keys, keyprove will output a proof of about 700 MB. On machines of 2 - 3 GHz generating
+will take some 5 - 15 minutes, during which CPU usage will be 100% most of the time. Up to 8 GB RAM
+may be used.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
