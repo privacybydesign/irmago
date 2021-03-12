@@ -25,7 +25,7 @@ require (
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
-	github.com/privacybydesign/gabi v0.0.0-20200823153621-467696543652
+	github.com/privacybydesign/gabi v0.0.0-20210311130659-b4e094b964d8
 	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819
