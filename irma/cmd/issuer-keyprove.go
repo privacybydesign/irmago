@@ -165,26 +165,28 @@ func lastPrivateKeyIndex(path string) (counter int) {
 	return
 }
 
-type stepStartMessage struct {
-	desc          string
-	intermediates int
-}
-type stepDoneMessage struct{}
-type tickMessage struct{}
-type quitMessage struct{}
-type finishMessage struct{}
-type setFinalMessage struct {
-	message string
-}
+type (
+	stepStartMessage struct {
+		desc          string
+		intermediates int
+	}
+	stepDoneMessage struct{}
+	tickMessage     struct{}
+	quitMessage     struct{}
+	finishMessage   struct{}
+	setFinalMessage struct {
+		message string
+	}
 
-type logFollower struct {
-	stepStartEvents chan<- stepStartMessage
-	stepDoneEvents  chan<- stepDoneMessage
-	tickEvents      chan<- tickMessage
-	quitEvents      chan<- quitMessage
-	finalEvents     chan<- setFinalMessage
-	finished        <-chan finishMessage
-}
+	logFollower struct {
+		stepStartEvents chan<- stepStartMessage
+		stepDoneEvents  chan<- stepDoneMessage
+		tickEvents      chan<- tickMessage
+		quitEvents      chan<- quitMessage
+		finalEvents     chan<- setFinalMessage
+		finished        <-chan finishMessage
+	}
+)
 
 func (l *logFollower) StepStart(desc string, intermediates int) {
 	l.stepStartEvents <- stepStartMessage{desc, intermediates}
