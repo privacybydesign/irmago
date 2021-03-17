@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2021-03-17
+### Fixed
+* Bug causing scheme updating to fail if OS temp dir is on other file system than the schemes
+* Prevent session result JWTs from being expired immediately if no expiry is specified is set in the session request; instead in that case they expire after two minutes
+* When POSTing session result to the `callbackUrl` specified in session request, set `Content-Type` to `application/json` for JSON messages
+* Fixed panic during scheme downloading on Windows
+* Correctly decode randomblind attributes when verifying disclosures/signatures
+
+### Added
+* Add request URL to log entry when IRMA server encounters an error (404 or otherwise) during HTTP request handling
+* Add flag `--allow-unsigned-callbacks` to IRMA server to allow `callbackUrl` in session requests when no JWT private key is installed
+* Add flag `--augment-client-return-url` to IRMA server to enable augmenting client return URL with server session token as query parameter (needs to be additionally enabled in session requests)
+* Add new `irma issuer keyprove` and `irma issuer keyverify` commands to generate and verify zero-knowledge proofs of correct generation of issuer private/public keypairs
+
+### Changed
+* Clarify warning and suppress stacktrace in IRMA server log entry in case `/statusevents` is hit while SSE is disabled
+* Force Unix (LF) line endings in schemes during scheme signing for consistency
+* Moved revocation commands from `irma issuer revocation` to just `irma issuer`
+
 ## [0.6.1] - 2020-12-15
 ### Changed
 * Change endpoint to which [IRMA server admin email address](https://irma.app/docs/email/) is sent and include IRMA server version number
@@ -136,6 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.7.0]: https://github.com/privacybydesign/irmago/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/privacybydesign/irmago/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/privacybydesign/irmago/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/privacybydesign/irmago/compare/v0.5.0...v0.5.1
