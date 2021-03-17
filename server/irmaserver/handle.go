@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -284,7 +284,7 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
 	r.Context().Value("session").(*session).handleDelete()
-	w.WriteHeader(200)
+	w.WriteHeader(204)
 }
 
 func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
