@@ -41,6 +41,8 @@ type Configuration struct {
 	RequestorSchemes map[RequestorSchemeIdentifier]*RequestorScheme
 	Requestors       map[string]*RequestorInfo
 
+	IssueWizards map[IssueWizardIdentifier]*IssueWizard
+
 	// DisabledRequestorSchemes keeps track of any error of the requestorscheme if it
 	// did not parse successfully
 	DisabledRequestorSchemes map[RequestorSchemeIdentifier]*SchemeManagerError
@@ -132,23 +134,42 @@ func (conf *Configuration) ParseFolder() (err error) {
 		}
 	}
 
-	// Parse schemes in storage
+	// Since requestor schemes may contain information defined in issuer schemes, first check
+	// what schemes exist so we can parse issuer schemes first.
 	var mgrerr *SchemeManagerError
+	var issuerschemes, requestorschemes []Scheme
 	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
-		_, err := conf.ParseSchemeFolder(dir)
+		scheme, _, err := conf.parseSchemeDescription(dir)
+		if err != nil {
+			return err
+		}
+		switch scheme.typ() {
+		case SchemeTypeIssuer:
+			issuerschemes = append(issuerschemes, scheme)
+		case SchemeTypeRequestor:
+			requestorschemes = append(requestorschemes, scheme)
+		default:
+			return errors.New("unsupported scheme type")
+		}
+		return nil
+	})
+	if err != nil {
+		return
+	}
+
+	// Parse the schemes we found, issuer schemes first
+	for _, scheme := range append(issuerschemes, requestorschemes...) {
+		_, err := conf.ParseSchemeFolder(scheme.path())
 		if err == nil {
-			return nil // OK, do next scheme folder
+			continue // OK, do next scheme folder
 		}
 		// If there is an error, and it is of type SchemeManagerError, return nil
 		// so as to continue parsing other schemes.
 		if e, ok := err.(*SchemeManagerError); ok {
 			mgrerr = e
-			return nil
+			continue
 		}
 		return err // Not a SchemeManagerError? return it & halt parsing now
-	})
-	if err != nil {
-		return
 	}
 
 	if !conf.options.IgnorePrivateKeys && len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
@@ -500,6 +521,7 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.RequestorSchemes = make(map[RequestorSchemeIdentifier]*RequestorScheme)
 	conf.Requestors = make(map[string]*RequestorInfo)
+	conf.IssueWizards = make(map[IssueWizardIdentifier]*IssueWizard)
 	conf.DisabledRequestorSchemes = make(map[RequestorSchemeIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
 	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
@@ -723,7 +745,8 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		name := v.Type().Field(i).Name
-		if field.Type() != reflect.TypeOf(TranslatedString{}) ||
+		translatedString := TranslatedString{}
+		if (field.Type() != reflect.TypeOf(translatedString) && field.Type() != reflect.TypeOf(&translatedString)) ||
 			name == "IssueURL" ||
 			name == "Category" ||
 			name == "FAQIntro" ||
@@ -732,10 +755,21 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 			name == "FAQHowto" {
 			continue
 		}
-		val := field.Interface().(TranslatedString)
-		for _, lang := range validLangs {
-			if _, exists := val[lang]; !exists {
-				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
+		var val TranslatedString
+		if field.Type() == reflect.TypeOf(&translatedString) {
+			tmp := field.Interface().(*TranslatedString)
+			if tmp == nil {
+				return
+			}
+			val = *tmp
+		} else {
+			val = field.Interface().(TranslatedString)
+		}
+
+		// assuming that translations also never should be empty
+		if l := val.validate(); len(l) > 0 {
+			for _, invalidLang := range l {
+				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, invalidLang, name))
 			}
 		}
 	}
@@ -768,6 +802,9 @@ func (conf *Configuration) join(other *Configuration) {
 	}
 	for key, val := range other.Requestors {
 		conf.Requestors[key] = val
+	}
+	for key, val := range other.IssueWizards {
+		conf.IssueWizards[key] = val
 	}
 	for key, val := range other.DisabledRequestorSchemes {
 		conf.DisabledRequestorSchemes[key] = val

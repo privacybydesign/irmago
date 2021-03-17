@@ -19,13 +19,14 @@ type session struct {
 	sync.Mutex
 	locked bool
 
-	action           irma.Action
-	token            string
-	clientToken      string
-	version          *irma.ProtocolVersion
-	rrequest         irma.RequestorRequest
-	request          irma.SessionRequest
-	legacyCompatible bool // if the request is convertible to pre-condiscon format
+	action             irma.Action
+	token              string
+	clientToken        string
+	version            *irma.ProtocolVersion
+	rrequest           irma.RequestorRequest
+	request            irma.SessionRequest
+	legacyCompatible   bool // if the request is convertible to pre-condiscon format
+	implicitDisclosure irma.AttributeConDisCon
 
 	status        server.Status
 	prevStatus    server.Status
@@ -71,7 +72,7 @@ const (
 
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
-	maxProtocolVersion = irma.NewVersion(2, 6)
+	maxProtocolVersion = irma.NewVersion(2, 7)
 )
 
 func (s *memorySessionStore) get(t string) *session {

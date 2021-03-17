@@ -3,6 +3,7 @@ package irma
 import (
 	"crypto/rand"
 	"encoding/json"
+	"encoding/xml"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -138,9 +139,18 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// check that restoring works
 	err = conf.ParseOrRestoreFolder()
 	require.NoError(t, err)
 	require.Empty(t, conf.DisabledSchemeManagers)
+
+	// switch to correct assets, and parse again to check that ParseOrRestoreFolder
+	// left the folder in a consistent state
+	conf.assets = filepath.Join("testdata", "irma_configuration")
+	err = conf.ParseFolder()
+	require.NoError(t, err)
+	require.Empty(t, conf.DisabledSchemeManagers)
+
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 }
@@ -164,6 +174,12 @@ func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	err = conf.ParseOrRestoreFolder()
 	require.NoError(t, err)
 	require.Empty(t, conf.DisabledSchemeManagers)
+
+	// parse again to check that ParseOrRestoreFolder left the folder in a consistent state
+	err = conf.ParseFolder()
+	require.NoError(t, err)
+	require.Empty(t, conf.DisabledSchemeManagers)
+
 	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("irma-demo"))
 	require.Contains(t, conf.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 	require.Contains(t, conf.RequestorSchemes, NewRequestorSchemeIdentifier("test-requestors"))
@@ -797,4 +813,567 @@ func TestPrivateKeyRings(t *testing.T) {
 	require.NoError(t, err)
 	_, err = mergedring.Latest(ru)
 	require.NoError(t, err)
+}
+
+// Helper functions for wizard tests below
+func credid(s string) CredentialTypeIdentifier {
+	return NewCredentialTypeIdentifier(s)
+}
+func credidptr(s string) *CredentialTypeIdentifier {
+	id := credid(s)
+	return &id
+}
+func credinfo(id string) *CredentialInfo {
+	i := credid(id)
+	return &CredentialInfo{
+		SchemeManagerID: i.Root(),
+		IssuerID:        i.IssuerIdentifier().Name(),
+		ID:              i.Name(),
+	}
+}
+func credtype(id string, deps ...string) *CredentialType {
+	i := credid(id)
+	d := CredentialDependencies{{{}}}
+	for _, dep := range deps {
+		d[0][0] = append(d[0][0], credid(dep))
+	}
+	return &CredentialType{
+		SchemeManagerID: i.Root(),
+		IssuerID:        i.IssuerIdentifier().Name(),
+		ID:              i.Name(),
+		Dependencies:    d,
+	}
+}
+func credwizarditem(id string) IssueWizardItem {
+	return IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: credidptr(id)}
+}
+
+func TestWizardDependencies(t *testing.T) {
+	dependencies := CredentialDependencies{
+		{
+			{credid("a.a.a"), credid("a.a.b")},
+			{credid("a.b.a")},
+		},
+		{
+			{credid("b.a.a")},
+			{credid("b.b.a"), credid("b.b.b")},
+		},
+	}
+
+	wizardcontents := dependencies.WizardContents()
+	require.Equal(t,
+		IssueWizardContents{
+			{
+				{credwizarditem("a.a.a"), credwizarditem("a.a.b")},
+				{credwizarditem("a.b.a")},
+			},
+			{
+				{credwizarditem("b.a.a")},
+				{credwizarditem("b.b.a"), credwizarditem("b.b.b")},
+			},
+		},
+		wizardcontents,
+	)
+
+	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
+	for _, discon := range dependencies {
+		for _, con := range discon {
+			for _, cred := range con {
+				conf.CredentialTypes[cred] = credtype(cred.String())
+			}
+		}
+	}
+	tests := []struct {
+		creds  map[CredentialTypeIdentifier]struct{}
+		wizard []IssueWizardItem
+	}{
+		{
+			creds: nil,
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("a.a.a"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("a.b.a"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.b.a"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("b.b.a"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.a.a"),
+			},
+		},
+		{
+			creds: map[CredentialTypeIdentifier]struct{}{credid("b.b.a"): {}, credid("b.b.b"): {}},
+			wizard: []IssueWizardItem{
+				credwizarditem("a.a.a"), credwizarditem("a.a.b"), credwizarditem("b.b.a"), credwizarditem("b.b.b"),
+			},
+		},
+	}
+
+	for _, tst := range tests {
+		require.Equal(t, tst.wizard, wizardcontents.ChoosePath(conf, tst.creds))
+	}
+}
+
+func TestWizardConstructed(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: NewIssueWizardIdentifier("test-requestors.test-requestor.testwizard"),
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.e"),
+				Text:       &TranslatedString{"en": "custom description of credential e"},
+			}}},
+			{{{
+				Type: IssueWizardItemTypeWebsite,
+				URL:  &TranslatedString{"en": "https://example.com"},
+			}}},
+		},
+	}
+
+	contents, err := wizard.Path(conf, nil)
+	require.NoError(t, err)
+	require.Equal(t,
+		[]IssueWizardItem{
+			credwizarditem("scheme.issuer.a"),
+			credwizarditem("scheme.issuer.b"),
+			credwizarditem("scheme.issuer.d"),
+			credwizarditem("scheme.issuer.c"),
+			wizard.Contents[1][0][0],
+			wizard.Contents[2][0][0],
+		},
+		contents,
+	)
+}
+
+func TestWizardFromScheme(t *testing.T) {
+	conf := parseConfiguration(t)
+	id := NewIssueWizardIdentifier("test-requestors.test-requestor.testwizard")
+	wizard := conf.Requestors["localhost"].Wizards[id]
+
+	var expected []IssueWizardItem
+	require.NoError(t, json.Unmarshal(
+		[]byte(`[{"type":"credential","credential":"irma-demo.MijnOverheid.fullName","header":{"en":"Full name","nl":"Volledige naam"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get name data","nl":"Haal naamgegevens op"}},{"type":"credential","credential":"irma-demo.MijnOverheid.singleton","text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."}},{"type":"session","credential":"irma-demo.RU.studentCard","header":{"en":"Student Card","nl":"Studentpas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Student Card","nl":"Haal studentpas op"},"sessionUrl":"https://example.com/getsession"},{"type":"website","credential":"irma-demo.stemmen.stempas","header":{"en":"Voting Card","nl":"Stempas"},"text":{"en":"Lorem ipsum dolor sit amet, consectetur adipiscing elit.","nl":"Lorem ipsum dolor sit amet, consectetur adipiscing elit."},"label":{"en":"Get Voting Card","nl":"Haal stempas op"},"url":{"en":"https://example.com/en","nl":"https://example.com/nl"},"inapp":true}]`),
+		&expected,
+	))
+
+	contents, err := wizard.Path(conf, nil)
+	require.NoError(t, err)
+	require.Equal(t, expected, contents)
+
+	True := true
+	wizard.ExpandDependencies = &True
+	contents, err = wizard.Path(conf, nil)
+	require.NoError(t, err)
+	require.Equal(t,
+		append([]IssueWizardItem{credwizarditem("irma-demo.MijnOverheid.root")}, expected...),
+		contents,
+	)
+}
+
+func TestWizardValidation(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: NewIssueWizardIdentifier("testwizard"),
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.e"),
+				Text:       &TranslatedString{"en": "custom description of credential e"},
+			}}},
+			{{{
+				Type:   IssueWizardItemTypeWebsite,
+				Header: &TranslatedString{"en": "header"},
+				Label:  &TranslatedString{"en": "label"},
+				Text:   &TranslatedString{"en": "text"},
+				URL:    &TranslatedString{"en": "https://example.com"},
+			}}},
+		},
+	}
+
+	require.NoError(t, wizard.Validate(conf))
+}
+
+func TestWizardIncorrectContentsOrder(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: NewIssueWizardIdentifier("testwizard"),
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{{
+				Type:   IssueWizardItemTypeWebsite,
+				Header: &TranslatedString{"en": "header"},
+				Label:  &TranslatedString{"en": "label"},
+				Text:   &TranslatedString{"en": "text"},
+				URL:    &TranslatedString{"en": "https://example.com"},
+			}}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.e"),
+				Text:       &TranslatedString{"en": "custom description of credential e"},
+			}}},
+		},
+	}
+
+	err := wizard.Validate(conf)
+	require.EqualError(t, err, "non-credential types in wizard testwizard should come last")
+}
+
+func TestWizardComplexity(t *testing.T) {
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+			credid("scheme.issuer.f"): credtype("scheme.issuer.f",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.g"): credtype("scheme.issuer.g",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.h"): credtype("scheme.issuer.h",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.i"): credtype("scheme.issuer.i",
+				"scheme.issuer.d",
+			),
+			credid("scheme.issuer.j"): credtype("scheme.issuer.j"),
+		},
+	}
+
+	wizard := IssueWizard{
+		ID: NewIssueWizardIdentifier("testwizard"),
+		Contents: IssueWizardContents{
+			{{
+				credwizarditem("scheme.issuer.c"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.d"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.e"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.f"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.g"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.h"),
+			}},
+			{{
+				credwizarditem("scheme.issuer.i"),
+			}},
+			{{{
+				Type:       IssueWizardItemTypeCredential,
+				Credential: credidptr("scheme.issuer.j"),
+				Text:       &TranslatedString{"en": "custom description of credential j"},
+			}}},
+			{{{
+				Type:   IssueWizardItemTypeWebsite,
+				Header: &TranslatedString{"en": "header"},
+				Label:  &TranslatedString{"en": "label"},
+				Text:   &TranslatedString{"en": "text"},
+				URL:    &TranslatedString{"en": "https://example.com"},
+			}}},
+		},
+	}
+
+	err := wizard.Validate(conf)
+	require.EqualError(t, err, "wizard with wizard ID testwizard too complex")
+}
+
+func TestIssueWizardItemValidation(t *testing.T) {
+	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
+
+	credTypeID := credid("a.a.a")
+	conf.CredentialTypes[credTypeID] = credtype(credTypeID.String())
+	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypeID, Text: &TranslatedString{"en": "text", "nl": "tekst"}}
+	schemeMan := SchemeManager{}
+	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypeID.SchemeManagerIdentifier(): &schemeMan}
+
+	credTypeID2 := credid("a.b.a")
+	conf.CredentialTypes[credTypeID2] = credtype(credTypeID2.String())
+	conf.CredentialTypes[credTypeID].Dependencies = CredentialDependencies{
+		{
+			{credTypeID2},
+		},
+	}
+
+	translation := trivialTranslation("Age limit")
+	conf.CredentialTypes[credTypeID2].FAQSummary = &translation
+
+	require.NoError(t, tester.validate(conf))
+}
+
+func TestIssueWizardFAQSummariesValidation(t *testing.T) {
+	conf := &Configuration{CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{}}
+
+	credTypeID := credid("a.a.a")
+	credTypeID2 := credid("a.b.a")
+	conf.CredentialTypes[credTypeID] = credtype(credTypeID.String())
+	conf.CredentialTypes[credTypeID2] = credtype(credTypeID2.String())
+	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypeID}
+	schemeMan := SchemeManager{}
+	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypeID.SchemeManagerIdentifier(): &schemeMan}
+
+	require.EqualError(t, tester.validate(conf), "FAQSummary missing for wizard item with credential type: a.a.a")
+
+	tester.Text = &TranslatedString{"en": "text"}
+	require.EqualError(t, tester.validate(conf), "Wizard item text field incomplete for item with credential type: a.a.a")
+
+	tester.Text = nil
+	conf.CredentialTypes[credTypeID].FAQSummary = &TranslatedString{"en": "text"}
+	require.EqualError(t, tester.validate(conf), "FAQSummary missing for: a.a.a")
+
+	tester.Text = &TranslatedString{"en": "text", "nl": "tekst"}
+	conf.CredentialTypes[credTypeID].Dependencies = CredentialDependencies{
+		{
+			{credid("a.b.a")},
+		},
+	}
+	require.EqualError(t, tester.validate(conf), "FAQSummary missing for last item in chain: a.a.a, a.b.a")
+}
+
+func TestCircularDependenciesValidation(t *testing.T) {
+	credTypeIDA := credid("scheme.issuer.a")
+	credTypeA := credtype("scheme.issuer.a")
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credTypeIDA: credTypeA,
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.a", "scheme.issuer.b",
+			),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.a",
+			),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d",
+			),
+		},
+	}
+
+	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDA)
+	require.NoError(t, err)
+}
+
+func TestCircularDependenciesError(t *testing.T) {
+	credTypeIDA := credid("scheme.issuer.a")
+	credTypeA := credtype("scheme.issuer.a", "scheme.issuer.b")
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credTypeIDA: credTypeA,
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a",
+			),
+		},
+	}
+
+	err := credTypeA.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDA)
+	require.EqualError(t, err, "No valid dependency branch could be built. There might be a circular dependency.")
+}
+
+func TestDependencyOfOtherSchemeError(t *testing.T) {
+	credTypeIDX := credid("otherScheme.someIssuer.x")
+	credTypeX := credtype("otherScheme.someIssuer.x", "scheme.issuer.a")
+
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credTypeIDX:               credTypeX,
+		},
+	}
+
+	err := credTypeX.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDX)
+	require.EqualError(t, err, "credential type otherScheme.someIssuer.x in scheme otherScheme has dependency outside the scheme: scheme.issuer.a")
+}
+
+func TestDependencyComplexityError(t *testing.T) {
+	credTypeIDZ := credid("scheme.issuer.z")
+	credTypeZ := credtype("scheme.issuer.z", "scheme.issuer.y")
+	conf := &Configuration{
+		CredentialTypes: map[CredentialTypeIdentifier]*CredentialType{
+			credid("scheme.issuer.a"): credtype("scheme.issuer.a"),
+			credid("scheme.issuer.b"): credtype("scheme.issuer.b",
+				"scheme.issuer.a"),
+			credid("scheme.issuer.c"): credtype("scheme.issuer.c",
+				"scheme.issuer.b"),
+			credid("scheme.issuer.d"): credtype("scheme.issuer.d",
+				"scheme.issuer.c"),
+			credid("scheme.issuer.e"): credtype("scheme.issuer.e",
+				"scheme.issuer.d"),
+			credid("scheme.issuer.f"): credtype("scheme.issuer.f",
+				"scheme.issuer.e"),
+			credid("scheme.issuer.g"): credtype("scheme.issuer.g",
+				"scheme.issuer.f"),
+			credid("scheme.issuer.h"): credtype("scheme.issuer.h",
+				"scheme.issuer.g"),
+			credid("scheme.issuer.i"): credtype("scheme.issuer.i",
+				"scheme.issuer.h"),
+			credid("scheme.issuer.j"): credtype("scheme.issuer.j",
+				"scheme.issuer.i"),
+			credid("scheme.issuer.k"): credtype("scheme.issuer.k",
+				"scheme.issuer.j"),
+			credid("scheme.issuer.l"): credtype("scheme.issuer.l",
+				"scheme.issuer.k"),
+			credid("scheme.issuer.m"): credtype("scheme.issuer.m",
+				"scheme.issuer.l"),
+			credid("scheme.issuer.n"): credtype("scheme.issuer.n",
+				"scheme.issuer.m"),
+			credid("scheme.issuer.o"): credtype("scheme.issuer.o",
+				"scheme.issuer.n"),
+			credid("scheme.issuer.p"): credtype("scheme.issuer.p",
+				"scheme.issuer.o"),
+			credid("scheme.issuer.q"): credtype("scheme.issuer.q",
+				"scheme.issuer.p"),
+			credid("scheme.issuer.r"): credtype("scheme.issuer.r",
+				"scheme.issuer.q"),
+			credid("scheme.issuer.s"): credtype("scheme.issuer.s",
+				"scheme.issuer.r"),
+			credid("scheme.issuer.t"): credtype("scheme.issuer.t",
+				"scheme.issuer.s"),
+			credid("scheme.issuer.u"): credtype("scheme.issuer.u",
+				"scheme.issuer.t"),
+			credid("scheme.issuer.v"): credtype("scheme.issuer.v",
+				"scheme.issuer.u"),
+			credid("scheme.issuer.w"): credtype("scheme.issuer.w",
+				"scheme.issuer.v"),
+			credid("scheme.issuer.x"): credtype("scheme.issuer.x",
+				"scheme.issuer.w"),
+			credid("scheme.issuer.y"): credtype("scheme.issuer.y",
+				"scheme.issuer.x"),
+			credTypeIDZ: credTypeZ,
+		},
+	}
+
+	err := credTypeZ.validateDependencies(conf, []CredentialTypeIdentifier{}, credTypeIDZ)
+	require.EqualError(t, err, "dependency tree too complex: scheme.issuer.y, "+
+		"scheme.issuer.x, scheme.issuer.w, scheme.issuer.v, scheme.issuer.u, scheme.issuer.t, "+
+		"scheme.issuer.s, scheme.issuer.r, scheme.issuer.q, scheme.issuer.p, scheme.issuer.o, "+
+		"scheme.issuer.n, scheme.issuer.m, scheme.issuer.l, scheme.issuer.k, scheme.issuer.j, "+
+		"scheme.issuer.i, scheme.issuer.h, scheme.issuer.g, scheme.issuer.f, scheme.issuer.e, "+
+		"scheme.issuer.d, scheme.issuer.c, scheme.issuer.b, scheme.issuer.a")
+}
+
+func TestCredentialDependencies_UnmarshalXML(t *testing.T) {
+	xmlbts := []byte(`<Dependencies>
+		<Or>
+			<And>
+				<CredentialType>a</CredentialType>
+				<CredentialType>b</CredentialType>
+			</And>
+			<And>
+				<CredentialType>c</CredentialType>
+			</And>
+		</Or>
+		<Or>
+			<And>
+				<CredentialType>d</CredentialType>
+			</And>
+			<And>
+				<CredentialType>e</CredentialType>
+				<CredentialType>f</CredentialType>
+			</And>
+		</Or>
+	</Dependencies>`)
+
+	var deps CredentialDependencies
+	require.NoError(t, xml.Unmarshal(xmlbts, &deps))
+
+	require.Equal(t,
+		CredentialDependencies{
+			{
+				{credid("a"), credid("b")},
+				{credid("c")},
+			},
+			{
+				{credid("d")},
+				{credid("e"), credid("f")},
+			},
+		},
+		deps,
+	)
 }

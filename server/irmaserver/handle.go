@@ -3,6 +3,7 @@ package irmaserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -89,7 +90,7 @@ func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
 	return session.status, nil
 }
 
-func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ProofStatus, *irma.RemoteError) {
+func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
 	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
@@ -98,8 +99,12 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	var err error
 	var rerr *irma.RemoteError
 	session.result.Signature = signature
-	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(
-		session.conf.IrmaConfiguration, session.request.(*irma.SignatureRequest))
+
+	// In case of chained sessions, we also expect attributes from previous sessions to be disclosed again.
+	request := session.request.(*irma.SignatureRequest)
+	request.Disclose = append(request.Disclose, session.implicitDisclosure...)
+
+	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
@@ -109,10 +114,14 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 			rerr = session.fail(server.ErrorUnknown, err.Error())
 		}
 	}
-	return &session.result.ProofStatus, rerr
+	return &irma.ServerSessionResponse{
+		SessionType:     irma.ActionSigning,
+		ProtocolVersion: session.version,
+		ProofStatus:     session.result.ProofStatus,
+	}, rerr
 }
 
-func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma.ProofStatus, *irma.RemoteError) {
+func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma.ServerSessionResponse, *irma.RemoteError) {
 	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
@@ -120,8 +129,12 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 
 	var err error
 	var rerr *irma.RemoteError
-	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(
-		session.conf.IrmaConfiguration, session.request.(*irma.DisclosureRequest))
+
+	// In case of chained sessions, we also expect attributes from previous sessions to be disclosed again.
+	request := session.request.(*irma.DisclosureRequest)
+	request.Disclose = append(request.Disclose, session.implicitDisclosure...)
+
+	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
 		session.setStatus(server.StatusDone)
 	} else {
@@ -131,10 +144,15 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 			rerr = session.fail(server.ErrorUnknown, err.Error())
 		}
 	}
-	return &session.result.ProofStatus, rerr
+
+	return &irma.ServerSessionResponse{
+		SessionType:     irma.ActionDisclosing,
+		ProtocolVersion: session.version,
+		ProofStatus:     session.result.ProofStatus,
+	}, rerr
 }
 
-func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) ([]*gabi.IssueSignatureMessage, *irma.RemoteError) {
+func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
 	if session.status != server.StatusConnected {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
 	}
@@ -174,6 +192,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 
 	// Verify all proofs and check disclosed attributes, if any, against request
 	now := time.Now()
+	request.Disclose = append(request.Disclose, session.implicitDisclosure...)
 	session.result.Disclosed, session.result.ProofStatus, err = commitments.Disclosure().VerifyAgainstRequest(
 		session.conf.IrmaConfiguration, request, request.GetContext(), request.GetNonce(nil), pubkeys, &now, false,
 	)
@@ -215,7 +234,86 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 	}
 
 	session.setStatus(server.StatusDone)
-	return sigs, nil
+	return &irma.ServerSessionResponse{
+		SessionType:     irma.ActionIssuing,
+		ProtocolVersion: session.version,
+		ProofStatus:     session.result.ProofStatus,
+		IssueSignatures: sigs,
+	}, nil
+}
+
+func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConDisCon, error) {
+	base := session.rrequest.Base()
+	if base.NextSession == nil {
+		return nil, nil, nil
+	}
+	url := base.NextSession.URL
+	if session.result.Status != server.StatusDone ||
+		session.result.ProofStatus != irma.ProofStatusValid ||
+		session.result.Err != nil {
+		return nil, nil, errors.New("session in invalid state")
+	}
+
+	var res interface{}
+	var err error
+	if session.conf.JwtRSAPrivateKey != nil {
+		res, err = server.ResultJwt(
+			session.result,
+			session.conf.JwtIssuer,
+			base.ResultJwtValidity,
+			session.conf.JwtRSAPrivateKey,
+		)
+	} else {
+		res = session.result
+	}
+
+	var reqbts json.RawMessage
+	err = irma.NewHTTPTransport("", false).Post(url, &reqbts, res)
+	if err != nil {
+		return nil, nil, err
+	}
+	req, err := server.ParseSessionRequest([]byte(reqbts))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Build list of attributes and values that were disclosed in this session
+	// that need to be disclosed again in the next session(s)
+	var disclosed irma.AttributeConDisCon
+	for _, attrlist := range session.result.Disclosed {
+		var con irma.AttributeCon
+		for _, attr := range attrlist {
+			con = append(con, irma.AttributeRequest{
+				Type:  attr.Identifier,
+				Value: attr.RawValue,
+			})
+		}
+		disclosed = append(disclosed, irma.AttributeDisCon{con})
+	}
+
+	return req, disclosed, nil
+}
+
+func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) error {
+	next, disclosed, err := session.nextSession()
+	if err != nil {
+		return err
+	}
+	if next == nil {
+		return nil
+	}
+	qr, token, err := s.StartSession(next, nil)
+	if err != nil {
+		return err
+	}
+
+	// All attributes that were disclosed in the previous session, as well as any attributes
+	// from sessions before that, need to be disclosed in the new session as well
+	newsession := s.sessions.get(token)
+	newsession.implicitDisclosure = disclosed
+	res.NextSession = qr
+
+	return nil
 }
 
 func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request) {
@@ -229,8 +327,17 @@ func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request
 		server.WriteError(w, server.ErrorMalformedInput, err.Error())
 		return
 	}
-	res, rerr := r.Context().Value("session").(*session).handlePostCommitments(commitments)
-	server.WriteResponse(w, res, rerr)
+	session := r.Context().Value("session").(*session)
+	res, rerr := session.handlePostCommitments(commitments)
+	if rerr != nil {
+		server.WriteResponse(w, nil, rerr)
+		return
+	}
+	if err = s.startNext(session, res); err != nil {
+		server.WriteError(w, server.ErrorNextSession, err.Error())
+		return
+	}
+	server.WriteResponse(w, res, nil)
 }
 
 func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +347,7 @@ func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Context().Value("session").(*session)
-	var res interface{}
+	var res *irma.ServerSessionResponse
 	var rerr *irma.RemoteError
 	switch session.action {
 	case irma.ActionDisclosing:
@@ -260,7 +367,15 @@ func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {
 	default:
 		rerr = server.RemoteError(server.ErrorInvalidRequest, "")
 	}
-	server.WriteResponse(w, res, rerr)
+	if rerr != nil {
+		server.WriteResponse(w, nil, rerr)
+		return
+	}
+	if err = s.startNext(session, res); err != nil {
+		server.WriteError(w, server.ErrorNextSession, err.Error())
+		return
+	}
+	server.WriteResponse(w, res, nil)
 }
 
 func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {

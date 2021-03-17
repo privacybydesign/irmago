@@ -43,12 +43,16 @@ func (attrs *AttributeList) CredentialInfo() *CredentialInfo {
 }
 
 func (ci CredentialInfo) GetCredentialType(conf *Configuration) *CredentialType {
-	return conf.CredentialTypes[NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", ci.SchemeManagerID, ci.IssuerID, ci.ID))]
+	return conf.CredentialTypes[ci.Identifier()]
 }
 
 // Returns true if credential is expired at moment of calling this function
 func (ci CredentialInfo) IsExpired() bool {
 	return ci.Expires.Before(Timestamp(time.Now()))
+}
+
+func (ci CredentialInfo) Identifier() CredentialTypeIdentifier {
+	return NewCredentialTypeIdentifier(fmt.Sprintf("%s.%s.%s", ci.SchemeManagerID, ci.IssuerID, ci.ID))
 }
 
 // Len implements sort.Interface.

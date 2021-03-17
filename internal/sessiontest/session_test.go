@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/dgrijalva/jwt-go"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -13,10 +14,12 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
+
+	"github.com/dgrijalva/jwt-go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -602,4 +605,27 @@ func TestPOSTSizeLimit(t *testing.T) {
 	var rerr irma.RemoteError
 	require.NoError(t, json.Unmarshal(bts, &rerr))
 	require.Equal(t, "http: request body too large", rerr.Message)
+}
+
+func TestChainedSessions(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	StartNextRequestServer(t)
+	defer StopNextRequestServer()
+
+	var request irma.ServiceProviderRequest
+	require.NoError(t, irma.NewHTTPTransport("http://localhost:48686", false).Get("1", &request))
+	requestorSessionHelper(t, &request, client)
+
+	// check that our credential instance is new
+	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
+
+	for _, cred := range client.CredentialInfoList() {
+		if id.String() == fmt.Sprintf("%s.%s.%s", cred.SchemeManagerID, cred.IssuerID, cred.ID) &&
+			cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1*irma.ExpiryFactor*time.Second))) {
+			return
+		}
+	}
+
+	require.NoError(t, errors.New("newly issued credential not found in client"))
 }
