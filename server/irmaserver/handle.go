@@ -284,7 +284,7 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
 	r.Context().Value("session").(*session).handleDelete()
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
