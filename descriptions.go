@@ -367,11 +367,11 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 			}
 
 			if len(result) >= maxWizardComplexity {
-				return errors.Errorf("wizard with wizard ID %s too complex", wizard.ID)
+				return errors.New("wizard too complex")
 			}
 		} else {
 			if len(contents) >= maxWizardComplexity {
-				return errors.Errorf("wizard with wizard ID %s too complex", wizard.ID)
+				return errors.New("wizard too complex")
 			}
 		}
 	}
@@ -385,19 +385,19 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 				if item.Credential == nil {
 					shouldBeLast = true
 				} else if shouldBeLast {
-					return errors.Errorf("items having no credential type in wizard %s should come last", wizard.ID)
+					return errors.New("items having no credential type should come last")
 				}
 
 				if err := item.validate(conf); err != nil {
-					return errors.Errorf("item %d.%d.%d of issue wizard %s: %w", i, j, k, wizard.ID, err)
+					return errors.Errorf("item %d.%d.%d: %w", i, j, k, err)
 				}
-				conf.validateTranslations(fmt.Sprintf("item %d.%d.%d of issue wizard %s", i, j, k, wizard.ID), item)
+				conf.validateTranslations(fmt.Sprintf("item %d.%d.%d", i, j, k), item)
 			}
 		}
 	}
-	conf.validateTranslations(fmt.Sprintf("issue wizard %s", wizard.ID), wizard)
+	conf.validateTranslations("issue wizard", wizard)
 	for i, qa := range wizard.FAQ {
-		conf.validateTranslations(fmt.Sprintf("QA %d of issue wizard %s", i, wizard.ID), qa)
+		conf.validateTranslations(fmt.Sprintf("QA %d", i), qa)
 	}
 
 	return nil

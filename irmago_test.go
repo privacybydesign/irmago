@@ -1085,7 +1085,7 @@ func TestWizardIncorrectContentsOrder(t *testing.T) {
 	}
 
 	err := wizard.Validate(conf)
-	require.EqualError(t, err, "items having no credential type in wizard testwizard should come last")
+	require.EqualError(t, err, "items having no credential type should come last")
 }
 
 func TestWizardComplexity(t *testing.T) {
@@ -1160,7 +1160,7 @@ func TestWizardComplexity(t *testing.T) {
 	}
 
 	err := wizard.Validate(conf)
-	require.EqualError(t, err, "wizard with wizard ID testwizard too complex")
+	require.EqualError(t, err, "wizard too complex")
 }
 
 func TestIssueWizardItemValidation(t *testing.T) {
