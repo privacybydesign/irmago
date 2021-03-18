@@ -361,10 +361,9 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	for _, contents := range allRelevantPaths {
 		// validate expanded dependency tree if ExpandDependencies flag is set to true; otherwise validate current length
 		if wizard.ExpandDependencies == nil || *wizard.ExpandDependencies {
-			result, error := buildDependencyTree(contents, conf, map[CredentialTypeIdentifier]struct{}{})
-
-			if error != nil {
-				return error
+			result, err := buildDependencyTree(contents, conf, map[CredentialTypeIdentifier]struct{}{})
+			if err != nil {
+				return err
 			}
 
 			if len(result) >= maxWizardComplexity {
