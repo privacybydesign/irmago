@@ -381,13 +381,11 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	for i, outer := range wizard.Contents {
 		for j, middle := range outer {
 			for k, item := range middle {
-				// validate all non-credential-items of a wizard are at the end
-				if item.Type != "credential" {
+				// validate all items having no credential type of a wizard are at the end
+				if item.Credential == nil {
 					shouldBeLast = true
-				} else {
-					if shouldBeLast {
-						return errors.Errorf("non-credential types in wizard %s should come last", wizard.ID)
-					}
+				} else if shouldBeLast {
+					return errors.Errorf("items having no credential type in wizard %s should come last", wizard.ID)
 				}
 
 				if err := item.validate(conf); err != nil {
