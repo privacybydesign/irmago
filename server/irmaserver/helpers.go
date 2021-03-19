@@ -64,18 +64,18 @@ func (session *session) onUpdate() {
 // Checks whether requested options are valid in the current session context.
 func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*irma.SessionOptions, error) {
 	if session.status != irma.ServerStatusInitialized {
-		return nil, errors.New("Frontend options cannot be updated when client is already connected")
+		return nil, errors.New("Frontend options can only be updated when session is in initialized state")
 	}
-	if request.PairingMethod != "" {
-		if request.PairingMethod == irma.PairingMethodNone {
-			session.options.PairingCode = ""
-		} else if request.PairingMethod == irma.PairingMethodPin {
-			session.options.PairingCode = common.NewPairingCode()
-		} else {
-			return nil, errors.New("Pairing method unknown")
-		}
-		session.options.PairingMethod = request.PairingMethod
+	if request.PairingMethod == "" {
+		return &session.options, nil
+	} else if request.PairingMethod == irma.PairingMethodNone {
+		session.options.PairingCode = ""
+	} else if request.PairingMethod == irma.PairingMethodPin {
+		session.options.PairingCode = common.NewPairingCode()
+	} else {
+		return nil, errors.New("Pairing method unknown")
 	}
+	session.options.PairingMethod = request.PairingMethod
 	return &session.options, nil
 }
 
