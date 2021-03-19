@@ -2,9 +2,10 @@ package irma
 
 import (
 	"context"
-	sseclient "github.com/sietseringers/go-sse"
 	"strings"
 	"time"
+
+	sseclient "github.com/sietseringers/go-sse"
 )
 
 const pollInterval = 1000 * time.Millisecond
@@ -30,15 +31,16 @@ func subscribeSSE(transport *HTTPTransport, statuschan chan ServerStatus, errorc
 	go func() {
 		for {
 			e := <-events
-			if e != nil && e.Type != "open" {
-				status := ServerStatus(strings.Trim(string(e.Data), `"`))
-				statuschan <- status
-				if untilNextOnly || status.Finished() {
-					errorchan <- nil
-					cancelled = true
-					cancel()
-					return
-				}
+			if e == nil || e.Type == "open" {
+				return
+			}
+			status := ServerStatus(strings.Trim(string(e.Data), `"`))
+			statuschan <- status
+			if untilNextOnly || status.Finished() {
+				errorchan <- nil
+				cancelled = true
+				cancel()
+				return
 			}
 		}
 	}()
