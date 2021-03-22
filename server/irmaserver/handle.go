@@ -309,6 +309,7 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	if err != nil {
 		return err
 	}
+	session.next = qr
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well
@@ -433,6 +434,12 @@ func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request)
 		rerr = session.fail(server.ErrorRevocation, err.Error())
 	}
 	server.WriteResponse(w, request, rerr)
+}
+
+func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	status := irma.FrontendSessionStatus{Status: session.status, NextSession: session.next}
+	server.WriteResponse(w, status, nil)
 }
 
 func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Request) {

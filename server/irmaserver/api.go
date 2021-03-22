@@ -116,6 +116,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		r.Get("/statusevents", s.handleSessionStatusEvents)
 		r.Route("/frontend", func(r chi.Router) {
 			r.Use(s.frontendMiddleware)
+			r.Get("/status", s.handleFrontendStatus)
 			r.Post("/options", s.handleFrontendOptionsPost)
 			r.Post("/pairingcompleted", s.handleFrontendPairingCompleted)
 		})
@@ -224,6 +225,8 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 		Type:               action,
 		URL:                s.conf.URL + "session/" + string(session.clientToken),
 		PairingRecommended: pairingRecommended,
+		MinProtocolVersion: minFrontendProtocolVersion,
+		MaxProtocolVersion: maxFrontendProtocolVersion,
 	}, session.requestorToken, session.frontendAuth, nil
 }
 
