@@ -68,7 +68,7 @@ func (session *session) onUpdate() {
 }
 
 // Checks whether requested options are valid in the current session context.
-func (session *session) updateFrontendOptions(request *irma.OptionsRequest) (*irma.SessionOptions, error) {
+func (session *session) updateFrontendOptions(request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
 	if session.status != irma.ServerStatusInitialized {
 		return nil, errors.New("Frontend options can only be updated when session is in initialized state")
 	}

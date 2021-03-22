@@ -119,7 +119,7 @@ func libraryRequest(
 	// Enable pairing if necessary
 	var sessionOptions *irma.SessionOptions
 	if pairing {
-		optionsRequest := irma.NewOptionsRequest()
+		optionsRequest := irma.NewFrontendOptionsRequest()
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		if sessionOptions, err = irmaServer.SetFrontendOptions(requestorToken, &optionsRequest); err != nil {
 			return nil, errors.WrapPrefix(err, "Failed to enable pairing", 0)
@@ -170,7 +170,7 @@ func serverRequest(
 	if pairing {
 		frontendTransport = irma.NewHTTPTransport(qr.URL, false)
 		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendAuth))
-		optionsRequest := irma.NewOptionsRequest()
+		optionsRequest := irma.NewFrontendOptionsRequest()
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {

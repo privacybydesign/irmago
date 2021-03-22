@@ -274,10 +274,10 @@ func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
 // Returns the updated session options struct. Frontend options can only be
 // changed when the client is not connected yet. Otherwise an error is returned.
 // Options that are not specified in the request, keep their old value.
-func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.OptionsRequest) (*irma.SessionOptions, error) {
+func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
 	return s.SetFrontendOptions(requestorToken, request)
 }
-func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.OptionsRequest) (*irma.SessionOptions, error) {
+func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
 	session := s.sessions.get(requestorToken)
 	if session == nil {
 		return nil, server.LogError(errors.Errorf("can't set frontend options of unknown session %s", requestorToken))

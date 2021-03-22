@@ -462,7 +462,7 @@ func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Request) {
-	optionsRequest := &irma.OptionsRequest{}
+	optionsRequest := &irma.FrontendOptionsRequest{}
 	bts, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		server.WriteError(w, server.ErrorMalformedInput, err.Error())
