@@ -41,7 +41,7 @@ type SessionResult struct {
 	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
 	Signature   *irma.SignedMessage          `json:"signature,omitempty"`
 	Err         *irma.RemoteError            `json:"error,omitempty"`
-	NextSession string                       `json:"nextSession,omitempty"`
+	NextSession irma.RequestorToken          `json:"nextSession,omitempty"`
 
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
 }

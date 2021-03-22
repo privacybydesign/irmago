@@ -168,6 +168,9 @@ type Qr struct {
 	Type Action `json:"irmaqr"`
 	// Indicator to the frontend that shows whether pairing is recommended when starting the session
 	PairingRecommended bool `json:"pairingHint,omitempty"`
+
+	MinProtocolVersion *ProtocolVersion `json:"minProtocolVersion"`
+	MaxProtocolVersion *ProtocolVersion `json:"maxProtocolVersion"`
 }
 
 // Tokens to identify a session from the perspective of the different agents
@@ -387,4 +390,9 @@ type ServerSessionResponse struct {
 	// needed for legacy (un)marshaling
 	ProtocolVersion *ProtocolVersion `json:"-"`
 	SessionType     Action           `json:"-"`
+}
+
+type FrontendSessionStatus struct {
+	Status      ServerStatus `json:"status"`
+	NextSession *Qr          `json:"nextSession,omitempty"`
 }

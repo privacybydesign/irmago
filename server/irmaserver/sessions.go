@@ -28,6 +28,7 @@ type session struct {
 	request            irma.SessionRequest
 	legacyCompatible   bool // if the request is convertible to pre-condiscon format
 	implicitDisclosure irma.AttributeConDisCon
+	next               *irma.Qr
 
 	options        irma.SessionOptions
 	status         irma.ServerStatus
@@ -78,6 +79,9 @@ const (
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
 	maxProtocolVersion = irma.NewVersion(2, 7)
+
+	minFrontendProtocolVersion = irma.NewVersion(1, 0)
+	maxFrontendProtocolVersion = irma.NewVersion(1, 1)
 )
 
 func (s *memorySessionStore) get(t irma.RequestorToken) *session {
