@@ -275,7 +275,7 @@ func extractPrivateField(i interface{}, field string) interface{} {
 }
 
 func setPairingMethod(method irma.PairingMethod, handler *TestHandler) string {
-	optionsRequest := irma.NewOptionsRequest()
+	optionsRequest := irma.NewFrontendOptionsRequest()
 	optionsRequest.PairingMethod = method
 	options := &irma.SessionOptions{}
 	err := handler.frontendTransport.Post("frontend/options", options, optionsRequest)

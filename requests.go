@@ -19,14 +19,14 @@ import (
 )
 
 const (
-	LDContextDisclosureRequest = "https://irma.app/ld/request/disclosure/v2"
-	LDContextSignatureRequest  = "https://irma.app/ld/request/signature/v2"
-	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
-	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
-	LDContextOptionsRequest    = "https://irma.app/ld/request/options/v1"
-	LDContextClientRequest     = "https://irma.app/ld/request/client/v1"
-	LDContextSessionOptions    = "https://irma.app/ld/options/v1"
-	DefaultJwtValidity         = 120
+	LDContextDisclosureRequest      = "https://irma.app/ld/request/disclosure/v2"
+	LDContextSignatureRequest       = "https://irma.app/ld/request/signature/v2"
+	LDContextIssuanceRequest        = "https://irma.app/ld/request/issuance/v2"
+	LDContextRevocationRequest      = "https://irma.app/ld/request/revocation/v1"
+	LDContextFrontendOptionsRequest = "https://irma.app/ld/request/frontendoptions/v1"
+	LDContextClientRequest          = "https://irma.app/ld/request/client/v1"
+	LDContextSessionOptions         = "https://irma.app/ld/options/v1"
+	DefaultJwtValidity              = 120
 )
 
 // BaseRequest contains information used by all IRMA session types, such the context and nonce,
@@ -221,8 +221,8 @@ const (
 	PairingMethodPin  = "pin"
 )
 
-// An OptionsRequest asks for a options change of a particular session.
-type OptionsRequest struct {
+// An FrontendOptionsRequest asks for a options change of a particular session.
+type FrontendOptionsRequest struct {
 	LDContext     string        `json:"@context,omitempty"`
 	PairingMethod PairingMethod `json:"pairingMethod"`
 }
@@ -1124,16 +1124,16 @@ func NewAttributeRequest(attr string) AttributeRequest {
 	return AttributeRequest{Type: NewAttributeTypeIdentifier(attr)}
 }
 
-// NewOptionsRequest returns a new options request initialized with default values for each option
-func NewOptionsRequest() OptionsRequest {
-	return OptionsRequest{
-		LDContext:     LDContextOptionsRequest,
+// NewFrontendOptionsRequest returns a new options request initialized with default values for each option
+func NewFrontendOptionsRequest() FrontendOptionsRequest {
+	return FrontendOptionsRequest{
+		LDContext:     LDContextFrontendOptionsRequest,
 		PairingMethod: PairingMethodNone,
 	}
 }
 
-func (or *OptionsRequest) Validate() error {
-	if or.LDContext != LDContextOptionsRequest {
+func (or *FrontendOptionsRequest) Validate() error {
+	if or.LDContext != LDContextFrontendOptionsRequest {
 		return errors.New("Not an options request")
 	}
 	return nil

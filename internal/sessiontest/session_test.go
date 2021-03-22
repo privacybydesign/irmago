@@ -162,7 +162,7 @@ func TestIssuancePairing(t *testing.T) {
 		require.Equal(t, string(server.ErrorPairingRequired.Type), sessionErr.RemoteError.ErrorName)
 
 		// Check whether pairing cannot be disabled again after client is connected.
-		request := irma.NewOptionsRequest()
+		request := irma.NewFrontendOptionsRequest()
 		result := &irma.SessionOptions{}
 		err = handler.frontendTransport.Post("frontend/options", result, request)
 		require.Error(t, err)
