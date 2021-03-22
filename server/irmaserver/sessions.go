@@ -114,6 +114,7 @@ func (s *memorySessionStore) stop() {
 		if session.sse != nil {
 			session.sse.CloseChannel("session/" + string(session.requestorToken))
 			session.sse.CloseChannel("session/" + string(session.clientToken))
+			session.sse.CloseChannel("frontendsession/" + string(session.clientToken))
 		}
 	}
 }
@@ -156,6 +157,7 @@ func (s *memorySessionStore) deleteExpired() {
 		if session.sse != nil {
 			session.sse.CloseChannel("session/" + string(session.requestorToken))
 			session.sse.CloseChannel("session/" + string(session.clientToken))
+			session.sse.CloseChannel("frontendsession/" + string(session.clientToken))
 		}
 		delete(s.client, session.clientToken)
 		delete(s.requestor, token)

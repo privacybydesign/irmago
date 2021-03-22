@@ -66,9 +66,10 @@ type LegacySessionResult struct {
 }
 
 const (
-	ComponentRevocation = "revocation"
-	ComponentSession    = "session"
-	ComponentStatic     = "static"
+	ComponentRevocation      = "revocation"
+	ComponentSession         = "session"
+	ComponentFrontendSession = "frontendsession"
+	ComponentStatic          = "static"
 )
 
 const (
