@@ -50,6 +50,8 @@ func (session *session) onUpdate() {
 		}
 	}
 
+	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.status, NextSession: session.next})
+
 	if session.sse == nil {
 		return
 	}
@@ -58,6 +60,9 @@ func (session *session) onUpdate() {
 	)
 	session.sse.SendMessage("session/"+string(session.requestorToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
+	)
+	session.sse.SendMessage("frontendsession/"+string(session.clientToken),
+		sse.SimpleMessage(string(frontendstatus)),
 	)
 }
 
@@ -424,6 +429,8 @@ func eventServer(conf *server.Configuration) *sse.Server {
 			switch ssectx.(common.SSECtx).Component {
 			case server.ComponentSession:
 				return "session/" + ssectx.(common.SSECtx).Arg
+			case server.ComponentFrontendSession:
+				return "frontendsession/" + ssectx.(common.SSECtx).Arg
 			case server.ComponentRevocation:
 				return "revocation/" + ssectx.(common.SSECtx).Arg
 			default:

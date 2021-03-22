@@ -117,6 +117,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 		r.Route("/frontend", func(r chi.Router) {
 			r.Use(s.frontendMiddleware)
 			r.Get("/status", s.handleFrontendStatus)
+			r.Get("/statusevents", s.handleFrontendStatusEvents)
 			r.Post("/options", s.handleFrontendOptionsPost)
 			r.Post("/pairingcompleted", s.handleFrontendPairingCompleted)
 		})
@@ -345,6 +346,7 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	go func() {
 		time.Sleep(200 * time.Millisecond)
 		s.serverSentEvents.SendMessage("session/"+token, sse.NewMessage("", "", "open"))
+		s.serverSentEvents.SendMessage("frontendsession/"+token, sse.NewMessage("", "", "open"))
 	}()
 	s.serverSentEvents.ServeHTTP(w, r)
 	return nil

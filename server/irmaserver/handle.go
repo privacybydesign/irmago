@@ -442,6 +442,20 @@ func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
 	server.WriteResponse(w, status, nil)
 }
 
+func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	session.locked = false
+	session.Unlock()
+	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
+		Component: server.ComponentFrontendSession,
+		Arg:       string(session.clientToken),
+	}))
+	if err := s.SubscribeServerSentEvents(w, r, string(session.clientToken), false); err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+		return
+	}
+}
+
 func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Request) {
 	optionsRequest := &irma.OptionsRequest{}
 	bts, err := ioutil.ReadAll(r.Body)
