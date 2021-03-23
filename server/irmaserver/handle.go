@@ -320,6 +320,7 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	// from sessions before that, need to be disclosed in the new session as well
 	newsession := s.sessions.get(token)
 	newsession.implicitDisclosure = disclosed
+	newsession.frontendAuth = session.frontendAuth
 	res.NextSession = qr
 
 	return nil
