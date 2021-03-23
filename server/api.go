@@ -26,9 +26,9 @@ import (
 var Logger *logrus.Logger = logrus.StandardLogger()
 
 type SessionPackage struct {
-	SessionPtr   *irma.Qr                   `json:"sessionPtr"`
-	Token        irma.RequestorToken        `json:"token"`
-	FrontendAuth irma.FrontendAuthorization `json:"frontendAuth"`
+	SessionPtr      *irma.Qr                     `json:"sessionPtr"`
+	Token           irma.RequestorToken          `json:"token"`
+	FrontendRequest *irma.FrontendSessionRequest `json:"frontendRequest"`
 }
 
 // SessionResult contains session information such as the session status, type, possible errors,

@@ -131,7 +131,7 @@ func getMultipleIssuanceRequest() *irma.IssuanceRequest {
 
 var TestType = "irmaserver-jwt"
 
-func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) (*server.SessionPackage, irma.FrontendAuthorization) {
+func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) (*server.SessionPackage, *irma.FrontendSessionRequest) {
 	var (
 		sesPkg server.SessionPackage
 		err    error
@@ -152,7 +152,7 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 	}
 
 	require.NoError(t, err)
-	return &sesPkg, sesPkg.FrontendAuth
+	return &sesPkg, sesPkg.FrontendRequest
 }
 
 func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg jwt.SigningMethod) string {
@@ -219,7 +219,7 @@ func sessionHelperWithFrontendOptions(
 		defer StopRequestorServer()
 	}
 
-	sesPkg, frontendAuth := startSession(t, request, sessiontype)
+	sesPkg, frontendRequest := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
 	h := &TestHandler{
@@ -232,7 +232,7 @@ func sessionHelperWithFrontendOptions(
 	if frontendOptionsHandler != nil || pairingHandler != nil {
 		h.pairingCodeChan = make(chan string)
 		h.frontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
-		h.frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendAuth))
+		h.frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendRequest.Authorization))
 	}
 	if frontendOptionsHandler != nil {
 		frontendOptionsHandler(h)

@@ -227,6 +227,18 @@ type FrontendOptionsRequest struct {
 	PairingMethod PairingMethod `json:"pairingMethod"`
 }
 
+// FrontendSessionRequest contains session parameters for the frontend.
+type FrontendSessionRequest struct {
+	// Authorization token to access frontend endpoints.
+	Authorization FrontendAuthorization `json:"authorization"`
+	// PairingRecommended indictes to the frontend that pairing is recommended when starting the session.
+	PairingRecommended bool `json:"pairingHint,omitempty"`
+	// MinProtocolVersion that the server supports for the frontend protocol.
+	MinProtocolVersion *ProtocolVersion `json:"minProtocolVersion"`
+	// MaxProtocolVersion that the server supports for the frontend protocol.
+	MaxProtocolVersion *ProtocolVersion `json:"maxProtocolVersion"`
+}
+
 type RevocationRequest struct {
 	LDContext      string                   `json:"@context,omitempty"`
 	CredentialType CredentialTypeIdentifier `json:"type"`
