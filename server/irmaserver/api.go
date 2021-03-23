@@ -166,21 +166,21 @@ func (s *Server) Stop() {
 // The request parameter can be an irma.RequestorRequest, or an irma.SessionRequest, or a
 // ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
 func StartSession(request interface{}, handler server.SessionHandler,
-) (*irma.Qr, irma.RequestorToken, irma.FrontendAuthorization, error) {
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.StartSession(request, handler)
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
-) (*irma.Qr, irma.RequestorToken, irma.FrontendAuthorization, error) {
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", nil, err
 	}
 
 	request := rrequest.SessionRequest()
 	action := request.Action()
 
 	if err := s.validateRequest(request); err != nil {
-		return nil, "", "", err
+		return nil, "", nil, err
 	}
 	if action == irma.ActionIssuing {
 		// Include the AttributeTypeIdentifiers of random blind attributes to each CredentialRequest.
@@ -191,7 +191,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 		}
 
 		if err := s.validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
-			return nil, "", "", err
+			return nil, "", nil, err
 		}
 	}
 
@@ -204,7 +204,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 			return nil
 		})
 		if err != nil {
-			return nil, "", "", err
+			return nil, "", nil, err
 		}
 	} else {
 		// For issuing and signing actions, we always recommend pairing.
@@ -223,12 +223,17 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 		s.handlers[session.requestorToken] = handler
 	}
 	return &irma.Qr{
-		Type:               action,
-		URL:                s.conf.URL + "session/" + string(session.clientToken),
-		PairingRecommended: pairingRecommended,
-		MinProtocolVersion: minFrontendProtocolVersion,
-		MaxProtocolVersion: maxFrontendProtocolVersion,
-	}, session.requestorToken, session.frontendAuth, nil
+			Type: action,
+			URL:  s.conf.URL + "session/" + string(session.clientToken),
+		},
+		session.requestorToken,
+		&irma.FrontendSessionRequest{
+			Authorization:      session.frontendAuth,
+			PairingRecommended: pairingRecommended,
+			MinProtocolVersion: minFrontendProtocolVersion,
+			MaxProtocolVersion: maxFrontendProtocolVersion,
+		},
+		nil
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.

@@ -159,7 +159,7 @@ func serverRequest(
 	logger.Debug("Server URL: ", serverurl)
 
 	// Start session at server
-	qr, frontendAuth, transport, err := postRequest(serverurl, request, name, authmethod, key)
+	qr, frontendRequest, transport, err := postRequest(serverurl, request, name, authmethod, key)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func serverRequest(
 	sessionOptions := &irma.SessionOptions{}
 	if pairing {
 		frontendTransport = irma.NewHTTPTransport(qr.URL, false)
-		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendAuth))
+		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendRequest.Authorization))
 		optionsRequest := irma.NewFrontendOptionsRequest()
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
@@ -244,7 +244,7 @@ func serverRequest(
 }
 
 func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (
-	*irma.Qr, irma.FrontendAuthorization, *irma.HTTPTransport, error) {
+	*irma.Qr, *irma.FrontendSessionRequest, *irma.HTTPTransport, error) {
 	var (
 		err       error
 		pkg       = &server.SessionPackage{}
@@ -261,20 +261,20 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 		var jwtstr string
 		jwtstr, err = signRequest(request, name, authmethod, key)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
 		err = transport.Post("session", pkg, jwtstr)
 	default:
-		return nil, "", nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
+		return nil, nil, nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
 
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, nil, err
 	}
 
 	transport.Server += fmt.Sprintf("session/%s/", pkg.Token)
-	return pkg.SessionPtr, pkg.FrontendAuth, transport, err
+	return pkg.SessionPtr, pkg.FrontendRequest, transport, err
 }
 
 func handlePairing(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completePairing func() error) (
