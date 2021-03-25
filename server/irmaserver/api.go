@@ -196,7 +196,9 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 	}
 
 	pairingRecommended := false
-	if action == irma.ActionDisclosing {
+	if rrequest.Base().NextSession != nil && rrequest.Base().NextSession.URL != "" {
+		pairingRecommended = true
+	} else if action == irma.ActionDisclosing {
 		err := request.Disclosure().Disclose.Iterate(func(attr *irma.AttributeRequest) error {
 			if attr.Value != nil {
 				pairingRecommended = true
