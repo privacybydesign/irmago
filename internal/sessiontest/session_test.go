@@ -145,8 +145,8 @@ func TestIssuancePairing(t *testing.T) {
 		pairingCode = setPairingMethod(irma.PairingMethodPin, handler)
 	}
 	pairingHandler := func(handler *TestHandler) {
-		// Below protocol version 2.7 pairing is not supported, so then the pairing stage is expected to be skipped.
-		if extractClientMaxVersion(handler.client).Below(2, 7) {
+		// Below protocol version 2.8 pairing is not supported, so then the pairing stage is expected to be skipped.
+		if extractClientMaxVersion(handler.client).Below(2, 8) {
 			return
 		}
 
