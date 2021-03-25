@@ -257,10 +257,10 @@ func (session *session) getSessionInfo() {
 	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
-	cr := &irma.ClientRequest{
+	cr := &irma.ClientSessionRequest{
 		Request: session.request, // As request is an interface, it needs to be initialized with a specific instance.
 	}
-	// UnmarshalJSON of ClientRequest takes into account legacy protocols, so we do not have to check that here.
+	// UnmarshalJSON of ClientSessionRequest takes into account legacy protocols, so we do not have to check that here.
 	err := session.transport.Get("", cr)
 	if err != nil {
 		session.fail(err.(*irma.SessionError))

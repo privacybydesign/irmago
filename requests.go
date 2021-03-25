@@ -24,7 +24,7 @@ const (
 	LDContextIssuanceRequest        = "https://irma.app/ld/request/issuance/v2"
 	LDContextRevocationRequest      = "https://irma.app/ld/request/revocation/v1"
 	LDContextFrontendOptionsRequest = "https://irma.app/ld/request/frontendoptions/v1"
-	LDContextClientRequest          = "https://irma.app/ld/request/client/v1"
+	LDContextClientSessionRequest   = "https://irma.app/ld/request/client/v1"
 	LDContextSessionOptions         = "https://irma.app/ld/options/v1"
 	DefaultJwtValidity              = 120
 )
@@ -259,8 +259,8 @@ type SessionOptions struct {
 	PairingCode   string        `json:"pairingCode,omitempty"`
 }
 
-// ClientRequest contains all information irmaclient needs to know to initiate a session.
-type ClientRequest struct {
+// ClientSessionRequest contains all information irmaclient needs to know to initiate a session.
+type ClientSessionRequest struct {
 	LDContext       string           `json:"@context,omitempty"`
 	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
 	Options         *SessionOptions  `json:"options,omitempty"`
@@ -1151,14 +1151,14 @@ func (or *FrontendOptionsRequest) Validate() error {
 	return nil
 }
 
-func (cr *ClientRequest) UnmarshalJSON(data []byte) error {
+func (cr *ClientSessionRequest) UnmarshalJSON(data []byte) error {
 	// Unmarshal in alias first to prevent infinite recursion
-	type alias ClientRequest
+	type alias ClientSessionRequest
 	err := json.Unmarshal(data, (*alias)(cr))
 	if err != nil {
 		return err
 	}
-	if cr.LDContext == LDContextClientRequest {
+	if cr.LDContext == LDContextClientSessionRequest {
 		return nil
 	}
 
@@ -1167,7 +1167,7 @@ func (cr *ClientRequest) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	cr.LDContext = LDContextClientRequest
+	cr.LDContext = LDContextClientSessionRequest
 	cr.ProtocolVersion = cr.Request.Base().ProtocolVersion
 	cr.Options = &SessionOptions{
 		LDContext:     LDContextSessionOptions,
@@ -1176,8 +1176,8 @@ func (cr *ClientRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (cr *ClientRequest) Validate() error {
-	if cr.LDContext != LDContextClientRequest {
+func (cr *ClientSessionRequest) Validate() error {
+	if cr.LDContext != LDContextClientSessionRequest {
 		return errors.New("Not a client request")
 	}
 	// The 'Request' field is not required. When this field is empty, we have to skip the validation.
