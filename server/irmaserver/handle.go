@@ -85,7 +85,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	}
 
 	if session.version.Below(2, 7) {
-		// These versions do not support the ClientRequest format, so send the SessionRequest.
+		// These versions do not support the ClientSessionRequest format, so send the SessionRequest.
 		request, err := session.getRequest()
 		if err != nil {
 			return nil, session.fail(server.ErrorRevocation, err.Error())
