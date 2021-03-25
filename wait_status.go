@@ -32,7 +32,7 @@ func subscribeSSE(transport *HTTPTransport, statuschan chan ServerStatus, errorc
 		for {
 			e := <-events
 			if e == nil || e.Type == "open" {
-				return
+				continue
 			}
 			status := ServerStatus(strings.Trim(string(e.Data), `"`))
 			statuschan <- status
