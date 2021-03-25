@@ -1146,7 +1146,7 @@ func NewFrontendOptionsRequest() FrontendOptionsRequest {
 
 func (or *FrontendOptionsRequest) Validate() error {
 	if or.LDContext != LDContextFrontendOptionsRequest {
-		return errors.New("Not an options request")
+		return errors.New("Not a frontend options request")
 	}
 	return nil
 }
