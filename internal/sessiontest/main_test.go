@@ -21,7 +21,7 @@ import (
 )
 
 // Defines the maximum protocol version of an irmaclient in tests
-var maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+var maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 8}
 
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers

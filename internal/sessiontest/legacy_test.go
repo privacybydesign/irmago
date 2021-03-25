@@ -40,7 +40,7 @@ func TestWithoutPairingSupport(t *testing.T) {
 	defer func() {
 		maxClientVersion = defaultMaxVersion
 	}()
-	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
+	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
 
 	t.Run("TestSigningSession", TestSigningSession)
 	t.Run("TestDisclosureSession", TestDisclosureSession)

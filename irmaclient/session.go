@@ -111,7 +111,8 @@ var supportedVersions = map[int][]int{
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
 		6, // introduces nonrevocation proofs
-		7, // introduces chained sessions and session binding
+		7, // introduces chained sessions
+		8, // introduces session binding
 	},
 }
 
@@ -233,8 +234,8 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
 	session.transport.SetHeader(irma.MaxVersionHeader, client.maxVersion.String())
 
-	// From protocol version 2.7 also an authorization header must be included.
-	if client.maxVersion.Above(2, 6) {
+	// From protocol version 2.8 also an authorization header must be included.
+	if client.maxVersion.Above(2, 7) {
 		clientAuth := common.NewSessionToken()
 		session.transport.SetHeader(irma.AuthorizationHeader, clientAuth)
 	}

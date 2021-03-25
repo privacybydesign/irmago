@@ -48,9 +48,9 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
 
-	// Protocol versions below 2.7 don't include an authorization header. Therefore skip the authorization
+	// Protocol versions below 2.8 don't include an authorization header. Therefore skip the authorization
 	// header presence check if a lower version is used.
-	if clientAuth == "" && session.version.Above(2, 6) {
+	if clientAuth == "" && session.version.Above(2, 7) {
 		return nil, session.fail(server.ErrorIrmaUnauthorized, "No authorization header provided")
 	}
 	session.clientAuth = clientAuth
@@ -72,7 +72,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
 
-	if session.options.PairingMethod != irma.PairingMethodNone && session.version.Above(2, 6) {
+	if session.options.PairingMethod != irma.PairingMethodNone && session.version.Above(2, 7) {
 		session.setStatus(irma.ServerStatusPairing)
 	} else {
 		session.setStatus(irma.ServerStatusConnected)
@@ -84,7 +84,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 		return legacy, nil
 	}
 
-	if session.version.Below(2, 7) {
+	if session.version.Below(2, 8) {
 		// These versions do not support the ClientSessionRequest format, so send the SessionRequest.
 		request, err := session.getRequest()
 		if err != nil {
@@ -425,7 +425,7 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	if session.version.Below(2, 7) {
+	if session.version.Below(2, 8) {
 		server.WriteError(w, server.ErrorUnexpectedRequest, "Endpoint is not support in used protocol version")
 		return
 	}
