@@ -118,8 +118,10 @@ func (conf *Configuration) ParseFolder() (err error) {
 	conf.clear()
 
 	// Copy any new or updated schemes out of the assets into storage
+	assetsFolders := make(map[string]struct{})
 	if conf.assets != "" {
 		err = common.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
+			assetsFolders[filepath.Base(dir)] = struct{}{}
 			uptodate, err := conf.isUpToDate(filepath.Base(dir))
 			if err != nil {
 				return err
@@ -130,6 +132,16 @@ func (conf *Configuration) ParseFolder() (err error) {
 			return err
 		})
 		if err != nil {
+			return err
+		}
+		if err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+			basedir := filepath.Base(dir)
+			if _, presentInAssets := assetsFolders[basedir]; !presentInAssets {
+				Logger.Warnf(`Found dir "%s" in irma_configuration that is not in assets; removing`, basedir)
+				return os.RemoveAll(dir)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 	}
