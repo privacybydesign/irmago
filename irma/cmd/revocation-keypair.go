@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/sietseringers/cobra"
 )
 
@@ -13,7 +13,7 @@ This is required before credential types requiring revocation can be issued unde
 (New keypairs generated with "irma scheme issuer keygen" already support revocation.)`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		sk, err := gabi.NewPrivateKeyFromFile(args[0], false)
+		sk, err := gabikeys.NewPrivateKeyFromFile(args[0], false)
 		if err != nil {
 			die("failed to read private key", err)
 		}
@@ -21,7 +21,7 @@ This is required before credential types requiring revocation can be issued unde
 			die("private key already supports revocation", nil)
 		}
 
-		pk, err := gabi.NewPublicKeyFromFile(args[1])
+		pk, err := gabikeys.NewPublicKeyFromFile(args[1])
 		if err != nil {
 			die("failed to read public key", err)
 		}
@@ -29,7 +29,7 @@ This is required before credential types requiring revocation can be issued unde
 			die("public key already supports revocation", nil)
 		}
 
-		if err = gabi.GenerateRevocationKeypair(sk, pk); err != nil {
+		if err = gabikeys.GenerateRevocationKeypair(sk, pk); err != nil {
 			die("failed to generate revocation keys", err)
 		}
 

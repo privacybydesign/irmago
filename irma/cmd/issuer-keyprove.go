@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/keyproof"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sietseringers/cobra"
@@ -70,13 +70,13 @@ may be used.`,
 		}
 
 		// Try to read public key
-		pk, err := gabi.NewPublicKeyFromFile(pubkeyfile)
+		pk, err := gabikeys.NewPublicKeyFromFile(pubkeyfile)
 		if err != nil {
 			die("Could not read public key", err)
 		}
 
 		// Try to read private key
-		sk, err := gabi.NewPrivateKeyFromFile(privkeyfile, false)
+		sk, err := gabikeys.NewPrivateKeyFromFile(privkeyfile, false)
 		if err != nil {
 			die("Could not read private key", err)
 		}

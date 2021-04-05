@@ -9,8 +9,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -219,23 +218,19 @@ func (conf *Configuration) verifyPrivateKeys() error {
 }
 
 func (conf *Configuration) prepareRevocation(credid irma.CredentialTypeIdentifier) error {
-	var sk *revocation.PrivateKey
-	err := conf.IrmaConfiguration.PrivateKeys.Iterate(credid.IssuerIdentifier(), func(isk *gabi.PrivateKey) error {
+	var sk *gabikeys.PrivateKey
+	err := conf.IrmaConfiguration.PrivateKeys.Iterate(credid.IssuerIdentifier(), func(isk *gabikeys.PrivateKey) error {
 		if !isk.RevocationSupported() {
 			return nil
 		}
-		s, err := isk.RevocationKey()
-		if err != nil {
-			return errors.WrapPrefix(err, fmt.Sprintf("failed to load revocation private key %s-%d", credid, isk.Counter), 0)
-		}
-		sk = s
+		sk = isk
 		exists, err := conf.IrmaConfiguration.Revocation.Exists(credid, isk.Counter)
 		if err != nil {
 			return errors.WrapPrefix(err, fmt.Sprintf("failed to check if accumulator exists for %s-%d", credid, isk.Counter), 0)
 		}
 		if !exists {
 			conf.Logger.Warnf("Creating initial accumulator for %s-%d", credid, isk.Counter)
-			if err := conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
+			if err = conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
 				return errors.WrapPrefix(err, fmt.Sprintf("failed create initial accumulator for %s-%d", credid, isk.Counter), 0)
 			}
 		}

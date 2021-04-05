@@ -13,6 +13,7 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -732,7 +733,7 @@ func TestRevocationMemoryStore(t *testing.T) {
 	retrieve(t, pk, db, 4, 6)
 }
 
-func revokeMultiple(t *testing.T, sk *revocation.PrivateKey, update *revocation.Update) *revocation.Update {
+func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Update) *revocation.Update {
 	acc := update.SignedAccumulator.Accumulator
 	event := update.Events[len(update.Events)-1]
 	events := update.Events
@@ -745,7 +746,7 @@ func revokeMultiple(t *testing.T, sk *revocation.PrivateKey, update *revocation.
 	return update
 }
 
-func retrieve(t *testing.T, pk *revocation.PublicKey, db *memRevStorage, count uint64, expectedIndex uint64) {
+func retrieve(t *testing.T, pk *gabikeys.PublicKey, db *memRevStorage, count uint64, expectedIndex uint64) {
 	var updates map[uint]*revocation.Update
 	var err error
 	for i := uint64(0); i <= count; i++ {
@@ -762,7 +763,7 @@ func retrieve(t *testing.T, pk *revocation.PublicKey, db *memRevStorage, count u
 	require.Equal(t, expectedIndex, acc.Index)
 }
 
-func revoke(t *testing.T, acc *revocation.Accumulator, parent *revocation.Event, sk *revocation.PrivateKey) (*revocation.Accumulator, *revocation.Event) {
+func revoke(t *testing.T, acc *revocation.Accumulator, parent *revocation.Event, sk *gabikeys.PrivateKey) (*revocation.Accumulator, *revocation.Event) {
 	e, err := rand.Prime(rand.Reader, 100)
 	require.NoError(t, err)
 	acc, event, err := acc.Remove(sk, big.Convert(e), parent)
