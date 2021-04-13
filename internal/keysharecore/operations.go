@@ -11,6 +11,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 )
 
@@ -202,7 +203,7 @@ func (c *Core) verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencr
 // Get keyshare commitment usign given idemix public key(s)
 func (c *Core) GenerateCommitments(ep EncryptedKeysharePacket, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
-	var keyList []*gabi.PublicKey
+	var keyList []*gabikeys.PublicKey
 	for _, keyID := range keyIDs {
 		key, ok := c.trustedKeys[keyID]
 		if !ok {
@@ -241,7 +242,7 @@ func (c *Core) GenerateCommitments(ep EncryptedKeysharePacket, accessToken strin
 // Generate response for zero-knowledge proof of keyshare secret, for a given previous commit and challenge
 func (c *Core) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Validate request
-	if uint(challenge.BitLen()) > gabi.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
+	if uint(challenge.BitLen()) > gabikeys.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
 		return "", ErrInvalidChallenge
 	}
 	key, ok := c.trustedKeys[keyID]

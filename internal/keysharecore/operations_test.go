@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -487,11 +488,11 @@ ZAS54R1mcyP67iBPxixiKeFqajUS+C4GFBrNSXbQTWf+jTyWkgfNSg==
 -----END RSA PRIVATE KEY-----`
 
 var jwtTestKey *rsa.PrivateKey
-var testPubK1 *gabi.PublicKey
+var testPubK1 *gabikeys.PublicKey
 
 func setupParameters() error {
 	var err error
-	testPubK1, err = gabi.NewPublicKeyFromXML(xmlPubKey1)
+	testPubK1, err = gabikeys.NewPublicKeyFromXML(xmlPubKey1)
 	if err != nil {
 		return err
 	}

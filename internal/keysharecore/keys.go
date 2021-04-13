@@ -5,8 +5,8 @@ import (
 	"crypto/rsa"
 	"sync"
 
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 )
 
@@ -29,7 +29,7 @@ type (
 
 		// IRMA issuer keys that are allowed to be used in keyshare
 		//  sessions
-		trustedKeys map[irma.PublicKeyIdentifier]*gabi.PublicKey
+		trustedKeys map[irma.PublicKeyIdentifier]*gabikeys.PublicKey
 	}
 )
 
@@ -37,7 +37,7 @@ func NewKeyshareCore() *Core {
 	return &Core{
 		decryptionKeys: map[uint32]AesKey{},
 		commitmentData: map[uint64]*big.Int{},
-		trustedKeys:    map[irma.PublicKeyIdentifier]*gabi.PublicKey{},
+		trustedKeys:    map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{},
 	}
 }
 
@@ -69,6 +69,6 @@ func (c *Core) SetSignKey(key *rsa.PrivateKey, id int) {
 }
 
 // Add public key as trusted by keyshareCore. Calling this on incorrectly generated key material WILL compromise keyshare secrets!
-func (c *Core) DangerousAddTrustedPublicKey(keyID irma.PublicKeyIdentifier, key *gabi.PublicKey) {
+func (c *Core) DangerousAddTrustedPublicKey(keyID irma.PublicKeyIdentifier, key *gabikeys.PublicKey) {
 	c.trustedKeys[keyID] = key
 }
