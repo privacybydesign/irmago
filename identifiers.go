@@ -26,6 +26,14 @@ type RequestorSchemeIdentifier struct {
 	metaObjectIdentifier
 }
 
+type RequestorIdentifier struct {
+	metaObjectIdentifier
+}
+
+type IssueWizardIdentifier struct {
+	metaObjectIdentifier
+}
+
 // SchemeManagerIdentifier identifies a scheme manager. Equal to its ID. For example "irma-demo".
 type SchemeManagerIdentifier struct {
 	metaObjectIdentifier
@@ -120,9 +128,19 @@ func (oi metaObjectIdentifier) Root() string {
 	}
 }
 
-// NewRequestorIdentifier converts the specified identifier to a RequestorSchemeIdentifier.
+// NewRequestorSchemeIdentifier converts the specified identifier to a RequestorSchemeIdentifier.
 func NewRequestorSchemeIdentifier(id string) RequestorSchemeIdentifier {
 	return RequestorSchemeIdentifier{metaObjectIdentifier(id)}
+}
+
+// NewRequestorIdentifier converts the specified identifier to a NewRequestorIdentifier.
+func NewRequestorIdentifier(id string) RequestorIdentifier {
+	return RequestorIdentifier{metaObjectIdentifier(id)}
+}
+
+// NewIssueWizardIdentifier converts the specified identifier to a NewIssueWizardIdentifier.
+func NewIssueWizardIdentifier(id string) IssueWizardIdentifier {
+	return IssueWizardIdentifier{metaObjectIdentifier(id)}
 }
 
 // NewSchemeManagerIdentifier converts the specified identifier to a SchemeManagerIdentifier.
@@ -145,6 +163,16 @@ func NewAttributeTypeIdentifier(id string) AttributeTypeIdentifier {
 	return AttributeTypeIdentifier{metaObjectIdentifier(id)}
 }
 
+// RequestorIdentifier returns the requestor identifier of the issue wizard.
+func (id IssueWizardIdentifier) RequestorIdentifier() RequestorIdentifier {
+	return NewRequestorIdentifier(id.Parent())
+}
+
+// RequestorSchemeIdentifier returns the requestor scheme identifier of the requestor.
+func (id RequestorIdentifier) RequestorSchemeIdentifier() RequestorSchemeIdentifier {
+	return NewRequestorSchemeIdentifier(id.Parent())
+}
+
 // SchemeManagerIdentifier returns the scheme manager identifer of the issuer.
 func (id IssuerIdentifier) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(id.Parent())
@@ -153,6 +181,10 @@ func (id IssuerIdentifier) SchemeManagerIdentifier() SchemeManagerIdentifier {
 // IssuerIdentifier returns the IssuerIdentifier of the credential identifier.
 func (id CredentialTypeIdentifier) IssuerIdentifier() IssuerIdentifier {
 	return NewIssuerIdentifier(id.Parent())
+}
+
+func (id CredentialTypeIdentifier) SchemeManagerIdentifier() SchemeManagerIdentifier {
+	return NewSchemeManagerIdentifier(id.Root())
 }
 
 // CredentialTypeIdentifier returns the CredentialTypeIdentifier of the attribute identifier.
@@ -185,12 +217,36 @@ func (id *SchemeManagerIdentifier) UnmarshalText(text []byte) error {
 	return nil
 }
 
+// MarshalText implements encoding.TextMarshaler.
 func (id RequestorSchemeIdentifier) MarshalText() ([]byte, error) {
 	return []byte(id.String()), nil
 }
 
+// UnmarshalText implements encoding.TextUnmarshaler.
 func (id *RequestorSchemeIdentifier) UnmarshalText(text []byte) error {
 	*id = NewRequestorSchemeIdentifier(string(text))
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (id RequestorIdentifier) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (id *RequestorIdentifier) UnmarshalText(text []byte) error {
+	*id = NewRequestorIdentifier(string(text))
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (id IssueWizardIdentifier) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (id *IssueWizardIdentifier) UnmarshalText(text []byte) error {
+	*id = NewIssueWizardIdentifier(string(text))
 	return nil
 }
 

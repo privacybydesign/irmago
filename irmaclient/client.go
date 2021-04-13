@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -142,7 +143,6 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
-	tempPath string,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
@@ -162,7 +162,7 @@ func New(
 
 	client.Configuration, err = irma.NewConfiguration(
 		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath, TempPath: tempPath, IgnorePrivateKeys: true},
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	if err != nil {
 		return nil, err
@@ -364,9 +364,11 @@ func (client *Client) addCredential(cred *credential) (err error) {
 }
 
 func generateSecretKey() (*secretKey, error) {
-	return &secretKey{
-		Key: common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[1024].Lm))),
-	}, nil
+	key, err := gabi.GenerateSecretAttribute()
+	if err != nil {
+		return nil, err
+	}
+	return &secretKey{Key: key}, nil
 }
 
 // Removal methods
@@ -877,7 +879,7 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 			return nil, nil, nil, revocation.ErrorRevoked
 		}
 		nonrev := request.Base().RequestsRevocation(cred.CredentialType().Identifier())
-		builder, err = cred.CreateDisclosureProofBuilder(grp.attrs, nonrev)
+		builder, err = cred.CreateDisclosureProofBuilder(grp.attrs, nil, nonrev)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -912,15 +914,19 @@ func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.Session
 	}
 
 	_, issig := request.(*irma.SignatureRequest)
+	proofs, err := builders.BuildProofList(request.Base().GetContext(), request.GetNonce(timestamp), issig)
+	if err != nil {
+		return nil, nil, err
+	}
 	return &irma.Disclosure{
-		Proofs:  builders.BuildProofList(request.Base().GetContext(), request.GetNonce(timestamp), issig),
+		Proofs:  proofs,
 		Indices: choices,
 	}, timestamp, nil
 }
 
 // generateIssuerProofNonce generates a nonce which the issuer must use in its gabi.ProofS.
 func generateIssuerProofNonce() (*big.Int, error) {
-	return common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), uint(gabi.DefaultSystemParameters[4096].Lstatzk))), nil
+	return gabi.GenerateNonce()
 }
 
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
@@ -934,14 +940,17 @@ func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest, choic
 	}
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 	for _, futurecred := range request.Credentials {
-		var pk *gabi.PublicKey
+		var pk *gabikeys.PublicKey
 		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		credtype := client.Configuration.CredentialTypes[futurecred.CredentialTypeID]
-		credBuilder := gabi.NewCredentialBuilder(pk, request.GetContext(),
+		credBuilder, err := gabi.NewCredentialBuilder(pk, request.GetContext(),
 			client.secretkey.Key, issuerProofNonce, credtype.RandomBlindAttributeIndices())
+		if err != nil {
+			return nil, nil, nil, err
+		}
 		builders = append(builders, credBuilder)
 	}
 
@@ -961,9 +970,13 @@ func (client *Client) IssueCommitments(request *irma.IssuanceRequest, choice *ir
 	if err != nil {
 		return nil, nil, err
 	}
+	proofs, err := builders.BuildProofList(request.GetContext(), request.GetNonce(nil), false)
+	if err != nil {
+		return nil, nil, err
+	}
 	return &irma.IssueCommitmentMessage{
 		IssueCommitmentMessage: &gabi.IssueCommitmentMessage{
-			Proofs: builders.BuildProofList(request.GetContext(), request.GetNonce(nil), false),
+			Proofs: proofs,
 			Nonce2: issuerProofNonce,
 		},
 		Indices: choices,

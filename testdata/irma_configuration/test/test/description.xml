@@ -1,9 +1,5 @@
 <Issuer version="4">
 	<ID>test</ID>
-	<ShortName>
-		<en>Demo test issuer</en>
-		<nl>Demo test issuer</nl>
-	</ShortName>
 	<Name>
 		<en>Demo test issuer</en>
 		<nl>Demo test issuer</nl>
@@ -11,5 +7,4 @@
 	<SchemeManager>test</SchemeManager>
 	<ContactAddress></ContactAddress>
 	<ContactEMail>info@example.com</ContactEMail>
-	<baseURL></baseURL>
 </Issuer>

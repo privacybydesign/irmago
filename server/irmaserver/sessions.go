@@ -1,6 +1,7 @@
 package irmaserver
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -18,13 +19,14 @@ type session struct {
 	sync.Mutex
 	locked bool
 
-	action           irma.Action
-	token            string
-	clientToken      string
-	version          *irma.ProtocolVersion
-	rrequest         irma.RequestorRequest
-	request          irma.SessionRequest
-	legacyCompatible bool // if the request is convertible to pre-condiscon format
+	action             irma.Action
+	token              string
+	clientToken        string
+	version            *irma.ProtocolVersion
+	rrequest           irma.RequestorRequest
+	request            irma.SessionRequest
+	legacyCompatible   bool // if the request is convertible to pre-condiscon format
+	implicitDisclosure irma.AttributeConDisCon
 
 	status        server.Status
 	prevStatus    server.Status
@@ -70,7 +72,7 @@ const (
 
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
-	maxProtocolVersion = irma.NewVersion(2, 6)
+	maxProtocolVersion = irma.NewVersion(2, 7)
 )
 
 func (s *memorySessionStore) get(t string) *session {
@@ -154,6 +156,15 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	token := common.NewSessionToken()
 	clientToken := common.NewSessionToken()
 
+	base := request.SessionRequest().Base()
+	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
+		if strings.Contains(base.ClientReturnURL, "?") {
+			base.ClientReturnURL += "&token=" + token
+		} else {
+			base.ClientReturnURL += "?token=" + token
+		}
+	}
+
 	ses := &session{
 		action:      action,
 		rrequest:    request,
@@ -175,9 +186,9 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.token}).Debug("New session started")
-	nonce := common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabi.DefaultSystemParameters[2048].Lstatzk))
-	ses.request.Base().Nonce = nonce
-	ses.request.Base().Context = one
+	nonce, _ := gabi.GenerateNonce()
+	base.Nonce = nonce
+	base.Context = one
 	s.sessions.add(ses)
 
 	return ses

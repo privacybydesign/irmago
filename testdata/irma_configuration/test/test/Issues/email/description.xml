@@ -3,10 +3,6 @@
 		<en>Demo Email address</en>
 		<nl>Demo E-mailadres</nl>
 	</Name>
-	<ShortName>
-		<en>Email</en>
-		<nl>E-mail</nl>
-	</ShortName>
 	<SchemeManager>test</SchemeManager>
 	<IssuerID>test</IssuerID>
 	<CredentialID>email</CredentialID>

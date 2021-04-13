@@ -4,15 +4,9 @@
 	  <en>Demo MijnOverheid.nl</en>
 	  <nl>Demo MijnOverheid.nl</nl>
   </Name>
-  <ShortName>
-	  <en>MijnOverheid.nl</en>
-	  <nl>MijnOverheid.nl</nl>
-  </ShortName>
   <SchemeManager>irma-demo</SchemeManager>
   <ContactAddress>Ministerie van BZK
 Turfmarkt 147
 2511 DP DEN HAAG</ContactAddress>
   <ContactEMail>info@minbzk.nl</ContactEMail>
-
-  <baseURL>http://www.irmacard.org/credentials/phase1/MijnOverheid/</baseURL>
 </Issuer>

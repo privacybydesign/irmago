@@ -189,13 +189,23 @@ func WriteString(w http.ResponseWriter, str string) {
 //  - SessionRequest instances (DisclosureRequest, SignatureRequest, IssuanceRequest)
 //  - JSON representations ([]byte or string) of any of the above.
 func ParseSessionRequest(request interface{}) (irma.RequestorRequest, error) {
+	rr, e := parseInput(request)
+	if e != nil {
+		return nil, e
+	}
+	rr.Base().SetDefaultsIfNecessary()
+
+	return rr, e
+}
+
+func parseInput(request interface{}) (irma.RequestorRequest, error) {
 	switch r := request.(type) {
 	case irma.RequestorRequest:
 		return r, nil
 	case irma.SessionRequest:
 		return wrapSessionRequest(r)
 	case string:
-		return ParseSessionRequest([]byte(r))
+		return parseInput([]byte(r))
 	case []byte:
 		var attempts = []irma.Validator{&irma.ServiceProviderRequest{}, &irma.SignatureRequestorRequest{}, &irma.IdentityProviderRequest{}}
 		t, err := tryUnmarshalJson(r, attempts)
@@ -295,7 +305,7 @@ func ResultJwt(sessionresult *SessionResult, issuer string, validity int, privat
 		IssuedAt: time.Now().Unix(),
 		Subject:  string(sessionresult.Type) + "_result",
 	}
-	standardclaims.ExpiresAt = time.Now().Unix() + int64(validity)
+	standardclaims.ExpiresAt = standardclaims.IssuedAt + int64(validity)
 
 	var claims jwt.Claims
 	if sessionresult.LegacySession {
@@ -323,7 +333,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 		logger.Debug("POSTing session result")
 	}
 
-	var res string
+	var res interface{}
 	if privatekey != nil {
 		var err error
 		res, err = ResultJwt(result, issuer, validity, privatekey)
@@ -332,12 +342,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 			return
 		}
 	} else {
-		bts, err := json.Marshal(result)
-		if err != nil {
-			_ = LogError(errors.WrapPrefix(err, "Failed to marshal session result for result callback", 0))
-			return
-		}
-		res = string(bts)
+		res = result
 	}
 
 	var x string // dummy for the server's return value that we don't care about
@@ -399,7 +404,7 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 	Logger.WithFields(fields).Tracef("=> request")
 }
 
-func LogResponse(status int, duration time.Duration, binary bool, response []byte) {
+func LogResponse(url string, status int, duration time.Duration, binary bool, response []byte) {
 	fields := logrus.Fields{
 		"status":   status,
 		"duration": duration.String(),
@@ -415,7 +420,7 @@ func LogResponse(status int, duration time.Duration, binary bool, response []byt
 	if status < 400 {
 		l.Trace("<= response")
 	} else {
-		l.Warn("<= response")
+		l.WithField("url", url).Warn("<= response")
 	}
 }
 
@@ -516,7 +521,7 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 				if opts.EncodeBinary && ww.Header().Get("Content-Type") != "application/json" {
 					hexencode = true
 				}
-				LogResponse(ww.Status(), time.Since(start), hexencode, resp)
+				LogResponse(r.URL.String(), ww.Status(), time.Since(start), hexencode, resp)
 			}()
 
 			// start timer and preform request

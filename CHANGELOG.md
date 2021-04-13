@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2021-03-17
+### Fixed
+* Bug causing scheme updating to fail if OS temp dir is on other file system than the schemes
+* Prevent session result JWTs from being expired immediately if no expiry is specified is set in the session request; instead in that case they expire after two minutes
+* When POSTing session result to the `callbackUrl` specified in session request, set `Content-Type` to `application/json` for JSON messages
+* Fixed panic during scheme downloading on Windows
+* Correctly decode randomblind attributes when verifying disclosures/signatures
+
+### Added
+* Add request URL to log entry when IRMA server encounters an error (404 or otherwise) during HTTP request handling
+* Add flag `--allow-unsigned-callbacks` to IRMA server to allow `callbackUrl` in session requests when no JWT private key is installed
+* Add flag `--augment-client-return-url` to IRMA server to enable augmenting client return URL with server session token as query parameter (needs to be additionally enabled in session requests)
+* Add new `irma issuer keyprove` and `irma issuer keyverify` commands to generate and verify zero-knowledge proofs of correct generation of issuer private/public keypairs
+
+### Changed
+* Clarify warning and suppress stacktrace in IRMA server log entry in case `/statusevents` is hit while SSE is disabled
+* Force Unix (LF) line endings in schemes during scheme signing for consistency
+* Moved revocation commands from `irma issuer revocation` to just `irma issuer`
+
+## [0.6.1] - 2020-12-15
+### Changed
+* Change endpoint to which [IRMA server admin email address](https://irma.app/docs/email/) is sent and include IRMA server version number
+
+### Fixed
+* Bug that could cause schemes on disk to enter an inconsistent state, causing IRMA server to refuse to startup
+* Nil deref during IRMA server startup in case local IP address failed to be determined
+* Bug causing requestor scheme updating to fail
+
 ## [0.6.0] - 2020-10-20
 ### Added
 * Support for "randomblind" attributes (if enabled in the scheme), for e.g. election use cases: attributes containing large random numbers issued in such a way that 1) the issuer does not learn their value while still providing a valid signature over the credential containing the attributes, and 2) the attribute value will be unequal to all previously issued randomblind attributes with overwhelming probability. Once issued, these attributes can be disclosed normally (i.e., only the issuance protocol is different for these attributes).
@@ -127,6 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.7.0]: https://github.com/privacybydesign/irmago/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/privacybydesign/irmago/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/privacybydesign/irmago/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/privacybydesign/irmago/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/privacybydesign/irmago/compare/v0.5.0-rc.5...v0.5.0

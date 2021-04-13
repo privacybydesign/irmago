@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/dgrijalva/jwt-go"
@@ -34,12 +34,14 @@ type Configuration struct {
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 	kssPublicKeys   map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
-	publicKeys      map[IssuerIdentifier]map[uint]*gabi.PublicKey
+	publicKeys      map[IssuerIdentifier]map[uint]*gabikeys.PublicKey
 	reverseHashes   map[string]CredentialTypeIdentifier
 
 	// RequestorScheme data of the currently loaded requestorscheme
 	RequestorSchemes map[RequestorSchemeIdentifier]*RequestorScheme
 	Requestors       map[string]*RequestorInfo
+
+	IssueWizards map[IssueWizardIdentifier]*IssueWizard
 
 	// DisabledRequestorSchemes keeps track of any error of the requestorscheme if it
 	// did not parse successfully
@@ -57,9 +59,6 @@ type Configuration struct {
 	Revocation  *RevocationStorage `json:"-"`
 	Scheduler   *gocron.Scheduler
 	Warnings    []string `json:"-"`
-
-	// Path to temp directory if different than default (needed on android)
-	TempPath string
 
 	options     ConfigurationOptions
 	initialized bool
@@ -86,7 +85,6 @@ var (
 
 type ConfigurationOptions struct {
 	Assets              string
-	TempPath            string
 	ReadOnly            bool
 	IgnorePrivateKeys   bool
 	RevocationDBConnStr string
@@ -98,7 +96,6 @@ type ConfigurationOptions struct {
 // ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configuration, err error) {
 	conf = &Configuration{
-		TempPath: opts.TempPath,
 		Path:     path,
 		assets:   opts.Assets,
 		readOnly: opts.ReadOnly,
@@ -127,8 +124,10 @@ func (conf *Configuration) ParseFolder() (err error) {
 	conf.clear()
 
 	// Copy any new or updated schemes out of the assets into storage
+	assetsFolders := make(map[string]struct{})
 	if conf.assets != "" {
 		err = common.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
+			assetsFolders[filepath.Base(dir)] = struct{}{}
 			uptodate, err := conf.isUpToDate(filepath.Base(dir))
 			if err != nil {
 				return err
@@ -141,25 +140,54 @@ func (conf *Configuration) ParseFolder() (err error) {
 		if err != nil {
 			return err
 		}
+		if err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+			basedir := filepath.Base(dir)
+			if _, presentInAssets := assetsFolders[basedir]; !presentInAssets {
+				Logger.Warnf(`Found dir "%s" in irma_configuration that is not in assets; removing`, basedir)
+				return os.RemoveAll(dir)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 
-	// Parse schemes in storage
+	// Since requestor schemes may contain information defined in issuer schemes, first check
+	// what schemes exist so we can parse issuer schemes first.
 	var mgrerr *SchemeManagerError
+	var issuerschemes, requestorschemes []Scheme
 	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
-		_, err := conf.ParseSchemeFolder(dir)
+		scheme, _, err := conf.parseSchemeDescription(dir)
+		if err != nil {
+			return err
+		}
+		switch scheme.typ() {
+		case SchemeTypeIssuer:
+			issuerschemes = append(issuerschemes, scheme)
+		case SchemeTypeRequestor:
+			requestorschemes = append(requestorschemes, scheme)
+		default:
+			return errors.New("unsupported scheme type")
+		}
+		return nil
+	})
+	if err != nil {
+		return
+	}
+
+	// Parse the schemes we found, issuer schemes first
+	for _, scheme := range append(issuerschemes, requestorschemes...) {
+		_, err := conf.ParseSchemeFolder(scheme.path())
 		if err == nil {
-			return nil // OK, do next scheme folder
+			continue // OK, do next scheme folder
 		}
 		// If there is an error, and it is of type SchemeManagerError, return nil
 		// so as to continue parsing other schemes.
 		if e, ok := err.(*SchemeManagerError); ok {
 			mgrerr = e
-			return nil
+			continue
 		}
 		return err // Not a SchemeManagerError? return it & halt parsing now
-	})
-	if err != nil {
-		return
 	}
 
 	if !conf.options.IgnorePrivateKeys && len(conf.PrivateKeys.(*privateKeyRingMerge).rings) == 0 {
@@ -287,7 +315,7 @@ func (conf *Configuration) AddPrivateKeyRing(ring PrivateKeyRing) error {
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
-func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabi.PublicKey, error) {
+func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabikeys.PublicKey, error) {
 	var haveIssuer, haveKey bool
 	var err error
 	_, haveIssuer = conf.publicKeys[id]
@@ -306,7 +334,7 @@ func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabi.P
 }
 
 // PublicKeyLatest returns the latest private key of the specified issuer.
-func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabi.PublicKey, error) {
+func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabikeys.PublicKey, error) {
 	indices, err := conf.PublicKeyIndices(id)
 	if err != nil {
 		return nil, err
@@ -447,7 +475,7 @@ func (conf *Configuration) hashToCredentialType(hash []byte) *CredentialType {
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	scheme := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
-	conf.publicKeys[issuerid] = map[uint]*gabi.PublicKey{}
+	conf.publicKeys[issuerid] = map[uint]*gabikeys.PublicKey{}
 	pattern := filepath.Join(scheme.path(), issuerid.Name(), "PublicKeys", "*")
 	files, err := filepath.Glob(pattern)
 	if err != nil {
@@ -469,7 +497,7 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil || !found {
 			return err
 		}
-		pk, err := gabi.NewPublicKeyFromBytes(bts)
+		pk, err := gabikeys.NewPublicKeyFromBytes(bts)
 		if err != nil {
 			return err
 		}
@@ -512,9 +540,10 @@ func (conf *Configuration) clear() {
 	conf.DisabledSchemeManagers = make(map[SchemeManagerIdentifier]*SchemeManagerError)
 	conf.RequestorSchemes = make(map[RequestorSchemeIdentifier]*RequestorScheme)
 	conf.Requestors = make(map[string]*RequestorInfo)
+	conf.IssueWizards = make(map[IssueWizardIdentifier]*IssueWizard)
 	conf.DisabledRequestorSchemes = make(map[RequestorSchemeIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
-	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
+	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabikeys.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 	if conf.PrivateKeys == nil { // keep if already populated
 		conf.PrivateKeys = &privateKeyRingMerge{}
@@ -735,7 +764,8 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		name := v.Type().Field(i).Name
-		if field.Type() != reflect.TypeOf(TranslatedString{}) ||
+		translatedString := TranslatedString{}
+		if (field.Type() != reflect.TypeOf(translatedString) && field.Type() != reflect.TypeOf(&translatedString)) ||
 			name == "IssueURL" ||
 			name == "Category" ||
 			name == "FAQIntro" ||
@@ -744,10 +774,21 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 			name == "FAQHowto" {
 			continue
 		}
-		val := field.Interface().(TranslatedString)
-		for _, lang := range validLangs {
-			if _, exists := val[lang]; !exists {
-				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, lang, name))
+		var val TranslatedString
+		if field.Type() == reflect.TypeOf(&translatedString) {
+			tmp := field.Interface().(*TranslatedString)
+			if tmp == nil {
+				return
+			}
+			val = *tmp
+		} else {
+			val = field.Interface().(TranslatedString)
+		}
+
+		// assuming that translations also never should be empty
+		if l := val.validate(); len(l) > 0 {
+			for _, invalidLang := range l {
+				conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s misses %s translation in <%s> tag", file, invalidLang, name))
 			}
 		}
 	}
@@ -780,6 +821,9 @@ func (conf *Configuration) join(other *Configuration) {
 	}
 	for key, val := range other.Requestors {
 		conf.Requestors[key] = val
+	}
+	for key, val := range other.IssueWizards {
+		conf.IssueWizards[key] = val
 	}
 	for key, val := range other.DisabledRequestorSchemes {
 		conf.DisabledRequestorSchemes[key] = val

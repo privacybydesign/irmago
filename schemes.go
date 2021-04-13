@@ -92,6 +92,8 @@ type (
 	SchemeType string
 )
 
+type DependencyChain []CredentialTypeIdentifier
+
 const (
 	SchemeManagerStatusValid               = SchemeManagerStatus("Valid")
 	SchemeManagerStatusUnprocessed         = SchemeManagerStatus("Unprocessed")
@@ -102,6 +104,8 @@ const (
 
 	SchemeTypeIssuer    = SchemeType("issuer")
 	SchemeTypeRequestor = SchemeType("requestor")
+
+	maxDepComplexity = 25
 )
 
 func (conf *Configuration) DownloadDefaultSchemes() error {
@@ -426,7 +430,7 @@ func (conf *Configuration) reinstallSchemeFromRemote(scheme Scheme) error {
 	if err = scheme.delete(conf); err != nil {
 		return err
 	}
-	return conf.installScheme(scheme.url(), pkbts, scheme.path())
+	return conf.installScheme(scheme.url(), pkbts, filepath.Base(scheme.path()))
 }
 
 // newSchemeDir returns the name of a newly created directory into which a scheme can be installed:
@@ -800,7 +804,7 @@ func downloadScheme(url string) (Scheme, error) {
 }
 
 func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error) {
-	dir, err := ioutil.TempDir(conf.TempPath, "tempscheme")
+	dir, err := ioutil.TempDir(filepath.Dir(scheme.path()), "tempscheme")
 	if err != nil {
 		return "", "", err
 	}
@@ -814,11 +818,14 @@ func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error)
 	return dir, newschemepath, nil
 }
 
-// Move oldscheme to a temp dir; move newscheme to the location of oldscheme; and delete oldscheme.
+// Move oldscheme to a temp dir in the same directory als oldscheme;
+// move newscheme to the location of oldscheme; and delete oldscheme.
 // If the first move works then the second one should too, so this will either entirely succeed
 // or leave the old scheme untouched.
 func (conf *Configuration) updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
-	tmp, err := ioutil.TempDir(conf.TempPath, "oldscheme")
+	// Create a directory in the same directory as oldscheme,
+	// this is to make sure os.Rename does not fail with an "invalid cross-device link" error.
+	tmp, err := ioutil.TempDir(filepath.Dir(oldscheme), "oldscheme")
 	if err != nil {
 		return err
 	}
@@ -897,7 +904,7 @@ func (scheme *SchemeManager) path() string { return scheme.storagepath }
 func (scheme *SchemeManager) setPath(path string) { scheme.storagepath = path }
 
 func (scheme *SchemeManager) parseContents(conf *Configuration) error {
-	return common.IterateSubfolders(scheme.path(), func(dir string, _ os.FileInfo) error {
+	err := common.IterateSubfolders(scheme.path(), func(dir string, _ os.FileInfo) error {
 		issuer := &Issuer{}
 
 		exists, err := conf.parseSchemeFile(scheme, filepath.Join(filepath.Base(dir), "description.xml"), issuer)
@@ -918,6 +925,87 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 		conf.Issuers[issuer.Identifier()] = issuer
 		return scheme.parseCredentialsFolder(conf, issuer, filepath.Join(dir, "Issues"))
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// validate that there are no circular dependencies
+	for _, credType := range conf.CredentialTypes {
+		if credType.SchemeManagerID == scheme.ID {
+			if err := credType.validateDependencies(conf, []CredentialTypeIdentifier{}, credType.Identifier()); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+var (
+	errCircDep = errors.Errorf("No valid dependency branch could be built. There might be a circular dependency.")
+)
+
+func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps DependencyChain, toBeChecked CredentialTypeIdentifier) error {
+	if len(validatedDeps) >= maxDepComplexity {
+		return errors.New("dependency tree too complex: " + validatedDeps.String())
+	}
+	for _, discon := range conf.CredentialTypes[ct.Identifier()].Dependencies {
+		disconSatisfied := false
+		for _, con := range discon {
+			conSatisfied := true
+
+			for _, item := range con {
+				if conf.CredentialTypes[item].SchemeManagerID != ct.SchemeManagerID {
+					return errors.Errorf("credential type %s in scheme %s has dependency outside the scheme: %s",
+						ct.Identifier().String(), ct.SchemeManagerID, conf.CredentialTypes[item].Identifier().String())
+				}
+
+				// all items need to be valid for middle to be valid
+				if toBeChecked == item {
+					conSatisfied = false
+					break
+				}
+
+				if conf.CredentialTypes[item].Dependencies != nil {
+					if e := conf.CredentialTypes[item].validateDependencies(conf, append(validatedDeps, item), toBeChecked); e != nil {
+						if e == errCircDep {
+							conSatisfied = false
+							break
+						} else {
+							return e
+						}
+					}
+				}
+			}
+			if conSatisfied {
+				disconSatisfied = true
+			}
+		}
+
+		if !disconSatisfied {
+			return errCircDep
+		}
+	}
+
+	return nil
+}
+
+func (d DependencyChain) contains(item CredentialTypeIdentifier) bool {
+	for _, dep := range d {
+		if dep == item {
+			return true
+		}
+	}
+	return false
+}
+
+func (d DependencyChain) String() string {
+	deps := make([]string, len(d))
+	for i := 0; i < len(d); i++ {
+		deps[i] = d[i].String()
+	}
+	return strings.Join(deps, ", ")
 }
 
 func (scheme *SchemeManager) validate(conf *Configuration) (error, SchemeManagerStatus) {
@@ -1154,9 +1242,9 @@ func (scheme *SchemeManager) downloadDemoPrivateKeys() error {
 	// For each public key, attempt to download a corresponding private key
 	for _, file := range files {
 		i := strings.LastIndex(pkpath, "PublicKeys")
-		skpath := file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1)
-		parts := strings.Split(skpath, "/")
-		exists, err := common.PathExists(filepath.FromSlash(skpath))
+		skpath := filepath.FromSlash(file[:i] + strings.Replace(file[i:], "PublicKeys", "PrivateKeys", 1))
+		parts := strings.Split(skpath, string(filepath.Separator))
+		exists, err := common.PathExists(skpath)
 		if exists || err != nil {
 			continue
 		}
@@ -1190,11 +1278,20 @@ func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path 
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {
+		if logoPath := requestor.logoPath(scheme); logoPath != "" {
+			requestor.LogoPath = &logoPath
+		}
 		for _, hostname := range requestor.Hostnames {
 			if _, ok := conf.Requestors[hostname]; ok {
 				return errors.Errorf("Double occurence of hostname %s", hostname)
 			}
 			conf.Requestors[hostname] = requestor
+		}
+		for id, wizard := range requestor.Wizards {
+			if _, ok := conf.IssueWizards[id]; ok {
+				return errors.Errorf("Double occurence of issue wizard %s", id)
+			}
+			conf.IssueWizards[id] = wizard
 		}
 	}
 	return nil
@@ -1229,22 +1326,50 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 		requestors = append(requestors, currentChunk...)
 	}
 
-	// Verify all referenced logos
+	// Verify all requestors
 	for _, requestor := range requestors {
-		if requestor.Logo == nil {
-			continue
+		if scheme.Demo && len(requestor.Hostnames) > 0 {
+			return errors.New("Demo requestor has hostnames: only allowed for non-demo schemes"), SchemeManagerStatusParsingError
 		}
-		var hash []byte
-		hash, err = hex.DecodeString(*requestor.Logo)
-		if err != nil {
-			return err, SchemeManagerStatusParsingError
+		if requestor.ID.RequestorSchemeIdentifier() != scheme.ID {
+			return errors.Errorf("requestor %s has incorrect ID", requestor.ID), SchemeManagerStatusParsingError
 		}
-		if _, err = conf.readHashedFile(filepath.Join(scheme.path(), "assets", *requestor.Logo+".png"), hash); err != nil {
-			return err, SchemeManagerStatusInvalidSignature
+		if requestor.Logo != nil {
+			if err, status := scheme.checkLogo(conf, *requestor.Logo); err != nil {
+				return err, status
+			}
+		}
+		for id, wizard := range requestor.Wizards {
+			if id != wizard.ID || id.RequestorIdentifier() != requestor.ID {
+				return errors.Errorf("issue wizard %s has incorrect ID", id), SchemeManagerStatusParsingError
+			}
+			if err = wizard.Validate(conf); err != nil {
+				return errors.Errorf("issue wizard %s: %w", id, err), SchemeManagerStatusParsingError
+			}
+			if wizard.Logo != nil {
+				if err, status := scheme.checkLogo(conf, *wizard.Logo); err != nil {
+					return err, status
+				}
+				path := filepath.Join(scheme.path(), "assets", *wizard.Logo+".png")
+				wizard.LogoPath = &path
+			}
 		}
 	}
 	scheme.requestors = requestors
+
 	return nil, SchemeManagerStatusValid
+}
+
+func (scheme *RequestorScheme) checkLogo(conf *Configuration, logo string) (error, SchemeManagerStatus) {
+	var hash []byte
+	hash, err := hex.DecodeString(logo)
+	if err != nil {
+		return err, SchemeManagerStatusParsingError
+	}
+	if _, err = conf.readHashedFile(filepath.Join(scheme.path(), "assets", logo+".png"), hash); err != nil {
+		return err, SchemeManagerStatusInvalidSignature
+	}
+	return nil, ""
 }
 
 func (scheme *RequestorScheme) update() error {

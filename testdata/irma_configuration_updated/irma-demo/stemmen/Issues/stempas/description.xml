@@ -3,10 +3,6 @@
     <en>Demo Voting Card</en>
     <nl>Demo Stempas</nl>
   </Name>
-  <ShortName>
-    <en>Demo Voting Card</en>
-    <nl>Demo Stempas</nl>
-  </ShortName>
   <SchemeManager>irma-demo</SchemeManager>
   <IssuerID>stemmen</IssuerID>
   <CredentialID>stempas</CredentialID>

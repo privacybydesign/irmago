@@ -3,10 +3,6 @@
 		<en>Demo Root</en>
 		<nl>Demo Root</nl>
 	</Name>
-	<ShortName>
-		<en>Root</en>
-		<nl>Root</nl>
-	</ShortName>
 	<SchemeManager>irma-demo</SchemeManager>
 	<IssuerID>MijnOverheid</IssuerID>
 	<CredentialID>root</CredentialID>
@@ -14,6 +10,10 @@
 		<en>Root credential issued by MijnOverheid.nl</en>
 		<nl>Root-credential uitgegeven door MijnOverheid.nl</nl>
 	</Description>
+	<FAQSummary>
+		<en>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</en>
+		<nl>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</nl>
+	</FAQSummary>
 	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>true</ShouldBeSingleton>
 	<RevocationServers>
@@ -31,7 +31,7 @@
 				<nl>Uw BSN-nummer</nl>
 			</Description>
 		</Attribute>
-		<Attribute revocation="true" />
+		<Attribute revocation="true"/>
 	</Attributes>
 
 </IssueSpecification>

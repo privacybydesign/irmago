@@ -19,8 +19,9 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -70,6 +71,10 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 	if len(session.request.Base().Revocation) > 0 {
 		minServer = &irma.ProtocolVersion{2, 6}
 	}
+	// Set minimum to 2.7 if chained session are used
+	if session.rrequest.Base().NextSession != nil {
+		minServer = &irma.ProtocolVersion{2, 7}
+	}
 
 	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {
 		err := errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minServer.String(), maxProtocolVersion.String())
@@ -103,7 +108,7 @@ func (session *session) checkCache(message []byte) (int, []byte) {
 
 // Issuance helpers
 
-func (session *session) computeWitness(sk *gabi.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
+func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
 	credtyp := session.conf.IrmaConfiguration.CredentialTypes[id]
 	if !credtyp.RevocationSupported() || !session.request.Base().RevocationSupported() {
@@ -136,7 +141,7 @@ func (session *session) computeWitness(sk *gabi.PrivateKey, cred *irma.Credentia
 		return nil, err
 	}
 
-	witness, err := sk.RevocationGenerateWitness(acc)
+	witness, err := revocation.RandomWitness(sk, acc)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +151,7 @@ func (session *session) computeWitness(sk *gabi.PrivateKey, cred *irma.Credentia
 }
 
 func (session *session) computeAttributes(
-	sk *gabi.PrivateKey, cred *irma.CredentialRequest,
+	sk *gabikeys.PrivateKey, cred *irma.CredentialRequest,
 ) ([]*big.Int, *revocation.Witness, error) {
 	id := cred.CredentialTypeID
 	witness, err := session.computeWitness(sk, cred)
@@ -281,8 +286,17 @@ func (s *Server) validateRequest(request irma.SessionRequest) error {
 	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
 		return err
 	}
-	if err := request.Base().Validate(s.conf.IrmaConfiguration); err != nil {
+	base := request.Base()
+	if err := base.Validate(s.conf.IrmaConfiguration); err != nil {
 		return err
+	}
+	if base.AugmentReturnURL {
+		if !s.conf.AugmentClientReturnURL {
+			return errors.New("augmenting client return url not enabled in server configuration")
+		}
+		if base.ClientReturnURL == "" {
+			return errors.New("cannot augment empty client return url")
+		}
 	}
 	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
 }

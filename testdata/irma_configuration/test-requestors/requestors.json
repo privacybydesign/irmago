@@ -1,12 +1,136 @@
 [
     {
         "scheme": "test-requestors",
+        "id": "test-requestors.test-requestor",
         "hostnames": [
             "localhost"
         ],
         "name": {
             "en": "Local IRMA server", "nl": "Lokale IRMA server"
         },
-        "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718"
+        "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+        "wizards": {
+            "test-requestors.test-requestor.testwizard": {
+                "id": "test-requestors.test-requestor.testwizard",
+                "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+                "title": {
+                    "nl": "Test",
+                    "en": "Test"
+                },
+                "info": {
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                },
+                "faq": [
+                    {
+                        "question": {
+                            "nl": "Waar haal je de gegevens op?",
+                            "en": "Where do you get the data?"
+                        },
+                        "answer": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        }
+                    },
+                    {
+                        "question": {
+                            "nl": "Welke gegevens haal je op?",
+                            "en": "Which data are added?"
+                        },
+                        "answer": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        }
+                    },
+                    {
+                        "question": {
+                            "nl": "Hoe werkt het?",
+                            "en": "How does it work?"
+                        },
+                        "answer": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        }
+                    }
+                ],
+                "intro": {
+                    "nl": "Doorloop eenmalig onderstaande stappen om toegang tot test te krijgen.",
+                    "en": "Go through the steps below once to gain access to test."
+                },
+                "successHeader": {
+                    "nl": "Gelukt!",
+                    "en": "Done!"
+                },
+                "successText": {
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                },
+                "expandDependencies": false,
+                "contents": [
+                    [[{
+                        "type": "credential",
+                        "credential": "irma-demo.MijnOverheid.fullName",
+                        "text": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        },
+                        "header": {
+                            "nl": "Volledige naam",
+                            "en": "Full name"
+                        },
+                        "label": {
+                            "nl": "Haal naamgegevens op",
+                            "en": "Get name data"
+                        }
+                    }]],
+                    [[{
+                        "type": "credential",
+                        "credential": "irma-demo.MijnOverheid.singleton",
+                        "text": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        }
+                    }]],
+                    [[{
+                        "type": "session",
+                        "sessionUrl": "https://example.com/getsession",
+                        "credential": "irma-demo.RU.studentCard",
+                        "text": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        },
+                        "header": {
+                            "nl": "Studentpas",
+                            "en": "Student Card"
+                        },
+                        "label": {
+                            "nl": "Haal studentpas op",
+                            "en": "Get Student Card"
+                        }
+                    }]],
+                    [[{
+                        "type": "website",
+                        "url": {
+                            "nl": "https://example.com/nl",
+                            "en": "https://example.com/en"
+                        },
+                        "inapp": true,
+                        "credential": "irma-demo.stemmen.stempas",
+                        "text": {
+                            "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                        },
+                        "header": {
+                            "nl": "Stempas",
+                            "en": "Voting Card"
+                        },
+                        "label": {
+                            "nl": "Haal stempas op",
+                            "en": "Get Voting Card"
+                        }
+                    }]]
+                ]
+            }
+        }
     }
 ]

@@ -80,6 +80,9 @@ type session struct {
 	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
 
+	next               *session
+	implicitDisclosure [][]*irma.AttributeIdentifier
+
 	// State for issuance sessions
 	issuerProofNonce *big.Int
 	builders         gabi.ProofBuilderList
@@ -107,6 +110,7 @@ var supportedVersions = map[int][]int{
 		4, // old protocol with legacy session requests
 		5, // introduces condiscon feature
 		6, // introduces nonrevocation proofs
+		7, // introduces chained sessions
 	},
 }
 var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
@@ -174,7 +178,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 }
 
 // newQrSession creates and starts a new interactive IRMA session
-func (client *Client) newQrSession(qr *irma.Qr, handler Handler) SessionDismisser {
+func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)
@@ -408,6 +412,12 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		session.cancel()
 		return
 	}
+
+	// If this is a session in a chain of sessions, also disclose all attributes disclosed in previous sessions
+	if session.implicitDisclosure != nil {
+		choice.Attributes = append(choice.Attributes, session.implicitDisclosure...)
+	}
+
 	session.choice = choice
 	if err := session.choice.Validate(); err != nil {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorRequiredAttributeMissing, Err: err})
@@ -458,6 +468,9 @@ func (session *session) sendResponse(message interface{}) {
 	var log *LogEntry
 	var err error
 	var messageJson []byte
+	var path string
+	var ourResponse interface{}
+	serverResponse := &irma.ServerSessionResponse{ProtocolVersion: session.Version, SessionType: session.Action}
 
 	switch session.Action {
 	case irma.ActionSigning:
@@ -466,68 +479,48 @@ func (session *session) sendResponse(message interface{}) {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
 			return
 		}
-
 		messageJson, err = json.Marshal(irmaSignature)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
 			return
 		}
-
-		if session.IsInteractive() {
-			var response disclosureResponse
-			if err = session.transport.Post("proofs", &response, irmaSignature); err != nil {
-				session.fail(err.(*irma.SessionError))
-				return
-			}
-			if response != "VALID" {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
-				return
-			}
-		}
-		log, err = session.createLogEntry(message)
-		if err != nil {
-			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			session.client.reportError(err)
-		}
+		ourResponse = irmaSignature
+		path = "proofs"
 	case irma.ActionDisclosing:
 		messageJson, err = json.Marshal(message)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Err: err})
 			return
 		}
-		if session.IsInteractive() {
-			var response disclosureResponse
-			if err = session.transport.Post("proofs", &response, message); err != nil {
-				session.fail(err.(*irma.SessionError))
-				return
-			}
-			if response != "VALID" {
-				session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(response)})
-				return
-			}
-		}
-		log, err = session.createLogEntry(message)
-		if err != nil {
-			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			session.client.reportError(err)
-		}
+		ourResponse = message
+		path = "proofs"
 	case irma.ActionIssuing:
-		response := []*gabi.IssueSignatureMessage{}
-		if err = session.transport.Post("commitments", &response, message); err != nil {
+		ourResponse = message
+		path = "commitments"
+	}
+
+	if session.IsInteractive() {
+		if err = session.transport.Post(path, &serverResponse, ourResponse); err != nil {
 			session.fail(err.(*irma.SessionError))
 			return
 		}
-		if err = session.client.ConstructCredentials(response, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+		if serverResponse.ProofStatus != irma.ProofStatusValid {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorRejected, Info: string(serverResponse.ProofStatus)})
 			return
 		}
-		log, err = session.createLogEntry(message)
-		if err != nil {
-			irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-			session.client.reportError(err)
+		if session.Action == irma.ActionIssuing {
+			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+				return
+			}
 		}
 	}
 
+	log, err = session.createLogEntry(message)
+	if err != nil {
+		irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
+		session.client.reportError(err)
+	}
 	if err = session.client.storage.AddLogEntry(log); err != nil {
 		irma.Logger.Warn(errors.WrapPrefix(err, "Failed to write log entry", 0).ErrorStack())
 	}
@@ -535,7 +528,13 @@ func (session *session) sendResponse(message interface{}) {
 		session.client.handler.UpdateAttributes()
 	}
 	session.finish(false)
-	session.Handler.Success(string(messageJson))
+
+	if serverResponse != nil && serverResponse.NextSession != nil {
+		session.next = session.client.newQrSession(serverResponse.NextSession, session.Handler)
+		session.next.implicitDisclosure = session.choice.Attributes
+	} else {
+		session.Handler.Success(string(messageJson))
+	}
 }
 
 // Response calculation methods
@@ -716,7 +715,11 @@ func (session *session) cancel() {
 }
 
 func (session *session) Dismiss() {
-	session.cancel()
+	if session.next != nil {
+		session.next.Dismiss()
+	} else {
+		session.cancel()
+	}
 }
 
 // Keyshare session handler methods

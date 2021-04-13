@@ -22,6 +22,7 @@ const (
 	LDContextSignatureRequest  = "https://irma.app/ld/request/signature/v2"
 	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
 	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
+	DefaultJwtValidity         = 120
 )
 
 // BaseRequest contains information used by all IRMA session types, such the context and nonce,
@@ -44,7 +45,8 @@ type BaseRequest struct {
 	Type            Action `json:"type,omitempty"` // Session type, only used in legacy code
 	DevelopmentMode bool   `json:"devMode,omitempty"`
 
-	ClientReturnURL string `json:"clientReturnUrl,omitempty"` // URL to proceed to when IRMA session is completed
+	ClientReturnURL  string `json:"clientReturnUrl,omitempty"`  // URL to proceed to when IRMA session is completed
+	AugmentReturnURL bool   `json:"augmentReturnUrl,omitempty"` // Whether to augment the return url with the server session token
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -120,9 +122,14 @@ type ServerJwt struct {
 // RequestorBaseRequest contains fields present in all RequestorRequest types
 // with which the requestor configures an IRMA session.
 type RequestorBaseRequest struct {
-	ResultJwtValidity int    `json:"validity,omitempty"`    // Validity of session result JWT in seconds
-	ClientTimeout     int    `json:"timeout,omitempty"`     // Wait this many seconds for the IRMA app to connect before the session times out
-	CallbackURL       string `json:"callbackUrl,omitempty"` // URL to post session result to
+	ResultJwtValidity int              `json:"validity,omitempty"`    // Validity of session result JWT in seconds
+	ClientTimeout     int              `json:"timeout,omitempty"`     // Wait this many seconds for the IRMA app to connect before the session times out
+	CallbackURL       string           `json:"callbackUrl,omitempty"` // URL to post session result to
+	NextSession       *NextSessionData `json:"nextSession,omitempty"` // Data about session to start after this one (if any)
+}
+
+type NextSessionData struct {
+	URL string `json:"url"` // URL from which to get the next session after this one
 }
 
 // RequestorRequest is the message with which requestors start an IRMA session. It contains a
@@ -130,7 +137,13 @@ type RequestorBaseRequest struct {
 type RequestorRequest interface {
 	Validator
 	SessionRequest() SessionRequest
-	Base() RequestorBaseRequest
+	Base() *RequestorBaseRequest
+}
+
+func (r *RequestorBaseRequest) SetDefaultsIfNecessary() {
+	if r.ResultJwtValidity == 0 {
+		r.ResultJwtValidity = DefaultJwtValidity
+	}
 }
 
 // A ServiceProviderRequest contains a disclosure request.
@@ -888,7 +901,7 @@ func NewServiceProviderJwt(servername string, dr *DisclosureRequest) *ServicePro
 			Type:       "verification_request",
 		},
 		Request: &ServiceProviderRequest{
-			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: 120},
+			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: DefaultJwtValidity},
 			Request:              dr,
 		},
 	}
@@ -903,7 +916,7 @@ func NewSignatureRequestorJwt(servername string, sr *SignatureRequest) *Signatur
 			Type:       "signature_request",
 		},
 		Request: &SignatureRequestorRequest{
-			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: 120},
+			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: DefaultJwtValidity},
 			Request:              sr,
 		},
 	}
@@ -918,7 +931,7 @@ func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityPro
 			Type:       "issue_request",
 		},
 		Request: &IdentityProviderRequest{
-			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: 120},
+			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: DefaultJwtValidity},
 			Request:              ir,
 		},
 	}
@@ -959,16 +972,16 @@ func (r *IdentityProviderRequest) SessionRequest() SessionRequest {
 	return r.Request
 }
 
-func (r *ServiceProviderRequest) Base() RequestorBaseRequest {
-	return r.RequestorBaseRequest
+func (r *ServiceProviderRequest) Base() *RequestorBaseRequest {
+	return &r.RequestorBaseRequest
 }
 
-func (r *SignatureRequestorRequest) Base() RequestorBaseRequest {
-	return r.RequestorBaseRequest
+func (r *SignatureRequestorRequest) Base() *RequestorBaseRequest {
+	return &r.RequestorBaseRequest
 }
 
-func (r *IdentityProviderRequest) Base() RequestorBaseRequest {
-	return r.RequestorBaseRequest
+func (r *IdentityProviderRequest) Base() *RequestorBaseRequest {
+	return &r.RequestorBaseRequest
 }
 
 // SessionRequest returns an IRMA session object.

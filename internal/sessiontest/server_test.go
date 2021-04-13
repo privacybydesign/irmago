@@ -1,6 +1,8 @@
 package sessiontest
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -19,6 +21,7 @@ import (
 
 var (
 	httpServer              *http.Server
+	nextRequestServer       *http.Server
 	irmaServer              *irmaserver.Server
 	irmaServerConfiguration *server.Configuration
 	requestorServer         *requestorserver.Server
@@ -102,6 +105,95 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) {
 func StopIrmaServer() {
 	irmaServer.Stop()
 	_ = httpServer.Close()
+}
+
+func chainedServerHandler(t *testing.T) http.Handler {
+	mux := http.NewServeMux()
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+
+	// Note: these chained session requests just serve to test the full functionality of this
+	// feature, and don't necessarily represent a chain of sessions that would be sensible or
+	// desirable in production settings; probably a chain should not be longer than two sessions,
+	// with an issuance session at the end.
+
+	mux.HandleFunc("/1", func(w http.ResponseWriter, r *http.Request) {
+		request := &irma.ServiceProviderRequest{
+			Request: getDisclosureRequest(id),
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				NextSession: &irma.NextSessionData{URL: "http://localhost:48686/2"},
+			},
+		}
+		bts, err := json.Marshal(request)
+		require.NoError(t, err)
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
+	var attr *string
+	mux.HandleFunc("/2", func(w http.ResponseWriter, r *http.Request) {
+		bts, err := ioutil.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.NoError(t, r.Body.Close())
+
+		var result server.SessionResult
+		require.NoError(t, json.Unmarshal(bts, &result))
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.Len(t, result.Disclosed, 1)
+		require.Len(t, result.Disclosed[0], 1)
+		attr = result.Disclosed[0][0].RawValue
+		require.NotNil(t, attr)
+
+		cred := &irma.CredentialRequest{
+			CredentialTypeID: id.CredentialTypeIdentifier(),
+			Attributes: map[string]string{
+				"level":             *attr,
+				"studentCardNumber": *attr,
+				"studentID":         *attr,
+				"university":        *attr,
+			},
+		}
+
+		bts, err = json.Marshal(irma.IdentityProviderRequest{
+			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{cred}),
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				NextSession: &irma.NextSessionData{URL: "http://localhost:48686/3"},
+			},
+		})
+		require.NoError(t, err)
+
+		logger.Trace("2nd request: ", string(bts))
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
+	mux.HandleFunc("/3", func(w http.ResponseWriter, r *http.Request) {
+		request := irma.NewDisclosureRequest()
+		request.Disclose = irma.AttributeConDisCon{{{{
+			Type:  irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"),
+			Value: attr,
+		}}}}
+		bts, err := json.Marshal(request)
+		require.NoError(t, err)
+		logger.Trace("3rd request: ", string(bts))
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
+	return mux
+}
+
+func StartNextRequestServer(t *testing.T) {
+	nextRequestServer = &http.Server{
+		Addr:    "localhost:48686",
+		Handler: chainedServerHandler(t),
+	}
+	go func() {
+		_ = nextRequestServer.ListenAndServe()
+	}()
+}
+
+func StopNextRequestServer() {
+	_ = nextRequestServer.Close()
 }
 
 var IrmaServerConfiguration = &requestorserver.Configuration{

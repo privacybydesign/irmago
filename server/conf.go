@@ -9,8 +9,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -57,6 +56,12 @@ type Configuration struct {
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 	// Parsed JWT private key
 	JwtRSAPrivateKey *rsa.PrivateKey `json:"-"`
+	// Whether to allow callbackUrl to be set in session requests when no JWT privatekey is installed
+	// (which is potentially unsafe depending on the setup)
+	AllowUnsignedCallbacks bool `json:"allow_unsigned_callbacks" mapstructure:"allow_unsigned_callbacks"`
+	// Whether to augment the clientreturnurl with the server token of the request (this allows for stateless
+	// requestor servers more easily)
+	AugmentClientReturnURL bool `json:"augment_client_return_url" mapstructure:"augment_client_return_url"`
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
@@ -93,8 +98,8 @@ func (conf *Configuration) Check() error {
 		conf.verifyURL,
 		conf.verifyEmail,
 		conf.verifyRevocation,
-		conf.verifyStaticSessions,
 		conf.verifyJwtPrivateKey,
+		conf.verifyStaticSessions,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
@@ -127,6 +132,9 @@ func (conf *Configuration) HavePrivateKeys() bool {
 
 func (conf *Configuration) verifyStaticSessions() error {
 	conf.StaticSessionRequests = make(map[string]irma.RequestorRequest)
+	if len(conf.StaticSessions) > 0 && conf.JwtRSAPrivateKey == nil && !conf.AllowUnsignedCallbacks {
+		return errors.New("static sessions configured but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration")
+	}
 	for name, r := range conf.StaticSessions {
 		if !regexp.MustCompile("^[a-zA-Z0-9_]+$").MatchString(name) {
 			return errors.Errorf("static session name %s not allowed, must be alphanumeric", name)
@@ -143,8 +151,9 @@ func (conf *Configuration) verifyStaticSessions() error {
 		if action != irma.ActionDisclosing && action != irma.ActionSigning {
 			return errors.Errorf("static session %s must be either a disclosing or signing session", name)
 		}
-		if rrequest.Base().CallbackURL == "" {
-			return errors.Errorf("static session %s has no callback URL", name)
+		base := rrequest.Base()
+		if base.CallbackURL == "" && (base.NextSession == nil || base.NextSession.URL == "") {
+			return errors.Errorf("static session %s has no callback URL or next session URL", name)
 		}
 		conf.StaticSessionRequests[name] = rrequest
 	}
@@ -209,23 +218,19 @@ func (conf *Configuration) verifyPrivateKeys() error {
 }
 
 func (conf *Configuration) prepareRevocation(credid irma.CredentialTypeIdentifier) error {
-	var sk *revocation.PrivateKey
-	err := conf.IrmaConfiguration.PrivateKeys.Iterate(credid.IssuerIdentifier(), func(isk *gabi.PrivateKey) error {
+	var sk *gabikeys.PrivateKey
+	err := conf.IrmaConfiguration.PrivateKeys.Iterate(credid.IssuerIdentifier(), func(isk *gabikeys.PrivateKey) error {
 		if !isk.RevocationSupported() {
 			return nil
 		}
-		s, err := isk.RevocationKey()
-		if err != nil {
-			return errors.WrapPrefix(err, fmt.Sprintf("failed to load revocation private key %s-%d", credid, isk.Counter), 0)
-		}
-		sk = s
+		sk = isk
 		exists, err := conf.IrmaConfiguration.Revocation.Exists(credid, isk.Counter)
 		if err != nil {
 			return errors.WrapPrefix(err, fmt.Sprintf("failed to check if accumulator exists for %s-%d", credid, isk.Counter), 0)
 		}
 		if !exists {
 			conf.Logger.Warnf("Creating initial accumulator for %s-%d", credid, isk.Counter)
-			if err := conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
+			if err = conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
 				return errors.WrapPrefix(err, fmt.Sprintf("failed create initial accumulator for %s-%d", credid, isk.Counter), 0)
 			}
 		}

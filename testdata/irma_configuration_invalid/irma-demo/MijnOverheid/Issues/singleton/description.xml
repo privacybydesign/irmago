@@ -3,10 +3,6 @@
 		<en>Demo Singleton</en>
 		<nl>Demo Singleton</nl>
 	</Name>
-	<ShortName>
-		<en>Singleton</en>
-		<nl>Singleton</nl>
-	</ShortName>
 	<SchemeManager>irma-demo</SchemeManager>
 	<IssuerID>MijnOverheid</IssuerID>
 	<CredentialID>singleton</CredentialID>

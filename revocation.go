@@ -17,8 +17,8 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
 	sseclient "github.com/sietseringers/go-sse"
@@ -185,7 +185,7 @@ func init() {
 // EnableRevocation creates an initial accumulator for a given credential type. This function is the
 // only way to create such an initial accumulator and it must be called before anyone can use
 // revocation for this credential type. Requires the issuer private key.
-func (rs *RevocationStorage) EnableRevocation(id CredentialTypeIdentifier, sk *revocation.PrivateKey) error {
+func (rs *RevocationStorage) EnableRevocation(id CredentialTypeIdentifier, sk *gabikeys.PrivateKey) error {
 	enabled, err := rs.Exists(id, sk.Counter)
 	if err != nil {
 		return err
@@ -622,7 +622,7 @@ func (rs *RevocationStorage) SyncIfOld(id CredentialTypeIdentifier, maxage uint6
 
 // SaveIssuanceRecord either stores the issuance record locally, if we are the revocation server of
 // the crecential type, or it signs and sends it to the remote revocation server.
-func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec *IssuanceRecord, sk *gabi.PrivateKey) error {
+func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec *IssuanceRecord, sk *gabikeys.PrivateKey) error {
 	credtype := rs.conf.CredentialTypes[id]
 	if credtype == nil {
 		return ErrorUnknownCredentialType
@@ -641,11 +641,7 @@ func (rs *RevocationStorage) SaveIssuanceRecord(id CredentialTypeIdentifier, rec
 	if settings.RevocationServerURL == "" {
 		return errors.New("cannot send issuance record: no server_url configured")
 	}
-	rsk, err := sk.RevocationKey()
-	if err != nil {
-		return err
-	}
-	return rs.client.PostIssuanceRecord(id, rsk, rec, settings.RevocationServerURL)
+	return rs.client.PostIssuanceRecord(id, sk, rec, settings.RevocationServerURL)
 }
 
 // Misscelaneous methods
@@ -857,7 +853,7 @@ func (rs *RevocationStorage) PostUpdate(id CredentialTypeIdentifier, update *rev
 	rs.ServerSentEvents.SendMessage("revocation/"+id.String(), sse.SimpleMessage(string(bts)))
 }
 
-func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, sk *revocation.PrivateKey, rec *IssuanceRecord, url string) error {
+func (client RevocationClient) PostIssuanceRecord(id CredentialTypeIdentifier, sk *gabikeys.PrivateKey, rec *IssuanceRecord, url string) error {
 	message, err := signed.MarshalSign(sk.ECDSA, rec)
 	if err != nil {
 		return err
@@ -986,7 +982,7 @@ func (client RevocationClient) transport(forceHTTPS bool) *HTTPTransport {
 	return client.http
 }
 
-func (rs RevocationKeys) PrivateKeyLatest(issid IssuerIdentifier) (*revocation.PrivateKey, error) {
+func (rs RevocationKeys) PrivateKeyLatest(issid IssuerIdentifier) (*gabikeys.PrivateKey, error) {
 	sk, err := rs.Conf.PrivateKeys.Latest(issid)
 	if err != nil {
 		return nil, err
@@ -994,14 +990,13 @@ func (rs RevocationKeys) PrivateKeyLatest(issid IssuerIdentifier) (*revocation.P
 	if sk == nil {
 		return nil, errors.Errorf("unknown private key: %s", issid)
 	}
-	revsk, err := sk.RevocationKey()
-	if err != nil {
-		return nil, err
+	if !sk.RevocationSupported() {
+		return nil, errors.New("private key does not support revocation")
 	}
-	return revsk, nil
+	return sk, nil
 }
 
-func (rs RevocationKeys) PrivateKey(issid IssuerIdentifier, counter uint) (*revocation.PrivateKey, error) {
+func (rs RevocationKeys) PrivateKey(issid IssuerIdentifier, counter uint) (*gabikeys.PrivateKey, error) {
 	sk, err := rs.Conf.PrivateKeys.Get(issid, counter)
 	if err != nil {
 		return nil, err
@@ -1009,14 +1004,13 @@ func (rs RevocationKeys) PrivateKey(issid IssuerIdentifier, counter uint) (*revo
 	if sk == nil {
 		return nil, errors.Errorf("unknown private key: %s", issid)
 	}
-	revsk, err := sk.RevocationKey()
-	if err != nil {
-		return nil, err
+	if !sk.RevocationSupported() {
+		return nil, errors.New("private key does not support revocation")
 	}
-	return revsk, nil
+	return sk, nil
 }
 
-func (rs RevocationKeys) PublicKey(issid IssuerIdentifier, counter uint) (*revocation.PublicKey, error) {
+func (rs RevocationKeys) PublicKey(issid IssuerIdentifier, counter uint) (*gabikeys.PublicKey, error) {
 	pk, err := rs.Conf.PublicKey(issid, counter)
 	if err != nil {
 		return nil, err
@@ -1024,11 +1018,10 @@ func (rs RevocationKeys) PublicKey(issid IssuerIdentifier, counter uint) (*revoc
 	if pk == nil {
 		return nil, errors.Errorf("unknown public key: %s-%d", issid, counter)
 	}
-	revpk, err := pk.RevocationKey()
-	if err != nil {
-		return nil, err
+	if !pk.RevocationSupported() {
+		return nil, errors.New("public key does not support revocation")
 	}
-	return revpk, nil
+	return pk, nil
 }
 
 // Conversion methods to/from database structs, SQL table rows, gob

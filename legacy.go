@@ -318,3 +318,36 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 
 	return checkType(legacy.Type, ActionIssuing)
 }
+
+func (s *ServerSessionResponse) MarshalJSON() ([]byte, error) {
+	if !s.ProtocolVersion.Below(2, 7) {
+		type response ServerSessionResponse
+		return json.Marshal((*response)(s))
+	}
+
+	if s.NextSession != nil {
+		return nil, errors.New("cannot marshal next session pointer into legacy server session response")
+	}
+
+	if s.SessionType != ActionIssuing {
+		return json.Marshal(s.ProofStatus)
+	}
+	return json.Marshal(s.IssueSignatures)
+}
+
+func (s *ServerSessionResponse) UnmarshalJSON(bts []byte) error {
+	if !s.ProtocolVersion.Below(2, 7) {
+		type response ServerSessionResponse
+		return json.Unmarshal(bts, (*response)(s))
+	}
+	if s.SessionType != ActionIssuing {
+		return json.Unmarshal(bts, &s.ProofStatus)
+	}
+
+	err := json.Unmarshal(bts, &s.IssueSignatures)
+	if err != nil {
+		return err
+	}
+	s.ProofStatus = ProofStatusValid
+	return nil
+}
