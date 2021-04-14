@@ -28,8 +28,8 @@ var (
 	revocationServer        *irmaserver.Server
 	revocationConfiguration *server.Configuration
 
-	//revocationDbType, revocationDbStr = "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
-	revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
+	revocationDbType, revocationDbStr = "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
+	//revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
 
 	revocationPkCounter uint = 2
 )
