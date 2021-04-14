@@ -1,4 +1,4 @@
-package myirma
+package myirmaserver
 
 import (
 	"sync"

@@ -8,21 +8,21 @@ import (
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare/task"
+	"github.com/privacybydesign/irmago/server/keyshare/taskserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
 	"github.com/sirupsen/logrus"
 )
 
-var confKeyshareTask *task.Configuration
+var confKeyshareTask *taskserver.Configuration
 
 var keyshareTaskCmd = &cobra.Command{
 	Use:   "task",
-	Short: "IRMA keyshare server background tasks",
+	Short: "IRMA keyshare background task server",
 	Run: func(command *cobra.Command, args []string) {
 		configureKeyshareTask(command)
 
-		task, err := task.New(confKeyshareTask)
+		task, err := taskserver.New(confKeyshareTask)
 		if err != nil {
 			die("", err)
 		}
@@ -120,7 +120,7 @@ func configureKeyshareTask(cmd *cobra.Command) {
 		emailAuth = smtp.PlainAuth("", viper.GetString("email-username"), viper.GetString("email-password"), viper.GetString("email-hostname"))
 	}
 
-	confKeyshareTask = &task.Configuration{
+	confKeyshareTask = &taskserver.Configuration{
 		DBConnstring: viper.GetString("db"),
 
 		ExpiryDelay: viper.GetInt("expiry-delay"),

@@ -1,6 +1,6 @@
 //+build !local_tests
 
-package myirma
+package myirmaserver
 
 import (
 	"bytes"

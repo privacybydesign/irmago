@@ -19,17 +19,17 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare/myirma"
+	"github.com/privacybydesign/irmago/server/keyshare/myirmaserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
 	"github.com/sirupsen/logrus"
 )
 
-var confKeyshareMyirma *myirma.Configuration
+var confKeyshareMyirma *myirmaserver.Configuration
 
 var myirmadCmd = &cobra.Command{
 	Use:   "myirma",
-	Short: "IRMA keyshare server myirma component",
+	Short: "IRMA keyshare myirma server",
 	Run: func(command *cobra.Command, args []string) {
 		configureMyirmad(command)
 
@@ -47,7 +47,7 @@ var myirmadCmd = &cobra.Command{
 		}
 
 		// Create main server
-		myirmaServer, err := myirma.New(confKeyshareMyirma)
+		myirmaServer, err := myirmaserver.New(confKeyshareMyirma)
 		if err != nil {
 			die("", err)
 		}
@@ -114,7 +114,7 @@ func init() {
 	flags.String("path-prefix", "/", "prefix to listen path")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.String("db-type", myirma.DatabaseTypePostgres, "Type of database to connect keyshare server to")
+	flags.String("db-type", myirmaserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 
@@ -207,7 +207,7 @@ func configureMyirmad(cmd *cobra.Command) {
 	}
 
 	// And build the configuration
-	confKeyshareMyirma = &myirma.Configuration{
+	confKeyshareMyirma = &myirmaserver.Configuration{
 		SchemesPath:           viper.GetString("schemes-path"),
 		SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
 		SchemesUpdateInterval: viper.GetInt("schemes-update"),
@@ -218,7 +218,7 @@ func configureMyirmad(cmd *cobra.Command) {
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),
 
-		DBType:       myirma.DatabaseType(viper.GetString("db-type")),
+		DBType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
 		DBConnstring: viper.GetString("db"),
 
 		KeyshareAttributeNames: viper.GetStringSlice("keyshare-attributes"),

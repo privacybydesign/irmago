@@ -1,6 +1,6 @@
 //+build !local_tests
 
-package myirma
+package myirmaserver
 
 import (
 	"database/sql"
@@ -202,9 +202,9 @@ func RunScriptOnDB(t *testing.T, filename string) {
 }
 
 func SetupDatabase(t *testing.T) {
-	RunScriptOnDB(t, "../app/schema.sql")
+	RunScriptOnDB(t, "../keyshareserver/schema.sql")
 }
 
 func TeardownDatabase(t *testing.T) {
-	RunScriptOnDB(t, "../app/cleanup.sql")
+	RunScriptOnDB(t, "../keyshareserver/cleanup.sql")
 }

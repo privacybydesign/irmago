@@ -1,6 +1,6 @@
 //+build !local_tests
 
-package app
+package keyshareserver
 
 import (
 	"database/sql"

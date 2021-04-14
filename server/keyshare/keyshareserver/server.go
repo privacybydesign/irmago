@@ -1,4 +1,4 @@
-package app
+package keyshareserver
 
 import (
 	"bytes"
@@ -116,7 +116,7 @@ func (s *Server) Handler() http.Handler {
 
 	if s.conf.Verbose >= 2 {
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
-		router.Use(server.LogMiddleware("keyshare-app", opts))
+		router.Use(server.LogMiddleware("keyshareserver", opts))
 	}
 
 	// Registration

@@ -1,4 +1,4 @@
-package task
+package taskserver
 
 import (
 	"path/filepath"

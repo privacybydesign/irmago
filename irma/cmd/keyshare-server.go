@@ -19,17 +19,17 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare/app"
+	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
 	"github.com/sirupsen/logrus"
 )
 
-var confKeysharePhone *app.Configuration
+var confKeyshareServer *keyshareserver.Configuration
 
 var keysharedCmd = &cobra.Command{
-	Use:   "app",
-	Short: "IRMA keyshare server app-talking component",
+	Use:   "server",
+	Short: "IRMA keyshare server",
 	Run: func(command *cobra.Command, args []string) {
 		configureKeyshared(command)
 
@@ -47,7 +47,7 @@ var keysharedCmd = &cobra.Command{
 		}
 
 		// Create main server
-		keyshareServer, err := app.New(confKeysharePhone)
+		keyshareServer, err := keyshareserver.New(confKeyshareServer)
 		if err != nil {
 			die("", err)
 		}
@@ -71,22 +71,22 @@ var keysharedCmd = &cobra.Command{
 			} else {
 				err = serv.ListenAndServe()
 			}
-			confKeysharePhone.Logger.Debug("Server stopped")
+			confKeyshareServer.Logger.Debug("Server stopped")
 			stopped <- struct{}{}
 		}()
 
 		for {
 			select {
 			case <-interrupt:
-				confKeysharePhone.Logger.Debug("Caught interrupt")
+				confKeyshareServer.Logger.Debug("Caught interrupt")
 				err = serv.Shutdown(context.Background())
 				if err != nil {
 					_ = server.LogError(err)
 				}
 				keyshareServer.Stop()
-				confKeysharePhone.Logger.Debug("Sent stop signal to server")
+				confKeyshareServer.Logger.Debug("Sent stop signal to server")
 			case <-stopped:
-				confKeysharePhone.Logger.Info("Exiting")
+				confKeyshareServer.Logger.Info("Exiting")
 				close(stopped)
 				close(interrupt)
 				return
@@ -112,7 +112,7 @@ func init() {
 	flags.String("path-prefix", "/", "prefix to listen path")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.String("db-type", app.DatabaseTypePostgres, "Type of database to connect keyshare server to")
+	flags.String("db-type", keyshareserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 
@@ -208,7 +208,7 @@ func configureKeyshared(cmd *cobra.Command) {
 	}
 
 	// And build the configuration
-	confKeysharePhone = &app.Configuration{
+	confKeyshareServer = &keyshareserver.Configuration{
 		SchemesPath:           viper.GetString("schemes-path"),
 		SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
 		SchemesUpdateInterval: viper.GetInt("schemes-update"),
@@ -217,7 +217,7 @@ func configureKeyshared(cmd *cobra.Command) {
 		URL:                   string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 		DisableTLS:            viper.GetBool("no-tls"),
 
-		DBType:       app.DatabaseType(viper.GetString("db-type")),
+		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
 		DBConnstring: viper.GetString("db"),
 
 		JwtKeyID:                viper.GetInt("jwt-privkey-id"),
