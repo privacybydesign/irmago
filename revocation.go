@@ -362,7 +362,7 @@ func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
 func (rs *RevocationStorage) IssuanceRecords(id CredentialTypeIdentifier, key string, issued time.Time) ([]*IssuanceRecord, error) {
 	where := map[string]interface{}{"cred_type": id, "revocationkey": key, "revoked_at": 0}
 	if !issued.IsZero() {
-		where["Issued"] = issued.UnixNano()
+		where["issued"] = issued.UnixNano()
 	}
 	var r []*IssuanceRecord
 	err := rs.sqldb.Find(&r, where)
