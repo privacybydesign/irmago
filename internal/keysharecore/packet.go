@@ -26,7 +26,7 @@ type (
 var (
 	ErrKeyshareSecretTooBig   = errors.New("Keyshare secret too big to store")
 	ErrKeyshareSecretNegative = errors.New("Keyshare secret negative")
-	NoSuchKey                 = errors.New("Key identifier unknown")
+	ErrNoSuchKey              = errors.New("Key identifier unknown")
 )
 
 func (p *unencryptedKeysharePacket) pin() [64]byte {
@@ -105,7 +105,7 @@ func (c *Core) decryptPacket(p EncryptedKeysharePacket) (unencryptedKeysharePack
 	// Fetch key
 	key, ok := c.decryptionKeys[id]
 	if !ok {
-		return unencryptedKeysharePacket{}, NoSuchKey
+		return unencryptedKeysharePacket{}, ErrNoSuchKey
 	}
 
 	// try and decrypt packet
