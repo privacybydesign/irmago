@@ -3,19 +3,20 @@ package irmaserver
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
+
+	"github.com/go-chi/chi"
+	"github.com/go-errors/errors"
 	"github.com/sirupsen/logrus"
 )
 

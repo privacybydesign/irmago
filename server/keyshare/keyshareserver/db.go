@@ -1,9 +1,9 @@
 package keyshareserver
 
 import (
-	"errors"
-
 	"github.com/privacybydesign/irmago/internal/keysharecore"
+
+	"github.com/go-errors/errors"
 )
 
 var (

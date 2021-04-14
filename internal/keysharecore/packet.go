@@ -5,9 +5,10 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
-	"errors"
 
 	"github.com/privacybydesign/gabi/big"
+
+	"github.com/go-errors/errors"
 )
 
 type (

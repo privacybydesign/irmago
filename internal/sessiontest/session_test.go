@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/require"
 )
 

@@ -1,7 +1,7 @@
 package myirmaserver
 
 import (
-	"errors"
+	"github.com/go-errors/errors"
 )
 
 var (

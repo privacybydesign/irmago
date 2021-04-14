@@ -3,11 +3,12 @@ package migrate
 import (
 	"database/sql"
 	"encoding/binary"
-	"errors"
 	"io/ioutil"
 
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
+
+	"github.com/go-errors/errors"
 )
 
 type Configuration struct {

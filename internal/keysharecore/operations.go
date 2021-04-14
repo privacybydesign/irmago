@@ -5,14 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
-	"errors"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
+
+	"github.com/dgrijalva/jwt-go"
+	"github.com/go-errors/errors"
 )
 
 var (
