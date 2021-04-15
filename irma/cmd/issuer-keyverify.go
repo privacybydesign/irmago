@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/keyproof"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sietseringers/cobra"
@@ -66,7 +66,7 @@ On machines of 2 - 3 GHz verification will take some 5 - 15 minutes, during whic
 		}
 
 		// Try to read public key
-		pk, err := gabi.NewPublicKeyFromFile(pubkeyfile)
+		pk, err := gabikeys.NewPublicKeyFromFile(pubkeyfile)
 		if err != nil {
 			die("Error reading public key", err)
 		}

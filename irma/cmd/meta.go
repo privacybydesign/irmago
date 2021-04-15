@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sietseringers/cobra"
@@ -60,7 +60,7 @@ func printMetadataAttr(metaint *big.Int, confpath string) error {
 
 	meta := irma.MetadataFromInt(metaint, conf)
 	typ := meta.CredentialType()
-	var key *gabi.PublicKey
+	var key *gabikeys.PublicKey
 
 	if typ == nil {
 		fmt.Println("Unknown credential type, hash:", base64.StdEncoding.EncodeToString(meta.CredentialTypeHash()))

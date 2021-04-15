@@ -19,6 +19,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -107,7 +108,7 @@ func (session *session) checkCache(message []byte) (int, []byte) {
 
 // Issuance helpers
 
-func (session *session) computeWitness(sk *gabi.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
+func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
 	credtyp := session.conf.IrmaConfiguration.CredentialTypes[id]
 	if !credtyp.RevocationSupported() || !session.request.Base().RevocationSupported() {
@@ -140,7 +141,7 @@ func (session *session) computeWitness(sk *gabi.PrivateKey, cred *irma.Credentia
 		return nil, err
 	}
 
-	witness, err := sk.RevocationGenerateWitness(acc)
+	witness, err := revocation.RandomWitness(sk, acc)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func (session *session) computeWitness(sk *gabi.PrivateKey, cred *irma.Credentia
 }
 
 func (session *session) computeAttributes(
-	sk *gabi.PrivateKey, cred *irma.CredentialRequest,
+	sk *gabikeys.PrivateKey, cred *irma.CredentialRequest,
 ) ([]*big.Int, *revocation.Witness, error) {
 	id := cred.CredentialTypeID
 	witness, err := session.computeWitness(sk, cred)

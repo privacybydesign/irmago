@@ -340,7 +340,7 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 						continue
 					}
 					if typ == "revoking" {
-						if _, err = sk.RevocationKey(); err != nil {
+						if ok := sk.RevocationSupported(); ok {
 							errs = append(errs, fmt.Sprintf("%s %s permission '%s': private key does not support revocation (add revocation key material to it using \"irma issuer revocation keypair\")", requestor, typ, permission))
 							continue
 						}

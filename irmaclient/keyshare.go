@@ -15,7 +15,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 )
 
 // This file contains an implementation of the client side of the keyshare protocol,
@@ -129,7 +129,7 @@ const (
 
 func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (ks *keyshareServer, err error) {
 	ks = &keyshareServer{
-		Nonce: make([]byte, 32),
+		Nonce:                   make([]byte, 32),
 		SchemeManagerIdentifier: schemeManagerIdentifier,
 	}
 	_, err = rand.Read(ks.Nonce)
@@ -407,7 +407,11 @@ func (ks *keyshareSession) GetCommitments() {
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
 func (ks *keyshareSession) GetProofPs() {
 	_, issig := ks.session.(*irma.SignatureRequest)
-	challenge := ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), issig)
+	challenge, err := ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), issig)
+	if err != nil {
+		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
+		return
+	}
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[irma.SchemeManagerIdentifier]string{}
@@ -417,7 +421,7 @@ func (ks *keyshareSession) GetProofPs() {
 			continue
 		}
 		var j string
-		err := transport.Post("prove/getResponse", &j, challenge)
+		err = transport.Post("prove/getResponse", &j, challenge)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return

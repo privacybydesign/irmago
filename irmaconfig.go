@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/dgrijalva/jwt-go"
@@ -34,7 +34,7 @@ type Configuration struct {
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 	kssPublicKeys   map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
-	publicKeys      map[IssuerIdentifier]map[uint]*gabi.PublicKey
+	publicKeys      map[IssuerIdentifier]map[uint]*gabikeys.PublicKey
 	reverseHashes   map[string]CredentialTypeIdentifier
 
 	// RequestorScheme data of the currently loaded requestorscheme
@@ -308,7 +308,7 @@ func (conf *Configuration) AddPrivateKeyRing(ring PrivateKeyRing) error {
 }
 
 // PublicKey returns the specified public key, or nil if not present in the Configuration.
-func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabi.PublicKey, error) {
+func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabikeys.PublicKey, error) {
 	var haveIssuer, haveKey bool
 	var err error
 	_, haveIssuer = conf.publicKeys[id]
@@ -327,7 +327,7 @@ func (conf *Configuration) PublicKey(id IssuerIdentifier, counter uint) (*gabi.P
 }
 
 // PublicKeyLatest returns the latest private key of the specified issuer.
-func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabi.PublicKey, error) {
+func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabikeys.PublicKey, error) {
 	indices, err := conf.PublicKeyIndices(id)
 	if err != nil {
 		return nil, err
@@ -468,7 +468,7 @@ func (conf *Configuration) hashToCredentialType(hash []byte) *CredentialType {
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	scheme := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
-	conf.publicKeys[issuerid] = map[uint]*gabi.PublicKey{}
+	conf.publicKeys[issuerid] = map[uint]*gabikeys.PublicKey{}
 	pattern := filepath.Join(scheme.path(), issuerid.Name(), "PublicKeys", "*")
 	files, err := filepath.Glob(pattern)
 	if err != nil {
@@ -490,7 +490,7 @@ func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 		if err != nil || !found {
 			return err
 		}
-		pk, err := gabi.NewPublicKeyFromBytes(bts)
+		pk, err := gabikeys.NewPublicKeyFromBytes(bts)
 		if err != nil {
 			return err
 		}
@@ -536,7 +536,7 @@ func (conf *Configuration) clear() {
 	conf.IssueWizards = make(map[IssueWizardIdentifier]*IssueWizard)
 	conf.DisabledRequestorSchemes = make(map[RequestorSchemeIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
-	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabi.PublicKey)
+	conf.publicKeys = make(map[IssuerIdentifier]map[uint]*gabikeys.PublicKey)
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 	if conf.PrivateKeys == nil { // keep if already populated
 		conf.PrivateKeys = &privateKeyRingMerge{}

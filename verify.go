@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 )
 
@@ -49,8 +50,8 @@ var ErrMissingPublicKey = errors.New("Missing public key")
 // ExtractPublicKeys returns the public keys of each proof in the proofList, in the same order,
 // for later use in verification of the proofList. If one of the proofs is not a ProofD
 // an error is returned.
-func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabi.PublicKey, error) {
-	var publicKeys = make([]*gabi.PublicKey, 0, len(pl))
+func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabikeys.PublicKey, error) {
+	var publicKeys = make([]*gabikeys.PublicKey, 0, len(pl))
 
 	for _, v := range pl {
 		switch v.(type) {
@@ -125,7 +126,7 @@ func (pl ProofList) VerifyProofs(
 	configuration *Configuration,
 	request SessionRequest,
 	context *big.Int, nonce *big.Int,
-	publickeys []*gabi.PublicKey,
+	publickeys []*gabikeys.PublicKey,
 	validAt *time.Time,
 	isSig bool,
 ) (bool, map[int]*time.Time, error) {
@@ -349,7 +350,7 @@ func (d *Disclosure) VerifyAgainstRequest(
 	configuration *Configuration,
 	request SessionRequest,
 	context, nonce *big.Int,
-	publickeys []*gabi.PublicKey,
+	publickeys []*gabikeys.PublicKey,
 	validAt *time.Time,
 	issig bool,
 ) ([][]*DisclosedAttribute, ProofStatus, error) {

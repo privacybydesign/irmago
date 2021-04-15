@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -74,7 +74,7 @@ func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 }
 
 func verifyCredentials(t *testing.T, client *Client) {
-	var pk *gabi.PublicKey
+	var pk *gabikeys.PublicKey
 	for credtype, credsmap := range client.attributes {
 		for index, attrs := range credsmap {
 			cred, err := client.credential(attrs.CredentialType().Identifier(), index)

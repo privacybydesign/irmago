@@ -29,7 +29,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/sietseringers/cobra"
 
 	"github.com/go-errors/errors"
@@ -114,11 +114,11 @@ var genkeypairCmd = &cobra.Command{
 		}
 
 		// Now generate the key pair
-		sysParams, ok := gabi.DefaultSystemParameters[keylength]
+		sysParams, ok := gabikeys.DefaultSystemParameters[keylength]
 		if !ok {
-			return fmt.Errorf("Unsupported key length, should be one of %v", gabi.DefaultKeyLengths)
+			return fmt.Errorf("Unsupported key length, should be one of %v", gabikeys.DefaultKeyLengths)
 		}
-		privk, pubk, err := gabi.GenerateKeyPair(sysParams, numAttributes, counter, expiryDate)
+		privk, pubk, err := gabikeys.GenerateKeyPair(sysParams, numAttributes, counter, expiryDate)
 		if err != nil {
 			return err
 		}

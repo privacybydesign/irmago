@@ -8,8 +8,8 @@ import (
 
 	"github.com/eknkc/basex"
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 )
 
 const (
@@ -38,7 +38,7 @@ type metadataField struct {
 // metadataAttribute represents a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
 type MetadataAttribute struct {
 	Int  *big.Int
-	pk   *gabi.PublicKey
+	pk   *gabikeys.PublicKey
 	Conf *Configuration
 }
 
@@ -248,7 +248,7 @@ func (attr *MetadataAttribute) Bytes() []byte {
 
 // PublicKey extracts identifier of the Idemix public key with which this instance was signed,
 // and returns this public key.
-func (attr *MetadataAttribute) PublicKey() (*gabi.PublicKey, error) {
+func (attr *MetadataAttribute) PublicKey() (*gabikeys.PublicKey, error) {
 	if attr.pk == nil {
 		var err error
 		attr.pk, err = attr.Conf.PublicKey(attr.CredentialType().IssuerIdentifier(), attr.KeyCounter())
