@@ -43,12 +43,11 @@ func New(c *Configuration) *Converter {
 		logger.WithField("error", err).Fatal("Could not open connection to destination database.")
 	}
 
-	core := keysharecore.NewKeyshareCore()
 	index, key, err := readAESKey(c.StoragePrimaryKeyFile)
 	if err != nil {
 		logger.WithField("error", err).Fatal("Could not load storage key.")
 	}
-	core.DangerousSetAESEncryptionKey(index, key)
+	core := keysharecore.NewKeyshareCore(index, key, 0, nil)
 
 	return &Converter{
 		source_db: source_db,

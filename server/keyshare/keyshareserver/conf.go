@@ -222,7 +222,6 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	}
 
 	// Parse keysharecore private keys and create a valid keyshare core
-	core := keysharecore.NewKeyshareCore()
 	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
 		return nil, server.LogError(errors.Errorf("Missing keyshare server jwt key"))
 	}
@@ -234,12 +233,12 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
 	}
-	core.SetSignKey(jwtPrivateKey, conf.JwtKeyID)
 	encID, encKey, err := readAESKey(conf.StoragePrimaryKeyFile)
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to load primary storage key", 0))
 	}
-	core.DangerousSetAESEncryptionKey(encID, encKey)
+
+	core := keysharecore.NewKeyshareCore(encID, encKey, conf.JwtKeyID, jwtPrivateKey)
 	for _, keyFile := range conf.StorageFallbackKeyFiles {
 		id, key, err := readAESKey(keyFile)
 		if err != nil {

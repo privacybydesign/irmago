@@ -21,12 +21,10 @@ import (
 
 func TestPinFunctionality(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 
 	// generate test pin
 	var bpin [64]byte
@@ -61,12 +59,10 @@ func TestPinFunctionality(t *testing.T) {
 
 func TestVerifyAccess(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 
 	// Generate test pins
 	var bpin [64]byte
@@ -162,12 +158,10 @@ func TestVerifyAccess(t *testing.T) {
 
 func TestProofFunctionality(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// generate test pin
@@ -214,12 +208,10 @@ func TestProofFunctionality(t *testing.T) {
 
 func TestCorruptedPacket(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -260,12 +252,10 @@ func TestCorruptedPacket(t *testing.T) {
 
 func TestIncorrectPin(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -299,12 +289,10 @@ func TestIncorrectPin(t *testing.T) {
 
 func TestMissingKey(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -334,12 +322,10 @@ func TestMissingKey(t *testing.T) {
 
 func TestInvalidChallenge(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -377,12 +363,10 @@ func TestInvalidChallenge(t *testing.T) {
 
 func TestDoubleCommitUse(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -410,12 +394,10 @@ func TestDoubleCommitUse(t *testing.T) {
 
 func TestNonExistingCommit(t *testing.T) {
 	// Setup keys for test
-	c := NewKeyshareCore()
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c.DangerousSetAESEncryptionKey(1, key)
-	c.SetSignKey(jwtTestKey, 1)
+	c := NewKeyshareCore(1, key, 1, jwtTestKey)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters

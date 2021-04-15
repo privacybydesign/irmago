@@ -33,12 +33,15 @@ type (
 	}
 )
 
-func NewKeyshareCore() *Core {
-	return &Core{
+func NewKeyshareCore(aesKeyID uint32, aesKey AesKey, signKeyID int, signKey *rsa.PrivateKey) *Core {
+	c := &Core{
 		decryptionKeys: map[uint32]AesKey{},
 		commitmentData: map[uint64]*big.Int{},
 		trustedKeys:    map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{},
 	}
+	c.setAESEncryptionKey(aesKeyID, aesKey)
+	c.setSignKey(signKeyID, signKey)
+	return c
 }
 
 func GenerateAESKey() (AesKey, error) {
@@ -56,14 +59,14 @@ func (c *Core) DangerousAddAESKey(keyID uint32, key AesKey) {
 // Set the aes key for encrypting new/changed keyshare data
 // with identifier keyid
 // Calling this wil also cause all keyshare packets generated with the key to be trusted
-func (c *Core) DangerousSetAESEncryptionKey(keyID uint32, key AesKey) {
+func (c *Core) setAESEncryptionKey(keyID uint32, key AesKey) {
 	c.decryptionKeys[keyID] = key
 	c.encryptionKey = key
 	c.encryptionKeyID = keyID
 }
 
 // Set key used to sign keyshare protocol messages
-func (c *Core) SetSignKey(key *rsa.PrivateKey, id int) {
+func (c *Core) setSignKey(id int, key *rsa.PrivateKey) {
 	c.signKey = key
 	c.signKeyID = id
 }
