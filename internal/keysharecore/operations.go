@@ -27,33 +27,12 @@ var (
 
 // Generate a new keyshare secret, secured with the given pin
 func (c *Core) GenerateKeyshareSecret(pinRaw string) (EncryptedKeysharePacket, error) {
-	pin, err := padPin(pinRaw)
+	secret, err := gabi.NewKeyshareSecret()
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
 
-	keyshareSecret, err := gabi.NewKeyshareSecret()
-	if err != nil {
-		return EncryptedKeysharePacket{}, err
-	}
-
-	var id [32]byte
-	_, err = rand.Read(id[:])
-	if err != nil {
-		return EncryptedKeysharePacket{}, err
-	}
-
-	// Build unencrypted packet
-	var p unencryptedKeysharePacket
-	p.setPin(pin)
-	err = p.setKeyshareSecret(keyshareSecret)
-	if err != nil {
-		return EncryptedKeysharePacket{}, err
-	}
-	p.setID(id)
-
-	// And encrypt
-	return c.encryptPacket(p)
+	return c.DangerousBuildKeyshareSecret(pinRaw, secret)
 }
 
 func (c *Core) DangerousBuildKeyshareSecret(pinRaw string, secret *big.Int) (EncryptedKeysharePacket, error) {
@@ -68,6 +47,7 @@ func (c *Core) DangerousBuildKeyshareSecret(pinRaw string, secret *big.Int) (Enc
 		return EncryptedKeysharePacket{}, err
 	}
 
+	// Build unencrypted packet
 	var p unencryptedKeysharePacket
 	p.setPin(pin)
 	err = p.setKeyshareSecret(secret)
@@ -76,27 +56,16 @@ func (c *Core) DangerousBuildKeyshareSecret(pinRaw string, secret *big.Int) (Enc
 	}
 	p.setID(id)
 
+	// And encrypt
 	return c.encryptPacket(p)
 }
 
 // Check pin for validity, and generate jwt for future access
 //  userid is an extra field added to the jwt for
 func (c *Core) ValidatePin(ep EncryptedKeysharePacket, pin string, userID string) (string, error) {
-	paddedPin, err := padPin(pin)
+	p, err := c.decryptPacketIfPinOK(ep, pin)
 	if err != nil {
 		return "", err
-	}
-
-	// decrypt
-	p, err := c.decryptPacket(ep)
-	if err != nil {
-		return "", err
-	}
-
-	// verify pin
-	refPin := p.pin()
-	if !hmac.Equal(refPin[:], paddedPin[:]) {
-		return "", ErrInvalidPin
 	}
 
 	// Generate jwt token
@@ -121,26 +90,14 @@ func (c *Core) ValidateJWT(ep EncryptedKeysharePacket, jwt string) error {
 
 // Change pin in an encrypted keyshare packet to a new value, after validating that the old value is known by caller.
 func (c *Core) ChangePin(ep EncryptedKeysharePacket, oldpinRaw, newpinRaw string) (EncryptedKeysharePacket, error) {
-	oldpin, err := padPin(oldpinRaw)
+	p, err := c.decryptPacketIfPinOK(ep, oldpinRaw)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
+
 	newpin, err := padPin(newpinRaw)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
-	}
-
-	// decrypt
-	p, err := c.decryptPacket(ep)
-	if err != nil {
-		return EncryptedKeysharePacket{}, err
-	}
-
-	// verify
-	refPin := p.pin()
-	// use hmac equal to make this constant time
-	if !hmac.Equal(refPin[:], oldpin[:]) {
-		return EncryptedKeysharePacket{}, ErrInvalidPin
 	}
 
 	// change and reencrypt

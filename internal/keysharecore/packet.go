@@ -3,6 +3,7 @@ package keysharecore
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"encoding/binary"
 
@@ -85,11 +86,7 @@ func (c *Core) encryptPacket(p unencryptedKeysharePacket) (EncryptedKeysharePack
 	}
 
 	// Encrypt packet
-	keyedAes, err := aes.NewCipher(c.encryptionKey[:])
-	if err != nil {
-		return EncryptedKeysharePacket{}, err
-	}
-	gcm, err := cipher.NewGCM(keyedAes)
+	gcm, err := newGCM(c.encryptionKey)
 	if err != nil {
 		return EncryptedKeysharePacket{}, err
 	}
@@ -109,11 +106,7 @@ func (c *Core) decryptPacket(p EncryptedKeysharePacket) (unencryptedKeysharePack
 	}
 
 	// try and decrypt packet
-	keyedAes, err := aes.NewCipher(key[:])
-	if err != nil {
-		return unencryptedKeysharePacket{}, err
-	}
-	gcm, err := cipher.NewGCM(keyedAes)
+	gcm, err := newGCM(key)
 	if err != nil {
 		return unencryptedKeysharePacket{}, err
 	}
@@ -123,4 +116,35 @@ func (c *Core) decryptPacket(p EncryptedKeysharePacket) (unencryptedKeysharePack
 		return unencryptedKeysharePacket{}, err
 	}
 	return result, nil
+}
+
+func (c *Core) decryptPacketIfPinOK(ep EncryptedKeysharePacket, pin string) (unencryptedKeysharePacket, error) {
+	paddedPin, err := padPin(pin)
+	if err != nil {
+		return unencryptedKeysharePacket{}, err
+	}
+
+	p, err := c.decryptPacket(ep)
+	if err != nil {
+		return unencryptedKeysharePacket{}, err
+	}
+
+	// Check pins in constant time
+	refPin := p.pin()
+	if !hmac.Equal(refPin[:], paddedPin[:]) {
+		return unencryptedKeysharePacket{}, ErrInvalidPin
+	}
+	return p, nil
+}
+
+func newGCM(key AesKey) (cipher.AEAD, error) {
+	keyedAes, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(keyedAes)
+	if err != nil {
+		return nil, err
+	}
+	return gcm, nil
 }
