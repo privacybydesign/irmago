@@ -225,8 +225,12 @@ func (s *Server) generateCommitments(user KeyshareUser, authorization string, ke
 	if _, ok := s.sessions[username]; !ok {
 		s.sessions[username] = &SessionData{}
 	}
-	s.sessions[username].LastCommitID = commitID
+	// Of all keys involved in the current session, store the ID of the first one to be used when
+	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
+	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
+	// puts the key ID of the credential(s) being issued at index 0.
 	s.sessions[username].LastKeyID = keys[0]
+	s.sessions[username].LastCommitID = commitID
 	s.sessions[username].expiry = time.Now().Add(10 * time.Second)
 	s.sessionLock.Unlock()
 
