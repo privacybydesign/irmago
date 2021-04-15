@@ -21,7 +21,7 @@ type (
 
 		// Key used to sign keyshare protocol messages
 		signKey   *rsa.PrivateKey
-		signKeyID int
+		signKeyID uint32
 
 		// Commit values generated in first step of keyshare protocol
 		commitmentData  map[uint64]*big.Int
@@ -33,7 +33,7 @@ type (
 	}
 )
 
-func NewKeyshareCore(aesKeyID uint32, aesKey AesKey, signKeyID int, signKey *rsa.PrivateKey) *Core {
+func NewKeyshareCore(aesKeyID uint32, aesKey AesKey, signKeyID uint32, signKey *rsa.PrivateKey) *Core {
 	c := &Core{
 		decryptionKeys: map[uint32]AesKey{},
 		commitmentData: map[uint64]*big.Int{},
@@ -66,7 +66,7 @@ func (c *Core) setAESEncryptionKey(keyID uint32, key AesKey) {
 }
 
 // Set key used to sign keyshare protocol messages
-func (c *Core) setSignKey(id int, key *rsa.PrivateKey) {
+func (c *Core) setSignKey(id uint32, key *rsa.PrivateKey) {
 	c.signKey = key
 	c.signKeyID = id
 }

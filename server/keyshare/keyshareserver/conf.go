@@ -58,7 +58,7 @@ type Configuration struct {
 
 	// Configuration of secure Core
 	// Private key used to sign JWTs with
-	JwtKeyID          int    `json:"jwt_key_id" mapstructure:"jwt_key_id"`
+	JwtKeyID          uint32 `json:"jwt_key_id" mapstructure:"jwt_key_id"`
 	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 	// Decryption keys used for keyshare packets

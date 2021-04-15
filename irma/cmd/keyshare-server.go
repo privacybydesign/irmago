@@ -220,7 +220,7 @@ func configureKeyshared(cmd *cobra.Command) {
 		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
 		DBConnstring: viper.GetString("db"),
 
-		JwtKeyID:                viper.GetInt("jwt-privkey-id"),
+		JwtKeyID:                viper.GetUint32("jwt-privkey-id"),
 		JwtPrivateKey:           viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:       viper.GetString("jwt-privkey-file"),
 		StoragePrimaryKeyFile:   viper.GetString("storage-primary-keyfile"),
