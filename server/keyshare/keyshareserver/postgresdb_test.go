@@ -53,6 +53,8 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
+	BACKOFF_START = 2
+
 	db, err := NewPostgresDatabase(postgresTestUrl)
 	require.NoError(t, err)
 
@@ -62,7 +64,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	ok, tries, wait, err := db.ReservePincheck(user)
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.True(t, tries > 0)
+	assert.Equal(t, MAX_PIN_TRIES-1, tries)
 	assert.Equal(t, int64(0), wait)
 	for tries != 0 {
 		ok, tries, wait, err = db.ReservePincheck(user)
@@ -70,7 +72,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 		assert.True(t, ok)
 	}
 
-	time.Sleep(time.Duration(wait-5) * time.Second)
+	time.Sleep(time.Duration(wait-1) * time.Second)
 
 	ok, tries, wait, err = db.ReservePincheck(user)
 	assert.NoError(t, err)
@@ -78,7 +80,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	assert.Equal(t, 0, tries)
 	assert.True(t, wait > 0)
 
-	time.Sleep(time.Duration(10 * time.Second))
+	time.Sleep(time.Duration(2 * time.Second))
 
 	ok, tries, wait, err = db.ReservePincheck(user)
 	assert.NoError(t, err)

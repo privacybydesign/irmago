@@ -28,8 +28,11 @@ func (m *keysharePostgresUser) Data() *KeyshareUserData {
 }
 
 const MAX_PIN_TRIES = 3         // Number of tries allowed on pin before we start with exponential backoff
-const BACKOFF_START = 30        // Initial ammount of time you are forced to back off when having multiple pin failures (in seconds)
-const EMAIL_TOKEN_VALIDITY = 24 // Ammount of time your email validation token is valid (in hours)
+const EMAIL_TOKEN_VALIDITY = 24 // Ammount of time user's email validation token is valid (in hours)
+
+// Initial ammount of time user is forced to back off when having multiple pin failures (in seconds).
+// var so that tests may change it.
+var BACKOFF_START int64 = 30
 
 func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 	db, err := sql.Open("pgx", connstring)
