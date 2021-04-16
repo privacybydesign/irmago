@@ -102,20 +102,23 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	assert.Equal(t, int64(0), wait)
 }
 
-func RunScriptOnDB(t *testing.T, filename string) {
+func RunScriptOnDB(t *testing.T, filename string, allowErr bool) {
 	db, err := sql.Open("pgx", postgresTestUrl)
 	require.NoError(t, err)
 	defer common.Close(db)
 	scriptData, err := ioutil.ReadFile(filename)
 	require.NoError(t, err)
 	_, err = db.Exec(string(scriptData))
-	require.NoError(t, err)
+	if !allowErr {
+		require.NoError(t, err)
+	}
 }
 
 func SetupDatabase(t *testing.T) {
-	RunScriptOnDB(t, "schema.sql")
+	RunScriptOnDB(t, "cleanup.sql", true)
+	RunScriptOnDB(t, "schema.sql", false)
 }
 
 func TeardownDatabase(t *testing.T) {
-	RunScriptOnDB(t, "cleanup.sql")
+	RunScriptOnDB(t, "cleanup.sql", false)
 }
