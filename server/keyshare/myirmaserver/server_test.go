@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -396,8 +397,11 @@ var keyshareServ *http.Server
 func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
-		SchemesPath:            filepath.Join(testdataPath, "irma_configuration"),
-		URL:                    "http://localhost:8080/irma_keyshare_server/api/v1/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		MyIRMAURL:              "http://localhost:8080/irma_keyshare_server/api/v1/",
 		DB:                     db,
 		SessionLifetime:        15 * 60,
 		KeyshareAttributeNames: []string{"test.test.mijnirma.email"},
@@ -426,7 +430,6 @@ func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 		DeleteAccountSubject: map[string]string{
 			"en": "testsubject",
 		},
-		Logger: irma.Logger,
 	})
 	require.NoError(t, err)
 

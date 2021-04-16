@@ -33,15 +33,15 @@ type Server struct {
 var ErrInvalidEmail = errors.New("Email not associated with account")
 
 func New(conf *Configuration) (*Server, error) {
-	err := processConfiguration(conf)
+	sessionserver, err := irmaserver.New(conf.Configuration)
+	if err != nil {
+		return nil, err
+	}
+	err = processConfiguration(conf)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionserver, err := irmaserver.New(conf.ServerConfiguration)
-	if err != nil {
-		return nil, err
-	}
 	s := &Server{
 		conf:          conf,
 		sessionserver: sessionserver,

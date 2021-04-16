@@ -8,7 +8,6 @@ import (
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/sirupsen/logrus"
 )
 
 type DatabaseType string
@@ -23,24 +22,9 @@ const (
 // Configuration contains configuration for the irmaserver library and irmad.
 type Configuration struct {
 	// IRMA server configuration. If not given, this will be populated using information here
-	ServerConfiguration *server.Configuration `json:"-"`
-	// Path to IRMA schemes to parse into server configuration (only used if ServerConfiguration == nil).
-	// If left empty, default value is taken using DefaultSchemesPath().
-	// If an empty folder is specified, default schemes (irma-demo and pbdf) are downloaded into it.
-	SchemesPath string `json:"schemes_path" mapstructure:"schemes_path"`
-	// If specified, schemes found here are copied into SchemesPath (only used if ServerConfiguration == nil)
-	SchemesAssetsPath string `json:"schemes_assets_path" mapstructure:"schemes_assets_path"`
-	// Disable scheme updating (used only if ServerConfiguration == nil)
-	DisableSchemesUpdate bool `json:"disable_schemes_update" mapstructure:"disable_schemes_update"`
-	// Update all schemes every x minutes (default value 0 means 60) (use DisableSchemesUpdate to disable)
-	// (used only if ServerConfiguration == nil)
-	SchemesUpdateInterval int `json:"schemes_update" mapstructure:"schemes_update"`
-	// Path to issuer private keys to parse
-	URL string `json:"url" mapstructure:"url"`
-	// Required to be set to true if URL does not begin with https:// in production mode.
-	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
-	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
-	DisableTLS bool `json:"no_tls" mapstructure:"no_tls"`
+	*server.Configuration `mapstructure:",squash"`
+
+	MyIRMAURL string `json:"url" mapstructure:"url"`
 
 	// Path to static content to serve (for testing)
 	StaticPath   string
@@ -77,48 +61,11 @@ type Configuration struct {
 	DeleteAccountFiles     map[string]string
 	DeleteAccountTemplates map[string]*template.Template
 	DeleteAccountSubject   map[string]string
-
-	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
-	Verbose int `json:"verbose" mapstructure:"verbose"`
-	// Don't log anything at all
-	Quiet bool `json:"quiet" mapstructure:"quiet"`
-	// Output structured log in JSON format
-	LogJSON bool `json:"log_json" mapstructure:"log_json"`
-	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
-	Logger *logrus.Logger `json:"-"`
-
-	// Production mode: enables safer and stricter defaults and config checking
-	Production bool `json:"production" mapstructure:"production"`
 }
 
 // Process a passed configuration to ensure all field values are valid and initialized
 // as required by the rest of this keyshare server component.
 func processConfiguration(conf *Configuration) error {
-	// Setup log
-	if conf.Logger == nil {
-		conf.Logger = server.NewLogger(conf.Verbose, conf.Quiet, conf.LogJSON)
-	}
-	server.Logger = conf.Logger
-	irma.Logger = conf.Logger
-
-	// Setup server configuration if needed
-	if conf.ServerConfiguration == nil {
-		conf.ServerConfiguration = &server.Configuration{
-			SchemesPath:           conf.SchemesPath,
-			SchemesAssetsPath:     conf.SchemesAssetsPath,
-			DisableSchemesUpdate:  conf.DisableSchemesUpdate,
-			SchemesUpdateInterval: conf.SchemesUpdateInterval,
-			DisableTLS:            conf.DisableTLS,
-			Logger:                conf.Logger,
-		}
-	}
-
-	// Force loggers to match (TODO: reevaluate once logging is reworked in IRMA server)
-	conf.ServerConfiguration.Logger = conf.Logger
-
-	// Force production status to match
-	conf.ServerConfiguration.Production = conf.Production
-
 	// Setup data for login requests
 	if len(conf.KeyshareAttributes) == 0 {
 		for _, v := range conf.KeyshareAttributeNames {
@@ -224,23 +171,10 @@ func processConfiguration(conf *Configuration) error {
 	}
 
 	// Setup server urls
-	if !strings.HasSuffix(conf.URL, "/") {
-		conf.URL = conf.URL + "/"
+	if !strings.HasSuffix(conf.MyIRMAURL, "/") {
+		conf.MyIRMAURL = conf.MyIRMAURL + "/"
 	}
-	if !strings.HasPrefix(conf.URL, "https://") {
-		if !conf.Production || conf.DisableTLS {
-			conf.DisableTLS = true
-			conf.Logger.Warnf("TLS is not enabled on the url \"%s\" to which the IRMA app will connect. "+
-				"Ensure that attributes are encrypted in transit by either enabling TLS or adding TLS in a reverse proxy.", conf.URL)
-		} else {
-			return server.LogError(errors.Errorf("Running without TLS in production mode is unsafe without a reverse proxy. " +
-				"Either use a https:// URL or explicitly disable TLS."))
-		}
-	}
-	if conf.ServerConfiguration.URL == "" {
-		conf.ServerConfiguration.URL = conf.URL + "irma/"
-		conf.ServerConfiguration.DisableTLS = conf.DisableTLS // ensure matching checks
-	}
+	conf.URL = conf.MyIRMAURL + "irma/"
 
 	return nil
 }

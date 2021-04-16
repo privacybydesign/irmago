@@ -65,7 +65,13 @@ func New(conf *Configuration) (*Server, error) {
 		scheduler: gocron.NewScheduler(),
 	}
 
-	// Do initial processing of configuration and create keyshare core
+	// Setup IRMA session server
+	s.sessionserver, err = irmaserver.New(conf.Configuration)
+	if err != nil {
+		return nil, err
+	}
+
+	// Process configuration and create keyshare core
 	s.core, err = processConfiguration(conf)
 	if err != nil {
 		return nil, err
@@ -73,16 +79,9 @@ func New(conf *Configuration) (*Server, error) {
 
 	// Load neccessary idemix keys into core, and ensure that future updates
 	// to them are processed
-	s.LoadIdemixKeys(conf.ServerConfiguration.IrmaConfiguration)
-	conf.ServerConfiguration.IrmaConfiguration.UpdateListeners = append(
-		conf.ServerConfiguration.IrmaConfiguration.UpdateListeners,
-		s.LoadIdemixKeys)
-
-	// Setup IRMA session server
-	s.sessionserver, err = irmaserver.New(conf.ServerConfiguration)
-	if err != nil {
-		return nil, err
-	}
+	s.LoadIdemixKeys(conf.IrmaConfiguration)
+	conf.IrmaConfiguration.UpdateListeners = append(
+		conf.IrmaConfiguration.UpdateListeners, s.LoadIdemixKeys)
 
 	// Setup DB
 	s.db = conf.DB

@@ -14,6 +14,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -450,9 +451,12 @@ var keyshareServ *http.Server
 func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/api/v1/",
+		Configuration: &server.Configuration{
+			SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
+			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
+			Logger:                irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/api/v1/",
 		DB:                    db,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -471,7 +475,6 @@ func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
 		VerificationURL: map[string]string{
 			"en": "http://example.com/verify/",
 		},
-		Logger: irma.Logger,
 	})
 	require.NoError(t, err)
 

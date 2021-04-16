@@ -7,6 +7,7 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,86 +16,101 @@ func TestConfInvalidAESKey(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 
 	_, err := New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
-		Logger:                irma.Logger,
 	})
 	assert.NoError(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
-		Logger:                irma.Logger,
 	})
 	assert.NoError(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk-does-not-exist.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
-		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey-does-not-exist"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
-		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
-		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                "undefined",
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
 		KeyshareAttribute:     "email",
-		Logger:                irma.Logger,
 	})
 	assert.Error(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -109,7 +125,6 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
-		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
@@ -118,8 +133,11 @@ func TestConfInvalidAESKey(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -134,13 +152,15 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
-		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -155,13 +175,15 @@ func TestConfInvalidAESKey(t *testing.T) {
 		RegistrationEmailSubject: map[string]string{
 			"en": "testsubject",
 		},
-		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -179,13 +201,15 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
-		Logger: irma.Logger,
 	})
 	assert.NoError(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -203,13 +227,15 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
-		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -227,13 +253,15 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
-		Logger: irma.Logger,
 	})
 	assert.NoError(t, err)
 
 	_, err = New(&Configuration{
-		SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
-		URL:                   "http://localhost:8080/irma_keyshare_server/",
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
@@ -251,7 +279,6 @@ func TestConfInvalidAESKey(t *testing.T) {
 		VerificationURL: map[string]string{
 			"en": "test",
 		},
-		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
 }

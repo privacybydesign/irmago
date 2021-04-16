@@ -209,13 +209,21 @@ func configureKeyshared(cmd *cobra.Command) {
 
 	// And build the configuration
 	confKeyshareServer = &keyshareserver.Configuration{
-		SchemesPath:           viper.GetString("schemes-path"),
-		SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
-		SchemesUpdateInterval: viper.GetInt("schemes-update"),
-		DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
-		IssuerPrivateKeysPath: viper.GetString("privkeys"),
-		URL:                   string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
-		DisableTLS:            viper.GetBool("no-tls"),
+		Configuration: &server.Configuration{
+			SchemesPath:           viper.GetString("schemes-path"),
+			SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
+			SchemesUpdateInterval: viper.GetInt("schemes-update"),
+			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
+			IssuerPrivateKeysPath: viper.GetString("privkeys"),
+			DisableTLS:            viper.GetBool("no-tls"),
+			Verbose:               viper.GetInt("verbose"),
+			Quiet:                 viper.GetBool("quiet"),
+			LogJSON:               viper.GetBool("log-json"),
+			Production:            viper.GetBool("production"),
+			Logger:                logger,
+		},
+
+		KeyshareURL: string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 
 		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
 		DBConnstring: viper.GetString("db"),
@@ -236,12 +244,6 @@ func configureKeyshared(cmd *cobra.Command) {
 		RegistrationEmailSubject: viper.GetStringMapString("registration-email-subject"),
 		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-template"),
 		VerificationURL:          viper.GetStringMapString("verification-url"),
-
-		Verbose:    viper.GetInt("verbose"),
-		Quiet:      viper.GetBool("quiet"),
-		LogJSON:    viper.GetBool("log-json"),
-		Logger:     logger,
-		Production: viper.GetBool("production"),
 	}
 }
 

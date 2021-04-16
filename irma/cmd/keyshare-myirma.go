@@ -208,12 +208,20 @@ func configureMyirmad(cmd *cobra.Command) {
 
 	// And build the configuration
 	confKeyshareMyirma = &myirmaserver.Configuration{
-		SchemesPath:           viper.GetString("schemes-path"),
-		SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
-		SchemesUpdateInterval: viper.GetInt("schemes-update"),
-		DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
-		URL:                   string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
-		DisableTLS:            viper.GetBool("no-tls"),
+		Configuration: &server.Configuration{
+			SchemesPath:           viper.GetString("schemes-path"),
+			SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
+			SchemesUpdateInterval: viper.GetInt("schemes-update"),
+			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
+			DisableTLS:            viper.GetBool("no-tls"),
+			Verbose:               viper.GetInt("verbose"),
+			Quiet:                 viper.GetBool("quiet"),
+			LogJSON:               viper.GetBool("log-json"),
+			Logger:                logger,
+			Production:            viper.GetBool("production"),
+		},
+
+		MyIRMAURL: string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),
@@ -235,12 +243,6 @@ func configureMyirmad(cmd *cobra.Command) {
 		DeleteEmailSubject:   viper.GetStringMapString("delete-email-subject"),
 		DeleteAccountFiles:   viper.GetStringMapString("delete-account-template"),
 		DeleteAccountSubject: viper.GetStringMapString("delete-account-subject"),
-
-		Verbose:    viper.GetInt("verbose"),
-		Quiet:      viper.GetBool("quiet"),
-		LogJSON:    viper.GetBool("log-json"),
-		Logger:     logger,
-		Production: viper.GetBool("production"),
 	}
 }
 
