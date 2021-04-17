@@ -33,12 +33,6 @@ type SessionData struct {
 	expiry       time.Time
 }
 
-// Used to provide context in protocol sessions
-type requestAuthorization struct {
-	user                  KeyshareUser
-	hasValidAuthorization bool
-}
-
 type Server struct {
 	// configuration
 	conf *Configuration
