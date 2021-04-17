@@ -21,7 +21,7 @@ var keyshareServ *http.Server
 
 func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 	db := keyshareserver.NewMemoryDatabase()
-	_, err := db.NewUser(keyshareserver.KeyshareUserData{
+	err := db.NewUser(&keyshareserver.KeyshareUser{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
@@ -30,7 +30,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	_, err = db.NewUser(keyshareserver.KeyshareUserData{
+	err = db.NewUser(&keyshareserver.KeyshareUser{
 		Username: "testusername",
 		Coredata: ep,
 	})

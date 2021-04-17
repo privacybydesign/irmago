@@ -22,13 +22,14 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	db, err := NewPostgresDatabase(postgresTestUrl)
 	require.NoError(t, err)
 
-	user, err := db.NewUser(KeyshareUserData{Username: "testuser"})
+	user := &KeyshareUser{Username: "testuser"}
+	err = db.NewUser(user)
 	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Data().Username)
+	assert.Equal(t, "testuser", user.Username)
 
 	nuser, err := db.User("testuser")
 	require.NoError(t, err)
-	assert.Equal(t, "testuser", nuser.Data().Username)
+	assert.Equal(t, "testuser", nuser.Username)
 
 	_, err = db.User("notexist")
 	assert.Error(t, err)
@@ -36,7 +37,8 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	err = db.UpdateUser(nuser)
 	assert.NoError(t, err)
 
-	_, err = db.NewUser(KeyshareUserData{Username: "testuser"})
+	user = &KeyshareUser{Username: "testuser"}
+	err = db.NewUser(user)
 	assert.Error(t, err)
 
 	err = db.AddLog(nuser, PinCheckFailed, 15)
@@ -58,7 +60,8 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	db, err := NewPostgresDatabase(postgresTestUrl)
 	require.NoError(t, err)
 
-	user, err := db.NewUser(KeyshareUserData{Username: "testuser"})
+	user := &KeyshareUser{Username: "testuser"}
+	err = db.NewUser(user)
 	require.NoError(t, err)
 
 	ok, tries, wait, err := db.ReservePincheck(user)

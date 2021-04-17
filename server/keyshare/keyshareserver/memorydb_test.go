@@ -10,18 +10,20 @@ import (
 func TestMemoryDBUserManagement(t *testing.T) {
 	db := NewMemoryDatabase()
 
-	user, err := db.NewUser(KeyshareUserData{Username: "testuser"})
+	user := &KeyshareUser{Username: "testuser"}
+	err := db.NewUser(user)
 	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Data().Username)
+	assert.Equal(t, "testuser", user.Username)
 
 	nuser, err := db.User("testuser")
 	require.NoError(t, err)
-	assert.Equal(t, "testuser", nuser.Data().Username)
+	assert.Equal(t, "testuser", nuser.Username)
 
 	_, err = db.User("nonexistent")
 	assert.Error(t, err)
 
-	_, err = db.NewUser(KeyshareUserData{Username: "testuser"})
+	user = &KeyshareUser{Username: "testuser"}
+	err = db.NewUser(user)
 	assert.Error(t, err)
 
 	err = db.UpdateUser(nuser)

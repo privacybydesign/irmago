@@ -15,19 +15,11 @@ type keyshareMemoryDB struct {
 	users map[string]keysharecore.EncryptedKeysharePacket
 }
 
-type keyshareMemoryUser struct {
-	KeyshareUserData
-}
-
-func (m *keyshareMemoryUser) Data() *KeyshareUserData {
-	return &m.KeyshareUserData
-}
-
 func NewMemoryDatabase() KeyshareDB {
 	return &keyshareMemoryDB{users: map[string]keysharecore.EncryptedKeysharePacket{}}
 }
 
-func (db *keyshareMemoryDB) User(username string) (KeyshareUser, error) {
+func (db *keyshareMemoryDB) User(username string) (*KeyshareUser, error) {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -37,10 +29,10 @@ func (db *keyshareMemoryDB) User(username string) (KeyshareUser, error) {
 	if !ok {
 		return nil, ErrUserNotFound
 	}
-	return &keyshareMemoryUser{KeyshareUserData{Username: username, Coredata: data}}, nil
+	return &KeyshareUser{Username: username, Coredata: data}, nil
 }
 
-func (db *keyshareMemoryDB) NewUser(user KeyshareUserData) (KeyshareUser, error) {
+func (db *keyshareMemoryDB) NewUser(user *KeyshareUser) error {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -48,49 +40,47 @@ func (db *keyshareMemoryDB) NewUser(user KeyshareUserData) (KeyshareUser, error)
 	// Check and insert user
 	_, exists := db.users[user.Username]
 	if exists {
-		return nil, ErrUserAlreadyExists
+		return ErrUserAlreadyExists
 	}
 	db.users[user.Username] = user.Coredata
-	return &keyshareMemoryUser{KeyshareUserData: user}, nil
+	return nil
 }
 
-func (db *keyshareMemoryDB) UpdateUser(user KeyshareUser) error {
-	userdata := user.(*keyshareMemoryUser)
-
+func (db *keyshareMemoryDB) UpdateUser(user *KeyshareUser) error {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
 	// Check and update user.
-	_, exists := db.users[userdata.Username]
+	_, exists := db.users[user.Username]
 	if !exists {
 		return ErrUserNotFound
 	}
-	db.users[userdata.Username] = userdata.Coredata
+	db.users[user.Username] = user.Coredata
 	return nil
 }
 
-func (db *keyshareMemoryDB) ReservePincheck(user KeyshareUser) (bool, int, int64, error) {
+func (db *keyshareMemoryDB) ReservePincheck(user *KeyshareUser) (bool, int, int64, error) {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
 	return true, 1, 0, nil
 }
 
-func (db *keyshareMemoryDB) ClearPincheck(user KeyshareUser) error {
+func (db *keyshareMemoryDB) ClearPincheck(user *KeyshareUser) error {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
 	return nil
 }
 
-func (db *keyshareMemoryDB) SetSeen(user KeyshareUser) error {
+func (db *keyshareMemoryDB) SetSeen(user *KeyshareUser) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *keyshareMemoryDB) AddLog(user KeyshareUser, eventType LogEntryType, param interface{}) error {
+func (db *keyshareMemoryDB) AddLog(user *KeyshareUser, eventType LogEntryType, param interface{}) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *keyshareMemoryDB) AddEmailVerification(user KeyshareUser, emailAddress, token string) error {
+func (db *keyshareMemoryDB) AddEmailVerification(user *KeyshareUser, emailAddress, token string) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }

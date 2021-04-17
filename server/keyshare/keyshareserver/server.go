@@ -162,7 +162,7 @@ func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
 // /prove/getCommitments
 func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	// Fetch from context
-	user := r.Context().Value("user").(KeyshareUser)
+	user := r.Context().Value("user").(*KeyshareUser)
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read keys
@@ -200,9 +200,9 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, commitments)
 }
 
-func (s *Server) generateCommitments(user KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
+func (s *Server) generateCommitments(user *KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
 	// Generate commitments
-	commitments, commitID, err := s.core.GenerateCommitments(user.Data().Coredata, authorization, keys)
+	commitments, commitID, err := s.core.GenerateCommitments(user.Coredata, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
 		return nil, err
@@ -219,7 +219,7 @@ func (s *Server) generateCommitments(user KeyshareUser, authorization string, ke
 	}
 
 	// Store needed data for later requests.
-	username := user.Data().Username
+	username := user.Username
 	s.sessionLock.Lock()
 	if _, ok := s.sessions[username]; !ok {
 		s.sessions[username] = &SessionData{}
@@ -240,8 +240,8 @@ func (s *Server) generateCommitments(user KeyshareUser, authorization string, ke
 // /prove/getResponse
 func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	// Fetch from context
-	user := r.Context().Value("user").(KeyshareUser)
-	username := user.Data().Username
+	user := r.Context().Value("user").(*KeyshareUser)
+	username := user.Username
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read challenge
@@ -291,7 +291,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	server.WriteString(w, proofResponse)
 }
 
-func (s *Server) doGenerateResponses(user KeyshareUser, authorization string, challenge *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
+func (s *Server) doGenerateResponses(user *KeyshareUser, authorization string, challenge *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Indicate activity on user account
 	err := s.db.SetSeen(user)
 	if err != nil {
@@ -306,7 +306,7 @@ func (s *Server) doGenerateResponses(user KeyshareUser, authorization string, ch
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.Data().Coredata, authorization, commitID, challenge, keyID)
+	proofResponse, err := s.core.GenerateResponse(user.Coredata, authorization, commitID, challenge, keyID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err
@@ -360,7 +360,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) doVerifyPin(user KeyshareUser, username, pin string) (irma.KeysharePinStatus, error) {
+func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.KeysharePinStatus, error) {
 	// Check whether timing allows this pin to be checked
 	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
@@ -376,7 +376,7 @@ func (s *Server) doVerifyPin(user KeyshareUser, username, pin string) (irma.Keys
 		return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
-	jwtt, err := s.core.ValidatePin(user.Data().Coredata, pin, username)
+	jwtt, err := s.core.ValidatePin(user.Coredata, pin, username)
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors
 		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
@@ -456,7 +456,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) doUpdatePin(user KeyshareUser, oldPin, newPin string) (irma.KeysharePinStatus, error) {
+func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
@@ -468,7 +468,7 @@ func (s *Server) doUpdatePin(user KeyshareUser, oldPin, newPin string) (irma.Key
 	}
 
 	// Try to do the update
-	user.Data().Coredata, err = s.core.ChangePin(user.Data().Coredata, oldPin, newPin)
+	user.Coredata, err = s.core.ChangePin(user.Coredata, oldPin, newPin)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -536,7 +536,8 @@ func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 		s.conf.Logger.WithField("error", err).Error("Could not register user")
 		return nil, err
 	}
-	user, err := s.db.NewUser(KeyshareUserData{Username: username, Language: msg.Language, Coredata: coredata})
+	user := &KeyshareUser{Username: username, Language: msg.Language, Coredata: coredata}
+	err = s.db.NewUser(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
 		return nil, err
@@ -567,7 +568,7 @@ func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	return sessionptr, nil
 }
 
-func (s *Server) sendRegistrationEmail(user KeyshareUser, language, email string) error {
+func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email string) error {
 	// Fetch template and configuration data for users language, falling back if needed
 	template, ok := s.conf.RegistrationEmailTemplates[language]
 	if !ok {
@@ -666,7 +667,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 
 		// verify access
 		ctx := r.Context()
-		err := s.core.ValidateJWT(ctx.Value("user").(KeyshareUser).Data().Coredata, authorization)
+		err := s.core.ValidateJWT(ctx.Value("user").(*KeyshareUser).Coredata, authorization)
 		hasValidAuthorization := (err == nil)
 
 		// Construct new context with both authorization and its validity

@@ -17,16 +17,6 @@ type keysharePostgresDatabase struct {
 	db *sql.DB
 }
 
-// For easy access in the database, we store the row id also in the returned user data
-type keysharePostgresUser struct {
-	KeyshareUserData
-	id int64
-}
-
-func (m *keysharePostgresUser) Data() *KeyshareUserData {
-	return &m.KeyshareUserData
-}
-
 const MAX_PIN_TRIES = 3         // Number of tries allowed on pin before we start with exponential backoff
 const EMAIL_TOKEN_VALIDITY = 24 // Ammount of time user's email validation token is valid (in hours)
 
@@ -44,28 +34,29 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 	}, nil
 }
 
-func (db *keysharePostgresDatabase) NewUser(user KeyshareUserData) (KeyshareUser, error) {
+func (db *keysharePostgresDatabase) NewUser(user *KeyshareUser) error {
 	res, err := db.db.Query("INSERT INTO irma.users (username, language, coredata, last_seen, pin_counter, pin_block_date) VALUES ($1, $2, $3, $4, 0, 0) RETURNING id",
 		user.Username,
 		user.Language,
 		user.Coredata[:],
 		time.Now().Unix())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer common.Close(res)
 	if !res.Next() {
-		return nil, ErrUserAlreadyExists
+		return ErrUserAlreadyExists
 	}
 	var id int64
 	err = res.Scan(&id)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &keysharePostgresUser{KeyshareUserData: user, id: id}, nil
+	user.id = id
+	return nil
 }
 
-func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) {
+func (db *keysharePostgresDatabase) User(username string) (*KeyshareUser, error) {
 	rows, err := db.db.Query("SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL", username)
 	if err != nil {
 		return nil, err
@@ -74,7 +65,7 @@ func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) 
 	if !rows.Next() {
 		return nil, ErrUserNotFound
 	}
-	var result keysharePostgresUser
+	var result KeyshareUser
 	var ep []byte
 	err = rows.Scan(&result.id, &result.Username, &result.Language, &ep)
 	if err != nil {
@@ -87,21 +78,17 @@ func (db *keysharePostgresDatabase) User(username string) (KeyshareUser, error) 
 	return &result, nil
 }
 
-func (db *keysharePostgresDatabase) UpdateUser(user KeyshareUser) error {
-	userdata := user.(*keysharePostgresUser)
+func (db *keysharePostgresDatabase) UpdateUser(user *KeyshareUser) error {
 	return db.updateUser(
 		"UPDATE irma.users SET username=$1, language=$2, coredata=$3 WHERE id=$4",
-		userdata.Username,
-		userdata.Language,
-		userdata.Coredata[:],
-		userdata.id,
+		user.Username,
+		user.Language,
+		user.Coredata[:],
+		user.id,
 	)
 }
 
-func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, int, int64, error) {
-	// Extract data
-	userdata := user.(*keysharePostgresUser)
-
+func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, int, int64, error) {
 	// Check that account is not blocked already, and if not,
 	//  update pinCounter and pinBlockDate
 	uprows, err := db.db.Query(`
@@ -113,7 +100,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 		time.Now().Unix()-1-BACKOFF_START, // Grace time of 2 seconds on pinBlockDate set
 		BACKOFF_START,
 		MAX_PIN_TRIES-2,
-		userdata.id,
+		user.id,
 		time.Now().Unix())
 	if err != nil {
 		return false, 0, 0, err
@@ -128,7 +115,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	if !uprows.Next() {
 		// if no results, then account either does not exist (which would be weird here) or is blocked
 		// so request wait timeout
-		pinrows, err := db.db.Query("SELECT pin_block_date FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", userdata.id)
+		pinrows, err := db.db.Query("SELECT pin_block_date FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", user.id)
 		if err != nil {
 			return false, 0, 0, err
 		}
@@ -161,18 +148,18 @@ func (db *keysharePostgresDatabase) ReservePincheck(user KeyshareUser) (bool, in
 	return allowed, tries, wait, nil
 }
 
-func (db *keysharePostgresDatabase) ClearPincheck(user KeyshareUser) error {
+func (db *keysharePostgresDatabase) ClearPincheck(user *KeyshareUser) error {
 	return db.updateUser(
 		"UPDATE irma.users SET pin_counter=0, pin_block_date=0 WHERE id=$1",
-		user.(*keysharePostgresUser).id,
+		user.id,
 	)
 }
 
-func (db *keysharePostgresDatabase) SetSeen(user KeyshareUser) error {
+func (db *keysharePostgresDatabase) SetSeen(user *KeyshareUser) error {
 	return db.updateUser(
 		"UPDATE irma.users SET last_seen = $1 WHERE id = $2",
 		time.Now().Unix(),
-		user.(*keysharePostgresUser).id,
+		user.id,
 	)
 }
 
@@ -191,9 +178,7 @@ func (db *keysharePostgresDatabase) updateUser(query string, args ...interface{}
 	return nil
 }
 
-func (db *keysharePostgresDatabase) AddLog(user KeyshareUser, eventType LogEntryType, param interface{}) error {
-	userdata := user.(*keysharePostgresUser)
-
+func (db *keysharePostgresDatabase) AddLog(user *KeyshareUser, eventType LogEntryType, param interface{}) error {
 	var encodedParamString *string
 	if param != nil {
 		encodedParam, err := json.Marshal(param)
@@ -208,17 +193,15 @@ func (db *keysharePostgresDatabase) AddLog(user KeyshareUser, eventType LogEntry
 		time.Now().Unix(),
 		eventType,
 		encodedParamString,
-		userdata.id)
+		user.id)
 	return err
 }
 
-func (db *keysharePostgresDatabase) AddEmailVerification(user KeyshareUser, emailAddress, token string) error {
-	userdata := user.(*keysharePostgresUser)
-
+func (db *keysharePostgresDatabase) AddEmailVerification(user *KeyshareUser, emailAddress, token string) error {
 	_, err := db.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, user_id, expiry) VALUES ($1, $2, $3, $4)",
 		token,
 		emailAddress,
-		userdata.id,
+		user.id,
 		time.Now().Add(EMAIL_TOKEN_VALIDITY*time.Hour).Unix())
 	return err
 }

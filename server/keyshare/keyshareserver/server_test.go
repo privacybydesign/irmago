@@ -92,7 +92,7 @@ func TestServerHandleRegister(t *testing.T) {
 
 func TestServerHandleValidate(t *testing.T) {
 	db := NewMemoryDatabase()
-	_, err := db.NewUser(KeyshareUserData{
+	err := db.NewUser(&KeyshareUser{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
@@ -101,7 +101,7 @@ func TestServerHandleValidate(t *testing.T) {
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	_, err = db.NewUser(KeyshareUserData{
+	err = db.NewUser(&KeyshareUser{
 		Username: "testusername",
 		Coredata: ep,
 	})
@@ -165,7 +165,7 @@ func TestServerHandleValidate(t *testing.T) {
 
 func TestPinTries(t *testing.T) {
 	db := NewMemoryDatabase()
-	_, err := db.NewUser(KeyshareUserData{
+	err := db.NewUser(&KeyshareUser{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
@@ -174,7 +174,7 @@ func TestPinTries(t *testing.T) {
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	_, err = db.NewUser(KeyshareUserData{
+	err = db.NewUser(&KeyshareUser{
 		Username: "testusername",
 		Coredata: ep,
 	})
@@ -210,7 +210,7 @@ func TestPinTries(t *testing.T) {
 
 func TestPinWait(t *testing.T) {
 	db := NewMemoryDatabase()
-	_, err := db.NewUser(KeyshareUserData{
+	err := db.NewUser(&KeyshareUser{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
@@ -219,7 +219,7 @@ func TestPinWait(t *testing.T) {
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	_, err = db.NewUser(KeyshareUserData{
+	err = db.NewUser(&KeyshareUser{
 		Username: "testusername",
 		Coredata: ep,
 	})
@@ -255,7 +255,7 @@ func TestPinWait(t *testing.T) {
 
 func TestPinWaitRefused(t *testing.T) {
 	db := NewMemoryDatabase()
-	_, err := db.NewUser(KeyshareUserData{
+	err := db.NewUser(&KeyshareUser{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
@@ -264,7 +264,7 @@ func TestPinWaitRefused(t *testing.T) {
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	_, err = db.NewUser(KeyshareUserData{
+	err = db.NewUser(&KeyshareUser{
 		Username: "testusername",
 		Coredata: ep,
 	})
@@ -348,7 +348,7 @@ func TestMissingUser(t *testing.T) {
 
 func TestInvalidKeyshareSessions(t *testing.T) {
 	db := NewMemoryDatabase()
-	_, err := db.NewUser(KeyshareUserData{
+	err := db.NewUser(&KeyshareUser{
 		Username: "",
 		Coredata: keysharecore.EncryptedKeysharePacket{},
 	})
@@ -357,7 +357,7 @@ func TestInvalidKeyshareSessions(t *testing.T) {
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	_, err = db.NewUser(KeyshareUserData{
+	err = db.NewUser(&KeyshareUser{
 		Username: "testusername",
 		Coredata: ep,
 	})
@@ -508,34 +508,34 @@ type testDB struct {
 	err   error
 }
 
-func (db *testDB) NewUser(user KeyshareUserData) (KeyshareUser, error) {
+func (db *testDB) NewUser(user *KeyshareUser) error {
 	return db.db.NewUser(user)
 }
 
-func (db *testDB) User(username string) (KeyshareUser, error) {
+func (db *testDB) User(username string) (*KeyshareUser, error) {
 	return db.db.User(username)
 }
 
-func (db *testDB) UpdateUser(user KeyshareUser) error {
+func (db *testDB) UpdateUser(user *KeyshareUser) error {
 	return db.db.UpdateUser(user)
 }
 
-func (db *testDB) ReservePincheck(user KeyshareUser) (bool, int, int64, error) {
+func (db *testDB) ReservePincheck(user *KeyshareUser) (bool, int, int64, error) {
 	return db.ok, db.tries, db.wait, db.err
 }
 
-func (db *testDB) ClearPincheck(user KeyshareUser) error {
+func (db *testDB) ClearPincheck(user *KeyshareUser) error {
 	return db.db.ClearPincheck(user)
 }
 
-func (db *testDB) SetSeen(user KeyshareUser) error {
+func (db *testDB) SetSeen(user *KeyshareUser) error {
 	return db.db.SetSeen(user)
 }
 
-func (db *testDB) AddLog(user KeyshareUser, entrytype LogEntryType, params interface{}) error {
+func (db *testDB) AddLog(user *KeyshareUser, entrytype LogEntryType, params interface{}) error {
 	return db.db.AddLog(user, entrytype, params)
 }
 
-func (db *testDB) AddEmailVerification(user KeyshareUser, email, token string) error {
+func (db *testDB) AddEmailVerification(user *KeyshareUser, email, token string) error {
 	return db.db.AddEmailVerification(user, email, token)
 }
