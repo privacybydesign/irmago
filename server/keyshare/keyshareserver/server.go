@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-errors/errors"
+	"github.com/hashicorp/go-multierror"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -73,9 +75,15 @@ func New(conf *Configuration) (*Server, error) {
 
 	// Load neccessary idemix keys into core, and ensure that future updates
 	// to them are processed
-	s.LoadIdemixKeys(conf.IrmaConfiguration)
-	conf.IrmaConfiguration.UpdateListeners = append(
-		conf.IrmaConfiguration.UpdateListeners, s.LoadIdemixKeys)
+	if err = s.LoadIdemixKeys(conf.IrmaConfiguration); err != nil {
+		return nil, err
+	}
+	conf.IrmaConfiguration.UpdateListeners = append(conf.IrmaConfiguration.UpdateListeners, func(conf *irma.Configuration) {
+		if err := s.LoadIdemixKeys(conf); err != nil {
+			// run periodically; can only log the error here
+			_ = server.LogError(err)
+		}
+	})
 
 	// Setup DB
 	s.db = conf.DB
@@ -135,22 +143,24 @@ func (s *Server) Handler() http.Handler {
 
 // On configuration changes, inform the keyshare core of any
 // new IRMA issuer public keys.
-func (s *Server) LoadIdemixKeys(conf *irma.Configuration) {
+func (s *Server) LoadIdemixKeys(conf *irma.Configuration) error {
+	errs := multierror.Error{}
 	for _, issuer := range conf.Issuers {
 		keyIDs, err := conf.PublicKeyIndices(issuer.Identifier())
 		if err != nil {
-			s.conf.Logger.WithFields(logrus.Fields{"issuer": issuer, "error": err}).Warn("Could not find keyIDs for issuer")
+			errs.Errors = append(errs.Errors, errors.Errorf("issuer %v: could not find key IDs: %v", issuer, err))
 			continue
 		}
 		for _, id := range keyIDs {
 			key, err := conf.PublicKey(issuer.Identifier(), id)
 			if err != nil {
-				s.conf.Logger.WithFields(logrus.Fields{"keyID": id, "error": err}).Warn("Could not fetch public key for issuer")
+				errs.Errors = append(errs.Errors, server.LogError(errors.Errorf("key %v-%v: could not fetch public key: %v", issuer, id, err)))
 				continue
 			}
-			s.core.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: issuer.Identifier(), Counter: uint(id)}, key)
+			s.core.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: issuer.Identifier(), Counter: id}, key)
 		}
 	}
+	return errs.ErrorOrNil()
 }
 
 // /prove/getCommitments
