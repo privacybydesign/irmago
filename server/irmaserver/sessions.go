@@ -220,19 +220,16 @@ func (s *redisSessionStore) get(t string) *session {
 }
 
 func (s *redisSessionStore) clientGet(t string) *session {
-	fmt.Println("############ redisSessionStore wants to GET")
-
 	val, err := s.client.Get(context.TODO(),sessionLookupPrefix+t).Result()
 	if err != nil {
 		fmt.Printf("unable to get session data for clientToken %s from redis: %s \n", t, err)
 	}
 
-	fmt.Println("ClientToken redis GET jsonObject:", val)
 	var session session
 	session.conf = s.conf
 	session.sessions = s
 	if err := session.UnmarshalJSON([]byte(val)); err != nil {
-		// return with error?
+		//TODO: return with error? general question how to deal with Redis errors
 		fmt.Printf("unable to unmarshal data into the new example struct due to: %s \n", err)
 	}
 
@@ -240,18 +237,19 @@ func (s *redisSessionStore) clientGet(t string) *session {
 }
 
 func (s *redisSessionStore) add(session *session) {
-	fmt.Println("############ redisSessionStore wants to ADD")
-
 	sessionJSON, err := session.MarshalJSON()
 	if err != nil {
 		fmt.Printf("unable to marshal data to json due to: %s \n", err)
 	}
 
-	err1 := s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, maxSessionLifetime).Err()
-	err2 := s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, maxSessionLifetime).Err()
-	fmt.Println("errors:", err, err1, err2)
-	fmt.Println("session.Token, session.ClientToken")
-	fmt.Println(session.sessionData.Token, session.sessionData.ClientToken)
+	err = s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, maxSessionLifetime).Err()
+	if err != nil {
+		fmt.Printf("unable to save token lookup in Redis datastore: %s \n", err)
+	}
+	err = s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, maxSessionLifetime).Err()
+	if err != nil {
+		fmt.Printf("unable to save session data as JSON in Redis datastore: %s \n", err)
+	}
 }
 
 func (s *redisSessionStore) update(session *session) {
