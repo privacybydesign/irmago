@@ -341,7 +341,7 @@ func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.Key
 	ok, tries, wait, err := s.db.ReservePincheck(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
-		return irma.KeysharePinStatus{}, nil
+		return irma.KeysharePinStatus{}, err
 	}
 	if !ok {
 		err = s.db.AddLog(user, PinCheckRefused, nil)
@@ -445,7 +445,7 @@ func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.Ke
 		}
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not change pin")
-		return irma.KeysharePinStatus{}, nil
+		return irma.KeysharePinStatus{}, err
 	}
 
 	// Mark pincheck as success, resetting users wait and count
