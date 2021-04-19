@@ -3,8 +3,6 @@ package keyshareserver
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -484,7 +482,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	// Generate keyshare server account
-	username := generateUsername()
+	username := common.NewSessionToken() // TODO use newRandomString() for this when shoulder-surf is merged
+	username = username[:12]
+
 	coredata, err := s.core.GenerateKeyshareSecret(msg.Pin)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not register user")
@@ -570,28 +570,6 @@ func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email strin
 	}
 
 	return nil
-}
-
-// Generate a base62 "username".
-//  this is a direct port of what the old java server uses.
-func generateUsername() string {
-	bts := make([]byte, 8)
-	_, err := rand.Read(bts)
-	if err != nil {
-		panic(err)
-	}
-	raw := make([]byte, 12)
-	base64.StdEncoding.Encode(raw, bts)
-	return strings.ReplaceAll(
-		strings.ReplaceAll(
-			strings.ReplaceAll(
-				string(raw),
-				"+",
-				""),
-			"/",
-			""),
-		"=",
-		"")
 }
 
 func (s *Server) userMiddleware(next http.Handler) http.Handler {
