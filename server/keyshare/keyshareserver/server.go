@@ -215,10 +215,6 @@ func (s *Server) generateCommitments(user *KeyshareUser, authorization string, k
 	// Prepare output message format
 	mappedCommitments := map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment{}
 	for i, keyID := range keys {
-		if err != nil {
-			s.conf.Logger.WithFields(logrus.Fields{"keyid": keyID, "error": err}).Error("Could not convert key identifier to string")
-			return nil, err
-		}
 		mappedCommitments[keyID] = commitments[i]
 	}
 
