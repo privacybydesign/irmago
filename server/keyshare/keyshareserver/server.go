@@ -221,16 +221,18 @@ func (s *Server) generateCommitments(user *KeyshareUser, authorization string, k
 	// Store needed data for later requests.
 	username := user.Username
 	s.sessionLock.Lock()
-	if _, ok := s.sessions[username]; !ok {
-		s.sessions[username] = &SessionData{}
+	session, ok := s.sessions[username]
+	if !ok {
+		session = &SessionData{}
+		s.sessions[username] = session
 	}
 	// Of all keys involved in the current session, store the ID of the first one to be used when
 	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
 	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
 	// puts the key ID of the credential(s) being issued at index 0.
-	s.sessions[username].LastKeyID = keys[0]
-	s.sessions[username].LastCommitID = commitID
-	s.sessions[username].expiry = time.Now().Add(10 * time.Second)
+	session.LastKeyID = keys[0]
+	session.LastCommitID = commitID
+	session.expiry = time.Now().Add(10 * time.Second)
 	s.sessionLock.Unlock()
 
 	// And send response
@@ -241,7 +243,6 @@ func (s *Server) generateCommitments(user *KeyshareUser, authorization string, k
 func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	// Fetch from context
 	user := r.Context().Value("user").(*KeyshareUser)
-	username := user.Username
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read challenge
@@ -268,7 +269,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	// Get data from session
 	s.sessionLock.Lock()
-	sessionData, ok := s.sessions[username]
+	sessionData, ok := s.sessions[user.Username]
 	s.sessionLock.Unlock()
 	if !ok {
 		s.conf.Logger.Warn("Request for response without previous call to get commitments")
