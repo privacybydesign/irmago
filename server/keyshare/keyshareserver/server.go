@@ -543,7 +543,7 @@ func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email strin
 	// Add it to the database
 	err := s.db.AddEmailVerification(user, email, token)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not generate email verifiation mail record")
+		s.conf.Logger.WithField("error", err).Error("Could not generate email verification mail record")
 		return err
 	}
 
@@ -551,7 +551,7 @@ func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email strin
 	var msg bytes.Buffer
 	err = template.Execute(&msg, map[string]string{"VerificationURL": verificationBaseURL + token})
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not generate email verifiation mail")
+		s.conf.Logger.WithField("error", err).Error("Could not generate email verification mail")
 		return err
 	}
 
@@ -565,7 +565,7 @@ func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email strin
 		msg.Bytes())
 
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not send email verifiation mail")
+		s.conf.Logger.WithField("error", err).Error("Could not send email verification mail")
 		return err
 	}
 
