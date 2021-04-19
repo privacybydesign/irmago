@@ -15,11 +15,11 @@ var (
 type LogEntryType string
 
 const (
-	PinCheckRefused = "PIN_CHECK_REFUSED"
-	PinCheckSuccess = "PIN_CHECK_SUCCESS"
-	PinCheckFailed  = "PIN_CHECK_FAILED"
-	PinCheckBlocked = "PIN_CHECK_BLOCKED"
-	IrmaSession     = "IRMA_SESSION"
+	PinCheckRefused LogEntryType = "PIN_CHECK_REFUSED"
+	PinCheckSuccess LogEntryType = "PIN_CHECK_SUCCESS"
+	PinCheckFailed  LogEntryType = "PIN_CHECK_FAILED"
+	PinCheckBlocked LogEntryType = "PIN_CHECK_BLOCKED"
+	IrmaSession     LogEntryType = "IRMA_SESSION"
 )
 
 // Interface used by server to manage data storage
