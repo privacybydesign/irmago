@@ -170,17 +170,8 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read keys
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
-	var keys []irma.PublicKeyIdentifier
-	err = json.Unmarshal(body, &keys)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
-		s.conf.Logger.WithField("body", body).Debug("Malformed request data")
+	keys := []irma.PublicKeyIdentifier{}
+	if err := s.parseBody(w, r, &keys); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -246,16 +237,8 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read challenge
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
 	challenge := new(big.Int)
-	err = json.Unmarshal(body, challenge)
-	if err != nil {
-		s.conf.Logger.Info("Malformed request: could not parse challenge")
+	if err := s.parseBody(w, r, challenge); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -328,16 +311,8 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 // /users/verify/pin
 func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
 	var msg irma.KeysharePinMessage
-	err = json.Unmarshal(body, &msg)
-	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"error": err}).Info("Malformed request: could not parse request body")
+	if err := s.parseBody(w, r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -426,17 +401,9 @@ func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.Key
 // /users/change/pin
 func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
-		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
-		return
-	}
 	var msg irma.KeyshareChangePin
-	err = json.Unmarshal(body, &msg)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
-		server.WriteError(w, server.ErrorInvalidRequest, "Invalid request")
+	if err := s.parseBody(w, r, &msg); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
@@ -501,17 +468,9 @@ func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.Ke
 // /client/register
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
-		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
-		return
-	}
 	var msg irma.KeyshareEnrollment
-	err = json.Unmarshal(body, &msg)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
-		server.WriteError(w, server.ErrorInvalidRequest, "Invalid request")
+	if err := s.parseBody(w, r, &msg); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
@@ -678,4 +637,18 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(nextContext))
 	})
+}
+
+func (s *Server) parseBody(w http.ResponseWriter, r *http.Request, input interface{}) error {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
+		return err
+	}
+	err = json.Unmarshal(body, input)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+		return err
+	}
+	return nil
 }
