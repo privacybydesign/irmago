@@ -21,16 +21,16 @@ import (
 )
 
 type session struct {
+	//TODO: check if we can get rid of this Mutex for Redis
 	sync.Mutex `json:-`
 	//TODO: note somewhere that state with redis will not support sse for the moment
 	sse           *sse.Server `json:-`
 	locked bool `json:-`
 	Sessions sessionStore `json:-`
 	Conf     *server.Configuration `json:-`
+	Request            irma.SessionRequest `json:-`
 
 	sessionData
-	//TODO maybe refactor to:
-	//sessionData sessionData
 }
 
 type sessionData struct {
@@ -38,7 +38,6 @@ type sessionData struct {
 	Token              string
 	ClientToken        string
 	Version            *irma.ProtocolVersion `json:",omitempty"`
-	Request            irma.SessionRequest
 	Rrequest           irma.RequestorRequest
 	LegacyCompatible   bool // if the Request is convertible to pre-condiscon format
 	ImplicitDisclosure irma.AttributeConDisCon
@@ -163,36 +162,32 @@ func (s *memorySessionStore) deleteExpired() {
 	s.Unlock()
 }
 
-// re-use existing?
-func (s *sessionData) MarshalBinary() ([]byte, error) {
+// MarshalJSON marshals a session to be used in the Redis in-memory datastore.
+func (s *session) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*s)
 }
 
-// re-use existing?
-// TODO: possibly Unmarshal method on session instead of sessionData
-func (s *sessionData) UnmarshalBinary(data []byte) error {
-	type rawSessionData sessionData
+// UnmarshalJSON unmarshals the sessionData of a session.
+func (s *session) UnmarshalJSON(data []byte) error {
 	var temp struct {
-		Request *json.RawMessage `json:",omitempty"`
 		Rrequest *json.RawMessage `json:",omitempty"`
-		rawSessionData
+		sessionData
 	}
 
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}
 
-	*s = sessionData(temp.rawSessionData)
+	s.sessionData = temp.sessionData
 
-	if temp.Request == nil || temp.Rrequest == nil {
-		s.Request = nil
+	if temp.Rrequest == nil {
 		s.Rrequest = nil
 		// TODO: return custom error
-		fmt.Printf("temp.Request == nil || temp.Rrequest == nil: %d %d \n", temp.Request, temp.Rrequest)
+		fmt.Printf("temp.Rrequest == nil: %d \n", temp.Rrequest)
 		return nil
 	}
 
-	// unmarshal rrequest
+	// unmarshal Rrequest
 	ipR := &irma.IdentityProviderRequest{}
 	spR := &irma.ServiceProviderRequest{}
 	sigR := &irma.SignatureRequestorRequest{}
@@ -208,8 +203,6 @@ func (s *sessionData) UnmarshalBinary(data []byte) error {
 		return err
 	}
 	s.Request = s.Rrequest.SessionRequest()
-
-	fmt.Printf("s.Rrequest: %s \n", s.Rrequest)
 
 	return nil
 }
@@ -236,7 +229,7 @@ func (s *redisSessionStore) clientGet(t string) *session {
 	var session session
 	session.Conf = s.conf
 	session.Sessions = s
-	if err := session.UnmarshalBinary([]byte(val)); err != nil {
+	if err := session.UnmarshalJSON([]byte(val)); err != nil {
 		// return with error?
 		fmt.Printf("unable to unmarshal data into the new example struct due to: %s \n", err)
 	}
@@ -247,7 +240,7 @@ func (s *redisSessionStore) clientGet(t string) *session {
 func (s *redisSessionStore) add(session *session) {
 	fmt.Println("############ redisSessionStore wants to ADD")
 
-	sessionJSON, err := session.sessionData.MarshalBinary()
+	sessionJSON, err := session.MarshalJSON()
 	if err != nil {
 		fmt.Printf("unable to marshal data to json due to: %s \n", err)
 	}
@@ -295,7 +288,6 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	sd := sessionData{
 		Action:      action,
 		Rrequest:    request,
-		Request:     request.SessionRequest(),
 		LastActive:  time.Now(),
 		Token:       token,
 		ClientToken: clientToken,
@@ -313,6 +305,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 		Sessions:    s.sessions,
 		sse:         s.serverSentEvents,
 		Conf:        s.conf,
+		Request:     request.SessionRequest(),
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.Token}).Debug("New session started")
