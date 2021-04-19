@@ -168,7 +168,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read keys
-	keys := []irma.PublicKeyIdentifier{}
+	var keys []irma.PublicKeyIdentifier
 	if err := s.parseBody(w, r, &keys); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -180,7 +180,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	commitments, err := s.generateCommitments(user, authorization, keys)
-	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
+	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -260,7 +260,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	// And do the actual responding
 	proofResponse, err := s.doGenerateResponses(user, authorization, challenge, sessionData.LastCommitID, sessionData.LastKeyID)
-	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
+	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -467,7 +467,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionptr, err := s.doRegistration(msg)
-	if err == keysharecore.ErrPinTooLong {
+	if err != nil && err == keysharecore.ErrPinTooLong {
 		// Too long pin is not an internal error
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -600,7 +600,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 		// verify access
 		ctx := r.Context()
 		err := s.core.ValidateJWT(ctx.Value("user").(*KeyshareUser).Coredata, authorization)
-		hasValidAuthorization := (err == nil)
+		hasValidAuthorization := err == nil
 
 		// Construct new context with both authorization and its validity
 		nextContext := context.WithValue(
