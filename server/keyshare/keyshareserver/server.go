@@ -337,20 +337,15 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.KeysharePinStatus, error) {
-	// Check whether timing allows this pin to be checked
-	ok, tries, wait, err := s.db.ReservePincheck(user)
+	// Check whether pin check is currently allowed
+	ok, tries, wait, err := s.reservePinCheck(user, pin)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
 		return irma.KeysharePinStatus{}, err
 	}
 	if !ok {
-		err = s.db.AddLog(user, PinCheckRefused, nil)
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
-			return irma.KeysharePinStatus{}, err
-		}
 		return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
+
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
 	jwtt, err := s.core.ValidatePin(user.Coredata, pin, username)
 	if err != nil && err != keysharecore.ErrInvalidPin {
@@ -426,9 +421,8 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
-	ok, tries, wait, err := s.db.ReservePincheck(user)
+	ok, tries, wait, err := s.reservePinCheck(user, oldPin)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
 		return irma.KeysharePinStatus{}, err
 	}
 	if !ok {
@@ -651,4 +645,21 @@ func (s *Server) parseBody(w http.ResponseWriter, r *http.Request, input interfa
 		return err
 	}
 	return nil
+}
+
+func (s *Server) reservePinCheck(user *KeyshareUser, pin string) (bool, int, int64, error) {
+	ok, tries, wait, err := s.db.ReservePincheck(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
+		return false, 0, 0, err
+	}
+	if !ok {
+		err = s.db.AddLog(user, PinCheckRefused, nil)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			return false, 0, 0, err
+		}
+		return false, tries, wait, nil
+	}
+	return true, tries, wait, nil
 }
