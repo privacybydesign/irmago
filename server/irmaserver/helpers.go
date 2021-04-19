@@ -31,15 +31,15 @@ import (
 
 func (session *session) markAlive() {
 	session.LastActive = time.Now()
-	session.Conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Debugf("Session marked active, expiry delayed")
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Debugf("Session marked active, expiry delayed")
 }
 
 func (session *session) setStatus(status server.Status) {
-	session.Conf.Logger.WithFields(logrus.Fields{"session": session.Token, "prevStatus": session.PrevStatus, "status": status}).
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.Token, "prevStatus": session.PrevStatus, "status": status}).
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
-	session.Sessions.update(session)
+	session.sessions.update(session)
 }
 
 func (session *session) onUpdate() {
@@ -68,7 +68,7 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 		minServer = &irma.ProtocolVersion{2, 5}
 	}
 	// Set minimum to 2.6 if nonrevocation is required
-	if len(session.Request.Base().Revocation) > 0 {
+	if len(session.request.Base().Revocation) > 0 {
 		minServer = &irma.ProtocolVersion{2, 6}
 	}
 	// Set minimum to 2.7 if chained session are used
@@ -110,13 +110,13 @@ func (session *session) checkCache(message []byte) (int, []byte) {
 
 func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
-	credtyp := session.Conf.IrmaConfiguration.CredentialTypes[id]
-	if !credtyp.RevocationSupported() || !session.Request.Base().RevocationSupported() {
+	credtyp := session.conf.IrmaConfiguration.CredentialTypes[id]
+	if !credtyp.RevocationSupported() || !session.request.Base().RevocationSupported() {
 		return nil, nil
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
-	rs := session.Conf.IrmaConfiguration.Revocation
+	rs := session.conf.IrmaConfiguration.Revocation
 	if err := rs.SyncDB(id); err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (session *session) computeAttributes(
 	}
 
 	issuedAt := time.Now()
-	attributes, err := cred.AttributeList(session.Conf.IrmaConfiguration, 0x03, nonrevAttr, issuedAt)
+	attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03, nonrevAttr, issuedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -180,7 +180,7 @@ func (session *session) computeAttributes(
 		}
 	}
 	if witness != nil {
-		err = session.Conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
+		err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -251,12 +251,12 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 		if !contains {
 			return nil, errors.Errorf("no keyshare proof included for scheme %s", scheme.Name())
 		}
-		session.Conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
+		session.conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
 		claims := &struct {
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
 		}{}
-		token, err := jwt.ParseWithClaims(str, claims, session.Conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
+		token, err := jwt.ParseWithClaims(str, claims, session.conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
 		if err != nil {
 			return nil, err
 		}

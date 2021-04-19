@@ -24,11 +24,11 @@ type session struct {
 	//TODO: check if we can get rid of this Mutex for Redis
 	sync.Mutex `json:-`
 	//TODO: note somewhere that state with redis will not support sse for the moment
-	sse           *sse.Server `json:-`
-	locked bool `json:-`
-	Sessions sessionStore `json:-`
-	Conf     *server.Configuration `json:-`
-	Request            irma.SessionRequest `json:-`
+	sse      *sse.Server
+	locked   bool
+	sessions sessionStore
+	conf     *server.Configuration
+	request  irma.SessionRequest
 
 	sessionData
 }
@@ -39,7 +39,7 @@ type sessionData struct {
 	ClientToken        string
 	Version            *irma.ProtocolVersion `json:",omitempty"`
 	Rrequest           irma.RequestorRequest
-	LegacyCompatible   bool // if the Request is convertible to pre-condiscon format
+	LegacyCompatible   bool // if the request is convertible to pre-condiscon format
 	ImplicitDisclosure irma.AttributeConDisCon
 	Status        server.Status
 	PrevStatus    server.Status
@@ -150,7 +150,7 @@ func (s *memorySessionStore) deleteExpired() {
 	}
 	s.RUnlock()
 
-	// Using a write lock, delete the expired Sessions
+	// Using a write lock, delete the expired sessions
 	s.Lock()
 	for _, Token := range expired {
 		session := s.requestor[Token]
@@ -204,7 +204,7 @@ func (s *session) UnmarshalJSON(data []byte) error {
 		fmt.Printf("unable to unmarshal rrequest: %s \n", err)
 		return err
 	}
-	s.Request = s.Rrequest.SessionRequest()
+	s.request = s.Rrequest.SessionRequest()
 
 	return nil
 }
@@ -229,8 +229,8 @@ func (s *redisSessionStore) clientGet(t string) *session {
 
 	fmt.Println("ClientToken redis GET jsonObject:", val)
 	var session session
-	session.Conf = s.conf
-	session.Sessions = s
+	session.conf = s.conf
+	session.sessions = s
 	if err := session.UnmarshalJSON([]byte(val)); err != nil {
 		// return with error?
 		fmt.Printf("unable to unmarshal data into the new example struct due to: %s \n", err)
@@ -303,10 +303,10 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	}
 	ses := &session{
 		sessionData: sd,
-		Sessions:    s.sessions,
+		sessions:    s.sessions,
 		sse:         s.serverSentEvents,
-		Conf:        s.conf,
-		Request:     request.SessionRequest(),
+		conf:        s.conf,
+		request:     request.SessionRequest(),
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.Token}).Debug("New session started")
