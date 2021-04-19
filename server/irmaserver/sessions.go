@@ -79,7 +79,9 @@ type redisSessionStore struct {
 }
 
 const (
-	maxSessionLifetime = 5 * time.Minute // After this a session is cancelled
+	maxSessionLifetime  = 5 * time.Minute // After this a session is cancelled
+	tokenLookupPrefix   = "token:"
+	sessionLookupPrefix = "session:"
 )
 
 var (
@@ -209,7 +211,7 @@ func (s *session) UnmarshalJSON(data []byte) error {
 
 func (s *redisSessionStore) get(t string) *session {
 	//TODO: input validation string?
-	val, err := s.client.Get(context.TODO(),t).Result()
+	val, err := s.client.Get(context.TODO(),tokenLookupPrefix+t).Result()
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -220,7 +222,7 @@ func (s *redisSessionStore) get(t string) *session {
 func (s *redisSessionStore) clientGet(t string) *session {
 	fmt.Println("############ redisSessionStore wants to GET")
 
-	val, err := s.client.Get(context.TODO(),t).Result()
+	val, err := s.client.Get(context.TODO(),sessionLookupPrefix+t).Result()
 	if err != nil {
 		fmt.Printf("unable to get data from redis: %s \n", err)
 	}
@@ -245,10 +247,9 @@ func (s *redisSessionStore) add(session *session) {
 		fmt.Printf("unable to marshal data to json due to: %s \n", err)
 	}
 
-	//TODO: use different key naming: 1 for token, 1 for clientToken (https://redislabs.com/blog/5-key-takeaways-for-developing-with-redis/)
 	//TODO: use expiration time
-	err1 := s.client.Set(context.TODO(),session.sessionData.Token, session.sessionData.ClientToken, 0).Err()
-	err2 := s.client.Set(context.TODO(),session.sessionData.ClientToken, sessionJSON, 0).Err()
+	err1 := s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, 0).Err()
+	err2 := s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, 0).Err()
 	fmt.Println("errors:", err, err1, err2)
 	fmt.Println("session.Token, session.ClientToken")
 	fmt.Println(session.sessionData.Token, session.sessionData.ClientToken)
