@@ -30,49 +30,49 @@ import (
 // Session helpers
 
 func (session *session) markAlive() {
-	session.lastActive = time.Now()
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debugf("Session marked active, expiry delayed")
+	session.LastActive = time.Now()
+	session.Conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Debugf("Session marked active, expiry delayed")
 }
 
 func (session *session) setStatus(status server.Status) {
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "prevStatus": session.prevStatus, "status": status}).
+	session.Conf.Logger.WithFields(logrus.Fields{"session": session.Token, "prevStatus": session.PrevStatus, "status": status}).
 		Info("Session status updated")
-	session.status = status
-	session.result.Status = status
-	session.sessions.update(session)
+	session.Status = status
+	session.Result.Status = status
+	session.Sessions.update(session)
 }
 
 func (session *session) onUpdate() {
 	if session.sse == nil {
 		return
 	}
-	session.sse.SendMessage("session/"+session.clientToken,
-		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
+	session.sse.SendMessage("session/"+session.ClientToken,
+		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.Status)),
 	)
-	session.sse.SendMessage("session/"+session.token,
-		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
+	session.sse.SendMessage("session/"+session.Token,
+		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.Status)),
 	)
 }
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
 	session.setStatus(server.StatusCancelled)
-	session.result = &server.SessionResult{Err: rerr, Token: session.token, Status: server.StatusCancelled, Type: session.action}
+	session.Result = &server.SessionResult{Err: rerr, Token: session.Token, Status: server.StatusCancelled, Type: session.Action}
 	return rerr
 }
 
 func (session *session) chooseProtocolVersion(minClient, maxClient *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
 	// Set minimum supported version to 2.5 if condiscon compatibility is required
 	minServer := minProtocolVersion
-	if !session.legacyCompatible {
+	if !session.LegacyCompatible {
 		minServer = &irma.ProtocolVersion{2, 5}
 	}
 	// Set minimum to 2.6 if nonrevocation is required
-	if len(session.request.Base().Revocation) > 0 {
+	if len(session.Request.Base().Revocation) > 0 {
 		minServer = &irma.ProtocolVersion{2, 6}
 	}
 	// Set minimum to 2.7 if chained session are used
-	if session.rrequest.Base().NextSession != nil {
+	if session.Rrequest.Base().NextSession != nil {
 		minServer = &irma.ProtocolVersion{2, 7}
 	}
 
@@ -96,27 +96,27 @@ const retryTimeLimit = 10 * time.Second
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
 func (session *session) checkCache(message []byte) (int, []byte) {
-	if len(session.responseCache.response) == 0 ||
-		session.responseCache.sessionStatus != session.status ||
-		session.lastActive.Before(time.Now().Add(-retryTimeLimit)) ||
-		sha256.Sum256(session.responseCache.message) != sha256.Sum256(message) {
-		session.responseCache = responseCache{}
+	if len(session.ResponseCache.response) == 0 ||
+		session.ResponseCache.sessionStatus != session.Status ||
+		session.LastActive.Before(time.Now().Add(-retryTimeLimit)) ||
+		sha256.Sum256(session.ResponseCache.message) != sha256.Sum256(message) {
+		session.ResponseCache = responseCache{}
 		return 0, nil
 	}
-	return session.responseCache.status, session.responseCache.response
+	return session.ResponseCache.status, session.ResponseCache.response
 }
 
 // Issuance helpers
 
 func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
-	credtyp := session.conf.IrmaConfiguration.CredentialTypes[id]
-	if !credtyp.RevocationSupported() || !session.request.Base().RevocationSupported() {
+	credtyp := session.Conf.IrmaConfiguration.CredentialTypes[id]
+	if !credtyp.RevocationSupported() || !session.Request.Base().RevocationSupported() {
 		return nil, nil
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
-	rs := session.conf.IrmaConfiguration.Revocation
+	rs := session.Conf.IrmaConfiguration.Revocation
 	if err := rs.SyncDB(id); err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (session *session) computeAttributes(
 	}
 
 	issuedAt := time.Now()
-	attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03, nonrevAttr, issuedAt)
+	attributes, err := cred.AttributeList(session.Conf.IrmaConfiguration, 0x03, nonrevAttr, issuedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,7 +178,9 @@ func (session *session) computeAttributes(
 			Issued:     issuedAt.UnixNano(),
 			ValidUntil: attributes.Expiry().UnixNano(),
 		}
-		err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
+	}
+	if witness != nil {
+		err = session.Conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -240,31 +242,31 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 }
 
 func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, scheme irma.SchemeManagerIdentifier) (*gabi.ProofP, error) {
-	if session.kssProofs == nil {
-		session.kssProofs = make(map[irma.SchemeManagerIdentifier]*gabi.ProofP)
+	if session.KssProofs == nil {
+		session.KssProofs = make(map[irma.SchemeManagerIdentifier]*gabi.ProofP)
 	}
 
-	if _, contains := session.kssProofs[scheme]; !contains {
+	if _, contains := session.KssProofs[scheme]; !contains {
 		str, contains := commitments.ProofPjwts[scheme.Name()]
 		if !contains {
 			return nil, errors.Errorf("no keyshare proof included for scheme %s", scheme.Name())
 		}
-		session.conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
+		session.Conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
 		claims := &struct {
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
 		}{}
-		token, err := jwt.ParseWithClaims(str, claims, session.conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
+		token, err := jwt.ParseWithClaims(str, claims, session.Conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
 		if err != nil {
 			return nil, err
 		}
 		if !token.Valid {
 			return nil, errors.Errorf("invalid keyshare proof included for scheme %s", scheme.Name())
 		}
-		session.kssProofs[scheme] = claims.ProofP
+		session.KssProofs[scheme] = claims.ProofP
 	}
 
-	return session.kssProofs[scheme], nil
+	return session.KssProofs[scheme], nil
 }
 
 // Other
@@ -402,18 +404,18 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 		ww.Tee(buf)
 		next.ServeHTTP(ww, r)
 
-		session.responseCache = responseCache{
+		session.ResponseCache = responseCache{
 			message:       message,
 			response:      buf.Bytes(),
 			status:        ww.Status(),
-			sessionStatus: session.status,
+			sessionStatus: session.Status,
 		}
 	})
 }
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := chi.URLParam(r, "token")
+		token := chi.URLParam(r, "Token")
 		session := s.sessions.clientGet(token)
 		if session == nil {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -424,14 +426,14 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		session.Lock()
 		session.locked = true
 		defer func() {
-			if session.prevStatus != session.status {
-				session.prevStatus = session.status
-				result := session.result
+			if session.PrevStatus != session.Status {
+				session.PrevStatus = session.Status
+				result := session.Result
 				r := ctx.Value("sessionresult")
 				if r != nil {
 					*r.(*server.SessionResult) = *result
 				}
-				if session.status.Finished() {
+				if session.Status.Finished() {
 					if handler := s.handlers[result.Token]; handler != nil {
 						go handler(result)
 						delete(s.handlers, token)

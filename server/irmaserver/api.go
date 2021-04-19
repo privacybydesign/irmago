@@ -1,10 +1,12 @@
 // Package irmaserver is a library that allows IRMA verifiers, issuers or attribute-based signature
-// applications to perform IRMA sessions with irmaclient instances (i.e. the IRMA app). It exposes
-// functions for handling IRMA sessions and a HTTP handler that handles the sessions with the
+// applications to perform IRMA Sessions with irmaclient instances (i.e. the IRMA app). It exposes
+// functions for handling IRMA Sessions and a HTTP handler that handles the Sessions with the
 // irmaclient.
 package irmaserver
 
 import (
+	"fmt"
+	"github.com/go-redis/redis/v8"
 	"net/http"
 	"time"
 
@@ -49,14 +51,26 @@ func New(conf *server.Configuration) (*Server, error) {
 	s := &Server{
 		conf:      conf,
 		scheduler: gocron.NewScheduler(),
-		sessions: &memorySessionStore{
-			requestor: make(map[string]*session),
-			client:    make(map[string]*session),
+		//TODO: switch here for inmemory of redis state
+		sessions: &redisSessionStore{
+			client:    redis.NewClient(&redis.Options{
+				Addr: "localhost:6379",
+				Password: "",
+				DB: 0,
+			}),
 			conf:      conf,
 		},
+		//sessions: &memorySessionStore{
+		//	requestor: make(map[string]*session),
+		//	client:    make(map[string]*session),
+		//	conf:      conf,
+		//},
+		//TODO: initial ping? what should happen in case of failure? should the switch use in memory if redis cannot be pinged?
 		handlers:         make(map[string]server.SessionHandler),
 		serverSentEvents: e,
 	}
+
+	fmt.Println("REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS")
 
 	s.scheduler.Every(10).Seconds().Do(func() {
 		s.sessions.deleteExpired()
@@ -109,7 +123,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
-	r.Route("/session/{token}", func(r chi.Router) {
+	r.Route("/session/{Token}", func(r chi.Router) {
 		r.Use(s.sessionMiddleware)
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)
@@ -183,19 +197,19 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 
 	request.Base().DevelopmentMode = !s.conf.Production
 	session := s.newSession(action, rrequest)
-	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.token}).Infof("Session started")
+	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.Token}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.token, "clienttoken": session.clientToken}).Info("Session request: ", server.ToJson(rrequest))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token, "clienttoken": session.ClientToken}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	if handler != nil {
-		s.handlers[session.token] = handler
+		s.handlers[session.Token] = handler
 	}
 	return &irma.Qr{
 		Type: action,
-		URL:  s.conf.URL + "session/" + session.clientToken,
-	}, session.token, nil
+		URL:  s.conf.URL + "session/" + session.ClientToken,
+	}, session.Token, nil
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
@@ -208,7 +222,7 @@ func (s *Server) GetSessionResult(token string) *server.SessionResult {
 		s.conf.Logger.Warn("Session result requested of unknown session ", token)
 		return nil
 	}
-	return session.result
+	return session.Result
 }
 
 // GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
@@ -221,7 +235,7 @@ func (s *Server) GetRequest(token string) irma.RequestorRequest {
 		s.conf.Logger.Warn("Session request requested of unknown session ", token)
 		return nil
 	}
-	return session.rrequest
+	return session.Rrequest
 }
 
 // CancelSession cancels the specified IRMA session.
@@ -272,7 +286,7 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
 	}
-	if session.status.Finished() {
+	if session.Status.Finished() {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
 	}
 
