@@ -213,7 +213,7 @@ func (s *redisSessionStore) get(t string) *session {
 	//TODO: input validation string?
 	val, err := s.client.Get(context.TODO(),tokenLookupPrefix+t).Result()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("unable to get corresponding clientToken for token %s from redis: %s \n", t, err)
 	}
 
 	return s.clientGet(val)
@@ -224,7 +224,7 @@ func (s *redisSessionStore) clientGet(t string) *session {
 
 	val, err := s.client.Get(context.TODO(),sessionLookupPrefix+t).Result()
 	if err != nil {
-		fmt.Printf("unable to get data from redis: %s \n", err)
+		fmt.Printf("unable to get session data for clientToken %s from redis: %s \n", t, err)
 	}
 
 	fmt.Println("ClientToken redis GET jsonObject:", val)
@@ -247,9 +247,8 @@ func (s *redisSessionStore) add(session *session) {
 		fmt.Printf("unable to marshal data to json due to: %s \n", err)
 	}
 
-	//TODO: use expiration time
-	err1 := s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, 0).Err()
-	err2 := s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, 0).Err()
+	err1 := s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, maxSessionLifetime).Err()
+	err2 := s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, maxSessionLifetime).Err()
 	fmt.Println("errors:", err, err1, err2)
 	fmt.Println("session.Token, session.ClientToken")
 	fmt.Println(session.sessionData.Token, session.sessionData.ClientToken)
