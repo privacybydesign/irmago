@@ -38,21 +38,6 @@ func TestConfInvalidAESKey(t *testing.T) {
 		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
-		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
-		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
-		KeyshareCredential:    "test.test.mijnirma",
-		KeyshareAttribute:     "email",
-	})
-	assert.NoError(t, err)
-
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
-		DBType:                DatabaseTypeMemory,
-		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk-does-not-exist.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareCredential:    "test.test.mijnirma",
