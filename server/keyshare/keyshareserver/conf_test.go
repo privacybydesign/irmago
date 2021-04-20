@@ -43,6 +43,16 @@ func TestConfInvalidAESKey(t *testing.T) {
 	assert.NoError(t, err)
 
 	conf := validConf(t)
+	conf.JwtPrivateKeyFile = ""
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.StoragePrimaryKeyFile = ""
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
 	conf.JwtPrivateKeyFile = filepath.Join(testdataPath, "jwtkeys", "kss-sk-does-not-exist.pem")
 	_, err = New(conf)
 	assert.Error(t, err)
