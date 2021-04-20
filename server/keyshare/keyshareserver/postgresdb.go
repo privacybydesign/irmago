@@ -94,14 +94,15 @@ func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, i
 	uprows, err := db.db.Query(`
 		UPDATE irma.users
 		SET pin_counter = pin_counter+1,
-			pin_block_date = $1+$2*2^GREATEST(0, pin_counter-$3)
-		WHERE id=$4 AND pin_block_date<=$5 AND coredata IS NOT NULL
+			pin_block_date = $1 + CASE WHEN pin_counter-$3 < 0 THEN 0
+			                           ELSE $2*2^GREATEST(0, pin_counter-$3)
+			                      END
+		WHERE id=$4 AND pin_block_date<=$1 AND coredata IS NOT NULL
 		RETURNING pin_counter, pin_block_date`,
-		time.Now().Unix()-1-BACKOFF_START, // Grace time of 2 seconds on pinBlockDate set
+		time.Now().Unix(),
 		BACKOFF_START,
-		MAX_PIN_TRIES-2,
-		user.id,
-		time.Now().Unix())
+		MAX_PIN_TRIES-1,
+		user.id)
 	if err != nil {
 		return false, 0, 0, err
 	}
