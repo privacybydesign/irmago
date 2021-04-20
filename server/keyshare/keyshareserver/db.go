@@ -32,12 +32,17 @@ type KeyshareDB interface {
 	User(username string) (*KeyshareUser, error)
 	UpdateUser(user *KeyshareUser) error
 
-	// Pin checking logic
-	// Reserve returns (allow, tries, wait, error)
-	// where allow is whether we can do the actual pin check
-	// tries is how many tries are remaining after doing so
-	// wait is how long to wait if tries is 0 or allow false
-	ReservePincheck(user *KeyshareUser) (bool, int, int64, error)
+	// ReservePincheck reserves a pin check attempt. Return parameters:
+	//  - allowed is whether the user is allowed to do the pin check (false if user is blocked)
+	//  - tries is how many tries are remaining, after this pin check
+	//  - wait is how long the user must wait before the next attempt is allowed if tries is 0
+	// ReservePincheck increases the user's try count and (if applicable) the date when the user
+	// is unblocked again in the database, regardless of if the pin check succeeds after this
+	// invocation.
+	ReservePincheck(user *KeyshareUser) (allowed bool, tries int, wait int64, err error)
+
+	// ClearPincheck resets the user's pin count and unblock date fields in the database to their
+	// default values (0 past attempts, no unblock date).
 	ClearPincheck(user *KeyshareUser) error
 
 	// User activity registration
