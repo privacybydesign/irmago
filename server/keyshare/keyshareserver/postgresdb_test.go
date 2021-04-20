@@ -64,38 +64,62 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	err = db.NewUser(user)
 	require.NoError(t, err)
 
+	// ReservePincheck sets user fields in the database as if the attempt was wrong. If the attempt
+	// was in fact correct, then these fields are cleared again later by the keyshare server by
+	// invoking db.ClearPincheck(user). So below we may think of ReservePincheck invocations as
+	// wrong pin attempts.
+
 	ok, tries, wait, err := db.ReservePincheck(user)
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, MAX_PIN_TRIES-1, tries)
 	assert.Equal(t, int64(0), wait)
+
+	// Try until we have no tries left
 	for tries != 0 {
 		ok, tries, wait, err = db.ReservePincheck(user)
 		require.NoError(t, err)
 		assert.True(t, ok)
 	}
 
+	assert.Equal(t, BACKOFF_START, wait) // next attempt after first timeout
+
+	// We have used all tries; we are now blocked. Wait till just before block end
 	time.Sleep(time.Duration(wait-1) * time.Second)
 
+	// Try again, not yet allowed
 	ok, tries, wait, err = db.ReservePincheck(user)
 	assert.NoError(t, err)
 	assert.False(t, ok)
 	assert.Equal(t, 0, tries)
-	assert.True(t, wait > 0)
+	assert.Equal(t, int64(1), wait)
 
-	time.Sleep(time.Duration(2 * time.Second))
+	// Wait till just after block end
+	time.Sleep(2 * time.Second)
 
+	// Trying is now allowed
 	ok, tries, wait, err = db.ReservePincheck(user)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, 0, tries)
-	assert.True(t, wait > 0)
+	assert.Equal(t, 2*BACKOFF_START, wait) // next attempt after doubled timeout
 
+	// Since we just used another attempt we are now blocked again
 	ok, tries, wait, err = db.ReservePincheck(user)
 	assert.NoError(t, err)
 	assert.False(t, ok)
 	assert.Equal(t, 0, tries)
-	assert.True(t, wait > 0)
+	assert.Equal(t, 2*BACKOFF_START, wait)
+
+	// Wait to be unblocked again
+	time.Sleep(time.Duration(wait+1) * time.Second)
+
+	// Try a final time
+	ok, tries, wait, err = db.ReservePincheck(user)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 0, tries)
+	assert.Equal(t, 4*BACKOFF_START, wait) // next attempt after again a doubled timeout
 
 	err = db.ClearPincheck(user)
 	assert.NoError(t, err)
