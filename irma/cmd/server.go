@@ -97,6 +97,8 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("revocation-db-type", "", "database type for revocation database (supported: mysql, postgres)")
 	flags.String("revocation-db-str", "", "connection string for revocation database")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
+	flags.String("store-type", "memory", "Specify how session state will be saved on the server.")
+	flags.String("redis-settings", "", "redis settings (in JSON)")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
@@ -219,6 +221,8 @@ func configureServer(cmd *cobra.Command) error {
 			DisableTLS:             viper.GetBool("no-tls"),
 			Email:                  viper.GetString("email"),
 			EnableSSE:              viper.GetBool("sse"),
+			StoreType:              viper.GetString("store-type"),
+			RedisSettings:          irma.RedisSettings{},
 			Verbose:                viper.GetInt("verbose"),
 			Quiet:                  viper.GetBool("quiet"),
 			LogJSON:                viper.GetBool("log-json"),
@@ -280,6 +284,12 @@ func configureServer(cmd *cobra.Command) error {
 	for i, s := range m {
 		conf.RevocationSettings[irma.NewCredentialTypeIdentifier(i)] = s
 	}
+
+	// Parse Redis store configuration
+	if err = handleMapOrString("redis-settings", &conf.RedisSettings); err != nil {
+		return err
+	}
+
 
 	logger.Debug("Done configuring")
 

@@ -43,6 +43,8 @@ type Configuration struct {
 	Email string `json:"email" mapstructure:"email"`
 	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
 	EnableSSE bool `json:"enable_sse" mapstructure:"enable_sse"`
+	StoreType string `json:"store_type" mapstructure:"store_type"`
+	RedisSettings irma.RedisSettings `json:"redis_settings" mapstructure:"redis_settings"`
 
 	// Static session requests that can be created by POST /session/{name}
 	StaticSessions map[string]interface{} `json:"static_sessions"`

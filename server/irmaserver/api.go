@@ -5,7 +5,7 @@
 package irmaserver
 
 import (
-	"fmt"
+	"context"
 	"github.com/go-redis/redis/v8"
 	"net/http"
 	"time"
@@ -49,32 +49,43 @@ func New(conf *server.Configuration) (*Server, error) {
 	conf.IrmaConfiguration.Revocation.ServerSentEvents = e
 
 	s := &Server{
-		conf:      conf,
-		scheduler: gocron.NewScheduler(),
-		//TODO: switch here for inmemory of redis state
-		sessions: &redisSessionStore{
-			client:    redis.NewClient(&redis.Options{
-				Addr: "localhost:6379",
-				Password: "",
-				DB: 0,
-			}),
-			conf:      conf,
-		},
-		//sessions: &memorySessionStore{
-		//	requestor: make(map[string]*session),
-		//	client:    make(map[string]*session),
-		//	conf:      conf,
-		//},
-		//TODO: initial ping? what should happen in case of failure? should the switch use in memory if redis cannot be pinged?
+		conf:             conf,
+		scheduler:        gocron.NewScheduler(),
 		handlers:         make(map[string]server.SessionHandler),
 		serverSentEvents: e,
 	}
 
-	fmt.Println("REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS REDIS")
+	switch conf.StoreType {
+	case "redis":
+		//TODO: without sse it keeps polling.
+		//TODO: redis settings must not be null here...
+		//setup client
+		cl := redis.NewClient(&redis.Options{
+			Addr:     conf.RedisSettings.Host + ":" + conf.RedisSettings.Port,
+			Password: conf.RedisSettings.Password,
+			DB:       conf.RedisSettings.DB,
+		})
+		if err := cl.Ping(context.TODO()).Err(); err != nil {
+			//TODO: what should happen in case of failure? should the switch use in memory if redis cannot be pinged?
+			return nil, err
+		}
+		s.sessions = &redisSessionStore{
+			client: cl,
+			conf: conf,
+		}
+	case "memory":
+		fallthrough
+	default:
+		s.sessions = &memorySessionStore{
+			requestor: make(map[string]*session),
+			client:    make(map[string]*session),
+			conf:      conf,
+		}
 
-	s.scheduler.Every(10).Seconds().Do(func() {
-		s.sessions.deleteExpired()
-	})
+		s.scheduler.Every(10).Seconds().Do(func() {
+			s.sessions.deleteExpired()
+		})
+	}
 
 	s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
 		for credid, settings := range s.conf.RevocationSettings {
