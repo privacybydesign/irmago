@@ -237,35 +237,39 @@ func (s *redisSessionStore) clientGet(t string) *session {
 }
 
 func (s *redisSessionStore) add(session *session) {
+	add(session, s.client, maxSessionLifetime)
+}
+
+func add(session *session, client *redis.Client, ttl time.Duration) {
 	sessionJSON, err := session.MarshalJSON()
 	if err != nil {
 		fmt.Printf("unable to marshal data to json due to: %s \n", err)
 	}
 
-	err = s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, maxSessionLifetime).Err()
+	err = client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, ttl).Err()
 	if err != nil {
 		fmt.Printf("unable to save token lookup in Redis datastore: %s \n", err)
 	}
-	err = s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, maxSessionLifetime).Err()
+	err = client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, ttl).Err()
 	if err != nil {
 		fmt.Printf("unable to save session data as JSON in Redis datastore: %s \n", err)
 	}
 }
 
 func (s *redisSessionStore) update(session *session) {
-	fmt.Println("############ redisSessionStore wants to UPDATE")
-	s.add(session)
-	//TODO: remove?
-	session.onUpdate()
+	ttl, _ := s.client.TTL(context.TODO(), session.ClientToken).Result()
+	add(session, s.client, ttl)
 }
 
 func (s *redisSessionStore) stop() {
-	fmt.Println("redisSessionStore wants to stop")
+	err := s.client.Close()
+	if err != nil {
+		fmt.Printf("closing the redis client failed due to %s \n", err)
+	}
 }
 
 func (s *redisSessionStore) deleteExpired() {
-	fmt.Println("redisSessionStore wants to deleteExpired")
-	//TODO: use redis expiration instead? explicit delete needed?
+	// This method is not used as data is directly stored in Redis with a corresponding expiration time.
 }
 
 var one *big.Int = big.NewInt(1)
