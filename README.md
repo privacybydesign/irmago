@@ -47,3 +47,17 @@ An [irma_keyshare_server](https://github.com/credentials/irma_keyshare_server) s
 - Make sure `check_user_enabled` is set to false in the Keyshare server configuration. Other options are already setup correctly in the example configuration.
 
 <!-- vim: set ts=4 sw=4: -->
+
+## Using a local Redis datastore
+Irmago can either store session states in memory (default) or in a Redis datastore. For local testing purposes you can use the standard [Redis docker container](https://hub.docker.com/_/redis):
+
+```
+docker pull redis
+docker run --name redis-test-instance -p 6379:6379 -d redis
+```
+
+You can then start irmago with the store-type flag set to redis and the [default configuration file](testdata/configurations/redis.yml). Make sure to replace `$IRMAGO_HOME` with your actual base path.
+
+```
+irma server -vv --allow-unsigned-callbacks --store-type redis --config=$IRMAGO_HOME/testdata/configurations/redis.yml
+```
