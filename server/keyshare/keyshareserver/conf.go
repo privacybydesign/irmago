@@ -48,17 +48,17 @@ type Configuration struct {
 	StoragePrimaryKeyFile   string   `json:"storage_primary_key_file" mapstructure:"storage_primary_key_file"`
 
 	// Keyshare credential to issue during registration
-	KeyshareCredential string
-	KeyshareAttribute  string
+	KeyshareCredential string `json:"keyshare_credential" mapstructure:"keyshare_credential"`
+	KeyshareAttribute  string `json:"keyshare_attribute" mapstructure:"keyshare_attribute"`
 
 	// Configuration for email sending during registration (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
-	RegistrationEmailFiles     map[string]string
-	RegistrationEmailSubject   map[string]string
-	registrationEmailTemplates map[string]*template.Template
+	RegistrationEmailFiles     map[string]string             `json:"registration_email_files" mapstructure:"registration_email_files"`
+	RegistrationEmailSubject   map[string]string             `json:"registration_email_subject" mapstructure:"registration_email_subject"`
+	registrationEmailTemplates map[string]*template.Template `json:"registration_email_templates" mapstructure:"registration_email_templates"`
 
-	VerificationURL map[string]string
+	VerificationURL map[string]string `json:"verification_url" mapstructure:"verification_url"`
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {

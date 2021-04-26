@@ -11,18 +11,18 @@ import (
 
 type Configuration struct {
 	// Database configuration
-	DBConnstring string
+	DBConnstring string `json:"db_connstring" mapstructure:"db_connstring"`
 
 	// Configuration for deleting expired accounts
-	ExpiryDelay int
-	DeleteDelay int
+	ExpiryDelay int `json:"expiry_delay" mapstructure:"expiry_delay"`
+	DeleteDelay int `json:"delete_delay" mapstructure:"delete_delay"`
 
 	// Email sending configuration
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
-	DeleteExpiredAccountFiles    map[string]string
-	DeleteExpiredAccountSubject  map[string]string
-	deleteExpiredAccountTemplate map[string]*template.Template
+	DeleteExpiredAccountFiles    map[string]string             `json:"delete_expired_account_files" mapstructure:"delete_expired_account_files"`
+	DeleteExpiredAccountSubject  map[string]string             `json:"delete_expired_account_subject" mapstructure:"delete_expired_account_subject"`
+	deleteExpiredAccountTemplate map[string]*template.Template `json:"delete_expired_account_template" mapstructure:"delete_expired_account_template"`
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`

@@ -27,8 +27,8 @@ type Configuration struct {
 	MyIRMAURL string `json:"url" mapstructure:"url"`
 
 	// Path to static content to serve (for testing)
-	StaticPath   string
-	StaticPrefix string
+	StaticPath   string `json:"static_path" mapstructure:"static_path"`
+	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
 
 	// Database configuration (ignored when database is provided)
 	DBType       DatabaseType `json:"db_type" mapstructure:"db_type"`
@@ -38,29 +38,29 @@ type Configuration struct {
 	DB MyirmaDB `json:"-"`
 
 	// Session lifetime in seconds
-	SessionLifetime int
+	SessionLifetime int `json:"session_lifetime" mapstructure:"session_lifetime"`
 
 	// Keyshare attributes to use for login
-	KeyshareAttributeNames []string
-	KeyshareAttributes     []irma.AttributeTypeIdentifier
-	EmailAttributeNames    []string
-	EmailAttributes        []irma.AttributeTypeIdentifier
+	KeyshareAttributeNames []string                       `json:"keyshare_attribute_names" mapstructure:"keyshare_attribute_names"`
+	KeyshareAttributes     []irma.AttributeTypeIdentifier `json:"-"`
+	EmailAttributeNames    []string                       `json:"email_attribute_names" mapstructure:"email_attribute_names"`
+	EmailAttributes        []irma.AttributeTypeIdentifier `json:"-"`
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
-	LoginEmailBaseURL map[string]string
+	LoginEmailBaseURL map[string]string `json:"login_email_base_url" mapstructure:"login_email_base_url"`
 
-	LoginEmailFiles      map[string]string
-	LoginEmailSubject    map[string]string
-	DeleteEmailFiles     map[string]string
-	DeleteEmailSubject   map[string]string
-	DeleteAccountFiles   map[string]string
-	DeleteAccountSubject map[string]string
+	LoginEmailFiles      map[string]string `json:"login_email_files" mapstructure:"login_email_files"`
+	LoginEmailSubject    map[string]string `json:"login_email_subject" mapstructure:"login_email_subject"`
+	DeleteEmailFiles     map[string]string `json:"delete_email_files" mapstructure:"delete_email_files"`
+	DeleteEmailSubject   map[string]string `json:"delete_email_subject" mapstructure:"delete_email_subject"`
+	DeleteAccountFiles   map[string]string `json:"delete_account_files" mapstructure:"delete_account_files"`
+	DeleteAccountSubject map[string]string `json:"delete_account_subject" mapstructure:"delete_account_subject"`
 
-	loginEmailTemplates    map[string]*template.Template
-	deleteEmailTemplates   map[string]*template.Template
-	deleteAccountTemplates map[string]*template.Template
+	loginEmailTemplates    map[string]*template.Template `json:"login_email_templates" mapstructure:"login_email_templates"`
+	deleteEmailTemplates   map[string]*template.Template `json:"delete_email_templates" mapstructure:"delete_email_templates"`
+	deleteAccountTemplates map[string]*template.Template `json:"delete_account_templates" mapstructure:"delete_account_templates"`
 }
 
 // Process a passed configuration to ensure all field values are valid and initialized
