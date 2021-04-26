@@ -55,9 +55,10 @@ type Configuration struct {
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
 	RegistrationEmailFiles     map[string]string
-	RegistrationEmailTemplates map[string]*template.Template
 	RegistrationEmailSubject   map[string]string
-	VerificationURL            map[string]string
+	registrationEmailTemplates map[string]*template.Template
+
+	VerificationURL map[string]string
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {
@@ -77,24 +78,15 @@ func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {
 // as required by the rest of this keyshare server component.
 func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	// Setup email templates
-	if conf.EmailServer != "" && conf.RegistrationEmailTemplates == nil {
-		conf.RegistrationEmailTemplates = map[string]*template.Template{}
-		for lang, templateFile := range conf.RegistrationEmailFiles {
-			var err error
-			conf.RegistrationEmailTemplates[lang], err = template.ParseFiles(templateFile)
-			if err != nil {
-				return nil, server.LogError(err)
-			}
-		}
-	}
-
-	// Verify email configuration
+	var err error
 	if conf.EmailServer != "" {
-		if _, ok := conf.RegistrationEmailTemplates[conf.DefaultLanguage]; !ok {
-			return nil, server.LogError(errors.Errorf("Missing registration email template for default language"))
-		}
-		if _, ok := conf.RegistrationEmailSubject[conf.DefaultLanguage]; !ok {
-			return nil, server.LogError(errors.Errorf("Missing registration email subject for default language"))
+		conf.registrationEmailTemplates, err = keyshare.ParseEmailTemplates(
+			conf.RegistrationEmailFiles,
+			conf.RegistrationEmailSubject,
+			conf.DefaultLanguage,
+		)
+		if err != nil {
+			return nil, server.LogError(err)
 		}
 		if _, ok := conf.VerificationURL[conf.DefaultLanguage]; !ok {
 			return nil, server.LogError(errors.Errorf("Missing verification base url for default lanaguage"))

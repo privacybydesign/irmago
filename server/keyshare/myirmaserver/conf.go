@@ -49,16 +49,18 @@ type Configuration struct {
 	// Configuration for email sending during login (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
-	LoginEmailFiles        map[string]string
-	LoginEmailTemplates    map[string]*template.Template
-	LoginEmailSubject      map[string]string
-	LoginEmailBaseURL      map[string]string
-	DeleteEmailFiles       map[string]string
-	DeleteEmailTemplates   map[string]*template.Template
-	DeleteEmailSubject     map[string]string
-	DeleteAccountFiles     map[string]string
-	DeleteAccountTemplates map[string]*template.Template
-	DeleteAccountSubject   map[string]string
+	LoginEmailBaseURL map[string]string
+
+	LoginEmailFiles      map[string]string
+	LoginEmailSubject    map[string]string
+	DeleteEmailFiles     map[string]string
+	DeleteEmailSubject   map[string]string
+	DeleteAccountFiles   map[string]string
+	DeleteAccountSubject map[string]string
+
+	loginEmailTemplates    map[string]*template.Template
+	deleteEmailTemplates   map[string]*template.Template
+	deleteAccountTemplates map[string]*template.Template
 }
 
 // Process a passed configuration to ensure all field values are valid and initialized
@@ -91,59 +93,31 @@ func processConfiguration(conf *Configuration) error {
 	}
 
 	// Setup email templates
-	if conf.EmailServer != "" && conf.LoginEmailTemplates == nil {
-		conf.LoginEmailTemplates = map[string]*template.Template{}
-		for lang, templateFile := range conf.LoginEmailFiles {
-			var err error
-			conf.LoginEmailTemplates[lang], err = template.ParseFiles(templateFile)
-			if err != nil {
-				return server.LogError(err)
-			}
-		}
-	}
-	if conf.EmailServer != "" && conf.DeleteEmailTemplates == nil {
-		conf.DeleteEmailTemplates = map[string]*template.Template{}
-		for lang, templateFile := range conf.DeleteEmailFiles {
-			var err error
-			conf.DeleteEmailTemplates[lang], err = template.ParseFiles(templateFile)
-			if err != nil {
-				return server.LogError(err)
-			}
-		}
-	}
-	if conf.EmailServer != "" && conf.DeleteAccountTemplates == nil {
-		conf.DeleteAccountTemplates = map[string]*template.Template{}
-		for lang, templateFile := range conf.DeleteAccountFiles {
-			var err error
-			conf.DeleteAccountTemplates[lang], err = template.ParseFiles(templateFile)
-			if err != nil {
-				return server.LogError(err)
-			}
-		}
-	}
-
-	// Verify email configuration
+	var err error
 	if conf.EmailServer != "" {
-		if _, ok := conf.LoginEmailTemplates[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing login email template for default language"))
+		if conf.loginEmailTemplates, err = keyshare.ParseEmailTemplates(
+			conf.LoginEmailFiles,
+			conf.LoginEmailSubject,
+			conf.DefaultLanguage,
+		); err != nil {
+			return server.LogError(err)
 		}
-		if _, ok := conf.LoginEmailSubject[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing login email subject for default language"))
+		if conf.deleteEmailTemplates, err = keyshare.ParseEmailTemplates(
+			conf.DeleteEmailFiles,
+			conf.DeleteEmailSubject,
+			conf.DefaultLanguage,
+		); err != nil {
+			return server.LogError(err)
+		}
+		if conf.deleteAccountTemplates, err = keyshare.ParseEmailTemplates(
+			conf.DeleteAccountFiles,
+			conf.DeleteAccountSubject,
+			conf.DefaultLanguage,
+		); err != nil {
+			return server.LogError(err)
 		}
 		if _, ok := conf.LoginEmailBaseURL[conf.DefaultLanguage]; !ok {
 			return server.LogError(errors.Errorf("Missing login email base url for default language"))
-		}
-		if _, ok := conf.DeleteEmailTemplates[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing delete email template for default language"))
-		}
-		if _, ok := conf.DeleteEmailSubject[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing delete email subject for default language"))
-		}
-		if _, ok := conf.DeleteAccountTemplates[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing delete account template for default language"))
-		}
-		if _, ok := conf.DeleteAccountSubject[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing delete account subject for default language"))
 		}
 	}
 
@@ -151,7 +125,6 @@ func processConfiguration(conf *Configuration) error {
 	if conf.DB == nil {
 		switch conf.DBType {
 		case DatabaseTypePostgres:
-			var err error
 			conf.DB, err = NewPostgresDatabase(conf.DBConnstring, conf.DeleteDelay)
 			if err != nil {
 				return err

@@ -1,7 +1,6 @@
 package keyshareserver
 
 import (
-	"html/template"
 	"path/filepath"
 	"testing"
 
@@ -9,7 +8,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func validConf(t *testing.T) *Configuration {
@@ -82,42 +80,15 @@ func TestConfInvalidAESKey(t *testing.T) {
 	_, err = New(conf)
 	assert.Error(t, err)
 
-	testTemplate := template.New("test")
-	_, err = testTemplate.Parse("testtemplate {{.VerificationURL}}")
-	require.NoError(t, err)
-
 	conf = validConfWithEmail(t)
-	conf.RegistrationEmailTemplates = map[string]*template.Template{
-		"en": testTemplate,
-	}
-	conf.VerificationURL = map[string]string{
-		"en": "test",
-	}
-	_, err = New(conf)
-	assert.Error(t, err)
-
-	conf = validConfWithEmail(t)
-	conf.RegistrationEmailTemplates = map[string]*template.Template{
-		"en": testTemplate,
+	conf.RegistrationEmailFiles = map[string]string{
+		"en": filepath.Join(testdataPath, "emailtemplate.html"),
 	}
 	conf.RegistrationEmailSubject = map[string]string{
 		"en": "testsubject",
 	}
 	_, err = New(conf)
 	assert.Error(t, err)
-
-	conf = validConfWithEmail(t)
-	conf.RegistrationEmailTemplates = map[string]*template.Template{
-		"en": testTemplate,
-	}
-	conf.RegistrationEmailSubject = map[string]string{
-		"en": "testsubject",
-	}
-	conf.VerificationURL = map[string]string{
-		"en": "test",
-	}
-	_, err = New(conf)
-	assert.NoError(t, err)
 
 	conf = validConfWithEmail(t)
 	conf.RegistrationEmailFiles = map[string]string{

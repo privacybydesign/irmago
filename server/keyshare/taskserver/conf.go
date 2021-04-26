@@ -3,7 +3,6 @@ package taskserver
 import (
 	"html/template"
 
-	"github.com/pkg/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
@@ -22,8 +21,8 @@ type Configuration struct {
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
 	DeleteExpiredAccountFiles    map[string]string
-	DeleteExpiredAccountTemplate map[string]*template.Template
 	DeleteExpiredAccountSubject  map[string]string
+	deleteExpiredAccountTemplate map[string]*template.Template
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
@@ -46,24 +45,15 @@ func processConfiguration(conf *Configuration) error {
 	irma.Logger = conf.Logger
 
 	// Setup email templates
-	if conf.EmailServer != "" && conf.DeleteExpiredAccountTemplate == nil {
-		conf.DeleteExpiredAccountTemplate = map[string]*template.Template{}
-		for lang, templateFile := range conf.DeleteExpiredAccountFiles {
-			var err error
-			conf.DeleteExpiredAccountTemplate[lang], err = template.ParseFiles(templateFile)
-			if err != nil {
-				return server.LogError(err)
-			}
-		}
-	}
-
-	// Verify email configuration
 	if conf.EmailServer != "" {
-		if _, ok := conf.DeleteExpiredAccountTemplate[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing delete expired account email template for default language"))
-		}
-		if _, ok := conf.DeleteExpiredAccountSubject[conf.DefaultLanguage]; !ok {
-			return server.LogError(errors.Errorf("Missing delete expired account email subject for default language"))
+		var err error
+		conf.deleteExpiredAccountTemplate, err = keyshare.ParseEmailTemplates(
+			conf.DeleteExpiredAccountFiles,
+			conf.DeleteExpiredAccountSubject,
+			conf.DefaultLanguage,
+		)
+		if err != nil {
+			return server.LogError(err)
 		}
 	}
 

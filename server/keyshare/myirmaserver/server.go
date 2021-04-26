@@ -128,9 +128,9 @@ func (s *Server) sendDeleteEmails(session *Sessiondata) error {
 		return err
 	}
 
-	template, ok := s.conf.DeleteAccountTemplates[userData.language]
+	template, ok := s.conf.deleteAccountTemplates[userData.language]
 	if !ok {
-		template = s.conf.DeleteAccountTemplates[s.conf.DefaultLanguage]
+		template = s.conf.deleteAccountTemplates[s.conf.DefaultLanguage]
 	}
 	subject, ok := s.conf.DeleteAccountSubject[userData.language]
 	if !ok {
@@ -211,9 +211,9 @@ func (s *Server) sendLoginEmail(request EmailLoginRequest) error {
 		return err
 	}
 
-	template, ok := s.conf.LoginEmailTemplates[request.Language]
+	template, ok := s.conf.loginEmailTemplates[request.Language]
 	if !ok {
-		template = s.conf.LoginEmailTemplates[s.conf.DefaultLanguage]
+		template = s.conf.loginEmailTemplates[s.conf.DefaultLanguage]
 	}
 	subject, ok := s.conf.LoginEmailSubject[request.Language]
 	if !ok {
@@ -538,9 +538,9 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendEmailRemovalEmail(info UserInformation, email string) error {
-	template, ok := s.conf.DeleteEmailTemplates[info.language]
+	template, ok := s.conf.deleteEmailTemplates[info.language]
 	if !ok {
-		template = s.conf.DeleteEmailTemplates[s.conf.DefaultLanguage]
+		template = s.conf.deleteEmailTemplates[s.conf.DefaultLanguage]
 	}
 	subject, ok := s.conf.DeleteEmailSubject[info.language]
 	if !ok {
