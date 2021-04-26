@@ -6,6 +6,7 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,9 +17,11 @@ func TestConfiguration(t *testing.T) {
 	assert.NoError(t, err)
 
 	err = processConfiguration(&Configuration{
-		EmailServer:     "localhost:1025",
-		EmailFrom:       "test@test.com",
-		DefaultLanguage: "en",
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     "localhost:1025",
+			EmailFrom:       "test@test.com",
+			DefaultLanguage: "en",
+		},
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
@@ -30,8 +33,10 @@ func TestConfiguration(t *testing.T) {
 	assert.NoError(t, err)
 
 	err = processConfiguration(&Configuration{
-		EmailServer: "localhost:1025",
-		EmailFrom:   "test@test.com",
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer: "localhost:1025",
+			EmailFrom:   "test@test.com",
+		},
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
@@ -43,9 +48,11 @@ func TestConfiguration(t *testing.T) {
 	assert.Error(t, err)
 
 	err = processConfiguration(&Configuration{
-		EmailServer:     "localhost:1025",
-		EmailFrom:       "test@test.com",
-		DefaultLanguage: "en",
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     "localhost:1025",
+			EmailFrom:       "test@test.com",
+			DefaultLanguage: "en",
+		},
 		DeleteExpiredAccountSubject: map[string]string{
 			"en": "testsubject",
 		},
@@ -54,9 +61,11 @@ func TestConfiguration(t *testing.T) {
 	assert.Error(t, err)
 
 	err = processConfiguration(&Configuration{
-		EmailServer:     "localhost:1025",
-		EmailFrom:       "test@test.com",
-		DefaultLanguage: "en",
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     "localhost:1025",
+			EmailFrom:       "test@test.com",
+			DefaultLanguage: "en",
+		},
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},

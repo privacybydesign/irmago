@@ -19,6 +19,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
@@ -222,6 +223,12 @@ func configureKeyshared(cmd *cobra.Command) {
 			Production:            viper.GetBool("production"),
 			Logger:                logger,
 		},
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     viper.GetString("email-server"),
+			EmailAuth:       emailAuth,
+			EmailFrom:       viper.GetString("email-from"),
+			DefaultLanguage: viper.GetString("default-language"),
+		},
 
 		KeyshareURL: string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 
@@ -237,10 +244,6 @@ func configureKeyshared(cmd *cobra.Command) {
 		KeyshareCredential: viper.GetString("keyshare-credential"),
 		KeyshareAttribute:  viper.GetString("keyshare-attribute"),
 
-		EmailServer:              viper.GetString("email-server"),
-		EmailAuth:                emailAuth,
-		EmailFrom:                viper.GetString("email-from"),
-		DefaultLanguage:          viper.GetString("default-language"),
 		RegistrationEmailSubject: viper.GetStringMapString("registration-email-subject"),
 		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-template"),
 		VerificationURL:          viper.GetStringMapString("verification-url"),

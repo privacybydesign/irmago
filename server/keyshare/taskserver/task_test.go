@@ -11,6 +11,7 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -117,12 +118,14 @@ func TestExpireAccounts(t *testing.T) {
 	require.NoError(t, err)
 
 	th, err := New(&Configuration{
-		DBConnstring:    postgresTestUrl,
-		DeleteDelay:     30,
-		ExpiryDelay:     1,
-		EmailServer:     "localhost:1025",
-		EmailFrom:       "test@test.com",
-		DefaultLanguage: "en",
+		DBConnstring: postgresTestUrl,
+		DeleteDelay:  30,
+		ExpiryDelay:  1,
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     "localhost:1025",
+			EmailFrom:       "test@test.com",
+			DefaultLanguage: "en",
+		},
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},

@@ -19,6 +19,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/privacybydesign/irmago/server/keyshare/myirmaserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
@@ -220,6 +221,12 @@ func configureMyirmad(cmd *cobra.Command) {
 			Logger:                logger,
 			Production:            viper.GetBool("production"),
 		},
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     viper.GetString("email-server"),
+			EmailAuth:       emailAuth,
+			EmailFrom:       viper.GetString("email-from"),
+			DefaultLanguage: viper.GetString("default-language"),
+		},
 
 		MyIRMAURL: string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
 
@@ -232,10 +239,6 @@ func configureMyirmad(cmd *cobra.Command) {
 		KeyshareAttributeNames: viper.GetStringSlice("keyshare-attributes"),
 		EmailAttributeNames:    viper.GetStringSlice("email-attributes"),
 
-		EmailServer:          viper.GetString("email-server"),
-		EmailAuth:            emailAuth,
-		EmailFrom:            viper.GetString("email-from"),
-		DefaultLanguage:      viper.GetString("default-language"),
 		LoginEmailSubject:    viper.GetStringMapString("login-email-subject"),
 		LoginEmailFiles:      viper.GetStringMapString("login-email-template"),
 		LoginEmailBaseURL:    viper.GetStringMapString("login-url"),

@@ -2,11 +2,11 @@ package taskserver
 
 import (
 	"html/template"
-	"net/smtp"
 
 	"github.com/pkg/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/sirupsen/logrus"
 )
 
@@ -19,10 +19,8 @@ type Configuration struct {
 	DeleteDelay int
 
 	// Email sending configuration
-	EmailServer                  string
-	EmailAuth                    smtp.Auth
-	EmailFrom                    string
-	DefaultLanguage              string
+	keyshare.EmailConfiguration `mapstructure:",squash"`
+
 	DeleteExpiredAccountFiles    map[string]string
 	DeleteExpiredAccountTemplate map[string]*template.Template
 	DeleteExpiredAccountSubject  map[string]string

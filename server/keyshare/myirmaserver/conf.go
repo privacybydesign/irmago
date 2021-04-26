@@ -2,12 +2,12 @@ package myirmaserver
 
 import (
 	"html/template"
-	"net/smtp"
 	"strings"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
 type DatabaseType string
@@ -47,10 +47,8 @@ type Configuration struct {
 	EmailAttributes        []irma.AttributeTypeIdentifier
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
-	EmailServer            string
-	EmailAuth              smtp.Auth
-	EmailFrom              string
-	DefaultLanguage        string
+	keyshare.EmailConfiguration `mapstructure:",squash"`
+
 	LoginEmailFiles        map[string]string
 	LoginEmailTemplates    map[string]*template.Template
 	LoginEmailSubject      map[string]string

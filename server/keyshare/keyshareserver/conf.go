@@ -4,11 +4,11 @@ import (
 	"encoding/binary"
 	"html/template"
 	"io/ioutil"
-	"net/smtp"
 	"strings"
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
+	"github.com/privacybydesign/irmago/server/keyshare"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
@@ -52,14 +52,12 @@ type Configuration struct {
 	KeyshareAttribute  string
 
 	// Configuration for email sending during registration (email address use will be disabled if not present)
-	EmailServer                string
-	EmailAuth                  smtp.Auth
-	EmailFrom                  string
+	keyshare.EmailConfiguration `mapstructure:",squash"`
+
 	RegistrationEmailFiles     map[string]string
 	RegistrationEmailTemplates map[string]*template.Template
 	RegistrationEmailSubject   map[string]string
 	VerificationURL            map[string]string
-	DefaultLanguage            string
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {

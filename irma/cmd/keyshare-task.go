@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/privacybydesign/irmago/server/keyshare/taskserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
@@ -121,15 +122,18 @@ func configureKeyshareTask(cmd *cobra.Command) {
 	}
 
 	confKeyshareTask = &taskserver.Configuration{
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     viper.GetString("email-server"),
+			EmailAuth:       emailAuth,
+			EmailFrom:       viper.GetString("email-from"),
+			DefaultLanguage: viper.GetString("default-language"),
+		},
+
 		DBConnstring: viper.GetString("db"),
 
 		ExpiryDelay: viper.GetInt("expiry-delay"),
 		DeleteDelay: viper.GetInt("delete-delay"),
 
-		EmailServer:                 viper.GetString("email-server"),
-		EmailAuth:                   emailAuth,
-		EmailFrom:                   viper.GetString("email-from"),
-		DefaultLanguage:             viper.GetString("default-language"),
 		DeleteExpiredAccountSubject: viper.GetStringMapString("expired-email-subject"),
 		DeleteExpiredAccountFiles:   viper.GetStringMapString("expired-email-template"),
 
