@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
@@ -48,8 +49,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
-		KeyshareCredential:    "test.test.mijnirma",
-		KeyshareAttribute:     "email",
+		KeyshareAttribute:     irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
 	})
 	require.NoError(t, err)
 

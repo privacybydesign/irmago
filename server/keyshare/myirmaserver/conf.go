@@ -41,10 +41,8 @@ type Configuration struct {
 	SessionLifetime int `json:"session_lifetime" mapstructure:"session_lifetime"`
 
 	// Keyshare attributes to use for login
-	KeyshareAttributeNames []string                       `json:"keyshare_attribute_names" mapstructure:"keyshare_attribute_names"`
-	KeyshareAttributes     []irma.AttributeTypeIdentifier `json:"-"`
-	EmailAttributeNames    []string                       `json:"email_attribute_names" mapstructure:"email_attribute_names"`
-	EmailAttributes        []irma.AttributeTypeIdentifier `json:"-"`
+	KeyshareAttributes []irma.AttributeTypeIdentifier `json:"keyshare_attributes" mapstructure:"keyshare_attributes"`
+	EmailAttributes    []irma.AttributeTypeIdentifier `json:"email_attributes" mapstructure:"email_attributes"`
 
 	// Configuration for email sending during login (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
@@ -66,24 +64,6 @@ type Configuration struct {
 // Process a passed configuration to ensure all field values are valid and initialized
 // as required by the rest of this keyshare server component.
 func processConfiguration(conf *Configuration) error {
-	// Setup data for login requests
-	if len(conf.KeyshareAttributes) == 0 {
-		for _, v := range conf.KeyshareAttributeNames {
-			conf.KeyshareAttributes = append(
-				conf.KeyshareAttributes,
-				irma.NewAttributeTypeIdentifier(v))
-		}
-	}
-
-	// Setup data for email requests
-	if len(conf.EmailAttributes) == 0 {
-		for _, v := range conf.EmailAttributeNames {
-			conf.EmailAttributes = append(
-				conf.EmailAttributes,
-				irma.NewAttributeTypeIdentifier(v))
-		}
-	}
-
 	// Verify attriubte configuration
 	if len(conf.KeyshareAttributes) == 0 {
 		return server.LogError(errors.Errorf("Missing keyshare attributes"))

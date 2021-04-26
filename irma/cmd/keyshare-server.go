@@ -241,8 +241,7 @@ func configureKeyshared(cmd *cobra.Command) {
 		StoragePrimaryKeyFile:   viper.GetString("storage-primary-keyfile"),
 		StorageFallbackKeyFiles: viper.GetStringSlice("storage-fallback-keyfile"),
 
-		KeyshareCredential: viper.GetString("keyshare-credential"),
-		KeyshareAttribute:  viper.GetString("keyshare-attribute"),
+		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare-attribute")),
 
 		RegistrationEmailSubject: viper.GetStringMapString("registration-email-subject"),
 		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-template"),

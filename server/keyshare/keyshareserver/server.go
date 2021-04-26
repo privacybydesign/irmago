@@ -509,9 +509,9 @@ func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	// Setup and return issuance session for keyshare credential.
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
-			CredentialTypeID: irma.NewCredentialTypeIdentifier(s.conf.KeyshareCredential),
+			CredentialTypeID: s.conf.KeyshareAttribute.CredentialTypeIdentifier(),
 			Attributes: map[string]string{
-				s.conf.KeyshareAttribute: username,
+				s.conf.KeyshareAttribute.Name(): username,
 			},
 		}})
 	sessionptr, _, err := s.sessionserver.StartSession(request, nil)

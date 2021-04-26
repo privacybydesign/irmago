@@ -236,9 +236,6 @@ func configureMyirmad(cmd *cobra.Command) {
 		DBType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
 		DBConnstring: viper.GetString("db"),
 
-		KeyshareAttributeNames: viper.GetStringSlice("keyshare-attributes"),
-		EmailAttributeNames:    viper.GetStringSlice("email-attributes"),
-
 		LoginEmailSubject:    viper.GetStringMapString("login-email-subject"),
 		LoginEmailFiles:      viper.GetStringMapString("login-email-template"),
 		LoginEmailBaseURL:    viper.GetStringMapString("login-url"),
@@ -246,6 +243,17 @@ func configureMyirmad(cmd *cobra.Command) {
 		DeleteEmailSubject:   viper.GetStringMapString("delete-email-subject"),
 		DeleteAccountFiles:   viper.GetStringMapString("delete-account-template"),
 		DeleteAccountSubject: viper.GetStringMapString("delete-account-subject"),
+	}
+
+	for _, v := range viper.GetStringSlice("keyshare-attributes") {
+		confKeyshareMyirma.KeyshareAttributes = append(
+			confKeyshareMyirma.KeyshareAttributes,
+			irma.NewAttributeTypeIdentifier(v))
+	}
+	for _, v := range viper.GetStringSlice("email-attributes") {
+		confKeyshareMyirma.EmailAttributes = append(
+			confKeyshareMyirma.EmailAttributes,
+			irma.NewAttributeTypeIdentifier(v))
 	}
 }
 

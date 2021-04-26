@@ -20,19 +20,6 @@ func TestConfValidation(t *testing.T) {
 			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
 			Logger:      irma.Logger,
 		},
-		MyIRMAURL:              "http://localhost:8000/",
-		DBType:                 DatabaseTypeMemory,
-		SessionLifetime:        60,
-		KeyshareAttributeNames: []string{"test.test.mijnirma.email"},
-		EmailAttributeNames:    []string{"test.test.email.email"},
-	})
-	assert.NoError(t, err)
-
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
 		MyIRMAURL:          "http://localhost:8000/",
 		DBType:             DatabaseTypeMemory,
 		SessionLifetime:    60,

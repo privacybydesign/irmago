@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"strings"
 
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server/keyshare"
@@ -47,9 +48,8 @@ type Configuration struct {
 	StorageFallbackKeyFiles []string `json:"storage_fallback_key_files" mapstructure:"storage_fallback_key_files"`
 	StoragePrimaryKeyFile   string   `json:"storage_primary_key_file" mapstructure:"storage_primary_key_file"`
 
-	// Keyshare credential to issue during registration
-	KeyshareCredential string `json:"keyshare_credential" mapstructure:"keyshare_credential"`
-	KeyshareAttribute  string `json:"keyshare_attribute" mapstructure:"keyshare_attribute"`
+	// Keyshare attribute to issue during registration
+	KeyshareAttribute irma.AttributeTypeIdentifier `json:"keyshare_attribute" mapstructure:"keyshare_attribute"`
 
 	// Configuration for email sending during registration (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
