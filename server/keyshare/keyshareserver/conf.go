@@ -31,7 +31,7 @@ type Configuration struct {
 	*server.Configuration `mapstructure:",squash"`
 
 	// URL at which the IRMA app can reach this keyshare server during sessions
-	KeyshareURL string `json:"url" mapstructure:"url"`
+	KeyshareURL string `json:"keyshare_url" mapstructure:"keyshare_url"`
 
 	// Database configuration (ignored when database is provided)
 	DBType       DatabaseType `json:"db_type" mapstructure:"db_type"`

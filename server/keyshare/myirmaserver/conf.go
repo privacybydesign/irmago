@@ -24,7 +24,7 @@ type Configuration struct {
 	// IRMA server configuration. If not given, this will be populated using information here
 	*server.Configuration `mapstructure:",squash"`
 
-	MyIRMAURL string `json:"url" mapstructure:"url"`
+	MyIRMAURL string `json:"myirma_url" mapstructure:"myirma_url"`
 
 	// Path to static content to serve (for testing)
 	StaticPath   string `json:"static_path" mapstructure:"static_path"`
