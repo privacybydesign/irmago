@@ -178,7 +178,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Then remove user
-	err := s.db.RemoveUser(*session.userID)
+	err := s.db.RemoveUser(*session.userID, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem removing user")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -595,7 +595,7 @@ func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
 		}
 	}
 
-	err = s.db.RemoveEmail(*session.userID, string(email))
+	err = s.db.RemoveEmail(*session.userID, string(email), 24*time.Hour*time.Duration(s.conf.DeleteDelay))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error removing user email address")
 		return err

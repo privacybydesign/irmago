@@ -33,7 +33,8 @@ type Configuration struct {
 	// Database configuration (ignored when database is provided)
 	DBType       DatabaseType `json:"db_type" mapstructure:"db_type"`
 	DBConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
-	DeleteDelay  int          `json:"delete_delay" mapstructure:"delete_delay"`
+	// DeleteDelay is the delay in days before a user or email address deletion becomes effective.
+	DeleteDelay int `json:"delete_delay" mapstructure:"delete_delay"`
 	// Provide a prepared database (useful for testing)
 	DB MyirmaDB `json:"-"`
 
@@ -105,7 +106,7 @@ func processConfiguration(conf *Configuration) error {
 	if conf.DB == nil {
 		switch conf.DBType {
 		case DatabaseTypePostgres:
-			conf.DB, err = NewPostgresDatabase(conf.DBConnstring, conf.DeleteDelay)
+			conf.DB, err = NewPostgresDatabase(conf.DBConnstring)
 			if err != nil {
 				return err
 			}

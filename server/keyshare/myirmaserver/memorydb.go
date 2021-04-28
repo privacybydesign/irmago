@@ -38,7 +38,7 @@ func (db *myirmaMemoryDB) UserID(username string) (int64, error) {
 	return data.id, nil
 }
 
-func (db *myirmaMemoryDB) RemoveUser(id int64) error {
+func (db *myirmaMemoryDB) RemoveUser(id int64, _ time.Duration) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -198,7 +198,7 @@ func (db *myirmaMemoryDB) AddEmail(id int64, email string) error {
 	return ErrUserNotFound
 }
 
-func (db *myirmaMemoryDB) RemoveEmail(id int64, email string) error {
+func (db *myirmaMemoryDB) RemoveEmail(id int64, email string, _ time.Duration) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {

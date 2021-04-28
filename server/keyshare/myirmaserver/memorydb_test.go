@@ -43,13 +43,13 @@ func TestMemoryDBUserManagement(t *testing.T) {
 
 	assert.NotEqual(t, time.Unix(0, 0), db.userData["testuser"].lastActive)
 
-	err = db.RemoveUser(15)
+	err = db.RemoveUser(15, 0)
 	assert.NoError(t, err)
 
 	_, err = db.UserID("testuser")
 	assert.Error(t, err)
 
-	err = db.RemoveUser(15)
+	err = db.RemoveUser(15, 0)
 	assert.Error(t, err)
 }
 
@@ -185,16 +185,16 @@ func TestMemoryDBUserInfo(t *testing.T) {
 	err = db.AddEmail(20, "bla@bla.com")
 	assert.Error(t, err)
 
-	err = db.RemoveEmail(17, "test@test.com")
+	err = db.RemoveEmail(17, "test@test.com", 0)
 	assert.NoError(t, err)
 
 	info, err = db.UserInformation(17)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(info.Emails))
 
-	err = db.RemoveEmail(17, "bla@bla.com")
+	err = db.RemoveEmail(17, "bla@bla.com", 0)
 	assert.NoError(t, err)
 
-	err = db.RemoveEmail(20, "bl@bla.com")
+	err = db.RemoveEmail(20, "bl@bla.com", 0)
 	assert.Error(t, err)
 }

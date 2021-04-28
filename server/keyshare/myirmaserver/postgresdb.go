@@ -12,20 +12,18 @@ import (
 )
 
 type myirmaPostgresDB struct {
-	db          *sql.DB
-	deleteDelay int
+	db *sql.DB
 }
 
 const EMAIL_TOKEN_VALIDITY = 60 // Ammount of time an email login token is valid (in minutes)
 
-func NewPostgresDatabase(connstring string, deleteDelay int) (MyirmaDB, error) {
+func NewPostgresDatabase(connstring string) (MyirmaDB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
 	}
 	return &myirmaPostgresDB{
-		db:          db,
-		deleteDelay: deleteDelay,
+		db: db,
 	}, nil
 }
 
@@ -82,10 +80,10 @@ func (db *myirmaPostgresDB) VerifyEmailToken(token string) (int64, error) {
 	return id, nil
 }
 
-func (db *myirmaPostgresDB) RemoveUser(id int64) error {
+func (db *myirmaPostgresDB) RemoveUser(id int64, delay time.Duration) error {
 	res, err := db.db.Exec("UPDATE irma.users SET coredata = NULL, delete_on = $2 WHERE id = $1 AND coredata IS NOT NULL",
 		id,
-		time.Now().Add(time.Duration(24*db.deleteDelay)*time.Hour).Unix())
+		time.Now().Add(delay).Unix())
 	if err != nil {
 		return err
 	}
@@ -287,11 +285,11 @@ func (db *myirmaPostgresDB) AddEmail(id int64, email string) error {
 	return nil
 }
 
-func (db *myirmaPostgresDB) RemoveEmail(id int64, email string) error {
+func (db *myirmaPostgresDB) RemoveEmail(id int64, email string, delay time.Duration) error {
 	res, err := db.db.Exec("UPDATE irma.emails SET delete_on = $3 WHERE user_id = $1 AND email = $2 AND delete_on IS NULL",
 		id,
 		email,
-		time.Now().Add(time.Duration(24*db.deleteDelay)*time.Hour).Unix())
+		time.Now().Add(delay).Unix())
 	if err != nil {
 		return err
 	}
