@@ -14,22 +14,22 @@ import (
 )
 
 func TestServerLoginEmail(t *testing.T) {
-	db := &MyirmaMemoryDB{
-		UserData: map[string]MemoryUserData{
-			"testuser": MemoryUserData{
-				ID:         15,
-				LastActive: time.Unix(0, 0),
-				Email:      []string{"test@test.com"},
+	db := &myirmaMemoryDB{
+		userData: map[string]memoryUserData{
+			"testuser": memoryUserData{
+				id:         15,
+				lastActive: time.Unix(0, 0),
+				email:      []string{"test@test.com"},
 			},
-			"noemail": MemoryUserData{
-				ID:         17,
-				LastActive: time.Unix(0, 0),
+			"noemail": memoryUserData{
+				id:         17,
+				lastActive: time.Unix(0, 0),
 			},
 		},
-		LoginEmailTokens: map[string]string{
+		loginEmailTokens: map[string]string{
 			"testtoken": "test@test.com",
 		},
-		VerifyEmailTokens: map[string]int64{
+		verifyEmailTokens: map[string]int64{
 			"testemailtoken": 15,
 		},
 	}

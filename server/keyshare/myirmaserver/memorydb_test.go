@@ -9,14 +9,14 @@ import (
 )
 
 func TestMemoryDBUserManagement(t *testing.T) {
-	db := &MyirmaMemoryDB{
-		UserData: map[string]MemoryUserData{
-			"testuser": MemoryUserData{
-				ID:         15,
-				LastActive: time.Unix(0, 0),
+	db := &myirmaMemoryDB{
+		userData: map[string]memoryUserData{
+			"testuser": memoryUserData{
+				id:         15,
+				lastActive: time.Unix(0, 0),
 			},
 		},
-		VerifyEmailTokens: map[string]int64{
+		verifyEmailTokens: map[string]int64{
 			"testtoken": 15,
 		},
 	}
@@ -41,7 +41,7 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	err = db.SetSeen(123456)
 	assert.Error(t, err)
 
-	assert.NotEqual(t, time.Unix(0, 0), db.UserData["testuser"].LastActive)
+	assert.NotEqual(t, time.Unix(0, 0), db.userData["testuser"].lastActive)
 
 	err = db.RemoveUser(15)
 	assert.NoError(t, err)
@@ -54,19 +54,19 @@ func TestMemoryDBUserManagement(t *testing.T) {
 }
 
 func TestMemoryDBLoginToken(t *testing.T) {
-	db := &MyirmaMemoryDB{
-		UserData: map[string]MemoryUserData{
-			"testuser": MemoryUserData{
-				ID:         15,
-				LastActive: time.Unix(0, 0),
-				Email:      []string{"test@test.com"},
+	db := &myirmaMemoryDB{
+		userData: map[string]memoryUserData{
+			"testuser": memoryUserData{
+				id:         15,
+				lastActive: time.Unix(0, 0),
+				email:      []string{"test@test.com"},
 			},
-			"noemail": MemoryUserData{
-				ID:         17,
-				LastActive: time.Unix(0, 0),
+			"noemail": memoryUserData{
+				id:         17,
+				lastActive: time.Unix(0, 0),
 			},
 		},
-		LoginEmailTokens: map[string]string{},
+		loginEmailTokens: map[string]string{},
 	}
 
 	err := db.AddEmailLoginToken("test2@test.com", "test2token")
@@ -106,13 +106,13 @@ func TestMemoryDBLoginToken(t *testing.T) {
 }
 
 func TestMemoryDBUserInfo(t *testing.T) {
-	db := &MyirmaMemoryDB{
-		UserData: map[string]MemoryUserData{
-			"testuser": MemoryUserData{
-				ID:         15,
-				LastActive: time.Unix(15, 0),
-				Email:      []string{"test@test.com"},
-				LogEntries: []LogEntry{
+	db := &myirmaMemoryDB{
+		userData: map[string]memoryUserData{
+			"testuser": memoryUserData{
+				id:         15,
+				lastActive: time.Unix(15, 0),
+				email:      []string{"test@test.com"},
+				logEntries: []LogEntry{
 					LogEntry{
 						Timestamp: 110,
 						Event:     "test",
@@ -125,9 +125,9 @@ func TestMemoryDBUserInfo(t *testing.T) {
 					},
 				},
 			},
-			"noemail": MemoryUserData{
-				ID:         17,
-				LastActive: time.Unix(20, 0),
+			"noemail": memoryUserData{
+				id:         17,
+				lastActive: time.Unix(20, 0),
 			},
 		},
 	}
