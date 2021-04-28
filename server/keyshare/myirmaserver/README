@@ -5,67 +5,73 @@ Although this server permits the user to delete his account, and change email ad
 This server exposes the following endpoints:
 
 -- SESSION STATUS --
-/checksession
-No arguments
-Check session status, fetching any pending errors from operations following IRMA sessions
-returns
-`expired` if user is not logged in
-`ok` if user is logged in
-error text if an error occured during IRMA session processing
+POST /checksession
+Arguments:   none
+Description: Check session status, fetching any pending errors from operations following IRMA sessions
+Returns:     - `expired` if user is not logged in
+             - `ok` if user is logged in
+             - error text if an error occured during IRMA session processing
 
 -- IRMA LOGIN --
-/login/irma
-No arguments
-Start IRMA login session
-returns session pointer
-after session, checksession needs to be called to check for errors
+POST /login/irma
+Arguments:   none
+Description: Start IRMA login session. After session, checksession needs to be called to check for errors
+Returns:     session pointer
 
 -- EMAIL LOGIN --
-/login/email
-Emailaddress as request body
-Send login email
-returns success with 204, or 403 if user not registered
+POST /login/email
+Arguments:   Emailaddress as request body
+Description: Send login email
+Returns:     success with 204, or 403 if user not registered
 
-/login/token/candidates
-token as request body
-Get account candidates for loging in with email address token
-returns list of account candidates with json structure:
-[{username: 'username', last_active: 'unix timestamp (utc) of last activity on account'},...]
+POST /login/token/candidates
+Arguments:   token as request body
+Description: Get account candidates for loging in with email address token
+Returns:     list of account candidates with json structure:
+             [{username: "username", last_active: "unix timestamp (utc) of last activity on account"},...]
 
-/login/token
-Loginrequest as json: {token: 'login token', username:, 'username of specific account to login to'}
-Login using a token into a specific user account
-returns success with 204, or error otherwise
+POST /login/token
+Arguments:   Login request as json:
+             {token: "login token", username: "username of specific account to login to"}
+Description: Login using a token into a specific user account
+Returns:     success with 204, or error otherwise
 
 -- LOGOUT --
-/logout
-No arguments
-Log out of current session
-returns success with 204, should not error
+POST /logout
+Arguments:   none
+Description: Log out of current session
+Returns:     success with 204, should not error
 
 -- USER DATA --
-/user
-No arguments
-Returns user account information for currently logged in user
-return structure as json:
-{username: 'username', emails: [{email: 'emailaddress', delete_in_progress: 'email address is currently waiting to be deleted'}], delete_in_progress: 'account is currently disabled and waiting to be deleted'}
+GET /user
+Arguments:   none
+Description: Returns user account information for currently logged in user
+Returns:     structure as json:
+             { username: "username",
+               emails: [{email: "emailaddress",
+                         delete_in_progress: "email address is currently waiting to be deleted"}, ...],
+               delete_in_progress: "account is currently disabled and waiting to be deleted" }
 
-/user/logs/{offset}
-No arguments outside url
-Returns 11 of user's logs, starting from log entry with index {offset}. Logs are ordered chronologically, newest first.
+GET /user/logs/{offset}
+Arguments:   none outside url
+Description: Retrieve log entries
+Returns:     11 of user"s logs, starting from log entry with index {offset}. Logs are ordered
+             chronologically, newest first.
 
 -- EMAIL MANAGEMENT --
-/email/add
-No arguments
-Returns session pointer for IRMA session in which user can disclose the email address to be added
-after session, checksession needs to be called to check for potential errors
+POST /email/add
+Arguments:   none
+Description: Starts session in which user can disclose the email address to be added.
+             After session, checksession needs to be called to check for potential errors
+Returns:     session pointer
 
-/email/remove
-emailaddress to remove as request body
-Returns 204 on success, errors otherwise
+POST /email/remove
+Arguments:   none
+Description: emailaddress to remove as request body
+Returns:     204 on success, errors otherwise
 
 -- ACCOUNT REMOVAL --
-/user/delete
-No arguments
-Start deletion process for currently logged in user
-returns 204 on success, errors otherwise (also if user deletion already in progress)
+POST /user/delete
+Arguments:   none
+Description: Start deletion process for currently logged in user
+Returns:     204 on success, errors otherwise (also if user deletion already in progress)
