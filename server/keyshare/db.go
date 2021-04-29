@@ -26,7 +26,7 @@ func (db *DB) ExecUser(query string, args ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	if c == 0 {
+	if c != 1 {
 		return ErrUserNotFound
 	}
 	return nil
