@@ -40,7 +40,7 @@ type LoginCandidate struct {
 }
 
 type LogEntry struct {
-	Timestamp int64  `json:"timestamp"`
-	Event     string `json:"event"`
-	Param     string `json:"param"`
+	Timestamp int64   `json:"timestamp"`
+	Event     string  `json:"event"`
+	Param     *string `json:"param,omitempty"`
 }

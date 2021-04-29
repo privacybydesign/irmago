@@ -116,12 +116,12 @@ func TestMemoryDBUserInfo(t *testing.T) {
 					LogEntry{
 						Timestamp: 110,
 						Event:     "test",
-						Param:     "",
+						Param:     &strEmpty,
 					},
 					LogEntry{
 						Timestamp: 120,
 						Event:     "test2",
-						Param:     "15",
+						Param:     &str15,
 					},
 				},
 			},
@@ -151,12 +151,12 @@ func TestMemoryDBUserInfo(t *testing.T) {
 		LogEntry{
 			Timestamp: 110,
 			Event:     "test",
-			Param:     "",
+			Param:     &strEmpty,
 		},
 		LogEntry{
 			Timestamp: 120,
 			Event:     "test2",
-			Param:     "15",
+			Param:     &str15,
 		},
 	}, entries)
 

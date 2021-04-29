@@ -172,17 +172,9 @@ func (db *myirmaPostgresDB) Logs(id int64, offset, ammount int) ([]LogEntry, err
 		"SELECT time, event, param FROM irma.log_entry_records WHERE user_id = $1 ORDER BY time DESC OFFSET $2 LIMIT $3",
 		func(rows *sql.Rows) error {
 			var curEntry LogEntry
-			var param *string
-			if err := rows.Scan(&curEntry.Timestamp, &curEntry.Event, &param); err != nil {
-				return err
-			}
-			if param == nil {
-				curEntry.Param = ""
-			} else {
-				curEntry.Param = *param
-			}
+			err := rows.Scan(&curEntry.Timestamp, &curEntry.Event, &curEntry.Param)
 			result = append(result, curEntry)
-			return nil
+			return err
 		},
 		id, offset, ammount)
 	if err != nil {

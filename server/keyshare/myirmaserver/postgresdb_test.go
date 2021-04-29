@@ -103,6 +103,11 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	assert.Error(t, err)
 }
 
+var (
+	str15    = "15"
+	strEmpty = ""
+)
+
 func TestPostgresDBUserInfo(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
@@ -117,7 +122,9 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@test.com')")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES (110, 'test', '', 15), (120, 'test2', '15', 15)")
+	_, err = pdb.db.Exec(
+		`INSERT INTO irma.log_entry_records (time, event, param, user_id)
+		 VALUES (110, 'test', '', 15), (120, 'test2', '15', 15), (130, 'test3', NULL, 15)`)
 	require.NoError(t, err)
 
 	info, err := db.UserInformation(15)
@@ -133,18 +140,23 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	_, err = db.UserInformation(1231)
 	assert.Error(t, err)
 
-	entries, err := db.Logs(15, 0, 2)
+	entries, err := db.Logs(15, 0, 3)
 	assert.NoError(t, err)
 	assert.Equal(t, []LogEntry{
 		LogEntry{
+			Timestamp: 130,
+			Event:     "test3",
+			Param:     nil,
+		},
+		LogEntry{
 			Timestamp: 120,
 			Event:     "test2",
-			Param:     "15",
+			Param:     &str15,
 		},
 		LogEntry{
 			Timestamp: 110,
 			Event:     "test",
-			Param:     "",
+			Param:     &strEmpty,
 		},
 	}, entries)
 
@@ -154,7 +166,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 
 	entries, err = db.Logs(15, 1, 15)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(entries))
+	assert.Equal(t, 2, len(entries))
 
 	entries, err = db.Logs(15, 100, 20)
 	assert.NoError(t, err)
