@@ -112,17 +112,6 @@ func (db *myirmaMemoryDB) LoginTokenCandidates(token string) ([]LoginCandidate, 
 	return result, nil
 }
 
-func (db *myirmaMemoryDB) LoginTokenEmail(token string) (string, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
-
-	v, ok := db.loginEmailTokens[token]
-	if !ok {
-		return "", keyshare.ErrUserNotFound
-	}
-	return v, nil
-}
-
 func (db *myirmaMemoryDB) TryUserLoginToken(token, username string) (bool, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()

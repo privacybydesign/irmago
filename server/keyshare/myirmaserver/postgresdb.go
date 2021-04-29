@@ -111,13 +111,6 @@ func (db *myirmaPostgresDB) LoginTokenCandidates(token string) ([]LoginCandidate
 	return candidates, nil
 }
 
-func (db *myirmaPostgresDB) LoginTokenEmail(token string) (string, error) {
-	var email string
-	return email, db.db.QueryUser("SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2",
-		[]interface{}{&email},
-		token, time.Now().Unix())
-}
-
 func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (bool, error) {
 	err := db.db.QueryUser(
 		`SELECT 1 FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
