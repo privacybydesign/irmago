@@ -2,7 +2,6 @@ package myirmaserver
 
 import (
 	"database/sql"
-	"fmt"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -114,7 +113,6 @@ func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 		token,
 		email,
 		time.Now().Add(EMAIL_TOKEN_VALIDITY*time.Minute).Unix())
-	fmt.Println(time.Now().Add(EMAIL_TOKEN_VALIDITY*time.Minute).Unix(), " ", time.Now().Unix())
 	if err != nil {
 		return err
 	}
