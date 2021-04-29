@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/privacybydesign/irmago/internal/keysharecore"
+	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
 // MemoryDB provides an easy-to-configure testing implementation of the
@@ -27,7 +28,7 @@ func (db *keyshareMemoryDB) User(username string) (*KeyshareUser, error) {
 	// Check and fetch user data
 	data, ok := db.users[username]
 	if !ok {
-		return nil, ErrUserNotFound
+		return nil, keyshare.ErrUserNotFound
 	}
 	return &KeyshareUser{Username: username, Coredata: data}, nil
 }
@@ -54,7 +55,7 @@ func (db *keyshareMemoryDB) UpdateUser(user *KeyshareUser) error {
 	// Check and update user.
 	_, exists := db.users[user.Username]
 	if !exists {
-		return ErrUserNotFound
+		return keyshare.ErrUserNotFound
 	}
 	db.users[user.Username] = user.Coredata
 	return nil

@@ -7,6 +7,7 @@ import (
 
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
 // postgresDB provides a postgres-backed implementation of KeyshareDB
@@ -14,7 +15,7 @@ import (
 // pgx as database driver
 
 type keysharePostgresDatabase struct {
-	db *sql.DB
+	db keyshare.DB
 }
 
 const MAX_PIN_TRIES = 3         // Number of tries allowed on pin before we start with exponential backoff
@@ -30,7 +31,7 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 		return nil, err
 	}
 	return &keysharePostgresDatabase{
-		db: db,
+		db: keyshare.DB{db},
 	}, nil
 }
 
@@ -63,7 +64,7 @@ func (db *keysharePostgresDatabase) User(username string) (*KeyshareUser, error)
 	}
 	defer common.Close(rows)
 	if !rows.Next() {
-		return nil, ErrUserNotFound
+		return nil, keyshare.ErrUserNotFound
 	}
 	var result KeyshareUser
 	var ep []byte
@@ -79,7 +80,7 @@ func (db *keysharePostgresDatabase) User(username string) (*KeyshareUser, error)
 }
 
 func (db *keysharePostgresDatabase) UpdateUser(user *KeyshareUser) error {
-	return db.updateUser(
+	return db.db.UserExec(
 		"UPDATE irma.users SET username=$1, language=$2, coredata=$3 WHERE id=$4",
 		user.Username,
 		user.Language,
@@ -122,7 +123,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, i
 		}
 		defer common.Close(pinrows)
 		if !pinrows.Next() {
-			return false, 0, 0, ErrUserNotFound
+			return false, 0, 0, keyshare.ErrUserNotFound
 		}
 		err = pinrows.Scan(&wait)
 		if err != nil {
@@ -150,33 +151,18 @@ func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, i
 }
 
 func (db *keysharePostgresDatabase) ClearPincheck(user *KeyshareUser) error {
-	return db.updateUser(
+	return db.db.UserExec(
 		"UPDATE irma.users SET pin_counter=0, pin_block_date=0 WHERE id=$1",
 		user.id,
 	)
 }
 
 func (db *keysharePostgresDatabase) SetSeen(user *KeyshareUser) error {
-	return db.updateUser(
+	return db.db.UserExec(
 		"UPDATE irma.users SET last_seen = $1 WHERE id = $2",
 		time.Now().Unix(),
 		user.id,
 	)
-}
-
-func (db *keysharePostgresDatabase) updateUser(query string, args ...interface{}) error {
-	res, err := db.db.Exec(query, args...)
-	if err != nil {
-		return err
-	}
-	c, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if c == 0 {
-		return ErrUserNotFound
-	}
-	return nil
 }
 
 func (db *keysharePostgresDatabase) AddLog(user *KeyshareUser, eventType LogEntryType, param interface{}) error {

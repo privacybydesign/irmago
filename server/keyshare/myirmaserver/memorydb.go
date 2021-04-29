@@ -3,6 +3,8 @@ package myirmaserver
 import (
 	"sync"
 	"time"
+
+	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
 type memoryUserData struct {
@@ -33,7 +35,7 @@ func (db *myirmaMemoryDB) UserID(username string) (int64, error) {
 	defer db.lock.Unlock()
 	data, ok := db.userData[username]
 	if !ok {
-		return 0, ErrUserNotFound
+		return 0, keyshare.ErrUserNotFound
 	}
 	return data.id, nil
 }
@@ -47,7 +49,7 @@ func (db *myirmaMemoryDB) RemoveUser(id int64, _ time.Duration) error {
 			return nil
 		}
 	}
-	return ErrUserNotFound
+	return keyshare.ErrUserNotFound
 }
 
 func (db *myirmaMemoryDB) VerifyEmailToken(token string) (int64, error) {
@@ -56,7 +58,7 @@ func (db *myirmaMemoryDB) VerifyEmailToken(token string) (int64, error) {
 
 	userID, ok := db.verifyEmailTokens[token]
 	if !ok {
-		return 0, ErrUserNotFound
+		return 0, keyshare.ErrUserNotFound
 	}
 
 	delete(db.verifyEmailTokens, token)
@@ -82,7 +84,7 @@ func (db *myirmaMemoryDB) AddEmailLoginToken(email, token string) error {
 	}
 
 	if !found {
-		return ErrUserNotFound
+		return keyshare.ErrUserNotFound
 	}
 
 	db.loginEmailTokens[token] = email
@@ -95,7 +97,7 @@ func (db *myirmaMemoryDB) LoginTokenCandidates(token string) ([]LoginCandidate, 
 
 	email, ok := db.loginEmailTokens[token]
 	if !ok {
-		return nil, ErrUserNotFound
+		return nil, keyshare.ErrUserNotFound
 	}
 
 	result := []LoginCandidate{}
@@ -116,7 +118,7 @@ func (db *myirmaMemoryDB) LoginTokenEmail(token string) (string, error) {
 
 	v, ok := db.loginEmailTokens[token]
 	if !ok {
-		return "", ErrUserNotFound
+		return "", keyshare.ErrUserNotFound
 	}
 	return v, nil
 }
@@ -132,7 +134,7 @@ func (db *myirmaMemoryDB) TryUserLoginToken(token, username string) (bool, error
 
 	user, ok := db.userData[username]
 	if !ok {
-		return false, ErrUserNotFound
+		return false, keyshare.ErrUserNotFound
 	}
 
 	for _, userEmail := range user.email {
@@ -163,7 +165,7 @@ func (db *myirmaMemoryDB) UserInformation(id int64) (UserInformation, error) {
 			}, nil
 		}
 	}
-	return UserInformation{}, ErrUserNotFound
+	return UserInformation{}, keyshare.ErrUserNotFound
 }
 
 func min(a, b int) int {
@@ -182,7 +184,7 @@ func (db *myirmaMemoryDB) Logs(id int64, offset, ammount int) ([]LogEntry, error
 			return user.logEntries[min(len(user.logEntries), offset):min(len(user.logEntries), offset+ammount)], nil
 		}
 	}
-	return nil, ErrUserNotFound
+	return nil, keyshare.ErrUserNotFound
 }
 
 func (db *myirmaMemoryDB) AddEmail(id int64, email string) error {
@@ -195,7 +197,7 @@ func (db *myirmaMemoryDB) AddEmail(id int64, email string) error {
 			return nil
 		}
 	}
-	return ErrUserNotFound
+	return keyshare.ErrUserNotFound
 }
 
 func (db *myirmaMemoryDB) RemoveEmail(id int64, email string, _ time.Duration) error {
@@ -215,7 +217,7 @@ func (db *myirmaMemoryDB) RemoveEmail(id int64, email string, _ time.Duration) e
 		}
 	}
 
-	return ErrUserNotFound
+	return keyshare.ErrUserNotFound
 }
 
 func (db *myirmaMemoryDB) SetSeen(id int64) error {
@@ -228,5 +230,5 @@ func (db *myirmaMemoryDB) SetSeen(id int64) error {
 			return nil
 		}
 	}
-	return ErrUserNotFound
+	return keyshare.ErrUserNotFound
 }

@@ -2,12 +2,6 @@ package myirmaserver
 
 import (
 	"time"
-
-	"github.com/go-errors/errors"
-)
-
-var (
-	ErrUserNotFound = errors.New("Could not find specified user")
 )
 
 type MyirmaDB interface {

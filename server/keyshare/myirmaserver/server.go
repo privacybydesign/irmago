@@ -14,6 +14,7 @@ import (
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 
 	irma "github.com/privacybydesign/irmago"
 
@@ -204,7 +205,7 @@ type EmailLoginRequest struct {
 func (s *Server) sendLoginEmail(request EmailLoginRequest) error {
 	token := common.NewSessionToken()
 	err := s.db.AddEmailLoginToken(request.Email, token)
-	if err == ErrUserNotFound {
+	if err == keyshare.ErrUserNotFound {
 		return err
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error adding login token to database")
@@ -268,7 +269,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = s.sendLoginEmail(request)
-	if err == ErrUserNotFound {
+	if err == keyshare.ErrUserNotFound {
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
@@ -292,7 +293,7 @@ func (s *Server) handleGetCandidates(w http.ResponseWriter, r *http.Request) {
 	token := string(requestData)
 
 	candidates, err := s.db.LoginTokenCandidates(token)
-	if err == ErrUserNotFound {
+	if err == keyshare.ErrUserNotFound {
 		server.WriteError(w, server.ErrorInvalidRequest, "token invalid")
 		return
 	} else if err != nil {
@@ -311,12 +312,12 @@ type TokenLoginRequest struct {
 
 func (s *Server) processTokenLogin(request TokenLoginRequest) (string, error) {
 	ok, err := s.db.TryUserLoginToken(request.Token, request.Username)
-	if err != nil && err != ErrUserNotFound {
+	if err != nil && err != keyshare.ErrUserNotFound {
 		s.conf.Logger.WithField("error", err).Error("Could not login user using token")
 		return "", err
 	}
-	if !ok || err == ErrUserNotFound {
-		return "", ErrUserNotFound
+	if !ok || err == keyshare.ErrUserNotFound {
+		return "", keyshare.ErrUserNotFound
 	}
 
 	session := s.store.create()
@@ -355,7 +356,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, err := s.processTokenLogin(request)
 
-	if err == ErrUserNotFound {
+	if err == keyshare.ErrUserNotFound {
 		server.WriteError(w, server.ErrorInvalidRequest, "Invalid login request")
 		return
 	}
@@ -392,7 +393,7 @@ func (s *Server) processLoginIrmaSessionResult(sessiontoken string, result *serv
 
 	username := *result.Disclosed[0][0].RawValue
 	id, err := s.db.UserID(username)
-	if err == ErrUserNotFound {
+	if err == keyshare.ErrUserNotFound {
 		session.pendingError = &server.ErrorUserNotRegistered
 		session.pendingErrorMessage = ""
 		return
@@ -450,7 +451,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	token := string(requestData)
 
 	id, err := s.db.VerifyEmailToken(token)
-	if err == ErrUserNotFound {
+	if err == keyshare.ErrUserNotFound {
 		s.conf.Logger.Info("Trying to reuse token")
 		server.WriteError(w, server.ErrorInvalidRequest, "Token already used")
 		return

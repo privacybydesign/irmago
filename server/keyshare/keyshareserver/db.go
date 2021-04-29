@@ -8,7 +8,6 @@ import (
 
 var (
 	ErrUserAlreadyExists = errors.New("Cannot create user, username already taken")
-	ErrUserNotFound      = errors.New("Could not find specified user")
 	ErrInvalidRecord     = errors.New("Invalid record in database")
 )
 
