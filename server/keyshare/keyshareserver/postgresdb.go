@@ -58,17 +58,13 @@ func (db *keysharePostgresDatabase) NewUser(user *KeyshareUser) error {
 }
 
 func (db *keysharePostgresDatabase) User(username string) (*KeyshareUser, error) {
-	rows, err := db.db.Query("SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL", username)
-	if err != nil {
-		return nil, err
-	}
-	defer common.Close(rows)
-	if !rows.Next() {
-		return nil, keyshare.ErrUserNotFound
-	}
 	var result KeyshareUser
 	var ep []byte
-	err = rows.Scan(&result.id, &result.Username, &result.Language, &ep)
+	err := db.db.UserQuery(
+		"SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL",
+		[]interface{}{&result.id, &result.Username, &result.Language, &ep},
+		username,
+	)
 	if err != nil {
 		return nil, err
 	}
