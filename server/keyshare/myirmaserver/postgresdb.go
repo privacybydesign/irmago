@@ -194,14 +194,8 @@ func (db *myirmaPostgresDB) AddEmail(id int64, email string) error {
 	}
 
 	// Fall back to adding new one
-	aff, err = db.db.ExecAndCount("INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", id, email)
-	if err != nil {
-		return err
-	}
-	if aff != 1 {
-		return errors.Errorf("Unexpected number of affected rows %d for email addition", aff)
-	}
-	return nil
+	_, err = db.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", id, email)
+	return err
 }
 
 func (db *myirmaPostgresDB) RemoveEmail(id int64, email string, delay time.Duration) error {
