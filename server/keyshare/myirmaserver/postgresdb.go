@@ -14,7 +14,7 @@ type myirmaPostgresDB struct {
 	db keyshare.DB
 }
 
-const EMAIL_TOKEN_VALIDITY = 60 // Ammount of time an email login token is valid (in minutes)
+const EMAIL_TOKEN_VALIDITY = 60 // amount of time an email login token is valid (in minutes)
 
 func NewPostgresDatabase(connstring string) (MyirmaDB, error) {
 	db, err := sql.Open("pgx", connstring)
@@ -166,7 +166,7 @@ func (db *myirmaPostgresDB) UserInformation(id int64) (UserInformation, error) {
 	return result, nil
 }
 
-func (db *myirmaPostgresDB) Logs(id int64, offset, ammount int) ([]LogEntry, error) {
+func (db *myirmaPostgresDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
 	var result []LogEntry
 	err := db.db.QueryIterate(
 		"SELECT time, event, param FROM irma.log_entry_records WHERE user_id = $1 ORDER BY time DESC OFFSET $2 LIMIT $3",
@@ -176,7 +176,7 @@ func (db *myirmaPostgresDB) Logs(id int64, offset, ammount int) ([]LogEntry, err
 			result = append(result, curEntry)
 			return err
 		},
-		id, offset, ammount)
+		id, offset, amount)
 	if err != nil {
 		return nil, err
 	}

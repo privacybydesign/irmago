@@ -19,9 +19,9 @@ type keysharePostgresDatabase struct {
 }
 
 const MAX_PIN_TRIES = 3         // Number of tries allowed on pin before we start with exponential backoff
-const EMAIL_TOKEN_VALIDITY = 24 // Ammount of time user's email validation token is valid (in hours)
+const EMAIL_TOKEN_VALIDITY = 24 // amount of time user's email validation token is valid (in hours)
 
-// Initial ammount of time user is forced to back off when having multiple pin failures (in seconds).
+// Initial amount of time user is forced to back off when having multiple pin failures (in seconds).
 // var so that tests may change it.
 var BACKOFF_START int64 = 30
 

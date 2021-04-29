@@ -176,12 +176,12 @@ func min(a, b int) int {
 	}
 }
 
-func (db *myirmaMemoryDB) Logs(id int64, offset, ammount int) ([]LogEntry, error) {
+func (db *myirmaMemoryDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for _, user := range db.userData {
 		if user.id == id {
-			return user.logEntries[min(len(user.logEntries), offset):min(len(user.logEntries), offset+ammount)], nil
+			return user.logEntries[min(len(user.logEntries), offset):min(len(user.logEntries), offset+amount)], nil
 		}
 	}
 	return nil, keyshare.ErrUserNotFound

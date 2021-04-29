@@ -15,7 +15,7 @@ type MyirmaDB interface {
 	TryUserLoginToken(token, username string) (bool, error)
 
 	UserInformation(id int64) (UserInformation, error)
-	Logs(id int64, offset int, ammount int) ([]LogEntry, error)
+	Logs(id int64, offset int, amount int) ([]LogEntry, error)
 	AddEmail(id int64, email string) error
 	RemoveEmail(id int64, email string, delay time.Duration) error
 
