@@ -16,6 +16,8 @@ type myirmaPostgresDB struct {
 
 const EMAIL_TOKEN_VALIDITY = 60 // amount of time an email login token is valid (in minutes)
 
+var ErrEmailNotFound = errors.New("Email address not found")
+
 func NewPostgresDatabase(connstring string) (MyirmaDB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
@@ -34,10 +36,13 @@ func (db *myirmaPostgresDB) UserID(username string) (int64, error) {
 func (db *myirmaPostgresDB) VerifyEmailToken(token string) (int64, error) {
 	var email string
 	var id int64
-	err := db.db.QueryUser(
+	err := db.db.QueryScan(
 		"SELECT user_id, email FROM irma.email_verification_tokens WHERE token = $1 AND expiry >= $2",
 		[]interface{}{&id, &email},
 		token, time.Now().Unix())
+	if err == sql.ErrNoRows {
+		return 0, errors.New("Token not found")
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -68,8 +73,11 @@ func (db *myirmaPostgresDB) RemoveUser(id int64, delay time.Duration) error {
 
 func (db *myirmaPostgresDB) AddEmailLoginToken(email, token string) error {
 	// Check if email address exists in database
-	err := db.db.QueryUser("SELECT 1 FROM irma.emails WHERE email = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
+	err := db.db.QueryScan("SELECT 1 FROM irma.emails WHERE email = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
 		nil, email, time.Now().Unix())
+	if err == sql.ErrNoRows {
+		return ErrEmailNotFound
+	}
 	if err != nil {
 		return err
 	}

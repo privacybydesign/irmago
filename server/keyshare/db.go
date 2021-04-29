@@ -32,14 +32,14 @@ func (db *DB) ExecUser(query string, args ...interface{}) error {
 	return nil
 }
 
-func (db *DB) QueryUser(query string, results []interface{}, args ...interface{}) error {
+func (db *DB) QueryScan(query string, results []interface{}, args ...interface{}) error {
 	res, err := db.Query(query, args...)
 	if err != nil {
 		return err
 	}
 	defer common.Close(res)
 	if !res.Next() {
-		return ErrUserNotFound
+		return sql.ErrNoRows
 	}
 	if results == nil {
 		return nil
@@ -49,6 +49,14 @@ func (db *DB) QueryUser(query string, results []interface{}, args ...interface{}
 		return err
 	}
 	return nil
+}
+
+func (db *DB) QueryUser(query string, results []interface{}, args ...interface{}) error {
+	err := db.QueryScan(query, results, args...)
+	if err == sql.ErrNoRows {
+		return ErrUserNotFound
+	}
+	return err
 }
 
 func (db *DB) QueryIterate(query string, f func(rows *sql.Rows) error, args ...interface{}) error {

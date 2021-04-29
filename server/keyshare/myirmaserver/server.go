@@ -205,7 +205,7 @@ type EmailLoginRequest struct {
 func (s *Server) sendLoginEmail(request EmailLoginRequest) error {
 	token := common.NewSessionToken()
 	err := s.db.AddEmailLoginToken(request.Email, token)
-	if err == keyshare.ErrUserNotFound {
+	if err == ErrEmailNotFound {
 		return err
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error adding login token to database")
@@ -269,7 +269,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = s.sendLoginEmail(request)
-	if err == keyshare.ErrUserNotFound {
+	if err == ErrEmailNotFound {
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
