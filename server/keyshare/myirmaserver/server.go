@@ -454,6 +454,10 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		s.conf.Logger.Info("Trying to reuse token")
 		server.WriteError(w, server.ErrorInvalidRequest, "Token already used")
 		return
+	} else if err != nil {
+		s.conf.Logger.WithField("error", err).Info("Could not verify email token")
+		server.WriteError(w, server.ErrorInvalidRequest, "could not verify email token")
+		return
 	}
 
 	session := s.store.create()
