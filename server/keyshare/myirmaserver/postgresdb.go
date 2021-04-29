@@ -205,10 +205,17 @@ func (db *myirmaPostgresDB) AddEmail(id int64, email string) error {
 }
 
 func (db *myirmaPostgresDB) RemoveEmail(id int64, email string, delay time.Duration) error {
-	return db.db.UserExec("UPDATE irma.emails SET delete_on = $3 WHERE user_id = $1 AND email = $2 AND delete_on IS NULL",
+	aff, err := db.db.ExecAndCount("UPDATE irma.emails SET delete_on = $3 WHERE user_id = $1 AND email = $2 AND delete_on IS NULL",
 		id,
 		email,
 		time.Now().Add(delay).Unix())
+	if err != nil {
+		return err
+	}
+	if aff != 1 {
+		return errors.Errorf("Unexpected number of affected rows %d for email removal", aff)
+	}
+	return nil
 }
 
 func (db *myirmaPostgresDB) SetSeen(id int64) error {
