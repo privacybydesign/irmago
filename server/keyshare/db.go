@@ -13,7 +13,7 @@ type DB struct {
 	*sql.DB
 }
 
-func (db *DB) ExecAndCount(query string, args ...interface{}) (int64, error) {
+func (db *DB) ExecCount(query string, args ...interface{}) (int64, error) {
 	res, err := db.Exec(query, args...)
 	if err != nil {
 		return 0, err
@@ -21,8 +21,8 @@ func (db *DB) ExecAndCount(query string, args ...interface{}) (int64, error) {
 	return res.RowsAffected()
 }
 
-func (db *DB) UserExec(query string, args ...interface{}) error {
-	c, err := db.ExecAndCount(query, args...)
+func (db *DB) ExecUser(query string, args ...interface{}) error {
+	c, err := db.ExecCount(query, args...)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func (db *DB) UserExec(query string, args ...interface{}) error {
 	return nil
 }
 
-func (db *DB) UserQuery(query string, results []interface{}, args ...interface{}) error {
+func (db *DB) QueryUser(query string, results []interface{}, args ...interface{}) error {
 	res, err := db.Query(query, args...)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func (db *DB) UserQuery(query string, results []interface{}, args ...interface{}
 	return nil
 }
 
-func (db *DB) QueryMultiple(query string, f func(rows *sql.Rows) error, args ...interface{}) error {
+func (db *DB) QueryIterate(query string, f func(rows *sql.Rows) error, args ...interface{}) error {
 	res, err := db.Query(query, args...)
 	if err != nil {
 		return err

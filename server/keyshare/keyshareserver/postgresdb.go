@@ -60,7 +60,7 @@ func (db *keysharePostgresDatabase) NewUser(user *KeyshareUser) error {
 func (db *keysharePostgresDatabase) User(username string) (*KeyshareUser, error) {
 	var result KeyshareUser
 	var ep []byte
-	err := db.db.UserQuery(
+	err := db.db.QueryUser(
 		"SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL",
 		[]interface{}{&result.id, &result.Username, &result.Language, &ep},
 		username,
@@ -76,7 +76,7 @@ func (db *keysharePostgresDatabase) User(username string) (*KeyshareUser, error)
 }
 
 func (db *keysharePostgresDatabase) UpdateUser(user *KeyshareUser) error {
-	return db.db.UserExec(
+	return db.db.ExecUser(
 		"UPDATE irma.users SET username=$1, language=$2, coredata=$3 WHERE id=$4",
 		user.Username,
 		user.Language,
@@ -147,14 +147,14 @@ func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, i
 }
 
 func (db *keysharePostgresDatabase) ClearPincheck(user *KeyshareUser) error {
-	return db.db.UserExec(
+	return db.db.ExecUser(
 		"UPDATE irma.users SET pin_counter=0, pin_block_date=0 WHERE id=$1",
 		user.id,
 	)
 }
 
 func (db *keysharePostgresDatabase) SetSeen(user *KeyshareUser) error {
-	return db.db.UserExec(
+	return db.db.ExecUser(
 		"UPDATE irma.users SET last_seen = $1 WHERE id = $2",
 		time.Now().Unix(),
 		user.id,
