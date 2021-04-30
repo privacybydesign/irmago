@@ -41,12 +41,12 @@ type sessionData struct {
 	Rrequest           irma.RequestorRequest
 	LegacyCompatible   bool // if the request is convertible to pre-condiscon format
 	ImplicitDisclosure irma.AttributeConDisCon
-	Status        server.Status
-	PrevStatus    server.Status
-	ResponseCache responseCache
-	LastActive time.Time
-	Result     *server.SessionResult
-	KssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
+	Status             server.Status
+	PrevStatus         server.Status
+	ResponseCache      responseCache
+	LastActive         time.Time
+	Result             *server.SessionResult
+	KssProofs          map[irma.SchemeManagerIdentifier]*gabi.ProofP
 }
 
 type responseCache struct {
@@ -75,7 +75,7 @@ type memorySessionStore struct {
 
 type redisSessionStore struct {
 	client *redis.Client
-	conf *server.Configuration
+	conf   *server.Configuration
 }
 
 const (
@@ -164,23 +164,25 @@ func (s *memorySessionStore) deleteExpired() {
 	s.Unlock()
 }
 
-// MarshalJSON marshals a session to be used in the Redis in-memory datastore.
-func (s *session) MarshalJSON() ([]byte, error) {
+// MarshalJSON marshals sessionData to be used in the Redis in-memory datastore.
+func (s *sessionData) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*s)
 }
 
-// UnmarshalJSON unmarshals the sessionData of a session.
-func (s *session) UnmarshalJSON(data []byte) error {
+// UnmarshalJSON unmarshals sessionData.
+func (s *sessionData) UnmarshalJSON(data []byte) error {
+	type rawSessionData sessionData
+
 	var temp struct {
 		Rrequest *json.RawMessage `json:",omitempty"`
-		sessionData
+		rawSessionData
 	}
 
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}
 
-	s.sessionData = temp.sessionData
+	*s = sessionData(temp.rawSessionData)
 
 	if temp.Rrequest == nil {
 		s.Rrequest = nil
@@ -204,15 +206,15 @@ func (s *session) UnmarshalJSON(data []byte) error {
 		fmt.Printf("unable to unmarshal rrequest: %s \n", err)
 		return err
 	}
-	s.request = s.Rrequest.SessionRequest()
 
 	return nil
 }
 
 func (s *redisSessionStore) get(t string) *session {
 	//TODO: input validation string?
-	val, err := s.client.Get(context.TODO(),tokenLookupPrefix+t).Result()
+	val, err := s.client.Get(context.TODO(), tokenLookupPrefix+t).Result()
 	if err != nil {
+		// return nil? compare with in memory
 		fmt.Printf("unable to get corresponding clientToken for token %s from redis: %s \n", t, err)
 	}
 
@@ -220,7 +222,7 @@ func (s *redisSessionStore) get(t string) *session {
 }
 
 func (s *redisSessionStore) clientGet(t string) *session {
-	val, err := s.client.Get(context.TODO(),sessionLookupPrefix+t).Result()
+	val, err := s.client.Get(context.TODO(), sessionLookupPrefix+t).Result()
 	if err != nil {
 		fmt.Printf("unable to get session data for clientToken %s from redis: %s \n", t, err)
 	}
@@ -228,10 +230,11 @@ func (s *redisSessionStore) clientGet(t string) *session {
 	var session session
 	session.conf = s.conf
 	session.sessions = s
-	if err := session.UnmarshalJSON([]byte(val)); err != nil {
+	if err := session.sessionData.UnmarshalJSON([]byte(val)); err != nil {
 		//TODO: return with error? general question how to deal with Redis errors
 		fmt.Printf("unable to unmarshal data into the new example struct due to: %s \n", err)
 	}
+	session.request = session.Rrequest.SessionRequest()
 
 	return &session
 }
@@ -241,7 +244,7 @@ func (s *redisSessionStore) add(session *session) {
 }
 
 func add(session *session, client *redis.Client, ttl time.Duration) {
-	sessionJSON, err := session.MarshalJSON()
+	sessionJSON, err := session.sessionData.MarshalJSON()
 	if err != nil {
 		fmt.Printf("unable to marshal data to json due to: %s \n", err)
 	}
