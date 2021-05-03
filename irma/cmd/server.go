@@ -222,7 +222,7 @@ func configureServer(cmd *cobra.Command) error {
 			Email:                  viper.GetString("email"),
 			EnableSSE:              viper.GetBool("sse"),
 			StoreType:              viper.GetString("store-type"),
-			RedisSettings:          irma.RedisSettings{},
+			RedisSettings:          server.RedisSettings{},
 			Verbose:                viper.GetInt("verbose"),
 			Quiet:                  viper.GetBool("quiet"),
 			LogJSON:                viper.GetBool("log-json"),
@@ -289,7 +289,6 @@ func configureServer(cmd *cobra.Command) error {
 	if err = handleMapOrString("redis-settings", &conf.RedisSettings); err != nil {
 		return err
 	}
-
 
 	logger.Debug("Done configuring")
 

@@ -63,13 +63,6 @@ type Configuration struct {
 	readOnly    bool
 }
 
-type RedisSettings struct {
-	Host     string `json:"host,omitempty" mapstructure:"host"`
-	Port     string `json:"port,omitempty" mapstructure:"port"`
-	Password string `json:"password,omitempty" mapstructure:"password"`
-	DB       int    `json:"db,omitempty" mapstructure:"db"`
-}
-
 type UnknownIdentifierError struct {
 	ErrorType
 	Missing *IrmaIdentifierSet
