@@ -170,7 +170,7 @@ func (s *Server) Stop() {
 		server.LogWarning(err)
 	}
 	s.stopScheduler <- true
-	s.sessions.stop()
+	_ = s.sessions.stop()
 }
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
@@ -207,7 +207,10 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	session := s.newSession(action, rrequest)
+	session, err := s.newSession(action, rrequest)
+	if err != nil {
+		return nil, "", err
+	}
 	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.Token}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token, "clienttoken": session.ClientToken}).Info("Session request: ", server.ToJson(rrequest))
@@ -224,29 +227,35 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
-func GetSessionResult(token string) *server.SessionResult {
+func GetSessionResult(token string) (*server.SessionResult, error) {
 	return s.GetSessionResult(token)
 }
-func (s *Server) GetSessionResult(token string) *server.SessionResult {
-	session := s.sessions.get(token)
+func (s *Server) GetSessionResult(token string) (*server.SessionResult, error) {
+	session, err := s.sessions.get(token)
+	if err != nil {
+		return nil, err
+	}
 	if session == nil {
 		s.conf.Logger.Warn("Session result requested of unknown session ", token)
-		return nil
+		return nil, nil
 	}
-	return session.Result
+	return session.Result, nil
 }
 
 // GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
-func GetRequest(token string) irma.RequestorRequest {
+func GetRequest(token string) (irma.RequestorRequest, error) {
 	return s.GetRequest(token)
 }
-func (s *Server) GetRequest(token string) irma.RequestorRequest {
-	session := s.sessions.get(token)
+func (s *Server) GetRequest(token string) (irma.RequestorRequest, error) {
+	session, err := s.sessions.get(token)
+	if err != nil {
+		return nil, err
+	}
 	if session == nil {
 		s.conf.Logger.Warn("Session request requested of unknown session ", token)
-		return nil
+		return nil, nil
 	}
-	return session.Rrequest
+	return session.Rrequest, nil
 }
 
 // CancelSession cancels the specified IRMA session.
@@ -254,11 +263,17 @@ func CancelSession(token string) error {
 	return s.CancelSession(token)
 }
 func (s *Server) CancelSession(token string) error {
-	session := s.sessions.get(token)
+	session, err := s.sessions.get(token)
+	if err != nil {
+		return err
+	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't cancel unknown session %s", token))
 	}
-	session.handleDelete()
+	err = session.handleDelete()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -290,9 +305,9 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 
 	var session *session
 	if requestor {
-		session = s.sessions.get(token)
+		session, _ = s.sessions.get(token) // SSE can only be used with storeType memory which does not contain errors.
 	} else {
-		session = s.sessions.clientGet(token)
+		session, _ = s.sessions.clientGet(token) // SSE can only be used with storeType memory which does not contain errors.
 	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))

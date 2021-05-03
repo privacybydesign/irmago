@@ -39,7 +39,11 @@ func (session *session) setStatus(status server.Status) {
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
-	session.sessions.update(session)
+	err := session.sessions.update(session)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (session *session) onUpdate() {
@@ -56,7 +60,7 @@ func (session *session) onUpdate() {
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
-	session.setStatus(server.StatusCancelled)
+	_ = session.setStatus(server.StatusCancelled) // silently fail in order not to overwrite original error
 	session.Result = &server.SessionResult{Err: rerr, Token: session.Token, Status: server.StatusCancelled, Type: session.Action}
 	return rerr
 }
@@ -271,17 +275,22 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 
 // Other
 
-func (s *Server) doResultCallback(result *server.SessionResult) {
-	url := s.GetRequest(result.Token).Base().CallbackURL
+func (s *Server) doResultCallback(result *server.SessionResult) error {
+	request, err := s.GetRequest(result.Token)
+	if err != nil {
+		return err
+	}
+	url := request.Base().CallbackURL
 	if url == "" {
-		return
+		return nil
 	}
 	server.DoResultCallback(url,
 		result,
 		s.conf.JwtIssuer,
-		s.GetRequest(result.Token).Base().ResultJwtValidity,
+		request.Base().ResultJwtValidity,
 		s.conf.JwtRSAPrivateKey,
 	)
+	return nil
 }
 
 func (s *Server) validateRequest(request irma.SessionRequest) error {
@@ -416,7 +425,11 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := chi.URLParam(r, "Token")
-		session := s.sessions.clientGet(token)
+		session, err := s.sessions.clientGet(token)
+		if err != nil {
+			server.WriteError(w, server.ErrorInternal, "")
+			return
+		}
 		if session == nil {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
 			return

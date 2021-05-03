@@ -60,8 +60,9 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	clientChan := make(chan *SessionResult, 2)
 	serverChan := make(chan *server.SessionResult)
 
-	qr, token, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
+	qr, token, err := irmaServer.StartSession(request, func(result *server.SessionResult) error {
 		serverChan <- result
+		return nil
 	})
 	require.NoError(t, err)
 

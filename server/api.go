@@ -46,7 +46,7 @@ type SessionResult struct {
 
 // SessionHandler is a function that can handle a session result
 // once an IRMA session has completed.
-type SessionHandler func(*SessionResult)
+type SessionHandler func(*SessionResult) error
 
 // Status is the status of an IRMA session.
 type Status string

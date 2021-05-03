@@ -23,14 +23,18 @@ import (
 // Maintaining the session state is done here, as well as checking whether the session is in the
 // appropriate status before handling the request.
 
-func (session *session) handleDelete() {
+func (session *session) handleDelete() error {
 	if session.Status.Finished() {
-		return
+		return nil
 	}
 	session.markAlive()
 
 	session.Result = &server.SessionResult{Token: session.Token, Status: server.StatusCancelled, Type: session.Action}
-	session.setStatus(server.StatusCancelled)
+	err := session.setStatus(server.StatusCancelled)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
@@ -62,7 +66,10 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	logger.WithFields(logrus.Fields{"version": session.Version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.Version
 
-	session.setStatus(server.StatusConnected)
+	err = session.setStatus(server.StatusConnected)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
+	}
 
 	if session.Version.Below(2, 5) {
 		logger.Info("Returning legacy session format")
@@ -106,7 +113,10 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 
 	session.Result.Disclosed, session.Result.ProofStatus, err = signature.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
-		session.setStatus(server.StatusDone)
+		err = session.setStatus(server.StatusDone)
+		if err != nil {
+			return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
+		}
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -136,7 +146,10 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 
 	session.Result.Disclosed, session.Result.ProofStatus, err = disclosure.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
-		session.setStatus(server.StatusDone)
+		err = session.setStatus(server.StatusDone)
+		if err != nil {
+			return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
+		}
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -233,7 +246,10 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		sigs = append(sigs, sig)
 	}
 
-	session.setStatus(server.StatusDone)
+	err = session.setStatus(server.StatusDone)
+	if err != nil {
+		return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
+	}
 	return &irma.ServerSessionResponse{
 		SessionType:     irma.ActionIssuing,
 		ProtocolVersion: session.Version,
@@ -309,7 +325,10 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well
-	newsession := s.sessions.get(token)
+	newsession, err := s.sessions.get(token)
+	if err != nil {
+		return err
+	}
 	newsession.ImplicitDisclosure = disclosed
 	res.NextSession = qr
 
@@ -398,7 +417,11 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
-	r.Context().Value("session").(*session).handleDelete()
+	err := r.Context().Value("session").(*session).handleDelete()
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
 	w.WriteHeader(200)
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-errors/errors"
 	"strings"
 	"sync"
 	"time"
@@ -57,12 +58,12 @@ type responseCache struct {
 }
 
 type sessionStore interface {
-	get(token string) *session
-	clientGet(token string) *session
-	add(session *session)
-	update(session *session)
+	get(token string) (*session, error)
+	clientGet(token string) (*session, error)
+	add(session *session) error
+	update(session *session) error
 	deleteExpired()
-	stop()
+	stop() error
 }
 
 type memorySessionStore struct {
@@ -89,30 +90,32 @@ var (
 	maxProtocolVersion = irma.NewVersion(2, 7)
 )
 
-func (s *memorySessionStore) get(t string) *session {
+func (s *memorySessionStore) get(t string) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
-	return s.requestor[t]
+	return s.requestor[t], nil
 }
 
-func (s *memorySessionStore) clientGet(t string) *session {
+func (s *memorySessionStore) clientGet(t string) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
-	return s.client[t]
+	return s.client[t], nil
 }
 
-func (s *memorySessionStore) add(session *session) {
+func (s *memorySessionStore) add(session *session) error {
 	s.Lock()
 	defer s.Unlock()
 	s.requestor[session.Token] = session
 	s.client[session.ClientToken] = session
+	return nil
 }
 
-func (s *memorySessionStore) update(session *session) {
+func (s *memorySessionStore) update(session *session) error {
 	session.onUpdate()
+	return nil
 }
 
-func (s *memorySessionStore) stop() {
+func (s *memorySessionStore) stop() error {
 	s.Lock()
 	defer s.Unlock()
 	for _, session := range s.requestor {
@@ -121,6 +124,7 @@ func (s *memorySessionStore) stop() {
 			session.sse.CloseChannel("session/" + session.ClientToken)
 		}
 	}
+	return nil
 }
 
 func (s *memorySessionStore) deleteExpired() {
@@ -140,7 +144,7 @@ func (s *memorySessionStore) deleteExpired() {
 			if !session.Status.Finished() {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Session expired")
 				session.markAlive()
-				session.setStatus(server.StatusTimeout)
+				_ = session.setStatus(server.StatusTimeout) // memoryStore implementation returns nil only
 			} else {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Deleting session")
 				expired = append(expired, Token)
@@ -186,9 +190,7 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 
 	if temp.Rrequest == nil {
 		s.Rrequest = nil
-		// TODO: return custom error
-		fmt.Printf("temp.Rrequest == nil: %d \n", temp.Rrequest)
-		return nil
+		return errors.Errorf("temp.Rrequest == nil: %d \n", temp.Rrequest)
 	}
 
 	// unmarshal Rrequest
@@ -203,28 +205,30 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 	} else if err = json.Unmarshal(*temp.Rrequest, sigR); err == nil && s.Action == "signing" {
 		s.Rrequest = sigR
 	} else {
-		fmt.Printf("unable to unmarshal rrequest: %s \n", err)
 		return err
 	}
 
 	return nil
 }
 
-func (s *redisSessionStore) get(t string) *session {
+func (s *redisSessionStore) get(t string) (*session, error) {
 	//TODO: input validation string?
 	val, err := s.client.Get(context.TODO(), tokenLookupPrefix+t).Result()
-	if err != nil {
-		// return nil? compare with in memory
-		fmt.Printf("unable to get corresponding clientToken for token %s from redis: %s \n", t, err)
+	if err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		return nil, server.LogError(err)
 	}
 
 	return s.clientGet(val)
 }
 
-func (s *redisSessionStore) clientGet(t string) *session {
+func (s *redisSessionStore) clientGet(t string) (*session, error) {
 	val, err := s.client.Get(context.TODO(), sessionLookupPrefix+t).Result()
-	if err != nil {
-		fmt.Printf("unable to get session data for clientToken %s from redis: %s \n", t, err)
+	if err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		return nil, server.LogError(err)
 	}
 
 	var session session
@@ -233,42 +237,47 @@ func (s *redisSessionStore) clientGet(t string) *session {
 	if err := session.sessionData.UnmarshalJSON([]byte(val)); err != nil {
 		//TODO: return with error? general question how to deal with Redis errors
 		fmt.Printf("unable to unmarshal data into the new example struct due to: %s \n", err)
+		return nil, server.LogError(err)
 	}
 	session.request = session.Rrequest.SessionRequest()
 
-	return &session
+	return &session, nil
 }
 
-func (s *redisSessionStore) add(session *session) {
-	add(session, s.client, maxSessionLifetime)
-}
+func (s *redisSessionStore) add(session *session) error {
+	timeout := maxSessionLifetime
+	if session.Status == server.StatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
+		timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
+	}
 
-func add(session *session, client *redis.Client, ttl time.Duration) {
 	sessionJSON, err := session.sessionData.MarshalJSON()
 	if err != nil {
-		fmt.Printf("unable to marshal data to json due to: %s \n", err)
+		return server.LogError(err)
 	}
 
-	err = client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, ttl).Err()
+	err = s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
 	if err != nil {
-		fmt.Printf("unable to save token lookup in Redis datastore: %s \n", err)
+		return server.LogError(err)
 	}
-	err = client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, ttl).Err()
+	err = s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
 	if err != nil {
-		fmt.Printf("unable to save session data as JSON in Redis datastore: %s \n", err)
+		return server.LogError(err)
 	}
+
+	return nil
 }
 
-func (s *redisSessionStore) update(session *session) {
-	ttl, _ := s.client.TTL(context.TODO(), session.ClientToken).Result()
-	add(session, s.client, ttl)
+func (s *redisSessionStore) update(session *session) error {
+	return s.add(session)
 }
 
-func (s *redisSessionStore) stop() {
+func (s *redisSessionStore) stop() error {
 	err := s.client.Close()
 	if err != nil {
-		fmt.Printf("closing the redis client failed due to %s \n", err)
+		return server.LogError(err)
 	}
+
+	return nil
 }
 
 func (s *redisSessionStore) deleteExpired() {
@@ -277,7 +286,7 @@ func (s *redisSessionStore) deleteExpired() {
 
 var one *big.Int = big.NewInt(1)
 
-func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *session {
+func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) (*session, error) {
 	token := common.NewSessionToken()
 	clientToken := common.NewSessionToken()
 
@@ -317,7 +326,10 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) *
 	nonce, _ := gabi.GenerateNonce()
 	base.Nonce = nonce
 	base.Context = one
-	s.sessions.add(ses)
+	err := s.sessions.add(ses)
+	if err != nil {
+		return nil, err
+	}
 
-	return ses
+	return ses, nil
 }

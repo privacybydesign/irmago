@@ -366,8 +366,9 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	serverChan := make(chan *server.SessionResult)
 
 	StartIrmaServer(t, false, "") // Run a server with old configuration (level is non-optional)
-	_, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	_, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) error {
 		serverChan <- result
+		return nil
 	})
 	expectedError := &irma.RequiredAttributeMissingError{
 		ErrorType: irma.ErrorRequiredAttributeMissing,
@@ -389,8 +390,9 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	_, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) error {
 		serverChan <- result
+		return nil
 	})
 	require.NoError(t, err)
 	StopIrmaServer()
