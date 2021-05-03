@@ -351,6 +351,10 @@ func TestServerUserData(t *testing.T) {
 	assert.NotEqual(t, []string{"test@test.com"}, userdata.Emails)
 	_ = res.Body.Close()
 
+	res, err = client.Get("http://localhost:8080/user/logs/abcd")
+	assert.NoError(t, err)
+	assert.Equal(t, 400, res.StatusCode)
+
 	res, err = client.Get("http://localhost:8080/user/logs/0")
 	assert.NoError(t, err)
 	assert.Equal(t, 200, res.StatusCode)

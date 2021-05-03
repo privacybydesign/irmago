@@ -511,7 +511,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	offset, err := strconv.Atoi(offsetS)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Info("Malformed offset")
-		w.WriteHeader(http.StatusNotFound)
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
