@@ -41,11 +41,6 @@ func TestServerInvalidMessage(t *testing.T) {
 	assert.Equal(t, 400, res.StatusCode)
 	_ = res.Body.Close()
 
-	res, err = http.Get("http://localhost:8080/user/logs/abcd")
-	assert.NoError(t, err)
-	assert.Equal(t, 404, res.StatusCode)
-	_ = res.Body.Close()
-
 	res, err = http.Get("http://localhost:8080/user")
 	assert.NoError(t, err)
 	assert.Equal(t, 400, res.StatusCode)

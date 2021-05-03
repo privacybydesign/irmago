@@ -80,11 +80,11 @@ func (s *Server) Handler() http.Handler {
 	// Email verification
 	router.Post("/verify", s.handleVerifyEmail)
 
+	// Session management
+	router.Post("/checksession", s.handleCheckSession)
+
 	router.Group(func(router chi.Router) {
 		router.Use(s.sessionMiddleware)
-
-		// Session management
-		router.Post("/checksession", s.handleCheckSession)
 
 		// User account data
 		router.Get("/user", s.handleUserInfo)
@@ -106,11 +106,15 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
-	session := r.Context().Value("session").(*Sessiondata)
-
-	if session == nil {
+	session := s.sessionFromCookie(r)
+	if session == nil || session.userID == nil {
 		server.WriteString(w, "expired")
-	} else if session.pendingError != nil {
+		return
+	}
+
+	session.Lock()
+	defer session.Unlock()
+	if session.pendingError != nil {
 		server.WriteError(w, *session.pendingError, session.pendingErrorMessage)
 		session.pendingError = nil
 		session.pendingErrorMessage = ""
@@ -162,11 +166,6 @@ func (s *Server) sendDeleteEmails(session *Sessiondata) error {
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*Sessiondata)
-	if session == nil || session.userID == nil {
-		s.conf.Logger.Info("Malformed request: not logged in")
-		server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
-		return
-	}
 
 	// First, send emails
 	if s.conf.EmailServer != "" {
@@ -494,12 +493,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*Sessiondata)
-	if session == nil || session.userID == nil {
-		s.conf.Logger.Info("Malformed request: not logged in")
-		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
-		return
-	}
-
 	userinfo, err := s.db.UserInformation(*session.userID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem fetching user information from database")
@@ -523,12 +516,6 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := r.Context().Value("session").(*Sessiondata)
-	if session == nil || session.userID == nil {
-		s.conf.Logger.Info("Malformed request: user not logged in")
-		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
-		return
-	}
-
 	entries, err := s.db.Logs(*session.userID, offset, 11)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not load log entries")
@@ -618,12 +605,6 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := r.Context().Value("session").(*Sessiondata)
-	if session == nil || session.userID == nil {
-		s.conf.Logger.Info("Malformed request: user not logged in")
-		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
-		return
-	}
-
 	err = s.processRemoveEmail(session, string(email))
 	if err == ErrInvalidEmail {
 		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
@@ -668,16 +649,9 @@ func (s *Server) processAddEmailIrmaSessionResult(sessiontoken string, result *s
 
 func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*Sessiondata)
-	if session == nil || session.userID == nil {
-		s.conf.Logger.Info("Malformed request: user not logged in")
-		server.WriteError(w, server.ErrorInvalidRequest, "Not logged in")
-		return
-	}
-
-	sessiontoken := session.token
 	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...),
 		func(result *server.SessionResult) {
-			s.processAddEmailIrmaSessionResult(sessiontoken, result)
+			s.processAddEmailIrmaSessionResult(session.token, result)
 		})
 
 	if err != nil {
@@ -691,22 +665,27 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, err := r.Cookie("session")
-		if err != nil {
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", (*Sessiondata)(nil))))
+		session := s.sessionFromCookie(r)
+		if session == nil || session.userID == nil {
+			s.conf.Logger.Info("Malformed request: user not logged in")
+			server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
 			return
 		}
 
-		session := s.store.get(token.Value)
-		if session != nil {
-			session.Lock()
-			defer session.Unlock()
-		}
-
+		session.Lock()
+		defer session.Unlock()
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
 	})
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {
 	return http.StripPrefix(s.conf.StaticPrefix, http.FileServer(http.Dir(s.conf.StaticPath)))
+}
+
+func (s *Server) sessionFromCookie(r *http.Request) *Sessiondata {
+	token, err := r.Cookie("session")
+	if err != nil { // only happens if cookie is not present
+		return nil
+	}
+	return s.store.get(token.Value)
 }
