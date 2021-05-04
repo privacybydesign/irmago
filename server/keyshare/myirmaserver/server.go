@@ -177,15 +177,24 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.setCookie(w, "")
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) setCookie(w http.ResponseWriter, token string) {
+	var maxAge int
+	if token != "" {
+		maxAge = s.conf.SessionLifetime
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
-		Value:    "",
+		Value:    token,
+		MaxAge:   maxAge,
 		Secure:   s.conf.Production,
 		Path:     "/",
 		HttpOnly: true,
 	})
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
 type EmailLoginRequest struct {
@@ -326,14 +335,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    token,
-		MaxAge:   s.conf.SessionLifetime,
-		Secure:   s.conf.Production,
-		Path:     "/",
-		HttpOnly: true,
-	})
+	s.setCookie(w, token)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -388,14 +390,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    sessiontoken,
-		MaxAge:   s.conf.SessionLifetime,
-		Secure:   s.conf.Production,
-		Path:     "/",
-		HttpOnly: true,
-	})
+	s.setCookie(w, sessiontoken)
 	server.WriteJson(w, qr)
 }
 
@@ -426,25 +421,12 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		// not relevant for frontend, so ignore beyond log.
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    session.token,
-		MaxAge:   s.conf.SessionLifetime,
-		Secure:   s.conf.Production,
-		Path:     "/",
-		HttpOnly: true,
-	})
+	s.setCookie(w, session.token)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    "",
-		Secure:   s.conf.Production,
-		Path:     "/",
-		HttpOnly: true,
-	})
+	s.setCookie(w, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
