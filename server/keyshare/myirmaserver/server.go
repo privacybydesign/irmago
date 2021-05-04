@@ -3,8 +3,6 @@ package myirmaserver
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"time"
@@ -237,22 +235,13 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestData, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
-
 	var request EmailLoginRequest
-	err = json.Unmarshal(requestData, &request)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+	if err := server.ParseBody(w, r, &request); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
-	err = s.sendLoginEmail(request)
+	err := s.sendLoginEmail(request)
 	if err == ErrEmailNotFound {
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
@@ -267,14 +256,11 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetCandidates(w http.ResponseWriter, r *http.Request) {
-	requestData, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read body")
-		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
+	var token string
+	if err := server.ParseBody(w, r, &token); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-
-	token := string(requestData)
 
 	candidates, err := s.db.LoginTokenCandidates(token)
 	if err == keyshare.ErrUserNotFound {
@@ -323,17 +309,8 @@ func (s *Server) processTokenLogin(request TokenLoginRequest) (string, error) {
 }
 
 func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
-	requestData, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read body")
-		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
-		return
-	}
-
 	var request TokenLoginRequest
-	err = json.Unmarshal(requestData, &request)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+	if err := server.ParseBody(w, r, &request); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -425,14 +402,11 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
-	requestData, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read body")
-		server.WriteError(w, server.ErrorInvalidRequest, "could not read request body")
+	var token string
+	if err := server.ParseBody(w, r, &token); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
-
-	token := string(requestData)
 
 	id, err := s.db.VerifyEmailToken(token)
 	if err == keyshare.ErrUserNotFound {
@@ -576,15 +550,14 @@ func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
 }
 
 func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
-	email, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read body")
-		server.WriteError(w, server.ErrorInvalidRequest, "Could not parse request body")
+	var email string
+	if err := server.ParseBody(w, r, &email); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
 	session := r.Context().Value("session").(*Sessiondata)
-	err = s.processRemoveEmail(session, string(email))
+	err := s.processRemoveEmail(session, email)
 	if err == ErrInvalidEmail {
 		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
 		return

@@ -3,9 +3,7 @@ package keyshareserver
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
@@ -169,7 +167,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 
 	// Read keys
 	var keys []irma.PublicKeyIdentifier
-	if err := s.parseBody(w, r, &keys); err != nil {
+	if err := server.ParseBody(w, r, &keys); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -236,7 +234,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	// Read challenge
 	challenge := new(big.Int)
-	if err := s.parseBody(w, r, challenge); err != nil {
+	if err := server.ParseBody(w, r, challenge); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -310,7 +308,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeysharePinMessage
-	if err := s.parseBody(w, r, &msg); err != nil {
+	if err := server.ParseBody(w, r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -395,7 +393,7 @@ func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.Key
 func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeyshareChangePin
-	if err := s.parseBody(w, r, &msg); err != nil {
+	if err := server.ParseBody(w, r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -461,7 +459,7 @@ func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.Ke
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeyshareEnrollment
-	if err := s.parseBody(w, r, &msg); err != nil {
+	if err := server.ParseBody(w, r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -600,20 +598,6 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(nextContext))
 	})
-}
-
-func (s *Server) parseBody(w http.ResponseWriter, r *http.Request, input interface{}) error {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not read request body")
-		return err
-	}
-	err = json.Unmarshal(body, input)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Info("Malformed request: could not parse request body")
-		return err
-	}
-	return nil
 }
 
 func (s *Server) reservePinCheck(user *KeyshareUser, pin string) (bool, int, int64, error) {

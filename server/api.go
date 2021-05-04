@@ -530,3 +530,22 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 		})
 	}
 }
+
+func ParseBody(w http.ResponseWriter, r *http.Request, input interface{}) error {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		Logger.WithField("error", err).Info("Malformed request: could not read request body")
+		return err
+	}
+
+	switch i := input.(type) {
+	case *string:
+		*i = string(body)
+	default:
+		if err = json.Unmarshal(body, input); err != nil {
+			Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+			return err
+		}
+	}
+	return nil
+}
