@@ -46,7 +46,7 @@ func (session *session) setStatus(status server.Status) {
 	return nil
 }
 
-func (session *session) onUpdate() {
+func (session *session) updateSSE() {
 	if session.sse == nil {
 		return
 	}
