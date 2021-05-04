@@ -352,6 +352,12 @@ func (s *Server) processLoginIrmaSessionResult(sessiontoken string, result *serv
 		// Ignore incomplete attempts, frontend handles these.
 		return
 	}
+	if result.ProofStatus != irma.ProofStatusValid {
+		s.conf.Logger.Info("received invalid login attribute")
+		session.pendingError = &server.ErrorInvalidProofs
+		session.pendingErrorMessage = ""
+		return
+	}
 
 	username := *result.Disclosed[0][0].RawValue
 	id, err := s.db.UserID(username)
