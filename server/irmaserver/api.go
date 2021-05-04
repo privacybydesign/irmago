@@ -76,7 +76,6 @@ func New(conf *server.Configuration) (*Server, error) {
 			DB:       conf.RedisSettings.DB,
 		})
 		if err := cl.Ping(context.TODO()).Err(); err != nil {
-			//TODO: what should happen in case of failure? should the switch use in memory if redis cannot be pinged?
 			return nil, err
 		}
 		s.sessions = &redisSessionStore{
