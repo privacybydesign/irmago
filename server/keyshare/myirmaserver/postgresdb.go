@@ -24,7 +24,7 @@ func NewPostgresDatabase(connstring string) (MyirmaDB, error) {
 		return nil, err
 	}
 	return &myirmaPostgresDB{
-		db: keyshare.DB{db},
+		db: keyshare.DB{DB: db},
 	}, nil
 }
 

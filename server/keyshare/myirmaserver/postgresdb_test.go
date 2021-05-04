@@ -77,7 +77,7 @@ func TestPostgresDBLoginToken(t *testing.T) {
 
 	cand, err := db.LoginTokenCandidates("testtoken")
 	assert.NoError(t, err)
-	assert.Equal(t, []LoginCandidate{LoginCandidate{Username: "testuser", LastActive: 0}}, cand)
+	assert.Equal(t, []LoginCandidate{{Username: "testuser", LastActive: 0}}, cand)
 
 	_, err = db.LoginTokenCandidates("DNE")
 	assert.Error(t, err)
@@ -136,17 +136,17 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	entries, err := db.Logs(15, 0, 3)
 	assert.NoError(t, err)
 	assert.Equal(t, []LogEntry{
-		LogEntry{
+		{
 			Timestamp: 130,
 			Event:     "test3",
 			Param:     nil,
 		},
-		LogEntry{
+		{
 			Timestamp: 120,
 			Event:     "test2",
 			Param:     &str15,
 		},
-		LogEntry{
+		{
 			Timestamp: 110,
 			Event:     "test",
 			Param:     &strEmpty,

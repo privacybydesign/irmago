@@ -100,7 +100,7 @@ func (db *myirmaMemoryDB) LoginTokenCandidates(token string) ([]LoginCandidate, 
 		return nil, keyshare.ErrUserNotFound
 	}
 
-	result := []LoginCandidate{}
+	var result []LoginCandidate
 	for name, user := range db.userData {
 		for _, userEmail := range user.email {
 			if userEmail == email {

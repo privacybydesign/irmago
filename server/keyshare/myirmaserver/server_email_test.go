@@ -16,12 +16,12 @@ import (
 func TestServerLoginEmail(t *testing.T) {
 	db := &myirmaMemoryDB{
 		userData: map[string]memoryUserData{
-			"testuser": memoryUserData{
+			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
 				email:      []string{"test@test.com"},
 			},
-			"noemail": memoryUserData{
+			"noemail": {
 				id:         17,
 				lastActive: time.Unix(0, 0),
 			},

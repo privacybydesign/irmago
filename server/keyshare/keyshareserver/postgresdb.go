@@ -31,7 +31,7 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 		return nil, err
 	}
 	return &keysharePostgresDatabase{
-		db: keyshare.DB{db},
+		db: keyshare.DB{DB: db},
 	}, nil
 }
 

@@ -11,7 +11,7 @@ import (
 func TestMemoryDBUserManagement(t *testing.T) {
 	db := &myirmaMemoryDB{
 		userData: map[string]memoryUserData{
-			"testuser": memoryUserData{
+			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
 			},
@@ -56,12 +56,12 @@ func TestMemoryDBUserManagement(t *testing.T) {
 func TestMemoryDBLoginToken(t *testing.T) {
 	db := &myirmaMemoryDB{
 		userData: map[string]memoryUserData{
-			"testuser": memoryUserData{
+			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
 				email:      []string{"test@test.com"},
 			},
-			"noemail": memoryUserData{
+			"noemail": {
 				id:         17,
 				lastActive: time.Unix(0, 0),
 			},
@@ -77,7 +77,7 @@ func TestMemoryDBLoginToken(t *testing.T) {
 
 	cand, err := db.LoginTokenCandidates("testtoken")
 	assert.NoError(t, err)
-	assert.Equal(t, []LoginCandidate{LoginCandidate{Username: "testuser", LastActive: 0}}, cand)
+	assert.Equal(t, []LoginCandidate{{Username: "testuser", LastActive: 0}}, cand)
 
 	_, err = db.LoginTokenCandidates("DNE")
 	assert.Error(t, err)
@@ -101,24 +101,24 @@ func TestMemoryDBLoginToken(t *testing.T) {
 func TestMemoryDBUserInfo(t *testing.T) {
 	db := &myirmaMemoryDB{
 		userData: map[string]memoryUserData{
-			"testuser": memoryUserData{
+			"testuser": {
 				id:         15,
 				lastActive: time.Unix(15, 0),
 				email:      []string{"test@test.com"},
 				logEntries: []LogEntry{
-					LogEntry{
+					{
 						Timestamp: 110,
 						Event:     "test",
 						Param:     &strEmpty,
 					},
-					LogEntry{
+					{
 						Timestamp: 120,
 						Event:     "test2",
 						Param:     &str15,
 					},
 				},
 			},
-			"noemail": memoryUserData{
+			"noemail": {
 				id:         17,
 				lastActive: time.Unix(20, 0),
 			},
@@ -141,12 +141,12 @@ func TestMemoryDBUserInfo(t *testing.T) {
 	entries, err := db.Logs(15, 0, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, []LogEntry{
-		LogEntry{
+		{
 			Timestamp: 110,
 			Event:     "test",
 			Param:     &strEmpty,
 		},
-		LogEntry{
+		{
 			Timestamp: 120,
 			Event:     "test2",
 			Param:     &str15,

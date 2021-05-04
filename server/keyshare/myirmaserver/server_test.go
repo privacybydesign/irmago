@@ -70,7 +70,7 @@ func TestServerInvalidMessage(t *testing.T) {
 func TestServerIrmaSessions(t *testing.T) {
 	db := &myirmaMemoryDB{
 		userData: map[string]memoryUserData{
-			"testuser": memoryUserData{
+			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
 				email:      []string{"test@test.com"},
@@ -107,12 +107,12 @@ func TestServerIrmaSessions(t *testing.T) {
 func TestServerSessionMgmnt(t *testing.T) {
 	db := &myirmaMemoryDB{
 		userData: map[string]memoryUserData{
-			"testuser": memoryUserData{
+			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
 				email:      []string{"test@test.com"},
 			},
-			"noemail": memoryUserData{
+			"noemail": {
 				id:         17,
 				lastActive: time.Unix(0, 0),
 			},
@@ -287,17 +287,17 @@ func TestServerSessionMgmnt(t *testing.T) {
 func TestServerUserData(t *testing.T) {
 	db := &myirmaMemoryDB{
 		userData: map[string]memoryUserData{
-			"testuser": memoryUserData{
+			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
 				email:      []string{"test@test.com"},
 				logEntries: []LogEntry{
-					LogEntry{
+					{
 						Timestamp: 110,
 						Event:     "test",
 						Param:     &strEmpty,
 					},
-					LogEntry{
+					{
 						Timestamp: 120,
 						Event:     "test2",
 						Param:     &str15,
@@ -364,12 +364,12 @@ func TestServerUserData(t *testing.T) {
 	err = json.Unmarshal(body, &logs)
 	assert.NoError(t, err)
 	assert.Equal(t, []LogEntry{
-		LogEntry{
+		{
 			Timestamp: 110,
 			Event:     "test",
 			Param:     &strEmpty,
 		},
-		LogEntry{
+		{
 			Timestamp: 120,
 			Event:     "test2",
 			Param:     &str15,
@@ -384,7 +384,7 @@ func TestServerUserData(t *testing.T) {
 	err = json.Unmarshal(body, &logs)
 	assert.NoError(t, err)
 	assert.Equal(t, []LogEntry{
-		LogEntry{
+		{
 			Timestamp: 120,
 			Event:     "test2",
 			Param:     &str15,

@@ -519,14 +519,14 @@ func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
 	}
 
 	if s.conf.EmailServer != "" {
-		err = s.sendEmailRemovalEmail(info, string(email))
+		err = s.sendEmailRemovalEmail(info, email)
 		if err != nil {
 			// already logged
 			return err
 		}
 	}
 
-	err = s.db.RemoveEmail(*session.userID, string(email), 24*time.Hour*time.Duration(s.conf.DeleteDelay))
+	err = s.db.RemoveEmail(*session.userID, email, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error removing user email address")
 		return err

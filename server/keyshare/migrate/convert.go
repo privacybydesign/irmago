@@ -130,22 +130,22 @@ func (c *Converter) ConvertUsers() {
 		defer common.Close(logs)
 
 		for logs.Next() {
-			var time int64
+			var t int64
 			var event string
 			var param int
 
-			err = logs.Scan(&time, &event, &param)
+			err = logs.Scan(&t, &event, &param)
 			if err != nil {
 				c.logger.WithField("error", err).Fatal("Error scanning log entry row")
 			}
 
-			if *lastSeen < time {
-				*lastSeen = time
+			if *lastSeen < t {
+				*lastSeen = t
 			}
 
 			params := fmt.Sprintf("%v", param)
 
-			_, err = c.target_db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES ($1, $2, $3, $4)", time, event, params, targetID)
+			_, err = c.target_db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES ($1, $2, $3, $4)", t, event, params, targetID)
 			if err != nil {
 				c.logger.WithField("error", err).Fatal("Error storing log entry in new database")
 			}
