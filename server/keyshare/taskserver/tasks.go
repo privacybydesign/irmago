@@ -80,14 +80,8 @@ func (t *TaskHandler) sendExpiryEmails(id int64, username, lang string) error {
 		}
 
 		// Prepare email body
-		template, ok := t.conf.deleteExpiredAccountTemplate[lang]
-		if !ok {
-			template = t.conf.deleteExpiredAccountTemplate[t.conf.DefaultLanguage]
-		}
-		subject, ok := t.conf.DeleteExpiredAccountSubject[lang]
-		if !ok {
-			subject = t.conf.DeleteExpiredAccountSubject[t.conf.DefaultLanguage]
-		}
+		template := t.conf.TranslateTemplate(t.conf.deleteExpiredAccountTemplate, lang)
+		subject := t.conf.TranslateString(t.conf.DeleteExpiredAccountSubject, lang)
 		var emsg bytes.Buffer
 		err = template.Execute(&emsg, map[string]string{"Username": username, "Email": email})
 		if err != nil {

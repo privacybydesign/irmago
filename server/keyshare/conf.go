@@ -33,3 +33,19 @@ func ParseEmailTemplates(files, subjects map[string]string, defaultLanguage stri
 
 	return templates, nil
 }
+
+func (conf EmailConfiguration) TranslateString(strings map[string]string, lang string) string {
+	s, ok := strings[lang]
+	if ok {
+		return s
+	}
+	return strings[conf.DefaultLanguage]
+}
+
+func (conf EmailConfiguration) TranslateTemplate(templates map[string]*template.Template, lang string) *template.Template {
+	t, ok := templates[lang]
+	if ok {
+		return t
+	}
+	return templates[conf.DefaultLanguage]
+}

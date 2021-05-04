@@ -524,18 +524,9 @@ func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 
 func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email string) error {
 	// Fetch template and configuration data for users language, falling back if needed
-	template, ok := s.conf.registrationEmailTemplates[language]
-	if !ok {
-		template = s.conf.registrationEmailTemplates[s.conf.DefaultLanguage]
-	}
-	verificationBaseURL, ok := s.conf.VerificationURL[language]
-	if !ok {
-		verificationBaseURL = s.conf.VerificationURL[s.conf.DefaultLanguage]
-	}
-	subject, ok := s.conf.RegistrationEmailSubject[language]
-	if !ok {
-		subject = s.conf.RegistrationEmailSubject[s.conf.DefaultLanguage]
-	}
+	template := s.conf.TranslateTemplate(s.conf.registrationEmailTemplates, language)
+	verificationBaseURL := s.conf.TranslateString(s.conf.VerificationURL, language)
+	subject := s.conf.TranslateString(s.conf.RegistrationEmailSubject, language)
 
 	// Generate token
 	token := common.NewSessionToken()

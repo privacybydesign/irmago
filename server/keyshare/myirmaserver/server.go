@@ -133,14 +133,8 @@ func (s *Server) sendDeleteEmails(session *Sessiondata) error {
 		return err
 	}
 
-	template, ok := s.conf.deleteAccountTemplates[userData.language]
-	if !ok {
-		template = s.conf.deleteAccountTemplates[s.conf.DefaultLanguage]
-	}
-	subject, ok := s.conf.DeleteAccountSubject[userData.language]
-	if !ok {
-		subject = s.conf.DeleteAccountSubject[s.conf.DefaultLanguage]
-	}
+	template := s.conf.TranslateTemplate(s.conf.deleteAccountTemplates, userData.language)
+	subject := s.conf.TranslateString(s.conf.DeleteAccountSubject, userData.language)
 	var emsg bytes.Buffer
 	err = template.Execute(&emsg, map[string]string{"Username": userData.Username})
 	if err != nil {
@@ -211,18 +205,9 @@ func (s *Server) sendLoginEmail(request EmailLoginRequest) error {
 		return err
 	}
 
-	template, ok := s.conf.loginEmailTemplates[request.Language]
-	if !ok {
-		template = s.conf.loginEmailTemplates[s.conf.DefaultLanguage]
-	}
-	subject, ok := s.conf.LoginEmailSubject[request.Language]
-	if !ok {
-		subject = s.conf.LoginEmailSubject[s.conf.DefaultLanguage]
-	}
-	baseURL, ok := s.conf.LoginEmailBaseURL[request.Language]
-	if !ok {
-		baseURL = s.conf.LoginEmailBaseURL[s.conf.DefaultLanguage]
-	}
+	template := s.conf.TranslateTemplate(s.conf.loginEmailTemplates, request.Language)
+	subject := s.conf.TranslateString(s.conf.LoginEmailSubject, request.Language)
+	baseURL := s.conf.TranslateString(s.conf.LoginEmailBaseURL, request.Language)
 	var emsg bytes.Buffer
 	err = template.Execute(&emsg, map[string]string{"TokenURL": baseURL + token})
 	if err != nil {
@@ -530,14 +515,8 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendEmailRemovalEmail(info UserInformation, email string) error {
-	template, ok := s.conf.deleteEmailTemplates[info.language]
-	if !ok {
-		template = s.conf.deleteEmailTemplates[s.conf.DefaultLanguage]
-	}
-	subject, ok := s.conf.DeleteEmailSubject[info.language]
-	if !ok {
-		subject = s.conf.DeleteEmailSubject[s.conf.DefaultLanguage]
-	}
+	template := s.conf.TranslateTemplate(s.conf.deleteEmailTemplates, info.language)
+	subject := s.conf.TranslateString(s.conf.DeleteEmailSubject, info.language)
 
 	var emsg bytes.Buffer
 	err := template.Execute(&emsg, map[string]string{"Username": info.Username})
