@@ -1,7 +1,6 @@
 package keyshareserver
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -521,11 +520,6 @@ func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 }
 
 func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email string) error {
-	// Fetch template and configuration data for users language, falling back if needed
-	template := s.conf.TranslateTemplate(s.conf.registrationEmailTemplates, language)
-	verificationBaseURL := s.conf.TranslateString(s.conf.VerificationURL, language)
-	subject := s.conf.TranslateString(s.conf.RegistrationEmailSubject, language)
-
 	// Generate token
 	token := common.NewSessionToken()
 
@@ -536,29 +530,14 @@ func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email strin
 		return err
 	}
 
-	// Build message
-	var msg bytes.Buffer
-	err = template.Execute(&msg, map[string]string{"VerificationURL": verificationBaseURL + token})
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not generate email verification mail")
-		return err
-	}
-
-	// And send it
-	err = server.SendHTMLMail(
-		s.conf.EmailServer,
-		s.conf.EmailAuth,
-		s.conf.EmailFrom,
-		email,
-		subject,
-		msg.Bytes())
-
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not send email verification mail")
-		return err
-	}
-
-	return nil
+	verificationBaseURL := s.conf.TranslateString(s.conf.VerificationURL, language)
+	return s.conf.SendEmail(
+		s.conf.registrationEmailTemplates,
+		s.conf.RegistrationEmailSubject,
+		map[string]string{"VerificationURL": verificationBaseURL + token},
+		[]string{email},
+		language,
+	)
 }
 
 func (s *Server) userMiddleware(next http.Handler) http.Handler {

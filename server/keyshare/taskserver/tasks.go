@@ -1,13 +1,11 @@
 package taskserver
 
 import (
-	"bytes"
 	"database/sql"
 	"time"
 
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/server"
 )
 
 type TaskHandler struct {
@@ -79,26 +77,15 @@ func (t *TaskHandler) sendExpiryEmails(id int64, username, lang string) error {
 			return err
 		}
 
-		// Prepare email body
-		template := t.conf.TranslateTemplate(t.conf.deleteExpiredAccountTemplate, lang)
-		subject := t.conf.TranslateString(t.conf.DeleteExpiredAccountSubject, lang)
-		var emsg bytes.Buffer
-		err = template.Execute(&emsg, map[string]string{"Username": username, "Email": email})
-		if err != nil {
-			t.conf.Logger.WithField("error", err).Error("Could not render email")
-			return err
-		}
-
 		// And send
-		err = server.SendHTMLMail(
-			t.conf.EmailServer,
-			t.conf.EmailAuth,
-			t.conf.EmailFrom,
-			email,
-			subject,
-			emsg.Bytes())
+		err = t.conf.SendEmail(
+			t.conf.deleteExpiredAccountTemplate,
+			t.conf.DeleteExpiredAccountSubject,
+			map[string]string{"Username": username, "Email": email},
+			[]string{email},
+			lang,
+		)
 		if err != nil {
-			t.conf.Logger.WithField("error", err).Error("Could not send email")
 			return err
 		}
 	}

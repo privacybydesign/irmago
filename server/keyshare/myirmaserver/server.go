@@ -1,7 +1,6 @@
 package myirmaserver
 
 import (
-	"bytes"
 	"context"
 	"net/http"
 	"strconv"
@@ -131,29 +130,17 @@ func (s *Server) sendDeleteEmails(session *Sessiondata) error {
 		return err
 	}
 
-	template := s.conf.TranslateTemplate(s.conf.deleteAccountTemplates, userData.language)
-	subject := s.conf.TranslateString(s.conf.DeleteAccountSubject, userData.language)
-	var emsg bytes.Buffer
-	err = template.Execute(&emsg, map[string]string{"Username": userData.Username})
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not render account deletion email")
-		return err
-	}
+	emails := make([]string, 0, len(userData.Emails))
 	for _, email := range userData.Emails {
-		err = server.SendHTMLMail(
-			s.conf.EmailServer,
-			s.conf.EmailAuth,
-			s.conf.EmailFrom,
-			email.Email,
-			subject,
-			emsg.Bytes())
-		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not send account deletion email")
-			return err
-		}
+		emails = append(emails, email.Email)
 	}
-
-	return nil
+	return s.conf.SendEmail(
+		s.conf.deleteAccountTemplates,
+		s.conf.DeleteAccountFiles,
+		map[string]string{"Username": userData.Username},
+		emails,
+		userData.language,
+	)
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -212,30 +199,14 @@ func (s *Server) sendLoginEmail(request EmailLoginRequest) error {
 		return err
 	}
 
-	template := s.conf.TranslateTemplate(s.conf.loginEmailTemplates, request.Language)
-	subject := s.conf.TranslateString(s.conf.LoginEmailSubject, request.Language)
 	baseURL := s.conf.TranslateString(s.conf.LoginEmailBaseURL, request.Language)
-	var emsg bytes.Buffer
-	err = template.Execute(&emsg, map[string]string{"TokenURL": baseURL + token})
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not generate login mail from template")
-		return err
-	}
-
-	err = server.SendHTMLMail(
-		s.conf.EmailServer,
-		s.conf.EmailAuth,
-		s.conf.EmailFrom,
-		request.Email,
-		subject,
-		emsg.Bytes())
-
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not send login mail")
-		return err
-	}
-
-	return nil
+	return s.conf.SendEmail(
+		s.conf.loginEmailTemplates,
+		s.conf.LoginEmailSubject,
+		map[string]string{"TokenURL": baseURL + token},
+		[]string{request.Email},
+		request.Language,
+	)
 }
 
 func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
@@ -474,33 +445,6 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, entries)
 }
 
-func (s *Server) sendEmailRemovalEmail(info UserInformation, email string) error {
-	template := s.conf.TranslateTemplate(s.conf.deleteEmailTemplates, info.language)
-	subject := s.conf.TranslateString(s.conf.DeleteEmailSubject, info.language)
-
-	var emsg bytes.Buffer
-	err := template.Execute(&emsg, map[string]string{"Username": info.Username})
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not generate email removal mail from template")
-		return err
-	}
-
-	err = server.SendHTMLMail(
-		s.conf.EmailServer,
-		s.conf.EmailAuth,
-		s.conf.EmailFrom,
-		email,
-		subject,
-		emsg.Bytes())
-
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not send email removal mail")
-		return err
-	}
-
-	return nil
-}
-
 func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
 	info, err := s.db.UserInformation(*session.userID)
 	if err != nil {
@@ -519,7 +463,13 @@ func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
 	}
 
 	if s.conf.EmailServer != "" {
-		err = s.sendEmailRemovalEmail(info, email)
+		err = s.conf.SendEmail(
+			s.conf.deleteEmailTemplates,
+			s.conf.DeleteEmailSubject,
+			map[string]string{"Username": info.Username},
+			[]string{email},
+			info.language,
+		)
 		if err != nil {
 			// already logged
 			return err
