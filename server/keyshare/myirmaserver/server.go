@@ -290,22 +290,21 @@ func (s *Server) processTokenLogin(request TokenLoginRequest) (string, error) {
 		return "", keyshare.ErrUserNotFound
 	}
 
-	session := s.store.create()
-	session.userID = new(int64)
-	*session.userID, err = s.db.UserID(request.Username) // username is trusted, since it was validated by s.db.TryUserLoginToken
+	id, err := s.db.UserID(request.Username) // username is trusted, since it was validated by s.db.TryUserLoginToken
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not fetch userid for username validated in earlier step")
 		return "", err
 	}
-	token := session.token
+	session := s.store.create()
+	session.userID = &id
 
-	err = s.db.SetSeen(*session.userID)
+	err = s.db.SetSeen(id)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not update users last seen date/time")
 		// not relevant for frontend, so ignore beyond log.
 	}
 
-	return token, nil
+	return session.token, nil
 }
 
 func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
@@ -365,8 +364,7 @@ func (s *Server) processLoginIrmaSessionResult(sessiontoken string, result *serv
 		return
 	}
 
-	session.userID = new(int64)
-	*session.userID = id
+	session.userID = &id
 
 	err = s.db.SetSeen(id)
 	if err != nil {
