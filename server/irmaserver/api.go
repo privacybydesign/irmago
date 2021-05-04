@@ -56,6 +56,16 @@ func New(conf *server.Configuration) (*Server, error) {
 	}
 
 	switch conf.StoreType {
+	case "memory":
+		s.sessions = &memorySessionStore{
+			requestor: make(map[string]*session),
+			client:    make(map[string]*session),
+			conf:      conf,
+		}
+
+		s.scheduler.Every(10).Seconds().Do(func() {
+			s.sessions.deleteExpired()
+		})
 	case "redis":
 		//TODO: without sse it keeps polling.
 		//TODO: redis settings must not be null here...
@@ -71,20 +81,10 @@ func New(conf *server.Configuration) (*Server, error) {
 		}
 		s.sessions = &redisSessionStore{
 			client: cl,
-			conf: conf,
+			conf:   conf,
 		}
-	case "memory":
-		fallthrough
 	default:
-		s.sessions = &memorySessionStore{
-			requestor: make(map[string]*session),
-			client:    make(map[string]*session),
-			conf:      conf,
-		}
-
-		s.scheduler.Every(10).Seconds().Do(func() {
-			s.sessions.deleteExpired()
-		})
+		return nil, errors.New("storeType not known")
 	}
 
 	s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
