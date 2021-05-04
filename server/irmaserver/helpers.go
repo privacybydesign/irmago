@@ -34,7 +34,7 @@ func (session *session) markAlive() {
 	session.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Debugf("Session marked active, expiry delayed")
 }
 
-func (session *session) setStatus(status server.Status) {
+func (session *session) setStatus(status server.Status) error {
 	session.conf.Logger.WithFields(logrus.Fields{"session": session.Token, "prevStatus": session.PrevStatus, "status": status}).
 		Info("Session status updated")
 	session.Status = status
