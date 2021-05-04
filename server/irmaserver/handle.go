@@ -318,7 +318,7 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	if next == nil {
 		return nil
 	}
-	qr, token, err := s.StartSession(next, nil)
+	qr, token, err := s.StartSessionWithContext(next, nil, session.context)
 	if err != nil {
 		return err
 	}
@@ -347,6 +347,7 @@ func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request
 		return
 	}
 	session := r.Context().Value("session").(*session)
+	session.context = r.Context()
 	res, rerr := session.handlePostCommitments(commitments)
 	if rerr != nil {
 		server.WriteResponse(w, nil, rerr)
@@ -366,6 +367,7 @@ func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Context().Value("session").(*session)
+	session.context = r.Context()
 	var res *irma.ServerSessionResponse
 	var rerr *irma.RemoteError
 	switch session.Action {
@@ -417,7 +419,9 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
-	err := r.Context().Value("session").(*session).handleDelete()
+	session := r.Context().Value("session").(*session)
+	session.context = r.Context()
+	err := session.handleDelete()
 	if err != nil {
 		w.WriteHeader(500)
 		return
@@ -436,6 +440,7 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Context().Value("session").(*session)
+	session.context = r.Context()
 	res, err := session.handleGetRequest(&min, &max)
 	server.WriteResponse(w, res, err)
 }
@@ -446,7 +451,7 @@ func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "unknown static session"))
 		return
 	}
-	qr, _, err := s.StartSession(rrequest, s.doResultCallback)
+	qr, _, err := s.StartSessionWithContext(rrequest, s.doResultCallback, r.Context())
 	if err != nil {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		return

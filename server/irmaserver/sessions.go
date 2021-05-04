@@ -30,6 +30,7 @@ type session struct {
 	sessions sessionStore
 	conf     *server.Configuration
 	request  irma.SessionRequest
+	context  context.Context
 
 	sessionData
 }
@@ -213,7 +214,7 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 
 func (s *redisSessionStore) get(t string) (*session, error) {
 	//TODO: input validation string?
-	val, err := s.client.Get(context.TODO(), tokenLookupPrefix+t).Result()
+	val, err := s.client.Get(context.Background(), tokenLookupPrefix+t).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -224,7 +225,7 @@ func (s *redisSessionStore) get(t string) (*session, error) {
 }
 
 func (s *redisSessionStore) clientGet(t string) (*session, error) {
-	val, err := s.client.Get(context.TODO(), sessionLookupPrefix+t).Result()
+	val, err := s.client.Get(context.Background(), sessionLookupPrefix+t).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -255,11 +256,11 @@ func (s *redisSessionStore) add(session *session) error {
 		return server.LogError(err)
 	}
 
-	err = s.client.Set(context.TODO(), tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
+	err = s.client.Set(session.context, tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
 	if err != nil {
 		return server.LogError(err)
 	}
-	err = s.client.Set(context.TODO(), sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
+	err = s.client.Set(session.context, sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
 	if err != nil {
 		return server.LogError(err)
 	}
@@ -286,7 +287,7 @@ func (s *redisSessionStore) deleteExpired() {
 
 var one *big.Int = big.NewInt(1)
 
-func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) (*session, error) {
+func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, ctx context.Context) (*session, error) {
 	token := common.NewSessionToken()
 	clientToken := common.NewSessionToken()
 
@@ -320,6 +321,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) (
 		sse:         s.serverSentEvents,
 		conf:        s.conf,
 		request:     request.SessionRequest(),
+		context:     ctx,
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.Token}).Debug("New session started")

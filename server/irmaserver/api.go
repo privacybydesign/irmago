@@ -75,7 +75,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			Password: conf.RedisSettings.Password,
 			DB:       conf.RedisSettings.DB,
 		})
-		if err := cl.Ping(context.TODO()).Err(); err != nil {
+		if err := cl.Ping(context.Background()).Err(); err != nil {
 			return nil, err
 		}
 		s.sessions = &redisSessionStore{
@@ -181,6 +181,9 @@ func StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr,
 	return s.StartSession(request, handler)
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
+	return s.StartSessionWithContext(req, handler, context.Background())
+}
+func (s *Server) StartSessionWithContext(req interface{}, handler server.SessionHandler, ctx context.Context) (*irma.Qr, string, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", err
@@ -206,7 +209,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	session, err := s.newSession(action, rrequest)
+	session, err := s.newSession(action, rrequest, ctx)
 	if err != nil {
 		return nil, "", err
 	}
