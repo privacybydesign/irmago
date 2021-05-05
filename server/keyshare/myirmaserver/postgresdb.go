@@ -16,7 +16,10 @@ type myirmaPostgresDB struct {
 
 const EMAIL_TOKEN_VALIDITY = 60 // amount of time an email login token is valid (in minutes)
 
-var ErrEmailNotFound = errors.New("Email address not found")
+var (
+	ErrEmailNotFound = errors.New("Email address not found")
+	ErrTokenNotFound = errors.New("Token not found")
+)
 
 func NewPostgresDatabase(connstring string) (MyirmaDB, error) {
 	db, err := sql.Open("pgx", connstring)
@@ -41,7 +44,7 @@ func (db *myirmaPostgresDB) VerifyEmailToken(token string) (int64, error) {
 		[]interface{}{&id, &email},
 		token, time.Now().Unix())
 	if err == sql.ErrNoRows {
-		return 0, errors.New("Token not found")
+		return 0, ErrTokenNotFound
 	}
 	if err != nil {
 		return 0, err
