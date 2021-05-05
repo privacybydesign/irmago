@@ -532,6 +532,12 @@ func (s *Server) processAddEmailIrmaSessionResult(sessiontoken string, result *s
 		// Ignore incomplete attempts, frontend does that
 		return
 	}
+	if result.ProofStatus != irma.ProofStatusValid {
+		s.conf.Logger.Info("received invalid email attribute")
+		session.pendingError = &server.ErrorInvalidProofs
+		session.pendingErrorMessage = ""
+		return
+	}
 
 	email := *result.Disclosed[0][0].RawValue
 	err := s.db.AddEmail(*session.userID, email)
