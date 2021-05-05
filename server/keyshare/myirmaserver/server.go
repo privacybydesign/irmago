@@ -168,15 +168,11 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) setCookie(w http.ResponseWriter, token string) {
-	var maxAge int
-	if token != "" {
-		maxAge = s.conf.SessionLifetime
-	}
+func (s *Server) setCookie(w http.ResponseWriter, token string, maxage int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    token,
-		MaxAge:   maxAge,
+		MaxAge:   maxage,
 		Secure:   s.conf.Production,
 		Path:     "/",
 		HttpOnly: true,
@@ -305,7 +301,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setCookie(w, token)
+	s.setCookie(w, token, s.conf.SessionLifetime)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -366,7 +362,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setCookie(w, sessiontoken)
+	s.setCookie(w, sessiontoken, s.conf.SessionLifetime)
 	server.WriteJson(w, qr)
 }
 
@@ -397,7 +393,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		// not relevant for frontend, so ignore beyond log.
 	}
 
-	s.setCookie(w, session.token)
+	s.setCookie(w, session.token, s.conf.SessionLifetime)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -406,7 +402,7 @@ func (s *Server) logoutUser(w http.ResponseWriter, r *http.Request) {
 	if session != nil {
 		session.userID = nil // expire session
 	}
-	s.setCookie(w, "")
+	s.setCookie(w, "", -1)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -422,6 +418,9 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
+
+	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.token, s.conf.SessionLifetime)
 
 	if userinfo.Emails == nil {
 		userinfo.Emails = []UserEmail{}
@@ -445,6 +444,9 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
+
+	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.token, s.conf.SessionLifetime)
 
 	if entries == nil {
 		entries = []LogEntry{}
@@ -511,6 +513,9 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.token, s.conf.SessionLifetime)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -560,6 +565,9 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
+
+	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.token, s.conf.SessionLifetime)
 
 	server.WriteJson(w, qr)
 }
