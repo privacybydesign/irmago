@@ -164,8 +164,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setCookie(w, "")
-
+	s.logoutUser(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -402,8 +401,16 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+func (s *Server) logoutUser(w http.ResponseWriter, r *http.Request) {
+	session := s.sessionFromCookie(r)
+	if session != nil {
+		session.userID = nil // expire session
+	}
 	s.setCookie(w, "")
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	s.logoutUser(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
