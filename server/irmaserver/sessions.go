@@ -242,13 +242,21 @@ func (s *redisSessionStore) clientGet(t string) (*session, error) {
 	}
 	session.request = session.Rrequest.SessionRequest()
 
+	if session.LastActive.Add(maxSessionLifetime).Before(time.Now()) && !session.Status.Finished() {
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Session expired")
+		session.markAlive()
+		_ = session.setStatus(server.StatusTimeout) // Worst case the TTL and status aren't updated. We won't deal with this error
+	}
+
 	return &session, nil
 }
 
 func (s *redisSessionStore) add(session *session) error {
-	timeout := maxSessionLifetime
+	timeout := 2 * maxSessionLifetime // logic similar to memory store
 	if session.Status == server.StatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 		timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
+	} else if session.Status.Finished() {
+		timeout = maxSessionLifetime
 	}
 
 	sessionJSON, err := session.sessionData.MarshalJSON()
