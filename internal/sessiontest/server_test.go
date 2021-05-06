@@ -27,6 +27,7 @@ var (
 	irmaServerConfiguration *server.Configuration
 	requestorServer         *requestorserver.Server
 	testWithRedis           bool
+	mr                      *miniredis.Miniredis
 
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
@@ -49,17 +50,25 @@ func init() {
 	}
 }
 
-func StartMiniRedis() *miniredis.Miniredis {
-	mr, err := miniredis.Run()
-	if err != nil {
-		panic(err)
+func StartMiniRedis() {
+	if mr == nil {
+		var err error
+		mr, err = miniredis.Run()
+		if err != nil {
+			panic(err)
+		}
 	}
-	return mr
+}
+
+func StopRedis() {
+	if mr != nil {
+		mr.Close()
+	}
 }
 
 func maybeUseRedisInRequestor(c *requestorserver.Configuration) {
 	if testWithRedis {
-		mr := StartMiniRedis()
+		StartMiniRedis()
 		c.StoreType = "redis"
 		c.RedisSettings.Host = mr.Host()
 		c.RedisSettings.Port = mr.Port()
@@ -70,7 +79,7 @@ func maybeUseRedisInRequestor(c *requestorserver.Configuration) {
 
 func maybeUseRedis(c *server.Configuration) {
 	if testWithRedis {
-		mr := StartMiniRedis()
+		StartMiniRedis()
 		c.StoreType = "redis"
 		c.RedisSettings.Host = mr.Host()
 		c.RedisSettings.Port = mr.Port()

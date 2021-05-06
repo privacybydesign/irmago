@@ -7,6 +7,7 @@ import (
 func TestRedis(t *testing.T) {
 	testWithRedis = true
 	defer func() { testWithRedis = false }()
+	defer StopRedis()
 
 	// run all session_test tests
 	t.Run("TestSigningSession", TestSigningSession)
