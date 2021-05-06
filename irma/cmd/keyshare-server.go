@@ -232,7 +232,7 @@ func configureKeyshared(cmd *cobra.Command) {
 		PathPrefix: viper.GetString("path-prefix"),
 
 		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
-		DBConnstring: viper.GetString("db"),
+		DBConnstring: viper.GetString("db-connstring"),
 
 		JwtKeyID:                viper.GetUint32("jwt-privkey-id"),
 		JwtPrivateKey:           viper.GetString("jwt-privkey"),

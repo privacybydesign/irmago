@@ -233,7 +233,7 @@ func configureMyirmad(cmd *cobra.Command) {
 		StaticPrefix: viper.GetString("static-prefix"),
 
 		DBType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
-		DBConnstring: viper.GetString("db"),
+		DBConnstring: viper.GetString("db-connstring"),
 
 		LoginEmailSubject:    viper.GetStringMapString("login-email-subject"),
 		LoginEmailFiles:      viper.GetStringMapString("login-email-template"),

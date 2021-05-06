@@ -129,7 +129,7 @@ func configureKeyshareTask(cmd *cobra.Command) {
 			DefaultLanguage: viper.GetString("default-language"),
 		},
 
-		DBConnstring: viper.GetString("db"),
+		DBConnstring: viper.GetString("db-connstring"),
 
 		ExpiryDelay: viper.GetInt("expiry-delay"),
 		DeleteDelay: viper.GetInt("delete-delay"),
