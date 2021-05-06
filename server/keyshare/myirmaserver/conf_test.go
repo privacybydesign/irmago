@@ -44,7 +44,7 @@ func TestConfValidation(t *testing.T) {
 			Logger:      irma.Logger,
 		},
 		DBType:             DatabaseTypePostgres,
-		DBConnstring:       "postgresql://localhost:5432/test/",
+		DBConnstring:       "postgresql://localhost:5432/test",
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
 	})
