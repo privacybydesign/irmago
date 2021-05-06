@@ -115,20 +115,25 @@ func (s *Server) Handler() http.Handler {
 		router.Use(server.LogMiddleware("keyshareserver", opts))
 	}
 
-	// Registration
-	router.Post("/client/register", s.handleRegister)
-
-	// Pin logic
-	router.Post("/users/verify/pin", s.handleVerifyPin)
-	router.Post("/users/change/pin", s.handleChangePin)
-
-	// Keyshare sessions
 	router.Group(func(router chi.Router) {
-		router.Use(s.userMiddleware)
-		router.Use(s.authorizationMiddleware)
-		router.Post("/users/isAuthorized", s.handleValidate)
-		router.Post("/prove/getCommitments", s.handleCommitments)
-		router.Post("/prove/getResponse", s.handleResponse)
+		router.Use(server.SizeLimitMiddleware)
+		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
+
+		// Registration
+		router.Post("/client/register", s.handleRegister)
+
+		// Pin logic
+		router.Post("/users/verify/pin", s.handleVerifyPin)
+		router.Post("/users/change/pin", s.handleChangePin)
+
+		// Keyshare sessions
+		router.Group(func(router chi.Router) {
+			router.Use(s.userMiddleware)
+			router.Use(s.authorizationMiddleware)
+			router.Post("/users/isAuthorized", s.handleValidate)
+			router.Post("/prove/getCommitments", s.handleCommitments)
+			router.Post("/prove/getResponse", s.handleResponse)
+		})
 	})
 
 	// IRMA server for issuing myirma credential during registration

@@ -87,30 +87,35 @@ func (s *Server) Handler() http.Handler {
 
 	router.Use(cors.New(corsOptions).Handler)
 
-	// Login/logout
-	router.Post("/login/irma", s.handleIrmaLogin)
-	router.Post("/login/email", s.handleEmailLogin)
-	router.Post("/login/token/candidates", s.handleGetCandidates)
-	router.Post("/login/token", s.handleTokenLogin)
-	router.Post("/logout", s.handleLogout)
-
-	// Email verification
-	router.Post("/verify", s.handleVerifyEmail)
-
-	// Session management
-	router.Post("/checksession", s.handleCheckSession)
-
 	router.Group(func(router chi.Router) {
-		router.Use(s.sessionMiddleware)
+		router.Use(server.SizeLimitMiddleware)
+		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
-		// User account data
-		router.Get("/user", s.handleUserInfo)
-		router.Get("/user/logs/{offset}", s.handleGetLogs)
-		router.Post("/user/delete", s.handleDeleteUser)
+		// Login/logout
+		router.Post("/login/irma", s.handleIrmaLogin)
+		router.Post("/login/email", s.handleEmailLogin)
+		router.Post("/login/token/candidates", s.handleGetCandidates)
+		router.Post("/login/token", s.handleTokenLogin)
+		router.Post("/logout", s.handleLogout)
 
-		// Email address management
-		router.Post("/email/add", s.handleAddEmail)
-		router.Post("/email/remove", s.handleRemoveEmail)
+		// Email verification
+		router.Post("/verify", s.handleVerifyEmail)
+
+		// Session management
+		router.Post("/checksession", s.handleCheckSession)
+
+		router.Group(func(router chi.Router) {
+			router.Use(s.sessionMiddleware)
+
+			// User account data
+			router.Get("/user", s.handleUserInfo)
+			router.Get("/user/logs/{offset}", s.handleGetLogs)
+			router.Post("/user/delete", s.handleDeleteUser)
+
+			// Email address management
+			router.Post("/email/add", s.handleAddEmail)
+			router.Post("/email/remove", s.handleRemoveEmail)
+		})
 	})
 
 	// IRMA session server
