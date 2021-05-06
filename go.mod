@@ -30,7 +30,7 @@ require (
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pkg/errors v0.8.1
-	github.com/privacybydesign/gabi v0.0.0-20210409092845-6113e0d3ec81
+	github.com/privacybydesign/gabi v0.0.0-20210520084001-626ad7db13a6
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
