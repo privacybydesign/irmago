@@ -406,7 +406,6 @@ func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 			EmailFrom:       "test@example.com",
 			DefaultLanguage: "en",
 		},
-		MyIRMAURL:          "http://localhost:8080/irma_keyshare_server/api/v1/",
 		DB:                 db,
 		SessionLifetime:    15 * 60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},

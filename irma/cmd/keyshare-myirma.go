@@ -9,8 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -220,6 +218,7 @@ func configureMyirmad(cmd *cobra.Command) {
 			LogJSON:               viper.GetBool("log-json"),
 			Logger:                logger,
 			Production:            viper.GetBool("production"),
+			URL:                   server.ReplacePortString(viper.GetString("url"), viper.GetInt("port")),
 		},
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     viper.GetString("email-server"),
@@ -228,7 +227,7 @@ func configureMyirmad(cmd *cobra.Command) {
 			DefaultLanguage: viper.GetString("default-language"),
 		},
 
-		MyIRMAURL: string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
+		PathPrefix: viper.GetString("path-prefix"),
 
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),

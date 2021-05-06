@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
@@ -363,4 +364,10 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 	conf.JwtRSAPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
 	conf.Logger.Info("Private key parsed, JWT endpoints enabled")
 	return err
+}
+
+// ReplacePortString is a helper that returns a copy of the specified url of the form
+// "http(s)://...:port" with "port" replaced by the specified port.
+func ReplacePortString(url string, port int) string {
+	return regexp.MustCompile("(https?://[^/]*):port").ReplaceAllString(url, "$1:"+strconv.Itoa(port))
 }

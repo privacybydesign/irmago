@@ -17,7 +17,6 @@ func validConf(t *testing.T) *Configuration {
 			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
 			Logger:      irma.Logger,
 		},
-		KeyshareURL:           "http://localhost:8080/irma_keyshare_server/",
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),

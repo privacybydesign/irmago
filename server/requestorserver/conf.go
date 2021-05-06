@@ -3,8 +3,6 @@ package requestorserver
 import (
 	"crypto/tls"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -245,8 +243,7 @@ func (conf *Configuration) initialize() error {
 		if port == 0 {
 			port = conf.Port
 		}
-		replace := "$1:" + strconv.Itoa(port)
-		conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
+		conf.URL = server.ReplacePortString(conf.URL, port)
 
 		separateClientServer := conf.separateClientServer()
 		if (separateClientServer && clientTlsConf != nil) || (!separateClientServer && tlsConf != nil) {

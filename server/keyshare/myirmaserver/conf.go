@@ -2,7 +2,6 @@ package myirmaserver
 
 import (
 	"html/template"
-	"strings"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -24,7 +23,7 @@ type Configuration struct {
 	// IRMA server configuration. If not given, this will be populated using information here
 	*server.Configuration `mapstructure:",squash"`
 
-	MyIRMAURL string `json:"myirma_url" mapstructure:"myirma_url"`
+	PathPrefix string `json:"path_prefix" mapstructure:"path_prefix"`
 
 	// Path to static content to serve (for testing)
 	StaticPath   string `json:"static_path" mapstructure:"static_path"`
@@ -122,11 +121,8 @@ func processConfiguration(conf *Configuration) error {
 		conf.SessionLifetime = 15 * 60 // default to 15 minutes
 	}
 
-	// Setup server urls
-	if !strings.HasSuffix(conf.MyIRMAURL, "/") {
-		conf.MyIRMAURL = conf.MyIRMAURL + "/"
-	}
-	conf.URL = conf.MyIRMAURL + "irma/"
+	// Setup IRMA session server url for in QR code
+	conf.URL = keyshare.AppendURLPrefix(conf.URL, conf.PathPrefix)
 
 	return nil
 }

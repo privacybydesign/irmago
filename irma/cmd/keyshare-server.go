@@ -9,8 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -222,6 +220,7 @@ func configureKeyshared(cmd *cobra.Command) {
 			LogJSON:               viper.GetBool("log-json"),
 			Production:            viper.GetBool("production"),
 			Logger:                logger,
+			URL:                   server.ReplacePortString(viper.GetString("url"), viper.GetInt("port")),
 		},
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     viper.GetString("email-server"),
@@ -230,7 +229,7 @@ func configureKeyshared(cmd *cobra.Command) {
 			DefaultLanguage: viper.GetString("default-language"),
 		},
 
-		KeyshareURL: string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(viper.GetString("url")), []byte("$1:"+strconv.Itoa(viper.GetInt("port"))))),
+		PathPrefix: viper.GetString("path-prefix"),
 
 		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
 		DBConnstring: viper.GetString("db"),
