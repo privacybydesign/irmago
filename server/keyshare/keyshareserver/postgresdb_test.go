@@ -3,23 +3,19 @@
 package keyshareserver
 
 import (
-	"database/sql"
-	"io/ioutil"
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-const postgresTestUrl = "postgresql://localhost:5432/test"
 
 func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(test.PostgresTestUrl)
 	require.NoError(t, err)
 
 	user := &KeyshareUser{Username: "testuser"}
@@ -57,7 +53,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 
 	BACKOFF_START = 2
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(test.PostgresTestUrl)
 	require.NoError(t, err)
 
 	user := &KeyshareUser{Username: "testuser"}
@@ -131,23 +127,11 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	assert.Equal(t, int64(0), wait)
 }
 
-func RunScriptOnDB(t *testing.T, filename string, allowErr bool) {
-	db, err := sql.Open("pgx", postgresTestUrl)
-	require.NoError(t, err)
-	defer common.Close(db)
-	scriptData, err := ioutil.ReadFile(filename)
-	require.NoError(t, err)
-	_, err = db.Exec(string(scriptData))
-	if !allowErr {
-		require.NoError(t, err)
-	}
-}
-
 func SetupDatabase(t *testing.T) {
-	RunScriptOnDB(t, "cleanup.sql", true)
-	RunScriptOnDB(t, "schema.sql", false)
+	test.RunScriptOnDB(t, "cleanup.sql", true)
+	test.RunScriptOnDB(t, "schema.sql", false)
 }
 
 func TeardownDatabase(t *testing.T) {
-	RunScriptOnDB(t, "cleanup.sql", false)
+	test.RunScriptOnDB(t, "cleanup.sql", false)
 }

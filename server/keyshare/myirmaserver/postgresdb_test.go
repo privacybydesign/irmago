@@ -3,22 +3,19 @@
 package myirmaserver
 
 import (
-	"database/sql"
-	"io/ioutil"
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-const postgresTestUrl = "postgresql://localhost:5432/test"
 
 func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(test.PostgresTestUrl)
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
@@ -58,7 +55,7 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(test.PostgresTestUrl)
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
@@ -105,7 +102,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := NewPostgresDatabase(postgresTestUrl)
+	db, err := NewPostgresDatabase(test.PostgresTestUrl)
 	require.NoError(t, err)
 
 	pdb := db.(*myirmaPostgresDB)
@@ -196,20 +193,11 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func RunScriptOnDB(t *testing.T, filename string) {
-	db, err := sql.Open("pgx", postgresTestUrl)
-	require.NoError(t, err)
-	scriptData, err := ioutil.ReadFile(filename)
-	require.NoError(t, err)
-	_, err = db.Exec(string(scriptData))
-	require.NoError(t, err)
-	_ = db.Close()
-}
-
 func SetupDatabase(t *testing.T) {
-	RunScriptOnDB(t, "../keyshareserver/schema.sql")
+	test.RunScriptOnDB(t, "../keyshareserver/cleanup.sql", true)
+	test.RunScriptOnDB(t, "../keyshareserver/schema.sql", false)
 }
 
 func TeardownDatabase(t *testing.T) {
-	RunScriptOnDB(t, "../keyshareserver/cleanup.sql")
+	test.RunScriptOnDB(t, "../keyshareserver/cleanup.sql", false)
 }
