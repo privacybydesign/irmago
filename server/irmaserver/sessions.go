@@ -52,10 +52,10 @@ type sessionData struct {
 }
 
 type responseCache struct {
-	message       []byte
-	response      []byte
-	status        int
-	sessionStatus server.Status
+	Message       []byte
+	Response      []byte
+	Status        int
+	SessionStatus server.Status
 }
 
 type sessionStore interface {

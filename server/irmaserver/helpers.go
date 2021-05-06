@@ -100,14 +100,14 @@ const retryTimeLimit = 10 * time.Second
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
 func (session *session) checkCache(message []byte) (int, []byte) {
-	if len(session.ResponseCache.response) == 0 ||
-		session.ResponseCache.sessionStatus != session.Status ||
+	if len(session.ResponseCache.Response) == 0 ||
+		session.ResponseCache.SessionStatus != session.Status ||
 		session.LastActive.Before(time.Now().Add(-retryTimeLimit)) ||
-		sha256.Sum256(session.ResponseCache.message) != sha256.Sum256(message) {
+		sha256.Sum256(session.ResponseCache.Message) != sha256.Sum256(message) {
 		session.ResponseCache = responseCache{}
 		return 0, nil
 	}
-	return session.ResponseCache.status, session.ResponseCache.response
+	return session.ResponseCache.Status, session.ResponseCache.Response
 }
 
 // Issuance helpers
@@ -414,11 +414,13 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(ww, r)
 
 		session.ResponseCache = responseCache{
-			message:       message,
-			response:      buf.Bytes(),
-			status:        ww.Status(),
-			sessionStatus: session.Status,
+			Message:       message,
+			Response:      buf.Bytes(),
+			Status:        ww.Status(),
+			SessionStatus: session.Status,
 		}
+		// TODO: error handling and check if this can be refactored so an update is not needed here
+		session.sessions.update(session)
 	})
 }
 
