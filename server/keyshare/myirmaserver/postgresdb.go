@@ -26,6 +26,9 @@ func NewPostgresDatabase(connstring string) (MyirmaDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = db.Ping(); err != nil {
+		return nil, errors.Errorf("failed to connect to database: %v", err)
+	}
 	return &myirmaPostgresDB{
 		db: keyshare.DB{DB: db},
 	}, nil

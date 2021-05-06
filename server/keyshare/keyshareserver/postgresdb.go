@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/go-errors/errors"
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server/keyshare"
@@ -29,6 +30,9 @@ func NewPostgresDatabase(connstring string) (KeyshareDB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
+	}
+	if err = db.Ping(); err != nil {
+		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
 	return &keysharePostgresDatabase{
 		db: keyshare.DB{DB: db},

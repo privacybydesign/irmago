@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/go-errors/errors"
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/internal/common"
 )
@@ -22,7 +23,9 @@ func New(conf *Configuration) (*TaskHandler, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	if err = db.Ping(); err != nil {
+		return nil, errors.Errorf("failed to connect to database: %v", err)
+	}
 	return &TaskHandler{
 		db:   db,
 		conf: conf,
