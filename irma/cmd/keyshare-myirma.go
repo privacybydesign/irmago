@@ -128,12 +128,12 @@ func init() {
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
 	flags.StringToString("login-email-subject", nil, "Translated subject lines for the login email")
-	flags.StringToString("login-email-template", nil, "Translated emails for the login email")
+	flags.StringToString("login-email-files", nil, "Translated emails for the login email")
 	flags.StringToString("login-url", nil, "Base URL for the email verification link (localized)")
 	flags.StringToString("delete-email-subject", nil, "Translated subject lines for the delete email email")
-	flags.StringToString("delete-email-template", nil, "Translated emails for the delete email email")
+	flags.StringToString("delete-email-files", nil, "Translated emails for the delete email email")
 	flags.StringToString("delete-account-subject", nil, "Translated subject lines for the delete account email")
-	flags.StringToString("delete-account-template", nil, "Translated emails for the delete account email")
+	flags.StringToString("delete-account-files", nil, "Translated emails for the delete account email")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
@@ -236,11 +236,11 @@ func configureMyirmad(cmd *cobra.Command) {
 		DBConnstring: viper.GetString("db-connstring"),
 
 		LoginEmailSubject:    viper.GetStringMapString("login-email-subject"),
-		LoginEmailFiles:      viper.GetStringMapString("login-email-template"),
+		LoginEmailFiles:      viper.GetStringMapString("login-email-files"),
 		LoginEmailBaseURL:    viper.GetStringMapString("login-url"),
-		DeleteEmailFiles:     viper.GetStringMapString("delete-email-template"),
+		DeleteEmailFiles:     viper.GetStringMapString("delete-email-files"),
 		DeleteEmailSubject:   viper.GetStringMapString("delete-email-subject"),
-		DeleteAccountFiles:   viper.GetStringMapString("delete-account-template"),
+		DeleteAccountFiles:   viper.GetStringMapString("delete-account-files"),
 		DeleteAccountSubject: viper.GetStringMapString("delete-account-subject"),
 	}
 

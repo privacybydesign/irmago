@@ -52,9 +52,9 @@ type Configuration struct {
 	// Configuration for email sending during registration (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
-	RegistrationEmailFiles     map[string]string             `json:"registration_email_files" mapstructure:"registration_email_files"`
-	RegistrationEmailSubject   map[string]string             `json:"registration_email_subject" mapstructure:"registration_email_subject"`
-	registrationEmailTemplates map[string]*template.Template `json:"registration_email_templates" mapstructure:"registration_email_templates"`
+	RegistrationEmailFiles     map[string]string `json:"registration_email_files" mapstructure:"registration_email_files"`
+	RegistrationEmailSubject   map[string]string `json:"registration_email_subject" mapstructure:"registration_email_subject"`
+	registrationEmailTemplates map[string]*template.Template
 
 	VerificationURL map[string]string `json:"verification_url" mapstructure:"verification_url"`
 }

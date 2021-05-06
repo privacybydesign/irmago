@@ -56,9 +56,9 @@ type Configuration struct {
 	DeleteAccountFiles   map[string]string `json:"delete_account_files" mapstructure:"delete_account_files"`
 	DeleteAccountSubject map[string]string `json:"delete_account_subject" mapstructure:"delete_account_subject"`
 
-	loginEmailTemplates    map[string]*template.Template `json:"login_email_templates" mapstructure:"login_email_templates"`
-	deleteEmailTemplates   map[string]*template.Template `json:"delete_email_templates" mapstructure:"delete_email_templates"`
-	deleteAccountTemplates map[string]*template.Template `json:"delete_account_templates" mapstructure:"delete_account_templates"`
+	loginEmailTemplates    map[string]*template.Template
+	deleteEmailTemplates   map[string]*template.Template
+	deleteAccountTemplates map[string]*template.Template
 }
 
 // Process a passed configuration to ensure all field values are valid and initialized

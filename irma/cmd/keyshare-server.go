@@ -133,7 +133,7 @@ func init() {
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
 	flags.StringToString("registration-email-subject", nil, "Translated subject lines for the registration email")
-	flags.StringToString("registration-email-template", nil, "Translated emails for the registration email")
+	flags.StringToString("registration-email-files", nil, "Translated emails for the registration email")
 	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
@@ -243,7 +243,7 @@ func configureKeyshared(cmd *cobra.Command) {
 		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare-attribute")),
 
 		RegistrationEmailSubject: viper.GetStringMapString("registration-email-subject"),
-		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-template"),
+		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-files"),
 		VerificationURL:          viper.GetStringMapString("verification-url"),
 	}
 }

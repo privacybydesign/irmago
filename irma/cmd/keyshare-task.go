@@ -57,7 +57,7 @@ func init() {
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
 	flags.StringToString("expired-email-subject", nil, "Translated subject lines for the expired account email")
-	flags.StringToString("expired-email-template", nil, "Translated emails for the expired account email")
+	flags.StringToString("expired-email-files", nil, "Translated emails for the expired account email")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
@@ -135,7 +135,7 @@ func configureKeyshareTask(cmd *cobra.Command) {
 		DeleteDelay: viper.GetInt("delete-delay"),
 
 		DeleteExpiredAccountSubject: viper.GetStringMapString("expired-email-subject"),
-		DeleteExpiredAccountFiles:   viper.GetStringMapString("expired-email-template"),
+		DeleteExpiredAccountFiles:   viper.GetStringMapString("expired-email-files"),
 
 		Verbose: viper.GetInt("verbose"),
 		Quiet:   viper.GetBool("quiet"),

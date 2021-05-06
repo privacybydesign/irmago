@@ -20,9 +20,9 @@ type Configuration struct {
 	// Email sending configuration
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
-	DeleteExpiredAccountFiles    map[string]string             `json:"delete_expired_account_files" mapstructure:"delete_expired_account_files"`
-	DeleteExpiredAccountSubject  map[string]string             `json:"delete_expired_account_subject" mapstructure:"delete_expired_account_subject"`
-	deleteExpiredAccountTemplate map[string]*template.Template `json:"delete_expired_account_template" mapstructure:"delete_expired_account_template"`
+	DeleteExpiredAccountFiles    map[string]string `json:"delete_expired_account_files" mapstructure:"delete_expired_account_files"`
+	DeleteExpiredAccountSubject  map[string]string `json:"delete_expired_account_subject" mapstructure:"delete_expired_account_subject"`
+	deleteExpiredAccountTemplate map[string]*template.Template
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
 	Verbose int `json:"verbose" mapstructure:"verbose"`
