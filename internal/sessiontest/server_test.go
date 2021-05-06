@@ -2,7 +2,6 @@ package sessiontest
 
 import (
 	"encoding/json"
-	"github.com/alicebob/miniredis"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
@@ -26,8 +25,8 @@ var (
 	irmaServer              *irmaserver.Server
 	irmaServerConfiguration *server.Configuration
 	requestorServer         *requestorserver.Server
-	testWithRedis           bool
-	mr                      *miniredis.Miniredis
+
+	testConfigurationHandler = defaultTestConfiguration
 
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
@@ -50,47 +49,9 @@ func init() {
 	}
 }
 
-func StartMiniRedis() {
-	if mr == nil {
-		var err error
-		mr, err = miniredis.Run()
-		if err != nil {
-			panic(err)
-		}
-	}
-}
-
-func StopRedis() {
-	if mr != nil {
-		mr.Close()
-	}
-}
-
-func maybeUseRedisInRequestor(c *requestorserver.Configuration) {
-	if testWithRedis {
-		StartMiniRedis()
-		c.StoreType = "redis"
-		c.RedisSettings.Host = mr.Host()
-		c.RedisSettings.Port = mr.Port()
-	} else {
-		c.StoreType = "memory"
-	}
-}
-
-func maybeUseRedis(c *server.Configuration) {
-	if testWithRedis {
-		StartMiniRedis()
-		c.StoreType = "redis"
-		c.RedisSettings.Host = mr.Host()
-		c.RedisSettings.Port = mr.Port()
-	} else {
-		c.StoreType = "memory"
-	}
-}
-
 func StartRequestorServer(configuration *requestorserver.Configuration) {
 	go func() {
-		maybeUseRedisInRequestor(configuration)
+		testConfigurationHandler(configuration.Configuration)
 		var err error
 		if requestorServer, err = requestorserver.New(configuration); err != nil {
 			panic(err)
@@ -131,7 +92,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) {
 			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 		},
 	}
-	maybeUseRedis(irmaServerConfiguration)
+	testConfigurationHandler(irmaServerConfiguration)
 	var err error
 	irmaServer, err = irmaserver.New(irmaServerConfiguration)
 
@@ -305,4 +266,10 @@ var JwtServerConfiguration = &requestorserver.Configuration{
 			AuthenticationKey:    "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg==",
 		},
 	},
+}
+
+// TODO: It's not so nice that it's necessary to set StoreType manually for every test. This pollutes the constant
+//       defaults IrmaServerConfiguration and JwtServerConfiguration (because these are given as pointers)
+func defaultTestConfiguration(c *server.Configuration) {
+	c.StoreType = "memory"
 }

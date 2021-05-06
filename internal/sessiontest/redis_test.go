@@ -1,13 +1,39 @@
 package sessiontest
 
 import (
+	"github.com/alicebob/miniredis"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
+var mr *miniredis.Miniredis
+
+func startRedis(t *testing.T) {
+	if mr == nil {
+		var err error
+		mr, err = miniredis.Run()
+		require.NoError(t, err)
+	} else {
+		mr.FlushAll()
+	}
+	testConfigurationHandler = func(c *server.Configuration) {
+		c.StoreType = "redis"
+		c.RedisSettings.Host = mr.Host()
+		c.RedisSettings.Port = mr.Port()
+	}
+}
+
+func stopRedis() {
+	testConfigurationHandler = defaultTestConfiguration
+	if mr != nil {
+		mr.Close()
+	}
+}
+
 func TestRedis(t *testing.T) {
-	testWithRedis = true
-	defer func() { testWithRedis = false }()
-	defer StopRedis()
+	startRedis(t)
+	defer stopRedis()
 
 	// run all session_test tests
 	t.Run("TestSigningSession", TestSigningSession)
