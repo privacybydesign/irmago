@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
+	"github.com/alicebob/miniredis"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
@@ -25,6 +26,7 @@ var (
 	irmaServer              *irmaserver.Server
 	irmaServerConfiguration *server.Configuration
 	requestorServer         *requestorserver.Server
+	testWithRedis           bool
 
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
@@ -47,8 +49,39 @@ func init() {
 	}
 }
 
+func StartMiniRedis() *miniredis.Miniredis {
+	mr, err := miniredis.Run()
+	if err != nil {
+		panic(err)
+	}
+	return mr
+}
+
+func maybeUseRedisInRequestor(c *requestorserver.Configuration) {
+	if testWithRedis {
+		mr := StartMiniRedis()
+		c.StoreType = "redis"
+		c.RedisSettings.Host = mr.Host()
+		c.RedisSettings.Port = mr.Port()
+	} else {
+		c.StoreType = "memory"
+	}
+}
+
+func maybeUseRedis(c *server.Configuration) {
+	if testWithRedis {
+		mr := StartMiniRedis()
+		c.StoreType = "redis"
+		c.RedisSettings.Host = mr.Host()
+		c.RedisSettings.Port = mr.Port()
+	} else {
+		c.StoreType = "memory"
+	}
+}
+
 func StartRequestorServer(configuration *requestorserver.Configuration) {
 	go func() {
+		maybeUseRedisInRequestor(configuration)
 		var err error
 		if requestorServer, err = requestorserver.New(configuration); err != nil {
 			panic(err)
@@ -89,6 +122,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) {
 			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 		},
 	}
+	maybeUseRedis(irmaServerConfiguration)
 	var err error
 	irmaServer, err = irmaserver.New(irmaServerConfiguration)
 
