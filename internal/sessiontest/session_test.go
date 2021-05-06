@@ -631,3 +631,13 @@ func TestChainedSessions(t *testing.T) {
 
 	require.NoError(t, errors.New("newly issued credential not found in client"))
 }
+
+// Test to check whether session stores (like Redis) correctly handle non-existing sessions
+func TestUnknownRequestorToken(t *testing.T) {
+	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
+
+	result, err := irmaServer.GetSessionResult("12345")
+	require.NoError(t, err)
+	require.Nil(t, result)
+}
