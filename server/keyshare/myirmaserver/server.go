@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi"
+	"github.com/go-chi/cors"
 	"github.com/go-errors/errors"
 	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -28,7 +29,16 @@ type Server struct {
 	schedulerStop chan<- bool
 }
 
-var ErrInvalidEmail = errors.New("Email not associated with account")
+var (
+	ErrInvalidEmail = errors.New("Email not associated with account")
+
+	corsOptions = cors.Options{
+		AllowedOrigins:   []string{"*"}, // TODO make this configurable
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Cache-Control"},
+		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodDelete},
+		AllowCredentials: true,
+	}
+)
 
 func New(conf *Configuration) (*Server, error) {
 	sessionserver, err := irmaserver.New(conf.Configuration)
@@ -66,6 +76,8 @@ func (s *Server) Handler() http.Handler {
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
 		router.Use(server.LogMiddleware("keyshare-myirma", opts))
 	}
+
+	router.Use(cors.New(corsOptions).Handler)
 
 	// Login/logout
 	router.Post("/login/irma", s.handleIrmaLogin)
