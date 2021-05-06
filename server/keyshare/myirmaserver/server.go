@@ -2,6 +2,7 @@ package myirmaserver
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -60,6 +61,13 @@ func New(conf *Configuration) (*Server, error) {
 
 	s.scheduler.Every(10).Seconds().Do(s.store.flush)
 	s.schedulerStop = s.scheduler.Start()
+
+	if s.conf.LogJSON {
+		s.conf.Logger.WithField("configuration", s.conf).Debug("Configuration")
+	} else {
+		bts, _ := json.MarshalIndent(s.conf, "", "   ")
+		s.conf.Logger.Debug("Configuration: ", string(bts), "\n")
+	}
 
 	return s, nil
 }
