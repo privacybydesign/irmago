@@ -57,5 +57,9 @@ func processConfiguration(conf *Configuration) error {
 		}
 	}
 
+	if err := conf.VerifyEmailServer(); err != nil {
+		return server.LogError(err)
+	}
+
 	return nil
 }

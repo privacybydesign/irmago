@@ -116,6 +116,10 @@ func processConfiguration(conf *Configuration) error {
 		}
 	}
 
+	if err = conf.VerifyEmailServer(); err != nil {
+		return server.LogError(err)
+	}
+
 	// Set default if needed for session lifetime
 	if conf.SessionLifetime == 0 {
 		conf.SessionLifetime = 15 * 60 // default to 15 minutes

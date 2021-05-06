@@ -84,6 +84,26 @@ func (conf EmailConfiguration) SendEmail(
 	return nil
 }
 
+func (conf EmailConfiguration) VerifyEmailServer() error {
+	if conf.EmailServer == "" {
+		return nil
+	}
+
+	client, err := smtp.Dial(conf.EmailServer)
+	if err != nil {
+		return errors.Errorf("failed to connect to email server: %v", err)
+	}
+	if conf.EmailAuth != nil {
+		if err = client.Auth(conf.EmailAuth); err != nil {
+			return errors.Errorf("failed to authenticate to email server: %v", err)
+		}
+	}
+	if err = client.Close(); err != nil {
+		return errors.Errorf("failed to close connection to email server: %v", err)
+	}
+	return nil
+}
+
 func sendHTMLEmail(addr string, a smtp.Auth, from, to, subject string, msg []byte) error {
 	headers := []byte("To: " + to + "\r\n" +
 		"From: " + from + "\r\n" +

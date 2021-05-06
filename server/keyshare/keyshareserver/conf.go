@@ -87,8 +87,12 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 			return nil, server.LogError(err)
 		}
 		if _, ok := conf.VerificationURL[conf.DefaultLanguage]; !ok {
-			return nil, server.LogError(errors.Errorf("Missing verification base url for default lanaguage"))
+			return nil, server.LogError(errors.Errorf("Missing verification base url for default language"))
 		}
+	}
+
+	if err = conf.VerifyEmailServer(); err != nil {
+		return nil, server.LogError(err)
 	}
 
 	// Setup database

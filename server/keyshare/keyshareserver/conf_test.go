@@ -25,13 +25,6 @@ func validConf(t *testing.T) *Configuration {
 	}
 }
 
-func validConfWithEmail(t *testing.T) *Configuration {
-	conf := validConf(t)
-	conf.EmailServer = "doesnotexist"
-	conf.DefaultLanguage = "en"
-	return conf
-}
-
 func TestConfInvalidAESKey(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 
@@ -65,65 +58,6 @@ func TestConfInvalidAESKey(t *testing.T) {
 
 	conf = validConf(t)
 	conf.DBType = "undefined"
-	_, err = New(conf)
-	assert.Error(t, err)
-
-	conf = validConfWithEmail(t)
-	conf.RegistrationEmailSubject = map[string]string{
-		"en": "testsubject",
-	}
-	conf.VerificationURL = map[string]string{
-		"en": "test",
-	}
-	_, err = New(conf)
-	assert.Error(t, err)
-
-	conf = validConfWithEmail(t)
-	conf.RegistrationEmailFiles = map[string]string{
-		"en": filepath.Join(testdataPath, "emailtemplate.html"),
-	}
-	conf.RegistrationEmailSubject = map[string]string{
-		"en": "testsubject",
-	}
-	_, err = New(conf)
-	assert.Error(t, err)
-
-	conf = validConfWithEmail(t)
-	conf.RegistrationEmailFiles = map[string]string{
-		"en": filepath.Join(testdataPath, "does-not-exist"),
-	}
-	conf.RegistrationEmailSubject = map[string]string{
-		"en": "testsubject",
-	}
-	conf.VerificationURL = map[string]string{
-		"en": "test",
-	}
-	_, err = New(conf)
-	assert.Error(t, err)
-
-	conf = validConfWithEmail(t)
-	conf.RegistrationEmailFiles = map[string]string{
-		"en": filepath.Join(testdataPath, "emailtemplate.html"),
-	}
-	conf.RegistrationEmailSubject = map[string]string{
-		"en": "testsubject",
-	}
-	conf.VerificationURL = map[string]string{
-		"en": "test",
-	}
-	_, err = New(conf)
-	assert.NoError(t, err)
-
-	conf = validConfWithEmail(t)
-	conf.RegistrationEmailFiles = map[string]string{
-		"en": filepath.Join(testdataPath, "invalidemailtemplate.html"),
-	}
-	conf.RegistrationEmailSubject = map[string]string{
-		"en": "testsubject",
-	}
-	conf.VerificationURL = map[string]string{
-		"en": "test",
-	}
 	_, err = New(conf)
 	assert.Error(t, err)
 }
