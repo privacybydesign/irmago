@@ -107,6 +107,7 @@ func init() {
 	flags.StringP("url", "u", "", "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
 	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
 	flags.String("static-prefix", "/", "Host static files under this URL prefix")
+	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
@@ -221,6 +222,7 @@ func configureMyirmad(cmd *cobra.Command) {
 			Logger:                logger,
 			Production:            viper.GetBool("production"),
 			URL:                   server.ReplacePortString(viper.GetString("url"), viper.GetInt("port")),
+			EnableSSE:             viper.GetBool("sse"),
 		},
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     viper.GetString("email-server"),
