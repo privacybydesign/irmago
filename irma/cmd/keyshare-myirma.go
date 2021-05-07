@@ -119,6 +119,7 @@ func init() {
 
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
 	flags.StringSlice("email-attributes", nil, "Attributes allowed for adding email addresses")
+	flags.Int("session-lifetime", myirmaserver.SessionLifetimeDefault, "Session lifetime in seconds")
 	flags.Lookup("keyshare-attributes").Header = `IRMA session configuration`
 
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
@@ -134,6 +135,7 @@ func init() {
 	flags.StringToString("delete-email-files", nil, "Translated emails for the delete email email")
 	flags.StringToString("delete-account-subject", nil, "Translated subject lines for the delete account email")
 	flags.StringToString("delete-account-files", nil, "Translated emails for the delete account email")
+	flags.Int("delete-delay", 0, "delay in days before a user or email address deletion becomes effective")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
@@ -242,6 +244,9 @@ func configureMyirmad(cmd *cobra.Command) {
 		DeleteEmailSubject:   viper.GetStringMapString("delete-email-subject"),
 		DeleteAccountFiles:   viper.GetStringMapString("delete-account-files"),
 		DeleteAccountSubject: viper.GetStringMapString("delete-account-subject"),
+		DeleteDelay:          viper.GetInt("delete-delay"),
+
+		SessionLifetime: viper.GetInt("session-lifetime"),
 	}
 
 	for _, v := range viper.GetStringSlice("keyshare-attributes") {

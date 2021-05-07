@@ -16,6 +16,8 @@ var ErrUnknownDatabaseType = errors.New("Unknown database type")
 const (
 	DatabaseTypeMemory   = "memory"
 	DatabaseTypePostgres = "postgres"
+
+	SessionLifetimeDefault = 15 * 60 // seconds
 )
 
 // Configuration contains configuration for the irmaserver library and irmad.
@@ -122,7 +124,7 @@ func processConfiguration(conf *Configuration) error {
 
 	// Set default if needed for session lifetime
 	if conf.SessionLifetime == 0 {
-		conf.SessionLifetime = 15 * 60 // default to 15 minutes
+		conf.SessionLifetime = SessionLifetimeDefault // default to 15 minutes
 	}
 
 	// Setup IRMA session server url for in QR code
