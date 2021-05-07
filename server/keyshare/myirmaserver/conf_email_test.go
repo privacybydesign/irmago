@@ -38,6 +38,17 @@ func TestConfEmailValidation(t *testing.T) {
 	assert.NoError(t, err)
 
 	conf = validConfWithEmail(t)
+	conf.DBType = DatabaseTypePostgres
+	conf.DBConnstring = "postgresql://localhost:54321/test"
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConfWithEmail(t)
+	conf.EmailServer = "http://localhost:1025"
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConfWithEmail(t)
 	conf.LoginEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "invalidemailtemplate.html")}
 	_, err = New(conf)
 	assert.Error(t, err)
