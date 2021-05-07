@@ -87,7 +87,7 @@ func (s *Server) Handler() http.Handler {
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
 		if s.conf.Verbose >= 2 {
-			opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
+			opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: false}
 			router.Use(server.LogMiddleware("keyshare-myirma", opts))
 		}
 
