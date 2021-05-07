@@ -5,255 +5,102 @@ import (
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare"
-
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/stretchr/testify/assert"
 )
+
+func validConf(t *testing.T) *Configuration {
+	testdataPath := test.FindTestdataFolder(t)
+	return &Configuration{
+		Configuration: &server.Configuration{
+			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
+			Logger:      irma.Logger,
+		},
+		DBType:             DatabaseTypeMemory,
+		SessionLifetime:    60,
+		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+	}
+}
+
+func validConfWithEmail(t *testing.T) *Configuration {
+	testdataPath := test.FindTestdataFolder(t)
+	conf := validConf(t)
+	conf.EmailServer = "localhost:1025"
+	conf.DefaultLanguage = "en"
+	conf.LoginEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
+	conf.LoginEmailSubject = map[string]string{"en": "testsubject"}
+	conf.LoginEmailBaseURL = map[string]string{"en": "localhost:8000/test/"}
+	conf.DeleteEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
+	conf.DeleteEmailSubject = map[string]string{"en": "testsubject"}
+	conf.DeleteAccountFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
+	conf.DeleteAccountSubject = map[string]string{"en": "testsubject"}
+	return conf
+}
 
 func TestConfValidation(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 
-	_, err := New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		DBType:             DatabaseTypeMemory,
-		SessionLifetime:    60,
-		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-	})
+	_, err := New(validConf(t))
 	assert.NoError(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		DBType:             DatabaseTypeMemory,
-		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-	})
+	conf := validConf(t)
+	conf.SessionLifetime = 0
+	_, err = New(conf)
 	assert.NoError(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		DBType:             DatabaseTypePostgres,
-		DBConnstring:       "postgresql://localhost:5432/test",
-		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-	})
+	conf = validConf(t)
+	conf.DBType = DatabaseTypePostgres
+	conf.DBConnstring = "postgresql://localhost:5432/test"
+	_, err = New(conf)
 	assert.NoError(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		DBType:             DatabaseTypeMemory,
-		SessionLifetime:    60,
-		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-	})
+	conf = validConf(t)
+	conf.KeyshareAttributes = nil
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.EmailAttributes = nil
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.DBType = "UNKNOWN"
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	_, err = New(validConfWithEmail(t))
 	assert.NoError(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		DBType:          DatabaseTypeMemory,
-		SessionLifetime: 60,
-		EmailAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-	})
+	conf = validConfWithEmail(t)
+	conf.LoginEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "invalidemailtemplate.html")}
+	_, err = New(conf)
 	assert.Error(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		DBType:             DatabaseTypeMemory,
-		SessionLifetime:    60,
-		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-	})
+	conf = validConfWithEmail(t)
+	conf.LoginEmailFiles = map[string]string{}
+	_, err = New(conf)
 	assert.Error(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		DBType:             "UNKNOWN",
-		SessionLifetime:    60,
-		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-	})
+	conf = validConfWithEmail(t)
+	conf.LoginEmailSubject = map[string]string{}
+	_, err = New(conf)
 	assert.Error(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     "localhost:1025",
-			DefaultLanguage: "en",
-		},
-		DBType:               DatabaseTypeMemory,
-		SessionLifetime:      60,
-		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-		LoginEmailFiles:      map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		LoginEmailSubject:    map[string]string{"en": "testsubject"},
-		LoginEmailBaseURL:    map[string]string{"en": "localhost:8000/test/"},
-		DeleteEmailFiles:     map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
-		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteAccountSubject: map[string]string{"en": "testsubject"},
-	})
-	assert.NoError(t, err)
-
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     "localhost:1025",
-			DefaultLanguage: "en",
-		},
-		DBType:               DatabaseTypeMemory,
-		SessionLifetime:      60,
-		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-		LoginEmailFiles:      map[string]string{"en": filepath.Join(testdataPath, "invalidemailtemplate.html")},
-		LoginEmailSubject:    map[string]string{"en": "testsubject"},
-		LoginEmailBaseURL:    map[string]string{"en": "localhost:8000/test/"},
-		DeleteEmailFiles:     map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
-		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteAccountSubject: map[string]string{"en": "testsubject"},
-	})
+	conf = validConfWithEmail(t)
+	conf.LoginEmailBaseURL = map[string]string{}
+	_, err = New(conf)
 	assert.Error(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     "localhost:1025",
-			DefaultLanguage: "en",
-		},
-		DBType:               DatabaseTypeMemory,
-		SessionLifetime:      60,
-		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-		LoginEmailFiles:      map[string]string{},
-		LoginEmailSubject:    map[string]string{"en": "testsubject"},
-		LoginEmailBaseURL:    map[string]string{"en": "localhost:8000/test/"},
-		DeleteEmailFiles:     map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
-		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteAccountSubject: map[string]string{"en": "testsubject"},
-	})
+	conf = validConfWithEmail(t)
+	conf.DeleteEmailFiles = map[string]string{"de": filepath.Join(testdataPath, "emailtemplate.html")}
+	_, err = New(conf)
 	assert.Error(t, err)
 
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     "localhost:1025",
-			DefaultLanguage: "en",
-		},
-		DBType:               DatabaseTypeMemory,
-		SessionLifetime:      60,
-		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-		LoginEmailFiles:      map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		LoginEmailSubject:    map[string]string{},
-		LoginEmailBaseURL:    map[string]string{"en": "localhost:8000/test/"},
-		DeleteEmailFiles:     map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
-		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteAccountSubject: map[string]string{"en": "testsubject"},
-	})
-	assert.Error(t, err)
-
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     "localhost:1025",
-			DefaultLanguage: "en",
-		},
-		DBType:               DatabaseTypeMemory,
-		SessionLifetime:      60,
-		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-		LoginEmailFiles:      map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		LoginEmailSubject:    map[string]string{"en": "testsubject"},
-		LoginEmailBaseURL:    map[string]string{},
-		DeleteEmailFiles:     map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
-		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteAccountSubject: map[string]string{"en": "testsubject"},
-	})
-	assert.Error(t, err)
-
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     "localhost:1025",
-			DefaultLanguage: "en",
-		},
-		DBType:               DatabaseTypeMemory,
-		SessionLifetime:      60,
-		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-		LoginEmailFiles:      map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		LoginEmailSubject:    map[string]string{"en": "testsubject"},
-		LoginEmailBaseURL:    map[string]string{"en": "localhost:8000/test/"},
-		DeleteEmailFiles:     map[string]string{"de": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteEmailSubject:   map[string]string{"en": "testsubject"},
-		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteAccountSubject: map[string]string{"en": "testsubject"},
-	})
-	assert.Error(t, err)
-
-	_, err = New(&Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     "localhost:1025",
-			DefaultLanguage: "en",
-		},
-		DBType:               DatabaseTypeMemory,
-		SessionLifetime:      60,
-		KeyshareAttributes:   []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
-		EmailAttributes:      []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
-		LoginEmailFiles:      map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		LoginEmailSubject:    map[string]string{"en": "testsubject"},
-		LoginEmailBaseURL:    map[string]string{"en": "localhost:8000/test/"},
-		DeleteEmailFiles:     map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteEmailSubject:   map[string]string{"de": "testsubject"},
-		DeleteAccountFiles:   map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")},
-		DeleteAccountSubject: map[string]string{"en": "testsubject"},
-	})
+	conf = validConfWithEmail(t)
+	conf.DeleteEmailSubject = map[string]string{"de": "testsubject"}
+	_, err = New(conf)
 	assert.Error(t, err)
 }
