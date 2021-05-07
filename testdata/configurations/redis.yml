@@ -1,5 +1,4 @@
-redis_settings:
-  host:     "localhost"
-  port:     "6379"
-  password: ""
-  db:       0
+redis_addr: "localhost:6379"
+redis_pw: ""
+redis_db: 0
+redis_allow_empty_password: true

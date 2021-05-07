@@ -67,11 +67,9 @@ func New(conf *server.Configuration) (*Server, error) {
 			s.sessions.deleteExpired()
 		})
 	case "redis":
-		//TODO: without sse it keeps polling.
-		//TODO: redis settings must not be null here...
 		//setup client
 		cl := redis.NewClient(&redis.Options{
-			Addr:     conf.RedisSettings.Host + ":" + conf.RedisSettings.Port,
+			Addr:     conf.RedisSettings.Addr,
 			Password: conf.RedisSettings.Password,
 			DB:       conf.RedisSettings.DB,
 		})

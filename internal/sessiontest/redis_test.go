@@ -16,8 +16,8 @@ func startRedis(t *testing.T) *miniredis.Miniredis {
 	testConfigurationHandler = func(c *server.Configuration) {
 		mr.FlushAll() // Flush Redis memory between different runs of the IRMA server to prevent side effects.
 		c.StoreType = "redis"
-		c.RedisSettings.Host = mr.Host()
-		c.RedisSettings.Port = mr.Port()
+		c.RedisSettings = &server.RedisSettings{}
+		c.RedisSettings.Addr = mr.Host() + ":" + mr.Port()
 	}
 	return mr
 }

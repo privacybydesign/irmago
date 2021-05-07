@@ -97,8 +97,6 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("revocation-db-type", "", "database type for revocation database (supported: mysql, postgres)")
 	flags.String("revocation-db-str", "", "connection string for revocation database")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
-	flags.String("store-type", "memory", "Specify how session state will be saved on the server.")
-	flags.String("redis-settings", "", "redis settings (in JSON)")
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
@@ -118,6 +116,14 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
 	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
+
+	flags.String("store-type", "memory", "specifies how session state will be saved on the server, defaults to memory")
+	flags.String("redis-addr", "", "redis address, to be specified as host:port")
+	flags.String("redis-pw", "", "redis server password")
+	flags.Int("redis-db", 0, "database to be selected after connecting to the server, defaults to 0")
+	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
+	flags.Lookup("store-type").Header = `Session store configuration`
+
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
@@ -222,7 +228,6 @@ func configureServer(cmd *cobra.Command) error {
 			Email:                  viper.GetString("email"),
 			EnableSSE:              viper.GetBool("sse"),
 			StoreType:              viper.GetString("store-type"),
-			RedisSettings:          server.RedisSettings{},
 			Verbose:                viper.GetInt("verbose"),
 			Quiet:                  viper.GetBool("quiet"),
 			LogJSON:                viper.GetBool("log-json"),
@@ -286,8 +291,17 @@ func configureServer(cmd *cobra.Command) error {
 	}
 
 	// Parse Redis store configuration
-	if err = handleMapOrString("redis-settings", &conf.RedisSettings); err != nil {
-		return err
+	if conf.StoreType == "redis" {
+		conf.RedisSettings = &server.RedisSettings{}
+		if conf.RedisSettings.Addr = viper.GetString("redis-addr"); conf.RedisSettings.Addr == "" {
+			return errors.New("When Redis is used as session data store, a Redis URL must be specified with the --redis-addr flag.")
+		}
+
+		if conf.RedisSettings.Password = viper.GetString("redis-pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis-allow-empty-password") {
+			return errors.New("When Redis is used as session data store, a Redis non-empty password must be specified with the --redis-pw flag. This restriction can be overwritten by setting the --redis-allow-empty-password flag to true.")
+		}
+
+		conf.RedisSettings.DB = viper.GetInt("redis-db")
 	}
 
 	logger.Debug("Done configuring")

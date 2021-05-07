@@ -42,9 +42,9 @@ type Configuration struct {
 	// for more information
 	Email string `json:"email" mapstructure:"email"`
 	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
-	EnableSSE     bool          `json:"enable_sse" mapstructure:"enable_sse"`
-	StoreType     string        `json:"store_type" mapstructure:"store_type"`
-	RedisSettings RedisSettings `json:"redis_settings" mapstructure:"redis_settings"`
+	EnableSSE     bool           `json:"enable_sse" mapstructure:"enable_sse"`
+	StoreType     string         `json:"store_type" mapstructure:"store_type"`
+	RedisSettings *RedisSettings `json:"redis_settings" mapstructure:"redis_settings"`
 
 	// Static session requests that can be created by POST /session/{name}
 	StaticSessions map[string]interface{} `json:"static_sessions"`
@@ -368,8 +368,7 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 }
 
 type RedisSettings struct {
-	Host     string `json:"host,omitempty" mapstructure:"host"`
-	Port     string `json:"port,omitempty" mapstructure:"port"`
+	Addr     string `json:"address,omitempty" mapstructure:"address"`
 	Password string `json:"password,omitempty" mapstructure:"password"`
 	DB       int    `json:"db,omitempty" mapstructure:"db"`
 }
