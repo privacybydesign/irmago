@@ -28,9 +28,17 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
+	user, err := db.UserInformation(id)
+	assert.NoError(t, err)
+	assert.Equal(t, []UserEmail(nil), user.Emails)
+
 	id, err = db.VerifyEmailToken("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
+
+	user, err = db.UserInformation(id)
+	assert.NoError(t, err)
+	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, user.Emails)
 
 	_, err = db.VerifyEmailToken("testtoken")
 	assert.Error(t, err)
@@ -76,6 +84,12 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []LoginCandidate{{Username: "testuser", LastActive: 0}}, cand)
 
+	currenttime := time.Now().Unix()
+	require.NoError(t, db.SetSeen(int64(15)))
+	cand, err = db.LoginTokenCandidates("testtoken")
+	assert.NoError(t, err)
+	assert.Equal(t, []LoginCandidate{{Username: "testuser", LastActive: currenttime}}, cand)
+
 	_, err = db.LoginTokenCandidates("DNE")
 	assert.Error(t, err)
 
@@ -91,6 +105,15 @@ func TestPostgresDBLoginToken(t *testing.T) {
 
 	_, err = db.TryUserLoginToken("testtoken", "testuser")
 	assert.Error(t, err)
+
+	assert.NoError(t, db.AddEmail(17, "test@test.com"))
+	assert.NoError(t, db.AddEmailLoginToken("test@test.com", "testtoken"))
+	cand, err = db.LoginTokenCandidates("testtoken")
+	assert.NoError(t, err)
+	assert.Equal(t, []LoginCandidate{
+		{Username: "testuser", LastActive: currenttime},
+		{Username: "noemail", LastActive: 0},
+	}, cand)
 }
 
 var (
