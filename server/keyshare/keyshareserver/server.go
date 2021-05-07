@@ -110,14 +110,14 @@ func (s *Server) clearSessions() {
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 
-	if s.conf.Verbose >= 2 {
-		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
-		router.Use(server.LogMiddleware("keyshareserver", opts))
-	}
-
 	router.Group(func(router chi.Router) {
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
+
+		if s.conf.Verbose >= 2 {
+			opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
+			router.Use(server.LogMiddleware("keyshareserver", opts))
+		}
 
 		// Registration
 		router.Post("/client/register", s.handleRegister)

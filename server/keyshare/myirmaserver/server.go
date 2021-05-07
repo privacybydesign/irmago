@@ -80,16 +80,16 @@ func (s *Server) Stop() {
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 
-	if s.conf.Verbose >= 2 {
-		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
-		router.Use(server.LogMiddleware("keyshare-myirma", opts))
-	}
-
 	router.Use(cors.New(corsOptions).Handler)
 
 	router.Group(func(router chi.Router) {
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
+
+		if s.conf.Verbose >= 2 {
+			opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
+			router.Use(server.LogMiddleware("keyshare-myirma", opts))
+		}
 
 		// Login/logout
 		router.Post("/login/irma", s.handleIrmaLogin)
