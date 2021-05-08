@@ -46,3 +46,12 @@ func TestServerLoginEmail(t *testing.T) {
 
 	test.HTTPPost(t, client, "http://localhost:8080/user/delete", "", nil, 204, nil)
 }
+
+func TestServerInvalidEmailMessage(t *testing.T) {
+	StartKeyshareServer(t, NewMyirmaMemoryDB(), "localhost:1025")
+	defer StopKeyshareServer(t)
+
+	test.HTTPPost(t, nil, "http://localhost:8080/login/email", "gval;kefsajsdkl;", nil, 400, nil)
+
+	test.HTTPPost(t, nil, "http://localhost:8080/login/token", "gval;kefsajsdkl;", nil, 400, nil)
+}

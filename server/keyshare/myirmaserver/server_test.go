@@ -25,10 +25,6 @@ func TestServerInvalidMessage(t *testing.T) {
 	StartKeyshareServer(t, NewMyirmaMemoryDB(), "localhost:1025")
 	defer StopKeyshareServer(t)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/login/email", "gval;kefsajsdkl;", nil, 400, nil)
-
-	test.HTTPPost(t, nil, "http://localhost:8080/login/token", "gval;kefsajsdkl;", nil, 400, nil)
-
 	test.HTTPGet(t, nil, "http://localhost:8080/user", nil, 400, nil)
 
 	test.HTTPGet(t, nil, "http://localhost:8080/user/logs/0", nil, 400, nil)
