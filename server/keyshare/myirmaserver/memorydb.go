@@ -84,7 +84,7 @@ func (db *myirmaMemoryDB) AddEmailLoginToken(email, token string) error {
 	}
 
 	if !found {
-		return keyshare.ErrUserNotFound
+		return ErrEmailNotFound
 	}
 
 	db.loginEmailTokens[token] = email

@@ -1,12 +1,8 @@
 package myirmaserver
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io/ioutil"
 	"net/http"
-	"net/http/cookiejar"
 	"path/filepath"
 	"testing"
 	"time"
@@ -29,42 +25,23 @@ func TestServerInvalidMessage(t *testing.T) {
 	StartKeyshareServer(t, NewMyirmaMemoryDB(), "localhost:1025")
 	defer StopKeyshareServer(t)
 
-	reqData := bytes.NewBufferString("gval;kefsajsdkl;")
-	res, err := http.Post("http://localhost:8080/login/email", "application/json", reqData)
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, nil, "http://localhost:8080/login/email", "gval;kefsajsdkl;", nil, 400, nil)
 
-	reqData = bytes.NewBufferString("aljksd;falsdfjgkj223hl4jk")
-	res, err = http.Post("http://localhost:8080/login/token", "application/json", reqData)
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, nil, "http://localhost:8080/login/token", "gval;kefsajsdkl;", nil, 400, nil)
 
-	res, err = http.Get("http://localhost:8080/user")
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPGet(t, nil, "http://localhost:8080/user", nil, 400, nil)
 
-	res, err = http.Get("http://localhost:8080/user/logs/0")
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPGet(t, nil, "http://localhost:8080/user/logs/0", nil, 400, nil)
 
-	res, err = http.Post("http://localhost:8080/user/delete", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, nil, "http://localhost:8080/user/delete", "", nil, 400, nil)
 
-	res, err = http.Post("http://localhost:8080/email/add", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, nil, "http://localhost:8080/email/add", "", nil, 400, nil)
 
-	res, err = http.Post("http://localhost:8080/email/remove", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, nil, "http://localhost:8080/email/remove", "", nil, 400, nil)
+}
+
+func textPlainHeader() http.Header {
+	return http.Header{"Content-Type": []string{"text/plain"}}
 }
 
 func TestServerIrmaSessions(t *testing.T) {
@@ -83,25 +60,13 @@ func TestServerIrmaSessions(t *testing.T) {
 	StartKeyshareServer(t, db, "")
 	defer StopKeyshareServer(t)
 
-	res, err := http.Post("http://localhost:8080/login/irma", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	_ = res.Body.Close()
+	client := test.NewHTTPClient()
 
-	jar, err := cookiejar.New(nil)
-	require.NoError(t, err)
-	client := &http.Client{
-		Jar: jar,
-	}
-	reqData := bytes.NewBufferString(`{"username":"testuser","token":"testtoken"}`)
-	res, err = client.Post("http://localhost:8080/login/token", "application/json", reqData)
-	assert.NoError(t, err)
-	assert.Equal(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/irma", "", nil, 200, nil)
 
-	res, err = client.Post("http://localhost:8080/email/add", "application/json", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
+	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"username":"testuser","token":"testtoken"}`, nil, 204, nil)
+
+	test.HTTPPost(t, client, "http://localhost:8080/email/add", "", nil, 200, nil)
 }
 
 func TestServerSessionMgmnt(t *testing.T) {
@@ -127,161 +92,63 @@ func TestServerSessionMgmnt(t *testing.T) {
 	StartKeyshareServer(t, db, "")
 	defer StopKeyshareServer(t)
 
-	jar, err := cookiejar.New(nil)
-	require.NoError(t, err)
-	client := &http.Client{
-		Jar: jar,
-	}
+	client := test.NewHTTPClient()
 
-	res, err := client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err := ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	var body []byte
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 
-	res, err = client.Post("http://localhost:8080/login/irma", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/irma", "", nil, 200, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 
-	reqData := bytes.NewBufferString("doesnotexist")
-	res, err = client.Post("http://localhost:8080/login/token/candidates", "text/plain", reqData)
-	assert.NoError(t, err)
-	assert.NotEqual(t, 200, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/token/candidates", "doesnotexist", textPlainHeader(), 400, nil)
 
-	reqData = bytes.NewBufferString("testtoken")
-	res, err = client.Post("http://localhost:8080/login/token/candidates", "text/plain", reqData)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
 	var cands []LoginCandidate
-	err = json.Unmarshal(body, &cands)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/login/token/candidates", "testtoken", textPlainHeader(), 200, &cands)
 	assert.Equal(t, 1, len(cands))
 	assert.Equal(t, "testuser", cands[0].Username)
-	_ = res.Body.Close()
 
-	reqData = bytes.NewBufferString(`{"token": "doesnotexist", "username":"testuser"}`)
-	res, err = client.Post("http://localhost:8080/login/token", "application/json", reqData)
-	assert.NoError(t, err)
-	assert.NotEqual(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "doesnotexist", "username": "testuser"}`, nil, 400, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 
-	reqData = bytes.NewBufferString(`{"token": "testtoken", "username":"doesnotexist"}`)
-	res, err = client.Post("http://localhost:8080/login/token", "application/json", reqData)
-	assert.NoError(t, err)
-	assert.NotEqual(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "testtoken", "username":"doesnotexist"}`, nil, 400, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 
-	reqData = bytes.NewBufferString(`{"token": "testtoken", "username":"noemail"}`)
-	res, err = client.Post("http://localhost:8080/login/token", "application/json", reqData)
-	assert.NoError(t, err)
-	assert.NotEqual(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "testtoken", "username":"noemail"}`, nil, 400, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 
-	reqData = bytes.NewBufferString(`{"token": "testtoken", "username":"testuser"}`)
-	res, err = client.Post("http://localhost:8080/login/token", "application/json", reqData)
-	assert.NoError(t, err)
-	assert.Equal(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "testtoken", "username":"testuser"}`, nil, 204, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("ok"), body)
-	_ = res.Body.Close()
 
-	res, err = client.Post("http://localhost:8080/logout", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/logout", "", nil, 204, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 
-	reqData = bytes.NewBufferString("doesnotexist")
-	res, err = client.Post("http://localhost:8080/verify", "text/plain", reqData)
-	assert.NoError(t, err)
-	assert.NotEqual(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/verify", "doesnotexist", textPlainHeader(), 400, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 
-	reqData = bytes.NewBufferString("testemailtoken")
-	res, err = client.Post("http://localhost:8080/verify", "text/plain", reqData)
-	assert.NoError(t, err)
-	assert.Equal(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/verify", "testemailtoken", textPlainHeader(), 204, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("ok"), body)
-	_ = res.Body.Close()
 
-	res, err = client.Post("http://localhost:8080/user/delete", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/user/delete", "", nil, 204, nil)
 
-	res, err = client.Post("http://localhost:8080/checksession", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
+	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
-	_ = res.Body.Close()
 }
 
 func TestServerUserData(t *testing.T) {
@@ -312,83 +179,32 @@ func TestServerUserData(t *testing.T) {
 	StartKeyshareServer(t, db, "")
 	defer StopKeyshareServer(t)
 
-	jar, err := cookiejar.New(nil)
-	require.NoError(t, err)
-	client := &http.Client{
-		Jar: jar,
-	}
+	client := test.NewHTTPClient()
 
-	reqData := bytes.NewBufferString(`{"username":"testuser", "token":"testtoken"}`)
-	res, err := client.Post("http://localhost:8080/login/token", "application/json", reqData)
-	require.NoError(t, err)
-	require.Equal(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"username":"testuser", "token":"testtoken"}`, nil, 204, nil)
 
-	res, err = client.Get("http://localhost:8080/user")
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
 	var userdata UserInformation
-	body, err := ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
-	err = json.Unmarshal(body, &userdata)
-	assert.NoError(t, err)
+	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
 	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, userdata.Emails)
-	_ = res.Body.Close()
 
-	reqData = bytes.NewBufferString("test@test.com")
-	res, err = client.Post("http://localhost:8080/email/remove", "text/plain", reqData)
-	assert.NoError(t, err)
-	assert.Equal(t, 204, res.StatusCode)
-	_ = res.Body.Close()
+	test.HTTPPost(t, client, "http://localhost:8080/email/remove", "test@test.com", textPlainHeader(), 204, nil)
 
-	res, err = client.Get("http://localhost:8080/user")
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
-	err = json.Unmarshal(body, &userdata)
-	assert.NoError(t, err)
-	assert.NotEqual(t, []string{"test@test.com"}, userdata.Emails)
-	_ = res.Body.Close()
+	userdata = UserInformation{}
+	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
+	assert.Empty(t, userdata.Emails)
 
-	res, err = client.Get("http://localhost:8080/user/logs/abcd")
-	assert.NoError(t, err)
-	assert.Equal(t, 400, res.StatusCode)
+	test.HTTPGet(t, client, "http://localhost:8080/user/logs/abcd", nil, 400, nil)
 
-	res, err = client.Get("http://localhost:8080/user/logs/0")
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
 	var logs []LogEntry
-	err = json.Unmarshal(body, &logs)
-	assert.NoError(t, err)
+	test.HTTPGet(t, client, "http://localhost:8080/user/logs/0", nil, 200, &logs)
 	assert.Equal(t, []LogEntry{
-		{
-			Timestamp: 110,
-			Event:     "test",
-			Param:     &strEmpty,
-		},
-		{
-			Timestamp: 120,
-			Event:     "test2",
-			Param:     &str15,
-		},
+		{Timestamp: 110, Event: "test", Param: &strEmpty},
+		{Timestamp: 120, Event: "test2", Param: &str15},
 	}, logs)
 
-	res, err = client.Get("http://localhost:8080/user/logs/1")
-	assert.NoError(t, err)
-	assert.Equal(t, 200, res.StatusCode)
-	body, err = ioutil.ReadAll(res.Body)
-	assert.NoError(t, err)
-	err = json.Unmarshal(body, &logs)
-	assert.NoError(t, err)
+	test.HTTPGet(t, client, "http://localhost:8080/user/logs/1", nil, 200, &logs)
 	assert.Equal(t, []LogEntry{
-		{
-			Timestamp: 120,
-			Event:     "test2",
-			Param:     &str15,
-		},
+		{Timestamp: 120, Event: "test2", Param: &str15},
 	}, logs)
 }
 
