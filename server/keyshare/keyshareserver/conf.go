@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"html/template"
 	"io/ioutil"
+	"strings"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -34,8 +35,6 @@ type Configuration struct {
 	DBConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
 	// Provide a prepared database (useful for testing)
 	DB KeyshareDB `json:"-"`
-
-	PathPrefix string `json:"path_prefix" mapstructure:"path_prefix"`
 
 	// Configuration of secure Core
 	// Private key used to sign JWTs with
@@ -112,7 +111,10 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	}
 
 	// Setup IRMA session server url for in QR code
-	conf.URL = keyshare.AppendURLPrefix(conf.URL, conf.PathPrefix)
+	if !strings.HasSuffix(conf.URL, "/") {
+		conf.URL += "/"
+	}
+	conf.URL += "irma/"
 
 	// Parse keysharecore private keys and create a valid keyshare core
 	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {

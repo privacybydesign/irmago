@@ -2,6 +2,7 @@ package myirmaserver
 
 import (
 	"html/template"
+	"strings"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -24,8 +25,6 @@ const (
 type Configuration struct {
 	// IRMA server configuration. If not given, this will be populated using information here
 	*server.Configuration `mapstructure:",squash"`
-
-	PathPrefix string `json:"path_prefix" mapstructure:"path_prefix"`
 
 	// Path to static content to serve (for testing)
 	StaticPath   string `json:"static_path" mapstructure:"static_path"`
@@ -128,7 +127,10 @@ func processConfiguration(conf *Configuration) error {
 	}
 
 	// Setup IRMA session server url for in QR code
-	conf.URL = keyshare.AppendURLPrefix(conf.URL, conf.PathPrefix)
+	if !strings.HasSuffix(conf.URL, "/") {
+		conf.URL += "/"
+	}
+	conf.URL += "irma/"
 
 	return nil
 }

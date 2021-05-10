@@ -12,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/go-chi/chi"
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -51,12 +50,9 @@ var myirmadCmd = &cobra.Command{
 			die("", err)
 		}
 
-		r := chi.NewRouter()
-		r.Mount(viper.GetString("path-prefix"), myirmaServer.Handler())
-
 		serv := &http.Server{
 			Addr:      fullAddr,
-			Handler:   r,
+			Handler:   myirmaServer.Handler(),
 			TLSConfig: TLSConfig,
 		}
 
@@ -111,7 +107,6 @@ func init() {
 
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
-	flags.String("path-prefix", "/", "prefix to listen path")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
 	flags.String("db-type", myirmaserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
@@ -230,8 +225,6 @@ func configureMyirmad(cmd *cobra.Command) {
 			EmailFrom:       viper.GetString("email-from"),
 			DefaultLanguage: viper.GetString("default-language"),
 		},
-
-		PathPrefix: viper.GetString("path-prefix"),
 
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),
