@@ -256,7 +256,7 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, count uin
 			if counter != nil {
 				where["pk_counter"] = *counter
 			}
-			if err := tx.Last(&records, where); err != nil {
+			if err := tx.Find(&records, where); err != nil {
 				return err
 			}
 			if count > 0 {
