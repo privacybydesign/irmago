@@ -549,3 +549,10 @@ func ParseBody(w http.ResponseWriter, r *http.Request, input interface{}) error 
 	}
 	return nil
 }
+
+func FilterStopError(err error) error {
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}

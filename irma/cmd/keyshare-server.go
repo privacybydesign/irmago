@@ -1,13 +1,6 @@
 package cmd
 
 import (
-	"context"
-	"fmt"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
@@ -21,55 +14,13 @@ var keysharedCmd = &cobra.Command{
 	Run: func(command *cobra.Command, args []string) {
 		conf := configureKeyshared(command)
 
-		// Determine full listening address.
-		fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen-addr"), viper.GetInt("port"))
-
-		// Load TLS configuration
-		TLSConfig := configureTLS()
-
 		// Create main server
 		keyshareServer, err := keyshareserver.New(conf)
 		if err != nil {
 			die("", err)
 		}
 
-		serv := &http.Server{
-			Addr:      fullAddr,
-			Handler:   keyshareServer.Handler(),
-			TLSConfig: TLSConfig,
-		}
-
-		stopped := make(chan struct{})
-		interrupt := make(chan os.Signal, 1)
-		signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
-
-		go func() {
-			if TLSConfig != nil {
-				err = serv.ListenAndServeTLS("", "")
-			} else {
-				err = serv.ListenAndServe()
-			}
-			conf.Logger.Debug("Server stopped")
-			stopped <- struct{}{}
-		}()
-
-		for {
-			select {
-			case <-interrupt:
-				conf.Logger.Debug("Caught interrupt")
-				err = serv.Shutdown(context.Background())
-				if err != nil {
-					_ = server.LogError(err)
-				}
-				keyshareServer.Stop()
-				conf.Logger.Debug("Sent stop signal to server")
-			case <-stopped:
-				conf.Logger.Info("Exiting")
-				close(stopped)
-				close(interrupt)
-				return
-			}
-		}
+		runServer(keyshareServer, conf.Logger)
 	},
 }
 

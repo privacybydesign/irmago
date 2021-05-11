@@ -117,17 +117,10 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 
 	if tlsConf != nil {
 		s.conf.Logger.Info(name, " TLS enabled")
-		return filterStopError(serv.ListenAndServeTLS("", ""))
+		return server.FilterStopError(serv.ListenAndServeTLS("", ""))
 	} else {
-		return filterStopError(serv.ListenAndServe())
+		return server.FilterStopError(serv.ListenAndServe())
 	}
-}
-
-func filterStopError(err error) error {
-	if err == http.ErrServerClosed {
-		return nil
-	}
-	return err
 }
 
 func (s *Server) Stop() {
