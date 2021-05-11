@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"syscall"
 
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/myirmaserver"
 	"github.com/sietseringers/cobra"
@@ -27,14 +25,7 @@ var myirmadCmd = &cobra.Command{
 		fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen-addr"), viper.GetInt("port"))
 
 		// Load TLS configuration
-		TLSConfig, err := kesyharedTLS(
-			viper.GetString("tls-cert"),
-			viper.GetString("tls-cert-file"),
-			viper.GetString("tls-privkey"),
-			viper.GetString("tls-privkey-file"))
-		if err != nil {
-			die("", err)
-		}
+		TLSConfig := configureTLS()
 
 		// Create main server
 		myirmaServer, err := myirmaserver.New(conf)
@@ -180,38 +171,4 @@ func configureMyirmad(cmd *cobra.Command) *myirmaserver.Configuration {
 	}
 
 	return conf
-}
-
-func myirmadTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {
-	if cert == "" && certfile == "" && key == "" && keyfile == "" {
-		return nil, nil
-	}
-
-	var certbts, keybts []byte
-	var err error
-	if certbts, err = common.ReadKey(cert, certfile); err != nil {
-		return nil, err
-	}
-	if keybts, err = common.ReadKey(key, keyfile); err != nil {
-		return nil, err
-	}
-
-	cer, err := tls.X509KeyPair(certbts, keybts)
-	if err != nil {
-		return nil, err
-	}
-	return &tls.Config{
-		Certificates:             []tls.Certificate{cer},
-		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-		PreferServerCipherSuites: true,
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-		},
-	}, nil
 }

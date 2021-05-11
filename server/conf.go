@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/rsa"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -370,4 +371,44 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 // "http(s)://...:port" with "port" replaced by the specified port.
 func ReplacePortString(url string, port int) string {
 	return regexp.MustCompile("(https?://[^/]*):port").ReplaceAllString(url, "$1:"+strconv.Itoa(port))
+}
+
+func TLSConf(cert, certfile, key, keyfile string) (*tls.Config, error) {
+	if cert == "" && certfile == "" && key == "" && keyfile == "" {
+		return nil, nil
+	}
+
+	var certbts, keybts []byte
+	var err error
+	if certbts, err = common.ReadKey(cert, certfile); err != nil {
+		return nil, err
+	}
+	if keybts, err = common.ReadKey(key, keyfile); err != nil {
+		return nil, err
+	}
+
+	cer, err := tls.X509KeyPair(certbts, keybts)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cer},
+		MinVersion:   tls.VersionTLS12,
+
+		// Safe according to https://safecurves.cr.yp.to/; fairly widely supported according to
+		// https://en.wikipedia.org/wiki/Comparison_of_TLS_implementations#Supported_elliptic_curves
+		CurvePreferences: []tls.CurveID{tls.X25519},
+
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		},
+	}, nil
 }

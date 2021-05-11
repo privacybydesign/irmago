@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"crypto/tls"
 	"net/smtp"
 	"os"
 	"path/filepath"
@@ -64,6 +65,18 @@ func configureIRMAServer() *server.Configuration {
 		AllowUnsignedCallbacks: viper.GetBool("allow-unsigned-callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment-client-return-url"),
 	}
+}
+
+func configureTLS() *tls.Config {
+	conf, err := server.TLSConf(
+		viper.GetString("tls-cert"),
+		viper.GetString("tls-cert-file"),
+		viper.GetString("tls-privkey"),
+		viper.GetString("tls-privkey-file"))
+	if err != nil {
+		die("", err)
+	}
+	return conf
 }
 
 func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, productionDefaults map[string]interface{}) {
