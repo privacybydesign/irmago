@@ -32,7 +32,8 @@ func TestSigningSession(t *testing.T) {
 func TestDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
-	responseString := sessionHelper(t, request, "verification", nil)
+	jwtServerConfiguration := JwtServerConfiguration()
+	responseString := sessionHelperWithConfig(t, request, "verification", nil, jwtServerConfiguration)
 
 	// Validate JWT
 	claims := struct {
@@ -40,7 +41,8 @@ func TestDisclosureSession(t *testing.T) {
 		*server.SessionResult
 	}{}
 	_, err := jwt.ParseWithClaims(responseString, &claims, func(token *jwt.Token) (interface{}, error) {
-		return &JwtServerConfiguration.JwtRSAPrivateKey.PublicKey, nil
+		pk := jwtServerConfiguration.JwtRSAPrivateKey.PublicKey
+		return &pk, nil
 	})
 	require.NoError(t, err)
 
@@ -467,8 +469,8 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 func TestStaticQRSession(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	StartRequestorServer(JwtServerConfiguration)
-	defer StopRequestorServer()
+	rs := StartRequestorServer(t, JwtServerConfiguration())
+	defer rs.Stop()
 
 	// start server to receive session result callback after the session
 	var received bool
@@ -588,8 +590,8 @@ func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
 }
 
 func TestPOSTSizeLimit(t *testing.T) {
-	StartRequestorServer(IrmaServerConfiguration)
-	defer StopRequestorServer()
+	rs := StartRequestorServer(t, IrmaServerConfiguration())
+	defer rs.Stop()
 
 	req, err := http.NewRequest(
 		http.MethodPost,

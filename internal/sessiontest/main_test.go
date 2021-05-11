@@ -3,6 +3,7 @@ package sessiontest
 import (
 	"encoding/base64"
 	"encoding/json"
+	"github.com/privacybydesign/irmago/server/requestorserver"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -118,26 +119,17 @@ func getMultipleIssuanceRequest() *irma.IssuanceRequest {
 	return request
 }
 
-var TestType = "irmaserver-jwt"
-
-func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *server.SessionPackage {
+func startSession(t *testing.T, request irma.SessionRequest, sessiontype string, useJWTs bool) *server.SessionPackage {
 	var (
 		sesPkg server.SessionPackage
 		err    error
 	)
 
-	switch TestType {
-	case "irmaserver-jwt":
-		url := "http://localhost:48682"
+	url := "http://localhost:48682"
+	if useJWTs {
 		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodRS256))
-	case "irmaserver-hmac-jwt":
-		url := "http://localhost:48682"
-		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, getJwt(t, request, sessiontype, jwt.SigningMethodHS256))
-	case "irmaserver":
-		url := "http://localhost:48682"
+	} else {
 		err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, request)
-	default:
-		t.Fatal("Invalid TestType")
 	}
 
 	require.NoError(t, err)
@@ -175,7 +167,7 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 	case jwt.SigningMethodHS256:
 		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwtcontents)
 		tok.Header["kid"] = "requestor3"
-		bts, err := base64.StdEncoding.DecodeString(JwtServerConfiguration.Requestors["requestor3"].AuthenticationKey)
+		bts, err := base64.StdEncoding.DecodeString(JwtServerConfiguration().Requestors["requestor3"].AuthenticationKey)
 		require.NoError(t, err)
 		j, err = tok.SignedString(bts)
 		require.NoError(t, err)
@@ -190,18 +182,24 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 }
 
 func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) string {
+	return sessionHelperWithConfig(t, request, sessiontype, client, JwtServerConfiguration())
+}
+
+func sessionHelperWithConfig(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client, config *requestorserver.Configuration) string {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
 	}
 
-	if TestType == "irmaserver" || TestType == "irmaserver-jwt" || TestType == "irmaserver-hmac-jwt" {
-		StartRequestorServer(JwtServerConfiguration)
-		defer StopRequestorServer()
+	useJWTs := false
+	if config != nil {
+		useJWTs = !config.DisableRequestorAuthentication
+		rs := StartRequestorServer(t, config)
+		defer rs.Stop()
 	}
 
-	sesPkg := startSession(t, request, sessiontype)
+	sesPkg := startSession(t, request, sessiontype, useJWTs)
 
 	c := make(chan *SessionResult)
 	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
@@ -213,11 +211,16 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		require.NoError(t, result.Err)
 	}
 
-	var resJwt string
-	err = irma.NewHTTPTransport("http://localhost:48682/session/"+sesPkg.Token, false).Get("result-jwt", &resJwt)
+	resultEndpoint := "result"
+	if useJWTs {
+		resultEndpoint = "result-jwt"
+	}
+
+	var res string
+	err = irma.NewHTTPTransport("http://localhost:48682/session/"+sesPkg.Token, false).Get(resultEndpoint, &res)
 	require.NoError(t, err)
 
-	return resJwt
+	return res
 }
 
 func expectedRequestorInfo(t *testing.T, conf *irma.Configuration) *irma.RequestorInfo {
