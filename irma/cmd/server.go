@@ -13,13 +13,12 @@ import (
 	"github.com/sietseringers/viper"
 )
 
-var conf *requestorserver.Configuration
-
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "IRMA server for verifying and issuing attributes",
 	Run: func(command *cobra.Command, args []string) {
-		if err := configureServer(command); err != nil {
+		conf, err := configureServer(command)
+		if err != nil {
 			die("", errors.WrapPrefix(err, "Failed to read configuration", 0))
 		}
 		serv, err := requestorserver.New(conf)
@@ -146,7 +145,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	return nil
 }
 
-func configureServer(cmd *cobra.Command) error {
+func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error) {
 	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
 		map[string]interface{}{
 			"no-auth":  false,
@@ -156,7 +155,7 @@ func configureServer(cmd *cobra.Command) error {
 	)
 
 	// Read configuration from flags and/or environmental variables
-	conf = &requestorserver.Configuration{
+	conf := &requestorserver.Configuration{
 		Configuration: configureIRMAServer(),
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose-perms"),
@@ -187,24 +186,24 @@ func configureServer(cmd *cobra.Command) error {
 
 	if conf.Production {
 		if !viper.GetBool("no-email") && conf.Email == "" {
-			return errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
+			return nil, errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
 		}
 		if viper.GetBool("no-email") && conf.Email != "" {
-			return errors.New("--no-email cannot be combined with --email")
+			return nil, errors.New("--no-email cannot be combined with --email")
 		}
 	}
 
 	// Handle requestors
 	var err error
 	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
-		return err
+		return nil, err
 	}
 	if err = handleMapOrString("static-sessions", &conf.StaticSessions); err != nil {
-		return err
+		return nil, err
 	}
 	var m map[string]*irma.RevocationSetting
 	if err = handleMapOrString("revocation-settings", &m); err != nil {
-		return err
+		return nil, err
 	}
 	for i, s := range m {
 		conf.RevocationSettings[irma.NewCredentialTypeIdentifier(i)] = s
@@ -212,5 +211,5 @@ func configureServer(cmd *cobra.Command) error {
 
 	logger.Debug("Done configuring")
 
-	return nil
+	return conf, nil
 }

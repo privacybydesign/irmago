@@ -17,13 +17,11 @@ import (
 	"github.com/sietseringers/viper"
 )
 
-var confKeyshareServer *keyshareserver.Configuration
-
 var keysharedCmd = &cobra.Command{
 	Use:   "server",
 	Short: "IRMA keyshare server",
 	Run: func(command *cobra.Command, args []string) {
-		configureKeyshared(command)
+		conf := configureKeyshared(command)
 
 		// Determine full listening address.
 		fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen-addr"), viper.GetInt("port"))
@@ -39,7 +37,7 @@ var keysharedCmd = &cobra.Command{
 		}
 
 		// Create main server
-		keyshareServer, err := keyshareserver.New(confKeyshareServer)
+		keyshareServer, err := keyshareserver.New(conf)
 		if err != nil {
 			die("", err)
 		}
@@ -60,22 +58,22 @@ var keysharedCmd = &cobra.Command{
 			} else {
 				err = serv.ListenAndServe()
 			}
-			confKeyshareServer.Logger.Debug("Server stopped")
+			conf.Logger.Debug("Server stopped")
 			stopped <- struct{}{}
 		}()
 
 		for {
 			select {
 			case <-interrupt:
-				confKeyshareServer.Logger.Debug("Caught interrupt")
+				conf.Logger.Debug("Caught interrupt")
 				err = serv.Shutdown(context.Background())
 				if err != nil {
 					_ = server.LogError(err)
 				}
 				keyshareServer.Stop()
-				confKeyshareServer.Logger.Debug("Sent stop signal to server")
+				conf.Logger.Debug("Sent stop signal to server")
 			case <-stopped:
-				confKeyshareServer.Logger.Info("Exiting")
+				conf.Logger.Info("Exiting")
 				close(stopped)
 				close(interrupt)
 				return
@@ -140,11 +138,11 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureKeyshared(cmd *cobra.Command) {
+func configureKeyshared(cmd *cobra.Command) *keyshareserver.Configuration {
 	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
 	// And build the configuration
-	confKeyshareServer = &keyshareserver.Configuration{
+	conf := &keyshareserver.Configuration{
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
@@ -164,7 +162,9 @@ func configureKeyshared(cmd *cobra.Command) {
 		VerificationURL:          viper.GetStringMapString("verification-url"),
 	}
 
-	confKeyshareServer.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
+	conf.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
+
+	return conf
 }
 
 func kesyharedTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {

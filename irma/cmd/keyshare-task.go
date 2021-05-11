@@ -6,15 +6,13 @@ import (
 	"github.com/sietseringers/viper"
 )
 
-var confKeyshareTask *taskserver.Configuration
-
 var keyshareTaskCmd = &cobra.Command{
 	Use:   "task",
 	Short: "IRMA keyshare background task server",
 	Run: func(command *cobra.Command, args []string) {
-		configureKeyshareTask(command)
+		conf := configureKeyshareTask(command)
 
-		task, err := taskserver.New(confKeyshareTask)
+		task, err := taskserver.New(conf)
 		if err != nil {
 			die("", err)
 		}
@@ -57,10 +55,10 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureKeyshareTask(cmd *cobra.Command) {
+func configureKeyshareTask(cmd *cobra.Command) *taskserver.Configuration {
 	readConfig(cmd, "keysharetasks", "keyshare task daemon", []string{".", "/etc/keysharetasks"}, nil)
 
-	confKeyshareTask = &taskserver.Configuration{
+	return &taskserver.Configuration{
 		EmailConfiguration: configureEmail(),
 
 		DBConnstring: viper.GetString("db-connstring"),

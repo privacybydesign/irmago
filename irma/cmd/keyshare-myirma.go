@@ -17,13 +17,11 @@ import (
 	"github.com/sietseringers/viper"
 )
 
-var confKeyshareMyirma *myirmaserver.Configuration
-
 var myirmadCmd = &cobra.Command{
 	Use:   "myirma",
 	Short: "IRMA keyshare myirma server",
 	Run: func(command *cobra.Command, args []string) {
-		configureMyirmad(command)
+		conf := configureMyirmad(command)
 
 		// Determine full listening address.
 		fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen-addr"), viper.GetInt("port"))
@@ -39,7 +37,7 @@ var myirmadCmd = &cobra.Command{
 		}
 
 		// Create main server
-		myirmaServer, err := myirmaserver.New(confKeyshareMyirma)
+		myirmaServer, err := myirmaserver.New(conf)
 		if err != nil {
 			die("", err)
 		}
@@ -60,22 +58,22 @@ var myirmadCmd = &cobra.Command{
 			} else {
 				err = serv.ListenAndServe()
 			}
-			confKeyshareMyirma.Logger.Debug("Server stopped")
+			conf.Logger.Debug("Server stopped")
 			stopped <- struct{}{}
 		}()
 
 		for {
 			select {
 			case <-interrupt:
-				confKeyshareMyirma.Logger.Debug("Caught interrupt")
+				conf.Logger.Debug("Caught interrupt")
 				err = serv.Shutdown(context.Background())
 				if err != nil {
 					_ = server.LogError(err)
 				}
 				myirmaServer.Stop()
-				confKeyshareMyirma.Logger.Debug("Sent stop signal to server")
+				conf.Logger.Debug("Sent stop signal to server")
 			case <-stopped:
-				confKeyshareMyirma.Logger.Info("Exiting")
+				conf.Logger.Info("Exiting")
 				close(stopped)
 				close(interrupt)
 				return
@@ -142,11 +140,11 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureMyirmad(cmd *cobra.Command) {
+func configureMyirmad(cmd *cobra.Command) *myirmaserver.Configuration {
 	readConfig(cmd, "myirmaserver", "myirmaserver", []string{".", "/etc/myirmaserver/"}, nil)
 
 	// And build the configuration
-	confKeyshareMyirma = &myirmaserver.Configuration{
+	conf := &myirmaserver.Configuration{
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
@@ -168,18 +166,20 @@ func configureMyirmad(cmd *cobra.Command) {
 		SessionLifetime: viper.GetInt("session-lifetime"),
 	}
 
-	confKeyshareMyirma.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
+	conf.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
 
 	for _, v := range viper.GetStringSlice("keyshare-attributes") {
-		confKeyshareMyirma.KeyshareAttributes = append(
-			confKeyshareMyirma.KeyshareAttributes,
+		conf.KeyshareAttributes = append(
+			conf.KeyshareAttributes,
 			irma.NewAttributeTypeIdentifier(v))
 	}
 	for _, v := range viper.GetStringSlice("email-attributes") {
-		confKeyshareMyirma.EmailAttributes = append(
-			confKeyshareMyirma.EmailAttributes,
+		conf.EmailAttributes = append(
+			conf.EmailAttributes,
 			irma.NewAttributeTypeIdentifier(v))
 	}
+
+	return conf
 }
 
 func myirmadTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {
