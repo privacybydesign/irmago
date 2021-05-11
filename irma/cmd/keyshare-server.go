@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/smtp"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,7 +12,6 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
@@ -145,34 +143,10 @@ func init() {
 func configureKeyshared(cmd *cobra.Command) {
 	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
-	// If username/password are specified for the email server, build an authentication object.
-	var emailAuth smtp.Auth
-	if viper.GetString("email-username") != "" {
-		emailAuth = smtp.PlainAuth("", viper.GetString("email-username"), viper.GetString("email-password"), viper.GetString("email-hostname"))
-	}
-
 	// And build the configuration
 	confKeyshareServer = &keyshareserver.Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath:           viper.GetString("schemes-path"),
-			SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
-			SchemesUpdateInterval: viper.GetInt("schemes-update"),
-			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
-			IssuerPrivateKeysPath: viper.GetString("privkeys"),
-			DisableTLS:            viper.GetBool("no-tls"),
-			Verbose:               viper.GetInt("verbose"),
-			Quiet:                 viper.GetBool("quiet"),
-			LogJSON:               viper.GetBool("log-json"),
-			Production:            viper.GetBool("production"),
-			Logger:                logger,
-			URL:                   server.ReplacePortString(viper.GetString("url"), viper.GetInt("port")),
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     viper.GetString("email-server"),
-			EmailAuth:       emailAuth,
-			EmailFrom:       viper.GetString("email-from"),
-			DefaultLanguage: viper.GetString("default-language"),
-		},
+		Configuration:      configureIRMAServer(),
+		EmailConfiguration: configureEmail(),
 
 		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
 		DBConnstring: viper.GetString("db-connstring"),
@@ -189,6 +163,8 @@ func configureKeyshared(cmd *cobra.Command) {
 		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-files"),
 		VerificationURL:          viper.GetStringMapString("verification-url"),
 	}
+
+	confKeyshareServer.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
 }
 
 func kesyharedTLS(cert, certfile, key, keyfile string) (*tls.Config, error) {

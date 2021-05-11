@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"net/smtp"
-
-	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/privacybydesign/irmago/server/keyshare/taskserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
@@ -63,19 +60,8 @@ func init() {
 func configureKeyshareTask(cmd *cobra.Command) {
 	readConfig(cmd, "keysharetasks", "keyshare task daemon", []string{".", "/etc/keysharetasks"}, nil)
 
-	// If username/password are specified for the email server, build an authentication object.
-	var emailAuth smtp.Auth
-	if viper.GetString("email-username") != "" {
-		emailAuth = smtp.PlainAuth("", viper.GetString("email-username"), viper.GetString("email-password"), viper.GetString("email-hostname"))
-	}
-
 	confKeyshareTask = &taskserver.Configuration{
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     viper.GetString("email-server"),
-			EmailAuth:       emailAuth,
-			EmailFrom:       viper.GetString("email-from"),
-			DefaultLanguage: viper.GetString("default-language"),
-		},
+		EmailConfiguration: configureEmail(),
 
 		DBConnstring: viper.GetString("db-connstring"),
 

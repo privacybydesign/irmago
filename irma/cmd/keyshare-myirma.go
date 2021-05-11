@@ -5,22 +5,16 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/smtp"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 
-	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/privacybydesign/irmago/server/keyshare/myirmaserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
-	"github.com/sirupsen/logrus"
 )
 
 var confKeyshareMyirma *myirmaserver.Configuration
@@ -148,92 +142,13 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, productionDefaults map[string]interface{}) {
-	dashReplacer := strings.NewReplacer("-", "_")
-	viper.SetEnvKeyReplacer(dashReplacer)
-	viper.SetFileKeyReplacer(dashReplacer)
-	viper.SetEnvPrefix(strings.ToUpper(name))
-	viper.AutomaticEnv()
-
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		die("", err)
-	}
-
-	// Locate and read configuration file
-	confpath := viper.GetString("config")
-	if confpath != "" {
-		dir, file := filepath.Dir(confpath), filepath.Base(confpath)
-		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
-		viper.AddConfigPath(dir)
-	} else {
-		viper.SetConfigName(name)
-		for _, path := range configpaths {
-			viper.AddConfigPath(path)
-		}
-	}
-
-	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
-
-	// Create our logger instance
-	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log-json"))
-
-	// First log output: hello, development or production mode, log level
-	mode := "development"
-	if viper.GetBool("production") {
-		mode = "production"
-		for key, val := range productionDefaults {
-			viper.SetDefault(key, val)
-		}
-	}
-	logger.WithFields(logrus.Fields{
-		"version":   irma.Version,
-		"mode":      mode,
-		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info(logname + " running")
-
-	// Now we finally examine and log any error from viper.ReadInConfig()
-	if err != nil {
-		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
-			logger.Info("No configuration file found")
-		} else {
-			die("", errors.WrapPrefix(err, "Failed to unmarshal configuration file at "+viper.ConfigFileUsed(), 0))
-		}
-	} else {
-		logger.Info("Config file: ", viper.ConfigFileUsed())
-	}
-}
-
 func configureMyirmad(cmd *cobra.Command) {
 	readConfig(cmd, "myirmaserver", "myirmaserver", []string{".", "/etc/myirmaserver/"}, nil)
 
-	// If username/password are specified for the email server, build an authentication object.
-	var emailAuth smtp.Auth
-	if viper.GetString("email-username") != "" {
-		emailAuth = smtp.PlainAuth("", viper.GetString("email-username"), viper.GetString("email-password"), viper.GetString("email-hostname"))
-	}
-
 	// And build the configuration
 	confKeyshareMyirma = &myirmaserver.Configuration{
-		Configuration: &server.Configuration{
-			SchemesPath:           viper.GetString("schemes-path"),
-			SchemesAssetsPath:     viper.GetString("schemes-assets-path"),
-			SchemesUpdateInterval: viper.GetInt("schemes-update"),
-			DisableSchemesUpdate:  viper.GetInt("schemes-update") == 0,
-			DisableTLS:            viper.GetBool("no-tls"),
-			Verbose:               viper.GetInt("verbose"),
-			Quiet:                 viper.GetBool("quiet"),
-			LogJSON:               viper.GetBool("log-json"),
-			Logger:                logger,
-			Production:            viper.GetBool("production"),
-			URL:                   server.ReplacePortString(viper.GetString("url"), viper.GetInt("port")),
-			EnableSSE:             viper.GetBool("sse"),
-		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     viper.GetString("email-server"),
-			EmailAuth:       emailAuth,
-			EmailFrom:       viper.GetString("email-from"),
-			DefaultLanguage: viper.GetString("default-language"),
-		},
+		Configuration:      configureIRMAServer(),
+		EmailConfiguration: configureEmail(),
 
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),
@@ -252,6 +167,8 @@ func configureMyirmad(cmd *cobra.Command) {
 
 		SessionLifetime: viper.GetInt("session-lifetime"),
 	}
+
+	confKeyshareMyirma.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
 
 	for _, v := range viper.GetStringSlice("keyshare-attributes") {
 		confKeyshareMyirma.KeyshareAttributes = append(
