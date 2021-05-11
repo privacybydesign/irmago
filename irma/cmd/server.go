@@ -3,7 +3,6 @@ package cmd
 import (
 	"os"
 	"os/signal"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -15,7 +14,6 @@ import (
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cast"
 )
 
@@ -153,56 +151,13 @@ func setFlags(cmd *cobra.Command, production bool) error {
 }
 
 func configureServer(cmd *cobra.Command) error {
-	dashReplacer := strings.NewReplacer("-", "_")
-	viper.SetEnvKeyReplacer(dashReplacer)
-	viper.SetFileKeyReplacer(dashReplacer)
-	viper.SetEnvPrefix("IRMASERVER")
-	viper.AutomaticEnv()
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		return err
-	}
-
-	// Locate and read configuration file
-	confpath := viper.GetString("config")
-	if confpath != "" {
-		dir, file := filepath.Dir(confpath), filepath.Base(confpath)
-		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
-		viper.AddConfigPath(dir)
-	} else {
-		viper.SetConfigName("irmaserver")
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/irmaserver/")
-		viper.AddConfigPath("$HOME/.irmaserver")
-	}
-	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
-
-	// Create our logger instance
-	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log-json"))
-
-	// First log output: hello, development or production mode, log level
-	mode := "development"
-	if viper.GetBool("production") {
-		mode = "production"
-		viper.SetDefault("no-auth", false)
-		viper.SetDefault("no-email", false)
-		viper.SetDefault("url", "")
-	}
-	logger.WithFields(logrus.Fields{
-		"version":   irma.Version,
-		"mode":      mode,
-		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info("irma server running")
-
-	// Now we finally examine and log any error from viper.ReadInConfig()
-	if err != nil {
-		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
-			logger.Info("No configuration file found")
-		} else {
-			die("", errors.WrapPrefix(err, "Failed to unmarshal configuration file at "+viper.ConfigFileUsed(), 0))
-		}
-	} else {
-		logger.Info("Config file: ", viper.ConfigFileUsed())
-	}
+	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
+		map[string]interface{}{
+			"no-auth":  false,
+			"no-email": false,
+			"url":      "",
+		},
+	)
 
 	// Read configuration from flags and/or environmental variables
 	conf = &requestorserver.Configuration{
@@ -267,6 +222,7 @@ func configureServer(cmd *cobra.Command) error {
 	}
 
 	// Handle requestors
+	var err error
 	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
 		return err
 	}

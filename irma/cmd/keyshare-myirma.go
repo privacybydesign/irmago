@@ -148,11 +148,11 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureMyirmad(cmd *cobra.Command) {
+func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, productionDefaults map[string]interface{}) {
 	dashReplacer := strings.NewReplacer("-", "_")
 	viper.SetEnvKeyReplacer(dashReplacer)
 	viper.SetFileKeyReplacer(dashReplacer)
-	viper.SetEnvPrefix("MYIRMA")
+	viper.SetEnvPrefix(strings.ToUpper(name))
 	viper.AutomaticEnv()
 
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
@@ -166,10 +166,12 @@ func configureMyirmad(cmd *cobra.Command) {
 		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
 		viper.AddConfigPath(dir)
 	} else {
-		viper.SetConfigName("myirmad")
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/myirmad/")
+		viper.SetConfigName(name)
+		for _, path := range configpaths {
+			viper.AddConfigPath(path)
+		}
 	}
+
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 
 	// Create our logger instance
@@ -179,12 +181,15 @@ func configureMyirmad(cmd *cobra.Command) {
 	mode := "development"
 	if viper.GetBool("production") {
 		mode = "production"
+		for key, val := range productionDefaults {
+			viper.SetDefault(key, val)
+		}
 	}
 	logger.WithFields(logrus.Fields{
 		"version":   irma.Version,
 		"mode":      mode,
 		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info("keyshared running")
+	}).Info(logname + " running")
 
 	// Now we finally examine and log any error from viper.ReadInConfig()
 	if err != nil {
@@ -196,6 +201,10 @@ func configureMyirmad(cmd *cobra.Command) {
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
 	}
+}
+
+func configureMyirmad(cmd *cobra.Command) {
+	readConfig(cmd, "myirmaserver", "myirmaserver", []string{".", "/etc/myirmaserver/"}, nil)
 
 	// If username/password are specified for the email server, build an authentication object.
 	var emailAuth smtp.Auth

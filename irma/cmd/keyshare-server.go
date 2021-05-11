@@ -8,11 +8,8 @@ import (
 	"net/smtp"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 
-	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
@@ -20,7 +17,6 @@ import (
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
-	"github.com/sirupsen/logrus"
 )
 
 var confKeyshareServer *keyshareserver.Configuration
@@ -147,53 +143,7 @@ func init() {
 }
 
 func configureKeyshared(cmd *cobra.Command) {
-	dashReplacer := strings.NewReplacer("-", "_")
-	viper.SetEnvKeyReplacer(dashReplacer)
-	viper.SetFileKeyReplacer(dashReplacer)
-	viper.SetEnvPrefix("KEYSHARED")
-	viper.AutomaticEnv()
-
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		die("", err)
-	}
-
-	// Locate and read configuration file
-	confpath := viper.GetString("config")
-	if confpath != "" {
-		dir, file := filepath.Dir(confpath), filepath.Base(confpath)
-		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
-		viper.AddConfigPath(dir)
-	} else {
-		viper.SetConfigName("keyshared")
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/keyshared/")
-	}
-	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
-
-	// Create our logger instance
-	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log-json"))
-
-	// First log output: hello, development or production mode, log level
-	mode := "development"
-	if viper.GetBool("production") {
-		mode = "production"
-	}
-	logger.WithFields(logrus.Fields{
-		"version":   irma.Version,
-		"mode":      mode,
-		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info("keyshared running")
-
-	// Now we finally examine and log any error from viper.ReadInConfig()
-	if err != nil {
-		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
-			logger.Info("No configuration file found")
-		} else {
-			die("", errors.WrapPrefix(err, "Failed to unmarshal configuration file at "+viper.ConfigFileUsed(), 0))
-		}
-	} else {
-		logger.Info("Config file: ", viper.ConfigFileUsed())
-	}
+	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
 	// If username/password are specified for the email server, build an authentication object.
 	var emailAuth smtp.Auth

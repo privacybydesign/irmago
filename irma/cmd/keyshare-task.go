@@ -2,17 +2,11 @@ package cmd
 
 import (
 	"net/smtp"
-	"path/filepath"
-	"strings"
 
-	"github.com/go-errors/errors"
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/privacybydesign/irmago/server/keyshare/taskserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
-	"github.com/sirupsen/logrus"
 )
 
 var confKeyshareTask *taskserver.Configuration
@@ -67,53 +61,7 @@ func init() {
 }
 
 func configureKeyshareTask(cmd *cobra.Command) {
-	dashReplacer := strings.NewReplacer("-", "_")
-	viper.SetEnvKeyReplacer(dashReplacer)
-	viper.SetFileKeyReplacer(dashReplacer)
-	viper.SetEnvPrefix("KEYSHARETASK")
-	viper.AutomaticEnv()
-
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		die("", err)
-	}
-
-	// Locate and read configuration file
-	confpath := viper.GetString("config")
-	if confpath != "" {
-		dir, file := filepath.Dir(confpath), filepath.Base(confpath)
-		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
-		viper.AddConfigPath(dir)
-	} else {
-		viper.SetConfigName("keysharetask")
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/keysharetask/")
-	}
-	err := viper.ReadInConfig()
-
-	// Create our logger instance
-	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log-json"))
-
-	// First log output: hello, development or production mode, log level
-	mode := "development"
-	if viper.GetBool("production") {
-		mode = "production"
-	}
-	logger.WithFields(logrus.Fields{
-		"version":   irma.Version,
-		"mode":      mode,
-		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info("keyshare task running")
-
-	// Now we finally examine and log any error from viper.ReadInConfig()
-	if err != nil {
-		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
-			logger.Info("No configuration file found")
-		} else {
-			die("", errors.WrapPrefix(err, "Failed to unmarshal configuration file at "+viper.ConfigFileUsed(), 0))
-		}
-	} else {
-		logger.Info("Config file: ", viper.ConfigFileUsed())
-	}
+	readConfig(cmd, "keysharetasks", "keyshare task daemon", []string{".", "/etc/keysharetasks"}, nil)
 
 	// If username/password are specified for the email server, build an authentication object.
 	var emailAuth smtp.Auth
