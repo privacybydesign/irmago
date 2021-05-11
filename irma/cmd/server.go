@@ -3,18 +3,14 @@ package cmd
 import (
 	"os"
 	"os/signal"
-	"regexp"
-	"strings"
 	"syscall"
 
 	"github.com/go-errors/errors"
-	"github.com/mitchellh/mapstructure"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
-	"github.com/spf13/cast"
 )
 
 var conf *requestorserver.Configuration
@@ -217,60 +213,4 @@ func configureServer(cmd *cobra.Command) error {
 	logger.Debug("Done configuring")
 
 	return nil
-}
-
-func handleMapOrString(key string, dest interface{}) error {
-	var m map[string]interface{}
-	var err error
-	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
-		if m, err = cast.ToStringMapE(viper.Get(key)); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from flag or env var", 0)
-		}
-	}
-	if len(m) == 0 {
-		return nil
-	}
-	if err := mapstructure.Decode(m, dest); err != nil {
-		return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from config file", 0)
-	}
-	return nil
-}
-
-func handlePermission(typ string) []string {
-	if !viper.IsSet(typ) {
-		if typ == "revoke-perms" || (viper.GetBool("production") && typ == "issue-perms") {
-			return []string{}
-		} else {
-			return []string{"*"}
-		}
-	}
-	perms := viper.GetStringSlice(typ)
-	if perms == nil {
-		return []string{}
-	}
-	return perms
-}
-
-// productionMode examines the arguments passed to the executable to see if --production is enabled.
-// (This should really be done using viper, but when the help message is printed, viper is not yet
-// initialized.)
-func productionMode() bool {
-	r := regexp.MustCompile("^--production(=(.*))?$")
-	for _, arg := range os.Args {
-		matches := r.FindStringSubmatch(arg)
-		if len(matches) != 3 {
-			continue
-		}
-		if matches[1] == "" {
-			return true
-		}
-		return checkConfVal(matches[2])
-	}
-
-	return checkConfVal(os.Getenv("IRMASERVER_PRODUCTION"))
-}
-
-func checkConfVal(val string) bool {
-	lc := strings.ToLower(val)
-	return lc == "1" || lc == "true" || lc == "yes" || lc == "t"
 }
