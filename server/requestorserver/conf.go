@@ -29,6 +29,9 @@ type Configuration struct {
 	ListenAddress string `json:"listen_addr" mapstructure:"listen_addr"`
 	// Port to listen at
 	Port int `json:"port" mapstructure:"port"`
+	// Route requests via this path, so instead of POST /session, it will
+	// be POST {ApiPrefix}/session.  Should start with a "/".
+	ApiPrefix string `json:"api_prefix" mapstructure:"api_prefix"`
 	// TLS configuration
 	TlsCertificate     string `json:"tls_cert" mapstructure:"tls_cert"`
 	TlsCertificateFile string `json:"tls_cert_file" mapstructure:"tls_cert_file"`
@@ -254,6 +257,14 @@ func (conf *Configuration) initialize() error {
 				conf.URL = "https://" + conf.URL[len("http://"):]
 			}
 		}
+	}
+
+	if !strings.HasSuffix(conf.ApiPrefix, "/") {
+		conf.ApiPrefix += "/"
+	}
+
+	if conf.URL != "" && !strings.HasSuffix(conf.URL, conf.ApiPrefix+"irma/") {
+		conf.Logger.Warnf("Are the URL and API-prefix set correctly?: %v does not end with %v.", conf.URL, conf.ApiPrefix+"irma/")
 	}
 
 	if len(conf.StaticSessions) != 0 && conf.JwtRSAPrivateKey == nil {

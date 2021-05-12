@@ -94,7 +94,7 @@ func (s *Server) startClientServer() error {
 
 func (s *Server) startServer(handler http.Handler, name, addr string, port int, tlsConf *tls.Config) error {
 	fulladdr := fmt.Sprintf("%s:%d", addr, port)
-	s.conf.Logger.Info(name, " listening at ", fulladdr)
+	s.conf.Logger.Info(name, " listening at ", fulladdr, s.conf.ApiPrefix)
 
 	serv := &http.Server{
 		Addr:      fulladdr,
@@ -159,11 +159,22 @@ var corsOptions = cors.Options{
 	AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
 }
 
+func (s *Server) createRouters() (rootRouter, apiRouter *chi.Mux) {
+	rootRouter = chi.NewRouter()
+	rootRouter.Route(s.conf.ApiPrefix, func(r chi.Router) {
+		// r will be a *chi.Mux, see https://github.com/go-chi/chi/blob/c9e87efe9691a63d6a89de8bbd16b04fe4d6640e/mux.go#L262
+		// We don't use a chi.Router, because we need the {NotFound,MethodNotAllowed}Handlers methods of *chi.Mux later on that
+		// are not part of the chi.Router interface.
+		apiRouter = r.(*chi.Mux)
+	})
+	apiRouter.Use(cors.New(corsOptions).Handler)
+	return
+}
+
 func (s *Server) ClientHandler() http.Handler {
-	router := chi.NewRouter()
-	router.Use(cors.New(corsOptions).Handler)
-	s.attachClientEndpoints(router)
-	return router
+	rootRouter, apiRouter := s.createRouters()
+	s.attachClientEndpoints(apiRouter)
+	return rootRouter
 }
 
 func (s *Server) attachClientEndpoints(router *chi.Mux) {
@@ -176,8 +187,7 @@ func (s *Server) attachClientEndpoints(router *chi.Mux) {
 // Handler returns a http.Handler that handles all IRMA requestor messages
 // and IRMA client messages.
 func (s *Server) Handler() http.Handler {
-	router := chi.NewRouter()
-	router.Use(cors.New(corsOptions).Handler)
+	rootRouter, router := s.createRouters()
 
 	if !s.conf.separateClientServer() {
 		// Mount server for irmaclient
@@ -226,7 +236,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/revocation", s.handleRevocation)
 	})
 
-	return router
+	return rootRouter
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {
