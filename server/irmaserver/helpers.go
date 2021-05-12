@@ -174,7 +174,7 @@ func (session *session) computeAttributes(
 		PKCounter:  &sk.Counter,
 		Key:        cred.RevocationKey,
 		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
-		Issued:     attributes.SigningDate().UnixNano(),
+		Issued:     issuedAt.UnixNano(),
 		ValidUntil: attributes.Expiry().UnixNano(),
 	}
 	if witness != nil {
