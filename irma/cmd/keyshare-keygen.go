@@ -45,5 +45,5 @@ func init() {
 	flags.SortFlags = false
 
 	flags.StringP("key-file", "k", "storagekey.aes", "File to write key to")
-	flags.Uint32P("counter", "c", 0, "Set counter for number of generated storage keys")
+	flags.Uint32P("counter", "c", 0, "Counter of generated key")
 }
