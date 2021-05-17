@@ -6,12 +6,12 @@ import (
 
 	"github.com/go-errors/errors"
 	_ "github.com/jackc/pgx/stdlib"
-	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
 type taskHandler struct {
 	conf *Configuration
-	db   *sql.DB
+	db   keyshare.DB
 }
 
 func newHandler(conf *Configuration) (*taskHandler, error) {
@@ -27,7 +27,7 @@ func newHandler(conf *Configuration) (*taskHandler, error) {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
 
-	task := &taskHandler{db: db, conf: conf}
+	task := &taskHandler{db: keyshare.DB{DB: db}, conf: conf}
 	return task, nil
 }
 
@@ -78,34 +78,30 @@ func (t *taskHandler) cleanupAccounts() {
 
 func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 	// Fetch user's email addresses
-	emailRes, err := t.db.Query("SELECT email FROM irma.emails WHERE user_id = $1", id)
+	err := t.db.QueryIterate("SELECT email FROM irma.emails WHERE user_id = $1",
+		func(emailRes *sql.Rows) error {
+			var email string
+			err := emailRes.Scan(&email)
+			if err != nil {
+				return err
+			}
+
+			// And send
+			err = t.conf.SendEmail(
+				t.conf.deleteExpiredAccountTemplate,
+				t.conf.DeleteExpiredAccountSubject,
+				map[string]string{"Username": username, "Email": email},
+				[]string{email},
+				lang,
+			)
+			return err
+		},
+		id,
+	)
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
 		return err
 	}
-
-	// And send emails to each of them.
-	for emailRes.Next() {
-		var email string
-		err = emailRes.Scan(&email)
-		if err != nil {
-			t.conf.Logger.WithField("error", err).Error("Could not retrieve email address")
-			return err
-		}
-
-		// And send
-		err = t.conf.SendEmail(
-			t.conf.deleteExpiredAccountTemplate,
-			t.conf.DeleteExpiredAccountSubject,
-			map[string]string{"Username": username, "Email": email},
-			[]string{email},
-			lang,
-		)
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -117,61 +113,45 @@ func (t *taskHandler) expireAccounts() {
 		return
 	}
 
-	// Select users we havent seen in ExpiryDelay days, and which have a registered email.
-	// We ignore (and thus keep alive) accounts without email addresses, as we cant inform their owners.
-	res, err := t.db.Query(`SELECT id, username, language 
-							FROM irma.users 
-							WHERE last_seen < $1 
+	// Iterate over users we havent seen in ExpiryDelay days, and which have a registered email.
+	// We ignore (and thus keep alive) accounts without email addresses, as we can't inform their owners.
+	// (Note that for such accounts we store no email addresses, i.e. no personal data whatsoever.)
+	err := t.db.QueryIterate(`SELECT id, username, language 
+							FROM irma.users
+							WHERE last_seen < $1
 								AND (
 										SELECT count(*) 
 										FROM irma.emails 
 										WHERE irma.users.id = irma.emails.user_id
-									) > 0 
+									) > 0
 							LIMIT 10`,
-		time.Now().Add(time.Duration(-24*t.conf.ExpiryDelay)*time.Hour).Unix())
+		func(res *sql.Rows) error {
+			var id int64
+			var username string
+			var lang string
+			err := res.Scan(&id, &username, &lang)
+			if err != nil {
+				return err
+			}
+
+			// Send emails
+			err = t.sendExpiryEmails(id, username, lang)
+			if err != nil {
+				return err // already logged, just abort
+			}
+
+			// Finally, do marking for deletion
+			err = t.db.ExecUser("UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
+				time.Now().Add(time.Duration(24*t.conf.DeleteDelay)*time.Hour).Unix())
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+		time.Now().Add(time.Duration(-24*t.conf.ExpiryDelay)*time.Hour).Unix(),
+	)
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not query for accounts that have expired")
 		return
-	}
-	defer common.Close(res)
-
-	// Send emails and mark for deletion each of the found inactive accounts.
-	for res.Next() {
-		var id int64
-		var username string
-		var lang string
-		err = res.Scan(&id, &username, &lang)
-		if err != nil {
-			t.conf.Logger.WithField("error", err).Error("Could not retrieve expired account information")
-			return
-		}
-
-		// Send emails
-		err = t.sendExpiryEmails(id, username, lang)
-		if err != nil {
-			// already logged, just abort
-			return
-		}
-
-		// Finally, do marking for deletion
-		del, err := t.db.Exec("UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
-			time.Now().Add(time.Duration(24*t.conf.DeleteDelay)*time.Hour).Unix())
-		if err != nil {
-			t.conf.Logger.WithField("error", err).WithField("id", id).Error("Could not mark user account for deletion")
-			return
-		}
-		aff, err := del.RowsAffected()
-		if err != nil {
-			t.conf.Logger.WithField("error", err).WithField("id", id).Error("Could not mark user account for deletion")
-			return
-		}
-		if aff != 1 {
-			t.conf.Logger.WithField("error", err).WithField("id", id).Error("Could not mark user account for deletion")
-			return
-		}
-	}
-	err = res.Err()
-	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("Error during iteration over accounts to be deleted")
 	}
 }
