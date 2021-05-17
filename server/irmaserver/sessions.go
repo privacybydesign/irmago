@@ -145,7 +145,7 @@ func (s *memorySessionStore) deleteExpired() {
 			if !session.Status.Finished() {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Session expired")
 				session.markAlive()
-				_ = session.setStatus(server.StatusTimeout) // memoryStore implementation returns nil only
+				session.setStatus(server.StatusTimeout)
 			} else {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Deleting session")
 				expired = append(expired, Token)
@@ -246,7 +246,8 @@ func (s *redisSessionStore) clientGet(t string) (*session, error) {
 	if session.LastActive.Add(maxSessionLifetime).Before(time.Now()) && !session.Status.Finished() {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Session expired")
 		session.markAlive()
-		_ = session.setStatus(server.StatusTimeout) // Worst case the TTL and status aren't updated. We won't deal with this error
+		session.setStatus(server.StatusTimeout)
+		_ = s.update(&session) // Worst case the TTL and status aren't updated. We won't deal with this error
 	}
 
 	return &session, nil

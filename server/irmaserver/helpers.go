@@ -34,16 +34,13 @@ func (session *session) markAlive() {
 	session.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Debugf("Session marked active, expiry delayed")
 }
 
-func (session *session) setStatus(status server.Status) error {
+func (session *session) setStatus(status server.Status) {
 	session.conf.Logger.WithFields(logrus.Fields{"session": session.Token, "prevStatus": session.PrevStatus, "status": status}).
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
-	err := session.sessions.update(session)
-	if err != nil {
-		return err
-	}
-	return nil
+	session.updateSSE()
+	session.toBeUpdated = true
 }
 
 func (session *session) updateSSE() {
@@ -60,7 +57,8 @@ func (session *session) updateSSE() {
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
-	_ = session.setStatus(server.StatusCancelled) // silently fail in order not to overwrite original error
+	session.setStatus(server.StatusCancelled)
+	_ = session.sessions.update(session) // silently fail in order not to overwrite original error
 	session.Result = &server.SessionResult{Err: rerr, Token: session.Token, Status: server.StatusCancelled, Type: session.Action}
 	return rerr
 }
@@ -419,8 +417,6 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 			Status:        ww.Status(),
 			SessionStatus: session.Status,
 		}
-		// TODO: error handling and check if this can be refactored so an update is not needed here
-		session.sessions.update(session)
 	})
 }
 
@@ -462,5 +458,14 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		}()
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
+
+		if session.toBeUpdated {
+			err = session.sessions.update(session)
+			if err != nil {
+				_ = server.LogError(err)
+				server.WriteError(w, server.ErrorInternal, "Internal server error")
+				return
+			}
+		}
 	})
 }

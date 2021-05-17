@@ -30,7 +30,8 @@ func (session *session) handleDelete() error {
 	session.markAlive()
 
 	session.Result = &server.SessionResult{Token: session.Token, Status: server.StatusCancelled, Type: session.Action}
-	err := session.setStatus(server.StatusCancelled)
+	session.setStatus(server.StatusCancelled)
+	err := session.sessions.update(session)
 	if err != nil {
 		return err
 	}
@@ -66,10 +67,7 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 	logger.WithFields(logrus.Fields{"version": session.Version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.Version
 
-	err = session.setStatus(server.StatusConnected)
-	if err != nil {
-		return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
-	}
+	session.setStatus(server.StatusConnected)
 
 	if session.Version.Below(2, 5) {
 		logger.Info("Returning legacy session format")
@@ -113,10 +111,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 
 	session.Result.Disclosed, session.Result.ProofStatus, err = signature.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
-		err = session.setStatus(server.StatusDone)
-		if err != nil {
-			return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
-		}
+		session.setStatus(server.StatusDone)
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -146,10 +141,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 
 	session.Result.Disclosed, session.Result.ProofStatus, err = disclosure.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
-		err = session.setStatus(server.StatusDone)
-		if err != nil {
-			return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
-		}
+		session.setStatus(server.StatusDone)
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -246,10 +238,8 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		sigs = append(sigs, sig)
 	}
 
-	err = session.setStatus(server.StatusDone)
-	if err != nil {
-		return nil, server.RemoteError(server.ErrorInternal, "Internal server error")
-	}
+	session.setStatus(server.StatusDone)
+
 	return &irma.ServerSessionResponse{
 		SessionType:     irma.ActionIssuing,
 		ProtocolVersion: session.Version,
