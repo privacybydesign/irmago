@@ -11,16 +11,9 @@ var keyshareTaskCmd = &cobra.Command{
 	Short: "Perform IRMA keyshare background tasks",
 	Run: func(command *cobra.Command, args []string) {
 		conf := configureKeyshareTask(command)
-
-		task, err := taskserver.New(conf)
-		if err != nil {
+		if err := taskserver.Do(conf); err != nil {
 			die("", err)
 		}
-
-		task.CleanupEmails()
-		task.CleanupTokens()
-		task.CleanupAccounts()
-		task.ExpireAccounts()
 	},
 }
 

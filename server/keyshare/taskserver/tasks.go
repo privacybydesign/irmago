@@ -9,12 +9,12 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
-type TaskHandler struct {
+type taskHandler struct {
 	conf *Configuration
 	db   *sql.DB
 }
 
-func New(conf *Configuration) (*TaskHandler, error) {
+func newHandler(conf *Configuration) (*taskHandler, error) {
 	err := processConfiguration(conf)
 	if err != nil {
 		return nil, err
@@ -26,14 +26,27 @@ func New(conf *Configuration) (*TaskHandler, error) {
 	if err = db.Ping(); err != nil {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
-	return &TaskHandler{
-		db:   db,
-		conf: conf,
-	}, nil
+
+	task := &taskHandler{db: db, conf: conf}
+	return task, nil
+}
+
+func Do(conf *Configuration) error {
+	task, err := newHandler(conf)
+	if err != nil {
+		return err
+	}
+
+	task.cleanupEmails()
+	task.cleanupTokens()
+	task.cleanupAccounts()
+	task.expireAccounts()
+
+	return nil
 }
 
 // Remove email addresses marked for deletion long enough ago
-func (t *TaskHandler) CleanupEmails() {
+func (t *taskHandler) cleanupEmails() {
 	_, err := t.db.Exec("DELETE FROM irma.emails WHERE delete_on < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email addresses marked for deletion")
@@ -41,7 +54,7 @@ func (t *TaskHandler) CleanupEmails() {
 }
 
 // Remove old login and email verifciation tokens
-func (t *TaskHandler) CleanupTokens() {
+func (t *taskHandler) cleanupTokens() {
 	_, err := t.db.Exec("DELETE FROM irma.email_login_tokens WHERE expiry < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email login tokens that have expired")
@@ -54,7 +67,7 @@ func (t *TaskHandler) CleanupTokens() {
 }
 
 // Cleanup accounts disabled long enough ago.
-func (t *TaskHandler) CleanupAccounts() {
+func (t *taskHandler) cleanupAccounts() {
 	_, err := t.db.Exec("DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR last_seen < delete_on - $2)",
 		time.Now().Unix(),
 		t.conf.DeleteDelay*24*60*60)
@@ -63,7 +76,7 @@ func (t *TaskHandler) CleanupAccounts() {
 	}
 }
 
-func (t *TaskHandler) sendExpiryEmails(id int64, username, lang string) error {
+func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 	// Fetch user's email addresses
 	emailRes, err := t.db.Query("SELECT email FROM irma.emails WHERE user_id = $1", id)
 	if err != nil {
@@ -97,7 +110,7 @@ func (t *TaskHandler) sendExpiryEmails(id int64, username, lang string) error {
 }
 
 // Mark old unused accounts for deletion, and inform their owners.
-func (t *TaskHandler) ExpireAccounts() {
+func (t *taskHandler) expireAccounts() {
 	// Disable this task when email server is not given
 	if t.conf.EmailServer == "" {
 		t.conf.Logger.Warning("Expiring accounts is disabled, as no email server is configured")
