@@ -39,6 +39,9 @@ func (db *DB) QueryScan(query string, results []interface{}, args ...interface{}
 	}
 	defer common.Close(res)
 	if !res.Next() {
+		if err = res.Err(); err != nil {
+			return err
+		}
 		return sql.ErrNoRows
 	}
 	if results == nil {
@@ -71,5 +74,5 @@ func (db *DB) QueryIterate(query string, f func(rows *sql.Rows) error, args ...i
 			return err
 		}
 	}
-	return nil
+	return res.Err()
 }

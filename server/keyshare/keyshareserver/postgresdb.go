@@ -50,6 +50,9 @@ func (db *keysharePostgresDatabase) NewUser(user *KeyshareUser) error {
 	}
 	defer common.Close(res)
 	if !res.Next() {
+		if err = res.Err(); err != nil {
+			return err
+		}
 		return ErrUserAlreadyExists
 	}
 	var id int64
@@ -115,6 +118,9 @@ func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, i
 		tries   int
 	)
 	if !uprows.Next() {
+		if err = uprows.Err(); err != nil {
+			return false, 0, 0, err
+		}
 		// if no results, then account either does not exist (which would be weird here) or is blocked
 		// so request wait timeout
 		pinrows, err := db.db.Query("SELECT pin_block_date FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", user.id)
@@ -123,6 +129,9 @@ func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, i
 		}
 		defer common.Close(pinrows)
 		if !pinrows.Next() {
+			if err = pinrows.Err(); err != nil {
+				return false, 0, 0, err
+			}
 			return false, 0, 0, keyshare.ErrUserNotFound
 		}
 		err = pinrows.Scan(&wait)
