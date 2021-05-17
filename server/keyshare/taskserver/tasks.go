@@ -116,15 +116,15 @@ func (t *taskHandler) expireAccounts() {
 	// Iterate over users we havent seen in ExpiryDelay days, and which have a registered email.
 	// We ignore (and thus keep alive) accounts without email addresses, as we can't inform their owners.
 	// (Note that for such accounts we store no email addresses, i.e. no personal data whatsoever.)
-	err := t.db.QueryIterate(`SELECT id, username, language 
-							FROM irma.users
-							WHERE last_seen < $1
-								AND (
-										SELECT count(*) 
-										FROM irma.emails 
-										WHERE irma.users.id = irma.emails.user_id
-									) > 0
-							LIMIT 10`,
+	err := t.db.QueryIterate(`
+		SELECT id, username, language
+		FROM irma.users
+		WHERE last_seen < $1 AND (
+			SELECT count(*)
+			FROM irma.emails
+			WHERE irma.users.id = irma.emails.user_id
+		) > 0
+		LIMIT 10`,
 		func(res *sql.Rows) error {
 			var id int64
 			var username string
