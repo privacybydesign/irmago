@@ -81,7 +81,7 @@ func (db *keysharePostgresDatabase) User(username string) (*KeyshareUser, error)
 
 func (db *keysharePostgresDatabase) UpdateUser(user *KeyshareUser) error {
 	return db.db.ExecUser(
-		"UPDATE irma.users SET username=$1, language=$2, coredata=$3 WHERE id=$4",
+		"UPDATE irma.users SET username = $1, language = $2, coredata = $3 WHERE id=$4",
 		user.Username,
 		user.Language,
 		user.Coredata[:],
@@ -152,7 +152,7 @@ func (db *keysharePostgresDatabase) ReservePincheck(user *KeyshareUser) (bool, i
 
 func (db *keysharePostgresDatabase) ClearPincheck(user *KeyshareUser) error {
 	return db.db.ExecUser(
-		"UPDATE irma.users SET pin_counter=0, pin_block_date=0 WHERE id=$1",
+		"UPDATE irma.users SET pin_counter = 0, pin_block_date = 0 WHERE id = $1",
 		user.id,
 	)
 }
