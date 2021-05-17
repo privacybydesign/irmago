@@ -20,6 +20,20 @@ func init() {
 	irma.Logger.SetLevel(logrus.FatalLevel)
 }
 
+func countRows(t *testing.T, db *sql.DB, table, where string) int {
+	query := "SELECT COUNT(*) FROM irma." + table
+	if where != "" {
+		query += " WHERE " + where
+	}
+	res, err := db.Query(query)
+	require.NoError(t, err)
+	require.True(t, res.Next())
+	var count int
+	require.NoError(t, res.Scan(&count))
+	require.NoError(t, res.Close())
+	return count
+}
+
 func TestCleanupEmails(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
@@ -36,13 +50,7 @@ func TestCleanupEmails(t *testing.T) {
 
 	th.cleanupEmails()
 
-	res, err := db.Query("SELECT COUNT(*) FROM irma.emails")
-	require.NoError(t, err)
-	require.True(t, res.Next())
-	var count int
-	require.NoError(t, res.Scan(&count))
-	assert.Equal(t, 2, count)
-	_ = res.Close()
+	assert.Equal(t, 2, countRows(t, db, "emails", ""))
 }
 
 func TestCleanupTokens(t *testing.T) {
@@ -63,20 +71,8 @@ func TestCleanupTokens(t *testing.T) {
 
 	th.cleanupTokens()
 
-	res, err := db.Query("SELECT COUNT(*) FROM irma.email_verification_tokens")
-	require.NoError(t, err)
-	require.True(t, res.Next())
-	var count int
-	require.NoError(t, res.Scan(&count))
-	assert.Equal(t, 1, count)
-	_ = res.Close()
-
-	res, err = db.Query("SELECT COUNT(*) FROM irma.email_login_tokens")
-	require.NoError(t, err)
-	require.True(t, res.Next())
-	require.NoError(t, res.Scan(&count))
-	assert.Equal(t, 1, count)
-	_ = res.Close()
+	assert.Equal(t, 1, countRows(t, db, "email_verification_tokens", ""))
+	assert.Equal(t, 1, countRows(t, db, "email_login_tokens", ""))
 }
 
 func TestCleanupAccounts(t *testing.T) {
@@ -93,13 +89,7 @@ func TestCleanupAccounts(t *testing.T) {
 
 	th.cleanupAccounts()
 
-	res, err := db.Query("SELECT COUNT(*) FROM irma.users")
-	require.NoError(t, err)
-	require.True(t, res.Next())
-	var count int
-	require.NoError(t, res.Scan(&count))
-	assert.Equal(t, 2, count)
-	_ = res.Close()
+	assert.Equal(t, 2, countRows(t, db, "users", ""))
 }
 
 func TestExpireAccounts(t *testing.T) {
@@ -135,13 +125,7 @@ func TestExpireAccounts(t *testing.T) {
 
 	th.expireAccounts()
 
-	res, err := db.Query("SELECT COUNT(*) FROM irma.users WHERE delete_on IS NOT NULL")
-	require.NoError(t, err)
-	require.True(t, res.Next())
-	var count int
-	require.NoError(t, res.Scan(&count))
-	assert.Equal(t, 1, count)
-	_ = res.Close()
+	assert.Equal(t, 1, countRows(t, db, "users", "delete_on IS NOT NULL"))
 }
 
 func SetupDatabase(t *testing.T) {
