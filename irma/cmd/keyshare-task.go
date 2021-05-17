@@ -8,7 +8,7 @@ import (
 
 var keyshareTaskCmd = &cobra.Command{
 	Use:   "task",
-	Short: "IRMA keyshare background task server",
+	Short: "Perform IRMA keyshare background tasks",
 	Run: func(command *cobra.Command, args []string) {
 		conf := configureKeyshareTask(command)
 
@@ -56,7 +56,7 @@ func init() {
 }
 
 func configureKeyshareTask(cmd *cobra.Command) *taskserver.Configuration {
-	readConfig(cmd, "keysharetasks", "keyshare task daemon", []string{".", "/etc/keysharetasks"}, nil)
+	readConfig(cmd, "keysharetasks", "keyshare tasks", []string{".", "/etc/keysharetasks"}, nil)
 
 	return &taskserver.Configuration{
 		EmailConfiguration: configureEmail(),
