@@ -218,7 +218,8 @@ func (s *redisSessionStore) get(t string) (*session, error) {
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
-		return nil, server.LogError(err)
+		_ = server.LogError(err)
+		return nil, errors.New("redis error")
 	}
 
 	return s.clientGet(val)
@@ -229,16 +230,16 @@ func (s *redisSessionStore) clientGet(t string) (*session, error) {
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
-		return nil, server.LogError(err)
+		_ = server.LogError(err)
+		return nil, errors.New("redis error")
 	}
 
 	var session session
 	session.conf = s.conf
 	session.sessions = s
 	if err := session.sessionData.UnmarshalJSON([]byte(val)); err != nil {
-		//TODO: return with error? general question how to deal with Redis errors
-		fmt.Printf("unable to unmarshal data into the new example struct due to: %s \n", err)
-		return nil, server.LogError(err)
+		_ = server.LogError(err)
+		return nil, errors.New("redis error")
 	}
 	session.request = session.Rrequest.SessionRequest()
 
@@ -261,16 +262,19 @@ func (s *redisSessionStore) add(session *session) error {
 
 	sessionJSON, err := session.sessionData.MarshalJSON()
 	if err != nil {
-		return server.LogError(err)
+		_ = server.LogError(err)
+		return errors.New("redis error")
 	}
 
 	err = s.client.Set(session.context, tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
 	if err != nil {
-		return server.LogError(err)
+		_ = server.LogError(err)
+		return errors.New("redis error")
 	}
 	err = s.client.Set(session.context, sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
 	if err != nil {
-		return server.LogError(err)
+		_ = server.LogError(err)
+		return errors.New("redis error")
 	}
 
 	return nil

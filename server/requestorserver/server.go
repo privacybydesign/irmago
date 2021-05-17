@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -547,7 +548,11 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	// Everything is authenticated and parsed, we're good to go!
 	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		if err.Error() == "redis error" {
+			server.WriteError(w, server.ErrorInternal, err.Error())
+		} else {
+			server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		}
 		return
 	}
 
@@ -588,7 +593,7 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.Re
 	}
 	if !applies {
 		var ctype = r.Header.Get("Content-Type")
-		if ctype != "application/json" && ctype != "text/plain" {
+		if !regexp.MustCompile("^application/json").MatchString(ctype) && !regexp.MustCompile("^text/plain").MatchString(ctype) {
 			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", ctype)
 			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
 			return false

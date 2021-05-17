@@ -253,9 +253,9 @@ func TestRedisHTTPErrors(t *testing.T) {
 	// Check error response of POST /session requestor endpoint
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
+	transport.SetHeader("Authorization", "xa6=*&9?8jeUu5>.f-%rVg`f63pHim")
 	err := transport.Post("session", nil, request)
-	// TODO: the session endpoint returns the wrong error; this should be fixed.
-	// checkError(err)
+	checkError(err)
 
 	// Check error response of requestor endpoints for sessions
 	transport.Server += "session/Sxqcpng37mAdBKgoAJXl/"
