@@ -89,7 +89,6 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 	var err error
 	var wg sync.WaitGroup
 	for id := range request.Disclosure().Identifiers().CredentialTypes {
-		id := id // copy for closure below, see https://golang.org/doc/faq#closures_and_goroutines
 		credtype := client.Configuration.CredentialTypes[id]
 		if !credtype.RevocationSupported() {
 			continue
@@ -99,6 +98,7 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 		}
 		irma.Logger.WithField("credtype", id).Debug("updating witnesses")
 		wg.Add(1)
+		id := id // copy for closure below (https://golang.org/doc/faq#closures_and_goroutines)
 		go func() {
 			if e := client.nonrevUpdate(id, base.Revocation[id].Updates); e != nil {
 				err = e // overwrites err from previously finished call, if any
