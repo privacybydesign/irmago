@@ -125,25 +125,26 @@ func (db *myirmaPostgresDB) LoginTokenCandidates(token string) ([]LoginCandidate
 	return candidates, nil
 }
 
-func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (bool, error) {
+func (db *myirmaPostgresDB) TryUserLoginToken(token, username string) (int64, bool, error) {
+	var id int64
 	err := db.db.QueryUser(
-		`SELECT 1 FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
+		`SELECT users.id FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
 		     username = $1 AND (emails.delete_on >= $3 OR emails.delete_on IS NULL) AND
 		     email = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
-		nil, username, token, time.Now().Unix())
+		[]interface{}{&id}, username, token, time.Now().Unix())
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 
 	// Successfull deletion of the token can only occur once, so we use that to signal ok to login
 	aff, err := db.db.ExecCount("DELETE FROM irma.email_login_tokens WHERE token = $1", token)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	if aff != 1 {
-		return false, nil
+		return 0, false, nil
 	}
-	return true, nil
+	return id, true, nil
 }
 
 func (db *myirmaPostgresDB) UserInformation(id int64) (UserInformation, error) {

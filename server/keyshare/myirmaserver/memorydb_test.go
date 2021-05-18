@@ -82,18 +82,21 @@ func TestMemoryDBLoginToken(t *testing.T) {
 	_, err = db.LoginTokenCandidates("DNE")
 	assert.Error(t, err)
 
-	_, err = db.TryUserLoginToken("testtoken", "DNE")
+	_, _, err = db.TryUserLoginToken("testtoken", "DNE")
 	assert.Error(t, err)
 
-	ok, err := db.TryUserLoginToken("testtoken", "noemail")
+	id, ok, err := db.TryUserLoginToken("testtoken", "noemail")
+	assert.Equal(t, int64(0), id)
 	assert.NoError(t, err)
 	assert.False(t, ok)
 
-	ok, err = db.TryUserLoginToken("testtoken", "testuser")
+	id, ok, err = db.TryUserLoginToken("testtoken", "testuser")
+	assert.Equal(t, int64(15), id)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	ok, err = db.TryUserLoginToken("testtoken", "testuser")
+	id, ok, err = db.TryUserLoginToken("testtoken", "testuser")
+	assert.Equal(t, int64(0), id)
 	assert.NoError(t, err)
 	assert.False(t, ok)
 }

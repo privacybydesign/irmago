@@ -279,7 +279,7 @@ type TokenLoginRequest struct {
 }
 
 func (s *Server) processTokenLogin(request TokenLoginRequest) (string, error) {
-	ok, err := s.db.TryUserLoginToken(request.Token, request.Username)
+	id, ok, err := s.db.TryUserLoginToken(request.Token, request.Username)
 	if err != nil && err != keyshare.ErrUserNotFound {
 		s.conf.Logger.WithField("error", err).Error("Could not login user using token")
 		return "", err
@@ -288,11 +288,6 @@ func (s *Server) processTokenLogin(request TokenLoginRequest) (string, error) {
 		return "", keyshare.ErrUserNotFound
 	}
 
-	id, err := s.db.UserID(request.Username) // username is trusted, since it was validated by s.db.TryUserLoginToken
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not fetch userid for username validated in earlier step")
-		return "", err
-	}
 	session := s.store.create()
 	session.userID = &id
 

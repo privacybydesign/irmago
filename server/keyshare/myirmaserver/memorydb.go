@@ -112,27 +112,27 @@ func (db *myirmaMemoryDB) LoginTokenCandidates(token string) ([]LoginCandidate, 
 	return result, nil
 }
 
-func (db *myirmaMemoryDB) TryUserLoginToken(token, username string) (bool, error) {
+func (db *myirmaMemoryDB) TryUserLoginToken(token, username string) (int64, bool, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
 	email, ok := db.loginEmailTokens[token]
 	if !ok {
-		return false, nil
+		return 0, false, nil
 	}
 
 	user, ok := db.userData[username]
 	if !ok {
-		return false, keyshare.ErrUserNotFound
+		return 0, false, keyshare.ErrUserNotFound
 	}
 
 	for _, userEmail := range user.email {
 		if userEmail == email {
 			delete(db.loginEmailTokens, token)
-			return true, nil
+			return user.id, true, nil
 		}
 	}
-	return false, nil
+	return 0, false, nil
 }
 
 func (db *myirmaMemoryDB) UserInformation(id int64) (UserInformation, error) {
