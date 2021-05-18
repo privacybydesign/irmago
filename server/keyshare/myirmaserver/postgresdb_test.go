@@ -93,18 +93,17 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	_, err = db.LoginTokenCandidates("DNE")
 	assert.Error(t, err)
 
-	_, _, err = db.TryUserLoginToken("testtoken", "DNE")
+	_, err = db.TryUserLoginToken("testtoken", "DNE")
 	assert.Error(t, err)
 
-	_, _, err = db.TryUserLoginToken("testtoken", "noemail")
+	_, err = db.TryUserLoginToken("testtoken", "noemail")
 	assert.Error(t, err)
 
-	id, ok, err := db.TryUserLoginToken("testtoken", "testuser")
+	id, err := db.TryUserLoginToken("testtoken", "testuser")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
-	assert.True(t, ok)
 
-	_, _, err = db.TryUserLoginToken("testtoken", "testuser")
+	_, err = db.TryUserLoginToken("testtoken", "testuser")
 	assert.Error(t, err)
 
 	assert.NoError(t, db.AddEmail(17, "test@test.com"))

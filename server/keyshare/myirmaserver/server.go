@@ -279,13 +279,13 @@ type TokenLoginRequest struct {
 }
 
 func (s *Server) processTokenLogin(request TokenLoginRequest) (string, error) {
-	id, ok, err := s.db.TryUserLoginToken(request.Token, request.Username)
-	if err != nil && err != keyshare.ErrUserNotFound {
-		s.conf.Logger.WithField("error", err).Error("Could not login user using token")
+	id, err := s.db.TryUserLoginToken(request.Token, request.Username)
+	if err == keyshare.ErrUserNotFound {
 		return "", err
 	}
-	if !ok || err == keyshare.ErrUserNotFound {
-		return "", keyshare.ErrUserNotFound
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not login user using token")
+		return "", err
 	}
 
 	session := s.store.create()

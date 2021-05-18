@@ -11,7 +11,7 @@ type MyirmaDB interface {
 
 	AddEmailLoginToken(email, token string) error
 	LoginTokenCandidates(token string) ([]LoginCandidate, error)
-	TryUserLoginToken(token, username string) (int64, bool, error)
+	TryUserLoginToken(token, username string) (int64, error)
 
 	UserInformation(id int64) (UserInformation, error)
 	Logs(id int64, offset int, amount int) ([]LogEntry, error)
