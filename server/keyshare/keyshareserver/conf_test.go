@@ -60,4 +60,9 @@ func TestConfInvalidAESKey(t *testing.T) {
 	conf.DBType = "undefined"
 	_, err = New(conf)
 	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.KeyshareAttribute = irma.NewAttributeTypeIdentifier("test.test.foo.bar")
+	_, err = New(conf)
+	assert.Error(t, err)
 }

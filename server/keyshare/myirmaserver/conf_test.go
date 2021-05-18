@@ -47,4 +47,14 @@ func TestConfValidation(t *testing.T) {
 	conf.DBType = "UNKNOWN"
 	_, err = New(conf)
 	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.KeyshareAttributes = append(conf.KeyshareAttributes, irma.NewAttributeTypeIdentifier("test.test.foo.bar"))
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.KeyshareAttributes = append(conf.EmailAttributes, irma.NewAttributeTypeIdentifier("test.test.foo.bar"))
+	_, err = New(conf)
+	assert.Error(t, err)
 }

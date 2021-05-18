@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
+	"github.com/hashicorp/go-multierror"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
@@ -71,6 +72,20 @@ func processConfiguration(conf *Configuration) error {
 	}
 	if len(conf.EmailAttributes) == 0 {
 		return server.LogError(errors.Errorf("Missing email attributes"))
+	}
+	var multierr multierror.Error
+	for _, attr := range conf.KeyshareAttributes {
+		if conf.IrmaConfiguration.AttributeTypes[attr] == nil {
+			multierr.Errors = append(multierr.Errors, errors.Errorf("Unknown keyshare attribute: %s", attr))
+		}
+	}
+	for _, attr := range conf.EmailAttributes {
+		if conf.IrmaConfiguration.AttributeTypes[attr] == nil {
+			multierr.Errors = append(multierr.Errors, errors.Errorf("Unknown email attribute: %s", attr))
+		}
+	}
+	if err := multierr.ErrorOrNil(); err != nil {
+		return server.LogError(err)
 	}
 
 	// Setup email templates

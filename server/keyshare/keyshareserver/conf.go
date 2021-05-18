@@ -94,6 +94,10 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 		return nil, server.LogError(err)
 	}
 
+	if conf.IrmaConfiguration.AttributeTypes[conf.KeyshareAttribute] == nil {
+		return nil, server.LogError(errors.Errorf("Unknown keyshare attribute: %s", conf.KeyshareAttribute))
+	}
+
 	// Setup database
 	if conf.DB == nil {
 		switch conf.DBType {
