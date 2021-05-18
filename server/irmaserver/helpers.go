@@ -180,8 +180,6 @@ func (session *session) computeAttributes(
 			Issued:     issuedAt.UnixNano(),
 			ValidUntil: attributes.Expiry().UnixNano(),
 		}
-	}
-	if witness != nil {
 		err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 		if err != nil {
 			return nil, nil, err

@@ -4,7 +4,6 @@ import (
 	//TODO: use redigo instead of redis-go v8?
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/go-errors/errors"
 	"strings"
 	"sync"
@@ -25,12 +24,13 @@ type session struct {
 	//TODO: check if we can get rid of this Mutex for Redis
 	sync.Mutex `json:-`
 	//TODO: note somewhere that state with redis will not support sse for the moment
-	sse      *sse.Server
-	locked   bool
-	sessions sessionStore
-	conf     *server.Configuration
-	request  irma.SessionRequest
-	context  context.Context
+	sse         *sse.Server
+	locked      bool
+	sessions    sessionStore
+	conf        *server.Configuration
+	request     irma.SessionRequest
+	context     context.Context
+	toBeUpdated bool
 
 	sessionData
 }
