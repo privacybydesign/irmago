@@ -14,8 +14,9 @@ func validConf(t *testing.T) *Configuration {
 	testdataPath := test.FindTestdataFolder(t)
 	return &Configuration{
 		Configuration: &server.Configuration{
-			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
-			Logger:      irma.Logger,
+			SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
+			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
+			Logger:                irma.Logger,
 		},
 		DBType:                DatabaseTypeMemory,
 		JwtKeyID:              0,
@@ -63,6 +64,11 @@ func TestConfInvalidAESKey(t *testing.T) {
 
 	conf = validConf(t)
 	conf.KeyshareAttribute = irma.NewAttributeTypeIdentifier("test.test.foo.bar")
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.IssuerPrivateKeysPath = testdataPath // no private keys here
 	_, err = New(conf)
 	assert.Error(t, err)
 }

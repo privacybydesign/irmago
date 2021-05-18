@@ -97,6 +97,10 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	if conf.IrmaConfiguration.AttributeTypes[conf.KeyshareAttribute] == nil {
 		return nil, server.LogError(errors.Errorf("Unknown keyshare attribute: %s", conf.KeyshareAttribute))
 	}
+	_, err = conf.IrmaConfiguration.PrivateKeys.Latest(conf.KeyshareAttribute.CredentialTypeIdentifier().IssuerIdentifier())
+	if err != nil {
+		return nil, server.LogError(errors.Errorf("Failed to load private key of keyshare attribute: %v", err))
+	}
 
 	// Setup database
 	if conf.DB == nil {
