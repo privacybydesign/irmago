@@ -13,6 +13,10 @@ import (
 	"github.com/sietseringers/viper"
 )
 
+var (
+	localIP, localIPErr = server.LocalIP()
+)
+
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "IRMA server for verifying and issuing attributes",
@@ -67,13 +71,9 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.SortFlags = false
 
 	var defaulturl string
-	var err error
 	if !production {
-		defaulturl, err = server.LocalIP()
-		if err != nil {
-			logger.Warn("Could not determine local IP address: ", err.Error())
-		} else {
-			defaulturl = "http://" + defaulturl + ":port"
+		if localIP != "" {
+			defaulturl = "http://" + localIP + ":port"
 		}
 	}
 
@@ -146,6 +146,10 @@ func setFlags(cmd *cobra.Command, production bool) error {
 }
 
 func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error) {
+	if localIPErr != nil {
+		logger.Warn("Could not determine local IP address: ", localIPErr.Error())
+	}
+
 	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
 		map[string]interface{}{
 			"no-auth":  false,
