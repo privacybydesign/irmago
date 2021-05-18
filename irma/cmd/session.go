@@ -108,9 +108,8 @@ func libraryRequest(
 
 	// Start the session
 	resultchan := make(chan *server.SessionResult)
-	qr, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) error {
+	qr, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) {
 		resultchan <- r
-		return nil
 	})
 	if err != nil {
 		return nil, errors.WrapPrefix(err, "IRMA session failed", 0)
