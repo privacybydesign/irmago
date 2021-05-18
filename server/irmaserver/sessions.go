@@ -111,8 +111,7 @@ func (s *memorySessionStore) add(session *session) error {
 	return nil
 }
 
-func (s *memorySessionStore) update(session *session) error {
-	session.updateSSE()
+func (s *memorySessionStore) update(_ *session) error {
 	return nil
 }
 
