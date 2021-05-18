@@ -41,6 +41,7 @@ func init() {
 
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
+	flags.StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
 	flags.String("db-type", myirmaserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
@@ -89,6 +90,8 @@ func configureMyirmad(cmd *cobra.Command) *myirmaserver.Configuration {
 	conf := &myirmaserver.Configuration{
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
+
+		CORSAllowedOrigins: viper.GetStringSlice("cors-allowed-origins"),
 
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),

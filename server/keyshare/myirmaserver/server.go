@@ -32,13 +32,6 @@ type Server struct {
 
 var (
 	ErrInvalidEmail = errors.New("Email not associated with account")
-
-	corsOptions = cors.Options{
-		AllowedOrigins:   []string{"*"}, // TODO make this configurable
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Cache-Control"},
-		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodDelete},
-		AllowCredentials: true,
-	}
 )
 
 func New(conf *Configuration) (*Server, error) {
@@ -80,7 +73,12 @@ func (s *Server) Stop() {
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 
-	router.Use(cors.New(corsOptions).Handler)
+	router.Use(cors.New(cors.Options{
+		AllowedOrigins:   s.conf.CORSAllowedOrigins,
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Cache-Control"},
+		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodDelete},
+		AllowCredentials: true,
+	}).Handler)
 
 	router.Group(func(router chi.Router) {
 		router.Use(server.SizeLimitMiddleware)

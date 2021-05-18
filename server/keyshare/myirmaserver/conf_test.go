@@ -57,4 +57,29 @@ func TestConfValidation(t *testing.T) {
 	conf.KeyshareAttributes = append(conf.EmailAttributes, irma.NewAttributeTypeIdentifier("test.test.foo.bar"))
 	_, err = New(conf)
 	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.CORSAllowedOrigins = []string{"*"}
+	_, err = New(conf)
+	assert.NoError(t, err)
+
+	conf = validConf(t)
+	conf.CORSAllowedOrigins = []string{"http://example.com"}
+	_, err = New(conf)
+	assert.NoError(t, err)
+
+	conf = validConf(t)
+	conf.CORSAllowedOrigins = []string{"*", "http://example.com"}
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.CORSAllowedOrigins = []string{"example.com"}
+	_, err = New(conf)
+	assert.Error(t, err)
+
+	conf = validConf(t)
+	conf.CORSAllowedOrigins = []string{"http://example.com/foobar"}
+	_, err = New(conf)
+	assert.Error(t, err)
 }

@@ -2,6 +2,7 @@ package myirmaserver
 
 import (
 	"html/template"
+	"net/url"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -26,6 +27,8 @@ const (
 type Configuration struct {
 	// IRMA server configuration. If not given, this will be populated using information here
 	*server.Configuration `mapstructure:",squash"`
+
+	CORSAllowedOrigins []string `json:"cors_allowed_origins" mapstructure:"cors_allowed_origins"`
 
 	// Path to static content to serve (for testing)
 	StaticPath   string `json:"static_path" mapstructure:"static_path"`
@@ -146,6 +149,23 @@ func processConfiguration(conf *Configuration) error {
 		conf.URL += "/"
 	}
 	conf.URL += "irma/"
+
+	for _, origin := range conf.CORSAllowedOrigins {
+		if origin == "*" {
+			if len(conf.CORSAllowedOrigins) != 1 {
+				return server.LogError(errors.New("CORS allowed origin * cannot be specified together with other allowed origins"))
+			}
+			continue
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return server.LogError(errors.Errorf(`Invalid CORS allowed origin "%s": %v`, origin, err))
+		}
+		if !strings.HasPrefix(u.Scheme, "http") || u.Path != "" || u.RawQuery != "" || u.RawFragment != "" {
+			err = errors.Errorf(`Invalid CORS allowed origin "%s": must start with http(s) but be without path, query or fragment`, origin)
+			return server.LogError(err)
+		}
+	}
 
 	return nil
 }
