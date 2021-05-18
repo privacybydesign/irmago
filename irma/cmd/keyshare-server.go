@@ -51,9 +51,8 @@ func init() {
 	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
 	flags.Lookup("jwt-privkey").Header = `Cryptographic keys`
 
-	flags.String("keyshare-credential", "", "Credential issued during keyshare server registration")
-	flags.String("keyshare-attribute", "", "Attribute within keyshare credential that contains username")
-	flags.Lookup("keyshare-credential").Header = `Keyshare server credential`
+	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
+	flags.Lookup("keyshare-attribute").Header = `Keyshare server attribute issued during registration`
 
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
