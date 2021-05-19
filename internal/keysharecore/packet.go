@@ -3,8 +3,8 @@ package keysharecore
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/binary"
 
 	"github.com/privacybydesign/gabi/big"
@@ -129,9 +129,8 @@ func (c *Core) decryptPacketIfPinOK(ep EncryptedKeysharePacket, pin string) (une
 		return unencryptedKeysharePacket{}, err
 	}
 
-	// Check pins in constant time
 	refPin := p.pin()
-	if !hmac.Equal(refPin[:], paddedPin[:]) {
+	if subtle.ConstantTimeCompare(refPin[:], paddedPin[:]) != 1 {
 		return unencryptedKeysharePacket{}, ErrInvalidPin
 	}
 	return p, nil

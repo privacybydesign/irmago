@@ -1,8 +1,8 @@
 package keysharecore
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
 	"time"
@@ -149,7 +149,7 @@ func (c *Core) verifyAccess(ep EncryptedKeysharePacket, jwtToken string) (unencr
 	}
 	refId := p.id()
 
-	if !hmac.Equal(refId[:], tokenID) {
+	if subtle.ConstantTimeCompare(refId[:], tokenID) != 1 {
 		return unencryptedKeysharePacket{}, ErrInvalidJWT
 	}
 
