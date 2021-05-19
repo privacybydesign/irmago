@@ -24,7 +24,7 @@ func TestPinFunctionality(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 
 	// generate test pin
 	var bpin [64]byte
@@ -62,7 +62,7 @@ func TestVerifyAccess(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 
 	// Generate test pins
 	var bpin [64]byte
@@ -161,7 +161,7 @@ func TestProofFunctionality(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// generate test pin
@@ -211,7 +211,7 @@ func TestCorruptedPacket(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -255,7 +255,7 @@ func TestIncorrectPin(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -292,7 +292,7 @@ func TestMissingKey(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -325,7 +325,7 @@ func TestInvalidChallenge(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -366,7 +366,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -397,7 +397,7 @@ func TestNonExistingCommit(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 1, jwtTestKey)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters

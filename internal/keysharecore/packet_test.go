@@ -28,7 +28,7 @@ func TestPacketEncryptDecrypt(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 0, nil)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key})
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
@@ -56,7 +56,7 @@ func TestPacketAuthentication(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 0, nil)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key})
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
@@ -84,7 +84,7 @@ func TestMultiKey(t *testing.T) {
 	var key AesKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(1, key, 0, nil)
+	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key})
 	_, err = rand.Read(key[:])
 	require.NoError(t, err)
 	c.DangerousAddAESKey(2, key)

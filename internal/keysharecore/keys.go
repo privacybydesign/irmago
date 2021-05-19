@@ -31,16 +31,23 @@ type (
 		//  sessions
 		trustedKeys map[irma.PublicKeyIdentifier]*gabikeys.PublicKey
 	}
+
+	Configuration struct {
+		AESKeyID  uint32
+		AESKey    AesKey
+		SignKeyID uint32
+		SignKey   *rsa.PrivateKey
+	}
 )
 
-func NewKeyshareCore(aesKeyID uint32, aesKey AesKey, signKeyID uint32, signKey *rsa.PrivateKey) *Core {
+func NewKeyshareCore(conf *Configuration) *Core {
 	c := &Core{
 		decryptionKeys: map[uint32]AesKey{},
 		commitmentData: map[uint64]*big.Int{},
 		trustedKeys:    map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{},
 	}
-	c.setAESEncryptionKey(aesKeyID, aesKey)
-	c.setSignKey(signKeyID, signKey)
+	c.setAESEncryptionKey(conf.AESKeyID, conf.AESKey)
+	c.setSignKey(conf.SignKeyID, conf.SignKey)
 	return c
 }
 

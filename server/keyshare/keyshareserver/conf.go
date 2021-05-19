@@ -141,7 +141,12 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to load primary storage key", 0))
 	}
 
-	core := keysharecore.NewKeyshareCore(encID, encKey, conf.JwtKeyID, jwtPrivateKey)
+	core := keysharecore.NewKeyshareCore(&keysharecore.Configuration{
+		AESKeyID:  encID,
+		AESKey:    encKey,
+		SignKeyID: conf.JwtKeyID,
+		SignKey:   jwtPrivateKey,
+	})
 	for _, keyFile := range conf.StorageFallbackKeyFiles {
 		id, key, err := readAESKey(keyFile)
 		if err != nil {
