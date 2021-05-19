@@ -61,7 +61,6 @@ func (c *Core) DangerousBuildKeyshareSecret(pinRaw string, secret *big.Int) (Enc
 }
 
 // Check pin for validity, and generate jwt for future access
-//  userid is an extra field added to the jwt for
 func (c *Core) ValidatePin(ep EncryptedKeysharePacket, pin string, userID string) (string, error) {
 	p, err := c.decryptPacketIfPinOK(ep, pin)
 	if err != nil {
@@ -75,7 +74,6 @@ func (c *Core) ValidatePin(ep EncryptedKeysharePacket, pin string, userID string
 		"sub":      "auth_tok",
 		"iat":      time.Now().Unix(),
 		"exp":      time.Now().Add(3 * time.Minute).Unix(),
-		"user_id":  userID,
 		"token_id": base64.StdEncoding.EncodeToString(id[:]),
 	})
 	token.Header["kid"] = c.signKeyID
