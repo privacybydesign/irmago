@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -24,12 +23,6 @@ import (
 	"github.com/go-chi/chi"
 )
 
-type SessionData struct {
-	LastKeyID    irma.PublicKeyIdentifier // last used key, used in signing the issuance message
-	LastCommitID uint64
-	expiry       time.Time
-}
-
 type Server struct {
 	// configuration
 	conf *Configuration
@@ -44,15 +37,14 @@ type Server struct {
 	stopScheduler chan<- bool
 
 	// Session data, keeping track of current keyshare protocol session state for each user
-	sessions    map[string]*SessionData
-	sessionLock sync.Mutex
+	store sessionStore
 }
 
 func New(conf *Configuration) (*Server, error) {
 	var err error
 	s := &Server{
 		conf:      conf,
-		sessions:  map[string]*SessionData{},
+		store:     newMemorySessionStore(10 * time.Second),
 		scheduler: gocron.NewScheduler(),
 	}
 
@@ -84,7 +76,7 @@ func New(conf *Configuration) (*Server, error) {
 	s.db = conf.DB
 
 	// Setup session cache clearing
-	s.scheduler.Every(10).Seconds().Do(s.clearSessions)
+	s.scheduler.Every(10).Seconds().Do(s.store.flush)
 	s.stopScheduler = s.scheduler.Start()
 
 	return s, nil
@@ -93,18 +85,6 @@ func New(conf *Configuration) (*Server, error) {
 func (s *Server) Stop() {
 	s.stopScheduler <- true
 	s.sessionserver.Stop()
-}
-
-// clean up any expired sessions
-func (s *Server) clearSessions() {
-	now := time.Now()
-	s.sessionLock.Lock()
-	defer s.sessionLock.Unlock()
-	for k, v := range s.sessions {
-		if now.After(v.expiry) {
-			delete(s.sessions, k)
-		}
-	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -210,21 +190,14 @@ func (s *Server) generateCommitments(user *KeyshareUser, authorization string, k
 	}
 
 	// Store needed data for later requests.
-	username := user.Username
-	s.sessionLock.Lock()
-	session, ok := s.sessions[username]
-	if !ok {
-		session = &SessionData{}
-		s.sessions[username] = session
-	}
 	// Of all keys involved in the current session, store the ID of the first one to be used when
 	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
 	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
 	// puts the key ID of the credential(s) being issued at index 0.
-	session.LastKeyID = keys[0]
-	session.LastCommitID = commitID
-	session.expiry = time.Now().Add(10 * time.Second)
-	s.sessionLock.Unlock()
+	s.store.add(user.Username, &SessionData{
+		LastKeyID:    keys[0],
+		LastCommitID: commitID,
+	})
 
 	// And send response
 	return &irma.ProofPCommitmentMap{Commitments: mappedCommitments}, nil
@@ -251,10 +224,8 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get data from session
-	s.sessionLock.Lock()
-	sessionData, ok := s.sessions[user.Username]
-	s.sessionLock.Unlock()
-	if !ok {
+	sessionData := s.store.get(user.Username)
+	if sessionData == nil {
 		s.conf.Logger.Warn("Request for response without previous call to get commitments")
 		server.WriteError(w, server.ErrorInvalidRequest, "Missing previous call to getCommitments")
 		return
