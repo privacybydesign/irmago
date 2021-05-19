@@ -58,10 +58,11 @@ func (s *MemorySessionStore) get(token string) *Sessiondata {
 }
 
 func (s *MemorySessionStore) flush() {
+	now := time.Now()
 	s.Lock()
 	defer s.Unlock()
 	for k, v := range s.data {
-		if time.Now().After(v.expiry) {
+		if now.After(v.expiry) {
 			delete(s.data, k)
 		}
 	}
