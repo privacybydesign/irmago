@@ -39,6 +39,8 @@ type Configuration struct {
 	// Configuration of secure Core
 	// Private key used to sign JWTs with
 	JwtKeyID          uint32 `json:"jwt_key_id" mapstructure:"jwt_key_id"`
+	JwtIssuer         string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
+	JwtPinExpiry      int    `json:"jwt_pin_expiry" mapstructure:"jwt_pin_expiry"`
 	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 	// Decryption keys used for keyshare packets
@@ -142,10 +144,12 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	}
 
 	core := keysharecore.NewKeyshareCore(&keysharecore.Configuration{
-		AESKeyID:  encID,
-		AESKey:    encKey,
-		SignKeyID: conf.JwtKeyID,
-		SignKey:   jwtPrivateKey,
+		AESKeyID:     encID,
+		AESKey:       encKey,
+		SignKeyID:    conf.JwtKeyID,
+		SignKey:      jwtPrivateKey,
+		JWTIssuer:    conf.JwtIssuer,
+		JWTPinExpiry: conf.JwtPinExpiry,
 	})
 	for _, keyFile := range conf.StorageFallbackKeyFiles {
 		id, key, err := readAESKey(keyFile)

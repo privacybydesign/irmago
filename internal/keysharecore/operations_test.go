@@ -37,8 +37,16 @@ func TestPinFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test with correct pin
-	_, err = c.ValidatePin(ep, pin, "testid")
+	j, err := c.ValidatePin(ep, pin, "testid")
 	assert.NoError(t, err)
+	var claims jwt.StandardClaims
+	_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
+		return &jwtTestKey.PublicKey, nil
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "auth_tok", claims.Subject)
+	assert.Equal(t, time.Now().Unix()+JWTPinExpiryDefault, claims.ExpiresAt)
+	assert.Equal(t, JWTIssuerDefault, claims.Issuer)
 
 	// test change pin
 	var bnewpin [64]byte

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
 	"github.com/sietseringers/cobra"
@@ -47,6 +48,8 @@ func init() {
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
 	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
 	flags.Int("jwt-privkey-id", 0, "Key identifier of keyshare server public key matching used private key")
+	flags.String("jwt-issuer", keysharecore.JWTIssuerDefault, "JWT issuer used in \"iss\" field")
+	flags.Int("jwt-pin-expiry", keysharecore.JWTPinExpiryDefault, "Expiry of PIN JWT in seconds")
 	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
 	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
 	flags.Lookup("jwt-privkey").Header = `Cryptographic keys`
@@ -93,6 +96,8 @@ func configureKeyshared(cmd *cobra.Command) *keyshareserver.Configuration {
 		JwtKeyID:                viper.GetUint32("jwt-privkey-id"),
 		JwtPrivateKey:           viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:       viper.GetString("jwt-privkey-file"),
+		JwtIssuer:               viper.GetString("jwt-issuer"),
+		JwtPinExpiry:            viper.GetInt("jwt-pin-expiry"),
 		StoragePrimaryKeyFile:   viper.GetString("storage-primary-keyfile"),
 		StorageFallbackKeyFiles: viper.GetStringSlice("storage-fallback-keyfile"),
 

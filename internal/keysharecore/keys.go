@@ -10,6 +10,11 @@ import (
 	irma "github.com/privacybydesign/irmago"
 )
 
+const (
+	JWTIssuerDefault    = "keyshare_server"
+	JWTPinExpiryDefault = 5 * 60 // seconds
+)
+
 type (
 	AesKey [32]byte
 
@@ -30,13 +35,18 @@ type (
 		// IRMA issuer keys that are allowed to be used in keyshare
 		//  sessions
 		trustedKeys map[irma.PublicKeyIdentifier]*gabikeys.PublicKey
+
+		jwtIssuer    string
+		jwtPinExpiry int
 	}
 
 	Configuration struct {
-		AESKeyID  uint32
-		AESKey    AesKey
-		SignKeyID uint32
-		SignKey   *rsa.PrivateKey
+		AESKeyID     uint32
+		AESKey       AesKey
+		SignKeyID    uint32
+		SignKey      *rsa.PrivateKey
+		JWTIssuer    string
+		JWTPinExpiry int // in seconds
 	}
 )
 
@@ -46,8 +56,19 @@ func NewKeyshareCore(conf *Configuration) *Core {
 		commitmentData: map[uint64]*big.Int{},
 		trustedKeys:    map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{},
 	}
+
 	c.setAESEncryptionKey(conf.AESKeyID, conf.AESKey)
 	c.setSignKey(conf.SignKeyID, conf.SignKey)
+
+	c.jwtIssuer = conf.JWTIssuer
+	if c.jwtIssuer == "" {
+		c.jwtIssuer = JWTIssuerDefault
+	}
+	c.jwtPinExpiry = conf.JWTPinExpiry
+	if c.jwtPinExpiry == 0 {
+		c.jwtPinExpiry = JWTPinExpiryDefault
+	}
+
 	return c
 }
 

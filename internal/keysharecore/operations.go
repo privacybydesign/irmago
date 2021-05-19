@@ -70,10 +70,10 @@ func (c *Core) ValidatePin(ep EncryptedKeysharePacket, pin string, userID string
 	// Generate jwt token
 	id := p.id()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss":      "keyshare_server",
+		"iss":      c.jwtIssuer,
 		"sub":      "auth_tok",
 		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(3 * time.Minute).Unix(),
+		"exp":      time.Now().Add(time.Duration(c.jwtPinExpiry) * time.Second).Unix(),
 		"token_id": base64.StdEncoding.EncodeToString(id[:]),
 	})
 	token.Header["kid"] = c.signKeyID
@@ -226,7 +226,7 @@ func (c *Core) GenerateResponse(ep EncryptedKeysharePacket, accessToken string, 
 		"ProofP": gabi.KeyshareResponse(p.keyshareSecret(), commit, challenge, key),
 		"iat":    time.Now().Unix(),
 		"sub":    "ProofP",
-		"iss":    "keyshare_server",
+		"iss":    c.jwtIssuer,
 	})
 	token.Header["kid"] = c.signKeyID
 	return token.SignedString(c.signKey)
