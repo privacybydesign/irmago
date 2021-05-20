@@ -53,9 +53,8 @@ func StartRequestorServer(t *testing.T, configuration *requestorserver.Configura
 	requestorServer, err := requestorserver.New(configuration)
 	require.NoError(t, err)
 	go func() {
-		if err := requestorServer.Start(configuration); err != nil {
-			panic("Starting server failed: " + err.Error())
-		}
+		err := requestorServer.Start(configuration)
+		require.NoError(t, err)
 	}()
 	time.Sleep(200 * time.Millisecond) // Give server time to start
 	return requestorServer
