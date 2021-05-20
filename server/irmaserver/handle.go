@@ -270,6 +270,10 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 	var reqbts json.RawMessage
 	err = irma.NewHTTPTransport("", false).Post(url, &reqbts, res)
 	if err != nil {
+		if sessErr, ok := err.(*irma.SessionError); ok && sessErr.RemoteStatus == http.StatusNoContent {
+			// 204 instead of a new sessionRequest means no next session is coming
+			return nil, nil, nil
+		}
 		return nil, nil, err
 	}
 	req, err := server.ParseSessionRequest([]byte(reqbts))
@@ -306,6 +310,7 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	if err != nil {
 		return err
 	}
+	session.result.NextSession = token
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well
