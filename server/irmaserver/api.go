@@ -133,7 +133,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
-	r.Route("/session/{Token}", func(r chi.Router) {
+	r.Route("/session/{token}", func(r chi.Router) {
 		r.Use(s.sessionMiddleware)
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)

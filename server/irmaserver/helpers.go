@@ -419,7 +419,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := chi.URLParam(r, "Token")
+		token := chi.URLParam(r, "token")
 		session, err := s.sessions.clientGet(token)
 		if err != nil {
 			server.WriteError(w, server.ErrorInternal, "")
