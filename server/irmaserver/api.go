@@ -56,6 +56,8 @@ func New(conf *server.Configuration) (*Server, error) {
 	}
 
 	switch conf.StoreType {
+	case "":
+		fallthrough // no specification defaults to the memory session store
 	case "memory":
 		s.sessions = &memorySessionStore{
 			requestor: make(map[string]*session),

@@ -117,7 +117,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
 
-	flags.String("store-type", "memory", "specifies how session state will be saved on the server, defaults to memory")
+	flags.String("store-type", "", "specifies how session state will be saved on the server, defaults to memory")
 	flags.String("redis-addr", "", "redis address, to be specified as host:port")
 	flags.String("redis-pw", "", "redis server password")
 	flags.Int("redis-db", 0, "database to be selected after connecting to the server, defaults to 0")

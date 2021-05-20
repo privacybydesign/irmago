@@ -194,7 +194,6 @@ var IrmaServerConfiguration = func() *requestorserver.Configuration {
 			DisableSchemesUpdate:  true,
 			SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 			IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-			StoreType:             "memory",
 			RevocationSettings: irma.RevocationSettings{
 				revocationTestCred:  {RevocationServerURL: "http://localhost:48683"},
 				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
@@ -219,7 +218,6 @@ var JwtServerConfiguration = func() *requestorserver.Configuration {
 			DisableSchemesUpdate:  true,
 			SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 			IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-			StoreType:             "memory",
 			RevocationSettings: irma.RevocationSettings{
 				revocationTestCred:  {RevocationServerURL: "http://localhost:48683"},
 				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
