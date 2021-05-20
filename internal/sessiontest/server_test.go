@@ -32,6 +32,9 @@ var (
 	revocationTestCred  = revocationTestAttr.CredentialTypeIdentifier()
 	revKeyshareTestAttr = irma.NewAttributeTypeIdentifier("test.test.email.email")
 	revKeyshareTestCred = revKeyshareTestAttr.CredentialTypeIdentifier()
+
+	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
+	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 )
 
 func init() {
@@ -253,11 +256,11 @@ var JwtServerConfiguration = func() *requestorserver.Configuration {
 			},
 			"requestor2": {
 				AuthenticationMethod: requestorserver.AuthenticationMethodToken,
-				AuthenticationKey:    "xa6=*&9?8jeUu5>.f-%rVg`f63pHim",
+				AuthenticationKey:    TokenAuthenticationKey,
 			},
 			"requestor3": {
 				AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
-				AuthenticationKey:    "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg==",
+				AuthenticationKey:    HmacAuthenticationKey,
 			},
 		},
 	}

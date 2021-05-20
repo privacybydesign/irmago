@@ -249,11 +249,11 @@ func TestRedisHTTPErrors(t *testing.T) {
 
 	url := fmt.Sprintf("http://localhost:%d", config.Port)
 	transport := irma.NewHTTPTransport(url, false)
+	transport.SetHeader("Authorization", TokenAuthenticationKey)
 
 	// Check error response of POST /session requestor endpoint
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
-	transport.SetHeader("Authorization", "xa6=*&9?8jeUu5>.f-%rVg`f63pHim")
 	err := transport.Post("session", nil, request)
 	checkError(err)
 
