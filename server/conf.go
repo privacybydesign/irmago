@@ -88,6 +88,12 @@ type Configuration struct {
 	Production bool `json:"production" mapstructure:"production"`
 }
 
+type RedisSettings struct {
+	Addr     string `json:"address,omitempty" mapstructure:"address"`
+	Password string `json:"password,omitempty" mapstructure:"password"`
+	DB       int    `json:"db,omitempty" mapstructure:"db"`
+}
+
 // Check ensures that the Configuration is loaded, usable and free of errors.
 func (conf *Configuration) Check() error {
 	if conf.Logger == nil {
