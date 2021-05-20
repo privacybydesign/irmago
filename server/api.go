@@ -40,6 +40,7 @@ type SessionResult struct {
 	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
 	Signature   *irma.SignedMessage          `json:"signature,omitempty"`
 	Err         *irma.RemoteError            `json:"error,omitempty"`
+	NextSession string                       `json:"nextSession,omitempty"`
 
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
 }
@@ -347,6 +348,10 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 
 	var x string // dummy for the server's return value that we don't care about
 	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", &x, res); err != nil {
+		if sessErr, ok := err.(*irma.SessionError); ok && sessErr.RemoteStatus == http.StatusNoContent {
+			// If we get a 204 during this callback that's perfectly fine
+			return
+		}
 		// not our problem, log it and go on
 		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
 	}
