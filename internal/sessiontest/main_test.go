@@ -192,14 +192,14 @@ func sessionHelperWithConfig(t *testing.T, request irma.SessionRequest, sessiont
 		defer test.ClearTestStorage(t, handler.storage)
 	}
 
-	useJWTs := false
+	authEnabled := false
 	if config != nil {
-		useJWTs = !config.DisableRequestorAuthentication
+		authEnabled = !config.DisableRequestorAuthentication // TODO: refactor test configuration so authentication method can easily be specified in test
 		rs := StartRequestorServer(t, config)
 		defer rs.Stop()
 	}
 
-	sesPkg := startSession(t, request, sessiontype, useJWTs)
+	sesPkg := startSession(t, request, sessiontype, authEnabled)
 
 	c := make(chan *SessionResult)
 	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
@@ -212,7 +212,7 @@ func sessionHelperWithConfig(t *testing.T, request irma.SessionRequest, sessiont
 	}
 
 	resultEndpoint := "result"
-	if useJWTs {
+	if authEnabled {
 		resultEndpoint = "result-jwt"
 	}
 
