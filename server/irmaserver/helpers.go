@@ -463,6 +463,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				server.WriteError(w, server.ErrorInternal, "Internal server error")
 				return
 			}
+			session.toBeUpdated = false
 		}
 	})
 }
