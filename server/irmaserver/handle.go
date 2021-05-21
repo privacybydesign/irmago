@@ -413,7 +413,7 @@ func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
 	session.context = r.Context()
 	err := session.handleDelete()
 	if err != nil {
-		w.WriteHeader(500)
+		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
 	w.WriteHeader(200)
