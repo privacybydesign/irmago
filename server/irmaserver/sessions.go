@@ -64,7 +64,7 @@ type sessionStore interface {
 	add(session *session) error
 	update(session *session) error
 	deleteExpired()
-	stop() error
+	stop()
 }
 
 type memorySessionStore struct {
@@ -115,7 +115,7 @@ func (s *memorySessionStore) update(_ *session) error {
 	return nil
 }
 
-func (s *memorySessionStore) stop() error {
+func (s *memorySessionStore) stop() {
 	s.Lock()
 	defer s.Unlock()
 	for _, session := range s.requestor {
@@ -124,7 +124,6 @@ func (s *memorySessionStore) stop() error {
 			session.sse.CloseChannel("session/" + session.ClientToken)
 		}
 	}
-	return nil
 }
 
 func (s *memorySessionStore) deleteExpired() {
@@ -284,13 +283,11 @@ func (s *redisSessionStore) update(session *session) error {
 	return s.add(session)
 }
 
-func (s *redisSessionStore) stop() error {
+func (s *redisSessionStore) stop() {
 	err := s.client.Close()
 	if err != nil {
-		return server.LogError(err)
+		_ = server.LogError(err)
 	}
-
-	return nil
 }
 
 func (s *redisSessionStore) deleteExpired() {

@@ -169,7 +169,7 @@ func (s *Server) Stop() {
 		server.LogWarning(err)
 	}
 	s.stopScheduler <- true
-	_ = s.sessions.stop()
+	s.sessions.stop()
 }
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
