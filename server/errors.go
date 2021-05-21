@@ -29,7 +29,7 @@ var (
 	ErrorSessionUnknown       Error = Error{Type: "SESSION_UNKNOWN", Status: 400, Description: "Unknown or expired session"}
 	ErrorMalformedInput       Error = Error{Type: "MALFORMED_INPUT", Status: 400, Description: "Input could not be parsed"}
 	ErrorUnknown              Error = Error{Type: "EXCEPTION", Status: 500, Description: "Encountered unexpected problem"}
-	ErrorInternal             Error = Error{Type: "EXCEPTION", Status: 500, Description: "Encountered unexpected problem"}
+	ErrorInternal             Error = Error{Type: "INTERNAL_ERROR", Status: 500, Description: "Internal server error"}
 	ErrorNextSession          Error = Error{Type: "NEXT_SESSION", Status: 500, Description: "Error starting next session"}
 	ErrorRevocation           Error = Error{Type: "REVOCATION", Status: 500, Description: "Revocation error"}
 	ErrorUnknownRevocationKey Error = Error{Type: "UNKNOWN_REVOCATION_KEY", Status: 404, Description: "No issuance records correspond to the given revocationKey"}
