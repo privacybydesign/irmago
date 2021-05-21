@@ -66,7 +66,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		}
 
 		s.scheduler.Every(10).Seconds().Do(func() {
-			s.sessions.deleteExpired()
+			s.sessions.(*memorySessionStore).deleteExpired()
 		})
 	case "redis":
 		//setup client

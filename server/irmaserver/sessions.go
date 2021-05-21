@@ -63,7 +63,6 @@ type sessionStore interface {
 	clientGet(token string) (*session, error)
 	add(session *session) error
 	update(session *session) error
-	deleteExpired()
 	stop()
 }
 
@@ -288,10 +287,6 @@ func (s *redisSessionStore) stop() {
 	if err != nil {
 		_ = server.LogError(err)
 	}
-}
-
-func (s *redisSessionStore) deleteExpired() {
-	// This method is not used as data is directly stored in Redis with a corresponding expiration time.
 }
 
 var one *big.Int = big.NewInt(1)
