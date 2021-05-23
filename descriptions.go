@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"path/filepath"
+	"regexp"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -149,6 +150,7 @@ type (
 		Title                TranslatedString          `json:"title"`
 		Logo                 *string                   `json:"logo,omitempty"`     // SHA256 of the logo contents (which is the filename on disk)
 		LogoPath             *string                   `json:"logoPath,omitempty"` // Full path to the logo set automatically during scheme parsing
+		Color                *string                   `json:"color,omitempty"`
 		Issues               *CredentialTypeIdentifier `json:"issues,omitempty"`
 		AllowOtherRequestors bool                      `json:"allowOtherRequestors"`
 
@@ -356,6 +358,11 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 	if (wizard.SuccessHeader == nil) != (wizard.SuccessText == nil) {
 		return errors.New("wizard contents must have success header and text either both specified, or both empty")
 	}
+
+	if wizard.Color != nil && !regexp.MustCompile("^#[0-9A-F]{6}$").MatchString(*wizard.Color) {
+		return errors.New("invalid wizard color: must be of the form #RRGGBB")
+	}
+
 	// validate that no possible content graph is too complex
 	allRelevantPaths := wizard.Contents.buildValidationPaths(conf, map[CredentialTypeIdentifier]struct{}{})
 	for _, contents := range allRelevantPaths {

@@ -169,15 +169,15 @@ func (session *session) computeAttributes(
 		return nil, nil, err
 	}
 
-	issrecord := &irma.IssuanceRecord{
-		CredType:   id,
-		PKCounter:  &sk.Counter,
-		Key:        cred.RevocationKey,
-		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
-		Issued:     attributes.SigningDate().UnixNano(),
-		ValidUntil: attributes.Expiry().UnixNano(),
-	}
 	if witness != nil {
+		issrecord := &irma.IssuanceRecord{
+			CredType:   id,
+			PKCounter:  &sk.Counter,
+			Key:        cred.RevocationKey,
+			Attr:       (*irma.RevocationAttribute)(nonrevAttr),
+			Issued:     issuedAt.UnixNano(),
+			ValidUntil: attributes.Expiry().UnixNano(),
+		}
 		err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 		if err != nil {
 			return nil, nil, err
