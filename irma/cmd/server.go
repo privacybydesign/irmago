@@ -100,7 +100,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
-	flags.StringP("api-prefix", "a", "/", "route requests via this path, so instead of PUT /session, one must PUT {api-prefix}/session for example")
+	flags.StringP("api-prefix", "a", "/", "prefix API endpoints with this string, e.g. POST /session becomes POST {api-prefix}/session")
 	flags.Int("client-port", 0, "if specified, start a separate server for the IRMA app at this port")
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
 	flags.Lookup("port").Header = `Server address and port to listen on`
