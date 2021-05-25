@@ -94,7 +94,7 @@ func (s *Server) startClientServer() error {
 
 func (s *Server) startServer(handler http.Handler, name, addr string, port int, tlsConf *tls.Config) error {
 	fulladdr := fmt.Sprintf("%s:%d", addr, port)
-	s.conf.Logger.Info(name, " listening at ", fulladdr)
+	s.conf.Logger.Info(name, " listening at ", fulladdr, s.conf.ApiPrefix)
 
 	serv := &http.Server{
 		Addr:      fulladdr,
@@ -159,11 +159,17 @@ var corsOptions = cors.Options{
 	AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
 }
 
+func (s *Server) prefixRouter(router *chi.Mux) (prefixedRouter *chi.Mux) {
+	prefixedRouter = chi.NewRouter()
+	prefixedRouter.Mount(s.conf.ApiPrefix, router)
+	return
+}
+
 func (s *Server) ClientHandler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(cors.New(corsOptions).Handler)
 	s.attachClientEndpoints(router)
-	return router
+	return s.prefixRouter(router)
 }
 
 func (s *Server) attachClientEndpoints(router *chi.Mux) {
@@ -226,7 +232,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/revocation", s.handleRevocation)
 	})
 
-	return router
+	return s.prefixRouter(router)
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {

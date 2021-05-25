@@ -100,6 +100,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
+	flags.StringP("api-prefix", "a", "/", "prefix API endpoints with this string, e.g. POST /session becomes POST {api-prefix}/session")
 	flags.Int("client-port", 0, "if specified, start a separate server for the IRMA app at this port")
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
 	flags.Lookup("port").Header = `Server address and port to listen on`
@@ -239,6 +240,7 @@ func configureServer(cmd *cobra.Command) error {
 		SkipPrivateKeysCheck:           viper.GetBool("skip-private-keys-check"),
 		ListenAddress:                  viper.GetString("listen-addr"),
 		Port:                           viper.GetInt("port"),
+		ApiPrefix:                      viper.GetString("api-prefix"),
 		ClientListenAddress:            viper.GetString("client-listen-addr"),
 		ClientPort:                     viper.GetInt("client-port"),
 		DisableRequestorAuthentication: viper.GetBool("no-auth"),
