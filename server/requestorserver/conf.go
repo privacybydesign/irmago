@@ -263,8 +263,12 @@ func (conf *Configuration) initialize() error {
 		conf.ApiPrefix += "/"
 	}
 
+	if !strings.HasPrefix(conf.ApiPrefix, "/") {
+		return errors.Errorf("api_prefix must start with a slash, but doesn't: %s", conf.ApiPrefix)
+	}
+
 	if conf.URL != "" && !strings.HasSuffix(conf.URL, conf.ApiPrefix+"irma/") {
-		conf.Logger.Warnf("Are the URL and API-prefix set correctly?: %v does not end with %v.", conf.URL, conf.ApiPrefix+"irma/")
+		conf.Logger.Warnf("Are the URL and API-prefix set correctly?: %s does not end with %s.", conf.URL, conf.ApiPrefix+"irma/")
 	}
 
 	if len(conf.StaticSessions) != 0 && conf.JwtRSAPrivateKey == nil {
