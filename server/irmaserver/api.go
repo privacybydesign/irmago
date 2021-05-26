@@ -5,6 +5,8 @@
 package irmaserver
 
 import (
+	"context"
+	"github.com/go-redis/redis/v8"
 	"net/http"
 	"time"
 
@@ -47,20 +49,42 @@ func New(conf *server.Configuration) (*Server, error) {
 	conf.IrmaConfiguration.Revocation.ServerSentEvents = e
 
 	s := &Server{
-		conf:      conf,
-		scheduler: gocron.NewScheduler(),
-		sessions: &memorySessionStore{
-			requestor: make(map[string]*session),
-			client:    make(map[string]*session),
-			conf:      conf,
-		},
+		conf:             conf,
+		scheduler:        gocron.NewScheduler(),
 		handlers:         make(map[string]server.SessionHandler),
 		serverSentEvents: e,
 	}
 
-	s.scheduler.Every(10).Seconds().Do(func() {
-		s.sessions.deleteExpired()
-	})
+	switch conf.StoreType {
+	case "":
+		fallthrough // no specification defaults to the memory session store
+	case "memory":
+		s.sessions = &memorySessionStore{
+			requestor: make(map[string]*session),
+			client:    make(map[string]*session),
+			conf:      conf,
+		}
+
+		s.scheduler.Every(10).Seconds().Do(func() {
+			s.sessions.(*memorySessionStore).deleteExpired()
+		})
+	case "redis":
+		//setup client
+		cl := redis.NewClient(&redis.Options{
+			Addr:     conf.RedisSettings.Addr,
+			Password: conf.RedisSettings.Password,
+			DB:       conf.RedisSettings.DB,
+		})
+		if err := cl.Ping(context.Background()).Err(); err != nil {
+			return nil, err
+		}
+		s.sessions = &redisSessionStore{
+			client: cl,
+			conf:   conf,
+		}
+	default:
+		return nil, errors.New("storeType not known")
+	}
 
 	s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
 		for credid, settings := range s.conf.RevocationSettings {
@@ -157,6 +181,9 @@ func StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr,
 	return s.StartSession(request, handler)
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
+	return s.StartSessionWithContext(req, handler, context.Background())
+}
+func (s *Server) StartSessionWithContext(req interface{}, handler server.SessionHandler, ctx context.Context) (*irma.Qr, string, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", err
@@ -182,46 +209,55 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	session := s.newSession(action, rrequest)
-	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.token}).Infof("Session started")
+	session, err := s.newSession(action, rrequest, ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.Token}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.token, "clienttoken": session.clientToken}).Info("Session request: ", server.ToJson(rrequest))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token, "clienttoken": session.ClientToken}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	if handler != nil {
-		s.handlers[session.token] = handler
+		s.handlers[session.Token] = handler
 	}
 	return &irma.Qr{
 		Type: action,
-		URL:  s.conf.URL + "session/" + session.clientToken,
-	}, session.token, nil
+		URL:  s.conf.URL + "session/" + session.ClientToken,
+	}, session.Token, nil
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
-func GetSessionResult(token string) *server.SessionResult {
+func GetSessionResult(token string) (*server.SessionResult, error) {
 	return s.GetSessionResult(token)
 }
-func (s *Server) GetSessionResult(token string) *server.SessionResult {
-	session := s.sessions.get(token)
+func (s *Server) GetSessionResult(token string) (*server.SessionResult, error) {
+	session, err := s.sessions.get(token)
+	if err != nil {
+		return nil, err
+	}
 	if session == nil {
 		s.conf.Logger.Warn("Session result requested of unknown session ", token)
-		return nil
+		return nil, nil
 	}
-	return session.result
+	return session.Result, nil
 }
 
 // GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
-func GetRequest(token string) irma.RequestorRequest {
+func GetRequest(token string) (irma.RequestorRequest, error) {
 	return s.GetRequest(token)
 }
-func (s *Server) GetRequest(token string) irma.RequestorRequest {
-	session := s.sessions.get(token)
+func (s *Server) GetRequest(token string) (irma.RequestorRequest, error) {
+	session, err := s.sessions.get(token)
+	if err != nil {
+		return nil, err
+	}
 	if session == nil {
 		s.conf.Logger.Warn("Session request requested of unknown session ", token)
-		return nil
+		return nil, nil
 	}
-	return session.rrequest
+	return session.Rrequest, nil
 }
 
 // CancelSession cancels the specified IRMA session.
@@ -229,11 +265,17 @@ func CancelSession(token string) error {
 	return s.CancelSession(token)
 }
 func (s *Server) CancelSession(token string) error {
-	session := s.sessions.get(token)
+	session, err := s.sessions.get(token)
+	if err != nil {
+		return err
+	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't cancel unknown session %s", token))
 	}
-	session.handleDelete()
+	err = session.handleDelete()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -265,14 +307,14 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 
 	var session *session
 	if requestor {
-		session = s.sessions.get(token)
+		session, _ = s.sessions.get(token) // SSE can only be used with storeType memory which does not contain errors.
 	} else {
-		session = s.sessions.clientGet(token)
+		session, _ = s.sessions.clientGet(token) // SSE can only be used with storeType memory which does not contain errors.
 	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
 	}
-	if session.status.Finished() {
+	if session.Status.Finished() {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
 	}
 

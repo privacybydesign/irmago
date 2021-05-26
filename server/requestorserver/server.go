@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -308,7 +309,11 @@ func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	res := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	res, err := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	if err != nil {
+		server.WriteError(w, server.ErrorInternal, "")
+		return
+	}
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -340,7 +345,11 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
-	res := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	res, err := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	if err != nil {
+		server.WriteError(w, server.ErrorInternal, "")
+		return
+	}
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -360,15 +369,25 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessiontoken := chi.URLParam(r, "token")
-	res := s.irmaserv.GetSessionResult(sessiontoken)
+	res, err := s.irmaserv.GetSessionResult(sessiontoken)
+	if err != nil {
+		server.WriteError(w, server.ErrorInternal, "")
+		return
+	}
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
 	}
 
+	request, err := s.irmaserv.GetRequest(res.Token)
+	if err != nil {
+		server.WriteError(w, server.ErrorInternal, "")
+		return
+	}
+
 	j, err := server.ResultJwt(res,
 		s.conf.JwtIssuer,
-		s.irmaserv.GetRequest(res.Token).Base().ResultJwtValidity,
+		request.Base().ResultJwtValidity,
 		s.conf.JwtRSAPrivateKey,
 	)
 	if err != nil {
@@ -388,7 +407,11 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessiontoken := chi.URLParam(r, "token")
-	res := s.irmaserv.GetSessionResult(sessiontoken)
+	res, err := s.irmaserv.GetSessionResult(sessiontoken)
+	if err != nil {
+		server.WriteError(w, server.ErrorInternal, "")
+		return
+	}
 	if res == nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 		return
@@ -413,7 +436,13 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		claims["iss"] = s.conf.JwtIssuer
 	}
 	claims["status"] = res.ProofStatus
-	validity := s.irmaserv.GetRequest(sessiontoken).Base().ResultJwtValidity
+
+	request, err := s.irmaserv.GetRequest(sessiontoken)
+	if err != nil {
+		server.WriteError(w, server.ErrorInternal, "")
+		return
+	}
+	validity := request.Base().ResultJwtValidity
 	if validity != 0 {
 		claims["exp"] = time.Now().Unix() + int64(validity)
 	}
@@ -461,16 +490,19 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
-	url := s.irmaserv.GetRequest(result.Token).Base().CallbackURL
-	if url == "" {
-		return
+	if request, err := s.irmaserv.GetRequest(result.Token); err == nil {
+		url := request.Base().CallbackURL
+		if url == "" {
+			return
+		}
+		server.DoResultCallback(url,
+			result,
+			s.conf.JwtIssuer,
+			request.Base().ResultJwtValidity,
+			s.conf.JwtRSAPrivateKey,
+		)
 	}
-	server.DoResultCallback(url,
-		result,
-		s.conf.JwtIssuer,
-		s.irmaserv.GetRequest(result.Token).Base().ResultJwtValidity,
-		s.conf.JwtRSAPrivateKey,
-	)
+	return
 }
 
 func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
@@ -520,7 +552,11 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	// Everything is authenticated and parsed, we're good to go!
 	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		if err.Error() == "redis error" {
+			server.WriteError(w, server.ErrorInternal, err.Error())
+		} else {
+			server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		}
 		return
 	}
 
@@ -561,13 +597,13 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.Re
 	}
 	if !applies {
 		var ctype = r.Header.Get("Content-Type")
-		if ctype != "application/json" && ctype != "text/plain" {
+		if !regexp.MustCompile("^application/json").MatchString(ctype) && !regexp.MustCompile("^text/plain").MatchString(ctype) {
 			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", ctype)
 			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
 			return false
 		}
 		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
-		server.WriteError(w, server.ErrorInvalidRequest, "Request could not be authenticated")
+		server.WriteError(w, server.ErrorInvalidRequest, "request could not be authenticated")
 		return false
 	}
 	return true

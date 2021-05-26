@@ -460,8 +460,6 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 	}
 }
 
-type disclosureResponse string
-
 // sendResponse sends the proofs of knowledge of the hidden attributes and/or the secret key, or the constructed
 // attribute-based signature, to the API server.
 func (session *session) sendResponse(message interface{}) {
@@ -691,7 +689,7 @@ func (session *session) finish(delete bool) bool {
 		// precise moment of completion isn't relevant for frontend.
 		go func() {
 			if delete && session.IsInteractive() {
-				session.transport.Delete()
+				_ = session.transport.Delete()
 			}
 			session.client.nonrevRepopulateCaches(session.request)
 		}()

@@ -91,10 +91,10 @@ func GetSessionResult(token *C.char) *C.char {
 	}
 
 	// Run the actual core function
-	result := s.GetSessionResult(C.GoString(token))
+	result, err := s.GetSessionResult(C.GoString(token))
 
 	// And properly return results
-	if result == nil {
+	if result == nil || err != nil {
 		return nil
 	}
 	resultJson, err := json.Marshal(result)
@@ -113,10 +113,10 @@ func GetRequest(token *C.char) *C.char {
 	}
 
 	// Run the core function
-	result := s.GetRequest(C.GoString(token))
+	result, err := s.GetRequest(C.GoString(token))
 
 	// And properly return results
-	if result == nil {
+	if result == nil || err != nil {
 		return nil
 	}
 	resultJson, err := json.Marshal(result)

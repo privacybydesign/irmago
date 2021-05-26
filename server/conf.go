@@ -43,6 +43,11 @@ type Configuration struct {
 	Email string `json:"email" mapstructure:"email"`
 	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
 	EnableSSE bool `json:"enable_sse" mapstructure:"enable_sse"`
+	// StoreType in which session data will be stored.
+	// If left empty, session data will be stored in memory by default.
+	StoreType string `json:"store_type" mapstructure:"store_type"`
+	// RedisSettings that need to be specified when Redis is used as session data store.
+	RedisSettings *RedisSettings `json:"redis_settings" mapstructure:"redis_settings"`
 
 	// Static session requests that can be created by POST /session/{name}
 	StaticSessions map[string]interface{} `json:"static_sessions"`
@@ -83,6 +88,12 @@ type Configuration struct {
 	Production bool `json:"production" mapstructure:"production"`
 }
 
+type RedisSettings struct {
+	Addr     string `json:"address,omitempty" mapstructure:"address"`
+	Password string `json:"password,omitempty" mapstructure:"password"`
+	DB       int    `json:"db,omitempty" mapstructure:"db"`
+}
+
 // Check ensures that the Configuration is loaded, usable and free of errors.
 func (conf *Configuration) Check() error {
 	if conf.Logger == nil {
@@ -110,6 +121,10 @@ func (conf *Configuration) Check() error {
 			}
 			return err
 		}
+	}
+
+	if conf.EnableSSE && conf.StoreType == "redis" {
+		conf.Logger.Warnf("Currently server site events (SSE) is not supported for the Redis session store.")
 	}
 
 	return nil
