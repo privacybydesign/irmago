@@ -22,7 +22,7 @@ func init() {
 }
 
 func TestServerInvalidMessage(t *testing.T) {
-	StartKeyshareServer(t, NewMyirmaMemoryDB(), "localhost:1025")
+	StartMyIrmaServer(t, newMemoryDB(), "localhost:1025")
 	defer StopKeyshareServer(t)
 
 	test.HTTPGet(t, nil, "http://localhost:8080/user", nil, 400, nil)
@@ -41,7 +41,7 @@ func textPlainHeader() http.Header {
 }
 
 func TestServerIrmaSessions(t *testing.T) {
-	db := &myirmaMemoryDB{
+	db := &memoryDB{
 		userData: map[string]memoryUserData{
 			"testuser": {
 				id:         15,
@@ -53,7 +53,7 @@ func TestServerIrmaSessions(t *testing.T) {
 			"testtoken": "test@test.com",
 		},
 	}
-	StartKeyshareServer(t, db, "")
+	StartMyIrmaServer(t, db, "")
 	defer StopKeyshareServer(t)
 
 	client := test.NewHTTPClient()
@@ -66,7 +66,7 @@ func TestServerIrmaSessions(t *testing.T) {
 }
 
 func TestServerSessionMgmnt(t *testing.T) {
-	db := &myirmaMemoryDB{
+	db := &memoryDB{
 		userData: map[string]memoryUserData{
 			"testuser": {
 				id:         15,
@@ -85,7 +85,7 @@ func TestServerSessionMgmnt(t *testing.T) {
 			"testemailtoken": 15,
 		},
 	}
-	StartKeyshareServer(t, db, "")
+	StartMyIrmaServer(t, db, "")
 	defer StopKeyshareServer(t)
 
 	client := test.NewHTTPClient()
@@ -148,7 +148,7 @@ func TestServerSessionMgmnt(t *testing.T) {
 }
 
 func TestServerUserData(t *testing.T) {
-	db := &myirmaMemoryDB{
+	db := &memoryDB{
 		userData: map[string]memoryUserData{
 			"testuser": {
 				id:         15,
@@ -172,20 +172,20 @@ func TestServerUserData(t *testing.T) {
 			"testtoken": "test@test.com",
 		},
 	}
-	StartKeyshareServer(t, db, "")
+	StartMyIrmaServer(t, db, "")
 	defer StopKeyshareServer(t)
 
 	client := test.NewHTTPClient()
 
 	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"username":"testuser", "token":"testtoken"}`, nil, 204, nil)
 
-	var userdata UserInformation
+	var userdata User
 	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
 	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, userdata.Emails)
 
 	test.HTTPPost(t, client, "http://localhost:8080/email/remove", "test@test.com", textPlainHeader(), 204, nil)
 
-	userdata = UserInformation{}
+	userdata = User{}
 	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
 	assert.Empty(t, userdata.Emails)
 
@@ -206,7 +206,7 @@ func TestServerUserData(t *testing.T) {
 
 var keyshareServ *http.Server
 
-func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
+func StartMyIrmaServer(t *testing.T, db DB, emailserver string) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
 		Configuration: &server.Configuration{
@@ -225,7 +225,7 @@ func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 		LoginEmailFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
-		LoginEmailSubject: map[string]string{
+		LoginEmailSubjects: map[string]string{
 			"en": "testsubject",
 		},
 		LoginEmailBaseURL: map[string]string{
@@ -234,13 +234,13 @@ func StartKeyshareServer(t *testing.T, db MyirmaDB, emailserver string) {
 		DeleteEmailFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
-		DeleteEmailSubject: map[string]string{
+		DeleteEmailSubjects: map[string]string{
 			"en": "testsubject",
 		},
 		DeleteAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
-		DeleteAccountSubject: map[string]string{
+		DeleteAccountSubjects: map[string]string{
 			"en": "testsubject",
 		},
 	})

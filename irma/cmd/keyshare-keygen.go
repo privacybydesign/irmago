@@ -8,7 +8,7 @@ import (
 	"github.com/sietseringers/cobra"
 )
 
-var keyshareKeygen = &cobra.Command{
+var keyshareKeygenCmd = &cobra.Command{
 	Use:   "keygen",
 	Short: "Generate storage key for keyshare server",
 	Run: func(command *cobra.Command, args []string) {
@@ -22,7 +22,7 @@ var keyshareKeygen = &cobra.Command{
 			die("", err)
 		}
 
-		key, err := keysharecore.GenerateAESKey()
+		key, err := keysharecore.GenerateDecryptionKey()
 		if err != nil {
 			die("", err)
 		}
@@ -39,9 +39,9 @@ var keyshareKeygen = &cobra.Command{
 }
 
 func init() {
-	keyshareRoot.AddCommand(keyshareKeygen)
+	keyshareRootCmd.AddCommand(keyshareKeygenCmd)
 
-	flags := keyshareKeygen.Flags()
+	flags := keyshareKeygenCmd.Flags()
 	flags.SortFlags = false
 
 	flags.StringP("key-file", "k", "storagekey.aes", "File to write key to")

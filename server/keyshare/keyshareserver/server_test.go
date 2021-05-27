@@ -23,7 +23,7 @@ func init() {
 }
 
 func TestServerInvalidMessage(t *testing.T) {
-	StartKeyshareServer(t, NewMemoryDatabase(), "")
+	StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
@@ -53,7 +53,7 @@ func TestServerInvalidMessage(t *testing.T) {
 }
 
 func TestServerHandleRegister(t *testing.T) {
-	StartKeyshareServer(t, NewMemoryDatabase(), "")
+	StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
@@ -162,7 +162,7 @@ func TestPinNoRemainingTries(t *testing.T) {
 }
 
 func TestMissingUser(t *testing.T) {
-	StartKeyshareServer(t, NewMemoryDatabase(), "")
+	StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized",
@@ -269,7 +269,7 @@ func TestKeyshareSessions(t *testing.T) {
 
 var keyshareServ *http.Server
 
-func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
+func StartKeyshareServer(t *testing.T, db DB, emailserver string) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
 		Configuration: &server.Configuration{
@@ -290,7 +290,7 @@ func StartKeyshareServer(t *testing.T, db KeyshareDB, emailserver string) {
 		RegistrationEmailFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
-		RegistrationEmailSubject: map[string]string{
+		RegistrationEmailSubjects: map[string]string{
 			"en": "testsubject",
 		},
 		VerificationURL: map[string]string{
@@ -322,59 +322,59 @@ func StopKeyshareServer(t *testing.T) {
 }
 
 type testDB struct {
-	db    KeyshareDB
+	db    DB
 	ok    bool
 	tries int
 	wait  int64
 	err   error
 }
 
-func (db *testDB) NewUser(user *KeyshareUser) error {
-	return db.db.NewUser(user)
+func (db *testDB) AddUser(user *User) error {
+	return db.db.AddUser(user)
 }
 
-func (db *testDB) User(username string) (*KeyshareUser, error) {
+func (db *testDB) User(username string) (*User, error) {
 	return db.db.User(username)
 }
 
-func (db *testDB) UpdateUser(user *KeyshareUser) error {
+func (db *testDB) UpdateUser(user *User) error {
 	return db.db.UpdateUser(user)
 }
 
-func (db *testDB) ReservePincheck(user *KeyshareUser) (bool, int, int64, error) {
+func (db *testDB) ReservePinTry(user *User) (bool, int, int64, error) {
 	return db.ok, db.tries, db.wait, db.err
 }
 
-func (db *testDB) ClearPincheck(user *KeyshareUser) error {
-	return db.db.ClearPincheck(user)
+func (db *testDB) ResetPinTries(user *User) error {
+	return db.db.ResetPinTries(user)
 }
 
-func (db *testDB) SetSeen(user *KeyshareUser) error {
+func (db *testDB) SetSeen(user *User) error {
 	return db.db.SetSeen(user)
 }
 
-func (db *testDB) AddLog(user *KeyshareUser, entrytype LogEntryType, params interface{}) error {
+func (db *testDB) AddLog(user *User, entrytype EventType, params interface{}) error {
 	return db.db.AddLog(user, entrytype, params)
 }
 
-func (db *testDB) AddEmailVerification(user *KeyshareUser, email, token string) error {
+func (db *testDB) AddEmailVerification(user *User, email, token string) error {
 	return db.db.AddEmailVerification(user, email, token)
 }
 
-func createDB(t *testing.T) KeyshareDB {
-	db := NewMemoryDatabase()
-	err := db.NewUser(&KeyshareUser{
+func createDB(t *testing.T) DB {
+	db := NewMemoryDB()
+	err := db.AddUser(&User{
 		Username: "",
-		Coredata: keysharecore.EncryptedKeysharePacket{},
+		UserData: keysharecore.User{},
 	})
 	require.NoError(t, err)
-	var ep keysharecore.EncryptedKeysharePacket
+	var ep keysharecore.User
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	err = db.NewUser(&KeyshareUser{
+	err = db.AddUser(&User{
 		Username: "testusername",
-		Coredata: ep,
+		UserData: ep,
 	})
 	require.NoError(t, err)
 	return db

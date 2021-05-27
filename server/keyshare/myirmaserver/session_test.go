@@ -11,13 +11,13 @@ func TestSessions(t *testing.T) {
 	store := NewMemorySessionStore(1 * time.Second)
 
 	session := store.create()
-	assert.NotEqual(t, (*Sessiondata)(nil), session)
+	assert.NotEqual(t, (*Session)(nil), session)
 
 	session2 := store.get(session.token)
 	assert.Equal(t, session, session2)
 
 	session3 := store.get("DOESNOTEXIST")
-	assert.Equal(t, (*Sessiondata)(nil), session3)
+	assert.Equal(t, (*Session)(nil), session3)
 
 	store.flush()
 
@@ -29,5 +29,5 @@ func TestSessions(t *testing.T) {
 	store.flush()
 
 	session5 := store.get(session.token)
-	assert.Equal(t, (*Sessiondata)(nil), session5)
+	assert.Equal(t, (*Session)(nil), session5)
 }

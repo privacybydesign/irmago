@@ -17,7 +17,7 @@ func validConf(t *testing.T) *Configuration {
 			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
 			Logger:      irma.Logger,
 		},
-		DBType:             DatabaseTypeMemory,
+		DBType:             DBTypeMemory,
 		SessionLifetime:    60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
 		EmailAttributes:    []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},

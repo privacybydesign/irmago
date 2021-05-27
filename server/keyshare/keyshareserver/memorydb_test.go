@@ -8,10 +8,10 @@ import (
 )
 
 func TestMemoryDBUserManagement(t *testing.T) {
-	db := NewMemoryDatabase()
+	db := NewMemoryDB()
 
-	user := &KeyshareUser{Username: "testuser"}
-	err := db.NewUser(user)
+	user := &User{Username: "testuser"}
+	err := db.AddUser(user)
 	require.NoError(t, err)
 	assert.Equal(t, "testuser", user.Username)
 
@@ -22,8 +22,8 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	_, err = db.User("nonexistent")
 	assert.Error(t, err)
 
-	user = &KeyshareUser{Username: "testuser"}
-	err = db.NewUser(user)
+	user = &User{Username: "testuser"}
+	err = db.AddUser(user)
 	assert.Error(t, err)
 
 	err = db.UpdateUser(nuser)
@@ -32,10 +32,10 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	err = db.AddEmailVerification(nuser, "test@test.com", "testtoken")
 	assert.NoError(t, err)
 
-	err = db.AddLog(nuser, PinCheckSuccess, nil)
+	err = db.AddLog(nuser, EventTypePinCheckSuccess, nil)
 	assert.NoError(t, err)
 
-	ok, tries, wait, err := db.ReservePincheck(nuser)
+	ok, tries, wait, err := db.ReservePinTry(nuser)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.True(t, tries > 0)

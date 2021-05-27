@@ -16,13 +16,13 @@ import (
 	"github.com/privacybydesign/irmago/server"
 )
 
-type DatabaseType string
+type DBType string
 
-var ErrUnknownDatabaseType = errors.New("Unknown database type")
+var ErrUnknownDBType = errors.New("Unknown database type")
 
 const (
-	DatabaseTypeMemory   = "memory"
-	DatabaseTypePostgres = "postgres"
+	DBTypeMemory   = "memory"
+	DBTypePostgres = "postgres"
 )
 
 // Configuration contains configuration for the irmaserver library and irmad.
@@ -31,10 +31,10 @@ type Configuration struct {
 	*server.Configuration `mapstructure:",squash"`
 
 	// Database configuration (ignored when database is provided)
-	DBType       DatabaseType `json:"db_type" mapstructure:"db_type"`
-	DBConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
+	DBType    DBType `json:"db_type" mapstructure:"db_type"`
+	DBConnStr string `json:"db_str" mapstructure:"db_str"`
 	// Provide a prepared database (useful for testing)
-	DB KeyshareDB `json:"-"`
+	DB DB `json:"-"`
 
 	// Configuration of secure Core
 	// Private key used to sign JWTs with
@@ -54,19 +54,19 @@ type Configuration struct {
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
 	RegistrationEmailFiles     map[string]string `json:"registration_email_files" mapstructure:"registration_email_files"`
-	RegistrationEmailSubject   map[string]string `json:"registration_email_subject" mapstructure:"registration_email_subject"`
+	RegistrationEmailSubjects  map[string]string `json:"registration_email_subjects" mapstructure:"registration_email_subjects"`
 	registrationEmailTemplates map[string]*template.Template
 
 	VerificationURL map[string]string `json:"verification_url" mapstructure:"verification_url"`
 }
 
-func readAESKey(filename string) (uint32, keysharecore.AesKey, error) {
+func readAESKey(filename string) (uint32, keysharecore.AESKey, error) {
 	keyData, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return 0, keysharecore.AesKey{}, err
+		return 0, keysharecore.AESKey{}, err
 	}
 	if len(keyData) != 32+4 {
-		return 0, keysharecore.AesKey{}, errors.New("Invalid aes key")
+		return 0, keysharecore.AESKey{}, errors.New("Invalid aes key")
 	}
 	var key [32]byte
 	copy(key[:], keyData[4:36])
@@ -81,7 +81,7 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	if conf.EmailServer != "" {
 		conf.registrationEmailTemplates, err = keyshare.ParseEmailTemplates(
 			conf.RegistrationEmailFiles,
-			conf.RegistrationEmailSubject,
+			conf.RegistrationEmailSubjects,
 			conf.DefaultLanguage,
 		)
 		if err != nil {
@@ -107,16 +107,16 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	// Setup database
 	if conf.DB == nil {
 		switch conf.DBType {
-		case DatabaseTypeMemory:
-			conf.DB = NewMemoryDatabase()
-		case DatabaseTypePostgres:
+		case DBTypeMemory:
+			conf.DB = NewMemoryDB()
+		case DBTypePostgres:
 			var err error
-			conf.DB, err = NewPostgresDatabase(conf.DBConnstring)
+			conf.DB, err = newPostgresDB(conf.DBConnStr)
 			if err != nil {
 				return nil, server.LogError(err)
 			}
 		default:
-			return nil, server.LogError(ErrUnknownDatabaseType)
+			return nil, server.LogError(ErrUnknownDBType)
 		}
 	}
 
@@ -144,19 +144,19 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	}
 
 	core := keysharecore.NewKeyshareCore(&keysharecore.Configuration{
-		AESKeyID:     encID,
-		AESKey:       encKey,
-		SignKeyID:    conf.JwtKeyID,
-		SignKey:      jwtPrivateKey,
-		JWTIssuer:    conf.JwtIssuer,
-		JWTPinExpiry: conf.JwtPinExpiry,
+		DecryptionKeyID: encID,
+		DecryptionKey:   encKey,
+		JWTPrivateKeyID: conf.JwtKeyID,
+		JWTPrivateKey:   jwtPrivateKey,
+		JWTIssuer:       conf.JwtIssuer,
+		JWTPinExpiry:    conf.JwtPinExpiry,
 	})
 	for _, keyFile := range conf.StorageFallbackKeyFiles {
 		id, key, err := readAESKey(keyFile)
 		if err != nil {
 			return nil, server.LogError(errors.WrapPrefix(err, "failed to load fallback key "+keyFile, 0))
 		}
-		core.DangerousAddAESKey(id, key)
+		core.DangerousAddDecryptionKey(id, key)
 	}
 
 	return core, nil

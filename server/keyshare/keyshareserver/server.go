@@ -30,7 +30,7 @@ type Server struct {
 	// external components
 	core          *keysharecore.Core
 	sessionserver *irmaserver.Server
-	db            KeyshareDB
+	db            DB
 
 	// Scheduler used to clean sessions
 	scheduler     *gocron.Scheduler
@@ -146,7 +146,7 @@ func (s *Server) LoadIdemixKeys(conf *irma.Configuration) error {
 // /prove/getCommitments
 func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	// Fetch from context
-	user := r.Context().Value("user").(*KeyshareUser)
+	user := r.Context().Value("user").(*User)
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read keys
@@ -175,9 +175,9 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, commitments)
 }
 
-func (s *Server) generateCommitments(user *KeyshareUser, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
+func (s *Server) generateCommitments(user *User, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
 	// Generate commitments
-	commitments, commitID, err := s.core.GenerateCommitments(user.Coredata, authorization, keys)
+	commitments, commitID, err := s.core.GenerateCommitments(user.UserData, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
 		return nil, err
@@ -194,9 +194,9 @@ func (s *Server) generateCommitments(user *KeyshareUser, authorization string, k
 	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
 	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
 	// puts the key ID of the credential(s) being issued at index 0.
-	s.store.add(user.Username, &SessionData{
-		LastKeyID:    keys[0],
-		LastCommitID: commitID,
+	s.store.add(user.Username, &Session{
+		KeyID:    keys[0],
+		CommitID: commitID,
 	})
 
 	// And send response
@@ -206,7 +206,7 @@ func (s *Server) generateCommitments(user *KeyshareUser, authorization string, k
 // /prove/getResponse
 func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	// Fetch from context
-	user := r.Context().Value("user").(*KeyshareUser)
+	user := r.Context().Value("user").(*User)
 	authorization := r.Context().Value("authorization").(string)
 
 	// Read challenge
@@ -232,7 +232,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// And do the actual responding
-	proofResponse, err := s.doGenerateResponses(user, authorization, challenge, sessionData.LastCommitID, sessionData.LastKeyID)
+	proofResponse, err := s.generateResponses(user, authorization, challenge, sessionData.CommitID, sessionData.KeyID)
 	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -246,7 +246,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	server.WriteString(w, proofResponse)
 }
 
-func (s *Server) doGenerateResponses(user *KeyshareUser, authorization string, challenge *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
+func (s *Server) generateResponses(user *User, authorization string, challenge *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Indicate activity on user account
 	err := s.db.SetSeen(user)
 	if err != nil {
@@ -255,13 +255,13 @@ func (s *Server) doGenerateResponses(user *KeyshareUser, authorization string, c
 	}
 
 	// Make log entry
-	err = s.db.AddLog(user, IrmaSession, nil)
+	err = s.db.AddLog(user, EventTypeIRMASession, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.Coredata, authorization, commitID, challenge, keyID)
+	proofResponse, err := s.core.GenerateResponse(user.UserData, authorization, commitID, challenge, keyID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err
@@ -297,7 +297,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// and verify pin
-	result, err := s.doVerifyPin(user, msg.Username, msg.Pin)
+	result, err := s.verifyPin(user, msg.Username, msg.Pin)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -307,7 +307,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.KeysharePinStatus, error) {
+func (s *Server) verifyPin(user *User, username, pin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(user, pin)
 	if err != nil {
@@ -318,7 +318,7 @@ func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.Key
 	}
 
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
-	jwtt, err := s.core.ValidatePin(user.Coredata, pin, username)
+	jwtt, err := s.core.ValidatePin(user.UserData, pin, username)
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors
 		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
@@ -327,13 +327,13 @@ func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.Key
 
 	if err == keysharecore.ErrInvalidPin {
 		// Handle invalid pin
-		err = s.db.AddLog(user, PinCheckFailed, tries)
+		err = s.db.AddLog(user, EventTypePinCheckFailed, tries)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 			return irma.KeysharePinStatus{}, err
 		}
 		if tries == 0 {
-			err = s.db.AddLog(user, PinCheckBlocked, wait)
+			err = s.db.AddLog(user, EventTypePinCheckBlocked, wait)
 			if err != nil {
 				s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 				return irma.KeysharePinStatus{}, err
@@ -345,7 +345,7 @@ func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.Key
 	}
 
 	// Handle success
-	err = s.db.ClearPincheck(user)
+	err = s.db.ResetPinTries(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
 		// Do not send to user
@@ -355,7 +355,7 @@ func (s *Server) doVerifyPin(user *KeyshareUser, username, pin string) (irma.Key
 		s.conf.Logger.WithField("error", err).Error("Could not indicate user activity")
 		// Do not send to user
 	}
-	err = s.db.AddLog(user, PinCheckSuccess, nil)
+	err = s.db.AddLog(user, EventTypePinCheckSuccess, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 		return irma.KeysharePinStatus{}, err
@@ -381,7 +381,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.doUpdatePin(user, msg.OldPin, msg.NewPin)
+	result, err := s.updatePin(user, msg.OldPin, msg.NewPin)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -390,7 +390,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.KeysharePinStatus, error) {
+func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(user, oldPin)
 	if err != nil {
@@ -401,7 +401,7 @@ func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.Ke
 	}
 
 	// Try to do the update
-	user.Coredata, err = s.core.ChangePin(user.Coredata, oldPin, newPin)
+	user.UserData, err = s.core.ChangePin(user.UserData, oldPin, newPin)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -414,7 +414,7 @@ func (s *Server) doUpdatePin(user *KeyshareUser, oldPin, newPin string) (irma.Ke
 	}
 
 	// Mark pincheck as success, resetting users wait and count
-	err = s.db.ClearPincheck(user)
+	err = s.db.ResetPinTries(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
 		// Do not send to user
@@ -439,7 +439,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionptr, err := s.doRegistration(msg)
+	sessionptr, err := s.register(msg)
 	if err != nil && err == keysharecore.ErrPinTooLong {
 		// Too long pin is not an internal error
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -453,18 +453,18 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, sessionptr)
 }
 
-func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
+func (s *Server) register(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	// Generate keyshare server account
 	username := common.NewSessionToken() // TODO use newRandomString() for this when shoulder-surf is merged
 	username = username[:12]
 
-	coredata, err := s.core.GenerateKeyshareSecret(msg.Pin)
+	userdata, err := s.core.NewUser(msg.Pin)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not register user")
 		return nil, err
 	}
-	user := &KeyshareUser{Username: username, Language: msg.Language, Coredata: coredata}
-	err = s.db.NewUser(user)
+	user := &User{Username: username, Language: msg.Language, UserData: userdata}
+	err = s.db.AddUser(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
 		return nil, err
@@ -495,7 +495,7 @@ func (s *Server) doRegistration(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	return sessionptr, nil
 }
 
-func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email string) error {
+func (s *Server) sendRegistrationEmail(user *User, language, email string) error {
 	// Generate token
 	token := common.NewSessionToken()
 
@@ -509,7 +509,7 @@ func (s *Server) sendRegistrationEmail(user *KeyshareUser, language, email strin
 	verificationBaseURL := s.conf.TranslateString(s.conf.VerificationURL, language)
 	return s.conf.SendEmail(
 		s.conf.registrationEmailTemplates,
-		s.conf.RegistrationEmailSubject,
+		s.conf.RegistrationEmailSubjects,
 		map[string]string{"VerificationURL": verificationBaseURL + token},
 		[]string{email},
 		language,
@@ -543,7 +543,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 
 		// verify access
 		ctx := r.Context()
-		err := s.core.ValidateJWT(ctx.Value("user").(*KeyshareUser).Coredata, authorization)
+		err := s.core.ValidateJWT(ctx.Value("user").(*User).UserData, authorization)
 		hasValidAuthorization := err == nil
 
 		// Construct new context with both authorization and its validity
@@ -555,14 +555,14 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) reservePinCheck(user *KeyshareUser, pin string) (bool, int, int64, error) {
-	ok, tries, wait, err := s.db.ReservePincheck(user)
+func (s *Server) reservePinCheck(user *User, pin string) (bool, int, int64, error) {
+	ok, tries, wait, err := s.db.ReservePinTry(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
 		return false, 0, 0, err
 	}
 	if !ok {
-		err = s.db.AddLog(user, PinCheckRefused, nil)
+		err = s.db.AddLog(user, EventTypePinCheckRefused, nil)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 			return false, 0, 0, err

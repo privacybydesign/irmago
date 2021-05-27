@@ -1,4 +1,4 @@
-package taskserver
+package tasks
 
 import (
 	"path/filepath"
@@ -25,7 +25,7 @@ func TestConfiguration(t *testing.T) {
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
-		DeleteExpiredAccountSubject: map[string]string{
+		DeleteExpiredAccountSubjects: map[string]string{
 			"en": "testsubject",
 		},
 		Logger: irma.Logger,
@@ -40,7 +40,7 @@ func TestConfiguration(t *testing.T) {
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
-		DeleteExpiredAccountSubject: map[string]string{
+		DeleteExpiredAccountSubjects: map[string]string{
 			"en": "testsubject",
 		},
 		Logger: irma.Logger,
@@ -53,7 +53,7 @@ func TestConfiguration(t *testing.T) {
 			EmailFrom:       "test@test.com",
 			DefaultLanguage: "en",
 		},
-		DeleteExpiredAccountSubject: map[string]string{
+		DeleteExpiredAccountSubjects: map[string]string{
 			"en": "testsubject",
 		},
 		Logger: irma.Logger,

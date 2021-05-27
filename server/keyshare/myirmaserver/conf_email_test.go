@@ -16,12 +16,12 @@ func validConfWithEmail(t *testing.T) *Configuration {
 	conf.EmailServer = "localhost:1025"
 	conf.DefaultLanguage = "en"
 	conf.LoginEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
-	conf.LoginEmailSubject = map[string]string{"en": "testsubject"}
+	conf.LoginEmailSubjects = map[string]string{"en": "testsubject"}
 	conf.LoginEmailBaseURL = map[string]string{"en": "localhost:8000/test/"}
 	conf.DeleteEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
-	conf.DeleteEmailSubject = map[string]string{"en": "testsubject"}
+	conf.DeleteEmailSubjects = map[string]string{"en": "testsubject"}
 	conf.DeleteAccountFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
-	conf.DeleteAccountSubject = map[string]string{"en": "testsubject"}
+	conf.DeleteAccountSubjects = map[string]string{"en": "testsubject"}
 	return conf
 }
 
@@ -29,8 +29,8 @@ func TestConfEmailValidation(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 
 	conf := validConf(t)
-	conf.DBType = DatabaseTypePostgres
-	conf.DBConnstring = "postgresql://localhost:5432/test"
+	conf.DBType = DBTypePostgres
+	conf.DBConnStr = "postgresql://localhost:5432/test"
 	_, err := New(conf)
 	assert.NoError(t, err)
 
@@ -38,8 +38,8 @@ func TestConfEmailValidation(t *testing.T) {
 	assert.NoError(t, err)
 
 	conf = validConfWithEmail(t)
-	conf.DBType = DatabaseTypePostgres
-	conf.DBConnstring = "postgresql://localhost:54321/test"
+	conf.DBType = DBTypePostgres
+	conf.DBConnStr = "postgresql://localhost:54321/test"
 	_, err = New(conf)
 	assert.Error(t, err)
 
@@ -59,7 +59,7 @@ func TestConfEmailValidation(t *testing.T) {
 	assert.Error(t, err)
 
 	conf = validConfWithEmail(t)
-	conf.LoginEmailSubject = map[string]string{}
+	conf.LoginEmailSubjects = map[string]string{}
 	_, err = New(conf)
 	assert.Error(t, err)
 
@@ -74,7 +74,7 @@ func TestConfEmailValidation(t *testing.T) {
 	assert.Error(t, err)
 
 	conf = validConfWithEmail(t)
-	conf.DeleteEmailSubject = map[string]string{"de": "testsubject"}
+	conf.DeleteEmailSubjects = map[string]string{"de": "testsubject"}
 	_, err = New(conf)
 	assert.Error(t, err)
 }

@@ -19,15 +19,15 @@ email_attributes:
 
 login_email_files:
   en: testdata/emailtemplate.html
-login_email_subject:
+login_email_subjects:
   en: testsubject
 login_url:
   en: http://localhost:3000#token=
 delete_email_files:
   en: testdata/emailtemplate.html
-delete_email_subject:
+delete_email_subjects:
   en: testsubject
 delete_account_files:
   en: testdata/emailtemplate.html
-delete_account_subject:
+delete_account_subjects:
   en: testsubject

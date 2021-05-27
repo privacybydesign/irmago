@@ -1,6 +1,6 @@
 //+build !local_tests
 
-package taskserver
+package tasks
 
 import (
 	"database/sql"
@@ -45,7 +45,7 @@ func TestCleanupEmails(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), (15, 'test2@test.com', $1), (15, 'test3@test.com', 0)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
-	th, err := newHandler(&Configuration{DBConnstring: test.PostgresTestUrl, Logger: irma.Logger})
+	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
 	th.cleanupEmails()
@@ -66,7 +66,7 @@ func TestCleanupTokens(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ('t1', 't1@test.com', 0), ('t2', 't2@test.com', $1)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
-	th, err := newHandler(&Configuration{DBConnstring: test.PostgresTestUrl, Logger: irma.Logger})
+	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
 	th.cleanupTokens()
@@ -84,7 +84,7 @@ func TestCleanupAccounts(t *testing.T) {
 	_, err = db.Exec("INSERT INTO irma.users (id, username, language, coredata, pin_counter, pin_block_date, last_seen, delete_on) VALUES (15, 'testuser', '', '', 0,0, 0, NULL), (16, 't2', '', '', 0, 0, 0, $1-3600), (17, 't3', '', '', 0, 0, $1, $1-3600), (18, 't4', '', NULL, 0, 0, $1, $1-3600)", time.Now().Unix())
 	require.NoError(t, err)
 
-	th, err := newHandler(&Configuration{DBConnstring: test.PostgresTestUrl, Logger: irma.Logger})
+	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
 	th.cleanupAccounts()
@@ -105,9 +105,9 @@ func TestExpireAccounts(t *testing.T) {
 	require.NoError(t, err)
 
 	th, err := newHandler(&Configuration{
-		DBConnstring: test.PostgresTestUrl,
-		DeleteDelay:  30,
-		ExpiryDelay:  1,
+		DBConnStr:   test.PostgresTestUrl,
+		DeleteDelay: 30,
+		ExpiryDelay: 1,
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     "localhost:1025",
 			EmailFrom:       "test@test.com",
@@ -116,7 +116,7 @@ func TestExpireAccounts(t *testing.T) {
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
-		DeleteExpiredAccountSubject: map[string]string{
+		DeleteExpiredAccountSubjects: map[string]string{
 			"en": "testsubject",
 		},
 		Logger: irma.Logger,

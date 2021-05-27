@@ -4,19 +4,22 @@ import (
 	"time"
 )
 
-type MyirmaDB interface {
-	UserID(username string) (int64, error)
-	VerifyEmailToken(token string) (int64, error)
-	RemoveUser(id int64, delay time.Duration) error
+type DB interface {
+	User(id int64) (User, error)
+
+	UserIDByUsername(username string) (int64, error)
+	UserIDByEmailToken(token string) (int64, error)
+	UserIDByLoginToken(token, username string) (int64, error)
+
+	ScheduleUserRemoval(id int64, delay time.Duration) error
 
 	AddEmailLoginToken(email, token string) error
-	LoginTokenCandidates(token string) ([]LoginCandidate, error)
-	TryUserLoginToken(token, username string) (int64, error)
+	LoginUserCandidates(token string) ([]LoginCandidate, error)
 
-	UserInformation(id int64) (UserInformation, error)
 	Logs(id int64, offset int, amount int) ([]LogEntry, error)
+
 	AddEmail(id int64, email string) error
-	RemoveEmail(id int64, email string, delay time.Duration) error
+	ScheduleEmailRemoval(id int64, email string, delay time.Duration) error
 
 	SetSeen(id int64) error
 }
@@ -26,7 +29,7 @@ type UserEmail struct {
 	DeleteInProgress bool   `json:"delete_in_progress"`
 }
 
-type UserInformation struct {
+type User struct {
 	Username         string      `json:"username"`
 	Emails           []UserEmail `json:"emails"`
 	language         string

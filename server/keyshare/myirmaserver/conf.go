@@ -12,13 +12,13 @@ import (
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
-type DatabaseType string
+type DBType string
 
-var ErrUnknownDatabaseType = errors.New("Unknown database type")
+var ErrUnknownDBType = errors.New("Unknown database type")
 
 const (
-	DatabaseTypeMemory   = "memory"
-	DatabaseTypePostgres = "postgres"
+	DBTypeMemory   = "memory"
+	DBTypePostgres = "postgres"
 
 	SessionLifetimeDefault = 15 * 60 // seconds
 )
@@ -35,12 +35,12 @@ type Configuration struct {
 	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
 
 	// Database configuration (ignored when database is provided)
-	DBType       DatabaseType `json:"db_type" mapstructure:"db_type"`
-	DBConnstring string       `json:"db_connstring" mapstructure:"db_connstring"`
+	DBType    DBType `json:"db_type" mapstructure:"db_type"`
+	DBConnStr string `json:"db_str" mapstructure:"db_str"`
 	// DeleteDelay is the delay in days before a user or email address deletion becomes effective.
 	DeleteDelay int `json:"delete_delay" mapstructure:"delete_delay"`
 	// Provide a prepared database (useful for testing)
-	DB MyirmaDB `json:"-"`
+	DB DB `json:"-"`
 
 	// Session lifetime in seconds
 	SessionLifetime int `json:"session_lifetime" mapstructure:"session_lifetime"`
@@ -54,12 +54,12 @@ type Configuration struct {
 
 	LoginEmailBaseURL map[string]string `json:"login_email_base_url" mapstructure:"login_email_base_url"`
 
-	LoginEmailFiles      map[string]string `json:"login_email_files" mapstructure:"login_email_files"`
-	LoginEmailSubject    map[string]string `json:"login_email_subject" mapstructure:"login_email_subject"`
-	DeleteEmailFiles     map[string]string `json:"delete_email_files" mapstructure:"delete_email_files"`
-	DeleteEmailSubject   map[string]string `json:"delete_email_subject" mapstructure:"delete_email_subject"`
-	DeleteAccountFiles   map[string]string `json:"delete_account_files" mapstructure:"delete_account_files"`
-	DeleteAccountSubject map[string]string `json:"delete_account_subject" mapstructure:"delete_account_subject"`
+	LoginEmailFiles       map[string]string `json:"login_email_files" mapstructure:"login_email_files"`
+	LoginEmailSubjects    map[string]string `json:"login_email_subjects" mapstructure:"login_email_subjects"`
+	DeleteEmailFiles      map[string]string `json:"delete_email_files" mapstructure:"delete_email_files"`
+	DeleteEmailSubjects   map[string]string `json:"delete_email_subjects" mapstructure:"delete_email_subjects"`
+	DeleteAccountFiles    map[string]string `json:"delete_account_files" mapstructure:"delete_account_files"`
+	DeleteAccountSubjects map[string]string `json:"delete_account_subjects" mapstructure:"delete_account_subjects"`
 
 	loginEmailTemplates    map[string]*template.Template
 	deleteEmailTemplates   map[string]*template.Template
@@ -96,21 +96,21 @@ func processConfiguration(conf *Configuration) error {
 	if conf.EmailServer != "" {
 		if conf.loginEmailTemplates, err = keyshare.ParseEmailTemplates(
 			conf.LoginEmailFiles,
-			conf.LoginEmailSubject,
+			conf.LoginEmailSubjects,
 			conf.DefaultLanguage,
 		); err != nil {
 			return server.LogError(err)
 		}
 		if conf.deleteEmailTemplates, err = keyshare.ParseEmailTemplates(
 			conf.DeleteEmailFiles,
-			conf.DeleteEmailSubject,
+			conf.DeleteEmailSubjects,
 			conf.DefaultLanguage,
 		); err != nil {
 			return server.LogError(err)
 		}
 		if conf.deleteAccountTemplates, err = keyshare.ParseEmailTemplates(
 			conf.DeleteAccountFiles,
-			conf.DeleteAccountSubject,
+			conf.DeleteAccountSubjects,
 			conf.DefaultLanguage,
 		); err != nil {
 			return server.LogError(err)
@@ -123,15 +123,15 @@ func processConfiguration(conf *Configuration) error {
 	// Setup database
 	if conf.DB == nil {
 		switch conf.DBType {
-		case DatabaseTypePostgres:
-			conf.DB, err = NewPostgresDatabase(conf.DBConnstring)
+		case DBTypePostgres:
+			conf.DB, err = newPostgresDB(conf.DBConnStr)
 			if err != nil {
 				return err
 			}
-		case DatabaseTypeMemory:
-			conf.DB = NewMyirmaMemoryDB()
+		case DBTypeMemory:
+			conf.DB = newMemoryDB()
 		default:
-			return server.LogError(ErrUnknownDatabaseType)
+			return server.LogError(ErrUnknownDBType)
 		}
 	}
 

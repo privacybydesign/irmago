@@ -7,20 +7,20 @@ import (
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
-// MemoryDB provides an easy-to-configure testing implementation of the
+// memoryDB provides an easy-to-configure testing implementation of the
 // keyshare server database. It does not provide full functionality, instead
 // mocking some behaviour, as noted on the specific functions.
 
-type keyshareMemoryDB struct {
+type memoryDB struct {
 	lock  sync.Mutex
-	users map[string]keysharecore.EncryptedKeysharePacket
+	users map[string]keysharecore.User
 }
 
-func NewMemoryDatabase() KeyshareDB {
-	return &keyshareMemoryDB{users: map[string]keysharecore.EncryptedKeysharePacket{}}
+func NewMemoryDB() DB {
+	return &memoryDB{users: map[string]keysharecore.User{}}
 }
 
-func (db *keyshareMemoryDB) User(username string) (*KeyshareUser, error) {
+func (db *memoryDB) User(username string) (*User, error) {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -30,10 +30,10 @@ func (db *keyshareMemoryDB) User(username string) (*KeyshareUser, error) {
 	if !ok {
 		return nil, keyshare.ErrUserNotFound
 	}
-	return &KeyshareUser{Username: username, Coredata: data}, nil
+	return &User{Username: username, UserData: data}, nil
 }
 
-func (db *keyshareMemoryDB) NewUser(user *KeyshareUser) error {
+func (db *memoryDB) AddUser(user *User) error {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -43,11 +43,11 @@ func (db *keyshareMemoryDB) NewUser(user *KeyshareUser) error {
 	if exists {
 		return ErrUserAlreadyExists
 	}
-	db.users[user.Username] = user.Coredata
+	db.users[user.Username] = user.UserData
 	return nil
 }
 
-func (db *keyshareMemoryDB) UpdateUser(user *KeyshareUser) error {
+func (db *memoryDB) UpdateUser(user *User) error {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -57,31 +57,31 @@ func (db *keyshareMemoryDB) UpdateUser(user *KeyshareUser) error {
 	if !exists {
 		return keyshare.ErrUserNotFound
 	}
-	db.users[user.Username] = user.Coredata
+	db.users[user.Username] = user.UserData
 	return nil
 }
 
-func (db *keyshareMemoryDB) ReservePincheck(user *KeyshareUser) (bool, int, int64, error) {
+func (db *memoryDB) ReservePinTry(user *User) (bool, int, int64, error) {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
 	return true, 1, 0, nil
 }
 
-func (db *keyshareMemoryDB) ClearPincheck(user *KeyshareUser) error {
+func (db *memoryDB) ResetPinTries(user *User) error {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
 	return nil
 }
 
-func (db *keyshareMemoryDB) SetSeen(user *KeyshareUser) error {
+func (db *memoryDB) SetSeen(user *User) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *keyshareMemoryDB) AddLog(user *KeyshareUser, eventType LogEntryType, param interface{}) error {
+func (db *memoryDB) AddLog(user *User, eventType EventType, param interface{}) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *keyshareMemoryDB) AddEmailVerification(user *KeyshareUser, emailAddress, token string) error {
+func (db *memoryDB) AddEmailVerification(user *User, emailAddress, token string) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }

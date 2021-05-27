@@ -21,19 +21,19 @@ import (
 var keyshareServ *http.Server
 
 func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
-	db := keyshareserver.NewMemoryDatabase()
-	err := db.NewUser(&keyshareserver.KeyshareUser{
+	db := keyshareserver.NewMemoryDB()
+	err := db.AddUser(&keyshareserver.User{
 		Username: "",
-		Coredata: keysharecore.EncryptedKeysharePacket{},
+		UserData: keysharecore.User{},
 	})
 	require.NoError(t, err)
-	var ep keysharecore.EncryptedKeysharePacket
+	var ep keysharecore.User
 	p, err := base64.StdEncoding.DecodeString("YWJjZK4w5SC+7D4lDrhiJGvB1iwxSeF90dGGPoGqqG7g3ivbfHibOdkKoOTZPbFlttBzn2EJgaEsL24Re8OWWWw5pd31/GCd14RXcb9Wy2oWhbr0pvJDLpIxXZt/qiQC0nJiIAYWLGZOdj5o0irDfqP1CSfw3IoKkVEl4lHRj0LCeINJIOpEfGlFtl4DHlWu8SMQFV1AIm3Gv64XzGncdkclVd41ti7cicBrcK8N2u9WvY/jCS4/Lxa2syp/O4IY")
 	require.NoError(t, err)
 	copy(ep[:], p)
-	err = db.NewUser(&keyshareserver.KeyshareUser{
+	err = db.AddUser(&keyshareserver.User{
 		Username: "testusername",
-		Coredata: ep,
+		UserData: ep,
 	})
 	require.NoError(t, err)
 

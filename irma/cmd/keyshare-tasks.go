@@ -1,24 +1,24 @@
 package cmd
 
 import (
-	"github.com/privacybydesign/irmago/server/keyshare/taskserver"
+	"github.com/privacybydesign/irmago/server/keyshare/tasks"
 	"github.com/sietseringers/cobra"
 	"github.com/sietseringers/viper"
 )
 
 var keyshareTaskCmd = &cobra.Command{
-	Use:   "task",
+	Use:   "tasks",
 	Short: "Perform IRMA keyshare background tasks",
 	Run: func(command *cobra.Command, args []string) {
-		conf := configureKeyshareTask(command)
-		if err := taskserver.Do(conf); err != nil {
+		conf := configureKeyshareTasks(command)
+		if err := tasks.Do(conf); err != nil {
 			die("", err)
 		}
 	},
 }
 
 func init() {
-	keyshareRoot.AddCommand(keyshareTaskCmd)
+	keyshareRootCmd.AddCommand(keyshareTaskCmd)
 
 	flags := keyshareTaskCmd.Flags()
 	flags.SortFlags = false
@@ -38,7 +38,7 @@ func init() {
 	flags.String("email-password", "", "Password to use when authenticating with email server")
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
-	flags.StringToString("expired-email-subject", nil, "Translated subject lines for the expired account email")
+	flags.StringToString("expired-email-subjects", nil, "Translated subject lines for the expired account email")
 	flags.StringToString("expired-email-files", nil, "Translated emails for the expired account email")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
@@ -48,19 +48,19 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureKeyshareTask(cmd *cobra.Command) *taskserver.Configuration {
+func configureKeyshareTasks(cmd *cobra.Command) *tasks.Configuration {
 	readConfig(cmd, "keysharetasks", "keyshare tasks", []string{".", "/etc/keysharetasks"}, nil)
 
-	return &taskserver.Configuration{
+	return &tasks.Configuration{
 		EmailConfiguration: configureEmail(),
 
-		DBConnstring: viper.GetString("db-connstring"),
+		DBConnStr: viper.GetString("db-str"),
 
 		ExpiryDelay: viper.GetInt("expiry-delay"),
 		DeleteDelay: viper.GetInt("delete-delay"),
 
-		DeleteExpiredAccountSubject: viper.GetStringMapString("expired-email-subject"),
-		DeleteExpiredAccountFiles:   viper.GetStringMapString("expired-email-files"),
+		DeleteExpiredAccountSubjects: viper.GetStringMapString("expired-email-subjects"),
+		DeleteExpiredAccountFiles:    viper.GetStringMapString("expired-email-files"),
 
 		Verbose: viper.GetInt("verbose"),
 		Quiet:   viper.GetBool("quiet"),

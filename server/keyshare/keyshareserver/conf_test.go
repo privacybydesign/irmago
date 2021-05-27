@@ -18,7 +18,7 @@ func validConf(t *testing.T) *Configuration {
 			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 			Logger:                irma.Logger,
 		},
-		DBType:                DatabaseTypeMemory,
+		DBType:                DBTypeMemory,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
@@ -26,7 +26,7 @@ func validConf(t *testing.T) *Configuration {
 	}
 }
 
-func TestConfInvalidAESKey(t *testing.T) {
+func TestConf(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 
 	_, err := New(validConf(t))

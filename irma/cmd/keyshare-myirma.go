@@ -8,9 +8,9 @@ import (
 	"github.com/sietseringers/viper"
 )
 
-var myirmadCmd = &cobra.Command{
-	Use:   "myirma",
-	Short: "IRMA keyshare myirma server",
+var myirmaServerCmd = &cobra.Command{
+	Use:   "myirmaserver",
+	Short: "IRMA keyshare MyIRMA server",
 	Run: func(command *cobra.Command, args []string) {
 		conf := configureMyirmad(command)
 
@@ -25,9 +25,9 @@ var myirmadCmd = &cobra.Command{
 }
 
 func init() {
-	keyshareRoot.AddCommand(myirmadCmd)
+	keyshareRootCmd.AddCommand(myirmaServerCmd)
 
-	flags := myirmadCmd.Flags()
+	flags := myirmaServerCmd.Flags()
 	flags.SortFlags = false
 
 	flags.StringP("config", "c", "", "path to configuration file")
@@ -44,7 +44,7 @@ func init() {
 	flags.StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.String("db-type", myirmaserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
+	flags.String("db-type", myirmaserver.DBTypePostgres, "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 
@@ -59,12 +59,12 @@ func init() {
 	flags.String("email-password", "", "Password to use when authenticating with email server")
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
-	flags.StringToString("login-email-subject", nil, "Translated subject lines for the login email")
+	flags.StringToString("login-email-subjects", nil, "Translated subject lines for the login email")
 	flags.StringToString("login-email-files", nil, "Translated emails for the login email")
 	flags.StringToString("login-url", nil, "Base URL for the email verification link (localized)")
-	flags.StringToString("delete-email-subject", nil, "Translated subject lines for the delete email email")
+	flags.StringToString("delete-email-subjects", nil, "Translated subject lines for the delete email email")
 	flags.StringToString("delete-email-files", nil, "Translated emails for the delete email email")
-	flags.StringToString("delete-account-subject", nil, "Translated subject lines for the delete account email")
+	flags.StringToString("delete-account-subjects", nil, "Translated subject lines for the delete account email")
 	flags.StringToString("delete-account-files", nil, "Translated emails for the delete account email")
 	flags.Int("delete-delay", 0, "delay in days before a user or email address deletion becomes effective")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
@@ -96,17 +96,17 @@ func configureMyirmad(cmd *cobra.Command) *myirmaserver.Configuration {
 		StaticPath:   viper.GetString("static-path"),
 		StaticPrefix: viper.GetString("static-prefix"),
 
-		DBType:       myirmaserver.DatabaseType(viper.GetString("db-type")),
-		DBConnstring: viper.GetString("db-connstring"),
+		DBType:    myirmaserver.DBType(viper.GetString("db-type")),
+		DBConnStr: viper.GetString("db-str"),
 
-		LoginEmailSubject:    viper.GetStringMapString("login-email-subject"),
-		LoginEmailFiles:      viper.GetStringMapString("login-email-files"),
-		LoginEmailBaseURL:    viper.GetStringMapString("login-url"),
-		DeleteEmailFiles:     viper.GetStringMapString("delete-email-files"),
-		DeleteEmailSubject:   viper.GetStringMapString("delete-email-subject"),
-		DeleteAccountFiles:   viper.GetStringMapString("delete-account-files"),
-		DeleteAccountSubject: viper.GetStringMapString("delete-account-subject"),
-		DeleteDelay:          viper.GetInt("delete-delay"),
+		LoginEmailSubjects:    viper.GetStringMapString("login-email-subjects"),
+		LoginEmailFiles:       viper.GetStringMapString("login-email-files"),
+		LoginEmailBaseURL:     viper.GetStringMapString("login-url"),
+		DeleteEmailFiles:      viper.GetStringMapString("delete-email-files"),
+		DeleteEmailSubjects:   viper.GetStringMapString("delete-email-subjects"),
+		DeleteAccountFiles:    viper.GetStringMapString("delete-account-files"),
+		DeleteAccountSubjects: viper.GetStringMapString("delete-account-subjects"),
+		DeleteDelay:           viper.GetInt("delete-delay"),
 
 		SessionLifetime: viper.GetInt("session-lifetime"),
 	}

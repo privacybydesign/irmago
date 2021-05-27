@@ -10,7 +10,7 @@ import (
 )
 
 func TestServerLoginEmail(t *testing.T) {
-	db := &myirmaMemoryDB{
+	db := &memoryDB{
 		userData: map[string]memoryUserData{
 			"testuser": {
 				id:         15,
@@ -29,7 +29,7 @@ func TestServerLoginEmail(t *testing.T) {
 			"testemailtoken": 15,
 		},
 	}
-	StartKeyshareServer(t, db, "localhost:1025")
+	StartMyIrmaServer(t, db, "localhost:1025")
 	defer StopKeyshareServer(t)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/login/email", `{"email": "dne", "language": "en"}`, nil, 403, nil)
@@ -48,7 +48,7 @@ func TestServerLoginEmail(t *testing.T) {
 }
 
 func TestServerInvalidEmailMessage(t *testing.T) {
-	StartKeyshareServer(t, NewMyirmaMemoryDB(), "localhost:1025")
+	StartMyIrmaServer(t, newMemoryDB(), "localhost:1025")
 	defer StopKeyshareServer(t)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/login/email", "gval;kefsajsdkl;", nil, 400, nil)

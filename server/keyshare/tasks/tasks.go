@@ -1,4 +1,4 @@
-package taskserver
+package tasks
 
 import (
 	"database/sql"
@@ -19,7 +19,7 @@ func newHandler(conf *Configuration) (*taskHandler, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("pgx", conf.DBConnstring)
+	db, err := sql.Open("pgx", conf.DBConnStr)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 			// And send
 			err = t.conf.SendEmail(
 				t.conf.deleteExpiredAccountTemplate,
-				t.conf.DeleteExpiredAccountSubject,
+				t.conf.DeleteExpiredAccountSubjects,
 				map[string]string{"Username": username, "Email": email},
 				[]string{email},
 				lang,

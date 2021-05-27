@@ -21,10 +21,10 @@ import (
 
 func TestPinFunctionality(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 
 	// generate test pin
 	var bpin [64]byte
@@ -33,7 +33,7 @@ func TestPinFunctionality(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate package
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	// Test with correct pin
@@ -67,10 +67,10 @@ func TestPinFunctionality(t *testing.T) {
 
 func TestVerifyAccess(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 
 	// Generate test pins
 	var bpin [64]byte
@@ -82,9 +82,9 @@ func TestVerifyAccess(t *testing.T) {
 	pin2 := string(bpin[:])
 
 	// and test keyshare secrets
-	ep1, err := c.GenerateKeyshareSecret(pin1)
+	ep1, err := c.NewUser(pin1)
 	require.NoError(t, err)
-	ep2, err := c.GenerateKeyshareSecret(pin2)
+	ep2, err := c.NewUser(pin2)
 	require.NoError(t, err)
 
 	// Test use jwt on wrong packet
@@ -105,7 +105,7 @@ func TestVerifyAccess(t *testing.T) {
 		"exp":      time.Now().Add(-3 * time.Minute).Unix(),
 		"token_id": tokenID,
 	})
-	jwtt, err = token.SignedString(c.signKey)
+	jwtt, err = token.SignedString(c.jwtPrivateKey)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep1, jwtt)
 	assert.Error(t, err)
@@ -115,7 +115,7 @@ func TestVerifyAccess(t *testing.T) {
 		"iat":      time.Now().Unix(),
 		"token_id": tokenID,
 	})
-	jwtt, err = token.SignedString(c.signKey)
+	jwtt, err = token.SignedString(c.jwtPrivateKey)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep1, jwtt)
 	assert.Error(t, err)
@@ -126,7 +126,7 @@ func TestVerifyAccess(t *testing.T) {
 		"exp":      "test",
 		"token_id": tokenID,
 	})
-	jwtt, err = token.SignedString(c.signKey)
+	jwtt, err = token.SignedString(c.jwtPrivateKey)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep1, jwtt)
 	assert.Error(t, err)
@@ -136,7 +136,7 @@ func TestVerifyAccess(t *testing.T) {
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(3 * time.Minute).Unix(),
 	})
-	jwtt, err = token.SignedString(c.signKey)
+	jwtt, err = token.SignedString(c.jwtPrivateKey)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep1, jwtt)
 	assert.Error(t, err)
@@ -147,7 +147,7 @@ func TestVerifyAccess(t *testing.T) {
 		"exp":      time.Now().Add(3 * time.Minute).Unix(),
 		"token_id": 7,
 	})
-	jwtt, err = token.SignedString(c.signKey)
+	jwtt, err = token.SignedString(c.jwtPrivateKey)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep1, jwtt)
 	assert.Error(t, err)
@@ -166,10 +166,10 @@ func TestVerifyAccess(t *testing.T) {
 
 func TestProofFunctionality(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// generate test pin
@@ -179,7 +179,7 @@ func TestProofFunctionality(t *testing.T) {
 	pin := string(bpin[:])
 
 	// generate keyshare secret
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	// Validate pin
@@ -201,7 +201,7 @@ func TestProofFunctionality(t *testing.T) {
 	}{}
 	fmt.Println(Rjwt)
 	_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (interface{}, error) {
-		return &c.signKey.PublicKey, nil
+		return &c.jwtPrivateKey.PublicKey, nil
 	})
 	require.NoError(t, err)
 
@@ -216,10 +216,10 @@ func TestProofFunctionality(t *testing.T) {
 
 func TestCorruptedPacket(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -229,7 +229,7 @@ func TestCorruptedPacket(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	jwtt, err := c.ValidatePin(ep, pin, "testid")
@@ -260,10 +260,10 @@ func TestCorruptedPacket(t *testing.T) {
 
 func TestIncorrectPin(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -273,7 +273,7 @@ func TestIncorrectPin(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	// validate pin
@@ -297,10 +297,10 @@ func TestIncorrectPin(t *testing.T) {
 
 func TestMissingKey(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -310,7 +310,7 @@ func TestMissingKey(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	// Generate jwt
@@ -330,10 +330,10 @@ func TestMissingKey(t *testing.T) {
 
 func TestInvalidChallenge(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -343,7 +343,7 @@ func TestInvalidChallenge(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	// Validate pin
@@ -371,10 +371,10 @@ func TestInvalidChallenge(t *testing.T) {
 
 func TestDoubleCommitUse(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -384,7 +384,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	// validate pin
@@ -402,10 +402,10 @@ func TestDoubleCommitUse(t *testing.T) {
 
 func TestNonExistingCommit(t *testing.T) {
 	// Setup keys for test
-	var key AesKey
+	var key AESKey
 	_, err := rand.Read(key[:])
 	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{AESKeyID: 1, AESKey: key, SignKeyID: 1, SignKey: jwtTestKey})
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
@@ -415,7 +415,7 @@ func TestNonExistingCommit(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.GenerateKeyshareSecret(pin)
+	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
 	// Generate jwt

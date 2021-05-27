@@ -8,7 +8,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 )
 
-type Sessiondata struct {
+type Session struct {
 	sync.Mutex
 
 	token  string
@@ -21,37 +21,37 @@ type Sessiondata struct {
 }
 
 type SessionStore interface {
-	create() *Sessiondata
-	get(token string) *Sessiondata
+	create() *Session
+	get(token string) *Session
 	flush()
 }
 
 type MemorySessionStore struct {
 	sync.Mutex
 
-	data            map[string]*Sessiondata
+	data            map[string]*Session
 	sessionLifetime time.Duration
 }
 
 func NewMemorySessionStore(sessionLifetime time.Duration) SessionStore {
 	return &MemorySessionStore{
 		sessionLifetime: sessionLifetime,
-		data:            map[string]*Sessiondata{},
+		data:            map[string]*Session{},
 	}
 }
 
-func (s *MemorySessionStore) create() *Sessiondata {
+func (s *MemorySessionStore) create() *Session {
 	s.Lock()
 	defer s.Unlock()
 	token := common.NewSessionToken()
-	s.data[token] = &Sessiondata{
+	s.data[token] = &Session{
 		token:  token,
 		expiry: time.Now().Add(s.sessionLifetime),
 	}
 	return s.data[token]
 }
 
-func (s *MemorySessionStore) get(token string) *Sessiondata {
+func (s *MemorySessionStore) get(token string) *Session {
 	s.Lock()
 	defer s.Unlock()
 	return s.data[token]

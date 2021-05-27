@@ -14,7 +14,7 @@ type memoryUserData struct {
 	lastActive time.Time
 }
 
-type myirmaMemoryDB struct {
+type memoryDB struct {
 	lock     sync.Mutex
 	userData map[string]memoryUserData
 
@@ -22,15 +22,15 @@ type myirmaMemoryDB struct {
 	verifyEmailTokens map[string]int64
 }
 
-func NewMyirmaMemoryDB() MyirmaDB {
-	return &myirmaMemoryDB{
+func newMemoryDB() DB {
+	return &memoryDB{
 		userData:          map[string]memoryUserData{},
 		loginEmailTokens:  map[string]string{},
 		verifyEmailTokens: map[string]int64{},
 	}
 }
 
-func (db *myirmaMemoryDB) UserID(username string) (int64, error) {
+func (db *memoryDB) UserIDByUsername(username string) (int64, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	data, ok := db.userData[username]
@@ -40,7 +40,7 @@ func (db *myirmaMemoryDB) UserID(username string) (int64, error) {
 	return data.id, nil
 }
 
-func (db *myirmaMemoryDB) RemoveUser(id int64, _ time.Duration) error {
+func (db *memoryDB) ScheduleUserRemoval(id int64, _ time.Duration) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -52,7 +52,7 @@ func (db *myirmaMemoryDB) RemoveUser(id int64, _ time.Duration) error {
 	return keyshare.ErrUserNotFound
 }
 
-func (db *myirmaMemoryDB) VerifyEmailToken(token string) (int64, error) {
+func (db *memoryDB) UserIDByEmailToken(token string) (int64, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -66,7 +66,7 @@ func (db *myirmaMemoryDB) VerifyEmailToken(token string) (int64, error) {
 	return userID, nil
 }
 
-func (db *myirmaMemoryDB) AddEmailLoginToken(email, token string) error {
+func (db *memoryDB) AddEmailLoginToken(email, token string) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -84,14 +84,14 @@ func (db *myirmaMemoryDB) AddEmailLoginToken(email, token string) error {
 	}
 
 	if !found {
-		return ErrEmailNotFound
+		return errEmailNotFound
 	}
 
 	db.loginEmailTokens[token] = email
 	return nil
 }
 
-func (db *myirmaMemoryDB) LoginTokenCandidates(token string) ([]LoginCandidate, error) {
+func (db *memoryDB) LoginUserCandidates(token string) ([]LoginCandidate, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -112,7 +112,7 @@ func (db *myirmaMemoryDB) LoginTokenCandidates(token string) ([]LoginCandidate, 
 	return result, nil
 }
 
-func (db *myirmaMemoryDB) TryUserLoginToken(token, username string) (int64, error) {
+func (db *memoryDB) UserIDByLoginToken(token, username string) (int64, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -135,7 +135,7 @@ func (db *myirmaMemoryDB) TryUserLoginToken(token, username string) (int64, erro
 	return 0, keyshare.ErrUserNotFound
 }
 
-func (db *myirmaMemoryDB) UserInformation(id int64) (UserInformation, error) {
+func (db *memoryDB) User(id int64) (User, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -147,14 +147,14 @@ func (db *myirmaMemoryDB) UserInformation(id int64) (UserInformation, error) {
 					DeleteInProgress: false,
 				})
 			}
-			return UserInformation{
+			return User{
 				Username:         username,
 				Emails:           emailList,
 				DeleteInProgress: false,
 			}, nil
 		}
 	}
-	return UserInformation{}, keyshare.ErrUserNotFound
+	return User{}, keyshare.ErrUserNotFound
 }
 
 func min(a, b int) int {
@@ -165,7 +165,7 @@ func min(a, b int) int {
 	}
 }
 
-func (db *myirmaMemoryDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
+func (db *memoryDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for _, user := range db.userData {
@@ -176,7 +176,7 @@ func (db *myirmaMemoryDB) Logs(id int64, offset, amount int) ([]LogEntry, error)
 	return nil, keyshare.ErrUserNotFound
 }
 
-func (db *myirmaMemoryDB) AddEmail(id int64, email string) error {
+func (db *memoryDB) AddEmail(id int64, email string) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -189,7 +189,7 @@ func (db *myirmaMemoryDB) AddEmail(id int64, email string) error {
 	return keyshare.ErrUserNotFound
 }
 
-func (db *myirmaMemoryDB) RemoveEmail(id int64, email string, _ time.Duration) error {
+func (db *memoryDB) ScheduleEmailRemoval(id int64, email string, _ time.Duration) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -209,7 +209,7 @@ func (db *myirmaMemoryDB) RemoveEmail(id int64, email string, _ time.Duration) e
 	return keyshare.ErrUserNotFound
 }
 
-func (db *myirmaMemoryDB) SetSeen(id int64) error {
+func (db *memoryDB) SetSeen(id int64) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {

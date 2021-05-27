@@ -1,4 +1,4 @@
-package taskserver
+package tasks
 
 import (
 	"html/template"
@@ -11,7 +11,7 @@ import (
 
 type Configuration struct {
 	// Database configuration
-	DBConnstring string `json:"db_connstring" mapstructure:"db_connstring"`
+	DBConnStr string `json:"db_str" mapstructure:"db_str"`
 
 	// Configuration for deleting expired accounts
 	ExpiryDelay int `json:"expiry_delay" mapstructure:"expiry_delay"`
@@ -21,7 +21,7 @@ type Configuration struct {
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
 	DeleteExpiredAccountFiles    map[string]string `json:"delete_expired_account_files" mapstructure:"delete_expired_account_files"`
-	DeleteExpiredAccountSubject  map[string]string `json:"delete_expired_account_subject" mapstructure:"delete_expired_account_subject"`
+	DeleteExpiredAccountSubjects map[string]string `json:"delete_expired_account_subjects" mapstructure:"delete_expired_account_subjects"`
 	deleteExpiredAccountTemplate map[string]*template.Template
 
 	// Logging verbosity level: 0 is normal, 1 includes DEBUG level, 2 includes TRACE level
@@ -49,7 +49,7 @@ func processConfiguration(conf *Configuration) error {
 		var err error
 		conf.deleteExpiredAccountTemplate, err = keyshare.ParseEmailTemplates(
 			conf.DeleteExpiredAccountFiles,
-			conf.DeleteExpiredAccountSubject,
+			conf.DeleteExpiredAccountSubjects,
 			conf.DefaultLanguage,
 		)
 		if err != nil {

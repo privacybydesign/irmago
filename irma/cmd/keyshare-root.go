@@ -14,13 +14,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var keyshareRoot = &cobra.Command{
+var keyshareRootCmd = &cobra.Command{
 	Use:   "keyshare",
 	Short: "IRMA keyshare server components",
 }
 
 func init() {
-	RootCmd.AddCommand(keyshareRoot)
+	RootCmd.AddCommand(keyshareRootCmd)
 }
 
 type stoppableServer interface {

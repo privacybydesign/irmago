@@ -25,7 +25,7 @@ type Server struct {
 
 	sessionserver *irmaserver.Server
 	store         SessionStore
-	db            MyirmaDB
+	db            DB
 	scheduler     *gocron.Scheduler
 	schedulerStop chan<- bool
 }
@@ -146,28 +146,28 @@ func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) sendDeleteEmails(session *Sessiondata) error {
-	userData, err := s.db.UserInformation(*session.userID)
+func (s *Server) sendDeleteEmails(session *Session) error {
+	user, err := s.db.User(*session.userID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not fetch user information")
 		return err
 	}
 
-	emails := make([]string, 0, len(userData.Emails))
-	for _, email := range userData.Emails {
+	emails := make([]string, 0, len(user.Emails))
+	for _, email := range user.Emails {
 		emails = append(emails, email.Email)
 	}
 	return s.conf.SendEmail(
 		s.conf.deleteAccountTemplates,
 		s.conf.DeleteAccountFiles,
-		map[string]string{"Username": userData.Username},
+		map[string]string{"Username": user.Username},
 		emails,
-		userData.language,
+		user.language,
 	)
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
-	session := r.Context().Value("session").(*Sessiondata)
+	session := r.Context().Value("session").(*Session)
 
 	// First, send emails
 	if s.conf.EmailServer != "" {
@@ -180,7 +180,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Then remove user
-	err := s.db.RemoveUser(*session.userID, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
+	err := s.db.ScheduleUserRemoval(*session.userID, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem removing user")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -210,7 +210,7 @@ type EmailLoginRequest struct {
 func (s *Server) sendLoginEmail(request EmailLoginRequest) error {
 	token := common.NewSessionToken()
 	err := s.db.AddEmailLoginToken(request.Email, token)
-	if err == ErrEmailNotFound {
+	if err == errEmailNotFound {
 		return err
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error adding login token to database")
@@ -220,7 +220,7 @@ func (s *Server) sendLoginEmail(request EmailLoginRequest) error {
 	baseURL := s.conf.TranslateString(s.conf.LoginEmailBaseURL, request.Language)
 	return s.conf.SendEmail(
 		s.conf.loginEmailTemplates,
-		s.conf.LoginEmailSubject,
+		s.conf.LoginEmailSubjects,
 		map[string]string{"TokenURL": baseURL + token},
 		[]string{request.Email},
 		request.Language,
@@ -240,7 +240,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.sendLoginEmail(request)
-	if err == ErrEmailNotFound {
+	if err == errEmailNotFound {
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
@@ -260,7 +260,7 @@ func (s *Server) handleGetCandidates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	candidates, err := s.db.LoginTokenCandidates(token)
+	candidates, err := s.db.LoginUserCandidates(token)
 	if err == keyshare.ErrUserNotFound {
 		server.WriteError(w, server.ErrorInvalidRequest, "token invalid")
 		return
@@ -279,7 +279,7 @@ type TokenLoginRequest struct {
 }
 
 func (s *Server) processTokenLogin(request TokenLoginRequest) (string, error) {
-	id, err := s.db.TryUserLoginToken(request.Token, request.Username)
+	id, err := s.db.UserIDByLoginToken(request.Token, request.Username)
 	if err == keyshare.ErrUserNotFound {
 		return "", err
 	}
@@ -344,7 +344,7 @@ func (s *Server) processLoginIrmaSessionResult(sessiontoken string, result *serv
 	}
 
 	username := *result.Disclosed[0][0].RawValue
-	id, err := s.db.UserID(username)
+	id, err := s.db.UserIDByUsername(username)
 	if err == keyshare.ErrUserNotFound {
 		session.pendingError = &server.ErrorUserNotRegistered
 		session.pendingErrorMessage = ""
@@ -391,8 +391,8 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := s.db.VerifyEmailToken(token)
-	if err == ErrTokenNotFound {
+	id, err := s.db.UserIDByEmailToken(token)
+	if err == errTokenNotFound {
 		s.conf.Logger.Info("Unknown email verification token")
 		server.WriteError(w, server.ErrorInvalidRequest, "Unknown email verification token")
 		return
@@ -429,8 +429,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
-	session := r.Context().Value("session").(*Sessiondata)
-	userinfo, err := s.db.UserInformation(*session.userID)
+	session := r.Context().Value("session").(*Session)
+	user, err := s.db.User(*session.userID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem fetching user information from database")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -440,10 +440,10 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
 	s.setCookie(w, session.token, s.conf.SessionLifetime)
 
-	if userinfo.Emails == nil {
-		userinfo.Emails = []UserEmail{}
+	if user.Emails == nil {
+		user.Emails = []UserEmail{}
 	} // Ensure we never send nil in place of an empty list
-	server.WriteJson(w, userinfo)
+	server.WriteJson(w, user)
 }
 
 func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
@@ -455,7 +455,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := r.Context().Value("session").(*Sessiondata)
+	session := r.Context().Value("session").(*Session)
 	entries, err := s.db.Logs(*session.userID, offset, 11)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not load log entries")
@@ -472,15 +472,15 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, entries)
 }
 
-func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
-	info, err := s.db.UserInformation(*session.userID)
+func (s *Server) processRemoveEmail(session *Session, email string) error {
+	user, err := s.db.User(*session.userID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error checking whether email address can be removed")
 		return err
 	}
 	validEmail := false
-	for _, emailL := range info.Emails {
-		if email == emailL.Email {
+	for _, e := range user.Emails {
+		if email == e.Email {
 			validEmail = true
 		}
 	}
@@ -492,10 +492,10 @@ func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
 	if s.conf.EmailServer != "" {
 		err = s.conf.SendEmail(
 			s.conf.deleteEmailTemplates,
-			s.conf.DeleteEmailSubject,
-			map[string]string{"Username": info.Username},
+			s.conf.DeleteEmailSubjects,
+			map[string]string{"Username": user.Username},
 			[]string{email},
-			info.language,
+			user.language,
 		)
 		if err != nil {
 			// already logged
@@ -503,7 +503,7 @@ func (s *Server) processRemoveEmail(session *Sessiondata, email string) error {
 		}
 	}
 
-	err = s.db.RemoveEmail(*session.userID, email, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
+	err = s.db.ScheduleEmailRemoval(*session.userID, email, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error removing user email address")
 		return err
@@ -519,7 +519,7 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := r.Context().Value("session").(*Sessiondata)
+	session := r.Context().Value("session").(*Session)
 	err := s.processRemoveEmail(session, email)
 	if err == ErrInvalidEmail {
 		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
@@ -572,7 +572,7 @@ func (s *Server) processAddEmailIrmaSessionResult(sessiontoken string, result *s
 }
 
 func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
-	session := r.Context().Value("session").(*Sessiondata)
+	session := r.Context().Value("session").(*Session)
 	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...),
 		func(result *server.SessionResult) {
 			s.processAddEmailIrmaSessionResult(session.token, result)
@@ -609,7 +609,7 @@ func (s *Server) StaticFilesHandler() http.Handler {
 	return http.StripPrefix(s.conf.StaticPrefix, http.FileServer(http.Dir(s.conf.StaticPath)))
 }
 
-func (s *Server) sessionFromCookie(r *http.Request) *Sessiondata {
+func (s *Server) sessionFromCookie(r *http.Request) *Session {
 	token, err := r.Cookie("session")
 	if err != nil { // only happens if cookie is not present
 		return nil

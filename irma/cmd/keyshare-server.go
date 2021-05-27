@@ -9,7 +9,7 @@ import (
 	"github.com/sietseringers/viper"
 )
 
-var keysharedCmd = &cobra.Command{
+var keyshareServerCmd = &cobra.Command{
 	Use:   "server",
 	Short: "IRMA keyshare server",
 	Run: func(command *cobra.Command, args []string) {
@@ -26,9 +26,9 @@ var keysharedCmd = &cobra.Command{
 }
 
 func init() {
-	keyshareRoot.AddCommand(keysharedCmd)
+	keyshareRootCmd.AddCommand(keyshareServerCmd)
 
-	flags := keysharedCmd.Flags()
+	flags := keyshareServerCmd.Flags()
 	flags.SortFlags = false
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
@@ -41,7 +41,7 @@ func init() {
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.String("db-type", keyshareserver.DatabaseTypePostgres, "Type of database to connect keyshare server to")
+	flags.String("db-type", keyshareserver.DBTypePostgres, "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 
@@ -63,7 +63,7 @@ func init() {
 	flags.String("email-password", "", "Password to use when authenticating with email server")
 	flags.String("email-from", "", "Email address to use as sender address")
 	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
-	flags.StringToString("registration-email-subject", nil, "Translated subject lines for the registration email")
+	flags.StringToString("registration-email-subjects", nil, "Translated subject lines for the registration email")
 	flags.StringToString("registration-email-files", nil, "Translated emails for the registration email")
 	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
@@ -90,8 +90,8 @@ func configureKeyshared(cmd *cobra.Command) *keyshareserver.Configuration {
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
-		DBType:       keyshareserver.DatabaseType(viper.GetString("db-type")),
-		DBConnstring: viper.GetString("db-connstring"),
+		DBType:    keyshareserver.DBType(viper.GetString("db-type")),
+		DBConnStr: viper.GetString("db-str"),
 
 		JwtKeyID:                viper.GetUint32("jwt-privkey-id"),
 		JwtPrivateKey:           viper.GetString("jwt-privkey"),
@@ -103,9 +103,9 @@ func configureKeyshared(cmd *cobra.Command) *keyshareserver.Configuration {
 
 		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare-attribute")),
 
-		RegistrationEmailSubject: viper.GetStringMapString("registration-email-subject"),
-		RegistrationEmailFiles:   viper.GetStringMapString("registration-email-files"),
-		VerificationURL:          viper.GetStringMapString("verification-url"),
+		RegistrationEmailSubjects: viper.GetStringMapString("registration-email-subjects"),
+		RegistrationEmailFiles:    viper.GetStringMapString("registration-email-files"),
+		VerificationURL:           viper.GetStringMapString("verification-url"),
 	}
 
 	conf.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
