@@ -116,6 +116,8 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
 	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
+	flags.String("revocation-settings", "", "revocation settings (in JSON)")
+	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.String("store-type", "", "specifies how session state will be saved on the server, defaults to memory")
 	flags.String("redis-addr", "", "redis address, to be specified as host:port")
@@ -123,10 +125,6 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Int("redis-db", 0, "database to be selected after connecting to the server, defaults to 0")
 	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
 	flags.Lookup("store-type").Header = `Session store configuration`
-
-	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
-
-	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
