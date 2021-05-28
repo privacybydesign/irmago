@@ -242,7 +242,15 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	if err != nil {
 		return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
-	if res.StatusCode != 200 {
+	if res.StatusCode == http.StatusNoContent {
+		if result != nil {
+			return &SessionError{
+				ErrorType:    ErrorServerResponse,
+				Err:          errors.New("'204 No Content' received, but result was expected"),
+				RemoteStatus: res.StatusCode,
+			}
+		}
+	} else if res.StatusCode != http.StatusOK {
 		apierr := &RemoteError{}
 		err = transport.unmarshal(body, apierr)
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
