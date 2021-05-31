@@ -1074,6 +1074,18 @@ func TestWizardValidation(t *testing.T) {
 	validColor := "#123ABC"
 	wizard.Color = &validColor
 	require.NoError(t, wizard.Validate(conf))
+
+	wizard.TextColor = &invalidColor1
+	require.EqualError(t, wizard.Validate(conf), "invalid wizard text color: must be of the form #RRGGBB")
+
+	wizard.TextColor = &invalidColor2
+	require.EqualError(t, wizard.Validate(conf), "invalid wizard text color: must be of the form #RRGGBB")
+
+	wizard.TextColor = nil
+	require.NoError(t, wizard.Validate(conf))
+
+	wizard.TextColor = &validColor
+	require.NoError(t, wizard.Validate(conf))
 }
 
 func TestWizardIncorrectContentsOrder(t *testing.T) {
