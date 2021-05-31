@@ -151,6 +151,7 @@ type (
 		Logo                 *string                   `json:"logo,omitempty"`     // SHA256 of the logo contents (which is the filename on disk)
 		LogoPath             *string                   `json:"logoPath,omitempty"` // Full path to the logo set automatically during scheme parsing
 		Color                *string                   `json:"color,omitempty"`
+		TextColor            *string                   `json:"textColor,omitempty"`
 		Issues               *CredentialTypeIdentifier `json:"issues,omitempty"`
 		AllowOtherRequestors bool                      `json:"allowOtherRequestors"`
 
@@ -361,6 +362,9 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 
 	if wizard.Color != nil && !regexp.MustCompile("^#[0-9A-F]{6}$").MatchString(*wizard.Color) {
 		return errors.New("invalid wizard color: must be of the form #RRGGBB")
+	}
+	if wizard.TextColor != nil && !regexp.MustCompile("^#[0-9A-F]{6}$").MatchString(*wizard.TextColor) {
+		return errors.New("invalid wizard text color: must be of the form #RRGGBB")
 	}
 
 	// validate that no possible content graph is too complex
