@@ -7,18 +7,18 @@ import (
 )
 
 var (
-	ErrUserAlreadyExists = errors.New("Cannot create user, username already taken")
-	ErrInvalidRecord     = errors.New("Invalid record in database")
+	errUserAlreadyExists = errors.New("Cannot create user, username already taken")
+	errInvalidRecord     = errors.New("Invalid record in database")
 )
 
-type EventType string
+type eventType string
 
 const (
-	EventTypePinCheckRefused EventType = "PIN_CHECK_REFUSED"
-	EventTypePinCheckSuccess EventType = "PIN_CHECK_SUCCESS"
-	EventTypePinCheckFailed  EventType = "PIN_CHECK_FAILED"
-	EventTypePinCheckBlocked EventType = "PIN_CHECK_BLOCKED"
-	EventTypeIRMASession     EventType = "IRMA_SESSION"
+	eventTypePinCheckRefused eventType = "PIN_CHECK_REFUSED"
+	eventTypePinCheckSuccess eventType = "PIN_CHECK_SUCCESS"
+	eventTypePinCheckFailed  eventType = "PIN_CHECK_FAILED"
+	eventTypePinCheckBlocked eventType = "PIN_CHECK_BLOCKED"
+	eventTypeIRMASession     eventType = "IRMA_SESSION"
 )
 
 // Interface used by server to manage data storage
@@ -28,29 +28,29 @@ const (
 type DB interface {
 	// User management
 	AddUser(user *User) error
-	User(username string) (*User, error)
-	UpdateUser(user *User) error
+	user(username string) (*User, error)
+	updateUser(user *User) error
 
 	// ReservePinTry reserves a pin check attempt, and additionally it returns:
 	//  - allowed is whether the user is allowed to do the pin check (false if user is blocked)
 	//  - tries is how many tries are remaining, after this pin check
 	//  - wait is how long the user must wait before the next attempt is allowed if tries is 0
-	// ResetPinTries increases the user's try count and (if applicable) the date when the user
+	// resetPinTries increases the user's try count and (if applicable) the date when the user
 	// is unblocked again in the database, regardless of if the pin check succeeds after this
 	// invocation.
-	ReservePinTry(user *User) (allowed bool, tries int, wait int64, err error)
+	reservePinTry(user *User) (allowed bool, tries int, wait int64, err error)
 
-	// ResetPinTries resets the user's pin count and unblock date fields in the database to their
+	// resetPinTries resets the user's pin count and unblock date fields in the database to their
 	// default values (0 past attempts, no unblock date).
-	ResetPinTries(user *User) error
+	resetPinTries(user *User) error
 
 	// User activity registration
 	// SetSeen calls are used to track when a users account was last active, for deleting old accounts
-	SetSeen(user *User) error
-	AddLog(user *User, eventType EventType, param interface{}) error
+	setSeen(user *User) error
+	addLog(user *User, eventType eventType, param interface{}) error
 
 	// Store email verification tokens on registration
-	AddEmailVerification(user *User, emailAddress, token string) error
+	addEmailVerification(user *User, emailAddress, token string) error
 }
 
 // Actual data on a user used by this server.

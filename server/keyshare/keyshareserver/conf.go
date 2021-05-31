@@ -18,7 +18,7 @@ import (
 
 type DBType string
 
-var ErrUnknownDBType = errors.New("Unknown database type")
+var errUnknownDBType = errors.New("Unknown database type")
 
 const (
 	DBTypeMemory   = "memory"
@@ -116,7 +116,7 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 				return nil, server.LogError(err)
 			}
 		default:
-			return nil, server.LogError(ErrUnknownDBType)
+			return nil, server.LogError(errUnknownDBType)
 		}
 	}
 

@@ -4,44 +4,44 @@ import (
 	"time"
 )
 
-type DB interface {
-	User(id int64) (User, error)
+type db interface {
+	user(id int64) (user, error)
 
-	UserIDByUsername(username string) (int64, error)
-	UserIDByEmailToken(token string) (int64, error)
-	UserIDByLoginToken(token, username string) (int64, error)
+	userIDByUsername(username string) (int64, error)
+	userIDByEmailToken(token string) (int64, error)
+	userIDByLoginToken(token, username string) (int64, error)
 
-	ScheduleUserRemoval(id int64, delay time.Duration) error
+	scheduleUserRemoval(id int64, delay time.Duration) error
 
-	AddEmailLoginToken(email, token string) error
-	LoginUserCandidates(token string) ([]LoginCandidate, error)
+	addEmailLoginToken(email, token string) error
+	loginUserCandidates(token string) ([]loginCandidate, error)
 
-	Logs(id int64, offset int, amount int) ([]LogEntry, error)
+	logs(id int64, offset int, amount int) ([]logEntry, error)
 
-	AddEmail(id int64, email string) error
-	ScheduleEmailRemoval(id int64, email string, delay time.Duration) error
+	addEmail(id int64, email string) error
+	scheduleEmailRemoval(id int64, email string, delay time.Duration) error
 
-	SetSeen(id int64) error
+	setSeen(id int64) error
 }
 
-type UserEmail struct {
+type userEmail struct {
 	Email            string `json:"email"`
 	DeleteInProgress bool   `json:"delete_in_progress"`
 }
 
-type User struct {
+type user struct {
 	Username         string      `json:"username"`
-	Emails           []UserEmail `json:"emails"`
+	Emails           []userEmail `json:"emails"`
 	language         string
 	DeleteInProgress bool `json:"delete_in_progress"`
 }
 
-type LoginCandidate struct {
+type loginCandidate struct {
 	Username   string `json:"username"`
 	LastActive int64  `json:"last_active"`
 }
 
-type LogEntry struct {
+type logEntry struct {
 	Timestamp int64   `json:"timestamp"`
 	Event     string  `json:"event"`
 	Param     *string `json:"param,omitempty"`

@@ -7,40 +7,40 @@ import (
 	irma "github.com/privacybydesign/irmago"
 )
 
-type Session struct {
+type session struct {
 	KeyID    irma.PublicKeyIdentifier // last used key, used in signing the issuance message
 	CommitID uint64
 	expiry   time.Time
 }
 
 type sessionStore interface {
-	add(username string, session *Session)
-	get(username string) *Session
+	add(username string, session *session)
+	get(username string) *session
 	flush()
 }
 
 type memorySessionStore struct {
 	sync.Mutex
 
-	sessions        map[string]*Session
+	sessions        map[string]*session
 	sessionLifetime time.Duration
 }
 
 func newMemorySessionStore(sessionLifetime time.Duration) sessionStore {
 	return &memorySessionStore{
 		sessionLifetime: sessionLifetime,
-		sessions:        map[string]*Session{},
+		sessions:        map[string]*session{},
 	}
 }
 
-func (s *memorySessionStore) add(username string, session *Session) {
+func (s *memorySessionStore) add(username string, session *session) {
 	s.Lock()
 	defer s.Unlock()
 	session.expiry = time.Now().Add(s.sessionLifetime)
 	s.sessions[username] = session
 }
 
-func (s *memorySessionStore) get(username string) *Session {
+func (s *memorySessionStore) get(username string) *session {
 	s.Lock()
 	defer s.Unlock()
 	return s.sessions[username]

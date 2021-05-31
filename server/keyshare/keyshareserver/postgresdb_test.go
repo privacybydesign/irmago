@@ -23,27 +23,27 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "testuser", user.Username)
 
-	nuser, err := db.User("testuser")
+	nuser, err := db.user("testuser")
 	require.NoError(t, err)
 	assert.Equal(t, "testuser", nuser.Username)
 
-	_, err = db.User("notexist")
+	_, err = db.user("notexist")
 	assert.Error(t, err)
 
-	err = db.UpdateUser(nuser)
+	err = db.updateUser(nuser)
 	assert.NoError(t, err)
 
 	user = &User{Username: "testuser"}
 	err = db.AddUser(user)
 	assert.Error(t, err)
 
-	err = db.AddLog(nuser, EventTypePinCheckFailed, 15)
+	err = db.addLog(nuser, eventTypePinCheckFailed, 15)
 	assert.NoError(t, err)
 
-	err = db.AddEmailVerification(nuser, "test@example.com", "testtoken")
+	err = db.addEmailVerification(nuser, "test@example.com", "testtoken")
 	assert.NoError(t, err)
 
-	err = db.SetSeen(nuser)
+	err = db.setSeen(nuser)
 	assert.NoError(t, err)
 }
 
@@ -60,12 +60,12 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	err = db.AddUser(user)
 	require.NoError(t, err)
 
-	// ReservePinTry sets user fields in the database as if the attempt was wrong. If the attempt
+	// reservePinTry sets user fields in the database as if the attempt was wrong. If the attempt
 	// was in fact correct, then these fields are cleared again later by the keyshare server by
-	// invoking db.ResetPinTries(user). So below we may think of ReservePinTry invocations as
+	// invoking db.resetPinTries(user). So below we may think of reservePinTry invocations as
 	// wrong pin attempts.
 
-	ok, tries, wait, err := db.ReservePinTry(user)
+	ok, tries, wait, err := db.reservePinTry(user)
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, maxPinTries-1, tries)
@@ -73,7 +73,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 
 	// Try until we have no tries left
 	for tries != 0 {
-		ok, tries, wait, err = db.ReservePinTry(user)
+		ok, tries, wait, err = db.reservePinTry(user)
 		require.NoError(t, err)
 		assert.True(t, ok)
 	}
@@ -84,7 +84,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	time.Sleep(time.Duration(wait-1) * time.Second)
 
 	// Try again, not yet allowed
-	ok, tries, wait, err = db.ReservePinTry(user)
+	ok, tries, wait, err = db.reservePinTry(user)
 	assert.NoError(t, err)
 	assert.False(t, ok)
 	assert.Equal(t, 0, tries)
@@ -94,14 +94,14 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Trying is now allowed
-	ok, tries, wait, err = db.ReservePinTry(user)
+	ok, tries, wait, err = db.reservePinTry(user)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, 0, tries)
 	assert.Equal(t, 2*backoffStart, wait) // next attempt after doubled timeout
 
 	// Since we just used another attempt we are now blocked again
-	ok, tries, wait, err = db.ReservePinTry(user)
+	ok, tries, wait, err = db.reservePinTry(user)
 	assert.NoError(t, err)
 	assert.False(t, ok)
 	assert.Equal(t, 0, tries)
@@ -111,16 +111,16 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	time.Sleep(time.Duration(wait+1) * time.Second)
 
 	// Try a final time
-	ok, tries, wait, err = db.ReservePinTry(user)
+	ok, tries, wait, err = db.reservePinTry(user)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, 0, tries)
 	assert.Equal(t, 4*backoffStart, wait) // next attempt after again a doubled timeout
 
-	err = db.ResetPinTries(user)
+	err = db.resetPinTries(user)
 	assert.NoError(t, err)
 
-	ok, tries, wait, err = db.ReservePinTry(user)
+	ok, tries, wait, err = db.reservePinTry(user)
 	assert.NoError(t, err)
 	assert.True(t, ok)
 	assert.True(t, tries > 0)

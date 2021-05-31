@@ -14,7 +14,7 @@ import (
 
 type DBType string
 
-var ErrUnknownDBType = errors.New("Unknown database type")
+var errUnknownDBType = errors.New("Unknown database type")
 
 const (
 	DBTypeMemory   = "memory"
@@ -40,7 +40,7 @@ type Configuration struct {
 	// DeleteDelay is the delay in days before a user or email address deletion becomes effective.
 	DeleteDelay int `json:"delete_delay" mapstructure:"delete_delay"`
 	// Provide a prepared database (useful for testing)
-	DB DB `json:"-"`
+	DB db `json:"-"`
 
 	// Session lifetime in seconds
 	SessionLifetime int `json:"session_lifetime" mapstructure:"session_lifetime"`
@@ -131,7 +131,7 @@ func processConfiguration(conf *Configuration) error {
 		case DBTypeMemory:
 			conf.DB = newMemoryDB()
 		default:
-			return server.LogError(ErrUnknownDBType)
+			return server.LogError(errUnknownDBType)
 		}
 	}
 

@@ -53,7 +53,7 @@ func (db *postgresDB) AddUser(user *User) error {
 		if err = res.Err(); err != nil {
 			return err
 		}
-		return ErrUserAlreadyExists
+		return errUserAlreadyExists
 	}
 	var id int64
 	err = res.Scan(&id)
@@ -64,7 +64,7 @@ func (db *postgresDB) AddUser(user *User) error {
 	return nil
 }
 
-func (db *postgresDB) User(username string) (*User, error) {
+func (db *postgresDB) user(username string) (*User, error) {
 	var result User
 	var ep []byte
 	err := db.db.QueryUser(
@@ -76,13 +76,13 @@ func (db *postgresDB) User(username string) (*User, error) {
 		return nil, err
 	}
 	if len(ep) != len(result.UserData[:]) {
-		return nil, ErrInvalidRecord
+		return nil, errInvalidRecord
 	}
 	copy(result.UserData[:], ep)
 	return &result, nil
 }
 
-func (db *postgresDB) UpdateUser(user *User) error {
+func (db *postgresDB) updateUser(user *User) error {
 	return db.db.ExecUser(
 		"UPDATE irma.users SET username = $1, language = $2, coredata = $3 WHERE id=$4",
 		user.Username,
@@ -92,7 +92,7 @@ func (db *postgresDB) UpdateUser(user *User) error {
 	)
 }
 
-func (db *postgresDB) ReservePinTry(user *User) (bool, int, int64, error) {
+func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 	// Check that account is not blocked already, and if not,
 	//  update pinCounter and pinBlockDate
 	uprows, err := db.db.Query(`
@@ -159,14 +159,14 @@ func (db *postgresDB) ReservePinTry(user *User) (bool, int, int64, error) {
 	return allowed, tries, wait, nil
 }
 
-func (db *postgresDB) ResetPinTries(user *User) error {
+func (db *postgresDB) resetPinTries(user *User) error {
 	return db.db.ExecUser(
 		"UPDATE irma.users SET pin_counter = 0, pin_block_date = 0 WHERE id = $1",
 		user.id,
 	)
 }
 
-func (db *postgresDB) SetSeen(user *User) error {
+func (db *postgresDB) setSeen(user *User) error {
 	return db.db.ExecUser(
 		"UPDATE irma.users SET last_seen = $1 WHERE id = $2",
 		time.Now().Unix(),
@@ -174,7 +174,7 @@ func (db *postgresDB) SetSeen(user *User) error {
 	)
 }
 
-func (db *postgresDB) AddLog(user *User, eventType EventType, param interface{}) error {
+func (db *postgresDB) addLog(user *User, eventType eventType, param interface{}) error {
 	var encodedParamString *string
 	if param != nil {
 		encodedParam, err := json.Marshal(param)
@@ -193,7 +193,7 @@ func (db *postgresDB) AddLog(user *User, eventType EventType, param interface{})
 	return err
 }
 
-func (db *postgresDB) AddEmailVerification(user *User, emailAddress, token string) error {
+func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string) error {
 	_, err := db.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, user_id, expiry) VALUES ($1, $2, $3, $4)",
 		token,
 		emailAddress,

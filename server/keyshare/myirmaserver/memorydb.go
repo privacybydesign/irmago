@@ -10,7 +10,7 @@ import (
 type memoryUserData struct {
 	id         int64
 	email      []string
-	logEntries []LogEntry
+	logEntries []logEntry
 	lastActive time.Time
 }
 
@@ -22,7 +22,7 @@ type memoryDB struct {
 	verifyEmailTokens map[string]int64
 }
 
-func newMemoryDB() DB {
+func newMemoryDB() db {
 	return &memoryDB{
 		userData:          map[string]memoryUserData{},
 		loginEmailTokens:  map[string]string{},
@@ -30,7 +30,7 @@ func newMemoryDB() DB {
 	}
 }
 
-func (db *memoryDB) UserIDByUsername(username string) (int64, error) {
+func (db *memoryDB) userIDByUsername(username string) (int64, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	data, ok := db.userData[username]
@@ -40,7 +40,7 @@ func (db *memoryDB) UserIDByUsername(username string) (int64, error) {
 	return data.id, nil
 }
 
-func (db *memoryDB) ScheduleUserRemoval(id int64, _ time.Duration) error {
+func (db *memoryDB) scheduleUserRemoval(id int64, _ time.Duration) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -52,7 +52,7 @@ func (db *memoryDB) ScheduleUserRemoval(id int64, _ time.Duration) error {
 	return keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) UserIDByEmailToken(token string) (int64, error) {
+func (db *memoryDB) userIDByEmailToken(token string) (int64, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -66,7 +66,7 @@ func (db *memoryDB) UserIDByEmailToken(token string) (int64, error) {
 	return userID, nil
 }
 
-func (db *memoryDB) AddEmailLoginToken(email, token string) error {
+func (db *memoryDB) addEmailLoginToken(email, token string) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -91,7 +91,7 @@ func (db *memoryDB) AddEmailLoginToken(email, token string) error {
 	return nil
 }
 
-func (db *memoryDB) LoginUserCandidates(token string) ([]LoginCandidate, error) {
+func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -100,11 +100,11 @@ func (db *memoryDB) LoginUserCandidates(token string) ([]LoginCandidate, error) 
 		return nil, keyshare.ErrUserNotFound
 	}
 
-	var result []LoginCandidate
+	var result []loginCandidate
 	for name, user := range db.userData {
 		for _, userEmail := range user.email {
 			if userEmail == email {
-				result = append(result, LoginCandidate{Username: name, LastActive: user.lastActive.Unix()})
+				result = append(result, loginCandidate{Username: name, LastActive: user.lastActive.Unix()})
 				break
 			}
 		}
@@ -112,7 +112,7 @@ func (db *memoryDB) LoginUserCandidates(token string) ([]LoginCandidate, error) 
 	return result, nil
 }
 
-func (db *memoryDB) UserIDByLoginToken(token, username string) (int64, error) {
+func (db *memoryDB) userIDByLoginToken(token, username string) (int64, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -135,26 +135,26 @@ func (db *memoryDB) UserIDByLoginToken(token, username string) (int64, error) {
 	return 0, keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) User(id int64) (User, error) {
+func (db *memoryDB) user(id int64) (user, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
-	for username, user := range db.userData {
-		if user.id == id {
-			var emailList []UserEmail
-			for _, e := range user.email {
-				emailList = append(emailList, UserEmail{
+	for username, u := range db.userData {
+		if u.id == id {
+			var emailList []userEmail
+			for _, e := range u.email {
+				emailList = append(emailList, userEmail{
 					Email:            e,
 					DeleteInProgress: false,
 				})
 			}
-			return User{
+			return user{
 				Username:         username,
 				Emails:           emailList,
 				DeleteInProgress: false,
 			}, nil
 		}
 	}
-	return User{}, keyshare.ErrUserNotFound
+	return user{}, keyshare.ErrUserNotFound
 }
 
 func min(a, b int) int {
@@ -165,7 +165,7 @@ func min(a, b int) int {
 	}
 }
 
-func (db *memoryDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
+func (db *memoryDB) logs(id int64, offset, amount int) ([]logEntry, error) {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for _, user := range db.userData {
@@ -176,7 +176,7 @@ func (db *memoryDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
 	return nil, keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) AddEmail(id int64, email string) error {
+func (db *memoryDB) addEmail(id int64, email string) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -189,7 +189,7 @@ func (db *memoryDB) AddEmail(id int64, email string) error {
 	return keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) ScheduleEmailRemoval(id int64, email string, _ time.Duration) error {
+func (db *memoryDB) scheduleEmailRemoval(id int64, email string, _ time.Duration) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {
@@ -209,7 +209,7 @@ func (db *memoryDB) ScheduleEmailRemoval(id int64, email string, _ time.Duration
 	return keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) SetSeen(id int64) error {
+func (db *memoryDB) setSeen(id int64) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 	for username, user := range db.userData {

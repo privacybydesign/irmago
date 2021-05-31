@@ -20,7 +20,7 @@ func NewMemoryDB() DB {
 	return &memoryDB{users: map[string]keysharecore.User{}}
 }
 
-func (db *memoryDB) User(username string) (*User, error) {
+func (db *memoryDB) user(username string) (*User, error) {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -41,13 +41,13 @@ func (db *memoryDB) AddUser(user *User) error {
 	// Check and insert user
 	_, exists := db.users[user.Username]
 	if exists {
-		return ErrUserAlreadyExists
+		return errUserAlreadyExists
 	}
 	db.users[user.Username] = user.UserData
 	return nil
 }
 
-func (db *memoryDB) UpdateUser(user *User) error {
+func (db *memoryDB) updateUser(user *User) error {
 	// Ensure access to database is single-threaded
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -61,27 +61,27 @@ func (db *memoryDB) UpdateUser(user *User) error {
 	return nil
 }
 
-func (db *memoryDB) ReservePinTry(user *User) (bool, int, int64, error) {
+func (db *memoryDB) reservePinTry(user *User) (bool, int, int64, error) {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
 	return true, 1, 0, nil
 }
 
-func (db *memoryDB) ResetPinTries(user *User) error {
+func (db *memoryDB) resetPinTries(user *User) error {
 	// Since this is a testing DB, implementing anything more than always allow creates hastle
 	return nil
 }
 
-func (db *memoryDB) SetSeen(user *User) error {
+func (db *memoryDB) setSeen(user *User) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *memoryDB) AddLog(user *User, eventType EventType, param interface{}) error {
+func (db *memoryDB) addLog(user *User, eventType eventType, param interface{}) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *memoryDB) AddEmailVerification(user *User, emailAddress, token string) error {
+func (db *memoryDB) addEmailVerification(user *User, emailAddress, token string) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }

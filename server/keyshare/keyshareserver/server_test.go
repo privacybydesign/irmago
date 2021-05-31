@@ -333,32 +333,32 @@ func (db *testDB) AddUser(user *User) error {
 	return db.db.AddUser(user)
 }
 
-func (db *testDB) User(username string) (*User, error) {
-	return db.db.User(username)
+func (db *testDB) user(username string) (*User, error) {
+	return db.db.user(username)
 }
 
-func (db *testDB) UpdateUser(user *User) error {
-	return db.db.UpdateUser(user)
+func (db *testDB) updateUser(user *User) error {
+	return db.db.updateUser(user)
 }
 
-func (db *testDB) ReservePinTry(user *User) (bool, int, int64, error) {
+func (db *testDB) reservePinTry(user *User) (bool, int, int64, error) {
 	return db.ok, db.tries, db.wait, db.err
 }
 
-func (db *testDB) ResetPinTries(user *User) error {
-	return db.db.ResetPinTries(user)
+func (db *testDB) resetPinTries(user *User) error {
+	return db.db.resetPinTries(user)
 }
 
-func (db *testDB) SetSeen(user *User) error {
-	return db.db.SetSeen(user)
+func (db *testDB) setSeen(user *User) error {
+	return db.db.setSeen(user)
 }
 
-func (db *testDB) AddLog(user *User, entrytype EventType, params interface{}) error {
-	return db.db.AddLog(user, entrytype, params)
+func (db *testDB) addLog(user *User, entrytype eventType, params interface{}) error {
+	return db.db.addLog(user, entrytype, params)
 }
 
-func (db *testDB) AddEmailVerification(user *User, email, token string) error {
-	return db.db.AddEmailVerification(user, email, token)
+func (db *testDB) addEmailVerification(user *User, email, token string) error {
+	return db.db.addEmailVerification(user, email, token)
 }
 
 func createDB(t *testing.T) DB {

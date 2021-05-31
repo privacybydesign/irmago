@@ -8,7 +8,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 )
 
-type Session struct {
+type session struct {
 	sync.Mutex
 
 	token  string
@@ -20,44 +20,44 @@ type Session struct {
 	expiry time.Time
 }
 
-type SessionStore interface {
-	create() *Session
-	get(token string) *Session
+type sessionStore interface {
+	create() *session
+	get(token string) *session
 	flush()
 }
 
-type MemorySessionStore struct {
+type memorySessionStore struct {
 	sync.Mutex
 
-	data            map[string]*Session
+	data            map[string]*session
 	sessionLifetime time.Duration
 }
 
-func NewMemorySessionStore(sessionLifetime time.Duration) SessionStore {
-	return &MemorySessionStore{
+func newMemorySessionStore(sessionLifetime time.Duration) sessionStore {
+	return &memorySessionStore{
 		sessionLifetime: sessionLifetime,
-		data:            map[string]*Session{},
+		data:            map[string]*session{},
 	}
 }
 
-func (s *MemorySessionStore) create() *Session {
+func (s *memorySessionStore) create() *session {
 	s.Lock()
 	defer s.Unlock()
 	token := common.NewSessionToken()
-	s.data[token] = &Session{
+	s.data[token] = &session{
 		token:  token,
 		expiry: time.Now().Add(s.sessionLifetime),
 	}
 	return s.data[token]
 }
 
-func (s *MemorySessionStore) get(token string) *Session {
+func (s *memorySessionStore) get(token string) *session {
 	s.Lock()
 	defer s.Unlock()
 	return s.data[token]
 }
 
-func (s *MemorySessionStore) flush() {
+func (s *memorySessionStore) flush() {
 	now := time.Now()
 	s.Lock()
 	defer s.Unlock()

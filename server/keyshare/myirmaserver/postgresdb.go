@@ -21,7 +21,7 @@ var (
 	errTokenNotFound = errors.New("Token not found")
 )
 
-func newPostgresDB(connstring string) (DB, error) {
+func newPostgresDB(connstring string) (db, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
@@ -34,12 +34,12 @@ func newPostgresDB(connstring string) (DB, error) {
 	}, nil
 }
 
-func (db *postgresDB) UserIDByUsername(username string) (int64, error) {
+func (db *postgresDB) userIDByUsername(username string) (int64, error) {
 	var id int64
 	return id, db.db.QueryUser("SELECT id FROM irma.users WHERE username = $1", []interface{}{&id}, username)
 }
 
-func (db *postgresDB) UserIDByEmailToken(token string) (int64, error) {
+func (db *postgresDB) userIDByEmailToken(token string) (int64, error) {
 	var email string
 	var id int64
 	err := db.db.QueryScan(
@@ -53,7 +53,7 @@ func (db *postgresDB) UserIDByEmailToken(token string) (int64, error) {
 		return 0, err
 	}
 
-	err = db.AddEmail(id, email)
+	err = db.addEmail(id, email)
 	if err != nil {
 		return 0, err
 	}
@@ -71,13 +71,13 @@ func (db *postgresDB) UserIDByEmailToken(token string) (int64, error) {
 	return id, nil
 }
 
-func (db *postgresDB) ScheduleUserRemoval(id int64, delay time.Duration) error {
+func (db *postgresDB) scheduleUserRemoval(id int64, delay time.Duration) error {
 	return db.db.ExecUser("UPDATE irma.users SET coredata = NULL, delete_on = $2 WHERE id = $1 AND coredata IS NOT NULL",
 		id,
 		time.Now().Add(delay).Unix())
 }
 
-func (db *postgresDB) AddEmailLoginToken(email, token string) error {
+func (db *postgresDB) addEmailLoginToken(email, token string) error {
 	// Check if email address exists in database
 	err := db.db.QueryScan("SELECT 1 FROM irma.emails WHERE email = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
 		nil, email, time.Now().Unix())
@@ -103,14 +103,14 @@ func (db *postgresDB) AddEmailLoginToken(email, token string) error {
 	return nil
 }
 
-func (db *postgresDB) LoginUserCandidates(token string) ([]LoginCandidate, error) {
-	var candidates []LoginCandidate
+func (db *postgresDB) loginUserCandidates(token string) ([]loginCandidate, error) {
+	var candidates []loginCandidate
 	err := db.db.QueryIterate(
 		`SELECT username, last_seen FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
 		     (emails.delete_on >= $2 OR emails.delete_on is NULL) AND
 		          emails.email = (SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2);`,
 		func(rows *sql.Rows) error {
-			candidate := LoginCandidate{}
+			candidate := loginCandidate{}
 			err := rows.Scan(&candidate.Username, &candidate.LastActive)
 			candidates = append(candidates, candidate)
 			return err
@@ -125,7 +125,7 @@ func (db *postgresDB) LoginUserCandidates(token string) ([]LoginCandidate, error
 	return candidates, nil
 }
 
-func (db *postgresDB) UserIDByLoginToken(token, username string) (int64, error) {
+func (db *postgresDB) userIDByLoginToken(token, username string) (int64, error) {
 	var id int64
 	err := db.db.QueryUser(
 		`SELECT users.id FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
@@ -146,39 +146,39 @@ func (db *postgresDB) UserIDByLoginToken(token, username string) (int64, error) 
 	return id, nil
 }
 
-func (db *postgresDB) User(id int64) (User, error) {
-	var result User
+func (db *postgresDB) user(id int64) (user, error) {
+	var result user
 
 	// fetch username
 	err := db.db.QueryUser("SELECT username, language, (coredata IS NULL) AS delete_in_progress FROM irma.users WHERE id = $1",
 		[]interface{}{&result.Username, &result.language, &result.DeleteInProgress},
 		id)
 	if err != nil {
-		return User{}, err
+		return user{}, err
 	}
 
 	// fetch email addresses
 	err = db.db.QueryIterate(
 		"SELECT email, (delete_on IS NOT NULL) AS delete_in_progress FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)",
 		func(rows *sql.Rows) error {
-			var email UserEmail
+			var email userEmail
 			err = rows.Scan(&email.Email, &email.DeleteInProgress)
 			result.Emails = append(result.Emails, email)
 			return err
 		},
 		id, time.Now().Unix())
 	if err != nil {
-		return User{}, err
+		return user{}, err
 	}
 	return result, nil
 }
 
-func (db *postgresDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
-	var result []LogEntry
+func (db *postgresDB) logs(id int64, offset, amount int) ([]logEntry, error) {
+	var result []logEntry
 	err := db.db.QueryIterate(
 		"SELECT time, event, param FROM irma.log_entry_records WHERE user_id = $1 ORDER BY time DESC OFFSET $2 LIMIT $3",
 		func(rows *sql.Rows) error {
-			var curEntry LogEntry
+			var curEntry logEntry
 			err := rows.Scan(&curEntry.Timestamp, &curEntry.Event, &curEntry.Param)
 			result = append(result, curEntry)
 			return err
@@ -190,7 +190,7 @@ func (db *postgresDB) Logs(id int64, offset, amount int) ([]LogEntry, error) {
 	return result, nil
 }
 
-func (db *postgresDB) AddEmail(id int64, email string) error {
+func (db *postgresDB) addEmail(id int64, email string) error {
 	// Try to restore email in process of deletion
 	aff, err := db.db.ExecCount("UPDATE irma.emails SET delete_on = NULL WHERE user_id = $1 AND email = $2", id, email)
 	if err != nil {
@@ -205,7 +205,7 @@ func (db *postgresDB) AddEmail(id int64, email string) error {
 	return err
 }
 
-func (db *postgresDB) ScheduleEmailRemoval(id int64, email string, delay time.Duration) error {
+func (db *postgresDB) scheduleEmailRemoval(id int64, email string, delay time.Duration) error {
 	aff, err := db.db.ExecCount("UPDATE irma.emails SET delete_on = $3 WHERE user_id = $1 AND email = $2 AND delete_on IS NULL",
 		id,
 		email,
@@ -219,6 +219,6 @@ func (db *postgresDB) ScheduleEmailRemoval(id int64, email string, delay time.Du
 	return nil
 }
 
-func (db *postgresDB) SetSeen(id int64) error {
+func (db *postgresDB) setSeen(id int64) error {
 	return db.db.ExecUser("UPDATE irma.users SET last_seen = $1 WHERE id = $2", time.Now().Unix(), id)
 }

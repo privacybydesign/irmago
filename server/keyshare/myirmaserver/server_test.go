@@ -101,7 +101,7 @@ func TestServerSessionMgmnt(t *testing.T) {
 
 	test.HTTPPost(t, client, "http://localhost:8080/login/token/candidates", "doesnotexist", textPlainHeader(), 400, nil)
 
-	var cands []LoginCandidate
+	var cands []loginCandidate
 	test.HTTPPost(t, client, "http://localhost:8080/login/token/candidates", "testtoken", textPlainHeader(), 200, &cands)
 	assert.Equal(t, 1, len(cands))
 	assert.Equal(t, "testuser", cands[0].Username)
@@ -154,7 +154,7 @@ func TestServerUserData(t *testing.T) {
 				id:         15,
 				lastActive: time.Unix(0, 0),
 				email:      []string{"test@test.com"},
-				logEntries: []LogEntry{
+				logEntries: []logEntry{
 					{
 						Timestamp: 110,
 						Event:     "test",
@@ -179,34 +179,34 @@ func TestServerUserData(t *testing.T) {
 
 	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"username":"testuser", "token":"testtoken"}`, nil, 204, nil)
 
-	var userdata User
+	var userdata user
 	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
-	assert.Equal(t, []UserEmail{{Email: "test@test.com", DeleteInProgress: false}}, userdata.Emails)
+	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, userdata.Emails)
 
 	test.HTTPPost(t, client, "http://localhost:8080/email/remove", "test@test.com", textPlainHeader(), 204, nil)
 
-	userdata = User{}
+	userdata = user{}
 	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
 	assert.Empty(t, userdata.Emails)
 
 	test.HTTPGet(t, client, "http://localhost:8080/user/logs/abcd", nil, 400, nil)
 
-	var logs []LogEntry
+	var logs []logEntry
 	test.HTTPGet(t, client, "http://localhost:8080/user/logs/0", nil, 200, &logs)
-	assert.Equal(t, []LogEntry{
+	assert.Equal(t, []logEntry{
 		{Timestamp: 110, Event: "test", Param: &strEmpty},
 		{Timestamp: 120, Event: "test2", Param: &str15},
 	}, logs)
 
 	test.HTTPGet(t, client, "http://localhost:8080/user/logs/1", nil, 200, &logs)
-	assert.Equal(t, []LogEntry{
+	assert.Equal(t, []logEntry{
 		{Timestamp: 120, Event: "test2", Param: &str15},
 	}, logs)
 }
 
 var keyshareServ *http.Server
 
-func StartMyIrmaServer(t *testing.T, db DB, emailserver string) {
+func StartMyIrmaServer(t *testing.T, db db, emailserver string) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
 		Configuration: &server.Configuration{
