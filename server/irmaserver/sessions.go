@@ -113,10 +113,15 @@ func (s *memorySessionStore) deleteExpired() {
 	// First check which sessions have expired
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
-	expired := make([]string, 0, len(s.requestor))
+	toCheck := make(map[string]*session, len(s.requestor))
 	for token, session := range s.requestor {
-		session.Lock()
+		toCheck[token] = session
+	}
+	s.RUnlock()
 
+	expired := make([]string, 0, len(toCheck))
+	for token, session := range toCheck {
+		session.Lock()
 		timeout := maxSessionLifetime
 		if session.status == server.StatusInitialized && session.rrequest.Base().ClientTimeout != 0 {
 			timeout = time.Duration(session.rrequest.Base().ClientTimeout) * time.Second
@@ -134,7 +139,6 @@ func (s *memorySessionStore) deleteExpired() {
 		}
 		session.Unlock()
 	}
-	s.RUnlock()
 
 	// Using a write lock, delete the expired sessions
 	s.Lock()
