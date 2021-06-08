@@ -115,15 +115,12 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	request.Disclose = append(request.Disclose, session.implicitDisclosure...)
 
 	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(session.conf.IrmaConfiguration, request)
-	if err == nil {
-		session.setStatus(irma.ServerStatusDone)
-	} else {
-		if err == irma.ErrMissingPublicKey {
-			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
-		} else {
-			rerr = session.fail(server.ErrorUnknown, err.Error())
-		}
+	if err != nil && err == irma.ErrMissingPublicKey {
+		rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
+	} else if err != nil {
+		rerr = session.fail(server.ErrorUnknown, err.Error())
 	}
+
 	return &irma.ServerSessionResponse{
 		SessionType:     irma.ActionSigning,
 		ProtocolVersion: session.version,
@@ -142,14 +139,10 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 	request.Disclose = append(request.Disclose, session.implicitDisclosure...)
 
 	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(session.conf.IrmaConfiguration, request)
-	if err == nil {
-		session.setStatus(irma.ServerStatusDone)
-	} else {
-		if err == irma.ErrMissingPublicKey {
-			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
-		} else {
-			rerr = session.fail(server.ErrorUnknown, err.Error())
-		}
+	if err != nil && err == irma.ErrMissingPublicKey {
+		rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
+	} else if err != nil {
+		rerr = session.fail(server.ErrorUnknown, err.Error())
 	}
 
 	return &irma.ServerSessionResponse{
@@ -236,7 +229,6 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		sigs = append(sigs, sig)
 	}
 
-	session.setStatus(irma.ServerStatusDone)
 	return &irma.ServerSessionResponse{
 		SessionType:     irma.ActionIssuing,
 		ProtocolVersion: session.version,
@@ -251,7 +243,10 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 		return nil, nil, nil
 	}
 	url := base.NextSession.URL
-	if session.result.Status != irma.ServerStatusDone ||
+
+	// Status is changed to DONE as soon as the next session URL is retrieved,
+	// so right now the status must be CONNECTED
+	if session.result.Status != irma.ServerStatusConnected ||
 		session.result.ProofStatus != irma.ProofStatusValid ||
 		session.result.Err != nil {
 		return nil, nil, errors.New("session in invalid state")
@@ -347,6 +342,7 @@ func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request
 		server.WriteError(w, server.ErrorNextSession, err.Error())
 		return
 	}
+	session.setStatus(irma.ServerStatusDone)
 	server.WriteResponse(w, res, nil)
 }
 
@@ -385,6 +381,7 @@ func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {
 		server.WriteError(w, server.ErrorNextSession, err.Error())
 		return
 	}
+	session.setStatus(irma.ServerStatusDone)
 	server.WriteResponse(w, res, nil)
 }
 
