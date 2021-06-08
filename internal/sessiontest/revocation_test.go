@@ -236,7 +236,7 @@ func TestRevocationAll(t *testing.T) {
 		stopRevocationServer()
 
 		result := revocationSession(t, client, nil, sessionOptionIgnoreError)
-		require.Equal(t, server.StatusCancelled, result.Status)
+		require.Equal(t, irma.ServerStatusCancelled, result.Status)
 		require.NotNil(t, result.Err)
 		require.Equal(t, result.Err.ErrorName, string(server.ErrorRevocation.Type))
 	})

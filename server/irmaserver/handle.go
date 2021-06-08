@@ -29,21 +29,34 @@ func (session *session) handleDelete() {
 	}
 	session.markAlive()
 
-	session.result = &server.SessionResult{Token: session.token, Status: server.StatusCancelled, Type: session.action}
-	session.setStatus(server.StatusCancelled)
+	session.result = &server.SessionResult{Token: session.requestorToken, Status: irma.ServerStatusCancelled, Type: session.action}
+	session.setStatus(irma.ServerStatusCancelled)
 }
 
-func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
-	if session.status != server.StatusInitialized {
+func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization) (
+	interface{}, *irma.RemoteError) {
+
+	if session.status != irma.ServerStatusInitialized {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
 
 	session.markAlive()
-	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.token})
+	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken})
+
+	var err error
+	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
+		return nil, session.fail(server.ErrorProtocolVersion, "")
+	}
+
+	// Protocol versions below 2.8 don't include an authorization header. Therefore skip the authorization
+	// header presence check if a lower version is used.
+	if clientAuth == "" && session.version.Above(2, 7) {
+		return nil, session.fail(server.ErrorIrmaUnauthorized, "No authorization header provided")
+	}
+	session.clientAuth = clientAuth
 
 	// we include the latest revocation updates for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
-	var err error
 	if err = session.conf.IrmaConfiguration.Revocation.SetRevocationUpdates(session.request.Base()); err != nil {
 		return nil, session.fail(server.ErrorRevocation, err.Error())
 	}
@@ -56,13 +69,14 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 		logger.Info("Using condiscon: backwards compatibility with legacy IRMA apps is disabled")
 	}
 
-	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
-		return nil, session.fail(server.ErrorProtocolVersion, "")
-	}
 	logger.WithFields(logrus.Fields{"version": session.version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.version
 
-	session.setStatus(server.StatusConnected)
+	if session.options.PairingMethod != irma.PairingMethodNone && session.version.Above(2, 7) {
+		session.setStatus(irma.ServerStatusPairing)
+	} else {
+		session.setStatus(irma.ServerStatusConnected)
+	}
 
 	if session.version.Below(2, 5) {
 		logger.Info("Returning legacy session format")
@@ -70,30 +84,26 @@ func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.S
 		return legacy, nil
 	}
 
-	// In case of issuance requests, strip revocation keys from []CredentialRequest
-	isreq, issuing := session.request.(*irma.IssuanceRequest)
-	if !issuing {
-		return session.request, nil
+	if session.version.Below(2, 8) {
+		// These versions do not support the ClientSessionRequest format, so send the SessionRequest.
+		request, err := session.getRequest()
+		if err != nil {
+			return nil, session.fail(server.ErrorRevocation, err.Error())
+		}
+		return request, nil
 	}
-	cpy, err := copyObject(isreq)
+	info, err := session.getClientRequest()
 	if err != nil {
 		return nil, session.fail(server.ErrorRevocation, err.Error())
 	}
-	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
-		cred.RevocationSupported = cred.RevocationKey != ""
-		cred.RevocationKey = ""
-	}
-	return cpy.(*irma.IssuanceRequest), nil
+	return info, nil
 }
 
-func (session *session) handleGetStatus() (server.Status, *irma.RemoteError) {
+func (session *session) handleGetStatus() (irma.ServerStatus, *irma.RemoteError) {
 	return session.status, nil
 }
 
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
-	if session.status != server.StatusConnected {
-		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
-	}
 	session.markAlive()
 
 	var err error
@@ -106,7 +116,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 
 	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
-		session.setStatus(server.StatusDone)
+		session.setStatus(irma.ServerStatusDone)
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -122,9 +132,6 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 }
 
 func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma.ServerSessionResponse, *irma.RemoteError) {
-	if session.status != server.StatusConnected {
-		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
-	}
 	session.markAlive()
 
 	var err error
@@ -136,7 +143,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 
 	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(session.conf.IrmaConfiguration, request)
 	if err == nil {
-		session.setStatus(server.StatusDone)
+		session.setStatus(irma.ServerStatusDone)
 	} else {
 		if err == irma.ErrMissingPublicKey {
 			rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
@@ -153,11 +160,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 }
 
 func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
-	if session.status != server.StatusConnected {
-		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session not yet started or already finished")
-	}
 	session.markAlive()
-
 	request := session.request.(*irma.IssuanceRequest)
 
 	discloseCount := len(commitments.Proofs) - len(request.Credentials)
@@ -233,7 +236,7 @@ func (session *session) handlePostCommitments(commitments *irma.IssueCommitmentM
 		sigs = append(sigs, sig)
 	}
 
-	session.setStatus(server.StatusDone)
+	session.setStatus(irma.ServerStatusDone)
 	return &irma.ServerSessionResponse{
 		SessionType:     irma.ActionIssuing,
 		ProtocolVersion: session.version,
@@ -248,7 +251,7 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 		return nil, nil, nil
 	}
 	url := base.NextSession.URL
-	if session.result.Status != server.StatusDone ||
+	if session.result.Status != irma.ServerStatusDone ||
 		session.result.ProofStatus != irma.ProofStatusValid ||
 		session.result.Err != nil {
 		return nil, nil, errors.New("session in invalid state")
@@ -306,16 +309,18 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	if next == nil {
 		return nil
 	}
-	qr, token, err := s.StartSession(next, nil)
+	qr, token, _, err := s.StartSession(next, nil)
 	if err != nil {
 		return err
 	}
 	session.result.NextSession = token
+	session.next = qr
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well
 	newsession := s.sessions.get(token)
 	newsession.implicitDisclosure = disclosed
+	newsession.frontendAuth = session.frontendAuth
 	res.NextSession = qr
 
 	return nil
@@ -394,9 +399,9 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 	session.Unlock()
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
-		Arg:       session.clientToken,
+		Arg:       string(session.clientToken),
 	}))
-	if err := s.SubscribeServerSentEvents(w, r, session.clientToken, false); err != nil {
+	if err := s.SubscribeServerSentEvents(w, r, string(session.clientToken), false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}
@@ -418,8 +423,74 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Context().Value("session").(*session)
-	res, err := session.handleGetRequest(&min, &max)
+	clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
+	res, err := session.handleGetClientRequest(&min, &max, clientAuth)
 	server.WriteResponse(w, res, err)
+}
+
+func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	if session.version.Below(2, 8) {
+		server.WriteError(w, server.ErrorUnexpectedRequest, "Endpoint is not support in used protocol version")
+		return
+	}
+	var rerr *irma.RemoteError
+	request, err := session.getRequest()
+	if err != nil {
+		rerr = session.fail(server.ErrorRevocation, err.Error())
+	}
+	server.WriteResponse(w, request, rerr)
+}
+
+func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	status := irma.FrontendSessionStatus{Status: session.status, NextSession: session.next}
+	server.WriteResponse(w, status, nil)
+}
+
+func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	session.locked = false
+	session.Unlock()
+	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
+		Component: server.ComponentFrontendSession,
+		Arg:       string(session.clientToken),
+	}))
+	if err := s.SubscribeServerSentEvents(w, r, string(session.clientToken), false); err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+		return
+	}
+}
+
+func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Request) {
+	optionsRequest := &irma.FrontendOptionsRequest{}
+	bts, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+	err = irma.UnmarshalValidate(bts, optionsRequest)
+	if err != nil {
+		server.WriteError(w, server.ErrorMalformedInput, err.Error())
+		return
+	}
+
+	session := r.Context().Value("session").(*session)
+	res, err := session.updateFrontendOptions(optionsRequest)
+	if err != nil {
+		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+		return
+	}
+	server.WriteResponse(w, res, nil)
+}
+
+func (s *Server) handleFrontendPairingCompleted(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value("session").(*session)
+	if err := session.pairingCompleted(); err != nil {
+		server.WriteError(w, server.ErrorUnexpectedRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {
@@ -428,7 +499,7 @@ func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "unknown static session"))
 		return
 	}
-	qr, _, err := s.StartSession(rrequest, s.doResultCallback)
+	qr, _, _, err := s.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		return

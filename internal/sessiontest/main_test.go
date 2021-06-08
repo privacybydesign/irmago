@@ -6,8 +6,10 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
+	"unsafe"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
@@ -17,6 +19,9 @@ import (
 	"github.com/privacybydesign/irmago/server"
 	"github.com/stretchr/testify/require"
 )
+
+// Defines the maximum protocol version of an irmaclient in tests
+var maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 8}
 
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
@@ -44,6 +49,12 @@ func parseExistingStorage(t *testing.T, storage string) (*irmaclient.Client, *Te
 		handler,
 	)
 	require.NoError(t, err)
+
+	// Set max version we want to test on
+	version := extractClientMaxVersion(client)
+	version.Major = maxClientVersion.Major
+	version.Minor = maxClientVersion.Minor
+
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 	return client, handler
 }
@@ -120,7 +131,7 @@ func getMultipleIssuanceRequest() *irma.IssuanceRequest {
 
 var TestType = "irmaserver-jwt"
 
-func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) *server.SessionPackage {
+func startSession(t *testing.T, request irma.SessionRequest, sessiontype string) (*server.SessionPackage, *irma.FrontendSessionRequest) {
 	var (
 		sesPkg server.SessionPackage
 		err    error
@@ -141,7 +152,7 @@ func startSession(t *testing.T, request irma.SessionRequest, sessiontype string)
 	}
 
 	require.NoError(t, err)
-	return &sesPkg
+	return &sesPkg, sesPkg.FrontendRequest
 }
 
 func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg jwt.SigningMethod) string {
@@ -189,7 +200,14 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 	return j
 }
 
-func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) string {
+func sessionHelperWithFrontendOptions(
+	t *testing.T,
+	request irma.SessionRequest,
+	sessiontype string,
+	client *irmaclient.Client,
+	frontendOptionsHandler func(handler *TestHandler),
+	pairingHandler func(handler *TestHandler),
+) string {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)
@@ -201,23 +219,68 @@ func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string
 		defer StopRequestorServer()
 	}
 
-	sesPkg := startSession(t, request, sessiontype)
+	sesPkg, frontendRequest := startSession(t, request, sessiontype)
 
 	c := make(chan *SessionResult)
-	h := &TestHandler{t: t, c: c, client: client, expectedServerName: expectedRequestorInfo(t, client.Configuration)}
+	h := &TestHandler{
+		t:                  t,
+		c:                  c,
+		client:             client,
+		expectedServerName: expectedRequestorInfo(t, client.Configuration),
+	}
+
+	if frontendOptionsHandler != nil || pairingHandler != nil {
+		h.pairingCodeChan = make(chan string)
+		h.frontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
+		h.frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendRequest.Authorization))
+	}
+	if frontendOptionsHandler != nil {
+		frontendOptionsHandler(h)
+	}
+
 	qrjson, err := json.Marshal(sesPkg.SessionPtr)
 	require.NoError(t, err)
-	client.NewSession(string(qrjson), h)
+	h.dismisser = client.NewSession(string(qrjson), h)
+
+	if pairingHandler != nil {
+		pairingHandler(h)
+	}
 
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
 
 	var resJwt string
-	err = irma.NewHTTPTransport("http://localhost:48682/session/"+sesPkg.Token, false).Get("result-jwt", &resJwt)
+	err = irma.NewHTTPTransport("http://localhost:48682/session/"+string(sesPkg.Token), false).Get("result-jwt", &resJwt)
 	require.NoError(t, err)
 
 	return resJwt
+}
+
+func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) string {
+	return sessionHelperWithFrontendOptions(t, request, sessiontype, client, nil, nil)
+}
+
+func extractClientTransport(dismisser irmaclient.SessionDismisser) *irma.HTTPTransport {
+	return extractPrivateField(dismisser, "transport").(*irma.HTTPTransport)
+}
+
+func extractClientMaxVersion(client *irmaclient.Client) *irma.ProtocolVersion {
+	return extractPrivateField(client, "maxVersion").(*irma.ProtocolVersion)
+}
+
+func extractPrivateField(i interface{}, field string) interface{} {
+	rct := reflect.ValueOf(i).Elem().FieldByName(field)
+	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface()
+}
+
+func setPairingMethod(method irma.PairingMethod, handler *TestHandler) string {
+	optionsRequest := irma.NewFrontendOptionsRequest()
+	optionsRequest.PairingMethod = method
+	options := &irma.SessionOptions{}
+	err := handler.frontendTransport.Post("frontend/options", options, optionsRequest)
+	require.NoError(handler.t, err)
+	return options.PairingCode
 }
 
 func expectedRequestorInfo(t *testing.T, conf *irma.Configuration) *irma.RequestorInfo {

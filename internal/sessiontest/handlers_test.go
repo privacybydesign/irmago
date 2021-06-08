@@ -82,6 +82,9 @@ type TestHandler struct {
 	expectedServerName *irma.RequestorInfo
 	wait               time.Duration
 	result             string
+	pairingCodeChan    chan string
+	dismisser          irmaclient.SessionDismisser
+	frontendTransport  *irma.HTTPTransport
 }
 
 func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
@@ -96,7 +99,7 @@ func (th TestHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdenti
 func (th TestHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
 	th.Failure(&irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())})
 }
-func (th TestHandler) StatusUpdate(action irma.Action, status irma.Status) {}
+func (th TestHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
 func (th *TestHandler) Success(result string) {
 	th.result = result
 	th.c <- nil
@@ -150,6 +153,15 @@ func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager
 func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	callback(true, "12345")
 }
+func (th TestHandler) PairingRequired(pairingCode string) {
+	// Send pairing code via channel to calling test. This is done such that
+	// calling tests can detect it when this handler is skipped unexpectedly.
+	if th.pairingCodeChan != nil {
+		th.pairingCodeChan <- pairingCode
+		return
+	}
+	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Pairing required")})
+}
 
 type SessionResult struct {
 	Err              error
@@ -197,7 +209,7 @@ type ManualTestHandler struct {
 	action irma.Action
 }
 
-func (th *ManualTestHandler) StatusUpdate(action irma.Action, status irma.Status) {
+func (th *ManualTestHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {
 	th.action = action
 }
 
