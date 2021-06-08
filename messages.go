@@ -10,9 +10,9 @@ import (
 	"fmt"
 
 	"github.com/dgrijalva/jwt-go"
-	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/irmago/internal/cbor"
 )
 
 // ClientStatus encodes the client status of an IRMA session (e.g., connected).
@@ -144,7 +144,7 @@ func UnmarshalValidateBinary(data []byte, dest interface{}) error {
 }
 
 func MarshalBinary(message interface{}) ([]byte, error) {
-	return cbor.Marshal(message, cbor.EncOptions{})
+	return cbor.Marshal(message)
 }
 
 func UnmarshalBinary(data []byte, dst interface{}) error {
