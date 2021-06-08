@@ -15,7 +15,7 @@ type memoryUserData struct {
 }
 
 type memoryDB struct {
-	lock     sync.Mutex
+	sync.Mutex
 	userData map[string]memoryUserData
 
 	loginEmailTokens  map[string]string
@@ -31,8 +31,8 @@ func newMemoryDB() db {
 }
 
 func (db *memoryDB) userIDByUsername(username string) (int64, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	data, ok := db.userData[username]
 	if !ok {
 		return 0, keyshare.ErrUserNotFound
@@ -41,8 +41,8 @@ func (db *memoryDB) userIDByUsername(username string) (int64, error) {
 }
 
 func (db *memoryDB) scheduleUserRemoval(id int64, _ time.Duration) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	for username, user := range db.userData {
 		if user.id == id {
 			delete(db.userData, username)
@@ -53,8 +53,8 @@ func (db *memoryDB) scheduleUserRemoval(id int64, _ time.Duration) error {
 }
 
 func (db *memoryDB) userIDByEmailToken(token string) (int64, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	userID, ok := db.verifyEmailTokens[token]
 	if !ok {
@@ -67,8 +67,8 @@ func (db *memoryDB) userIDByEmailToken(token string) (int64, error) {
 }
 
 func (db *memoryDB) addEmailLoginToken(email, token string) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	found := false
 	for _, user := range db.userData {
@@ -92,8 +92,8 @@ func (db *memoryDB) addEmailLoginToken(email, token string) error {
 }
 
 func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	email, ok := db.loginEmailTokens[token]
 	if !ok {
@@ -113,8 +113,8 @@ func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) 
 }
 
 func (db *memoryDB) userIDByLoginToken(token, username string) (int64, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	email, ok := db.loginEmailTokens[token]
 	if !ok {
@@ -136,8 +136,8 @@ func (db *memoryDB) userIDByLoginToken(token, username string) (int64, error) {
 }
 
 func (db *memoryDB) user(id int64) (user, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	for username, u := range db.userData {
 		if u.id == id {
 			var emailList []userEmail
@@ -166,8 +166,8 @@ func min(a, b int) int {
 }
 
 func (db *memoryDB) logs(id int64, offset, amount int) ([]logEntry, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	for _, user := range db.userData {
 		if user.id == id {
 			return user.logEntries[min(len(user.logEntries), offset):min(len(user.logEntries), offset+amount)], nil
@@ -177,8 +177,8 @@ func (db *memoryDB) logs(id int64, offset, amount int) ([]logEntry, error) {
 }
 
 func (db *memoryDB) addEmail(id int64, email string) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	for username, user := range db.userData {
 		if user.id == id {
 			user.email = append(user.email, email)
@@ -190,8 +190,8 @@ func (db *memoryDB) addEmail(id int64, email string) error {
 }
 
 func (db *memoryDB) scheduleEmailRemoval(id int64, email string, _ time.Duration) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	for username, user := range db.userData {
 		if user.id == id {
 			for i, emailv := range user.email {
@@ -210,8 +210,8 @@ func (db *memoryDB) scheduleEmailRemoval(id int64, email string, _ time.Duration
 }
 
 func (db *memoryDB) setSeen(id int64) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	for username, user := range db.userData {
 		if user.id == id {
 			user.lastActive = time.Now()

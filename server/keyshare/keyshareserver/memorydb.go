@@ -12,7 +12,7 @@ import (
 // mocking some behaviour, as noted on the specific functions.
 
 type memoryDB struct {
-	lock  sync.Mutex
+	sync.Mutex
 	users map[string]keysharecore.User
 }
 
@@ -22,8 +22,8 @@ func NewMemoryDB() DB {
 
 func (db *memoryDB) user(username string) (*User, error) {
 	// Ensure access to database is single-threaded
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	// Check and fetch user data
 	data, ok := db.users[username]
@@ -35,8 +35,8 @@ func (db *memoryDB) user(username string) (*User, error) {
 
 func (db *memoryDB) AddUser(user *User) error {
 	// Ensure access to database is single-threaded
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	// Check and insert user
 	_, exists := db.users[user.Username]
@@ -49,8 +49,8 @@ func (db *memoryDB) AddUser(user *User) error {
 
 func (db *memoryDB) updateUser(user *User) error {
 	// Ensure access to database is single-threaded
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	// Check and update user.
 	_, exists := db.users[user.Username]
