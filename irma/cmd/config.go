@@ -93,6 +93,17 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	// Locate and read configuration file
 	confpath := viper.GetString("config")
 	if confpath != "" {
+		info, err := os.Stat(confpath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				die("specified configuration file does not exist", nil)
+			} else {
+				die("failed to stat configuration file", err)
+			}
+		}
+		if info.IsDir() {
+			die("specified configuration file is a directory", nil)
+		}
 		dir, file := filepath.Dir(confpath), filepath.Base(confpath)
 		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
 		viper.AddConfigPath(dir)
