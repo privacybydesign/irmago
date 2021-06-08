@@ -55,6 +55,10 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	err = db.scheduleUserRemoval(15, 0)
 	assert.NoError(t, err)
 
+	user, err = db.user(15)
+	require.NoError(t, err)
+	require.True(t, user.DeleteInProgress)
+
 	err = db.scheduleUserRemoval(15, 0)
 	assert.Error(t, err)
 }
@@ -201,6 +205,10 @@ func TestPostgresDBUserInfo(t *testing.T) {
 
 	err = db.scheduleEmailRemoval(17, "test@test.com", 0)
 	assert.NoError(t, err)
+
+	info, err = db.user(17)
+	assert.NoError(t, err)
+	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: true}}, info.Emails)
 
 	// Need sleep here to ensure time has passed since delete
 	time.Sleep(1 * time.Second)
