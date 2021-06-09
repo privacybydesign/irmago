@@ -160,7 +160,7 @@ func (s *Server) sendDeleteEmails(session *session) error {
 	return s.conf.SendEmail(
 		s.conf.deleteAccountTemplates,
 		s.conf.DeleteAccountFiles,
-		map[string]string{"Username": user.Username},
+		map[string]string{"Username": user.Username, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
 		emails,
 		user.language,
 	)
@@ -493,7 +493,7 @@ func (s *Server) processRemoveEmail(session *session, email string) error {
 		err = s.conf.SendEmail(
 			s.conf.deleteEmailTemplates,
 			s.conf.DeleteEmailSubjects,
-			map[string]string{"Username": user.Username},
+			map[string]string{"Username": user.Username, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
 			[]string{email},
 			user.language,
 		)
