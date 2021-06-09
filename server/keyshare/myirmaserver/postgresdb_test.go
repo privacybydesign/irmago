@@ -146,8 +146,12 @@ func TestPostgresDBUserInfo(t *testing.T) {
 
 	info, err := db.user(15)
 	assert.NoError(t, err)
-	assert.Equal(t, "testuser", info.Username)
-	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
+	assert.Equal(t, user{
+		Username:         "testuser",
+		Emails:           []userEmail{{Email: "test@test.com", DeleteInProgress: false}},
+		language:         "",
+		DeleteInProgress: false,
+	}, info)
 
 	info, err = db.user(17)
 	assert.NoError(t, err)
