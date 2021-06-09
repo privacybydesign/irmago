@@ -25,11 +25,11 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	id, err = db.userIDByEmailToken("testtoken")
+	id, err = db.verifyEmailToken("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	_, err = db.userIDByEmailToken("testtoken")
+	_, err = db.verifyEmailToken("testtoken")
 	assert.Error(t, err)
 
 	_, err = db.userIDByUsername("DNE")
@@ -69,10 +69,10 @@ func TestMemoryDBLoginToken(t *testing.T) {
 		loginEmailTokens: map[string]string{},
 	}
 
-	err := db.addEmailLoginToken("test2@test.com", "test2token")
+	err := db.addLoginToken("test2@test.com", "test2token")
 	assert.Error(t, err)
 
-	err = db.addEmailLoginToken("test@test.com", "testtoken")
+	err = db.addLoginToken("test@test.com", "testtoken")
 	require.NoError(t, err)
 
 	cand, err := db.loginUserCandidates("testtoken")
@@ -82,18 +82,18 @@ func TestMemoryDBLoginToken(t *testing.T) {
 	_, err = db.loginUserCandidates("DNE")
 	assert.Error(t, err)
 
-	_, err = db.userIDByLoginToken("testtoken", "DNE")
+	_, err = db.verifyLoginToken("testtoken", "DNE")
 	assert.Error(t, err)
 
-	id, err := db.userIDByLoginToken("testtoken", "noemail")
+	id, err := db.verifyLoginToken("testtoken", "noemail")
 	assert.Equal(t, int64(0), id)
 	assert.Error(t, err)
 
-	id, err = db.userIDByLoginToken("testtoken", "testuser")
+	id, err = db.verifyLoginToken("testtoken", "testuser")
 	assert.Equal(t, int64(15), id)
 	assert.NoError(t, err)
 
-	id, err = db.userIDByLoginToken("testtoken", "testuser")
+	id, err = db.verifyLoginToken("testtoken", "testuser")
 	assert.Equal(t, int64(0), id)
 	assert.Error(t, err)
 }

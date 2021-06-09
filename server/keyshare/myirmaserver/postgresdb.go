@@ -39,7 +39,7 @@ func (db *postgresDB) userIDByUsername(username string) (int64, error) {
 	return id, db.db.QueryUser("SELECT id FROM irma.users WHERE username = $1", []interface{}{&id}, username)
 }
 
-func (db *postgresDB) userIDByEmailToken(token string) (int64, error) {
+func (db *postgresDB) verifyEmailToken(token string) (int64, error) {
 	var email string
 	var id int64
 	err := db.db.QueryScan(
@@ -77,7 +77,7 @@ func (db *postgresDB) scheduleUserRemoval(id int64, delay time.Duration) error {
 		time.Now().Add(delay).Unix())
 }
 
-func (db *postgresDB) addEmailLoginToken(email, token string) error {
+func (db *postgresDB) addLoginToken(email, token string) error {
 	// Check if email address exists in database
 	err := db.db.QueryScan("SELECT 1 FROM irma.emails WHERE email = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
 		nil, email, time.Now().Unix())
@@ -125,7 +125,7 @@ func (db *postgresDB) loginUserCandidates(token string) ([]loginCandidate, error
 	return candidates, nil
 }
 
-func (db *postgresDB) userIDByLoginToken(token, username string) (int64, error) {
+func (db *postgresDB) verifyLoginToken(token, username string) (int64, error) {
 	var id int64
 	err := db.db.QueryUser(
 		`SELECT users.id FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE

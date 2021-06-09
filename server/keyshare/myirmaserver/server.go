@@ -209,7 +209,7 @@ type emailLoginRequest struct {
 
 func (s *Server) sendLoginEmail(request emailLoginRequest) error {
 	token := common.NewSessionToken()
-	err := s.db.addEmailLoginToken(request.Email, token)
+	err := s.db.addLoginToken(request.Email, token)
 	if err == errEmailNotFound {
 		return err
 	} else if err != nil {
@@ -279,7 +279,7 @@ type tokenLoginRequest struct {
 }
 
 func (s *Server) processTokenLogin(request tokenLoginRequest) (string, error) {
-	id, err := s.db.userIDByLoginToken(request.Token, request.Username)
+	id, err := s.db.verifyLoginToken(request.Token, request.Username)
 	if err == keyshare.ErrUserNotFound {
 		return "", err
 	}
@@ -391,7 +391,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := s.db.userIDByEmailToken(token)
+	id, err := s.db.verifyEmailToken(token)
 	if err == errTokenNotFound {
 		s.conf.Logger.Info("Unknown email verification token")
 		server.WriteError(w, server.ErrorInvalidRequest, "Unknown email verification token")

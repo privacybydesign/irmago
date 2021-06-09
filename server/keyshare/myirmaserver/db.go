@@ -8,12 +8,13 @@ type db interface {
 	user(id int64) (user, error)
 
 	userIDByUsername(username string) (int64, error)
-	userIDByEmailToken(token string) (int64, error)
-	userIDByLoginToken(token, username string) (int64, error)
+
+	verifyEmailToken(token string) (int64, error)
+	verifyLoginToken(token, username string) (int64, error)
 
 	scheduleUserRemoval(id int64, delay time.Duration) error
 
-	addEmailLoginToken(email, token string) error
+	addLoginToken(email, token string) error
 	loginUserCandidates(token string) ([]loginCandidate, error)
 
 	logs(id int64, offset int, amount int) ([]logEntry, error)

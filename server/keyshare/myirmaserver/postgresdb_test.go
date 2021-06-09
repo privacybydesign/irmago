@@ -32,7 +32,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail(nil), user.Emails)
 
-	id, err = db.userIDByEmailToken("testtoken")
+	id, err = db.verifyEmailToken("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
@@ -40,7 +40,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, user.Emails)
 
-	_, err = db.userIDByEmailToken("testtoken")
+	_, err = db.verifyEmailToken("testtoken")
 	assert.Error(t, err)
 
 	_, err = db.userIDByUsername("DNE")
@@ -78,10 +78,10 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@test.com')")
 	require.NoError(t, err)
 
-	err = db.addEmailLoginToken("test2@test.com", "test2token")
+	err = db.addLoginToken("test2@test.com", "test2token")
 	assert.Error(t, err)
 
-	err = db.addEmailLoginToken("test@test.com", "testtoken")
+	err = db.addLoginToken("test@test.com", "testtoken")
 	require.NoError(t, err)
 
 	cand, err := db.loginUserCandidates("testtoken")
@@ -97,21 +97,21 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	_, err = db.loginUserCandidates("DNE")
 	assert.Error(t, err)
 
-	_, err = db.userIDByLoginToken("testtoken", "DNE")
+	_, err = db.verifyLoginToken("testtoken", "DNE")
 	assert.Error(t, err)
 
-	_, err = db.userIDByLoginToken("testtoken", "noemail")
+	_, err = db.verifyLoginToken("testtoken", "noemail")
 	assert.Error(t, err)
 
-	id, err := db.userIDByLoginToken("testtoken", "testuser")
+	id, err := db.verifyLoginToken("testtoken", "testuser")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	_, err = db.userIDByLoginToken("testtoken", "testuser")
+	_, err = db.verifyLoginToken("testtoken", "testuser")
 	assert.Error(t, err)
 
 	assert.NoError(t, db.addEmail(17, "test@test.com"))
-	assert.NoError(t, db.addEmailLoginToken("test@test.com", "testtoken"))
+	assert.NoError(t, db.addLoginToken("test@test.com", "testtoken"))
 	cand, err = db.loginUserCandidates("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []loginCandidate{

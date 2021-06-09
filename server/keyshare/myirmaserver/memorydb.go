@@ -52,7 +52,7 @@ func (db *memoryDB) scheduleUserRemoval(id int64, _ time.Duration) error {
 	return keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) userIDByEmailToken(token string) (int64, error) {
+func (db *memoryDB) verifyEmailToken(token string) (int64, error) {
 	db.Lock()
 	defer db.Unlock()
 
@@ -66,7 +66,7 @@ func (db *memoryDB) userIDByEmailToken(token string) (int64, error) {
 	return userID, nil
 }
 
-func (db *memoryDB) addEmailLoginToken(email, token string) error {
+func (db *memoryDB) addLoginToken(email, token string) error {
 	db.Lock()
 	defer db.Unlock()
 
@@ -112,7 +112,7 @@ func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) 
 	return result, nil
 }
 
-func (db *memoryDB) userIDByLoginToken(token, username string) (int64, error) {
+func (db *memoryDB) verifyLoginToken(token, username string) (int64, error) {
 	db.Lock()
 	defer db.Unlock()
 
