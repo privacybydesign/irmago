@@ -22,8 +22,8 @@ func init() {
 }
 
 func TestServerInvalidMessage(t *testing.T) {
-	StartMyIrmaServer(t, newMemoryDB(), "localhost:1025")
-	defer StopKeyshareServer(t)
+	myirmaServer, httpServer := StartMyIrmaServer(t, newMemoryDB(), "localhost:1025")
+	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
 	test.HTTPGet(t, nil, "http://localhost:8080/user", nil, 400, nil)
 
@@ -53,8 +53,8 @@ func TestServerIrmaSessions(t *testing.T) {
 			"testtoken": "test@test.com",
 		},
 	}
-	StartMyIrmaServer(t, db, "")
-	defer StopKeyshareServer(t)
+	myirmaServer, httpServer := StartMyIrmaServer(t, db, "")
+	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
 	client := test.NewHTTPClient()
 
@@ -85,8 +85,8 @@ func TestServerSessionMgmnt(t *testing.T) {
 			"testemailtoken": 15,
 		},
 	}
-	StartMyIrmaServer(t, db, "")
-	defer StopKeyshareServer(t)
+	myirmaServer, httpServer := StartMyIrmaServer(t, db, "")
+	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
 	client := test.NewHTTPClient()
 
@@ -172,8 +172,8 @@ func TestServerUserData(t *testing.T) {
 			"testtoken": "test@test.com",
 		},
 	}
-	StartMyIrmaServer(t, db, "")
-	defer StopKeyshareServer(t)
+	myirmaServer, httpServer := StartMyIrmaServer(t, db, "")
+	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
 	client := test.NewHTTPClient()
 
@@ -204,9 +204,7 @@ func TestServerUserData(t *testing.T) {
 	}, logs)
 }
 
-var keyshareServ *http.Server
-
-func StartMyIrmaServer(t *testing.T, db db, emailserver string) {
+func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.Server) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
 		Configuration: &server.Configuration{
@@ -249,21 +247,26 @@ func StartMyIrmaServer(t *testing.T, db db, emailserver string) {
 	r := chi.NewRouter()
 	r.Mount("/", s.Handler())
 
-	keyshareServ = &http.Server{
+	s.Stop()
+
+	serv := &http.Server{
 		Addr:    "localhost:8080",
 		Handler: r,
 	}
 
 	go func() {
-		err := keyshareServ.ListenAndServe()
+		err := serv.ListenAndServe()
 		if err == http.ErrServerClosed {
 			err = nil
 		}
 		assert.NoError(t, err)
 	}()
+
+	return s, serv
 }
 
-func StopKeyshareServer(t *testing.T) {
-	err := keyshareServ.Shutdown(context.Background())
+func StopMyIrmaServer(t *testing.T, myirmaServer *Server, httpServer *http.Server) {
+	myirmaServer.Stop()
+	err := httpServer.Shutdown(context.Background())
 	assert.NoError(t, err)
 }

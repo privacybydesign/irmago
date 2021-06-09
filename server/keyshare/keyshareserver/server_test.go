@@ -23,8 +23,8 @@ func init() {
 }
 
 func TestServerInvalidMessage(t *testing.T) {
-	StartKeyshareServer(t, NewMemoryDB(), "")
-	defer StopKeyshareServer(t)
+	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
 		"gval;kefsajsdkl;", nil,
@@ -53,8 +53,8 @@ func TestServerInvalidMessage(t *testing.T) {
 }
 
 func TestServerHandleRegister(t *testing.T) {
-	StartKeyshareServer(t, NewMemoryDB(), "")
-	defer StopKeyshareServer(t)
+	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
 		`{"pin":"testpin","email":"test@test.com","language":"en"}`, nil,
@@ -76,8 +76,8 @@ func TestServerHandleRegister(t *testing.T) {
 
 func TestServerHandleValidate(t *testing.T) {
 	db := createDB(t)
-	StartKeyshareServer(t, db, "")
-	defer StopKeyshareServer(t)
+	keyshareServer, httpServer := StartKeyshareServer(t, db, "")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	var jwtMsg irma.KeysharePinStatus
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin",
@@ -117,8 +117,8 @@ func TestServerHandleValidate(t *testing.T) {
 
 func TestPinTries(t *testing.T) {
 	db := createDB(t)
-	StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
-	defer StopKeyshareServer(t)
+	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	var jwtMsg irma.KeysharePinStatus
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin",
@@ -140,7 +140,7 @@ func TestPinNoRemainingTries(t *testing.T) {
 	db := createDB(t)
 
 	for _, ok := range []bool{true, false} {
-		StartKeyshareServer(t, &testDB{db: db, ok: ok, tries: 0, wait: 5, err: nil}, "")
+		keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: ok, tries: 0, wait: 5, err: nil}, "")
 
 		var jwtMsg irma.KeysharePinStatus
 		test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin",
@@ -157,13 +157,13 @@ func TestPinNoRemainingTries(t *testing.T) {
 		require.Equal(t, "error", jwtMsg.Status)
 		require.Equal(t, "5", jwtMsg.Message)
 
-		StopKeyshareServer(t)
+		StopKeyshareServer(t, keyshareServer, httpServer)
 	}
 }
 
 func TestMissingUser(t *testing.T) {
-	StartKeyshareServer(t, NewMemoryDB(), "")
-	defer StopKeyshareServer(t)
+	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized",
 		"", http.Header{
@@ -202,8 +202,8 @@ func TestMissingUser(t *testing.T) {
 
 func TestKeyshareSessions(t *testing.T) {
 	db := createDB(t)
-	StartKeyshareServer(t, db, "")
-	defer StopKeyshareServer(t)
+	keyshareServer, httpServer := StartKeyshareServer(t, db, "")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	var jwtMsg irma.KeysharePinStatus
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin",
@@ -267,9 +267,7 @@ func TestKeyshareSessions(t *testing.T) {
 	)
 }
 
-var keyshareServ *http.Server
-
-func StartKeyshareServer(t *testing.T, db DB, emailserver string) {
+func StartKeyshareServer(t *testing.T, db DB, emailserver string) (*Server, *http.Server) {
 	testdataPath := test.FindTestdataFolder(t)
 	s, err := New(&Configuration{
 		Configuration: &server.Configuration{
@@ -302,22 +300,25 @@ func StartKeyshareServer(t *testing.T, db DB, emailserver string) {
 	r := chi.NewRouter()
 	r.Mount("/irma_keyshare_server/api/v1/", s.Handler())
 
-	keyshareServ = &http.Server{
+	serv := &http.Server{
 		Addr:    "localhost:8080",
 		Handler: r,
 	}
 
 	go func() {
-		err := keyshareServ.ListenAndServe()
+		err := serv.ListenAndServe()
 		if err == http.ErrServerClosed {
 			err = nil
 		}
 		assert.NoError(t, err)
 	}()
+
+	return s, serv
 }
 
-func StopKeyshareServer(t *testing.T) {
-	err := keyshareServ.Shutdown(context.Background())
+func StopKeyshareServer(t *testing.T, keyshareServer *Server, httpServer *http.Server) {
+	keyshareServer.Stop()
+	err := httpServer.Shutdown(context.Background())
 	assert.NoError(t, err)
 }
 

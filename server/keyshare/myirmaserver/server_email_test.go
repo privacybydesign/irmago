@@ -29,8 +29,8 @@ func TestServerLoginEmail(t *testing.T) {
 			"testemailtoken": 15,
 		},
 	}
-	StartMyIrmaServer(t, db, "localhost:1025")
-	defer StopKeyshareServer(t)
+	myirmaServer, httpServer := StartMyIrmaServer(t, db, "localhost:1025")
+	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/login/email", `{"email": "dne", "language": "en"}`, nil, 403, nil)
 
@@ -48,8 +48,8 @@ func TestServerLoginEmail(t *testing.T) {
 }
 
 func TestServerInvalidEmailMessage(t *testing.T) {
-	StartMyIrmaServer(t, newMemoryDB(), "localhost:1025")
-	defer StopKeyshareServer(t)
+	myirmaServer, httpServer := StartMyIrmaServer(t, newMemoryDB(), "localhost:1025")
+	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/login/email", "gval;kefsajsdkl;", nil, 400, nil)
 

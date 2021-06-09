@@ -9,8 +9,8 @@ import (
 )
 
 func TestServerRegistrationWithEmail(t *testing.T) {
-	StartKeyshareServer(t, NewMemoryDB(), "localhost:1025")
-	defer StopKeyshareServer(t)
+	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "localhost:1025")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
 		`{"pin":"testpin","email":"test@test.com","language":"en"}`, nil,
