@@ -196,6 +196,9 @@ func (db *postgresDB) addEmail(id int64, email string) error {
 	if err != nil {
 		return err
 	}
+	if aff > 1 {
+		return errors.Errorf("Unexpected number of affected rows %d for email adding", aff)
+	}
 	if aff == 1 {
 		return nil
 	}
