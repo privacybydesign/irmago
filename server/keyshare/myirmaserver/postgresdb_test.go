@@ -229,10 +229,10 @@ func TestPostgresDBUserInfo(t *testing.T) {
 }
 
 func SetupDatabase(t *testing.T) {
-	test.RunScriptOnDB(t, "../keyshareserver/cleanup.sql", true)
-	test.RunScriptOnDB(t, "../keyshareserver/schema.sql", false)
+	test.RunScriptOnDB(t, "../cleanup.sql", true)
+	test.RunScriptOnDB(t, "../schema.sql", false)
 }
 
 func TeardownDatabase(t *testing.T) {
-	test.RunScriptOnDB(t, "../keyshareserver/cleanup.sql", false)
+	test.RunScriptOnDB(t, "../cleanup.sql", false)
 }
