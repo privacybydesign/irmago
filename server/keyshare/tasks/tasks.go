@@ -53,7 +53,7 @@ func (t *taskHandler) cleanupEmails() {
 	}
 }
 
-// Remove old login and email verifciation tokens
+// Remove old login and email verification tokens
 func (t *taskHandler) cleanupTokens() {
 	_, err := t.db.Exec("DELETE FROM irma.email_login_tokens WHERE expiry < $1", time.Now().Unix())
 	if err != nil {
