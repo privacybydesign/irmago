@@ -134,10 +134,17 @@ func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 
 	session.Lock()
 	defer session.Unlock()
-	if session.pendingError != nil {
-		server.WriteError(w, *session.pendingError, session.pendingErrorMessage)
-		session.pendingError = nil
-		session.pendingErrorMessage = ""
+
+	var (
+		err server.Error
+		msg string
+	)
+	if session.loginSessionToken != "" {
+		err, msg = s.processLoginIrmaSessionResult(session)
+	}
+
+	if err != (server.Error{}) {
+		server.WriteError(w, err, msg)
 	} else if session.userID == nil {
 		// Errors matter more than expired status if we have them
 		server.WriteString(w, "expired")
@@ -323,37 +330,32 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) processLoginIrmaSessionResult(sessiontoken string, result *server.SessionResult) {
-	session := s.store.get(sessiontoken)
-	if session == nil {
-		s.conf.Logger.Info("User session expired during IRMA session")
-		return
+func (s *Server) processLoginIrmaSessionResult(session *session) (server.Error, string) {
+	result := s.sessionserver.GetSessionResult(session.loginSessionToken)
+	if result == nil {
+		session.loginSessionToken = ""
+		return server.ErrorInternal, "unknown login session"
 	}
-	session.Lock()
-	defer session.Unlock()
 
 	if result.Status != server.StatusDone {
 		// Ignore incomplete attempts, frontend handles these.
-		return
+		return server.Error{}, ""
 	}
+
+	session.loginSessionToken = ""
+
 	if result.ProofStatus != irma.ProofStatusValid {
 		s.conf.Logger.Info("received invalid login attribute")
-		session.pendingError = &server.ErrorInvalidProofs
-		session.pendingErrorMessage = ""
-		return
+		return server.ErrorInvalidProofs, ""
 	}
 
 	username := *result.Disclosed[0][0].RawValue
 	id, err := s.db.userIDByUsername(username)
 	if err == keyshare.ErrUserNotFound {
-		session.pendingError = &server.ErrorUserNotRegistered
-		session.pendingErrorMessage = ""
-		return
+		return server.ErrorUserNotRegistered, ""
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during processing of login IRMA session result")
-		session.pendingError = &server.ErrorInternal
-		session.pendingErrorMessage = err.Error()
-		return
+		return server.ErrorInternal, err.Error()
 	}
 
 	session.userID = &id
@@ -363,23 +365,21 @@ func (s *Server) processLoginIrmaSessionResult(sessiontoken string, result *serv
 		s.conf.Logger.WithField("error", err).Error("Could not update users last seen time/date")
 		// not relevant for frontend, so ignore beyond log.
 	}
+	return server.Error{}, ""
 }
 
 func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	session := s.store.create()
 	sessiontoken := session.token
 
-	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...),
-		func(result *server.SessionResult) {
-			s.processLoginIrmaSessionResult(sessiontoken, result)
-		})
-
+	qr, loginToken, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...), nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for login")
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
 
+	session.loginSessionToken = loginToken
 	s.setCookie(w, sessiontoken, s.conf.SessionLifetime)
 	server.WriteJson(w, qr)
 }
@@ -430,6 +430,16 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
+
+	// Handle finished IRMA session used for adding email address, if any
+	if session.emailSessionToken != "" {
+		e, msg := s.processAddEmailIrmaSessionResult(session)
+		if e != (server.Error{}) {
+			server.WriteError(w, e, msg)
+			return
+		}
+	}
+
 	user, err := s.db.user(*session.userID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem fetching user information from database")
@@ -537,53 +547,46 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) processAddEmailIrmaSessionResult(sessiontoken string, result *server.SessionResult) {
-	session := s.store.get(sessiontoken)
-	if session == nil {
-		s.conf.Logger.Info("User session expired during IRMA session")
-		return
-	}
-	session.Lock()
-	defer session.Unlock()
-
-	if session.userID == nil {
-		s.conf.Logger.Error("Unexpected logged out session during email address add")
-		return
+func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Error, string) {
+	result := s.sessionserver.GetSessionResult(session.emailSessionToken)
+	if result == nil {
+		session.emailSessionToken = ""
+		return server.ErrorInternal, "unknown login session"
 	}
 
 	if result.Status != server.StatusDone {
 		// Ignore incomplete attempts, frontend does that
-		return
+		return server.Error{}, ""
 	}
+
+	session.emailSessionToken = ""
+
 	if result.ProofStatus != irma.ProofStatusValid {
 		s.conf.Logger.Info("received invalid email attribute")
-		session.pendingError = &server.ErrorInvalidProofs
-		session.pendingErrorMessage = ""
-		return
+		return server.ErrorInvalidProofs, ""
 	}
 
 	email := *result.Disclosed[0][0].RawValue
 	err := s.db.addEmail(*session.userID, email)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not add email address to user")
-		session.pendingError = &server.ErrorInternal
-		session.pendingErrorMessage = err.Error()
+		return server.ErrorInternal, err.Error()
 	}
+
+	return server.Error{}, ""
 }
 
 func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	qr, _, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...),
-		func(result *server.SessionResult) {
-			s.processAddEmailIrmaSessionResult(session.token, result)
-		})
 
+	qr, emailToken, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...), nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for adding email address")
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
 
+	session.emailSessionToken = emailToken
 	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
 	s.setCookie(w, session.token, s.conf.SessionLifetime)
 

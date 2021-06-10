@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/server"
 )
 
 type session struct {
@@ -14,8 +13,8 @@ type session struct {
 	token  string
 	userID *int64
 
-	pendingError        *server.Error
-	pendingErrorMessage string
+	loginSessionToken string
+	emailSessionToken string
 
 	expiry time.Time
 }
