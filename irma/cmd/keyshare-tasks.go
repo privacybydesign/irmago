@@ -37,7 +37,7 @@ func init() {
 	flags.String("email-username", "", "Username to use when authenticating with email server")
 	flags.String("email-password", "", "Password to use when authenticating with email server")
 	flags.String("email-from", "", "Email address to use as sender address")
-	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
+	flags.String("default-language", "en", "Default language, used as fallback when users preferred language is not available")
 	flags.StringToString("expired-email-subjects", nil, "Translated subject lines for the expired account email")
 	flags.StringToString("expired-email-files", nil, "Translated emails for the expired account email")
 	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`

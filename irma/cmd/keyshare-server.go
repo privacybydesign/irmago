@@ -62,7 +62,7 @@ func init() {
 	flags.String("email-username", "", "Username to use when authenticating with email server")
 	flags.String("email-password", "", "Password to use when authenticating with email server")
 	flags.String("email-from", "", "Email address to use as sender address")
-	flags.String("default-language", "en", "Default language, used as fallback when users prefered language is not available")
+	flags.String("default-language", "en", "Default language, used as fallback when users preferred language is not available")
 	flags.StringToString("registration-email-subjects", nil, "Translated subject lines for the registration email")
 	flags.StringToString("registration-email-files", nil, "Translated emails for the registration email")
 	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
