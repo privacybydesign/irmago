@@ -223,5 +223,17 @@ func (db *postgresDB) scheduleEmailRemoval(id int64, email string, delay time.Du
 }
 
 func (db *postgresDB) setSeen(id int64) error {
-	return db.db.ExecUser("UPDATE irma.users SET last_seen = $1 WHERE id = $2", time.Now().Unix(), id)
+	// If the user is scheduled for deletion (delete_on is not null), undo that by resetting
+	// delete_on back to null, but only if the user did not explicitly delete her account herself
+	// in the myIRMA website, in which case coredata is null.
+	return db.db.ExecUser(
+		`UPDATE irma.users
+		 SET last_seen = $1,
+		     delete_on = CASE
+		         WHEN coredata IS NOT NULL THEN NULL
+		         ELSE delete_on
+		     END
+		 WHERE id = $2`,
+		time.Now().Unix(), id,
+	)
 }
