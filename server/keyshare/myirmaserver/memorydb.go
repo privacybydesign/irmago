@@ -58,6 +58,8 @@ func (db *memoryDB) verifyEmailToken(token string) (int64, error) {
 
 	userID, ok := db.verifyEmailTokens[token]
 	if !ok {
+		// We return this particular error in this case for consistency with the postgres DB.
+		// The calling function replaces this with a more informative error for the frontend.
 		return 0, keyshare.ErrUserNotFound
 	}
 
@@ -97,6 +99,8 @@ func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) 
 
 	email, ok := db.loginEmailTokens[token]
 	if !ok {
+		// We return this particular error in this case for consistency with the postgres DB.
+		// The calling function replaces this with a more informative error for the frontend.
 		return nil, keyshare.ErrUserNotFound
 	}
 
