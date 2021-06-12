@@ -9,6 +9,7 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/eknkc/basex v1.0.0
 	github.com/fxamacker/cbor v1.5.0
+	github.com/fxamacker/cbor/v2 v2.3.0 // indirect
 	github.com/getsentry/raven-go v0.0.0-20180121060056-563b81fc02b7
 	github.com/go-chi/chi v3.3.3+incompatible
 	github.com/go-chi/cors v1.0.0
@@ -26,8 +27,8 @@ require (
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
-	github.com/privacybydesign/gabi v0.0.0-20210409092845-6113e0d3ec81
 	github.com/pelletier/go-toml v1.2.0 // indirect
+	github.com/privacybydesign/gabi v0.0.0-20210409092845-6113e0d3ec81
 	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819

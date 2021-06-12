@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
-	"github.com/fxamacker/cbor"
 	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
@@ -21,6 +20,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/gabi/signed"
+	"github.com/privacybydesign/irmago/internal/cbor"
 	sseclient "github.com/sietseringers/go-sse"
 
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -1099,7 +1099,7 @@ func (RevocationAttribute) GormDataType(dialect gorm.Dialect) string {
 }
 
 func (i *RevocationAttribute) MarshalCBOR() ([]byte, error) {
-	return cbor.Marshal((*big.Int)(i), cbor.EncOptions{})
+	return cbor.Marshal((*big.Int)(i))
 }
 
 func (i *RevocationAttribute) UnmarshalCBOR(data []byte) error {
