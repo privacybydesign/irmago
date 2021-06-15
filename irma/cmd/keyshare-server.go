@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
@@ -13,7 +14,10 @@ var keyshareServerCmd = &cobra.Command{
 	Use:   "server",
 	Short: "IRMA keyshare server",
 	Run: func(command *cobra.Command, args []string) {
-		conf := configureKeyshareServer(command)
+		conf, err := configureKeyshareServer(command)
+		if err != nil {
+			die("failed to read configuration", err)
+		}
 
 		// Create main server
 		keyshareServer, err := keyshareserver.New(conf)
@@ -82,7 +86,7 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureKeyshareServer(cmd *cobra.Command) *keyshareserver.Configuration {
+func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration, error) {
 	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
 	// And build the configuration
@@ -108,7 +112,11 @@ func configureKeyshareServer(cmd *cobra.Command) *keyshareserver.Configuration {
 		VerificationURL:           viper.GetStringMapString("verification-url"),
 	}
 
+	if conf.Production && conf.DBType != keyshareserver.DBTypePostgres {
+		return nil, errors.New("in production mode, db-type must be postgres")
+	}
+
 	conf.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
 
-	return conf
+	return conf, nil
 }

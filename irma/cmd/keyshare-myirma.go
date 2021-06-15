@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/myirmaserver"
@@ -12,7 +13,10 @@ var myirmaServerCmd = &cobra.Command{
 	Use:   "myirmaserver",
 	Short: "IRMA keyshare MyIRMA server",
 	Run: func(command *cobra.Command, args []string) {
-		conf := configureMyirmaServer(command)
+		conf, err := configureMyirmaServer(command)
+		if err != nil {
+			die("failed to read configuration", err)
+		}
 
 		// Create main server
 		myirmaServer, err := myirmaserver.New(conf)
@@ -83,7 +87,7 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureMyirmaServer(cmd *cobra.Command) *myirmaserver.Configuration {
+func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, error) {
 	readConfig(cmd, "myirmaserver", "myirmaserver", []string{".", "/etc/myirmaserver/"}, nil)
 
 	// And build the configuration
@@ -111,6 +115,10 @@ func configureMyirmaServer(cmd *cobra.Command) *myirmaserver.Configuration {
 		SessionLifetime: viper.GetInt("session-lifetime"),
 	}
 
+	if conf.Production && conf.DBType != myirmaserver.DBTypePostgres {
+		return nil, errors.New("in production mode, db-type must be postgres")
+	}
+
 	conf.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
 
 	for _, v := range viper.GetStringSlice("keyshare-attributes") {
@@ -124,5 +132,5 @@ func configureMyirmaServer(cmd *cobra.Command) *myirmaserver.Configuration {
 			irma.NewAttributeTypeIdentifier(v))
 	}
 
-	return conf
+	return conf, nil
 }
