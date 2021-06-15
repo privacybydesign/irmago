@@ -31,22 +31,22 @@ var (
 	ErrNoSuchKey              = errors.New("Key identifier unknown")
 )
 
-func (p *unencryptedUserSecrets) pin() [64]byte {
+func (s *unencryptedUserSecrets) pin() [64]byte {
 	var result [64]byte
-	copy(result[:], p[0:64])
+	copy(result[:], s[0:64])
 	return result
 }
 
-func (p *unencryptedUserSecrets) setPin(pw [64]byte) {
-	copy(p[0:64], pw[:])
+func (s *unencryptedUserSecrets) setPin(pw [64]byte) {
+	copy(s[0:64], pw[:])
 }
 
-func (p *unencryptedUserSecrets) keyshareSecret() *big.Int {
+func (s *unencryptedUserSecrets) keyshareSecret() *big.Int {
 	result := new(big.Int)
-	return result.SetBytes(p[64:128])
+	return result.SetBytes(s[64:128])
 }
 
-func (p *unencryptedUserSecrets) setKeyshareSecret(val *big.Int) error {
+func (s *unencryptedUserSecrets) setKeyshareSecret(val *big.Int) error {
 	if val.Sign() == -1 {
 		return ErrKeyshareSecretNegative
 	}
@@ -57,24 +57,24 @@ func (p *unencryptedUserSecrets) setKeyshareSecret(val *big.Int) error {
 	}
 	zerolen := 64 - len(data)
 	for i := 0; i < zerolen; i++ {
-		p[64+i] = 0
+		s[64+i] = 0
 	}
-	copy(p[64+zerolen:], data)
+	copy(s[64+zerolen:], data)
 
 	return nil
 }
 
-func (p *unencryptedUserSecrets) id() [32]byte {
+func (s *unencryptedUserSecrets) id() [32]byte {
 	var result [32]byte
-	copy(result[:], p[128:160])
+	copy(result[:], s[128:160])
 	return result
 }
 
-func (p *unencryptedUserSecrets) setID(id [32]byte) {
-	copy(p[128:160], id[:])
+func (s *unencryptedUserSecrets) setID(id [32]byte) {
+	copy(s[128:160], id[:])
 }
 
-func (c *Core) encryptUserSecrets(p unencryptedUserSecrets) (UserSecrets, error) {
+func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, error) {
 	var result UserSecrets
 
 	// Store key id
@@ -91,14 +91,14 @@ func (c *Core) encryptUserSecrets(p unencryptedUserSecrets) (UserSecrets, error)
 	if err != nil {
 		return UserSecrets{}, err
 	}
-	gcm.Seal(result[:16], result[4:16], p[:], nil)
+	gcm.Seal(result[:16], result[4:16], secrets[:], nil)
 
 	return result, nil
 }
 
-func (c *Core) decryptUserSecrets(p UserSecrets) (unencryptedUserSecrets, error) {
+func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, error) {
 	// determine key id
-	id := binary.LittleEndian.Uint32(p[0:])
+	id := binary.LittleEndian.Uint32(secrets[0:])
 
 	// Fetch key
 	key, ok := c.decryptionKeys[id]
@@ -112,29 +112,29 @@ func (c *Core) decryptUserSecrets(p UserSecrets) (unencryptedUserSecrets, error)
 		return unencryptedUserSecrets{}, err
 	}
 	var result unencryptedUserSecrets
-	_, err = gcm.Open(result[:0], p[4:16], p[16:], nil)
+	_, err = gcm.Open(result[:0], secrets[4:16], secrets[16:], nil)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
 	return result, nil
 }
 
-func (c *Core) decryptUserSecretsIfPinOK(ep UserSecrets, pin string) (unencryptedUserSecrets, error) {
+func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unencryptedUserSecrets, error) {
 	paddedPin, err := padPin(pin)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
 
-	p, err := c.decryptUserSecrets(ep)
+	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
 
-	refPin := p.pin()
+	refPin := s.pin()
 	if subtle.ConstantTimeCompare(refPin[:], paddedPin[:]) != 1 {
 		return unencryptedUserSecrets{}, ErrInvalidPin
 	}
-	return p, nil
+	return s, nil
 }
 
 func newGCM(key AESKey) (cipher.AEAD, error) {

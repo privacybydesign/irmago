@@ -66,19 +66,19 @@ func (db *postgresDB) AddUser(user *User) error {
 
 func (db *postgresDB) user(username string) (*User, error) {
 	var result User
-	var ep []byte
+	var secrets []byte
 	err := db.db.QueryUser(
 		"SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL",
-		[]interface{}{&result.id, &result.Username, &result.Language, &ep},
+		[]interface{}{&result.id, &result.Username, &result.Language, &secrets},
 		username,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if len(ep) != len(result.Secrets[:]) {
+	if len(secrets) != len(result.Secrets[:]) {
 		return nil, errInvalidRecord
 	}
-	copy(result.Secrets[:], ep)
+	copy(result.Secrets[:], secrets)
 	return &result, nil
 }
 
