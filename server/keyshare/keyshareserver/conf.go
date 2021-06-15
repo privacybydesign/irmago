@@ -21,8 +21,8 @@ type DBType string
 var errUnknownDBType = errors.New("Unknown database type")
 
 const (
-	DBTypeMemory   = "memory"
-	DBTypePostgres = "postgres"
+	DBTypeMemory   DBType = "memory"
+	DBTypePostgres DBType = "postgres"
 )
 
 // Configuration contains configuration for the irmaserver library and irmad.

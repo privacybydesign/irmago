@@ -44,7 +44,7 @@ func init() {
 	flags.StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.String("db-type", myirmaserver.DBTypePostgres, "Type of database to connect keyshare server to")
+	flags.String("db-type", string(myirmaserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 

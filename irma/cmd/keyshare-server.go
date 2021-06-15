@@ -41,7 +41,7 @@ func init() {
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
 	flags.Lookup("port").Header = `Server address and port to listen on`
 
-	flags.String("db-type", keyshareserver.DBTypePostgres, "Type of database to connect keyshare server to")
+	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 	flags.Lookup("db-type").Header = `Database configuration`
 

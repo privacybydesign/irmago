@@ -17,8 +17,8 @@ type DBType string
 var errUnknownDBType = errors.New("Unknown database type")
 
 const (
-	DBTypeMemory   = "memory"
-	DBTypePostgres = "postgres"
+	DBTypeMemory   DBType = "memory"
+	DBTypePostgres DBType = "postgres"
 
 	SessionLifetimeDefault = 15 * 60 // seconds
 )
