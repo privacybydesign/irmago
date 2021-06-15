@@ -151,7 +151,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 
 	// Read keys
 	var keys []irma.PublicKeyIdentifier
-	if err := server.ParseBody(w, r, &keys); err != nil {
+	if err := server.ParseBody(r, &keys); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -211,7 +211,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	// Read challenge
 	challenge := new(big.Int)
-	if err := server.ParseBody(w, r, challenge); err != nil {
+	if err := server.ParseBody(r, challenge); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -283,7 +283,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeysharePinMessage
-	if err := server.ParseBody(w, r, &msg); err != nil {
+	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -368,7 +368,7 @@ func (s *Server) verifyPin(user *User, pin string) (irma.KeysharePinStatus, erro
 func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeyshareChangePin
-	if err := server.ParseBody(w, r, &msg); err != nil {
+	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -434,7 +434,7 @@ func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinS
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeyshareEnrollment
-	if err := server.ParseBody(w, r, &msg); err != nil {
+	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}

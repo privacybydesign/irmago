@@ -241,7 +241,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var request emailLoginRequest
-	if err := server.ParseBody(w, r, &request); err != nil {
+	if err := server.ParseBody(r, &request); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -262,7 +262,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetCandidates(w http.ResponseWriter, r *http.Request) {
 	var token string
-	if err := server.ParseBody(w, r, &token); err != nil {
+	if err := server.ParseBody(r, &token); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -309,7 +309,7 @@ func (s *Server) processTokenLogin(request tokenLoginRequest) (string, error) {
 
 func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	var request tokenLoginRequest
-	if err := server.ParseBody(w, r, &request); err != nil {
+	if err := server.ParseBody(r, &request); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -386,7 +386,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	var token string
-	if err := server.ParseBody(w, r, &token); err != nil {
+	if err := server.ParseBody(r, &token); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -524,7 +524,7 @@ func (s *Server) processRemoveEmail(session *session, email string) error {
 
 func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 	var email string
-	if err := server.ParseBody(w, r, &email); err != nil {
+	if err := server.ParseBody(r, &email); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}

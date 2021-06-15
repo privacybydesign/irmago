@@ -531,7 +531,7 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 	}
 }
 
-func ParseBody(w http.ResponseWriter, r *http.Request, input interface{}) error {
+func ParseBody(r *http.Request, input interface{}) error {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		Logger.WithField("error", err).Info("Malformed request: could not read request body")
