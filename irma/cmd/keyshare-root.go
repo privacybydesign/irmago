@@ -52,10 +52,10 @@ func runServer(serv stoppableServer, logger *logrus.Logger) {
 		} else {
 			err = server.FilterStopError(httpServer.ListenAndServe())
 		}
-		logger.Debug("Server stopped")
 		if err != nil {
 			_ = server.LogError(err)
 		}
+		logger.Debug("Server stopped")
 		stopped <- struct{}{}
 	}()
 
