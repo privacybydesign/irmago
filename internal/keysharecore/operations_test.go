@@ -37,7 +37,7 @@ func TestPinFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test with correct pin
-	j, err := c.ValidatePin(ep, pin, "testid")
+	j, err := c.ValidatePin(ep, pin)
 	assert.NoError(t, err)
 	var claims jwt.StandardClaims
 	_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
@@ -57,11 +57,11 @@ func TestPinFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// test correct pin
-	_, err = c.ValidatePin(ep, newpin, "testid")
+	_, err = c.ValidatePin(ep, newpin)
 	assert.NoError(t, err)
 
 	// Test incorrect pin
-	_, err = c.ValidatePin(ep, pin, "testid")
+	_, err = c.ValidatePin(ep, pin)
 	assert.Error(t, err)
 }
 
@@ -88,7 +88,7 @@ func TestVerifyAccess(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test use jwt on wrong packet
-	jwtt, err := c.ValidatePin(ep1, pin1, "testid")
+	jwtt, err := c.ValidatePin(ep1, pin1)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(ep2, jwtt)
 	assert.Error(t, err)
@@ -183,7 +183,7 @@ func TestProofFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate pin
-	jwtt, err := c.ValidatePin(ep, pin, "testid")
+	jwtt, err := c.ValidatePin(ep, pin)
 	require.NoError(t, err)
 
 	// Get keyshare commitment
@@ -232,7 +232,7 @@ func TestCorruptedPacket(t *testing.T) {
 	ep, err := c.NewUser(pin)
 	require.NoError(t, err)
 
-	jwtt, err := c.ValidatePin(ep, pin, "testid")
+	jwtt, err := c.ValidatePin(ep, pin)
 	require.NoError(t, err)
 
 	_, commitID, err := c.GenerateCommitments(ep, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
@@ -242,7 +242,7 @@ func TestCorruptedPacket(t *testing.T) {
 	ep[12] = ep[12] + 1
 
 	// Verify pin
-	_, err = c.ValidatePin(ep, pin, "testid")
+	_, err = c.ValidatePin(ep, pin)
 	assert.Error(t, err, "ValidatePin accepts corrupted keyshare packet")
 
 	// Change pin
@@ -277,7 +277,7 @@ func TestIncorrectPin(t *testing.T) {
 	require.NoError(t, err)
 
 	// validate pin
-	jwtt, err := c.ValidatePin(ep, pin, "testid")
+	jwtt, err := c.ValidatePin(ep, pin)
 	require.NoError(t, err)
 
 	// Corrupt pin
@@ -314,7 +314,7 @@ func TestMissingKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate jwt
-	jwtt, err := c.ValidatePin(ep, pin, "testid")
+	jwtt, err := c.ValidatePin(ep, pin)
 	require.NoError(t, err)
 
 	// GenerateCommitments
@@ -347,7 +347,7 @@ func TestInvalidChallenge(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate pin
-	jwtt, err := c.ValidatePin(ep, pin, "testid")
+	jwtt, err := c.ValidatePin(ep, pin)
 	require.NoError(t, err)
 
 	// Test negative challenge
@@ -388,7 +388,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	require.NoError(t, err)
 
 	// validate pin
-	jwtt, err := c.ValidatePin(ep, pin, "testid")
+	jwtt, err := c.ValidatePin(ep, pin)
 	require.NoError(t, err)
 
 	// Use commit double
@@ -419,7 +419,7 @@ func TestNonExistingCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate jwt
-	jwtt, err := c.ValidatePin(ep, pin, "testid")
+	jwtt, err := c.ValidatePin(ep, pin)
 	require.NoError(t, err)
 
 	// test

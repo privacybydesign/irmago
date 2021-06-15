@@ -297,7 +297,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// and verify pin
-	result, err := s.verifyPin(user, msg.Username, msg.Pin)
+	result, err := s.verifyPin(user, msg.Pin)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -307,7 +307,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) verifyPin(user *User, username, pin string) (irma.KeysharePinStatus, error) {
+func (s *Server) verifyPin(user *User, pin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(user, pin)
 	if err != nil {
@@ -318,7 +318,7 @@ func (s *Server) verifyPin(user *User, username, pin string) (irma.KeysharePinSt
 	}
 
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
-	jwtt, err := s.core.ValidatePin(user.UserData, pin, username)
+	jwtt, err := s.core.ValidatePin(user.UserData, pin)
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors
 		s.conf.Logger.WithField("error", err).Error("Could not validate pin")

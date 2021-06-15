@@ -61,7 +61,7 @@ func (c *Core) newUserFromSecret(pinRaw string, secret *big.Int) (User, error) {
 }
 
 // ValidatePin checks pin for validity and generates JWT for future access.
-func (c *Core) ValidatePin(ep User, pin string, userID string) (string, error) {
+func (c *Core) ValidatePin(ep User, pin string) (string, error) {
 	p, err := c.decryptUserIfPinOK(ep, pin)
 	if err != nil {
 		return "", err
