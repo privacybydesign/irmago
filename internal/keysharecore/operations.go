@@ -65,11 +65,12 @@ func (c *Core) ValidatePin(secrets UserSecrets, pin string) (string, error) {
 
 	// Generate jwt token
 	id := s.id()
+	t := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":      c.jwtIssuer,
 		"sub":      "auth_tok",
-		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(time.Duration(c.jwtPinExpiry) * time.Second).Unix(),
+		"iat":      t.Unix(),
+		"exp":      t.Add(time.Duration(c.jwtPinExpiry) * time.Second).Unix(),
 		"token_id": base64.StdEncoding.EncodeToString(id[:]),
 	})
 	token.Header["kid"] = c.jwtPrivateKeyID
