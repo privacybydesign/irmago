@@ -13,7 +13,7 @@ var keyshareServerCmd = &cobra.Command{
 	Use:   "server",
 	Short: "IRMA keyshare server",
 	Run: func(command *cobra.Command, args []string) {
-		conf := configureKeyshared(command)
+		conf := configureKeyshareServer(command)
 
 		// Create main server
 		keyshareServer, err := keyshareserver.New(conf)
@@ -82,7 +82,7 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureKeyshared(cmd *cobra.Command) *keyshareserver.Configuration {
+func configureKeyshareServer(cmd *cobra.Command) *keyshareserver.Configuration {
 	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
 	// And build the configuration

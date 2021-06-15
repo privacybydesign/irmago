@@ -12,7 +12,7 @@ var myirmaServerCmd = &cobra.Command{
 	Use:   "myirmaserver",
 	Short: "IRMA keyshare MyIRMA server",
 	Run: func(command *cobra.Command, args []string) {
-		conf := configureMyirmad(command)
+		conf := configureMyirmaServer(command)
 
 		// Create main server
 		myirmaServer, err := myirmaserver.New(conf)
@@ -83,7 +83,7 @@ func init() {
 	flags.Lookup("verbose").Header = `Other options`
 }
 
-func configureMyirmad(cmd *cobra.Command) *myirmaserver.Configuration {
+func configureMyirmaServer(cmd *cobra.Command) *myirmaserver.Configuration {
 	readConfig(cmd, "myirmaserver", "myirmaserver", []string{".", "/etc/myirmaserver/"}, nil)
 
 	// And build the configuration
