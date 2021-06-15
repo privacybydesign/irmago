@@ -25,7 +25,7 @@ var (
 	ErrUnknownCommit    = errors.New("unknown commit id")
 )
 
-// Generate a new keyshare secret, secured with the given pin
+// NewUser generates a new keyshare secret, secured with the given pin.
 func (c *Core) NewUser(pinRaw string) (User, error) {
 	secret, err := gabi.NewKeyshareSecret()
 	if err != nil {
@@ -60,7 +60,7 @@ func (c *Core) newUserFromSecret(pinRaw string, secret *big.Int) (User, error) {
 	return c.encryptUser(p)
 }
 
-// Check pin for validity, and generate jwt for future access
+// ValidatePin checks pin for validity and generates JWT for future access.
 func (c *Core) ValidatePin(ep User, pin string, userID string) (string, error) {
 	p, err := c.decryptUserIfPinOK(ep, pin)
 	if err != nil {
@@ -80,13 +80,15 @@ func (c *Core) ValidatePin(ep User, pin string, userID string) (string, error) {
 	return token.SignedString(c.jwtPrivateKey)
 }
 
-// Check whether the given JWT is currently valid as an access token for operations on the provided encrypted keyshare packet
+// ValidateJWT checks whether the given JWT is currently valid as an access token for operations
+// on the provided encrypted keyshare packet.
 func (c *Core) ValidateJWT(ep User, jwt string) error {
 	_, err := c.verifyAccess(ep, jwt)
 	return err
 }
 
-// Change pin in an encrypted keyshare packet to a new value, after validating that the old value is known by caller.
+// ChangePin changes the pin in an encrypted keyshare packet to a new value, after validating that
+// the old value is known by the caller.
 func (c *Core) ChangePin(ep User, oldpinRaw, newpinRaw string) (User, error) {
 	p, err := c.decryptUserIfPinOK(ep, oldpinRaw)
 	if err != nil {
@@ -109,8 +111,8 @@ func (c *Core) ChangePin(ep User, oldpinRaw, newpinRaw string) (User, error) {
 	return c.encryptUser(p)
 }
 
-// Verify that a given access jwt is valid, and if so, return decrypted keyshare packet
-//  Note: Although this is an internal function, it is tested directly
+// verifyAccess checks that a given access jwt is valid, and if so, return decrypted keyshare packet.
+// Note: Although this is an internal function, it is tested directly
 func (c *Core) verifyAccess(ep User, jwtToken string) (unencryptedUser, error) {
 	// Verify token validity
 	token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (interface{}, error) {
@@ -156,7 +158,7 @@ func (c *Core) verifyAccess(ep User, jwtToken string) (unencryptedUser, error) {
 	return p, nil
 }
 
-// Get keyshare commitment usign given idemix public key(s)
+// GenerateCommitments generates keyshare commitments using the specified Idemix public key(s).
 func (c *Core) GenerateCommitments(ep User, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
 	var keyList []*gabikeys.PublicKey
@@ -195,7 +197,7 @@ func (c *Core) GenerateCommitments(ep User, accessToken string, keyIDs []irma.Pu
 	return commitments, commitID, nil
 }
 
-// Generate response for zero-knowledge proof of keyshare secret, for a given previous commit and challenge
+// GenerateResponse generates the response of a zero-knowledge proof of the keyshare secret, for a given previous commit and challenge.
 func (c *Core) GenerateResponse(ep User, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Validate request
 	if uint(challenge.BitLen()) > gabikeys.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {

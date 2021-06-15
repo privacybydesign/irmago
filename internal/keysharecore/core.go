@@ -82,8 +82,8 @@ func GenerateDecryptionKey() (AESKey, error) {
 	return res, err
 }
 
-// Add an aes key for decryption, with identifier keyid
-// Calling this will cause all keyshare packets generated with the key to be trusted
+// DangerousAddDecryptionKey adds an AES key for decryption, with identifier keyID.
+// Calling this will cause all keyshare packets generated with the key to be trusted.
 func (c *Core) DangerousAddDecryptionKey(keyID uint32, key AESKey) {
 	c.decryptionKeys[keyID] = key
 }
@@ -103,7 +103,8 @@ func (c *Core) setJWTPrivateKey(id uint32, key *rsa.PrivateKey) {
 	c.jwtPrivateKeyID = id
 }
 
-// Add public key as trusted by keyshareCore. Calling this on incorrectly generated key material WILL compromise keyshare secrets!
+// DangerousAddTrustedPublicKey adds a public key as trusted by keysharecore.
+// Calling this on incorrectly generated key material WILL compromise keyshare secrets!
 func (c *Core) DangerousAddTrustedPublicKey(keyID irma.PublicKeyIdentifier, key *gabikeys.PublicKey) {
 	c.trustedKeys[keyID] = key
 }

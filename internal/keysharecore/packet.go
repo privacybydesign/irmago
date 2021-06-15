@@ -20,7 +20,8 @@ type (
 	//  security impact through error side channels.
 	unencryptedUser [64 + 64 + 32]byte
 
-	// Size is that of unencrypted packet + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID
+	// User contains the encrypted data of a keyshare user.
+	// The size is that of unencryptedUser + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID.
 	User [64 + 64 + 32 + 12 + 16 + 4]byte
 )
 
