@@ -15,7 +15,7 @@ func TestPacketAccess(t *testing.T) {
 	_, err := rand.Read(testPassword[:])
 	require.NoError(t, err)
 
-	var p unencryptedUser
+	var p unencryptedUserSecrets
 	p.setPin(testPassword)
 	err = p.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
@@ -37,15 +37,15 @@ func TestPacketEncryptDecrypt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create and encrypt packet
-	var p_before unencryptedUser
+	var p_before unencryptedUserSecrets
 	p_before.setPin(testPassword)
 	err = p_before.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
-	p_encypted, err := c.encryptUser(p_before)
+	p_encypted, err := c.encryptUserSecrets(p_before)
 	require.NoError(t, err)
 
 	// Decrypt and test values
-	p_after, err := c.decryptUser(p_encypted)
+	p_after, err := c.decryptUserSecrets(p_encypted)
 	require.NoError(t, err)
 	assert.Equal(t, testPassword, p_after.pin(), "passwords don't match")
 	assert.Equal(t, 0, p_after.keyshareSecret().Cmp(testSecret), "keyshare secrets don't match")
@@ -65,17 +65,17 @@ func TestPacketAuthentication(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create and encrypt packet
-	var p_before unencryptedUser
+	var p_before unencryptedUserSecrets
 	p_before.setPin(testPassword)
 	err = p_before.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
-	p_encrypted, err := c.encryptUser(p_before)
+	p_encrypted, err := c.encryptUserSecrets(p_before)
 	require.NoError(t, err)
 
 	// Modify encrypted packet and check that it no longer decrypts
 	p_encrypted[33] = 0
 	p_encrypted[34] = 15
-	_, err = c.decryptUser(p_encrypted)
+	_, err = c.decryptUserSecrets(p_encrypted)
 	assert.Error(t, err, "Tampering not detected")
 }
 
@@ -96,7 +96,7 @@ func TestMultiKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create packet
-	var p_before unencryptedUser
+	var p_before unencryptedUserSecrets
 	p_before.setPin(testPassword)
 	err = p_before.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
@@ -104,27 +104,27 @@ func TestMultiKey(t *testing.T) {
 	// encrypt with key 1
 	c.decryptionKeyID = 1
 	c.decryptionKey = c.decryptionKeys[c.decryptionKeyID]
-	e1, err := c.encryptUser(p_before)
+	e1, err := c.encryptUserSecrets(p_before)
 	require.NoError(t, err)
 
 	// encrypt with key 2
 	c.decryptionKeyID = 2
 	c.decryptionKey = c.decryptionKeys[c.decryptionKeyID]
-	e2, err := c.encryptUser(p_before)
+	e2, err := c.encryptUserSecrets(p_before)
 	require.NoError(t, err)
 
 	// Check e1
-	p_after, err := c.decryptUser(e1)
+	p_after, err := c.decryptUserSecrets(e1)
 	assert.NoError(t, err)
 	assert.Equal(t, p_before, p_after, "packet mismatch on key 1")
 
 	// Check e2
-	p_after, err = c.decryptUser(e2)
+	p_after, err = c.decryptUserSecrets(e2)
 	assert.NoError(t, err)
 	assert.Equal(t, p_before, p_after, "packet mismatch on key 2")
 
 	// check that unknown key is detected correctly
 	delete(c.decryptionKeys, 1)
-	_, err = c.decryptUser(e1)
+	_, err = c.decryptUserSecrets(e1)
 	assert.Error(t, err, "Missing decryption key not detected.")
 }

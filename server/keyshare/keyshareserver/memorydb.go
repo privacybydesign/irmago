@@ -13,11 +13,11 @@ import (
 
 type memoryDB struct {
 	sync.Mutex
-	users map[string]keysharecore.User
+	users map[string]keysharecore.UserSecrets
 }
 
 func NewMemoryDB() DB {
-	return &memoryDB{users: map[string]keysharecore.User{}}
+	return &memoryDB{users: map[string]keysharecore.UserSecrets{}}
 }
 
 func (db *memoryDB) user(username string) (*User, error) {
@@ -26,11 +26,11 @@ func (db *memoryDB) user(username string) (*User, error) {
 	defer db.Unlock()
 
 	// Check and fetch user data
-	data, ok := db.users[username]
+	secrets, ok := db.users[username]
 	if !ok {
 		return nil, keyshare.ErrUserNotFound
 	}
-	return &User{Username: username, UserData: data}, nil
+	return &User{Username: username, Secrets: secrets}, nil
 }
 
 func (db *memoryDB) AddUser(user *User) error {
@@ -43,7 +43,7 @@ func (db *memoryDB) AddUser(user *User) error {
 	if exists {
 		return errUserAlreadyExists
 	}
-	db.users[user.Username] = user.UserData
+	db.users[user.Username] = user.Secrets
 	return nil
 }
 
@@ -57,7 +57,7 @@ func (db *memoryDB) updateUser(user *User) error {
 	if !exists {
 		return keyshare.ErrUserNotFound
 	}
-	db.users[user.Username] = user.UserData
+	db.users[user.Username] = user.Secrets
 	return nil
 }
 

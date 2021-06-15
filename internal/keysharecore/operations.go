@@ -25,44 +25,40 @@ var (
 	ErrUnknownCommit    = errors.New("unknown commit id")
 )
 
-// NewUser generates a new keyshare secret, secured with the given pin.
-func (c *Core) NewUser(pinRaw string) (User, error) {
+// NewUserSecrets generates a new keyshare secret, secured with the given pin.
+func (c *Core) NewUserSecrets(pinRaw string) (UserSecrets, error) {
 	secret, err := gabi.NewKeyshareSecret()
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 
-	return c.newUserFromSecret(pinRaw, secret)
-}
-
-func (c *Core) newUserFromSecret(pinRaw string, secret *big.Int) (User, error) {
 	pin, err := padPin(pinRaw)
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 
 	var id [32]byte
 	_, err = rand.Read(id[:])
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 
 	// Build unencrypted packet
-	var p unencryptedUser
+	var p unencryptedUserSecrets
 	p.setPin(pin)
 	err = p.setKeyshareSecret(secret)
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 	p.setID(id)
 
 	// And encrypt
-	return c.encryptUser(p)
+	return c.encryptUserSecrets(p)
 }
 
 // ValidatePin checks pin for validity and generates JWT for future access.
-func (c *Core) ValidatePin(ep User, pin string) (string, error) {
-	p, err := c.decryptUserIfPinOK(ep, pin)
+func (c *Core) ValidatePin(ep UserSecrets, pin string) (string, error) {
+	p, err := c.decryptUserSecretsIfPinOK(ep, pin)
 	if err != nil {
 		return "", err
 	}
@@ -82,38 +78,38 @@ func (c *Core) ValidatePin(ep User, pin string) (string, error) {
 
 // ValidateJWT checks whether the given JWT is currently valid as an access token for operations
 // on the provided encrypted keyshare packet.
-func (c *Core) ValidateJWT(ep User, jwt string) error {
+func (c *Core) ValidateJWT(ep UserSecrets, jwt string) error {
 	_, err := c.verifyAccess(ep, jwt)
 	return err
 }
 
 // ChangePin changes the pin in an encrypted keyshare packet to a new value, after validating that
 // the old value is known by the caller.
-func (c *Core) ChangePin(ep User, oldpinRaw, newpinRaw string) (User, error) {
-	p, err := c.decryptUserIfPinOK(ep, oldpinRaw)
+func (c *Core) ChangePin(ep UserSecrets, oldpinRaw, newpinRaw string) (UserSecrets, error) {
+	p, err := c.decryptUserSecretsIfPinOK(ep, oldpinRaw)
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 
 	newpin, err := padPin(newpinRaw)
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 
 	// change and reencrypt
 	var id [32]byte
 	_, err = rand.Read(id[:])
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 	p.setPin(newpin)
 	p.setID(id)
-	return c.encryptUser(p)
+	return c.encryptUserSecrets(p)
 }
 
 // verifyAccess checks that a given access jwt is valid, and if so, return decrypted keyshare packet.
 // Note: Although this is an internal function, it is tested directly
-func (c *Core) verifyAccess(ep User, jwtToken string) (unencryptedUser, error) {
+func (c *Core) verifyAccess(ep UserSecrets, jwtToken string) (unencryptedUserSecrets, error) {
 	// Verify token validity
 	token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != jwt.SigningMethodRS256 {
@@ -123,43 +119,43 @@ func (c *Core) verifyAccess(ep User, jwtToken string) (unencryptedUser, error) {
 		return &c.jwtPrivateKey.PublicKey, nil
 	})
 	if err != nil {
-		return unencryptedUser{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || claims.Valid() != nil {
-		return unencryptedUser{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 	if !claims.VerifyExpiresAt(time.Now().Unix(), true) {
-		return unencryptedUser{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 	if _, present := claims["token_id"]; !present {
-		return unencryptedUser{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 	tokenIDB64, ok := claims["token_id"].(string)
 	if !ok {
-		return unencryptedUser{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 	tokenID, err := base64.StdEncoding.DecodeString(tokenIDB64)
 	if err != nil {
-		return unencryptedUser{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 
-	p, err := c.decryptUser(ep)
+	p, err := c.decryptUserSecrets(ep)
 	if err != nil {
-		return unencryptedUser{}, err
+		return unencryptedUserSecrets{}, err
 	}
 	refId := p.id()
 
 	if subtle.ConstantTimeCompare(refId[:], tokenID) != 1 {
-		return unencryptedUser{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 
 	return p, nil
 }
 
 // GenerateCommitments generates keyshare commitments using the specified Idemix public key(s).
-func (c *Core) GenerateCommitments(ep User, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
+func (c *Core) GenerateCommitments(ep UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
 	var keyList []*gabikeys.PublicKey
 	for _, keyID := range keyIDs {
@@ -198,7 +194,7 @@ func (c *Core) GenerateCommitments(ep User, accessToken string, keyIDs []irma.Pu
 }
 
 // GenerateResponse generates the response of a zero-knowledge proof of the keyshare secret, for a given previous commit and challenge.
-func (c *Core) GenerateResponse(ep User, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
+func (c *Core) GenerateResponse(ep UserSecrets, accessToken string, commitID uint64, challenge *big.Int, keyID irma.PublicKeyIdentifier) (string, error) {
 	// Validate request
 	if uint(challenge.BitLen()) > gabikeys.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
 		return "", ErrInvalidChallenge

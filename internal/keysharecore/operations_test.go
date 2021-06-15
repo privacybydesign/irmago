@@ -33,7 +33,7 @@ func TestPinFunctionality(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate package
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	// Test with correct pin
@@ -82,9 +82,9 @@ func TestVerifyAccess(t *testing.T) {
 	pin2 := string(bpin[:])
 
 	// and test keyshare secrets
-	ep1, err := c.NewUser(pin1)
+	ep1, err := c.NewUserSecrets(pin1)
 	require.NoError(t, err)
-	ep2, err := c.NewUser(pin2)
+	ep2, err := c.NewUserSecrets(pin2)
 	require.NoError(t, err)
 
 	// Test use jwt on wrong packet
@@ -179,7 +179,7 @@ func TestProofFunctionality(t *testing.T) {
 	pin := string(bpin[:])
 
 	// generate keyshare secret
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	// Validate pin
@@ -229,7 +229,7 @@ func TestCorruptedPacket(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	jwtt, err := c.ValidatePin(ep, pin)
@@ -273,7 +273,7 @@ func TestIncorrectPin(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	// validate pin
@@ -310,7 +310,7 @@ func TestMissingKey(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	// Generate jwt
@@ -343,7 +343,7 @@ func TestInvalidChallenge(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	// Validate pin
@@ -384,7 +384,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	// validate pin
@@ -415,7 +415,7 @@ func TestNonExistingCommit(t *testing.T) {
 	pin := string(bpin[:])
 
 	// Generate packet
-	ep, err := c.NewUser(pin)
+	ep, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
 	// Generate jwt

@@ -43,7 +43,7 @@ func (db *postgresDB) AddUser(user *User) error {
 	res, err := db.db.Query("INSERT INTO irma.users (username, language, coredata, last_seen, pin_counter, pin_block_date) VALUES ($1, $2, $3, $4, 0, 0) RETURNING id",
 		user.Username,
 		user.Language,
-		user.UserData[:],
+		user.Secrets[:],
 		time.Now().Unix())
 	if err != nil {
 		return err
@@ -75,10 +75,10 @@ func (db *postgresDB) user(username string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(ep) != len(result.UserData[:]) {
+	if len(ep) != len(result.Secrets[:]) {
 		return nil, errInvalidRecord
 	}
-	copy(result.UserData[:], ep)
+	copy(result.Secrets[:], ep)
 	return &result, nil
 }
 
@@ -87,7 +87,7 @@ func (db *postgresDB) updateUser(user *User) error {
 		"UPDATE irma.users SET username = $1, language = $2, coredata = $3 WHERE id=$4",
 		user.Username,
 		user.Language,
-		user.UserData[:],
+		user.Secrets[:],
 		user.id,
 	)
 }

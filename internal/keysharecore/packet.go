@@ -18,11 +18,11 @@ type (
 	//  encryption layer applied before storing it. As such, we keep it here more explicit than
 	//  is standard in go. When modifying this structure, analyse whether such changes can have a
 	//  security impact through error side channels.
-	unencryptedUser [64 + 64 + 32]byte
+	unencryptedUserSecrets [64 + 64 + 32]byte
 
-	// User contains the encrypted data of a keyshare user.
-	// The size is that of unencryptedUser + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID.
-	User [64 + 64 + 32 + 12 + 16 + 4]byte
+	// UserSecrets contains the encrypted data of a keyshare user.
+	// The size is that of unencryptedUserSecrets + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID.
+	UserSecrets [64 + 64 + 32 + 12 + 16 + 4]byte
 )
 
 var (
@@ -31,22 +31,22 @@ var (
 	ErrNoSuchKey              = errors.New("Key identifier unknown")
 )
 
-func (p *unencryptedUser) pin() [64]byte {
+func (p *unencryptedUserSecrets) pin() [64]byte {
 	var result [64]byte
 	copy(result[:], p[0:64])
 	return result
 }
 
-func (p *unencryptedUser) setPin(pw [64]byte) {
+func (p *unencryptedUserSecrets) setPin(pw [64]byte) {
 	copy(p[0:64], pw[:])
 }
 
-func (p *unencryptedUser) keyshareSecret() *big.Int {
+func (p *unencryptedUserSecrets) keyshareSecret() *big.Int {
 	result := new(big.Int)
 	return result.SetBytes(p[64:128])
 }
 
-func (p *unencryptedUser) setKeyshareSecret(val *big.Int) error {
+func (p *unencryptedUserSecrets) setKeyshareSecret(val *big.Int) error {
 	if val.Sign() == -1 {
 		return ErrKeyshareSecretNegative
 	}
@@ -64,18 +64,18 @@ func (p *unencryptedUser) setKeyshareSecret(val *big.Int) error {
 	return nil
 }
 
-func (p *unencryptedUser) id() [32]byte {
+func (p *unencryptedUserSecrets) id() [32]byte {
 	var result [32]byte
 	copy(result[:], p[128:160])
 	return result
 }
 
-func (p *unencryptedUser) setID(id [32]byte) {
+func (p *unencryptedUserSecrets) setID(id [32]byte) {
 	copy(p[128:160], id[:])
 }
 
-func (c *Core) encryptUser(p unencryptedUser) (User, error) {
-	var result User
+func (c *Core) encryptUserSecrets(p unencryptedUserSecrets) (UserSecrets, error) {
+	var result UserSecrets
 
 	// Store key id
 	binary.LittleEndian.PutUint32(result[0:], c.decryptionKeyID)
@@ -83,56 +83,56 @@ func (c *Core) encryptUser(p unencryptedUser) (User, error) {
 	// Generate and store nonce
 	_, err := rand.Read(result[4:16])
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 
 	// Encrypt packet
 	gcm, err := newGCM(c.decryptionKey)
 	if err != nil {
-		return User{}, err
+		return UserSecrets{}, err
 	}
 	gcm.Seal(result[:16], result[4:16], p[:], nil)
 
 	return result, nil
 }
 
-func (c *Core) decryptUser(p User) (unencryptedUser, error) {
+func (c *Core) decryptUserSecrets(p UserSecrets) (unencryptedUserSecrets, error) {
 	// determine key id
 	id := binary.LittleEndian.Uint32(p[0:])
 
 	// Fetch key
 	key, ok := c.decryptionKeys[id]
 	if !ok {
-		return unencryptedUser{}, ErrNoSuchKey
+		return unencryptedUserSecrets{}, ErrNoSuchKey
 	}
 
 	// try and decrypt packet
 	gcm, err := newGCM(key)
 	if err != nil {
-		return unencryptedUser{}, err
+		return unencryptedUserSecrets{}, err
 	}
-	var result unencryptedUser
+	var result unencryptedUserSecrets
 	_, err = gcm.Open(result[:0], p[4:16], p[16:], nil)
 	if err != nil {
-		return unencryptedUser{}, err
+		return unencryptedUserSecrets{}, err
 	}
 	return result, nil
 }
 
-func (c *Core) decryptUserIfPinOK(ep User, pin string) (unencryptedUser, error) {
+func (c *Core) decryptUserSecretsIfPinOK(ep UserSecrets, pin string) (unencryptedUserSecrets, error) {
 	paddedPin, err := padPin(pin)
 	if err != nil {
-		return unencryptedUser{}, err
+		return unencryptedUserSecrets{}, err
 	}
 
-	p, err := c.decryptUser(ep)
+	p, err := c.decryptUserSecrets(ep)
 	if err != nil {
-		return unencryptedUser{}, err
+		return unencryptedUserSecrets{}, err
 	}
 
 	refPin := p.pin()
 	if subtle.ConstantTimeCompare(refPin[:], paddedPin[:]) != 1 {
-		return unencryptedUser{}, ErrInvalidPin
+		return unencryptedUserSecrets{}, ErrInvalidPin
 	}
 	return p, nil
 }

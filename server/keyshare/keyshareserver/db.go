@@ -56,6 +56,6 @@ type DB interface {
 type User struct {
 	Username string
 	Language string
-	UserData keysharecore.User
+	Secrets  keysharecore.UserSecrets
 	id       int64
 }

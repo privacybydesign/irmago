@@ -177,7 +177,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) generateCommitments(user *User, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
 	// Generate commitments
-	commitments, commitID, err := s.core.GenerateCommitments(user.UserData, authorization, keys)
+	commitments, commitID, err := s.core.GenerateCommitments(user.Secrets, authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
 		return nil, err
@@ -261,7 +261,7 @@ func (s *Server) generateResponses(user *User, authorization string, challenge *
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.UserData, authorization, commitID, challenge, keyID)
+	proofResponse, err := s.core.GenerateResponse(user.Secrets, authorization, commitID, challenge, keyID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err
@@ -318,7 +318,7 @@ func (s *Server) verifyPin(user *User, pin string) (irma.KeysharePinStatus, erro
 	}
 
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
-	jwtt, err := s.core.ValidatePin(user.UserData, pin)
+	jwtt, err := s.core.ValidatePin(user.Secrets, pin)
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors
 		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
@@ -401,7 +401,7 @@ func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinS
 	}
 
 	// Try to do the update
-	user.UserData, err = s.core.ChangePin(user.UserData, oldPin, newPin)
+	user.Secrets, err = s.core.ChangePin(user.Secrets, oldPin, newPin)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -458,12 +458,12 @@ func (s *Server) register(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	username := common.NewSessionToken() // TODO use newRandomString() for this when shoulder-surf is merged
 	username = username[:12]
 
-	userdata, err := s.core.NewUser(msg.Pin)
+	secrets, err := s.core.NewUserSecrets(msg.Pin)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not register user")
 		return nil, err
 	}
-	user := &User{Username: username, Language: msg.Language, UserData: userdata}
+	user := &User{Username: username, Language: msg.Language, Secrets: secrets}
 	err = s.db.AddUser(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
@@ -543,7 +543,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 
 		// verify access
 		ctx := r.Context()
-		err := s.core.ValidateJWT(ctx.Value("user").(*User).UserData, authorization)
+		err := s.core.ValidateJWT(ctx.Value("user").(*User).Secrets, authorization)
 		hasValidAuthorization := err == nil
 
 		// Construct new context with both authorization and its validity
