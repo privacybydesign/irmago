@@ -40,6 +40,8 @@ type Server struct {
 	store sessionStore
 }
 
+var errMissingCommitment = errors.New("missing previous call to getCommitments")
+
 func New(conf *Configuration) (*Server, error) {
 	var err error
 	s := &Server{
@@ -230,17 +232,12 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get data from session
-	sessionData := s.store.get(user.Username)
-	if sessionData == nil {
-		s.conf.Logger.Warn("Request for response without previous call to get commitments")
-		server.WriteError(w, server.ErrorInvalidRequest, "Missing previous call to getCommitments")
-		return
-	}
-
 	// And do the actual responding
-	proofResponse, err := s.generateResponses(user, authorization, challenge, sessionData.CommitID, sessionData.KeyID)
-	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
+	proofResponse, err := s.generateResponse(user, authorization, challenge)
+	if err != nil &&
+		(err == keysharecore.ErrInvalidChallenge ||
+			err == keysharecore.ErrInvalidJWT ||
+			err == errMissingCommitment) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
@@ -253,7 +250,14 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 	server.WriteString(w, proofResponse)
 }
 
-func (s *Server) generateResponses(user *User, authorization string, challenge *big.Int, commitID uint64, keyID irma.PublicKeyIdentifier) (string, error) {
+func (s *Server) generateResponse(user *User, authorization string, challenge *big.Int) (string, error) {
+	// Get data from session
+	sessionData := s.store.get(user.Username)
+	if sessionData == nil {
+		s.conf.Logger.Warn("Request for response without previous call to get commitments")
+		return "", errMissingCommitment
+	}
+
 	// Indicate activity on user account
 	err := s.db.setSeen(user)
 	if err != nil {
@@ -268,7 +272,7 @@ func (s *Server) generateResponses(user *User, authorization string, challenge *
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.Secrets, authorization, commitID, challenge, keyID)
+	proofResponse, err := s.core.GenerateResponse(user.Secrets, authorization, sessionData.CommitID, challenge, sessionData.KeyID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err
