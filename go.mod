@@ -1,6 +1,6 @@
 module github.com/privacybydesign/irmago
 
-go 1.13
+go 1.15
 
 require (
 	github.com/alexandrevicenzi/go-sse v1.3.1-0.20200117161408-7b23d5ff7420
