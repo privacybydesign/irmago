@@ -27,6 +27,9 @@ type Configuration struct {
 	ListenAddress string `json:"listen_addr" mapstructure:"listen_addr"`
 	// Port to listen at
 	Port int `json:"port" mapstructure:"port"`
+	// Route requests via this path, so instead of POST /session, it will
+	// be POST {ApiPrefix}/session.  Should start with a "/".
+	ApiPrefix string `json:"api_prefix" mapstructure:"api_prefix"`
 	// TLS configuration
 	TlsCertificate     string `json:"tls_cert" mapstructure:"tls_cert"`
 	TlsCertificateFile string `json:"tls_cert_file" mapstructure:"tls_cert_file"`
@@ -253,6 +256,18 @@ func (conf *Configuration) initialize() error {
 		}
 	}
 
+	if !strings.HasSuffix(conf.ApiPrefix, "/") {
+		conf.ApiPrefix += "/"
+	}
+
+	if !strings.HasPrefix(conf.ApiPrefix, "/") {
+		return errors.Errorf("api_prefix must start with a slash, but doesn't: %s", conf.ApiPrefix)
+	}
+
+	if conf.URL != "" && !strings.HasSuffix(conf.URL, conf.ApiPrefix+"irma/") {
+		conf.Logger.Warnf("Are the URL and API-prefix set correctly?: %s does not end with %s.", conf.URL, conf.ApiPrefix+"irma/")
+	}
+
 	if len(conf.StaticSessions) != 0 && conf.JwtRSAPrivateKey == nil {
 		conf.Logger.Warn("Static sessions enabled and no JWT private key installed. Ensure that POSTs to the callback URLs of static sessions are trustworthy by keeping the callback URLs secret and by using HTTPS.")
 	}
@@ -337,7 +352,7 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 						continue
 					}
 					if typ == "revoking" {
-						if ok := sk.RevocationSupported(); ok {
+						if ok := sk.RevocationSupported(); !ok {
 							errs = append(errs, fmt.Sprintf("%s %s permission '%s': private key does not support revocation (add revocation key material to it using \"irma issuer revocation keypair\")", requestor, typ, permission))
 							continue
 						}

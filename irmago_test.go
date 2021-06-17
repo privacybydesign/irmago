@@ -1043,6 +1043,49 @@ func TestWizardValidation(t *testing.T) {
 	}
 
 	require.NoError(t, wizard.Validate(conf))
+
+	wizard.SuccessText = (*TranslatedString)(&map[string]string{"en": "foo"})
+	wizard.SuccessHeader = nil
+	require.EqualError(t, wizard.Validate(conf), "wizard contents must have success header and text either both specified, or both empty")
+
+	wizard.SuccessText = nil
+	wizard.SuccessHeader = (*TranslatedString)(&map[string]string{"en": "foo"})
+	require.EqualError(t, wizard.Validate(conf), "wizard contents must have success header and text either both specified, or both empty")
+
+	wizard.SuccessText = nil
+	wizard.SuccessHeader = nil
+	require.NoError(t, wizard.Validate(conf))
+
+	wizard.SuccessText = (*TranslatedString)(&map[string]string{"en": "foo"})
+	wizard.SuccessHeader = (*TranslatedString)(&map[string]string{"en": "foo"})
+	require.NoError(t, wizard.Validate(conf))
+
+	invalidColor1 := "123"
+	wizard.Color = &invalidColor1
+	require.EqualError(t, wizard.Validate(conf), "invalid wizard color: must be of the form #RRGGBB")
+
+	invalidColor2 := "123ABC"
+	wizard.Color = &invalidColor2
+	require.EqualError(t, wizard.Validate(conf), "invalid wizard color: must be of the form #RRGGBB")
+
+	wizard.Color = nil
+	require.NoError(t, wizard.Validate(conf))
+
+	validColor := "#123ABC"
+	wizard.Color = &validColor
+	require.NoError(t, wizard.Validate(conf))
+
+	wizard.TextColor = &invalidColor1
+	require.EqualError(t, wizard.Validate(conf), "invalid wizard text color: must be of the form #RRGGBB")
+
+	wizard.TextColor = &invalidColor2
+	require.EqualError(t, wizard.Validate(conf), "invalid wizard text color: must be of the form #RRGGBB")
+
+	wizard.TextColor = nil
+	require.NoError(t, wizard.Validate(conf))
+
+	wizard.TextColor = &validColor
+	require.NoError(t, wizard.Validate(conf))
 }
 
 func TestWizardIncorrectContentsOrder(t *testing.T) {

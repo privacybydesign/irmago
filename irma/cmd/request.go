@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
@@ -16,7 +15,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sietseringers/cobra"
-	sseclient "github.com/sietseringers/go-sse"
 	"github.com/sietseringers/pflag"
 )
 
@@ -111,52 +109,6 @@ func configureRequest(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configur
 }
 
 // Helper functions
-
-func wait(initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
-	events := make(chan *sseclient.Event)
-
-	go func() {
-		for {
-			if e := <-events; e != nil && e.Type != "open" {
-				status := server.Status(strings.Trim(string(e.Data), `"`))
-				statuschan <- status
-				if status.Finished() {
-					return
-				}
-			}
-		}
-	}()
-
-	if err := sseclient.Notify(nil, transport.Server+"statusevents", true, events); err != nil {
-		fmt.Println("SSE failed, fallback to polling", err)
-		close(events)
-		poll(initialStatus, transport, statuschan)
-		return
-	}
-}
-
-// poll recursively polls the session status until a final status is received.
-func poll(initialStatus server.Status, transport *irma.HTTPTransport, statuschan chan server.Status) {
-	// First we wait
-	<-time.NewTimer(pollInterval).C
-
-	// Get session status
-	var s string
-	if err := transport.Get("status", &s); err != nil {
-		_ = server.LogFatal(err)
-	}
-	status := server.Status(strings.Trim(s, `"`))
-
-	// report if status changed
-	if status != initialStatus {
-		statuschan <- status
-	}
-
-	if status.Finished() {
-		return
-	}
-	go poll(status, transport, statuschan)
-}
 
 func constructSessionRequest(cmd *cobra.Command, conf *irma.Configuration) (irma.RequestorRequest, error) {
 	disclose, _ := cmd.Flags().GetStringArray("disclose")

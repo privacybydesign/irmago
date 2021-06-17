@@ -488,7 +488,7 @@ func (s *Server) register(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 				s.conf.KeyshareAttribute.Name(): username,
 			},
 		}})
-	sessionptr, _, err := s.irmaserv.StartSession(request, nil)
+	sessionptr, _, _, err := s.irmaserv.StartSession(request, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not start keyshare credential issuance sessions")
 		return nil, err

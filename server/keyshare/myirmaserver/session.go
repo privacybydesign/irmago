@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -13,8 +14,8 @@ type session struct {
 	token  string
 	userID *int64
 
-	loginSessionToken string
-	emailSessionToken string
+	loginSessionToken irma.RequestorToken
+	emailSessionToken irma.RequestorToken
 
 	expiry time.Time
 }

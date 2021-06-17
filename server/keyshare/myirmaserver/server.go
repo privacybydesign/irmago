@@ -337,7 +337,7 @@ func (s *Server) processLoginIrmaSessionResult(session *session) (server.Error, 
 		return server.ErrorInternal, "unknown login session"
 	}
 
-	if result.Status != server.StatusDone {
+	if result.Status != irma.ServerStatusDone {
 		// Ignore incomplete attempts, frontend handles these.
 		return server.Error{}, ""
 	}
@@ -372,7 +372,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	session := s.store.create()
 	sessiontoken := session.token
 
-	qr, loginToken, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...), nil)
+	qr, loginToken, _, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...), nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for login")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -554,7 +554,7 @@ func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Erro
 		return server.ErrorInternal, "unknown login session"
 	}
 
-	if result.Status != server.StatusDone {
+	if result.Status != irma.ServerStatusDone {
 		// Ignore incomplete attempts, frontend does that
 		return server.Error{}, ""
 	}
@@ -579,7 +579,7 @@ func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Erro
 func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
 
-	qr, emailToken, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...), nil)
+	qr, emailToken, _, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...), nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for adding email address")
 		server.WriteError(w, server.ErrorInternal, err.Error())

@@ -31,11 +31,11 @@ import (
 
 func (session *session) markAlive() {
 	session.lastActive = time.Now()
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token}).Debugf("Session marked active, expiry delayed")
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Debugf("Session marked active, expiry delayed")
 }
 
-func (session *session) setStatus(status server.Status) {
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.token, "prevStatus": session.prevStatus, "status": status}).
+func (session *session) setStatus(status irma.ServerStatus) {
+	session.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken, "prevStatus": session.prevStatus, "status": status}).
 		Info("Session status updated")
 	session.status = status
 	session.result.Status = status
@@ -43,21 +43,61 @@ func (session *session) setStatus(status server.Status) {
 }
 
 func (session *session) onUpdate() {
+	// Send status update to all listener channels
+	for _, statusChan := range session.statusChannels {
+		statusChan <- session.status
+		if session.status.Finished() {
+			close(statusChan)
+		}
+	}
+
+	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.status, NextSession: session.next})
+
 	if session.sse == nil {
 		return
 	}
-	session.sse.SendMessage("session/"+session.clientToken,
+	session.sse.SendMessage("session/"+string(session.clientToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
-	session.sse.SendMessage("session/"+session.token,
+	session.sse.SendMessage("session/"+string(session.requestorToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.status)),
 	)
+	session.sse.SendMessage("frontendsession/"+string(session.clientToken),
+		sse.SimpleMessage(string(frontendstatus)),
+	)
+}
+
+// Checks whether requested options are valid in the current session context.
+func (session *session) updateFrontendOptions(request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
+	if session.status != irma.ServerStatusInitialized {
+		return nil, errors.New("Frontend options can only be updated when session is in initialized state")
+	}
+	if request.PairingMethod == "" {
+		return &session.options, nil
+	} else if request.PairingMethod == irma.PairingMethodNone {
+		session.options.PairingCode = ""
+	} else if request.PairingMethod == irma.PairingMethodPin {
+		session.options.PairingCode = common.NewPairingCode()
+	} else {
+		return nil, errors.New("Pairing method unknown")
+	}
+	session.options.PairingMethod = request.PairingMethod
+	return &session.options, nil
+}
+
+// Complete the pairing process of frontend and irma client
+func (session *session) pairingCompleted() error {
+	if session.status == irma.ServerStatusPairing {
+		session.setStatus(irma.ServerStatusConnected)
+		return nil
+	}
+	return errors.New("Pairing was not enabled")
 }
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
-	session.setStatus(server.StatusCancelled)
-	session.result = &server.SessionResult{Err: rerr, Token: session.token, Status: server.StatusCancelled, Type: session.action}
+	session.setStatus(irma.ServerStatusCancelled)
+	session.result = &server.SessionResult{Err: rerr, Token: session.requestorToken, Status: irma.ServerStatusCancelled, Type: session.action}
 	return rerr
 }
 
@@ -92,11 +132,13 @@ const retryTimeLimit = 10 * time.Second
 
 // checkCache returns a previously cached response, for replaying against multiple requests from
 // irmago's retryablehttp client, if:
-// - the same was POSTed as last time
+// - the same body was POSTed to the same endpoint as last time
+// - the body is not empty
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
-func (session *session) checkCache(message []byte) (int, []byte) {
-	if len(session.responseCache.response) == 0 ||
+func (session *session) checkCache(endpoint string, message []byte) (int, []byte) {
+	if session.responseCache.endpoint != endpoint ||
+		len(session.responseCache.response) == 0 ||
 		session.responseCache.sessionStatus != session.status ||
 		session.lastActive.Before(time.Now().Add(-retryTimeLimit)) ||
 		sha256.Sum256(session.responseCache.message) != sha256.Sum256(message) {
@@ -169,15 +211,15 @@ func (session *session) computeAttributes(
 		return nil, nil, err
 	}
 
-	issrecord := &irma.IssuanceRecord{
-		CredType:   id,
-		PKCounter:  &sk.Counter,
-		Key:        cred.RevocationKey,
-		Attr:       (*irma.RevocationAttribute)(nonrevAttr),
-		Issued:     attributes.SigningDate().UnixNano(),
-		ValidUntil: attributes.Expiry().UnixNano(),
-	}
 	if witness != nil {
+		issrecord := &irma.IssuanceRecord{
+			CredType:   id,
+			PKCounter:  &sk.Counter,
+			Key:        cred.RevocationKey,
+			Attr:       (*irma.RevocationAttribute)(nonrevAttr),
+			Issued:     issuedAt.UnixNano(),
+			ValidUntil: attributes.Expiry().UnixNano(),
+		}
 		err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 		if err != nil {
 			return nil, nil, err
@@ -267,6 +309,40 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	return session.kssProofs[scheme], nil
 }
 
+func (session *session) getClientRequest() (*irma.ClientSessionRequest, error) {
+	info := irma.ClientSessionRequest{
+		LDContext:       irma.LDContextClientSessionRequest,
+		ProtocolVersion: session.version,
+		Options:         &session.options,
+	}
+
+	if session.options.PairingMethod == irma.PairingMethodNone {
+		request, err := session.getRequest()
+		if err != nil {
+			return nil, err
+		}
+		info.Request = request
+	}
+	return &info, nil
+}
+
+func (session *session) getRequest() (irma.SessionRequest, error) {
+	// In case of issuance requests, strip revocation keys from []CredentialRequest
+	isreq, issuing := session.request.(*irma.IssuanceRequest)
+	if !issuing {
+		return session.request, nil
+	}
+	cpy, err := copyObject(isreq)
+	if err != nil {
+		return nil, err
+	}
+	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
+		cred.RevocationSupported = cred.RevocationKey != ""
+		cred.RevocationKey = ""
+	}
+	return cpy.(*irma.IssuanceRequest), nil
+}
+
 // Other
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
@@ -354,6 +430,8 @@ func eventServer(conf *server.Configuration) *sse.Server {
 			switch ssectx.(common.SSECtx).Component {
 			case server.ComponentSession:
 				return "session/" + ssectx.(common.SSECtx).Arg
+			case server.ComponentFrontendSession:
+				return "frontendsession/" + ssectx.(common.SSECtx).Arg
 			case server.ComponentRevocation:
 				return "revocation/" + ssectx.(common.SSECtx).Arg
 			default:
@@ -375,6 +453,19 @@ func errorWriter(err *irma.RemoteError, writer func(w http.ResponseWriter, objec
 	}
 }
 
+func (s *Server) frontendMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+		frontendAuth := irma.FrontendAuthorization(r.Header.Get(irma.AuthorizationHeader))
+
+		if frontendAuth != session.frontendAuth {
+			server.WriteError(w, server.ErrorIrmaUnauthorized, "")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*session)
@@ -389,7 +480,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 		r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
 
 		// if a cache is set and applicable, return it
-		status, output := session.checkCache(message)
+		status, output := session.checkCache(r.URL.Path, message)
 		if status > 0 && len(output) > 0 {
 			w.WriteHeader(status)
 			_, _ = w.Write(output)
@@ -403,6 +494,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(ww, r)
 
 		session.responseCache = responseCache{
+			endpoint:      r.URL.Path,
 			message:       message,
 			response:      buf.Bytes(),
 			status:        ww.Status(),
@@ -413,7 +505,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := chi.URLParam(r, "token")
+		token := irma.ClientToken(chi.URLParam(r, "clientToken"))
 		session := s.sessions.clientGet(token)
 		if session == nil {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -434,7 +526,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				if session.status.Finished() {
 					if handler := s.handlers[result.Token]; handler != nil {
 						go handler(result)
-						delete(s.handlers, token)
+						delete(s.handlers, result.Token)
 					}
 				}
 			}
@@ -445,5 +537,30 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		}()
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
+	})
+}
+
+func (s *Server) pairingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+
+		if session.status == irma.ServerStatusPairing {
+			server.WriteError(w, server.ErrorPairingRequired, "")
+			return
+		}
+
+		// Endpoints behind the pairingMiddleware can only be accessed when the client is already connected
+		// and the request includes the right authorization header to prove we still talk to the same client as before.
+		if session.status != irma.ServerStatusConnected {
+			server.WriteError(w, server.ErrorUnexpectedRequest, "Session not yet started or already finished")
+			return
+		}
+		clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
+		if session.clientAuth != clientAuth {
+			server.WriteError(w, server.ErrorIrmaUnauthorized, "")
+			return
+		}
+
+		next.ServeHTTP(w, r)
 	})
 }

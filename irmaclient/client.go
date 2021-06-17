@@ -56,6 +56,10 @@ type Client struct {
 	// Legacy storage needed when client has not updated to the new storage yet
 	fileStorage fileStorage
 
+	// Versions the client supports
+	minVersion *irma.ProtocolVersion
+	maxVersion *irma.ProtocolVersion
+
 	// Other state
 	Preferences           Preferences
 	Configuration         *irma.Configuration
@@ -158,6 +162,8 @@ func New(
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		handler:               handler,
+		minVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
+		maxVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
 
 	client.Configuration, err = irma.NewConfiguration(

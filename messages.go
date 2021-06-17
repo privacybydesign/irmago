@@ -15,12 +15,16 @@ import (
 	"github.com/privacybydesign/gabi"
 )
 
-// Status encodes the status of an IRMA session (e.g., connected).
-type Status string
+// ClientStatus encodes the client status of an IRMA session (e.g., connected).
+type ClientStatus string
+
+// ServerStatus encodes the server status of an IRMA session (e.g., CONNECTED).
+type ServerStatus string
 
 const (
-	MinVersionHeader = "X-IRMA-MinProtocolVersion"
-	MaxVersionHeader = "X-IRMA-MaxProtocolVersion"
+	MinVersionHeader    = "X-IRMA-MinProtocolVersion"
+	MaxVersionHeader    = "X-IRMA-MaxProtocolVersion"
+	AuthorizationHeader = "Authorization"
 )
 
 // ProtocolVersion encodes the IRMA protocol version of an IRMA session.
@@ -164,11 +168,29 @@ type Qr struct {
 	Type Action `json:"irmaqr"`
 }
 
-// Statuses
+// Tokens to identify a session from the perspective of the different agents
+type RequestorToken string
+type ClientToken string
+
+// Authorization headers
+type ClientAuthorization string
+type FrontendAuthorization string
+
+// Client statuses
 const (
-	StatusConnected     = Status("connected")
-	StatusCommunicating = Status("communicating")
-	StatusManualStarted = Status("manualStarted")
+	ClientStatusConnected     = ClientStatus("connected")
+	ClientStatusCommunicating = ClientStatus("communicating")
+	ClientStatusManualStarted = ClientStatus("manualStarted")
+)
+
+// Server statuses
+const (
+	ServerStatusInitialized ServerStatus = "INITIALIZED" // The session has been started and is waiting for the client
+	ServerStatusPairing     ServerStatus = "PAIRING"     // The client is waiting for the frontend to give permission to connect
+	ServerStatusConnected   ServerStatus = "CONNECTED"   // The client has retrieved the session request, we wait for its response
+	ServerStatusCancelled   ServerStatus = "CANCELLED"   // The session is cancelled, possibly due to an error
+	ServerStatusDone        ServerStatus = "DONE"        // The session has completed successfully
+	ServerStatusTimeout     ServerStatus = "TIMEOUT"     // Session timed out
 )
 
 // Actions
@@ -197,6 +219,8 @@ const (
 	ErrorCrypto = ErrorType("crypto")
 	// Error involving revocation or nonrevocation proofs
 	ErrorRevocation = ErrorType("revocation")
+	// Our pairing attempt was rejected by the server
+	ErrorPairingRejected = ErrorType("pairingRejected")
 	// Server rejected our response (second IRMA message)
 	ErrorRejected = ErrorType("rejected")
 	// (De)serializing of a message failed
@@ -405,6 +429,10 @@ func (qr *Qr) Validate() (err error) {
 	return nil
 }
 
+func (status ServerStatus) Finished() bool {
+	return status == ServerStatusDone || status == ServerStatusCancelled || status == ServerStatusTimeout
+}
+
 type ServerSessionResponse struct {
 	ProofStatus     ProofStatus                   `json:"proofStatus"`
 	IssueSignatures []*gabi.IssueSignatureMessage `json:"sigs,omitempty"`
@@ -413,4 +441,9 @@ type ServerSessionResponse struct {
 	// needed for legacy (un)marshaling
 	ProtocolVersion *ProtocolVersion `json:"-"`
 	SessionType     Action           `json:"-"`
+}
+
+type FrontendSessionStatus struct {
+	Status      ServerStatus `json:"status"`
+	NextSession *Qr          `json:"nextSession,omitempty"`
 }

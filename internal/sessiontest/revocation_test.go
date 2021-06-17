@@ -138,6 +138,24 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, result.Missing)
 	})
 
+	t.Run("MixRevocationNonRevocation", func(t *testing.T) {
+		client, handler := revocationSetup(t)
+		defer test.ClearTestStorage(t, handler.storage)
+		defer stopRevocationServer()
+
+		request := revocationRequest(revocationTestAttr)
+		request.Disclose[0][0] = append(request.Disclose[0][0], irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID"))
+		result := revocationSession(t, client, request)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+
+		request = revocationRequest(revocationTestAttr)
+		request.Disclose = append(request.Disclose, irma.AttributeDisCon{{irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID")}})
+		result = revocationSession(t, client, request)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+	})
+
 	t.Run("AttributeBasedSignature", func(t *testing.T) {
 		client, handler := revocationSetup(t)
 		defer test.ClearTestStorage(t, handler.storage)
@@ -219,7 +237,7 @@ func TestRevocationAll(t *testing.T) {
 		stopRevocationServer()
 
 		result := revocationSession(t, client, nil, sessionOptionIgnoreError)
-		require.Equal(t, server.StatusCancelled, result.Status)
+		require.Equal(t, irma.ServerStatusCancelled, result.Status)
 		require.NotNil(t, result.Err)
 		require.Equal(t, result.Err.ErrorName, string(server.ErrorRevocation.Type))
 	})
