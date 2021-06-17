@@ -21,8 +21,13 @@ func init() {
 	irma.Logger.SetLevel(logrus.FatalLevel)
 }
 
+var (
+	str15    = "15"
+	strEmpty = ""
+)
+
 func TestServerInvalidMessage(t *testing.T) {
-	myirmaServer, httpServer := StartMyIrmaServer(t, newMemoryDB(), "localhost:1025")
+	myirmaServer, httpServer := StartMyIrmaServer(t, newMemoryDB(), "")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
 	test.HTTPGet(t, nil, "http://localhost:8080/user", nil, 400, nil)

@@ -120,11 +120,6 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	}, cand)
 }
 
-var (
-	str15    = "15"
-	strEmpty = ""
-)
-
 func TestPostgresDBUserInfo(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
