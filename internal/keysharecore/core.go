@@ -83,14 +83,14 @@ func GenerateDecryptionKey() (AESKey, error) {
 }
 
 // DangerousAddDecryptionKey adds an AES key for decryption, with identifier keyID.
-// Calling this will cause all keyshare packets generated with the key to be trusted.
+// Calling this will cause all keyshare secrets generated with the key to be trusted.
 func (c *Core) DangerousAddDecryptionKey(keyID uint32, key AESKey) {
 	c.decryptionKeys[keyID] = key
 }
 
 // Set the aes key for encrypting new/changed keyshare data
 // with identifier keyid
-// Calling this will also cause all keyshare packets generated with the key to be trusted
+// Calling this will also cause all keyshare user secrets generated with the key to be trusted
 func (c *Core) setDecryptionKey(keyID uint32, key AESKey) {
 	c.decryptionKeys[keyID] = key
 	c.decryptionKey = key

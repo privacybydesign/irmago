@@ -43,7 +43,7 @@ func (c *Core) NewUserSecrets(pinRaw string) (UserSecrets, error) {
 		return UserSecrets{}, err
 	}
 
-	// Build unencrypted packet
+	// Build unencrypted secrets
 	var s unencryptedUserSecrets
 	s.setPin(pin)
 	err = s.setKeyshareSecret(secret)
@@ -78,13 +78,13 @@ func (c *Core) ValidatePin(secrets UserSecrets, pin string) (string, error) {
 }
 
 // ValidateJWT checks whether the given JWT is currently valid as an access token for operations
-// on the provided encrypted keyshare packet.
+// on the provided encrypted keyshare user secrets.
 func (c *Core) ValidateJWT(secrets UserSecrets, jwt string) error {
 	_, err := c.verifyAccess(secrets, jwt)
 	return err
 }
 
-// ChangePin changes the pin in an encrypted keyshare packet to a new value, after validating that
+// ChangePin changes the pin in an encrypted keyshare user secret to a new value, after validating that
 // the old value is known by the caller.
 func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (UserSecrets, error) {
 	s, err := c.decryptUserSecretsIfPinOK(secrets, oldpinRaw)
@@ -108,7 +108,7 @@ func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (User
 	return c.encryptUserSecrets(s)
 }
 
-// verifyAccess checks that a given access jwt is valid, and if so, return decrypted keyshare packet.
+// verifyAccess checks that a given access jwt is valid, and if so, return decrypted keyshare user secrets.
 // Note: Although this is an internal function, it is tested directly
 func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUserSecrets, error) {
 	// Verify token validity

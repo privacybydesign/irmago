@@ -14,8 +14,8 @@ import (
 
 type (
 	// Contains pin (bytes 0-63), secret (bytes 64-127), and identifier (bytes 128-159)
-	//  The binary structure of this packet can have security implications through its interaction with the
-	//  encryption layer applied before storing it. As such, we keep it here more explicit than
+	//  The binary structure of this data structure can have security implications through its interaction
+	//  with the encryption layer applied before storing it. As such, we keep it here more explicit than
 	//  is standard in go. When modifying this structure, analyse whether such changes can have a
 	//  security impact through error side channels.
 	unencryptedUserSecrets [64 + 64 + 32]byte
@@ -86,7 +86,7 @@ func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, 
 		return UserSecrets{}, err
 	}
 
-	// Encrypt packet
+	// Encrypt secrets
 	gcm, err := newGCM(c.decryptionKey)
 	if err != nil {
 		return UserSecrets{}, err
@@ -106,7 +106,7 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 		return unencryptedUserSecrets{}, ErrNoSuchKey
 	}
 
-	// try and decrypt packet
+	// try and decrypt secrets
 	gcm, err := newGCM(key)
 	if err != nil {
 		return unencryptedUserSecrets{}, err

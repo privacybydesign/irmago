@@ -43,7 +43,7 @@ type Configuration struct {
 	JwtPinExpiry      int    `json:"jwt_pin_expiry" mapstructure:"jwt_pin_expiry"`
 	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
-	// Decryption keys used for keyshare packets
+	// Decryption keys used for user secrets
 	StorageFallbackKeyFiles []string `json:"storage_fallback_key_files" mapstructure:"storage_fallback_key_files"`
 	StoragePrimaryKeyFile   string   `json:"storage_primary_key_file" mapstructure:"storage_primary_key_file"`
 
