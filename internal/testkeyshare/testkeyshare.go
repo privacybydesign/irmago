@@ -43,6 +43,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 			SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
 			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 			Logger:                l,
+			URL:                   "http://localhost:8080/irma_keyshare_server/api/v1/",
 		},
 		DB:                    db,
 		JwtKeyID:              0,
