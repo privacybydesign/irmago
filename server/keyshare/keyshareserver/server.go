@@ -163,7 +163,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(keys) == 0 {
-		s.conf.Logger.Info("Malformed request: no keys over which to commit specified")
+		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
 		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
 		return
 	}
