@@ -75,7 +75,7 @@ func readAESKey(filename string) (uint32, keysharecore.AESKey, error) {
 
 // Process a passed configuration to ensure all field values are valid and initialized
 // as required by the rest of this keyshare server component.
-func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
+func validateConf(conf *Configuration) error {
 	// Setup email templates
 	var err error
 	if conf.EmailServer != "" {
@@ -85,39 +85,23 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 			conf.DefaultLanguage,
 		)
 		if err != nil {
-			return nil, server.LogError(err)
+			return server.LogError(err)
 		}
 		if _, ok := conf.VerificationURL[conf.DefaultLanguage]; !ok {
-			return nil, server.LogError(errors.Errorf("Missing verification base url for default language"))
+			return server.LogError(errors.Errorf("Missing verification base url for default language"))
 		}
 	}
 
 	if err = conf.VerifyEmailServer(); err != nil {
-		return nil, server.LogError(err)
+		return server.LogError(err)
 	}
 
 	if conf.IrmaConfiguration.AttributeTypes[conf.KeyshareAttribute] == nil {
-		return nil, server.LogError(errors.Errorf("Unknown keyshare attribute: %s", conf.KeyshareAttribute))
+		return server.LogError(errors.Errorf("Unknown keyshare attribute: %s", conf.KeyshareAttribute))
 	}
 	_, err = conf.IrmaConfiguration.PrivateKeys.Latest(conf.KeyshareAttribute.CredentialTypeIdentifier().IssuerIdentifier())
 	if err != nil {
-		return nil, server.LogError(errors.Errorf("Failed to load private key of keyshare attribute: %v", err))
-	}
-
-	// Setup database
-	if conf.DB == nil {
-		switch conf.DBType {
-		case DBTypeMemory:
-			conf.DB = NewMemoryDB()
-		case DBTypePostgres:
-			var err error
-			conf.DB, err = newPostgresDB(conf.DBConnStr)
-			if err != nil {
-				return nil, server.LogError(err)
-			}
-		default:
-			return nil, server.LogError(errUnknownDBType)
-		}
+		return server.LogError(errors.Errorf("Failed to load private key of keyshare attribute: %v", err))
 	}
 
 	// Setup IRMA session server url for in QR code
@@ -126,6 +110,27 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	}
 	conf.URL += "irma/"
 
+	return nil
+}
+
+func setupDatabase(conf *Configuration) (DB, error) {
+	var db DB
+	switch conf.DBType {
+	case DBTypeMemory:
+		db = NewMemoryDB()
+	case DBTypePostgres:
+		var err error
+		db, err = newPostgresDB(conf.DBConnStr)
+		if err != nil {
+			return nil, server.LogError(err)
+		}
+	default:
+		return nil, server.LogError(errUnknownDBType)
+	}
+	return db, nil
+}
+
+func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 	// Parse keysharecore private keys and create a valid keyshare core
 	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
 		return nil, server.LogError(errors.Errorf("Missing keyshare server jwt key"))
@@ -138,14 +143,14 @@ func processConfiguration(conf *Configuration) (*keysharecore.Core, error) {
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
 	}
-	encID, encKey, err := readAESKey(conf.StoragePrimaryKeyFile)
+	decKeyID, decKey, err := readAESKey(conf.StoragePrimaryKeyFile)
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to load primary storage key", 0))
 	}
 
 	core := keysharecore.NewKeyshareCore(&keysharecore.Configuration{
-		DecryptionKeyID: encID,
-		DecryptionKey:   encKey,
+		DecryptionKeyID: decKeyID,
+		DecryptionKey:   decKey,
 		JWTPrivateKeyID: conf.JwtKeyID,
 		JWTPrivateKey:   jwtPrivateKey,
 		JWTIssuer:       conf.JwtIssuer,

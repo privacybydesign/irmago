@@ -55,7 +55,19 @@ func New(conf *Configuration) (*Server, error) {
 	}
 
 	// Process configuration and create keyshare core
-	s.core, err = processConfiguration(conf)
+	err = validateConf(conf)
+	if err != nil {
+		return nil, err
+	}
+	if conf.DB != nil {
+		s.db = conf.DB
+	} else {
+		s.db, err = setupDatabase(conf)
+		if err != nil {
+			return nil, err
+		}
+	}
+	s.core, err = setupCore(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -71,9 +83,6 @@ func New(conf *Configuration) (*Server, error) {
 			_ = server.LogError(err)
 		}
 	})
-
-	// Setup DB
-	s.db = conf.DB
 
 	// Setup session cache clearing
 	s.scheduler.Every(10).Seconds().Do(s.store.flush)
