@@ -28,9 +28,9 @@ type Server struct {
 	conf *Configuration
 
 	// external components
-	core          *keysharecore.Core
-	sessionserver *irmaserver.Server
-	db            DB
+	core     *keysharecore.Core
+	irmaserv *irmaserver.Server
+	db       DB
 
 	// Scheduler used to clean sessions
 	scheduler     *gocron.Scheduler
@@ -49,7 +49,7 @@ func New(conf *Configuration) (*Server, error) {
 	}
 
 	// Setup IRMA session server
-	s.sessionserver, err = irmaserver.New(conf.Configuration)
+	s.irmaserv, err = irmaserver.New(conf.Configuration)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func New(conf *Configuration) (*Server, error) {
 
 func (s *Server) Stop() {
 	s.stopScheduler <- true
-	s.sessionserver.Stop()
+	s.irmaserv.Stop()
 }
 
 func (s *Server) Handler() http.Handler {
@@ -126,7 +126,7 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	// IRMA server for issuing myirma credential during registration
-	router.Mount("/irma/", s.sessionserver.HandlerFunc())
+	router.Mount("/irma/", s.irmaserv.HandlerFunc())
 	return router
 }
 
@@ -496,7 +496,7 @@ func (s *Server) register(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 				s.conf.KeyshareAttribute.Name(): username,
 			},
 		}})
-	sessionptr, _, err := s.sessionserver.StartSession(request, nil)
+	sessionptr, _, err := s.irmaserv.StartSession(request, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not start keyshare credential issuance sessions")
 		return nil, err

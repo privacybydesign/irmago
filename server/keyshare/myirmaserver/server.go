@@ -23,7 +23,7 @@ import (
 type Server struct {
 	conf *Configuration
 
-	sessionserver *irmaserver.Server
+	irmaserv      *irmaserver.Server
 	store         sessionStore
 	db            db
 	scheduler     *gocron.Scheduler
@@ -35,7 +35,7 @@ var (
 )
 
 func New(conf *Configuration) (*Server, error) {
-	sessionserver, err := irmaserver.New(conf.Configuration)
+	irmaserv, err := irmaserver.New(conf.Configuration)
 	if err != nil {
 		return nil, err
 	}
@@ -45,11 +45,11 @@ func New(conf *Configuration) (*Server, error) {
 	}
 
 	s := &Server{
-		conf:          conf,
-		sessionserver: sessionserver,
-		store:         newMemorySessionStore(time.Duration(conf.SessionLifetime) * time.Second),
-		db:            conf.DB,
-		scheduler:     gocron.NewScheduler(),
+		conf:      conf,
+		irmaserv:  irmaserv,
+		store:     newMemorySessionStore(time.Duration(conf.SessionLifetime) * time.Second),
+		db:        conf.DB,
+		scheduler: gocron.NewScheduler(),
 	}
 
 	s.scheduler.Every(10).Seconds().Do(s.store.flush)
@@ -66,7 +66,7 @@ func New(conf *Configuration) (*Server, error) {
 }
 
 func (s *Server) Stop() {
-	s.sessionserver.Stop()
+	s.irmaserv.Stop()
 	s.schedulerStop <- true
 }
 
@@ -117,7 +117,7 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	// IRMA session server
-	router.Mount("/irma/", s.sessionserver.HandlerFunc())
+	router.Mount("/irma/", s.irmaserv.HandlerFunc())
 
 	if s.conf.StaticPath != "" {
 		router.Mount(s.conf.StaticPrefix, s.staticFilesHandler())
@@ -331,7 +331,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) processLoginIrmaSessionResult(session *session) (server.Error, string) {
-	result := s.sessionserver.GetSessionResult(session.loginSessionToken)
+	result := s.irmaserv.GetSessionResult(session.loginSessionToken)
 	if result == nil {
 		session.loginSessionToken = ""
 		return server.ErrorInternal, "unknown login session"
@@ -372,7 +372,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	session := s.store.create()
 	sessiontoken := session.token
 
-	qr, loginToken, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...), nil)
+	qr, loginToken, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...), nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for login")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -548,7 +548,7 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Error, string) {
-	result := s.sessionserver.GetSessionResult(session.emailSessionToken)
+	result := s.irmaserv.GetSessionResult(session.emailSessionToken)
 	if result == nil {
 		session.emailSessionToken = ""
 		return server.ErrorInternal, "unknown login session"
@@ -579,7 +579,7 @@ func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Erro
 func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
 
-	qr, emailToken, err := s.sessionserver.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...), nil)
+	qr, emailToken, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...), nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for adding email address")
 		server.WriteError(w, server.ErrorInternal, err.Error())
