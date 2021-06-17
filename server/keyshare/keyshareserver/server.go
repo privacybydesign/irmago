@@ -316,7 +316,7 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) verifyPin(user *User, pin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
-	ok, tries, wait, err := s.reservePinCheck(user, pin)
+	ok, tries, wait, err := s.reservePinCheck(user)
 	if err != nil {
 		return irma.KeysharePinStatus{}, err
 	}
@@ -399,7 +399,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
-	ok, tries, wait, err := s.reservePinCheck(user, oldPin)
+	ok, tries, wait, err := s.reservePinCheck(user)
 	if err != nil {
 		return irma.KeysharePinStatus{}, err
 	}
@@ -562,7 +562,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) reservePinCheck(user *User, pin string) (bool, int, int64, error) {
+func (s *Server) reservePinCheck(user *User) (bool, int, int64, error) {
 	ok, tries, wait, err := s.db.reservePinTry(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
