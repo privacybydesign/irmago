@@ -76,8 +76,8 @@ func New(conf *Configuration) (*Server, error) {
 	if err = s.loadIdemixKeys(conf.IrmaConfiguration); err != nil {
 		return nil, err
 	}
-	conf.IrmaConfiguration.UpdateListeners = append(conf.IrmaConfiguration.UpdateListeners, func(conf *irma.Configuration) {
-		if err := s.loadIdemixKeys(conf); err != nil {
+	conf.IrmaConfiguration.UpdateListeners = append(conf.IrmaConfiguration.UpdateListeners, func(c *irma.Configuration) {
+		if err := s.loadIdemixKeys(c); err != nil {
 			// run periodically; can only log the error here
 			_ = server.LogError(err)
 		}
