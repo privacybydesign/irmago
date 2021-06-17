@@ -72,8 +72,7 @@ func New(conf *Configuration) (*Server, error) {
 		return nil, err
 	}
 
-	// Load neccessary idemix keys into core, and ensure that future updates
-	// to them are processed
+	// Load Idemix keys into core, and ensure that new keys added in the future will be loaded as well.
 	if err = s.loadIdemixKeys(conf.IrmaConfiguration); err != nil {
 		return nil, err
 	}
@@ -130,8 +129,7 @@ func (s *Server) Handler() http.Handler {
 	return router
 }
 
-// On configuration changes, inform the keyshare core of any
-// new IRMA issuer public keys.
+// On configuration changes, update the keyshare core with all current public keys of the IRMA issuers.
 func (s *Server) loadIdemixKeys(conf *irma.Configuration) error {
 	errs := multierror.Error{}
 	for _, issuer := range conf.Issuers {
