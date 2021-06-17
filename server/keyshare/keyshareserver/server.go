@@ -456,8 +456,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) register(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	// Generate keyshare server account
-	username := common.NewSessionToken() // TODO use newRandomString() for this when shoulder-surf is merged
-	username = username[:12]
+	username := common.NewRandomString(12, common.AlphanumericChars)
 
 	secrets, err := s.core.NewUserSecrets(msg.Pin)
 	if err != nil {

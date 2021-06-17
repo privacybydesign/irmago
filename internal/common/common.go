@@ -26,9 +26,10 @@ var Logger *logrus.Logger
 var ForceHTTPS = true
 
 const (
-	sessionChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	AlphanumericChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	NumericChars      = "0123456789"
+
 	sessionTokenLength = 20
-	pairingCodeChars   = "0123456789"
 	pairingCodeLength  = 4
 )
 
@@ -276,14 +277,14 @@ type SSECtx struct {
 }
 
 func NewSessionToken() string {
-	return newRandomString(sessionTokenLength, sessionChars)
+	return NewRandomString(sessionTokenLength, AlphanumericChars)
 }
 
 func NewPairingCode() string {
-	return newRandomString(pairingCodeLength, pairingCodeChars)
+	return NewRandomString(pairingCodeLength, NumericChars)
 }
 
-func newRandomString(count int, characterSet string) string {
+func NewRandomString(count int, characterSet string) string {
 	r := make([]byte, count)
 	_, err := rand.Read(r)
 	if err != nil {
