@@ -52,7 +52,6 @@ func TestKeyshareRegister(t *testing.T) {
 
 // Use the existing keyshare enrollment and credentials
 // in a keyshare session of each session type.
-// Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
