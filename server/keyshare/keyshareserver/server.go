@@ -120,7 +120,6 @@ func (s *Server) Handler() http.Handler {
 		router.Group(func(router chi.Router) {
 			router.Use(s.userMiddleware)
 			router.Use(s.authorizationMiddleware)
-			router.Post("/users/isAuthorized", s.handleValidate)
 			router.Post("/prove/getCommitments", s.handleCommitments)
 			router.Post("/prove/getResponse", s.handleResponse)
 		})
@@ -279,15 +278,6 @@ func (s *Server) generateResponse(user *User, authorization string, challenge *b
 	}
 
 	return proofResponse, nil
-}
-
-// /users/isAuthorized
-func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
-	if r.Context().Value("hasValidAuthorization").(bool) {
-		server.WriteJson(w, &irma.KeyshareAuthorization{Status: "authorized", Candidates: []string{"pin"}})
-	} else {
-		server.WriteJson(w, &irma.KeyshareAuthorization{Status: "expired", Candidates: []string{"pin"}})
-	}
 }
 
 // /users/verify/pin

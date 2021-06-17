@@ -74,9 +74,9 @@ func TestServerHandleRegister(t *testing.T) {
 	)
 }
 
-func TestServerHandleValidate(t *testing.T) {
+func TestPinTries(t *testing.T) {
 	db := createDB(t)
-	keyshareServer, httpServer := StartKeyshareServer(t, db, "")
+	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	var jwtMsg irma.KeysharePinStatus
@@ -86,41 +86,6 @@ func TestServerHandleValidate(t *testing.T) {
 	)
 	require.Equal(t, "success", jwtMsg.Status)
 
-	var msg irma.KeyshareAuthorization
-	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized",
-		"", http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{jwtMsg.Message},
-		},
-		200, &msg,
-	)
-	assert.Equal(t, "authorized", msg.Status)
-
-	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized",
-		"", http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{"Bearer " + jwtMsg.Message},
-		},
-		200, &msg,
-	)
-	assert.Equal(t, "authorized", msg.Status)
-
-	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized",
-		"", http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{"eyalksjdf.aljsdklfesdfhas.asdfhasdf"},
-		},
-		200, &msg,
-	)
-	assert.Equal(t, "expired", msg.Status)
-}
-
-func TestPinTries(t *testing.T) {
-	db := createDB(t)
-	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
-	defer StopKeyshareServer(t, keyshareServer, httpServer)
-
-	var jwtMsg irma.KeysharePinStatus
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin",
 		`{"id":"testusername","pin":"puZGbaLDmFywGhFDi4vW2G87Zh"}`, nil,
 		200, &jwtMsg,
@@ -164,14 +129,6 @@ func TestPinNoRemainingTries(t *testing.T) {
 func TestMissingUser(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
-
-	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/isAuthorized",
-		"", http.Header{
-			"X-IRMA-Keyshare-Username": []string{"doesnotexist"},
-			"Authorization":            []string{"ey.ey.ey"},
-		},
-		403, nil,
-	)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/users/verify/pin",
 		`{"id":"doesnotexist","pin":"bla"}`, nil,
