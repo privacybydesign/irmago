@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPacketAccess(t *testing.T) {
+func TestUserSecretsAccess(t *testing.T) {
 	var testSecret = big.NewInt(51232)
 	var testPassword [64]byte
 	_, err := rand.Read(testPassword[:])
@@ -23,7 +23,7 @@ func TestPacketAccess(t *testing.T) {
 	assert.Equal(t, 0, p.keyshareSecret().Cmp(testSecret), "keyshare secret doesn't match")
 }
 
-func TestPacketEncryptDecrypt(t *testing.T) {
+func TestUserSecretsEncryptDecrypt(t *testing.T) {
 	// Setup keys for test
 	var key AESKey
 	_, err := rand.Read(key[:])
@@ -36,7 +36,7 @@ func TestPacketEncryptDecrypt(t *testing.T) {
 	_, err = rand.Read(testPassword[:])
 	require.NoError(t, err)
 
-	// Create and encrypt packet
+	// Create and encrypt user secrets
 	var p_before unencryptedUserSecrets
 	p_before.setPin(testPassword)
 	err = p_before.setKeyshareSecret(testSecret)
@@ -51,7 +51,7 @@ func TestPacketEncryptDecrypt(t *testing.T) {
 	assert.Equal(t, 0, p_after.keyshareSecret().Cmp(testSecret), "keyshare secrets don't match")
 }
 
-func TestPacketAuthentication(t *testing.T) {
+func TestUserSecretsAuthentication(t *testing.T) {
 	// Setup keys for test
 	var key AESKey
 	_, err := rand.Read(key[:])
@@ -64,7 +64,7 @@ func TestPacketAuthentication(t *testing.T) {
 	_, err = rand.Read(testPassword[:])
 	require.NoError(t, err)
 
-	// Create and encrypt packet
+	// Create and encrypt user secrets
 	var p_before unencryptedUserSecrets
 	p_before.setPin(testPassword)
 	err = p_before.setKeyshareSecret(testSecret)
@@ -72,7 +72,7 @@ func TestPacketAuthentication(t *testing.T) {
 	p_encrypted, err := c.encryptUserSecrets(p_before)
 	require.NoError(t, err)
 
-	// Modify encrypted packet and check that it no longer decrypts
+	// Modify encrypted user secrets and check that it no longer decrypts
 	p_encrypted[33] = 0
 	p_encrypted[34] = 15
 	_, err = c.decryptUserSecrets(p_encrypted)
@@ -95,7 +95,7 @@ func TestMultiKey(t *testing.T) {
 	_, err = rand.Read(testPassword[:])
 	require.NoError(t, err)
 
-	// Create packet
+	// Create user secrets
 	var p_before unencryptedUserSecrets
 	p_before.setPin(testPassword)
 	err = p_before.setKeyshareSecret(testSecret)
@@ -116,12 +116,12 @@ func TestMultiKey(t *testing.T) {
 	// Check e1
 	p_after, err := c.decryptUserSecrets(e1)
 	assert.NoError(t, err)
-	assert.Equal(t, p_before, p_after, "packet mismatch on key 1")
+	assert.Equal(t, p_before, p_after, "user secrets mismatch on key 1")
 
 	// Check e2
 	p_after, err = c.decryptUserSecrets(e2)
 	assert.NoError(t, err)
-	assert.Equal(t, p_before, p_after, "packet mismatch on key 2")
+	assert.Equal(t, p_before, p_after, "user secrets mismatch on key 2")
 
 	// check that unknown key is detected correctly
 	delete(c.decryptionKeys, 1)

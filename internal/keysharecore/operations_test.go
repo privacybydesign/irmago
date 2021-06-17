@@ -87,7 +87,7 @@ func TestVerifyAccess(t *testing.T) {
 	secrets2, err := c.NewUserSecrets(pin2)
 	require.NoError(t, err)
 
-	// Test use jwt on wrong packet
+	// Test use jwt on wrong secrets
 	jwtt, err := c.ValidatePin(secrets1, pin1)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(secrets2, jwtt)
@@ -214,7 +214,7 @@ func TestProofFunctionality(t *testing.T) {
 			testPubK1.N)), "Crypto result off")
 }
 
-func TestCorruptedPacket(t *testing.T) {
+func TestCorruptedUserSecrets(t *testing.T) {
 	// Setup keys for test
 	var key AESKey
 	_, err := rand.Read(key[:])
@@ -228,7 +228,7 @@ func TestCorruptedPacket(t *testing.T) {
 	require.NoError(t, err)
 	pin := string(bpin[:])
 
-	// Generate packet
+	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
@@ -238,24 +238,24 @@ func TestCorruptedPacket(t *testing.T) {
 	_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 	require.NoError(t, err)
 
-	// Corrupt packet
+	// Corrupt user secrets
 	secrets[12] = secrets[12] + 1
 
 	// Verify pin
 	_, err = c.ValidatePin(secrets, pin)
-	assert.Error(t, err, "ValidatePin accepts corrupted keyshare packet")
+	assert.Error(t, err, "ValidatePin accepts corrupted keyshare user secrets")
 
 	// Change pin
 	_, err = c.ChangePin(secrets, pin, pin)
-	assert.Error(t, err, "ChangePin accepts corrupted keyshare packet")
+	assert.Error(t, err, "ChangePin accepts corrupted keyshare user secrets")
 
 	// GenerateCommitments
 	_, _, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	assert.Error(t, err, "GenerateCommitments accepts corrupted keyshare packet")
+	assert.Error(t, err, "GenerateCommitments accepts corrupted keyshare user secrets")
 
 	// GetResponse
 	_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.Error(t, err, "GenerateResponse accepts corrupted keyshare packet")
+	assert.Error(t, err, "GenerateResponse accepts corrupted keyshare user secrets")
 }
 
 func TestIncorrectPin(t *testing.T) {
@@ -272,7 +272,7 @@ func TestIncorrectPin(t *testing.T) {
 	require.NoError(t, err)
 	pin := string(bpin[:])
 
-	// Generate packet
+	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
@@ -309,7 +309,7 @@ func TestMissingKey(t *testing.T) {
 	require.NoError(t, err)
 	pin := string(bpin[:])
 
-	// Generate packet
+	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
@@ -342,7 +342,7 @@ func TestInvalidChallenge(t *testing.T) {
 	require.NoError(t, err)
 	pin := string(bpin[:])
 
-	// Generate packet
+	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
@@ -383,7 +383,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	require.NoError(t, err)
 	pin := string(bpin[:])
 
-	// Generate packet
+	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
@@ -414,7 +414,7 @@ func TestNonExistingCommit(t *testing.T) {
 	require.NoError(t, err)
 	pin := string(bpin[:])
 
-	// Generate packet
+	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
 	require.NoError(t, err)
 
