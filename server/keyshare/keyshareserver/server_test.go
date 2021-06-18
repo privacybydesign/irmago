@@ -299,7 +299,7 @@ func (db *testDB) updateUser(user *User) error {
 	return db.db.updateUser(user)
 }
 
-func (db *testDB) reservePinTry(user *User) (bool, int, int64, error) {
+func (db *testDB) reservePinTry(_ *User) (bool, int, int64, error) {
 	return db.ok, db.tries, db.wait, db.err
 }
 
