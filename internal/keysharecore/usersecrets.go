@@ -75,13 +75,13 @@ func (s *unencryptedUserSecrets) setID(id [32]byte) {
 }
 
 func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, error) {
-	var encSecret UserSecrets
+	var encSecrets UserSecrets
 
 	// Store key id
-	binary.LittleEndian.PutUint32(encSecret[0:], c.decryptionKeyID)
+	binary.LittleEndian.PutUint32(encSecrets[0:], c.decryptionKeyID)
 
 	// Generate and store nonce
-	_, err := rand.Read(encSecret[4:16])
+	_, err := rand.Read(encSecrets[4:16])
 	if err != nil {
 		return UserSecrets{}, err
 	}
@@ -91,9 +91,9 @@ func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, 
 	if err != nil {
 		return UserSecrets{}, err
 	}
-	gcm.Seal(encSecret[:16], encSecret[4:16], secrets[:], nil)
+	gcm.Seal(encSecrets[:16], encSecrets[4:16], secrets[:], nil)
 
-	return encSecret, nil
+	return encSecrets, nil
 }
 
 func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, error) {
@@ -111,12 +111,12 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
-	var unencSecret unencryptedUserSecrets
-	_, err = gcm.Open(unencSecret[:0], secrets[4:16], secrets[16:], nil)
+	var unencSecrets unencryptedUserSecrets
+	_, err = gcm.Open(unencSecrets[:0], secrets[4:16], secrets[16:], nil)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
-	return unencSecret, nil
+	return unencSecrets, nil
 }
 
 func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unencryptedUserSecrets, error) {
