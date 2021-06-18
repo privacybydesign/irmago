@@ -3,7 +3,6 @@
 package test
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -113,12 +112,6 @@ func SetupTestStorage(t *testing.T) string {
 	err := common.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(storage, "client"))
 	checkError(t, err)
 	return storage
-}
-
-func PrettyPrint(t *testing.T, ob interface{}) string {
-	b, err := json.MarshalIndent(ob, "", "  ")
-	require.NoError(t, err)
-	return string(b)
 }
 
 func SetTestStorageDir(dir string) {
