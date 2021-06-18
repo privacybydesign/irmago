@@ -41,6 +41,8 @@ func (conf EmailConfiguration) TranslateString(strings map[string]string, lang s
 	if ok {
 		return s
 	}
+	server.Logger.WithField("lang", lang).
+		Warn("email string translation requested for unknown language, falling back to default")
 	return strings[conf.DefaultLanguage]
 }
 
@@ -49,6 +51,8 @@ func (conf EmailConfiguration) translateTemplate(templates map[string]*template.
 	if ok {
 		return t
 	}
+	server.Logger.WithField("lang", lang).
+		Warn("email template translation requested for unknown language, falling back to default")
 	return templates[conf.DefaultLanguage]
 }
 

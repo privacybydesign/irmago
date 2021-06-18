@@ -61,7 +61,7 @@ func TestServerHandleRegister(t *testing.T) {
 		200, nil,
 	)
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"dne"}`, nil,
+		`{"pin":"testpin","email":"test@test.com","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
@@ -69,7 +69,7 @@ func TestServerHandleRegister(t *testing.T) {
 		200, nil,
 	)
 	test.HTTPPost(t, nil, "http://localhost:8080/irma_keyshare_server/api/v1/client/register",
-		`{"pin":"testpin","language":"dne"}`, nil,
+		`{"pin":"testpin","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
 }

@@ -32,11 +32,11 @@ func TestServerLoginEmail(t *testing.T) {
 	myirmaServer, httpServer := StartMyIrmaServer(t, db, "localhost:1025")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/login/email", `{"email": "dne", "language": "en"}`, nil, 403, nil)
+	test.HTTPPost(t, nil, "http://localhost:8080/login/email", `{"email": "nonexistinglanguage", "language": "en"}`, nil, 403, nil)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/login/email", `{"email": "test@test.com", "language":"en"}`, nil, 204, nil)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/login/email", `{"email": "test@test.com", "language":"dne"}`, nil, 204, nil)
+	test.HTTPPost(t, nil, "http://localhost:8080/login/email", `{"email": "test@test.com", "language":"nonexistinglanguage"}`, nil, 204, nil)
 
 	client := test.NewHTTPClient()
 
