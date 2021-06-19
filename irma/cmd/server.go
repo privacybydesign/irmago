@@ -157,8 +157,8 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 
 	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
 		map[string]interface{}{
-			"no-auth":  false,
-			"no-email": false,
+			"no_auth":  false,
+			"no_email": false,
 			"url":      "",
 		},
 	)
@@ -167,38 +167,38 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	conf := &requestorserver.Configuration{
 		Configuration: configureIRMAServer(),
 		Permissions: requestorserver.Permissions{
-			Disclosing: handlePermission("disclose-perms"),
-			Signing:    handlePermission("sign-perms"),
-			Issuing:    handlePermission("issue-perms"),
-			Revoking:   handlePermission("revoke-perms"),
+			Disclosing: handlePermission("disclose_perms"),
+			Signing:    handlePermission("sign_perms"),
+			Issuing:    handlePermission("issue_perms"),
+			Revoking:   handlePermission("revoke_perms"),
 		},
-		SkipPrivateKeysCheck:           viper.GetBool("skip-private-keys-check"),
-		ListenAddress:                  viper.GetString("listen-addr"),
+		SkipPrivateKeysCheck:           viper.GetBool("skip_private_keys_check"),
+		ListenAddress:                  viper.GetString("listen_addr"),
 		Port:                           viper.GetInt("port"),
-		ApiPrefix:                      viper.GetString("api-prefix"),
-		ClientListenAddress:            viper.GetString("client-listen-addr"),
-		ClientPort:                     viper.GetInt("client-port"),
-		DisableRequestorAuthentication: viper.GetBool("no-auth"),
+		ApiPrefix:                      viper.GetString("api_prefix"),
+		ClientListenAddress:            viper.GetString("client_listen_addr"),
+		ClientPort:                     viper.GetInt("client_port"),
+		DisableRequestorAuthentication: viper.GetBool("no_auth"),
 		Requestors:                     make(map[string]requestorserver.Requestor),
-		MaxRequestAge:                  viper.GetInt("max-request-age"),
-		StaticPath:                     viper.GetString("static-path"),
-		StaticPrefix:                   viper.GetString("static-prefix"),
+		MaxRequestAge:                  viper.GetInt("max_request_age"),
+		StaticPath:                     viper.GetString("static_path"),
+		StaticPrefix:                   viper.GetString("static_prefix"),
 
-		TlsCertificate:           viper.GetString("tls-cert"),
-		TlsCertificateFile:       viper.GetString("tls-cert-file"),
-		TlsPrivateKey:            viper.GetString("tls-privkey"),
-		TlsPrivateKeyFile:        viper.GetString("tls-privkey-file"),
-		ClientTlsCertificate:     viper.GetString("client-tls-cert"),
-		ClientTlsCertificateFile: viper.GetString("client-tls-cert-file"),
-		ClientTlsPrivateKey:      viper.GetString("client-tls-privkey"),
-		ClientTlsPrivateKeyFile:  viper.GetString("client-tls-privkey-file"),
+		TlsCertificate:           viper.GetString("tls_cert"),
+		TlsCertificateFile:       viper.GetString("tls_cert_file"),
+		TlsPrivateKey:            viper.GetString("tls_privkey"),
+		TlsPrivateKeyFile:        viper.GetString("tls_privkey_file"),
+		ClientTlsCertificate:     viper.GetString("client_tls_cert"),
+		ClientTlsCertificateFile: viper.GetString("client_tls_cert_file"),
+		ClientTlsPrivateKey:      viper.GetString("client_tls_privkey"),
+		ClientTlsPrivateKeyFile:  viper.GetString("client_tls_privkey_file"),
 	}
 
 	if conf.Production {
-		if !viper.GetBool("no-email") && conf.Email == "" {
+		if !viper.GetBool("no_email") && conf.Email == "" {
 			return nil, errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
 		}
-		if viper.GetBool("no-email") && conf.Email != "" {
+		if viper.GetBool("no_email") && conf.Email != "" {
 			return nil, errors.New("--no-email cannot be combined with --email")
 		}
 	}
@@ -208,11 +208,11 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
 		return nil, err
 	}
-	if err = handleMapOrString("static-sessions", &conf.StaticSessions); err != nil {
+	if err = handleMapOrString("static_sessions", &conf.StaticSessions); err != nil {
 		return nil, err
 	}
 	var m map[string]*irma.RevocationSetting
-	if err = handleMapOrString("revocation-settings", &m); err != nil {
+	if err = handleMapOrString("revocation_settings", &m); err != nil {
 		return nil, err
 	}
 	for i, s := range m {

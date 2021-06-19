@@ -98,22 +98,22 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
-		DBType:    keyshareserver.DBType(viper.GetString("db-type")),
-		DBConnStr: viper.GetString("db-str"),
+		DBType:    keyshareserver.DBType(viper.GetString("db_type")),
+		DBConnStr: viper.GetString("db_str"),
 
-		JwtKeyID:                viper.GetUint32("jwt-privkey-id"),
-		JwtPrivateKey:           viper.GetString("jwt-privkey"),
-		JwtPrivateKeyFile:       viper.GetString("jwt-privkey-file"),
-		JwtIssuer:               viper.GetString("jwt-issuer"),
-		JwtPinExpiry:            viper.GetInt("jwt-pin-expiry"),
-		StoragePrimaryKeyFile:   viper.GetString("storage-primary-keyfile"),
-		StorageFallbackKeyFiles: viper.GetStringSlice("storage-fallback-keyfile"),
+		JwtKeyID:                viper.GetUint32("jwt_privkey_id"),
+		JwtPrivateKey:           viper.GetString("jwt_privkey"),
+		JwtPrivateKeyFile:       viper.GetString("jwt_privkey_file"),
+		JwtIssuer:               viper.GetString("jwt_issuer"),
+		JwtPinExpiry:            viper.GetInt("jwt_pin_expiry"),
+		StoragePrimaryKeyFile:   viper.GetString("storage_primary_keyfile"),
+		StorageFallbackKeyFiles: viper.GetStringSlice("storage_fallback_keyfile"),
 
-		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare-attribute")),
+		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare_attribute")),
 
-		RegistrationEmailSubjects: viper.GetStringMapString("registration-email-subjects"),
-		RegistrationEmailFiles:    viper.GetStringMapString("registration-email-files"),
-		VerificationURL:           viper.GetStringMapString("verification-url"),
+		RegistrationEmailSubjects: viper.GetStringMapString("registration_email_subjects"),
+		RegistrationEmailFiles:    viper.GetStringMapString("registration_email_files"),
+		VerificationURL:           viper.GetStringMapString("verification_url"),
 	}
 
 	if conf.Production && conf.DBType != keyshareserver.DBTypePostgres {

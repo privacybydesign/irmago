@@ -58,17 +58,17 @@ func configureKeyshareTasks(cmd *cobra.Command) *tasks.Configuration {
 	return &tasks.Configuration{
 		EmailConfiguration: configureEmail(),
 
-		DBConnStr: viper.GetString("db-str"),
+		DBConnStr: viper.GetString("db_str"),
 
-		ExpiryDelay: viper.GetInt("expiry-delay"),
-		DeleteDelay: viper.GetInt("delete-delay"),
+		ExpiryDelay: viper.GetInt("expiry_delay"),
+		DeleteDelay: viper.GetInt("delete_delay"),
 
-		DeleteExpiredAccountSubjects: viper.GetStringMapString("expired-email-subjects"),
-		DeleteExpiredAccountFiles:    viper.GetStringMapString("expired-email-files"),
+		DeleteExpiredAccountSubjects: viper.GetStringMapString("expired_email_subjects"),
+		DeleteExpiredAccountFiles:    viper.GetStringMapString("expired_email_files"),
 
 		Verbose: viper.GetInt("verbose"),
 		Quiet:   viper.GetBool("quiet"),
-		LogJSON: viper.GetBool("log-json"),
+		LogJSON: viper.GetBool("log_json"),
 		Logger:  logger,
 	}
 }

@@ -99,24 +99,24 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
-		CORSAllowedOrigins: viper.GetStringSlice("cors-allowed-origins"),
+		CORSAllowedOrigins: viper.GetStringSlice("cors_allowed_origins"),
 
-		StaticPath:   viper.GetString("static-path"),
-		StaticPrefix: viper.GetString("static-prefix"),
+		StaticPath:   viper.GetString("static_path"),
+		StaticPrefix: viper.GetString("static_prefix"),
 
-		DBType:    myirmaserver.DBType(viper.GetString("db-type")),
-		DBConnStr: viper.GetString("db-str"),
+		DBType:    myirmaserver.DBType(viper.GetString("db_type")),
+		DBConnStr: viper.GetString("db_str"),
 
-		LoginEmailSubjects:    viper.GetStringMapString("login-email-subjects"),
-		LoginEmailFiles:       viper.GetStringMapString("login-email-files"),
-		LoginEmailBaseURL:     viper.GetStringMapString("login-url"),
-		DeleteEmailFiles:      viper.GetStringMapString("delete-email-files"),
-		DeleteEmailSubjects:   viper.GetStringMapString("delete-email-subjects"),
-		DeleteAccountFiles:    viper.GetStringMapString("delete-account-files"),
-		DeleteAccountSubjects: viper.GetStringMapString("delete-account-subjects"),
-		DeleteDelay:           viper.GetInt("delete-delay"),
+		LoginEmailSubjects:    viper.GetStringMapString("login_email_subjects"),
+		LoginEmailFiles:       viper.GetStringMapString("login_email_files"),
+		LoginEmailBaseURL:     viper.GetStringMapString("login_url"),
+		DeleteEmailFiles:      viper.GetStringMapString("delete_email_files"),
+		DeleteEmailSubjects:   viper.GetStringMapString("delete_email_subjects"),
+		DeleteAccountFiles:    viper.GetStringMapString("delete_account_files"),
+		DeleteAccountSubjects: viper.GetStringMapString("delete_account_subjects"),
+		DeleteDelay:           viper.GetInt("delete_delay"),
 
-		SessionLifetime: viper.GetInt("session-lifetime"),
+		SessionLifetime: viper.GetInt("session_lifetime"),
 	}
 
 	if conf.Production && conf.DBType != myirmaserver.DBTypePostgres {
@@ -125,12 +125,12 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 
 	conf.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
 
-	for _, v := range viper.GetStringSlice("keyshare-attributes") {
+	for _, v := range viper.GetStringSlice("keyshare_attributes") {
 		conf.KeyshareAttributes = append(
 			conf.KeyshareAttributes,
 			irma.NewAttributeTypeIdentifier(v))
 	}
-	for _, v := range viper.GetStringSlice("email-attributes") {
+	for _, v := range viper.GetStringSlice("email_attributes") {
 		conf.EmailAttributes = append(
 			conf.EmailAttributes,
 			irma.NewAttributeTypeIdentifier(v))
