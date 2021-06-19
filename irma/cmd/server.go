@@ -67,8 +67,15 @@ func init() {
 }
 
 func setFlags(cmd *cobra.Command, production bool) error {
-	flags := cmd.Flags()
-	flags.SortFlags = false
+	cmd.SetUsageTemplate(headerFlagsTemplate)
+	flagHeaders["irma server"] = map[string]string{
+		"port":       "Server address and port to listen on",
+		"no-auth":    "Requestor authentication and default requestor permissions",
+		"jwt-issuer": "JWT configuration",
+		"tls-cert":   "TLS configuration (leave empty to disable TLS)",
+		"email":      "Email address (see README for more info)",
+		"verbose":    "Other options",
+	}
 
 	var defaulturl string
 	if !production {
@@ -78,6 +85,9 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	}
 
 	schemespath := irma.DefaultSchemesPath()
+
+	flags := cmd.Flags()
+	flags.SortFlags = false
 
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
@@ -96,7 +106,6 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringP("api-prefix", "a", "/", "prefix API endpoints with this string, e.g. POST /session becomes POST {api-prefix}/session")
 	flags.Int("client-port", 0, "if specified, start a separate server for the IRMA app at this port")
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
-	flags.Lookup("port").Header = `Server address and port to listen on`
 
 	flags.Bool("no-auth", !production, "whether or not to authenticate requestors (and reject all authenticated requests)")
 	flags.String("requestors", "", "requestor configuration (in JSON)")
@@ -110,7 +119,6 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
 	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
-	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
@@ -120,7 +128,6 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
 	flags.Bool("allow-unsigned-callbacks", false, "Allow callbackUrl in session requests when no JWT privatekey is installed (potentially unsafe)")
 	flags.Bool("augment-client-return-url", false, "Augment the client return url with the server session token if present")
-	flags.Lookup("jwt-issuer").Header = `JWT configuration`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
@@ -131,17 +138,14 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
 	flags.Bool("no-tls", false, "Disable TLS")
-	flags.Lookup("tls-cert").Header = "TLS configuration (leave empty to disable TLS)"
 
 	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
 	flags.Bool("no-email", !production, "Opt out of providing an email address with --email")
-	flags.Lookup("email").Header = "Email address (see README for more info)"
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Bool("production", false, "Production mode")
-	flags.Lookup("verbose").Header = `Other options`
 
 	return nil
 }

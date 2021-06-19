@@ -37,6 +37,8 @@ func Execute() {
 
 func init() {
 	RootCmd.AddCommand(versionCmd)
+
+	cobra.AddTemplateFunc("insertHeaders", insertHeaders)
 }
 
 func die(message string, err error) {

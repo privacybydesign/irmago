@@ -31,6 +31,16 @@ var myirmaServerCmd = &cobra.Command{
 func init() {
 	keyshareRootCmd.AddCommand(myirmaServerCmd)
 
+	myirmaServerCmd.SetUsageTemplate(headerFlagsTemplate)
+	flagHeaders["irma keyshare myirmaserver"] = map[string]string{
+		"port":                "Server address and port to listen on",
+		"db-type":             "Database configuration",
+		"keyshare-attributes": "IRMA session configuration",
+		"email-server":        "Email configuration (leave empty to disable sending emails)",
+		"tls-cert":            "TLS configuration (leave empty to disable TLS)",
+		"verbose":             "Other options",
+	}
+
 	flags := myirmaServerCmd.Flags()
 	flags.SortFlags = false
 
@@ -46,16 +56,13 @@ func init() {
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
 	flags.StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
-	flags.Lookup("port").Header = `Server address and port to listen on`
 
 	flags.String("db-type", string(myirmaserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
-	flags.Lookup("db-type").Header = `Database configuration`
 
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
 	flags.StringSlice("email-attributes", nil, "Attributes allowed for adding email addresses")
 	flags.Int("session-lifetime", myirmaserver.SessionLifetimeDefault, "Session lifetime in seconds")
-	flags.Lookup("keyshare-attributes").Header = `IRMA session configuration`
 
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
@@ -71,20 +78,17 @@ func init() {
 	flags.StringToString("delete-account-subjects", nil, "Translated subject lines for the delete account email")
 	flags.StringToString("delete-account-files", nil, "Translated emails for the delete account email")
 	flags.Int("delete-delay", 0, "delay in days before a user or email address deletion becomes effective")
-	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
 	flags.String("tls-privkey-file", "", "path to TLS private key")
 	flags.Bool("no-tls", false, "Disable TLS")
-	flags.Lookup("tls-cert").Header = `TLS configuration (leave empty to disable TLS)`
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Bool("production", false, "Production mode")
-	flags.Lookup("verbose").Header = `Other options`
 }
 
 func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, error) {

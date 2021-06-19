@@ -32,6 +32,17 @@ var keyshareServerCmd = &cobra.Command{
 func init() {
 	keyshareRootCmd.AddCommand(keyshareServerCmd)
 
+	keyshareServerCmd.SetUsageTemplate(headerFlagsTemplate)
+	flagHeaders["irma keyshare server"] = map[string]string{
+		"port":               "Server address and port to listen on",
+		"db-type":            "Database configuration",
+		"jwt-privkey":        "Cryptographic keys",
+		"keyshare-attribute": "Keyshare server attribute issued during registration",
+		"email-server":       "Email configuration (leave empty to disable sending emails)",
+		"tls-cert":           "TLS configuration (leave empty to disable TLS)",
+		"verbose":            "Other options",
+	}
+
 	flags := keyshareServerCmd.Flags()
 	flags.SortFlags = false
 	flags.StringP("config", "c", "", "path to configuration file")
@@ -43,11 +54,9 @@ func init() {
 
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
-	flags.Lookup("port").Header = `Server address and port to listen on`
 
 	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
-	flags.Lookup("db-type").Header = `Database configuration`
 
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
 	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
@@ -56,10 +65,8 @@ func init() {
 	flags.Int("jwt-pin-expiry", keysharecore.JWTPinExpiryDefault, "Expiry of PIN JWT in seconds")
 	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
 	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
-	flags.Lookup("jwt-privkey").Header = `Cryptographic keys`
 
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
-	flags.Lookup("keyshare-attribute").Header = `Keyshare server attribute issued during registration`
 
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
@@ -70,20 +77,17 @@ func init() {
 	flags.StringToString("registration-email-subjects", nil, "Translated subject lines for the registration email")
 	flags.StringToString("registration-email-files", nil, "Translated emails for the registration email")
 	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
-	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
 	flags.String("tls-privkey-file", "", "path to TLS private key")
 	flags.Bool("no-tls", false, "Disable TLS")
-	flags.Lookup("tls-cert").Header = `TLS configuration (leave empty to disable TLS)`
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Bool("production", false, "Production mode")
-	flags.Lookup("verbose").Header = `Other options`
 }
 
 func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration, error) {
