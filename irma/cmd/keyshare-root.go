@@ -9,9 +9,9 @@ import (
 	"syscall"
 
 	"github.com/privacybydesign/irmago/server"
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var keyshareRootCmd = &cobra.Command{

@@ -13,12 +13,12 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
-	"github.com/sietseringers/pflag"
 	"github.com/spf13/cast"
+	"github.com/spf13/pflag"
 
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func configureEmail() keyshare.EmailConfiguration {

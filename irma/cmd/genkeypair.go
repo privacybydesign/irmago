@@ -30,7 +30,7 @@ import (
 	"strconv"
 
 	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 
 	"github.com/go-errors/errors"
 )

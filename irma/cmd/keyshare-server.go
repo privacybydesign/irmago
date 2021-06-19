@@ -6,8 +6,8 @@ import (
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var keyshareServerCmd = &cobra.Command{

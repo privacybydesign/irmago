@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 )
 
 var revokeKeypairCmd = &cobra.Command{
