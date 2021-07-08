@@ -59,6 +59,7 @@ func configureIRMAServer() *server.Configuration {
 		LogJSON:                viper.GetBool("log-json"),
 		Logger:                 logger,
 		Production:             viper.GetBool("production"),
+		MaxSessionLifetime:     viper.GetInt("max-session-lifetime"),
 		JwtIssuer:              viper.GetString("jwt-issuer"),
 		JwtPrivateKey:          viper.GetString("jwt-privkey"),
 		JwtPrivateKeyFile:      viper.GetString("jwt-privkey-file"),

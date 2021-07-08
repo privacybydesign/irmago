@@ -72,10 +72,6 @@ type memorySessionStore struct {
 	client    map[irma.ClientToken]*session
 }
 
-const (
-	maxSessionLifetime = 5 * time.Minute // After this a session is cancelled
-)
-
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
 	maxProtocolVersion = irma.NewVersion(2, 8)
@@ -132,7 +128,7 @@ func (s *memorySessionStore) deleteExpired() {
 	expired := make([]irma.RequestorToken, 0, len(toCheck))
 	for token, session := range toCheck {
 		session.Lock()
-		timeout := maxSessionLifetime
+		timeout := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
 		if session.status == irma.ServerStatusInitialized && session.rrequest.Base().ClientTimeout != 0 {
 			timeout = time.Duration(session.rrequest.Base().ClientTimeout) * time.Second
 		}
