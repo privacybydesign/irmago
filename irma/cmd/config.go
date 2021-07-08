@@ -8,16 +8,16 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-errors/errors"
-	"github.com/mitchellh/mapstructure"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
-	"github.com/spf13/cast"
-	"github.com/spf13/pflag"
 
+	"github.com/go-errors/errors"
+	"github.com/mitchellh/mapstructure"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
