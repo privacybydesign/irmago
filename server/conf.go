@@ -51,6 +51,9 @@ type Configuration struct {
 	// Static session requests after parsing
 	StaticSessionRequests map[string]irma.RequestorRequest `json:"-"`
 
+	// Session Timeout in minutes (default value 0 means 5)
+	MaxSessionLifetime int `json:"max_session_lifetime" mapstructure:"max_session_lifetime"`
+
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
@@ -92,6 +95,11 @@ func (conf *Configuration) Check() error {
 	}
 	Logger = conf.Logger
 	irma.SetLogger(conf.Logger)
+
+	// Use default session lifetime if not specified
+	if conf.MaxSessionLifetime == 0 {
+		conf.MaxSessionLifetime = 5
+	}
 
 	// loop to avoid repetetive err != nil line triplets
 	for _, f := range []func() error{
