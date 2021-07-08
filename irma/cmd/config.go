@@ -87,13 +87,11 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	viper.SetEnvPrefix(strings.ToUpper(name))
 	viper.AutomaticEnv()
 
-	// bind cmd flags to viper, replacing dashes with underscores
+	// Bind cmd flags to viper, such that configuration files use underscores instead of dashes
 	f := cmd.Flags()
 	normalizeFunc := f.GetNormalizeFunc()
 	f.SetNormalizeFunc(func(fs *pflag.FlagSet, name string) pflag.NormalizedName {
-		result := normalizeFunc(fs, name)
-		name = strings.ReplaceAll(string(result), "-", "_")
-		return pflag.NormalizedName(name)
+		return pflag.NormalizedName(dashReplacer.Replace(string(normalizeFunc(fs, name))))
 	})
 	if err := viper.BindPFlags(f); err != nil {
 		die("", err)
