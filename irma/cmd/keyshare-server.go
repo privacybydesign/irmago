@@ -33,15 +33,8 @@ func init() {
 	keyshareRootCmd.AddCommand(keyshareServerCmd)
 
 	keyshareServerCmd.SetUsageTemplate(headerFlagsTemplate)
-	flagHeaders["irma keyshare server"] = map[string]string{
-		"port":               "Server address and port to listen on",
-		"db-type":            "Database configuration",
-		"jwt-privkey":        "Cryptographic keys",
-		"keyshare-attribute": "Keyshare server attribute issued during registration",
-		"email-server":       "Email configuration (leave empty to disable sending emails)",
-		"tls-cert":           "TLS configuration (leave empty to disable TLS)",
-		"verbose":            "Other options",
-	}
+	headers := map[string]string{}
+	flagHeaders["irma keyshare server"] = headers
 
 	flags := keyshareServerCmd.Flags()
 	flags.SortFlags = false
@@ -52,12 +45,15 @@ func init() {
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.StringP("url", "u", "", "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
 
+	headers["port"] = "Server address and port to listen on"
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
 
+	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
 
+	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
 	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
 	flags.Int("jwt-privkey-id", 0, "Key identifier of keyshare server public key matching used private key")
@@ -66,8 +62,10 @@ func init() {
 	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
 	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
 
+	headers["keyshare-attribute"] = "Keyshare server attribute issued during registration"
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
 
+	headers["email-server"] = "Email configuration (leave empty to disable sending emails)"
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
 	flags.String("email-username", "", "Username to use when authenticating with email server")
@@ -78,12 +76,14 @@ func init() {
 	flags.StringToString("registration-email-files", nil, "Translated emails for the registration email")
 	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
 
+	headers["tls-cert"] = "TLS configuration (leave empty to disable TLS)"
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
 	flags.String("tls-privkey-file", "", "path to TLS private key")
 	flags.Bool("no-tls", false, "Disable TLS")
 
+	headers["verbose"] = "Other options"
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")

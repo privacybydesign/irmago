@@ -6,7 +6,8 @@ import (
 )
 
 // headerFlagsTemplate is copied from cobra.Command.UsageTemplate, modified to include an invocation
-// of insertHeaders on the flags, which intersperses the flags with headers.
+// of insertHeaders on the flags, which intersperses the flags with headers defined in the
+// flagHeaders variable.
 var headerFlagsTemplate = `Usage:{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
