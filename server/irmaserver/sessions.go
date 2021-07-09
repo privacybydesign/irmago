@@ -80,9 +80,9 @@ type redisSessionStore struct {
 }
 
 const (
-	maxSessionLifetime  = 5 * time.Minute // After this a session is cancelled
-	tokenLookupPrefix   = "token:"
-	sessionLookupPrefix = "session:"
+	maxSessionLifetime         = 5 * time.Minute // After this a session is cancelled
+	requestorTokenLookupPrefix = "token:"
+	clientTokenLookupPrefix    = "session:"
 )
 
 var (
@@ -211,7 +211,7 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 
 func (s *redisSessionStore) get(t string) (*session, error) {
 	//TODO: input validation string?
-	val, err := s.client.Get(context.Background(), tokenLookupPrefix+t).Result()
+	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+t).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -223,7 +223,7 @@ func (s *redisSessionStore) get(t string) (*session, error) {
 }
 
 func (s *redisSessionStore) clientGet(t string) (*session, error) {
-	val, err := s.client.Get(context.Background(), sessionLookupPrefix+t).Result()
+	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+t).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -264,12 +264,12 @@ func (s *redisSessionStore) add(session *session) error {
 		return errors.New("redis error")
 	}
 
-	err = s.client.Set(session.context, tokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
+	err = s.client.Set(session.context, requestorTokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
 	if err != nil {
 		_ = server.LogError(err)
 		return errors.New("redis error")
 	}
-	err = s.client.Set(session.context, sessionLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
+	err = s.client.Set(session.context, clientTokenLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
 	if err != nil {
 		_ = server.LogError(err)
 		return errors.New("redis error")
