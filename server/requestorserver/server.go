@@ -484,19 +484,21 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
-	if request, err := s.irmaserv.GetRequest(result.Token); err == nil {
-		url := request.Base().CallbackURL
-		if url == "" {
-			return
-		}
-		server.DoResultCallback(url,
-			result,
-			s.conf.JwtIssuer,
-			request.Base().ResultJwtValidity,
-			s.conf.JwtRSAPrivateKey,
-		)
+	request, err := s.irmaserv.GetRequest(result.Token)
+	if err != nil {
+		return
 	}
-	return
+
+	url := request.Base().CallbackURL
+	if url == "" {
+		return
+	}
+	server.DoResultCallback(url,
+		result,
+		s.conf.JwtIssuer,
+		request.Base().ResultJwtValidity,
+		s.conf.JwtRSAPrivateKey,
+	)
 }
 
 func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
