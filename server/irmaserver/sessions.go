@@ -130,7 +130,7 @@ func (s *memorySessionStore) deleteExpired() {
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
 	expired := make([]string, 0, len(s.requestor))
-	for Token, session := range s.requestor {
+	for token, session := range s.requestor {
 		session.Lock()
 
 		timeout := maxSessionLifetime
@@ -145,7 +145,7 @@ func (s *memorySessionStore) deleteExpired() {
 				session.setStatus(server.StatusTimeout)
 			} else {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Deleting session")
-				expired = append(expired, Token)
+				expired = append(expired, token)
 			}
 		}
 		session.Unlock()
@@ -154,14 +154,14 @@ func (s *memorySessionStore) deleteExpired() {
 
 	// Using a write lock, delete the expired sessions
 	s.Lock()
-	for _, Token := range expired {
-		session := s.requestor[Token]
+	for _, token := range expired {
+		session := s.requestor[token]
 		if session.sse != nil {
 			session.sse.CloseChannel("session/" + session.Token)
 			session.sse.CloseChannel("session/" + session.ClientToken)
 		}
 		delete(s.client, session.ClientToken)
-		delete(s.requestor, Token)
+		delete(s.requestor, token)
 	}
 	s.Unlock()
 }
@@ -298,9 +298,9 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 	base := request.SessionRequest().Base()
 	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
 		if strings.Contains(base.ClientReturnURL, "?") {
-			base.ClientReturnURL += "&Token=" + token
+			base.ClientReturnURL += "&token=" + token
 		} else {
-			base.ClientReturnURL += "?Token=" + token
+			base.ClientReturnURL += "?token=" + token
 		}
 	}
 
