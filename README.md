@@ -54,10 +54,10 @@ docker pull redis
 docker run --name redis-test-instance -p 6379:6379 -d redis
 ```
 
-You can then start irmago with the store-type flag set to redis and the [default configuration file](testdata/configurations/redis.yml).
+You can then start irmago with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
 
 ```
-irma server -vv --allow-unsigned-callbacks --store-type redis --config=./testdata/configurations/redis.yml
+irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password
 ```
 
 <!-- vim: set ts=4 sw=4: -->
