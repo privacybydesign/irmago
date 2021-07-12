@@ -23,9 +23,10 @@ This release contains several large new features. In particular, the shoulder su
 
 * During scheme parsing, folders found in the scheme folder not present in the assets (when configured) are removed
 * Shoulder surfing prevention:
-  * The `server.SessionPackage` struct now contains a new struct `FrontendRequest` of type `*irma.FrontendSessionRequest`, containing (a.o.) the following:
+  * The `server.SessionPackage` struct now contains a new struct `FrontendRequest` of type `*irma.FrontendSessionRequest`, containing the following:
     * A boolean `PairingRecommended` (named `pairingHint` when being marshalled to JSON) that is set to true when pairing is recommended for that session, as indication to the frontend
     * An `Authorization` token used by the frontend to set pairing options
+    * Fields called `MinProtocolVersion` and `MaxProtocolVersion` indicating the frontend protocol version range supported by the IRMA server.
   * The return values of the `StartSession` function from the API of the `irmaserver` package have changed as follows:
     * The type of the second return parameter, the requestor token, has changed from `string` to `irma.RequestorToken`
     * A new return parameter (type `*irma.FrontendSessionRequest`) has been added containing the frontend pairing settings (corresponding to the `FrontendRequest` field in the `server.SessionPackage` mentioned above)
