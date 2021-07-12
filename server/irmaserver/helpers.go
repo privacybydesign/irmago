@@ -58,8 +58,8 @@ func (session *session) updateSSE() {
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
 	session.setStatus(server.StatusCancelled)
-	_ = session.sessions.update(session) // silently fail in order not to overwrite original error
 	session.Result = &server.SessionResult{Err: rerr, Token: session.Token, Status: server.StatusCancelled, Type: session.Action}
+	_ = session.sessions.update(session) // silently fail in order not to overwrite original error
 	return rerr
 }
 
