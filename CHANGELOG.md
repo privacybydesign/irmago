@@ -4,20 +4,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2021-03-17
+## [0.8.0] - 2021-07-27
+This release contains several large new features. In particular, the shoulder surf prevention feature brings a number of breaking changes in the API, mainly within the `irmaserver` package.
+
 ### Added
-* Support for device pairing to prevent shoulder surfing (i.e. make it impossible for someone in close physical proximity to a user to scan the QR code that was meant for the user)
-  * Introduced new frontend endpoints to manage device pairing
+
+* Support for [chained IRMA sessions](https://irma.app/docs/next/chained-sessions)
+* A Go rewrite of the [keyshare server](https://irma.app/docs/overview/#irma-pin-codes-using-the-keyshare-server) (see the new `irma keyshare` commands), succeeding the [now deprecated `irma_keyshare_server`](https://github.com/credentials/irma_keyshare_server)
+* Added a function `SessionStatus()` in the `irmaserver` package returning a channel with status updates of an IRMA session
+* Added `--api-prefix` parameter to the IRMA server for prefixing its API endpoints with a string
+* Added `--max-session-lifetime` parameter to the IRMA server for setting the session expiry (default 5 minutes)
+* Shoulder surfing prevention: support for device pairing to prevent shoulder surfing (i.e. make it impossible for someone in close physical proximity to a user to scan the QR code that was meant for the user)
+  * Introduced new endpoints used by the [frontend](https://github.com/privacybydesign/irma-frontend-packages) to manage device pairing
   * The API of the `irmaserver` package has two new functions `SetFrontendOptions` and `PairingCompleted`
   * A new server status `"PAIRING"` is introduced
-* A new function `SessionStatus` is available in the API of the `irmaserver` to get a channel with status updates of an IRMA session
 
 ### Changes
-* The `server.SessionPackage` struct now contains an extra field `FrontendAuth`
-* The `irma.Qr` struct now contains an optional field `PairingRecommended` (named `pairingHint` when being marshalled to JSON) that is set to true when pairing is recommended for that session, as indication to the frontend
-* The `StartSession` function from the API of the `irmaserver` package now returns three values: the session pointer (type *irma.QR), the requestor token (type irma.RequestorToken) and the frontend authorization token (type irma.FrontendAuthorization)
-* The `token` parameter, as used by most functions in the API of the `irmaserver` package, now has the type `irma.RequestorToken`
-* The `server.Status` type has been moved to `irma.ServerStatus`; the related constants are also moved, e.g. from `server.StatusInitialized` to `irma.ServerStatusInitialized`
+
+* During scheme parsing, folders found in the scheme folder not present in the assets (when configured) are removed
+* Shoulder surfing prevention:
+  * The `server.SessionPackage` struct now contains an extra field `FrontendAuth`
+  * The `irma.Qr` struct now contains an optional field `PairingRecommended` (named `pairingHint` when being marshalled to JSON) that is set to true when pairing is recommended for that session, as indication to the frontend
+  * The `StartSession` function from the API of the `irmaserver` package now returns three values: the session pointer (type `*irma.QR`), the requestor token (type `irma.RequestorToken`) and the frontend authorization token (type `irma.FrontendAuthorization`)
+  * The `token` parameter, as used by most functions in the API of the `irmaserver` package, now has the type `irma.RequestorToken`
+  * The `server.Status` type has been moved to `irma.ServerStatus`; the related constants are also moved, e.g. from `server.StatusInitialized` to `irma.ServerStatusInitialized`
+  
+### Fixed
+* Bug causing IRMA server startup to fail when revocation is enabled
+* Bug causing sessions to fail when revocation is enabled and the issuer has multiple revocation-enabled keys
+* Incorrectly cased SQL column name used in revocation data lookup
+* Bug causing issuance time in revocation records being floored to credential validity epoch boundaries
 
 ## [0.7.0] - 2021-03-17
 ### Fixed
