@@ -120,8 +120,8 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.String("store-type", "", "specifies how session state will be saved on the server, defaults to memory")
-	flags.String("redis-addr", "", "redis address, to be specified as host:port")
-	flags.String("redis-pw", "", "redis server password")
+	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
+	flags.String("redis-pw", "", "Redis server password")
 	flags.Int("redis-db", 0, "database to be selected after connecting to the server, defaults to 0")
 	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
 	flags.Lookup("store-type").Header = `Session store configuration`
