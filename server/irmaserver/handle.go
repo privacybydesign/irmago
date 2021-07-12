@@ -31,11 +31,7 @@ func (session *session) handleDelete() error {
 
 	session.Result = &server.SessionResult{Token: session.Token, Status: server.StatusCancelled, Type: session.Action}
 	session.setStatus(server.StatusCancelled)
-	err := session.sessions.update(session)
-	if err != nil {
-		return err
-	}
-	return nil
+	return session.sessions.update(session)
 }
 
 func (session *session) handleGetRequest(min, max *irma.ProtocolVersion) (irma.SessionRequest, *irma.RemoteError) {
