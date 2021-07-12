@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 
 	"github.com/privacybydesign/irmago/internal/keysharecore"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 )
 
 var keyshareKeygenCmd = &cobra.Command{

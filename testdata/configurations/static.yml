@@ -1,4 +1,5 @@
 schemes_update: 0
+allow_unsigned_callbacks: true
 static_sessions:
   # Start this session by scanning with the IRMA app a QR code with the following content:
   # {"irmaqr": "redirect", "u": "http://host:port/irma/session/mystaticsession"}

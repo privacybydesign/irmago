@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/sietseringers/cobra"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -37,6 +37,8 @@ func Execute() {
 
 func init() {
 	RootCmd.AddCommand(versionCmd)
+
+	cobra.AddTemplateFunc("insertHeaders", insertHeaders)
 }
 
 func die(message string, err error) {

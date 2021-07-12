@@ -1,6 +1,6 @@
 package cmd
 
-import "github.com/sietseringers/cobra"
+import "github.com/spf13/cobra"
 
 // schemeCmd represents the scheme command
 var schemeCmd = &cobra.Command{

@@ -5,7 +5,7 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 )
 
 var revokeCmd = &cobra.Command{

@@ -20,7 +20,6 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.6.2
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jasonlvhit/gocron v0.0.0-20180312192515-54194c9749d4
 	github.com/jinzhu/gorm v1.9.12
 	github.com/lib/pq v1.3.0 // indirect
@@ -32,15 +31,13 @@ require (
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/privacybydesign/gabi v0.0.0-20210520084001-626ad7db13a6
 	github.com/shopspring/decimal v1.2.0 // indirect
-	github.com/pelletier/go-toml v1.2.0 // indirect
-	github.com/sietseringers/cobra v1.0.1-0.20200909200314-c50c3838234b
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
-	github.com/sietseringers/pflag v1.0.4-0.20200909193609-0cde7e893819
-	github.com/sietseringers/viper v1.3.2-0.20200909194413-4120aa4ee8e8
 	github.com/sirupsen/logrus v1.4.2
-	github.com/smartystreets/goconvey v1.6.4 // indirect
 	github.com/spf13/afero v1.2.0 // indirect
 	github.com/spf13/cast v1.3.0
+	github.com/spf13/cobra v1.1.3
+	github.com/spf13/pflag v1.0.5
+	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.6.1
 	github.com/timshannon/bolthold v0.0.0-20190812165541-a85bcc049a2e // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2

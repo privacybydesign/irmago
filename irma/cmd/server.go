@@ -9,8 +9,8 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -67,8 +67,9 @@ func init() {
 }
 
 func setFlags(cmd *cobra.Command, production bool) error {
-	flags := cmd.Flags()
-	flags.SortFlags = false
+	cmd.SetUsageTemplate(headerFlagsTemplate)
+	headers := map[string]string{}
+	flagHeaders["irma server"] = headers
 
 	var defaulturl string
 	if !production {
@@ -78,6 +79,9 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	}
 
 	schemespath := irma.DefaultSchemesPath()
+
+	flags := cmd.Flags()
+	flags.SortFlags = false
 
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
@@ -91,13 +95,14 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("revocation-db-str", "", "connection string for revocation database")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
+	headers["port"] = "Server address and port to listen on"
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
 	flags.StringP("api-prefix", "a", "/", "prefix API endpoints with this string, e.g. POST /session becomes POST {api-prefix}/session")
 	flags.Int("client-port", 0, "if specified, start a separate server for the IRMA app at this port")
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
-	flags.Lookup("port").Header = `Server address and port to listen on`
 
+	headers["no-auth"] = "Requestor authentication and default requestor permissions"
 	flags.Bool("no-auth", !production, "whether or not to authenticate requestors (and reject all authenticated requests)")
 	flags.String("requestors", "", "requestor configuration (in JSON)")
 	flags.StringSlice("disclose-perms", nil, "list of attributes that all requestors may verify (default *)")
@@ -111,18 +116,18 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
 	flags.Int("max-session-lifetime", 5, "maximum duration of a session once a client connects in minutes")
-	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
+	headers["jwt-issuer"] = "JWT configuration"
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
 	flags.String("jwt-privkey-file", "", "path to JWT private key")
 	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
 	flags.Bool("allow-unsigned-callbacks", false, "Allow callbackUrl in session requests when no JWT privatekey is installed (potentially unsafe)")
 	flags.Bool("augment-client-return-url", false, "Augment the client return url with the server session token if present")
-	flags.Lookup("jwt-issuer").Header = `JWT configuration`
 
+	headers["tls-cert"] = "TLS configuration (leave empty to disable TLS)"
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
@@ -132,17 +137,16 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
 	flags.Bool("no-tls", false, "Disable TLS")
-	flags.Lookup("tls-cert").Header = "TLS configuration (leave empty to disable TLS)"
 
+	headers["email"] = "Email address (see README for more info)"
 	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
 	flags.Bool("no-email", !production, "Opt out of providing an email address with --email")
-	flags.Lookup("email").Header = "Email address (see README for more info)"
 
+	headers["verbose"] = "Other options"
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Bool("production", false, "Production mode")
-	flags.Lookup("verbose").Header = `Other options`
 
 	return nil
 }
@@ -154,8 +158,8 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 
 	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
 		map[string]interface{}{
-			"no-auth":  false,
-			"no-email": false,
+			"no_auth":  false,
+			"no_email": false,
 			"url":      "",
 		},
 	)
@@ -164,38 +168,38 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	conf := &requestorserver.Configuration{
 		Configuration: configureIRMAServer(),
 		Permissions: requestorserver.Permissions{
-			Disclosing: handlePermission("disclose-perms"),
-			Signing:    handlePermission("sign-perms"),
-			Issuing:    handlePermission("issue-perms"),
-			Revoking:   handlePermission("revoke-perms"),
+			Disclosing: handlePermission("disclose_perms"),
+			Signing:    handlePermission("sign_perms"),
+			Issuing:    handlePermission("issue_perms"),
+			Revoking:   handlePermission("revoke_perms"),
 		},
-		SkipPrivateKeysCheck:           viper.GetBool("skip-private-keys-check"),
-		ListenAddress:                  viper.GetString("listen-addr"),
+		SkipPrivateKeysCheck:           viper.GetBool("skip_private_keys_check"),
+		ListenAddress:                  viper.GetString("listen_addr"),
 		Port:                           viper.GetInt("port"),
-		ApiPrefix:                      viper.GetString("api-prefix"),
-		ClientListenAddress:            viper.GetString("client-listen-addr"),
-		ClientPort:                     viper.GetInt("client-port"),
-		DisableRequestorAuthentication: viper.GetBool("no-auth"),
+		ApiPrefix:                      viper.GetString("api_prefix"),
+		ClientListenAddress:            viper.GetString("client_listen_addr"),
+		ClientPort:                     viper.GetInt("client_port"),
+		DisableRequestorAuthentication: viper.GetBool("no_auth"),
 		Requestors:                     make(map[string]requestorserver.Requestor),
-		MaxRequestAge:                  viper.GetInt("max-request-age"),
-		StaticPath:                     viper.GetString("static-path"),
-		StaticPrefix:                   viper.GetString("static-prefix"),
+		MaxRequestAge:                  viper.GetInt("max_request_age"),
+		StaticPath:                     viper.GetString("static_path"),
+		StaticPrefix:                   viper.GetString("static_prefix"),
 
-		TlsCertificate:           viper.GetString("tls-cert"),
-		TlsCertificateFile:       viper.GetString("tls-cert-file"),
-		TlsPrivateKey:            viper.GetString("tls-privkey"),
-		TlsPrivateKeyFile:        viper.GetString("tls-privkey-file"),
-		ClientTlsCertificate:     viper.GetString("client-tls-cert"),
-		ClientTlsCertificateFile: viper.GetString("client-tls-cert-file"),
-		ClientTlsPrivateKey:      viper.GetString("client-tls-privkey"),
-		ClientTlsPrivateKeyFile:  viper.GetString("client-tls-privkey-file"),
+		TlsCertificate:           viper.GetString("tls_cert"),
+		TlsCertificateFile:       viper.GetString("tls_cert_file"),
+		TlsPrivateKey:            viper.GetString("tls_privkey"),
+		TlsPrivateKeyFile:        viper.GetString("tls_privkey_file"),
+		ClientTlsCertificate:     viper.GetString("client_tls_cert"),
+		ClientTlsCertificateFile: viper.GetString("client_tls_cert_file"),
+		ClientTlsPrivateKey:      viper.GetString("client_tls_privkey"),
+		ClientTlsPrivateKeyFile:  viper.GetString("client_tls_privkey_file"),
 	}
 
 	if conf.Production {
-		if !viper.GetBool("no-email") && conf.Email == "" {
+		if !viper.GetBool("no_email") && conf.Email == "" {
 			return nil, errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
 		}
-		if viper.GetBool("no-email") && conf.Email != "" {
+		if viper.GetBool("no_email") && conf.Email != "" {
 			return nil, errors.New("--no-email cannot be combined with --email")
 		}
 	}
@@ -205,11 +209,11 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
 		return nil, err
 	}
-	if err = handleMapOrString("static-sessions", &conf.StaticSessions); err != nil {
+	if err = handleMapOrString("static_sessions", &conf.StaticSessions); err != nil {
 		return nil, err
 	}
 	var m map[string]*irma.RevocationSetting
-	if err = handleMapOrString("revocation-settings", &m); err != nil {
+	if err = handleMapOrString("revocation_settings", &m); err != nil {
 		return nil, err
 	}
 	for i, s := range m {

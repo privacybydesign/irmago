@@ -9,9 +9,9 @@ import (
 	"syscall"
 
 	"github.com/privacybydesign/irmago/server"
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var keyshareRootCmd = &cobra.Command{
@@ -30,7 +30,7 @@ type stoppableServer interface {
 
 func runServer(serv stoppableServer, logger *logrus.Logger) {
 	// Determine full listening address.
-	fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen-addr"), viper.GetInt("port"))
+	fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen_addr"), viper.GetInt("port"))
 
 	// Load TLS configuration
 	TLSConfig := configureTLS()

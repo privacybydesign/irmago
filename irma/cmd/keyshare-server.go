@@ -6,8 +6,8 @@ import (
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var keyshareServerCmd = &cobra.Command{
@@ -32,6 +32,10 @@ var keyshareServerCmd = &cobra.Command{
 func init() {
 	keyshareRootCmd.AddCommand(keyshareServerCmd)
 
+	keyshareServerCmd.SetUsageTemplate(headerFlagsTemplate)
+	headers := map[string]string{}
+	flagHeaders["irma keyshare server"] = headers
+
 	flags := keyshareServerCmd.Flags()
 	flags.SortFlags = false
 	flags.StringP("config", "c", "", "path to configuration file")
@@ -41,14 +45,15 @@ func init() {
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.StringP("url", "u", "", "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
 
+	headers["port"] = "Server address and port to listen on"
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
-	flags.Lookup("port").Header = `Server address and port to listen on`
 
+	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
-	flags.Lookup("db-type").Header = `Database configuration`
 
+	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
 	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
 	flags.Int("jwt-privkey-id", 0, "Key identifier of keyshare server public key matching used private key")
@@ -56,11 +61,11 @@ func init() {
 	flags.Int("jwt-pin-expiry", keysharecore.JWTPinExpiryDefault, "Expiry of PIN JWT in seconds")
 	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
 	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
-	flags.Lookup("jwt-privkey").Header = `Cryptographic keys`
 
+	headers["keyshare-attribute"] = "Keyshare server attribute issued during registration"
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
-	flags.Lookup("keyshare-attribute").Header = `Keyshare server attribute issued during registration`
 
+	headers["email-server"] = "Email configuration (leave empty to disable sending emails)"
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
 	flags.String("email-username", "", "Username to use when authenticating with email server")
@@ -70,20 +75,19 @@ func init() {
 	flags.StringToString("registration-email-subjects", nil, "Translated subject lines for the registration email")
 	flags.StringToString("registration-email-files", nil, "Translated emails for the registration email")
 	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
-	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
+	headers["tls-cert"] = "TLS configuration (leave empty to disable TLS)"
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
 	flags.String("tls-privkey-file", "", "path to TLS private key")
 	flags.Bool("no-tls", false, "Disable TLS")
-	flags.Lookup("tls-cert").Header = `TLS configuration (leave empty to disable TLS)`
 
+	headers["verbose"] = "Other options"
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Bool("production", false, "Production mode")
-	flags.Lookup("verbose").Header = `Other options`
 }
 
 func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration, error) {
@@ -94,22 +98,22 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
-		DBType:    keyshareserver.DBType(viper.GetString("db-type")),
-		DBConnStr: viper.GetString("db-str"),
+		DBType:    keyshareserver.DBType(viper.GetString("db_type")),
+		DBConnStr: viper.GetString("db_str"),
 
-		JwtKeyID:                viper.GetUint32("jwt-privkey-id"),
-		JwtPrivateKey:           viper.GetString("jwt-privkey"),
-		JwtPrivateKeyFile:       viper.GetString("jwt-privkey-file"),
-		JwtIssuer:               viper.GetString("jwt-issuer"),
-		JwtPinExpiry:            viper.GetInt("jwt-pin-expiry"),
-		StoragePrimaryKeyFile:   viper.GetString("storage-primary-keyfile"),
-		StorageFallbackKeyFiles: viper.GetStringSlice("storage-fallback-keyfile"),
+		JwtKeyID:                viper.GetUint32("jwt_privkey_id"),
+		JwtPrivateKey:           viper.GetString("jwt_privkey"),
+		JwtPrivateKeyFile:       viper.GetString("jwt_privkey_file"),
+		JwtIssuer:               viper.GetString("jwt_issuer"),
+		JwtPinExpiry:            viper.GetInt("jwt_pin_expiry"),
+		StoragePrimaryKeyFile:   viper.GetString("storage_primary_keyfile"),
+		StorageFallbackKeyFiles: viper.GetStringSlice("storage_fallback_keyfile"),
 
-		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare-attribute")),
+		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare_attribute")),
 
-		RegistrationEmailSubjects: viper.GetStringMapString("registration-email-subjects"),
-		RegistrationEmailFiles:    viper.GetStringMapString("registration-email-files"),
-		VerificationURL:           viper.GetStringMapString("verification-url"),
+		RegistrationEmailSubjects: viper.GetStringMapString("registration_email_subjects"),
+		RegistrationEmailFiles:    viper.GetStringMapString("registration_email_files"),
+		VerificationURL:           viper.GetStringMapString("verification_url"),
 	}
 
 	if conf.Production && conf.DBType != keyshareserver.DBTypePostgres {

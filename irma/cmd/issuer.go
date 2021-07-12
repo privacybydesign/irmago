@@ -1,6 +1,6 @@
 package cmd
 
-import "github.com/sietseringers/cobra"
+import "github.com/spf13/cobra"
 
 // issuerCmd represents the issuer command
 var issuerCmd = &cobra.Command{

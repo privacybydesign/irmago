@@ -8,72 +8,73 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-errors/errors"
-	"github.com/mitchellh/mapstructure"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
-	"github.com/spf13/cast"
 
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
+	"github.com/go-errors/errors"
+	"github.com/mitchellh/mapstructure"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cast"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 )
 
 func configureEmail() keyshare.EmailConfiguration {
 	// If username/password are specified for the email server, build an authentication object.
 	var emailAuth smtp.Auth
-	if viper.GetString("email-username") != "" {
+	if viper.GetString("email_username") != "" {
 		emailAuth = smtp.PlainAuth(
 			"",
-			viper.GetString("email-username"),
-			viper.GetString("email-password"),
-			viper.GetString("email-hostname"),
+			viper.GetString("email_username"),
+			viper.GetString("email_password"),
+			viper.GetString("email_hostname"),
 		)
 	}
 
 	return keyshare.EmailConfiguration{
-		EmailServer:     viper.GetString("email-server"),
+		EmailServer:     viper.GetString("email_server"),
 		EmailAuth:       emailAuth,
-		EmailFrom:       viper.GetString("email-from"),
-		DefaultLanguage: viper.GetString("default-language"),
+		EmailFrom:       viper.GetString("email_from"),
+		DefaultLanguage: viper.GetString("default_language"),
 	}
 }
 
 func configureIRMAServer() *server.Configuration {
 	return &server.Configuration{
-		SchemesPath:            viper.GetString("schemes-path"),
-		SchemesAssetsPath:      viper.GetString("schemes-assets-path"),
-		SchemesUpdateInterval:  viper.GetInt("schemes-update"),
-		DisableSchemesUpdate:   viper.GetInt("schemes-update") == 0,
+		SchemesPath:            viper.GetString("schemes_path"),
+		SchemesAssetsPath:      viper.GetString("schemes_assets_path"),
+		SchemesUpdateInterval:  viper.GetInt("schemes_update"),
+		DisableSchemesUpdate:   viper.GetInt("schemes_update") == 0,
 		IssuerPrivateKeysPath:  viper.GetString("privkeys"),
-		RevocationDBType:       viper.GetString("revocation-db-type"),
-		RevocationDBConnStr:    viper.GetString("revocation-db-str"),
+		RevocationDBType:       viper.GetString("revocation_db_type"),
+		RevocationDBConnStr:    viper.GetString("revocation_db_str"),
 		RevocationSettings:     irma.RevocationSettings{},
 		URL:                    viper.GetString("url"),
-		DisableTLS:             viper.GetBool("no-tls"),
+		DisableTLS:             viper.GetBool("no_tls"),
 		Email:                  viper.GetString("email"),
 		EnableSSE:              viper.GetBool("sse"),
 		Verbose:                viper.GetInt("verbose"),
 		Quiet:                  viper.GetBool("quiet"),
-		LogJSON:                viper.GetBool("log-json"),
+		LogJSON:                viper.GetBool("log_json"),
 		Logger:                 logger,
 		Production:             viper.GetBool("production"),
-		MaxSessionLifetime:     viper.GetInt("max-session-lifetime"),
-		JwtIssuer:              viper.GetString("jwt-issuer"),
-		JwtPrivateKey:          viper.GetString("jwt-privkey"),
-		JwtPrivateKeyFile:      viper.GetString("jwt-privkey-file"),
-		AllowUnsignedCallbacks: viper.GetBool("allow-unsigned-callbacks"),
-		AugmentClientReturnURL: viper.GetBool("augment-client-return-url"),
+		MaxSessionLifetime:     viper.GetInt("max_session_lifetime"),
+		JwtIssuer:              viper.GetString("jwt_issuer"),
+		JwtPrivateKey:          viper.GetString("jwt_privkey"),
+		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
+		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
+		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
 	}
 }
 
 func configureTLS() *tls.Config {
 	conf, err := server.TLSConf(
-		viper.GetString("tls-cert"),
-		viper.GetString("tls-cert-file"),
-		viper.GetString("tls-privkey"),
-		viper.GetString("tls-privkey-file"))
+		viper.GetString("tls_cert"),
+		viper.GetString("tls_cert_file"),
+		viper.GetString("tls_privkey"),
+		viper.GetString("tls_privkey_file"))
 	if err != nil {
 		die("", err)
 	}
@@ -83,11 +84,16 @@ func configureTLS() *tls.Config {
 func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, productionDefaults map[string]interface{}) {
 	dashReplacer := strings.NewReplacer("-", "_")
 	viper.SetEnvKeyReplacer(dashReplacer)
-	viper.SetFileKeyReplacer(dashReplacer)
 	viper.SetEnvPrefix(strings.ToUpper(name))
 	viper.AutomaticEnv()
 
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
+	// Bind cmd flags to viper, such that configuration files use underscores instead of dashes
+	f := cmd.Flags()
+	normalizeFunc := f.GetNormalizeFunc()
+	f.SetNormalizeFunc(func(fs *pflag.FlagSet, name string) pflag.NormalizedName {
+		return pflag.NormalizedName(dashReplacer.Replace(string(normalizeFunc(fs, name))))
+	})
+	if err := viper.BindPFlags(f); err != nil {
 		die("", err)
 	}
 
@@ -118,7 +124,7 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
 
 	// Create our logger instance
-	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log-json"))
+	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log_json"))
 
 	// First log output: hello, development or production mode, log level
 	mode := "development"
@@ -165,7 +171,7 @@ func handleMapOrString(key string, dest interface{}) error {
 
 func handlePermission(typ string) []string {
 	if !viper.IsSet(typ) {
-		if typ == "revoke-perms" || (viper.GetBool("production") && typ == "issue-perms") {
+		if typ == "revoke_perms" || (viper.GetBool("production") && typ == "issue_perms") {
 			return []string{}
 		} else {
 			return []string{"*"}

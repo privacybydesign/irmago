@@ -5,8 +5,8 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/myirmaserver"
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var myirmaServerCmd = &cobra.Command{
@@ -31,6 +31,10 @@ var myirmaServerCmd = &cobra.Command{
 func init() {
 	keyshareRootCmd.AddCommand(myirmaServerCmd)
 
+	myirmaServerCmd.SetUsageTemplate(headerFlagsTemplate)
+	headers := map[string]string{}
+	flagHeaders["irma keyshare myirmaserver"] = headers
+
 	flags := myirmaServerCmd.Flags()
 	flags.SortFlags = false
 
@@ -43,20 +47,21 @@ func init() {
 	flags.String("static-prefix", "/", "Host static files under this URL prefix")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
+	headers["port"] = "Server address and port to listen on"
 	flags.IntP("port", "p", 8080, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
 	flags.StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
-	flags.Lookup("port").Header = `Server address and port to listen on`
 
+	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(myirmaserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db", "", "Database server connection string")
-	flags.Lookup("db-type").Header = `Database configuration`
 
+	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
 	flags.StringSlice("email-attributes", nil, "Attributes allowed for adding email addresses")
 	flags.Int("session-lifetime", myirmaserver.SessionLifetimeDefault, "Session lifetime in seconds")
-	flags.Lookup("keyshare-attributes").Header = `IRMA session configuration`
 
+	headers["email-server"] = "Email configuration (leave empty to disable sending emails)"
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
 	flags.String("email-hostname", "", "Hostname used in email server tls certificate (leave empty when mail server does not use tls)")
 	flags.String("email-username", "", "Username to use when authenticating with email server")
@@ -71,20 +76,19 @@ func init() {
 	flags.StringToString("delete-account-subjects", nil, "Translated subject lines for the delete account email")
 	flags.StringToString("delete-account-files", nil, "Translated emails for the delete account email")
 	flags.Int("delete-delay", 0, "delay in days before a user or email address deletion becomes effective")
-	flags.Lookup("email-server").Header = `Email configuration (leave empty to disable sending emails)`
 
+	headers["tls-cert"] = "TLS configuration (leave empty to disable TLS)"
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
 	flags.String("tls-privkey-file", "", "path to TLS private key")
 	flags.Bool("no-tls", false, "Disable TLS")
-	flags.Lookup("tls-cert").Header = `TLS configuration (leave empty to disable TLS)`
 
+	headers["verbose"] = "Other options"
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Bool("production", false, "Production mode")
-	flags.Lookup("verbose").Header = `Other options`
 }
 
 func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, error) {
@@ -95,24 +99,24 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
-		CORSAllowedOrigins: viper.GetStringSlice("cors-allowed-origins"),
+		CORSAllowedOrigins: viper.GetStringSlice("cors_allowed_origins"),
 
-		StaticPath:   viper.GetString("static-path"),
-		StaticPrefix: viper.GetString("static-prefix"),
+		StaticPath:   viper.GetString("static_path"),
+		StaticPrefix: viper.GetString("static_prefix"),
 
-		DBType:    myirmaserver.DBType(viper.GetString("db-type")),
-		DBConnStr: viper.GetString("db-str"),
+		DBType:    myirmaserver.DBType(viper.GetString("db_type")),
+		DBConnStr: viper.GetString("db_str"),
 
-		LoginEmailSubjects:    viper.GetStringMapString("login-email-subjects"),
-		LoginEmailFiles:       viper.GetStringMapString("login-email-files"),
-		LoginEmailBaseURL:     viper.GetStringMapString("login-url"),
-		DeleteEmailFiles:      viper.GetStringMapString("delete-email-files"),
-		DeleteEmailSubjects:   viper.GetStringMapString("delete-email-subjects"),
-		DeleteAccountFiles:    viper.GetStringMapString("delete-account-files"),
-		DeleteAccountSubjects: viper.GetStringMapString("delete-account-subjects"),
-		DeleteDelay:           viper.GetInt("delete-delay"),
+		LoginEmailSubjects:    viper.GetStringMapString("login_email_subjects"),
+		LoginEmailFiles:       viper.GetStringMapString("login_email_files"),
+		LoginEmailBaseURL:     viper.GetStringMapString("login_url"),
+		DeleteEmailFiles:      viper.GetStringMapString("delete_email_files"),
+		DeleteEmailSubjects:   viper.GetStringMapString("delete_email_subjects"),
+		DeleteAccountFiles:    viper.GetStringMapString("delete_account_files"),
+		DeleteAccountSubjects: viper.GetStringMapString("delete_account_subjects"),
+		DeleteDelay:           viper.GetInt("delete_delay"),
 
-		SessionLifetime: viper.GetInt("session-lifetime"),
+		SessionLifetime: viper.GetInt("session_lifetime"),
 	}
 
 	if conf.Production && conf.DBType != myirmaserver.DBTypePostgres {
@@ -121,12 +125,12 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 
 	conf.URL = server.ReplacePortString(viper.GetString("url"), viper.GetInt("port"))
 
-	for _, v := range viper.GetStringSlice("keyshare-attributes") {
+	for _, v := range viper.GetStringSlice("keyshare_attributes") {
 		conf.KeyshareAttributes = append(
 			conf.KeyshareAttributes,
 			irma.NewAttributeTypeIdentifier(v))
 	}
-	for _, v := range viper.GetStringSlice("email-attributes") {
+	for _, v := range viper.GetStringSlice("email_attributes") {
 		conf.EmailAttributes = append(
 			conf.EmailAttributes,
 			irma.NewAttributeTypeIdentifier(v))
