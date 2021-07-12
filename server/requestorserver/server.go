@@ -548,7 +548,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	// Everything is authenticated and parsed, we're good to go!
 	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
-		if err.Error() == "redis error" {
+		if _, ok := err.(irmaserver.RedisError); ok {
 			server.WriteError(w, server.ErrorInternal, err.Error())
 		} else {
 			server.WriteError(w, server.ErrorInvalidRequest, err.Error())

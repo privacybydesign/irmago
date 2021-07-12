@@ -79,6 +79,10 @@ type redisSessionStore struct {
 	conf   *server.Configuration
 }
 
+type RedisError interface {
+	Error() string
+}
+
 const (
 	maxSessionLifetime         = 5 * time.Minute // After this a session is cancelled
 	requestorTokenLookupPrefix = "token:"
@@ -215,8 +219,7 @@ func (s *redisSessionStore) get(t string) (*session, error) {
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
-		_ = server.LogError(err)
-		return nil, errors.New("redis error")
+		return nil, logAsRedisError(err)
 	}
 
 	return s.clientGet(val)
@@ -227,16 +230,14 @@ func (s *redisSessionStore) clientGet(t string) (*session, error) {
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
-		_ = server.LogError(err)
-		return nil, errors.New("redis error")
+		return nil, logAsRedisError(err)
 	}
 
 	var session session
 	session.conf = s.conf
 	session.sessions = s
 	if err := session.sessionData.UnmarshalJSON([]byte(val)); err != nil {
-		_ = server.LogError(err)
-		return nil, errors.New("redis error")
+		return nil, logAsRedisError(err)
 	}
 	session.request = session.Rrequest.SessionRequest()
 
@@ -260,19 +261,16 @@ func (s *redisSessionStore) add(session *session) error {
 
 	sessionJSON, err := session.sessionData.MarshalJSON()
 	if err != nil {
-		_ = server.LogError(err)
-		return errors.New("redis error")
+		return logAsRedisError(err)
 	}
 
 	err = s.client.Set(session.context, requestorTokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
 	if err != nil {
-		_ = server.LogError(err)
-		return errors.New("redis error")
+		return logAsRedisError(err)
 	}
 	err = s.client.Set(session.context, clientTokenLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
 	if err != nil {
-		_ = server.LogError(err)
-		return errors.New("redis error")
+		return logAsRedisError(err)
 	}
 
 	return nil
@@ -285,7 +283,7 @@ func (s *redisSessionStore) update(session *session) error {
 func (s *redisSessionStore) stop() {
 	err := s.client.Close()
 	if err != nil {
-		_ = server.LogError(err)
+		_ = logAsRedisError(err)
 	}
 }
 
@@ -338,4 +336,8 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 	}
 
 	return ses, nil
+}
+
+func logAsRedisError(err error) error {
+	return server.LogError(RedisError(err))
 }
