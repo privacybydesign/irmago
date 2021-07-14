@@ -191,21 +191,16 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 	}
 
 	// unmarshal Rrequest
-	ipR := &irma.IdentityProviderRequest{}
-	spR := &irma.ServiceProviderRequest{}
-	sigR := &irma.SignatureRequestorRequest{}
-
-	if err := json.Unmarshal(*temp.Rrequest, ipR); err == nil && s.Action == "issuing" {
-		s.Rrequest = ipR
-	} else if err = json.Unmarshal(*temp.Rrequest, spR); err == nil && s.Action == "disclosing" {
-		s.Rrequest = spR
-	} else if err = json.Unmarshal(*temp.Rrequest, sigR); err == nil && s.Action == "signing" {
-		s.Rrequest = sigR
-	} else {
-		return err
+	switch s.Action {
+	case "issuing":
+		s.Rrequest = &irma.IdentityProviderRequest{}
+	case "disclosing":
+		s.Rrequest = &irma.ServiceProviderRequest{}
+	case "signing":
+		s.Rrequest = &irma.SignatureRequestorRequest{}
 	}
 
-	return nil
+	return json.Unmarshal(*temp.Rrequest, s.Rrequest)
 }
 
 func (s *redisSessionStore) get(t string) (*session, error) {
