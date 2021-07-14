@@ -461,7 +461,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			err = session.sessions.update(session)
 			if err != nil {
 				_ = server.LogError(err)
-				server.WriteError(w, server.ErrorInternal, "Internal server error")
+				server.WriteError(w, server.ErrorInternal, "")
 				return
 			}
 			session.toBeUpdated = false

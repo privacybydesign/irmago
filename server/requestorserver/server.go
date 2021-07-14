@@ -549,7 +549,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		if _, ok := err.(irmaserver.RedisError); ok {
-			server.WriteError(w, server.ErrorInternal, err.Error())
+			server.WriteError(w, server.ErrorInternal, "")
 		} else {
 			server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		}
