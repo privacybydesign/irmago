@@ -231,7 +231,7 @@ func (s *redisSessionStore) clientGet(t string) (*session, error) {
 	var session session
 	session.conf = s.conf
 	session.sessions = s
-	if err := session.sessionData.UnmarshalJSON([]byte(val)); err != nil {
+	if err := json.Unmarshal([]byte(val), &session.sessionData); err != nil {
 		return nil, logAsRedisError(err)
 	}
 	session.request = session.Rrequest.SessionRequest()
