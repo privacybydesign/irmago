@@ -40,7 +40,7 @@ func (entry *LogEntry) UnmarshalJSON(b []byte) (err error) {
 	// Internal type needed for unmarshalling to delay requestorInfo unmarshalling
 	type rawLogEntry LogEntry
 	var temp struct {
-		ServerName *json.RawMessage `json:",omitempty"`
+		ServerName json.RawMessage `json:",omitempty"`
 		rawLogEntry
 	}
 
@@ -52,24 +52,24 @@ func (entry *LogEntry) UnmarshalJSON(b []byte) (err error) {
 	*entry = LogEntry(temp.rawLogEntry)
 
 	// Nil as servername is simple
-	if temp.ServerName == nil {
+	if len(temp.ServerName) == 0 {
 		entry.ServerName = nil
 		return nil
 	}
 
 	// Try to decode servername as requestorinfo
-	if err = json.Unmarshal(*temp.ServerName, &(entry.ServerName)); err != nil {
+	if err = json.Unmarshal(temp.ServerName, &(entry.ServerName)); err != nil {
 		return
 	}
 
-	// If succesfull, we should have at least one translation for a name, so check that
+	// If successful, we should have at least one translation for a name, so check that
 	if len(entry.ServerName.Name) != 0 {
 		return nil
 	}
 
 	// No success, construct a minimal requestorinfo with the old translatedstring as name
 	entry.ServerName = &irma.RequestorInfo{}
-	return json.Unmarshal(*temp.ServerName, &(entry.ServerName.Name))
+	return json.Unmarshal(temp.ServerName, &(entry.ServerName.Name))
 }
 
 const ActionRemoval = irma.Action("removal")
