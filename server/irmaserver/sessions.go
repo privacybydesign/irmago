@@ -170,11 +170,6 @@ func (s *memorySessionStore) deleteExpired() {
 	s.Unlock()
 }
 
-// MarshalJSON marshals sessionData to be used in the Redis in-memory datastore.
-func (s *sessionData) MarshalJSON() ([]byte, error) {
-	return json.Marshal(*s)
-}
-
 // UnmarshalJSON unmarshals sessionData.
 func (s *sessionData) UnmarshalJSON(data []byte) error {
 	type rawSessionData sessionData
@@ -259,7 +254,7 @@ func (s *redisSessionStore) add(session *session) error {
 		timeout = maxSessionLifetime
 	}
 
-	sessionJSON, err := session.sessionData.MarshalJSON()
+	sessionJSON, err := json.Marshal(session.sessionData)
 	if err != nil {
 		return logAsRedisError(err)
 	}
