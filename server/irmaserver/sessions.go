@@ -175,7 +175,7 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 	type rawSessionData sessionData
 
 	var temp struct {
-		Rrequest *json.RawMessage `json:",omitempty"`
+		Rrequest json.RawMessage `json:",omitempty"`
 		rawSessionData
 	}
 
@@ -185,7 +185,7 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 
 	*s = sessionData(temp.rawSessionData)
 
-	if temp.Rrequest == nil {
+	if len(temp.Rrequest) == 0 {
 		s.Rrequest = nil
 		return errors.Errorf("temp.Rrequest == nil: %d \n", temp.Rrequest)
 	}
@@ -200,7 +200,7 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 		s.Rrequest = &irma.SignatureRequestorRequest{}
 	}
 
-	return json.Unmarshal(*temp.Rrequest, s.Rrequest)
+	return json.Unmarshal(temp.Rrequest, s.Rrequest)
 }
 
 func (s *redisSessionStore) get(t string) (*session, error) {
