@@ -211,6 +211,7 @@ func sessionHelperWithConfig(t *testing.T, request irma.SessionRequest, sessiont
 		require.NoError(t, result.Err)
 	}
 
+	// hacky solution since all tests that require JWT signing also test requestor authentication, see TODO above
 	resultEndpoint := "result"
 	if authEnabled {
 		resultEndpoint = "result-jwt"
