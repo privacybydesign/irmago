@@ -153,11 +153,15 @@ func (p *PrivateKeyRingFolder) Latest(id IssuerIdentifier) (*gabikeys.PrivateKey
 }
 
 func (p *PrivateKeyRingFolder) Iterate(id IssuerIdentifier, f func(sk *gabikeys.PrivateKey) error) error {
-	files, err := filepath.Glob(filepath.Join(p.path, fmt.Sprintf("%s*", id.String())))
+	files, err := filepath.Glob(filepath.Join(p.path, fmt.Sprintf("%s.xml", id.String())))
 	if err != nil {
 		return err
 	}
-	for _, file := range files {
+	filesWithCounter, err := filepath.Glob(filepath.Join(p.path, fmt.Sprintf("%s.*.xml", id.String())))
+	if err != nil {
+		return err
+	}
+	for _, file := range append(files, filesWithCounter...) {
 		sk, err := p.readFile(filepath.Base(file), id)
 		if err != nil {
 			return err
