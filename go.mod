@@ -29,7 +29,7 @@ require (
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
-	github.com/privacybydesign/gabi v0.0.0-20210520084001-626ad7db13a6
+	github.com/privacybydesign/gabi v0.0.0-20210714094051-ba80a6a8c5d8
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sirupsen/logrus v1.4.2
