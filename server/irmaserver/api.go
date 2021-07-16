@@ -238,7 +238,7 @@ func (s *Server) GetSessionResult(token string) (*server.SessionResult, error) {
 		return nil, err
 	}
 	if session == nil {
-		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session request requested of unknown session %s", token)))
+		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session result requested of unknown session %s", token)))
 	}
 	return session.Result, nil
 }

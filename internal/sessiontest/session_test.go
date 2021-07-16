@@ -639,6 +639,6 @@ func TestUnknownRequestorToken(t *testing.T) {
 
 	result, err := irmaServer.GetSessionResult("12345")
 
-	require.Equal(t, err.Error(), "session request requested of unknown session 12345")
+	require.Equal(t, err.Error(), "session result requested of unknown session 12345")
 	require.Nil(t, result)
 }
