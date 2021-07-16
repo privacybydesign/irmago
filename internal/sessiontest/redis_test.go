@@ -213,7 +213,15 @@ func TestRedisHTTPErrors(t *testing.T) {
 	// Stop the Redis server early to check whether the IRMA client fails correctly
 	mr.Close()
 
-	checkError := func(err error) {
+	checkErrorSessionUnknown := func(err error) {
+		serr, ok := err.(*irma.SessionError)
+		require.True(t, ok)
+		require.NotNil(t, serr.RemoteError)
+		require.Equal(t, server.ErrorSessionUnknown.Status, serr.RemoteError.Status)
+		require.Equal(t, string(server.ErrorSessionUnknown.Type), serr.RemoteError.ErrorName)
+	}
+
+	checkErrorInternal := func(err error) {
 		serr, ok := err.(*irma.SessionError)
 		require.True(t, ok)
 		require.NotNil(t, serr.RemoteError)
@@ -229,31 +237,31 @@ func TestRedisHTTPErrors(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 	err := transport.Post("session", nil, request)
-	checkError(err)
+	checkErrorInternal(err)
 
 	// Check error response of requestor endpoints for sessions
 	transport.Server += "session/Sxqcpng37mAdBKgoAJXl/"
 	err = transport.Get("result", nil)
-	checkError(err)
+	checkErrorSessionUnknown(err)
 	err = transport.Get("result-jwt", nil)
-	checkError(err)
+	checkErrorSessionUnknown(err)
 	err = transport.Get("getproof", nil)
-	checkError(err)
+	checkErrorSessionUnknown(err)
 	err = transport.Get("status", nil)
-	checkError(err)
+	checkErrorSessionUnknown(err)
 	// TODO: Check for sse endpoint. We don't know yet whether this will be implemented for Redis.
 
 	// Check error response of irma endpoints
 	transport.Server = strings.Replace(transport.Server, "/session/", "/irma/session/", 1)
 	err = transport.Post("", nil, struct{}{})
-	checkError(err)
+	checkErrorInternal(err)
 	err = transport.Delete()
-	checkError(err)
+	checkErrorInternal(err)
 	err = transport.Post("commitments", nil, struct{}{})
-	checkError(err)
+	checkErrorInternal(err)
 	err = transport.Post("proofs", nil, struct{}{})
-	checkError(err)
+	checkErrorInternal(err)
 	err = transport.Get("status", nil)
-	checkError(err)
+	checkErrorInternal(err)
 	// TODO: Check for sse endpoint. We don't know yet whether this will be implemented for Redis.
 }

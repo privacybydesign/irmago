@@ -83,6 +83,10 @@ type RedisError interface {
 	Error() string
 }
 
+type UnknownSessionError interface {
+	Error() string
+}
+
 const (
 	maxSessionLifetime         = 5 * time.Minute // After this a session is cancelled
 	requestorTokenLookupPrefix = "token:"

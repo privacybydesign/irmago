@@ -166,7 +166,7 @@ func Stop() {
 }
 func (s *Server) Stop() {
 	if err := s.conf.IrmaConfiguration.Revocation.Close(); err != nil {
-		server.LogWarning(err)
+		_ = server.LogWarning(err)
 	}
 	s.stopScheduler <- true
 	s.sessions.stop()
@@ -238,8 +238,7 @@ func (s *Server) GetSessionResult(token string) (*server.SessionResult, error) {
 		return nil, err
 	}
 	if session == nil {
-		s.conf.Logger.Warn("Session result requested of unknown session ", token)
-		return nil, nil
+		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session request requested of unknown session %s", token)))
 	}
 	return session.Result, nil
 }
@@ -254,8 +253,7 @@ func (s *Server) GetRequest(token string) (irma.RequestorRequest, error) {
 		return nil, err
 	}
 	if session == nil {
-		s.conf.Logger.Warn("Session request requested of unknown session ", token)
-		return nil, nil
+		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session request requested of unknown session %s", token)))
 	}
 	return session.Rrequest, nil
 }
