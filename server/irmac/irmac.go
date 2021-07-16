@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	irma "github.com/privacybydesign/irmago"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -84,47 +85,69 @@ func StartSession(requestString *C.char) (r *C.char) {
 }
 
 //export GetSessionResult
-func GetSessionResult(token *C.char) *C.char {
+func GetSessionResult(token *C.char) (r *C.char) {
+	// Create struct for return information
+	result := struct {
+		SessionResult *server.SessionResult
+		Error         string
+	}{}
+	defer func() {
+		j, e := json.Marshal(result)
+		if e != nil {
+			// encoding error, should never occur
+			panic(e)
+		}
+		r = C.CString(string(j))
+	}()
+
 	// Check that we have required input
 	if token == nil {
 		return nil
 	}
 
 	// Run the actual core function
-	result, err := s.GetSessionResult(C.GoString(token))
+	var err error
+	result.SessionResult, err = s.GetSessionResult(C.GoString(token))
 
 	// And properly return results
-	if result == nil || err != nil {
-		return nil
-	}
-	resultJson, err := json.Marshal(result)
 	if err != nil {
-		// encoding error, should never occur
-		panic(err)
+		result.Error = err.Error()
+		return
 	}
-	return C.CString(string(resultJson))
+	return
 }
 
 //export GetRequest
-func GetRequest(token *C.char) *C.char {
+func GetRequest(token *C.char) (r *C.char) {
+	// Create struct for return information
+	result := struct {
+		RequestorRequestResult irma.RequestorRequest
+		Error                  string
+	}{}
+	defer func() {
+		j, e := json.Marshal(result)
+		if e != nil {
+			// encoding error, should never occur
+			panic(e)
+		}
+		r = C.CString(string(j))
+	}()
+
 	// Check that we have required input
 	if token == nil {
 		return nil
 	}
 
 	// Run the core function
-	result, err := s.GetRequest(C.GoString(token))
+	var err error
+	result.RequestorRequestResult, err = s.GetRequest(C.GoString(token))
 
 	// And properly return results
-	if result == nil || err != nil {
-		return nil
-	}
-	resultJson, err := json.Marshal(result)
 	if err != nil {
-		// encoding error, should never occur
-		panic(err)
+		result.Error = err.Error()
+		return
 	}
-	return C.CString(string(resultJson))
+	return
 }
 
 //export CancelSession
