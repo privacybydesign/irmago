@@ -124,7 +124,7 @@ func (conf *Configuration) Check() error {
 	}
 
 	if conf.EnableSSE && conf.StoreType == "redis" {
-		conf.Logger.Warnf("Currently server site events (SSE) is not supported for the Redis session store.")
+		conf.Logger.Warnf("Currently server-sent events (SSE) is not supported for the Redis session store.")
 	}
 
 	return nil
