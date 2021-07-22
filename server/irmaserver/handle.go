@@ -262,6 +262,9 @@ func (session *session) nextSession() (irma.RequestorRequest, irma.AttributeConD
 			base.ResultJwtValidity,
 			session.conf.JwtRSAPrivateKey,
 		)
+		if err != nil {
+			return nil, nil, err
+		}
 	} else {
 		res = session.result
 	}
