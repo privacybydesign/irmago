@@ -38,6 +38,7 @@ This release contains several large new features. In particular, the shoulder su
 * Bug causing sessions to fail when revocation is enabled and the issuer has multiple revocation-enabled keys
 * Incorrectly cased SQL column name used in revocation data lookup
 * Bug causing issuance time in revocation records being floored to credential validity epoch boundaries
+* Fixed bug when loading private key of issuer if another issuer with a similar name exists
 
 ## [0.7.0] - 2021-03-17
 ### Fixed
