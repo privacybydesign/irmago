@@ -630,6 +630,11 @@ func TestPOSTSizeLimit(t *testing.T) {
 	StartRequestorServer(IrmaServerConfiguration)
 	defer StopRequestorServer()
 
+	server.PostSizeLimit = 1 << 10
+	defer func() {
+		server.PostSizeLimit = 10 << 20
+	}()
+
 	req, err := http.NewRequest(
 		http.MethodPost,
 		"http://localhost:48682/session/",

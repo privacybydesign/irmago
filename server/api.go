@@ -73,10 +73,11 @@ const (
 )
 
 const (
-	PostSizeLimit = 10 << 20 // 10 MB
-	ReadTimeout   = 5 * time.Second
-	WriteTimeout  = 2 * ReadTimeout
+	ReadTimeout  = 5 * time.Second
+	WriteTimeout = 2 * ReadTimeout
 )
+
+var PostSizeLimit int64 = 10 << 20 // 10 MB
 
 // Remove this when dropping support for legacy pre-condiscon session requests
 func (r *SessionResult) Legacy() *LegacySessionResult {
