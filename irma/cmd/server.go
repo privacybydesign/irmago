@@ -3,29 +3,26 @@ package cmd
 import (
 	"os"
 	"os/signal"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"syscall"
 
 	"github.com/go-errors/errors"
-	"github.com/mitchellh/mapstructure"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
-	"github.com/sietseringers/cobra"
-	"github.com/sietseringers/viper"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cast"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
-var conf *requestorserver.Configuration
+var (
+	localIP, localIPErr = server.LocalIP()
+)
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "IRMA server for verifying and issuing attributes",
 	Run: func(command *cobra.Command, args []string) {
-		if err := configureServer(command); err != nil {
+		conf, err := configureServer(command)
+		if err != nil {
 			die("", errors.WrapPrefix(err, "Failed to read configuration", 0))
 		}
 		serv, err := requestorserver.New(conf)
@@ -70,21 +67,21 @@ func init() {
 }
 
 func setFlags(cmd *cobra.Command, production bool) error {
-	flags := cmd.Flags()
-	flags.SortFlags = false
+	cmd.SetUsageTemplate(headerFlagsTemplate)
+	headers := map[string]string{}
+	flagHeaders["irma server"] = headers
 
 	var defaulturl string
-	var err error
 	if !production {
-		defaulturl, err = server.LocalIP()
-		if err != nil {
-			logger.Warn("Could not determine local IP address: ", err.Error())
-		} else {
-			defaulturl = "http://" + defaulturl + ":port"
+		if localIP != "" {
+			defaulturl = "http://" + localIP + ":port"
 		}
 	}
 
 	schemespath := irma.DefaultSchemesPath()
+
+	flags := cmd.Flags()
+	flags.SortFlags = false
 
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
@@ -98,12 +95,14 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("revocation-db-str", "", "connection string for revocation database")
 	flags.Bool("sse", false, "Enable server sent for status updates (experimental)")
 
+	headers["port"] = "Server address and port to listen on"
 	flags.IntP("port", "p", 8088, "port at which to listen")
 	flags.StringP("listen-addr", "l", "", "address at which to listen (default 0.0.0.0)")
+	flags.StringP("api-prefix", "a", "/", "prefix API endpoints with this string, e.g. POST /session becomes POST {api-prefix}/session")
 	flags.Int("client-port", 0, "if specified, start a separate server for the IRMA app at this port")
 	flags.String("client-listen-addr", "", "address at which server for IRMA app listens")
-	flags.Lookup("port").Header = `Server address and port to listen on`
 
+	headers["no-auth"] = "Requestor authentication and default requestor permissions"
 	flags.Bool("no-auth", !production, "whether or not to authenticate requestors (and reject all authenticated requests)")
 	flags.String("requestors", "", "requestor configuration (in JSON)")
 	flags.StringSlice("disclose-perms", nil, "list of attributes that all requestors may verify (default *)")
@@ -116,6 +115,8 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
 	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
+	flags.Int("max-session-lifetime", 5, "maximum duration of a session once a client connects in minutes")
+
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
@@ -126,14 +127,15 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
 	flags.Lookup("store-type").Header = `Session store configuration`
 
+	headers["jwt-issuer"] = "JWT configuration"
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
 	flags.String("jwt-privkey-file", "", "path to JWT private key")
 	flags.Int("max-request-age", 300, "max age in seconds of a session request JWT")
 	flags.Bool("allow-unsigned-callbacks", false, "Allow callbackUrl in session requests when no JWT privatekey is installed (potentially unsafe)")
 	flags.Bool("augment-client-return-url", false, "Augment the client return url with the server session token if present")
-	flags.Lookup("jwt-issuer").Header = `JWT configuration`
 
+	headers["tls-cert"] = "TLS configuration (leave empty to disable TLS)"
 	flags.String("tls-cert", "", "TLS certificate (chain)")
 	flags.String("tls-cert-file", "", "path to TLS certificate (chain)")
 	flags.String("tls-privkey", "", "TLS private key")
@@ -143,75 +145,36 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
 	flags.Bool("no-tls", false, "Disable TLS")
-	flags.Lookup("tls-cert").Header = "TLS configuration (leave empty to disable TLS)"
 
+	headers["email"] = "Email address (see README for more info)"
 	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
 	flags.Bool("no-email", !production, "Opt out of providing an email address with --email")
-	flags.Lookup("email").Header = "Email address (see README for more info)"
 
+	headers["verbose"] = "Other options"
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
 	flags.Bool("log-json", false, "Log in JSON format")
 	flags.Bool("production", false, "Production mode")
-	flags.Lookup("verbose").Header = `Other options`
 
 	return nil
 }
 
-func configureServer(cmd *cobra.Command) error {
-	dashReplacer := strings.NewReplacer("-", "_")
-	viper.SetEnvKeyReplacer(dashReplacer)
-	viper.SetFileKeyReplacer(dashReplacer)
-	viper.SetEnvPrefix("IRMASERVER")
-	viper.AutomaticEnv()
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		return err
+func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error) {
+	if localIPErr != nil {
+		logger.Warn("Could not determine local IP address: ", localIPErr.Error())
 	}
 
-	// Locate and read configuration file
-	confpath := viper.GetString("config")
-	if confpath != "" {
-		dir, file := filepath.Dir(confpath), filepath.Base(confpath)
-		viper.SetConfigName(strings.TrimSuffix(file, filepath.Ext(file)))
-		viper.AddConfigPath(dir)
-	} else {
-		viper.SetConfigName("irmaserver")
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("/etc/irmaserver/")
-		viper.AddConfigPath("$HOME/.irmaserver")
-	}
-	err := viper.ReadInConfig() // Hold error checking until we know how much of it to log
-
-	// Create our logger instance
-	logger = server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log-json"))
-
-	// First log output: hello, development or production mode, log level
-	mode := "development"
-	if viper.GetBool("production") {
-		mode = "production"
-		viper.SetDefault("no-auth", false)
-		viper.SetDefault("no-email", false)
-		viper.SetDefault("url", "")
-	}
-	logger.WithFields(logrus.Fields{
-		"version":   irma.Version,
-		"mode":      mode,
-		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info("irma server running")
-
-	// Now we finally examine and log any error from viper.ReadInConfig()
-	if err != nil {
-		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
-			logger.Info("No configuration file found")
-		} else {
-			die("", errors.WrapPrefix(err, "Failed to unmarshal configuration file at "+viper.ConfigFileUsed(), 0))
-		}
-	} else {
-		logger.Info("Config file: ", viper.ConfigFileUsed())
-	}
+	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
+		map[string]interface{}{
+			"no_auth":  false,
+			"no_email": false,
+			"url":      "",
+		},
+	)
 
 	// Read configuration from flags and/or environmental variables
-	conf = &requestorserver.Configuration{
+	conf := &requestorserver.Configuration{
+		// TODO: 		Configuration: configureIRMAServer(),
 		Configuration: &server.Configuration{
 			SchemesPath:            viper.GetString("schemes-path"),
 			SchemesAssetsPath:      viper.GetString("schemes-assets-path"),
@@ -238,51 +201,53 @@ func configureServer(cmd *cobra.Command) error {
 			AugmentClientReturnURL: viper.GetBool("augment-client-return-url"),
 		},
 		Permissions: requestorserver.Permissions{
-			Disclosing: handlePermission("disclose-perms"),
-			Signing:    handlePermission("sign-perms"),
-			Issuing:    handlePermission("issue-perms"),
-			Revoking:   handlePermission("revoke-perms"),
+			Disclosing: handlePermission("disclose_perms"),
+			Signing:    handlePermission("sign_perms"),
+			Issuing:    handlePermission("issue_perms"),
+			Revoking:   handlePermission("revoke_perms"),
 		},
-		SkipPrivateKeysCheck:           viper.GetBool("skip-private-keys-check"),
-		ListenAddress:                  viper.GetString("listen-addr"),
+		SkipPrivateKeysCheck:           viper.GetBool("skip_private_keys_check"),
+		ListenAddress:                  viper.GetString("listen_addr"),
 		Port:                           viper.GetInt("port"),
-		ClientListenAddress:            viper.GetString("client-listen-addr"),
-		ClientPort:                     viper.GetInt("client-port"),
-		DisableRequestorAuthentication: viper.GetBool("no-auth"),
+		ApiPrefix:                      viper.GetString("api_prefix"),
+		ClientListenAddress:            viper.GetString("client_listen_addr"),
+		ClientPort:                     viper.GetInt("client_port"),
+		DisableRequestorAuthentication: viper.GetBool("no_auth"),
 		Requestors:                     make(map[string]requestorserver.Requestor),
-		MaxRequestAge:                  viper.GetInt("max-request-age"),
-		StaticPath:                     viper.GetString("static-path"),
-		StaticPrefix:                   viper.GetString("static-prefix"),
+		MaxRequestAge:                  viper.GetInt("max_request_age"),
+		StaticPath:                     viper.GetString("static_path"),
+		StaticPrefix:                   viper.GetString("static_prefix"),
 
-		TlsCertificate:           viper.GetString("tls-cert"),
-		TlsCertificateFile:       viper.GetString("tls-cert-file"),
-		TlsPrivateKey:            viper.GetString("tls-privkey"),
-		TlsPrivateKeyFile:        viper.GetString("tls-privkey-file"),
-		ClientTlsCertificate:     viper.GetString("client-tls-cert"),
-		ClientTlsCertificateFile: viper.GetString("client-tls-cert-file"),
-		ClientTlsPrivateKey:      viper.GetString("client-tls-privkey"),
-		ClientTlsPrivateKeyFile:  viper.GetString("client-tls-privkey-file"),
+		TlsCertificate:           viper.GetString("tls_cert"),
+		TlsCertificateFile:       viper.GetString("tls_cert_file"),
+		TlsPrivateKey:            viper.GetString("tls_privkey"),
+		TlsPrivateKeyFile:        viper.GetString("tls_privkey_file"),
+		ClientTlsCertificate:     viper.GetString("client_tls_cert"),
+		ClientTlsCertificateFile: viper.GetString("client_tls_cert_file"),
+		ClientTlsPrivateKey:      viper.GetString("client_tls_privkey"),
+		ClientTlsPrivateKeyFile:  viper.GetString("client_tls_privkey_file"),
 	}
 
 	if conf.Production {
-		if !viper.GetBool("no-email") && conf.Email == "" {
-			return errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
+		if !viper.GetBool("no_email") && conf.Email == "" {
+			return nil, errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
 		}
-		if viper.GetBool("no-email") && conf.Email != "" {
-			return errors.New("--no-email cannot be combined with --email")
+		if viper.GetBool("no_email") && conf.Email != "" {
+			return nil, errors.New("--no-email cannot be combined with --email")
 		}
 	}
 
 	// Handle requestors
+	var err error
 	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
-		return err
+		return nil, err
 	}
-	if err = handleMapOrString("static-sessions", &conf.StaticSessions); err != nil {
-		return err
+	if err = handleMapOrString("static_sessions", &conf.StaticSessions); err != nil {
+		return nil, err
 	}
 	var m map[string]*irma.RevocationSetting
-	if err = handleMapOrString("revocation-settings", &m); err != nil {
-		return err
+	if err = handleMapOrString("revocation_settings", &m); err != nil {
+		return nil, err
 	}
 	for i, s := range m {
 		conf.RevocationSettings[irma.NewCredentialTypeIdentifier(i)] = s
@@ -304,61 +269,5 @@ func configureServer(cmd *cobra.Command) error {
 
 	logger.Debug("Done configuring")
 
-	return nil
-}
-
-func handleMapOrString(key string, dest interface{}) error {
-	var m map[string]interface{}
-	var err error
-	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
-		if m, err = cast.ToStringMapE(viper.Get(key)); err != nil {
-			return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from flag or env var", 0)
-		}
-	}
-	if len(m) == 0 {
-		return nil
-	}
-	if err := mapstructure.Decode(m, dest); err != nil {
-		return errors.WrapPrefix(err, "Failed to unmarshal "+key+" from config file", 0)
-	}
-	return nil
-}
-
-func handlePermission(typ string) []string {
-	if !viper.IsSet(typ) {
-		if typ == "revoke-perms" || (viper.GetBool("production") && typ == "issue-perms") {
-			return []string{}
-		} else {
-			return []string{"*"}
-		}
-	}
-	perms := viper.GetStringSlice(typ)
-	if perms == nil {
-		return []string{}
-	}
-	return perms
-}
-
-// productionMode examines the arguments passed to the executable to see if --production is enabled.
-// (This should really be done using viper, but when the help message is printed, viper is not yet
-// initialized.)
-func productionMode() bool {
-	r := regexp.MustCompile("^--production(=(.*))?$")
-	for _, arg := range os.Args {
-		matches := r.FindStringSubmatch(arg)
-		if len(matches) != 3 {
-			continue
-		}
-		if matches[1] == "" {
-			return true
-		}
-		return checkConfVal(matches[2])
-	}
-
-	return checkConfVal(os.Getenv("IRMASERVER_PRODUCTION"))
-}
-
-func checkConfVal(val string) bool {
-	lc := strings.ToLower(val)
-	return lc == "1" || lc == "true" || lc == "yes" || lc == "t"
+	return conf, nil
 }

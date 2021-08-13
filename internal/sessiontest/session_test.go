@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -136,6 +136,47 @@ func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
 	require.NoError(t, client.Close())
 	client, handler = parseExistingStorage(t, handler.storage)
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
+}
+
+func TestIssuancePairing(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	var pairingCode string
+	frontendOptionsHandler := func(handler *TestHandler) {
+		pairingCode = setPairingMethod(irma.PairingMethodPin, handler)
+	}
+	pairingHandler := func(handler *TestHandler) {
+		// Below protocol version 2.8 pairing is not supported, so then the pairing stage is expected to be skipped.
+		if extractClientMaxVersion(handler.client).Below(2, 8) {
+			return
+		}
+
+		require.Equal(t, pairingCode, <-handler.pairingCodeChan)
+
+		// Check whether access to request endpoint is denied as long as pairing is not finished
+		clientTransport := extractClientTransport(handler.dismisser)
+		err := clientTransport.Get("request", struct{}{})
+		require.Error(t, err)
+		sessionErr := err.(*irma.SessionError)
+		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
+		require.Equal(t, server.ErrorPairingRequired.Status, sessionErr.RemoteError.Status)
+		require.Equal(t, string(server.ErrorPairingRequired.Type), sessionErr.RemoteError.ErrorName)
+
+		// Check whether pairing cannot be disabled again after client is connected.
+		request := irma.NewFrontendOptionsRequest()
+		result := &irma.SessionOptions{}
+		err = handler.frontendTransport.Post("frontend/options", result, request)
+		require.Error(t, err)
+		sessionErr = err.(*irma.SessionError)
+		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
+		require.Equal(t, server.ErrorUnexpectedRequest.Status, sessionErr.RemoteError.Status)
+		require.Equal(t, string(server.ErrorUnexpectedRequest.Type), sessionErr.RemoteError.ErrorName)
+
+		err = handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
+		require.NoError(t, err)
+	}
+	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, pairingHandler)
 }
 
 func TestLargeAttribute(t *testing.T) {
@@ -368,7 +409,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	serverChan := make(chan *server.SessionResult)
 
 	StartIrmaServer(t, false, "") // Run a server with old configuration (level is non-optional)
-	_, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	_, _, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	expectedError := &irma.RequiredAttributeMissingError{
@@ -391,7 +432,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	_, _, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)
@@ -490,7 +531,7 @@ func TestStaticQRSession(t *testing.T) {
 	c := make(chan *SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, ""})
+	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, "", nil, nil, nil})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
@@ -540,7 +581,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 
 	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
-	_, _, err := irmaServer.StartSession(request, nil)
+	_, _, _, err := irmaServer.StartSession(request, nil)
 	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
 
 	// Make the request valid
@@ -590,6 +631,11 @@ func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
 func TestPOSTSizeLimit(t *testing.T) {
 	rs := StartRequestorServer(t, IrmaServerConfiguration())
 	defer rs.Stop()
+
+	server.PostSizeLimit = 1 << 10
+	defer func() {
+		server.PostSizeLimit = 10 << 20
+	}()
 
 	req, err := http.NewRequest(
 		http.MethodPost,
@@ -641,4 +687,15 @@ func TestUnknownRequestorToken(t *testing.T) {
 
 	require.Equal(t, err.Error(), "session result requested of unknown session 12345")
 	require.Nil(t, result)
+}
+
+func TestDisablePairing(t *testing.T) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	frontendOptionsHandler := func(handler *TestHandler) {
+		_ = setPairingMethod(irma.PairingMethodPin, handler)
+		_ = setPairingMethod(irma.PairingMethodNone, handler)
+	}
+	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, nil)
 }

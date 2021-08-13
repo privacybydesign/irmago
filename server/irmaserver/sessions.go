@@ -21,6 +21,35 @@ import (
 )
 
 type session struct {
+	//sync.Mutex
+	//locked bool
+	//
+	//action             irma.Action
+	//requestorToken     irma.RequestorToken
+	//clientToken        irma.ClientToken
+	//frontendAuth       irma.FrontendAuthorization
+	//version            *irma.ProtocolVersion
+	//rrequest           irma.RequestorRequest
+	//request            irma.SessionRequest
+	//legacyCompatible   bool // if the request is convertible to pre-condiscon format
+	//implicitDisclosure irma.AttributeConDisCon
+	//next               *irma.Qr
+	//
+	//options        irma.SessionOptions
+	//status         irma.ServerStatus
+	//prevStatus     irma.ServerStatus
+	//sse            *sse.Server
+	//statusChannels []chan irma.ServerStatus
+	//responseCache  responseCache
+	//
+	//clientAuth irma.ClientAuthorization
+	//lastActive time.Time
+	//result     *server.SessionResult
+	//
+	//kssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
+	//
+	//conf     *server.Configuration
+	//sessions sessionStore
 	//TODO: check if we can get rid of this Mutex for Redis
 	sync.Mutex `json:-`
 	//TODO: note somewhere that state with redis will not support sse for the moment
@@ -32,13 +61,17 @@ type session struct {
 	context     context.Context
 	toBeUpdated bool
 
+	frontendAuth       irma.FrontendAuthorization
+	implicitDisclosure irma.AttributeConDisCon
+	next               *irma.Qr
+
 	sessionData
 }
 
 type sessionData struct {
 	Action             irma.Action
-	Token              string
-	ClientToken        string
+	RequestorToken     irma.RequestorToken
+	ClientToken        irma.ClientToken
 	Version            *irma.ProtocolVersion `json:",omitempty"`
 	Rrequest           irma.RequestorRequest
 	LegacyCompatible   bool // if the request is convertible to pre-condiscon format
@@ -52,6 +85,7 @@ type sessionData struct {
 }
 
 type responseCache struct {
+	Endpoint      string
 	Message       []byte
 	Response      []byte
 	Status        int
@@ -59,8 +93,8 @@ type responseCache struct {
 }
 
 type sessionStore interface {
-	get(token string) (*session, error)
-	clientGet(token string) (*session, error)
+	get(token irma.RequestorToken) (*session, error)
+	clientGet(token irma.ClientToken) (*session, error)
 	add(session *session) error
 	update(session *session) error
 	stop()
@@ -70,8 +104,8 @@ type memorySessionStore struct {
 	sync.RWMutex
 	conf *server.Configuration
 
-	requestor map[string]*session
-	client    map[string]*session
+	requestor map[irma.RequestorToken]*session
+	client    map[irma.ClientToken]*session
 }
 
 type redisSessionStore struct {
@@ -95,16 +129,19 @@ const (
 
 var (
 	minProtocolVersion = irma.NewVersion(2, 4)
-	maxProtocolVersion = irma.NewVersion(2, 7)
+	maxProtocolVersion = irma.NewVersion(2, 8)
+
+	minFrontendProtocolVersion = irma.NewVersion(1, 0)
+	maxFrontendProtocolVersion = irma.NewVersion(1, 1)
 )
 
-func (s *memorySessionStore) get(t string) (*session, error) {
+func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
 	return s.requestor[t], nil
 }
 
-func (s *memorySessionStore) clientGet(t string) (*session, error) {
+func (s *memorySessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
 	return s.client[t], nil
@@ -113,7 +150,7 @@ func (s *memorySessionStore) clientGet(t string) (*session, error) {
 func (s *memorySessionStore) add(session *session) error {
 	s.Lock()
 	defer s.Unlock()
-	s.requestor[session.Token] = session
+	s.requestor[session.RequestorToken] = session
 	s.client[session.ClientToken] = session
 	return nil
 }
@@ -127,8 +164,9 @@ func (s *memorySessionStore) stop() {
 	defer s.Unlock()
 	for _, session := range s.requestor {
 		if session.sse != nil {
-			session.sse.CloseChannel("session/" + session.Token)
-			session.sse.CloseChannel("session/" + session.ClientToken)
+			session.sse.CloseChannel("session/" + string(session.RequestorToken))
+			session.sse.CloseChannel("session/" + string(session.ClientToken))
+			session.sse.CloseChannel("frontendsession/" + string(session.ClientToken))
 		}
 	}
 }
@@ -137,8 +175,14 @@ func (s *memorySessionStore) deleteExpired() {
 	// First check which sessions have expired
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
-	expired := make([]string, 0, len(s.requestor))
+	toCheck := make(map[irma.RequestorToken]*session, len(s.requestor))
 	for token, session := range s.requestor {
+		toCheck[token] = session
+	}
+	s.RUnlock()
+
+	expired := make([]irma.RequestorToken, 0, len(toCheck))
+	for token, session := range toCheck {
 		session.Lock()
 
 		timeout := maxSessionLifetime
@@ -148,25 +192,25 @@ func (s *memorySessionStore) deleteExpired() {
 
 		if session.LastActive.Add(timeout).Before(time.Now()) {
 			if !session.Status.Finished() {
-				s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Session expired")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Session expired")
 				session.markAlive()
-				session.setStatus(server.StatusTimeout)
+				session.setStatus(irma.ServerStatusTimeout)
 			} else {
-				s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Deleting session")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Infof("Deleting session")
 				expired = append(expired, token)
 			}
 		}
 		session.Unlock()
 	}
-	s.RUnlock()
 
 	// Using a write lock, delete the expired sessions
 	s.Lock()
 	for _, token := range expired {
 		session := s.requestor[token]
 		if session.sse != nil {
-			session.sse.CloseChannel("session/" + session.Token)
-			session.sse.CloseChannel("session/" + session.ClientToken)
+			session.sse.CloseChannel("session/" + string(session.RequestorToken))
+			session.sse.CloseChannel("session/" + string(session.ClientToken))
+			session.sse.CloseChannel("frontendsession/" + string(session.ClientToken))
 		}
 		delete(s.client, session.ClientToken)
 		delete(s.requestor, token)
@@ -284,15 +328,16 @@ func (s *redisSessionStore) stop() {
 var one *big.Int = big.NewInt(1)
 
 func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, ctx context.Context) (*session, error) {
-	token := common.NewSessionToken()
-	clientToken := common.NewSessionToken()
+	clientToken := irma.ClientToken(common.NewSessionToken())
+	requestorToken := irma.RequestorToken(common.NewSessionToken())
+	frontendAuth := irma.FrontendAuthorization(common.NewSessionToken())
 
 	base := request.SessionRequest().Base()
 	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
 		if strings.Contains(base.ClientReturnURL, "?") {
-			base.ClientReturnURL += "&token=" + token
+			base.ClientReturnURL += "&token=" + string(requestorToken)
 		} else {
-			base.ClientReturnURL += "?token=" + token
+			base.ClientReturnURL += "?token=" + string(requestorToken)
 		}
 	}
 
@@ -300,15 +345,15 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 		Action:      action,
 		Rrequest:    request,
 		LastActive:  time.Now(),
-		Token:       token,
+		RequestorToken:       requestorToken,
 		ClientToken: clientToken,
 		Status:      server.StatusInitialized,
 		PrevStatus:  server.StatusInitialized,
 		Result: &server.SessionResult{
 			LegacySession: request.SessionRequest().Base().Legacy(),
-			Token:         token,
+			Token:         requestorToken,
 			Type:          action,
-			Status:        server.StatusInitialized,
+			Status:        irma.ServerStatusInitialized,
 		},
 	}
 	ses := &session{
@@ -318,9 +363,15 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 		conf:        s.conf,
 		request:     request.SessionRequest(),
 		context:     ctx,
+
+		options: irma.SessionOptions{
+			LDContext:     irma.LDContextSessionOptions,
+			PairingMethod: irma.PairingMethodNone,
+		},
+		frontendAuth:   frontendAuth,
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": ses.Token}).Debug("New session started")
+	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
 	nonce, _ := gabi.GenerateNonce()
 	base.Nonce = nonce
 	base.Context = one

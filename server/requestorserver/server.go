@@ -95,7 +95,7 @@ func (s *Server) startClientServer() error {
 
 func (s *Server) startServer(handler http.Handler, name, addr string, port int, tlsConf *tls.Config) error {
 	fulladdr := fmt.Sprintf("%s:%d", addr, port)
-	s.conf.Logger.Info(name, " listening at ", fulladdr)
+	s.conf.Logger.Info(name, " listening at ", fulladdr, s.conf.ApiPrefix)
 
 	serv := &http.Server{
 		Addr:      fulladdr,
@@ -118,17 +118,10 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 
 	if tlsConf != nil {
 		s.conf.Logger.Info(name, " TLS enabled")
-		return filterStopError(serv.ListenAndServeTLS("", ""))
+		return server.FilterStopError(serv.ListenAndServeTLS("", ""))
 	} else {
-		return filterStopError(serv.ListenAndServe())
+		return server.FilterStopError(serv.ListenAndServe())
 	}
-}
-
-func filterStopError(err error) error {
-	if err == http.ErrServerClosed {
-		return nil
-	}
-	return err
 }
 
 func (s *Server) Stop() {
@@ -160,11 +153,17 @@ var corsOptions = cors.Options{
 	AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete},
 }
 
+func (s *Server) prefixRouter(router *chi.Mux) (prefixedRouter *chi.Mux) {
+	prefixedRouter = chi.NewRouter()
+	prefixedRouter.Mount(s.conf.ApiPrefix, router)
+	return
+}
+
 func (s *Server) ClientHandler() http.Handler {
 	router := chi.NewRouter()
 	router.Use(cors.New(corsOptions).Handler)
 	s.attachClientEndpoints(router)
-	return router
+	return s.prefixRouter(router)
 }
 
 func (s *Server) attachClientEndpoints(router *chi.Mux) {
@@ -203,7 +202,7 @@ func (s *Server) Handler() http.Handler {
 		// Server routes
 		r.Route("/session", func(r chi.Router) {
 			r.Post("/", s.handleCreateSession)
-			r.Route("/{token}", func(r chi.Router) {
+			r.Route("/{requestorToken}", func(r chi.Router) {
 				r.Delete("/", s.handleDelete)
 				r.Get("/status", s.handleStatus)
 				r.Get("/statusevents", s.handleStatusEvents)
@@ -227,7 +226,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/revocation", s.handleRevocation)
 	})
 
-	return router
+	return s.prefixRouter(router)
 }
 
 func (s *Server) StaticFilesHandler() http.Handler {
@@ -303,7 +302,7 @@ func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	res, err := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	res, err := s.irmaserv.GetSessionResult(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -317,13 +316,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
-	token := chi.URLParam(r, "token")
-	s.conf.Logger.WithFields(logrus.Fields{"session": token}).Debug("new client subscribed to server sent events")
+	requestorToken := chi.URLParam(r, "requestorToken")
+	s.conf.Logger.WithFields(logrus.Fields{"session": requestorToken}).Debug("new client subscribed to server sent events")
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
-		Arg:       token,
+		Arg:       requestorToken,
 	}))
-	if err := s.irmaserv.SubscribeServerSentEvents(w, r, token, true); err != nil {
+	if err := s.irmaserv.SubscribeServerSentEvents(w, r, requestorToken, true); err != nil {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      server.ErrorUnsupported.Status,
 			ErrorName:   string(server.ErrorUnsupported.Type),
@@ -333,14 +332,14 @@ func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	err := s.irmaserv.CancelSession(chi.URLParam(r, "token"))
+	err := s.irmaserv.CancelSession(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
 	if err != nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 	}
 }
 
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
-	res, err := s.irmaserv.GetSessionResult(chi.URLParam(r, "token"))
+	res, err := s.irmaserv.GetSessionResult(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -364,8 +363,8 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessiontoken := chi.URLParam(r, "token")
-	res, err := s.irmaserv.GetSessionResult(sessiontoken)
+	requestorToken := irma.RequestorToken(chi.URLParam(r, "requestorToken"))
+	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -406,8 +405,8 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessiontoken := chi.URLParam(r, "token")
-	res, err := s.irmaserv.GetSessionResult(sessiontoken)
+	requestorToken := irma.RequestorToken(chi.URLParam(r, "requestorToken"))
+	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -437,7 +436,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	}
 	claims["status"] = res.ProofStatus
 
-	request, err := s.irmaserv.GetRequest(sessiontoken)
+	request, err := s.irmaserv.GetRequest(requestorToken)
 	if err != nil {
 		server.WriteError(w, server.ErrorInternal, "")
 		return
@@ -552,7 +551,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, token, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
 		if _, ok := err.(irmaserver.RedisError); ok {
 			server.WriteError(w, server.ErrorInternal, "")
@@ -563,8 +562,9 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	server.WriteJson(w, server.SessionPackage{
-		SessionPtr: qr,
-		Token:      token,
+		SessionPtr:      qr,
+		Token:           requestorToken,
+		FrontendRequest: frontendRequest,
 	})
 }
 

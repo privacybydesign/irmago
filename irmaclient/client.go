@@ -56,6 +56,10 @@ type Client struct {
 	// Legacy storage needed when client has not updated to the new storage yet
 	fileStorage fileStorage
 
+	// Versions the client supports
+	minVersion *irma.ProtocolVersion
+	maxVersion *irma.ProtocolVersion
+
 	// Other state
 	Preferences           Preferences
 	Configuration         *irma.Configuration
@@ -158,6 +162,8 @@ func New(
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		handler:               handler,
+		minVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
+		maxVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
 
 	client.Configuration, err = irma.NewConfiguration(
@@ -1091,7 +1097,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	if err != nil {
 		return err
 	}
-	message := keyshareEnrollment{
+	message := irma.KeyshareEnrollment{
 		Email:    email,
 		Pin:      kss.HashedPin(pin),
 		Language: lang,
@@ -1152,13 +1158,13 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 	}
 
 	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer, !client.Preferences.DeveloperMode)
-	message := keyshareChangepin{
+	message := irma.KeyshareChangePin{
 		Username: kss.Username,
 		OldPin:   kss.HashedPin(oldPin),
 		NewPin:   kss.HashedPin(newPin),
 	}
 
-	res := &keysharePinStatus{}
+	res := &irma.KeysharePinStatus{}
 	err := transport.Post("users/change/pin", res, message)
 	if err != nil {
 		return err

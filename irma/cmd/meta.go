@@ -11,7 +11,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 )
 
 // metaCmd represents the meta command

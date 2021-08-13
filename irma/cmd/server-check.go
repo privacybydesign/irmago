@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server/requestorserver"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 )
 
 var serverCheckCmd = &cobra.Command{
@@ -17,7 +17,8 @@ that the configuration is valid.
 
 Specify -v to see the configuration.`,
 	Run: func(command *cobra.Command, args []string) {
-		if err := configureServer(command); err != nil {
+		conf, err := configureServer(command)
+		if err != nil {
 			die("", errors.WrapPrefix(err, "Failed to read configuration from file, args, or env vars", 0))
 		}
 

@@ -50,6 +50,9 @@ type Configuration struct {
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
 	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
 
+	// Listeners for configuration changes from initialization and updating of the schemes
+	UpdateListeners []ConfigurationListener
+
 	// Path to the irma_configuration folder that this instance represents
 	Path        string
 	PrivateKeys PrivateKeyRing
@@ -62,6 +65,9 @@ type Configuration struct {
 	assets      string
 	readOnly    bool
 }
+
+// ConfigurationListeners are the interface provided to react to changes in schemes.
+type ConfigurationListener func(conf *Configuration)
 
 type UnknownIdentifierError struct {
 	ErrorType
@@ -207,6 +213,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 	}
 
 	conf.initialized = true
+	conf.CallListeners()
 	if mgrerr != nil {
 		return mgrerr
 	}
@@ -824,6 +831,8 @@ func (conf *Configuration) join(other *Configuration) {
 	for key, val := range other.publicKeys {
 		conf.publicKeys[key] = val
 	}
+
+	conf.CallListeners()
 }
 
 func (e *UnknownIdentifierError) Error() string {
@@ -895,4 +904,10 @@ func firstExistingPath(paths []string) string {
 		}
 	}
 	return ""
+}
+
+func (conf *Configuration) CallListeners() {
+	for _, listener := range conf.UpdateListeners {
+		listener(conf)
+	}
 }

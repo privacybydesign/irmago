@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
+
+	"github.com/go-errors/errors"
 )
 
 // This file contains the legacy storage based on files. These functions are needed

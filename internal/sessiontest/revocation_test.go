@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -27,8 +28,8 @@ var (
 	revocationServer        *irmaserver.Server
 	revocationConfiguration *server.Configuration
 
-	//revocationDbType, revocationDbStr = "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
-	revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
+	revocationDbType, revocationDbStr = "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
+	//revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
 
 	revocationPkCounter uint = 2
 )
@@ -236,7 +237,7 @@ func TestRevocationAll(t *testing.T) {
 		stopRevocationServer()
 
 		result := revocationSession(t, client, nil, sessionOptionIgnoreError)
-		require.Equal(t, server.StatusCancelled, result.Status)
+		require.Equal(t, irma.ServerStatusCancelled, result.Status)
 		require.NotNil(t, result.Err)
 		require.Equal(t, result.Err.ErrorName, string(server.ErrorRevocation.Type))
 	})
@@ -633,6 +634,31 @@ func TestRevocationAll(t *testing.T) {
 		// client notices it has no revocation-aware credential instance and aborts
 		result = revocationSession(t, client, nil, sessionOptionReuseServer, sessionOptionUnsatisfiableRequest)
 		require.NotEmpty(t, result.Missing)
+	})
+}
+
+func TestKeyshareRevocation(t *testing.T) {
+	t.Run("Keyshare", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		testkeyshare.StartKeyshareServer(t, logger)
+		defer testkeyshare.StopKeyshareServer(t)
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+	})
+
+	t.Run("Both", func(t *testing.T) {
+		startRevocationServer(t, true)
+		defer stopRevocationServer()
+		testkeyshare.StartKeyshareServer(t, logger)
+		defer testkeyshare.StopKeyshareServer(t)
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t, handler.storage)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler)
+		testRevocation(t, revocationTestAttr, client, handler)
 	})
 }
 

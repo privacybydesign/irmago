@@ -1,17 +1,18 @@
-// +build !local_tests
-
 package sessiontest
 
 import (
 	"testing"
 
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
 func TestManualKeyshareSession(t *testing.T) {
+	testkeyshare.StartKeyshareServer(t, logger)
+	defer testkeyshare.StopKeyshareServer(t)
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
 
@@ -22,10 +23,14 @@ func TestManualKeyshareSession(t *testing.T) {
 }
 
 func TestRequestorIssuanceKeyshareSession(t *testing.T) {
+	testkeyshare.StartKeyshareServer(t, logger)
+	defer testkeyshare.StopKeyshareServer(t)
 	testRequestorIssuance(t, true, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {
+	testkeyshare.StartKeyshareServer(t, logger)
+	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
@@ -47,8 +52,9 @@ func TestKeyshareRegister(t *testing.T) {
 
 // Use the existing keyshare enrollment and credentials
 // in a keyshare session of each session type.
-// Use keyshareuser.sql to enroll the user at the keyshare server.
 func TestKeyshareSessions(t *testing.T) {
+	testkeyshare.StartKeyshareServer(t, logger)
+	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 	StartIrmaServer(t, false, "")
@@ -81,6 +87,8 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 	StartIrmaServer(t, false, "")
 	defer StopIrmaServer()
+	testkeyshare.StartKeyshareServer(t, logger)
+	defer testkeyshare.StopKeyshareServer(t)
 
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
@@ -96,25 +104,4 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 		},
 	}, id)
 	requestorSessionHelper(t, request, nil, sessionOptionReuseServer)
-}
-
-func TestKeyshareRevocation(t *testing.T) {
-	t.Run("Keyshare", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
-		client, handler := parseStorage(t)
-		defer test.ClearTestStorage(t, handler.storage)
-
-		testRevocation(t, revKeyshareTestAttr, client, handler)
-	})
-
-	t.Run("Both", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
-		client, handler := parseStorage(t)
-		defer test.ClearTestStorage(t, handler.storage)
-
-		testRevocation(t, revKeyshareTestAttr, client, handler)
-		testRevocation(t, revocationTestAttr, client, handler)
-	})
 }

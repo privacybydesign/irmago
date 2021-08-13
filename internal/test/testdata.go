@@ -3,7 +3,6 @@
 package test
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -12,9 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago/internal/common"
-
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,7 +72,7 @@ func StopBadHttpServer() {
 func FindTestdataFolder(t *testing.T) string {
 	path := "testdata"
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		exists, err := common.PathExists(path)
 		checkError(t, err)
 		if exists {
@@ -114,12 +112,6 @@ func SetupTestStorage(t *testing.T) string {
 	err := common.CopyDirectory(filepath.Join(path, testStorageDir), filepath.Join(storage, "client"))
 	checkError(t, err)
 	return storage
-}
-
-func PrettyPrint(t *testing.T, ob interface{}) string {
-	b, err := json.MarshalIndent(ob, "", "  ")
-	require.NoError(t, err)
-	return string(b)
 }
 
 func SetTestStorageDir(dir string) {

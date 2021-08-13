@@ -1,0 +1,33 @@
+verbose: 2
+
+cors_allowed_origins: "*"
+
+email_server: localhost:1025
+email_from: test@example.com
+default_languange: en
+
+delete_delay: 1
+
+db_connstring: postgresql://localhost:5432/test
+
+sse: true
+
+keyshare_attributes:
+  - pbdf.sidn-pbdf.irma.pseudonym
+email_attributes:
+  - pbdf.sidn-pbdf.email.email
+
+login_email_files:
+  en: testdata/emailtemplate.html
+login_email_subjects:
+  en: testsubject
+login_url:
+  en: http://localhost:3000#token=
+delete_email_files:
+  en: testdata/emailtemplate.html
+delete_email_subjects:
+  en: testsubject
+delete_account_files:
+  en: testdata/emailtemplate.html
+delete_account_subjects:
+  en: testsubject

@@ -2,9 +2,11 @@ package server
 
 import (
 	"crypto/rsa"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
@@ -54,6 +56,9 @@ type Configuration struct {
 	// Static session requests after parsing
 	StaticSessionRequests map[string]irma.RequestorRequest `json:"-"`
 
+	// Session Timeout in minutes (default value 0 means 5)
+	MaxSessionLifetime int `json:"max_session_lifetime" mapstructure:"max_session_lifetime"`
+
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
 	// Private key to sign result JWTs with. If absent, /result-jwt and /getproof are disabled.
@@ -101,6 +106,11 @@ func (conf *Configuration) Check() error {
 	}
 	Logger = conf.Logger
 	irma.SetLogger(conf.Logger)
+
+	// Use default session lifetime if not specified
+	if conf.MaxSessionLifetime == 0 {
+		conf.MaxSessionLifetime = 5
+	}
 
 	// loop to avoid repetetive err != nil line triplets
 	for _, f := range []func() error{
@@ -378,4 +388,50 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 	conf.JwtRSAPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
 	conf.Logger.Info("Private key parsed, JWT endpoints enabled")
 	return err
+}
+
+// ReplacePortString is a helper that returns a copy of the specified url of the form
+// "http(s)://...:port" with "port" replaced by the specified port.
+func ReplacePortString(url string, port int) string {
+	return regexp.MustCompile("(https?://[^/]*):port").ReplaceAllString(url, "$1:"+strconv.Itoa(port))
+}
+
+func TLSConf(cert, certfile, key, keyfile string) (*tls.Config, error) {
+	if cert == "" && certfile == "" && key == "" && keyfile == "" {
+		return nil, nil
+	}
+
+	var certbts, keybts []byte
+	var err error
+	if certbts, err = common.ReadKey(cert, certfile); err != nil {
+		return nil, err
+	}
+	if keybts, err = common.ReadKey(key, keyfile); err != nil {
+		return nil, err
+	}
+
+	cer, err := tls.X509KeyPair(certbts, keybts)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cer},
+		MinVersion:   tls.VersionTLS12,
+
+		// Safe according to https://safecurves.cr.yp.to/; fairly widely supported according to
+		// https://en.wikipedia.org/wiki/Comparison_of_TLS_implementations#Supported_elliptic_curves
+		CurvePreferences: []tls.CurveID{tls.X25519},
+
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		},
+	}, nil
 }

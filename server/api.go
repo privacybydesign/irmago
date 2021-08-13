@@ -26,20 +26,22 @@ import (
 var Logger *logrus.Logger = logrus.StandardLogger()
 
 type SessionPackage struct {
-	SessionPtr *irma.Qr `json:"sessionPtr"`
-	Token      string   `json:"token"`
+	SessionPtr      *irma.Qr                     `json:"sessionPtr"`
+	Token           irma.RequestorToken          `json:"token"`
+	FrontendRequest *irma.FrontendSessionRequest `json:"frontendRequest"`
 }
 
 // SessionResult contains session information such as the session status, type, possible errors,
 // and disclosed attributes or attribute-based signature if appropriate to the session type.
 type SessionResult struct {
-	Token       string                       `json:"token"`
-	Status      Status                       `json:"status"`
-	Type        irma.Action                  `json:"type"'`
+	Token       irma.RequestorToken          `json:"token"`
+	Status      irma.ServerStatus            `json:"status"`
+	Type        irma.Action                  `json:"type"`
 	ProofStatus irma.ProofStatus             `json:"proofStatus,omitempty"`
 	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
 	Signature   *irma.SignedMessage          `json:"signature,omitempty"`
 	Err         *irma.RemoteError            `json:"error,omitempty"`
+	NextSession irma.RequestorToken          `json:"nextSession,omitempty"`
 
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
 }
@@ -48,17 +50,14 @@ type SessionResult struct {
 // once an IRMA session has completed.
 type SessionHandler func(*SessionResult)
 
-// Status is the status of an IRMA session.
-type Status string
-
 type LogOptions struct {
 	Response, Headers, From, EncodeBinary bool
 }
 
 // Remove this when dropping support for legacy pre-condiscon session requests
 type LegacySessionResult struct {
-	Token       string                     `json:"token"`
-	Status      Status                     `json:"status"`
+	Token       irma.RequestorToken        `json:"token"`
+	Status      irma.ServerStatus          `json:"status"`
 	Type        irma.Action                `json:"type"`
 	ProofStatus irma.ProofStatus           `json:"proofStatus,omitempty"`
 	Disclosed   []*irma.DisclosedAttribute `json:"disclosed,omitempty"`
@@ -67,24 +66,18 @@ type LegacySessionResult struct {
 }
 
 const (
-	StatusInitialized Status = "INITIALIZED" // The session has been started and is waiting for the client
-	StatusConnected   Status = "CONNECTED"   // The client has retrieved the session request, we wait for its response
-	StatusCancelled   Status = "CANCELLED"   // The session is cancelled, possibly due to an error
-	StatusDone        Status = "DONE"        // The session has completed successfully
-	StatusTimeout     Status = "TIMEOUT"     // Session timed out
+	ComponentRevocation      = "revocation"
+	ComponentSession         = "session"
+	ComponentFrontendSession = "frontendsession"
+	ComponentStatic          = "static"
 )
 
 const (
-	ComponentRevocation = "revocation"
-	ComponentSession    = "session"
-	ComponentStatic     = "static"
+	ReadTimeout  = 5 * time.Second
+	WriteTimeout = 2 * ReadTimeout
 )
 
-const (
-	PostSizeLimit = 10 << 20 // 10 MB
-	ReadTimeout   = 5 * time.Second
-	WriteTimeout  = 2 * ReadTimeout
-)
+var PostSizeLimit int64 = 10 << 20 // 10 MB
 
 // Remove this when dropping support for legacy pre-condiscon session requests
 func (r *SessionResult) Legacy() *LegacySessionResult {
@@ -93,10 +86,6 @@ func (r *SessionResult) Legacy() *LegacySessionResult {
 		disclosed = append(disclosed, l[0])
 	}
 	return &LegacySessionResult{r.Token, r.Status, r.Type, r.ProofStatus, disclosed, r.Signature, r.Err}
-}
-
-func (status Status) Finished() bool {
-	return status == StatusDone || status == StatusCancelled || status == StatusTimeout
 }
 
 // RemoteError converts an error and an explaining message to an *irma.RemoteError.
@@ -345,8 +334,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 		res = result
 	}
 
-	var x string // dummy for the server's return value that we don't care about
-	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", &x, res); err != nil {
+	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", nil, res); err != nil {
 		// not our problem, log it and go on
 		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
 	}
@@ -529,4 +517,30 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 			next.ServeHTTP(ww, r)
 		})
 	}
+}
+
+func ParseBody(r *http.Request, input interface{}) error {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		Logger.WithField("error", err).Info("Malformed request: could not read request body")
+		return err
+	}
+
+	switch i := input.(type) {
+	case *string:
+		*i = string(body)
+	default:
+		if err = json.Unmarshal(body, input); err != nil {
+			Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+			return err
+		}
+	}
+	return nil
+}
+
+func FilterStopError(err error) error {
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
 }

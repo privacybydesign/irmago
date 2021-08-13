@@ -4,10 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/bwesterb/go-atum"
@@ -59,61 +57,6 @@ type keyshareServer struct {
 	Nonce                   []byte `json:"nonce"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
 	token                   string
-}
-
-type keyshareEnrollment struct {
-	Username string  `json:"username"`
-	Pin      string  `json:"pin"`
-	Email    *string `json:"email"`
-	Language string  `json:"language"`
-}
-
-type keyshareChangepin struct {
-	Username string `json:"id"`
-	OldPin   string `json:"oldpin"`
-	NewPin   string `json:"newpin"`
-}
-
-type keyshareAuthorization struct {
-	Status     string   `json:"status"`
-	Candidates []string `json:"candidates"`
-}
-
-type keysharePinMessage struct {
-	Username string `json:"id"`
-	Pin      string `json:"pin"`
-}
-
-type keysharePinStatus struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
-type publicKeyIdentifier struct {
-	Issuer  string `json:"issuer"`
-	Counter uint   `json:"counter"`
-}
-
-func (pki *publicKeyIdentifier) UnmarshalText(text []byte) error {
-	str := string(text)
-	index := strings.LastIndex(str, "-")
-	if index == -1 {
-		return errors.New("Invalid publicKeyIdentifier")
-	}
-	counter, err := strconv.Atoi(str[index+1:])
-	if err != nil {
-		return err
-	}
-	*pki = publicKeyIdentifier{Issuer: str[:index], Counter: uint(counter)}
-	return nil
-}
-
-func (pki *publicKeyIdentifier) MarshalText() (text []byte, err error) {
-	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
-}
-
-type proofPCommitmentMap struct {
-	Commitments map[publicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
 }
 
 const (
@@ -200,7 +143,7 @@ func startKeyshareSession(
 		ks.keyshareServer = ks.keyshareServers[managerID]
 		transport := irma.NewHTTPTransport(scheme.KeyshareServer, !ks.preferences.DeveloperMode)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
-		transport.SetHeader(kssAuthHeader, "Bearer "+ks.keyshareServer.token)
+		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
 		transport.SetHeader(kssVersionHeader, "2")
 		ks.transports[managerID] = transport
 
@@ -285,8 +228,8 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 
 func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
 	success bool, tries int, blocked int, err error) {
-	pinmsg := keysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
-	pinresult := &keysharePinStatus{}
+	pinmsg := irma.KeysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
+	pinresult := &irma.KeysharePinStatus{}
 	err = transport.Post("users/verify/pin", pinresult, pinmsg)
 	if err != nil {
 		return
@@ -343,8 +286,8 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 // of all keyshare servers of their part of the private key, and merges these commitments
 // in our own proof builders.
 func (ks *keyshareSession) GetCommitments() {
-	pkids := map[irma.SchemeManagerIdentifier][]*publicKeyIdentifier{}
-	commitments := map[publicKeyIdentifier]*gabi.ProofPCommitment{}
+	pkids := map[irma.SchemeManagerIdentifier][]*irma.PublicKeyIdentifier{}
+	commitments := map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment{}
 
 	// For each scheme manager, build a list of public keys under this manager
 	// that we will use in the keyshare protocol with the keyshare server of this manager
@@ -355,9 +298,9 @@ func (ks *keyshareSession) GetCommitments() {
 			continue
 		}
 		if _, contains := pkids[managerID]; !contains {
-			pkids[managerID] = []*publicKeyIdentifier{}
+			pkids[managerID] = []*irma.PublicKeyIdentifier{}
 		}
-		pkids[managerID] = append(pkids[managerID], &publicKeyIdentifier{Issuer: pk.Issuer, Counter: pk.Counter})
+		pkids[managerID] = append(pkids[managerID], &irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter})
 	}
 
 	// Now inform each keyshare server of with respect to which public keys
@@ -368,7 +311,7 @@ func (ks *keyshareSession) GetCommitments() {
 		}
 
 		transport := ks.transports[managerID]
-		comms := &proofPCommitmentMap{}
+		comms := &irma.ProofPCommitmentMap{}
 		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
 		if err != nil {
 			if err.(*irma.SessionError).RemoteError != nil &&
@@ -391,7 +334,7 @@ func (ks *keyshareSession) GetCommitments() {
 	// Merge in the commitments
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
-		pki := publicKeyIdentifier{Issuer: pk.Issuer, Counter: pk.Counter}
+		pki := irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter}
 		comm, distributed := commitments[pki]
 		if !distributed {
 			continue

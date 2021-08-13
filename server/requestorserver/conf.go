@@ -3,8 +3,6 @@ package requestorserver
 import (
 	"crypto/tls"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -29,6 +27,9 @@ type Configuration struct {
 	ListenAddress string `json:"listen_addr" mapstructure:"listen_addr"`
 	// Port to listen at
 	Port int `json:"port" mapstructure:"port"`
+	// Route requests via this path, so instead of POST /session, it will
+	// be POST {ApiPrefix}/session.  Should start with a "/".
+	ApiPrefix string `json:"api_prefix" mapstructure:"api_prefix"`
 	// TLS configuration
 	TlsCertificate     string `json:"tls_cert" mapstructure:"tls_cert"`
 	TlsCertificateFile string `json:"tls_cert_file" mapstructure:"tls_cert_file"`
@@ -245,8 +246,7 @@ func (conf *Configuration) initialize() error {
 		if port == 0 {
 			port = conf.Port
 		}
-		replace := "$1:" + strconv.Itoa(port)
-		conf.URL = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(conf.URL), []byte(replace)))
+		conf.URL = server.ReplacePortString(conf.URL, port)
 
 		separateClientServer := conf.separateClientServer()
 		if (separateClientServer && clientTlsConf != nil) || (!separateClientServer && tlsConf != nil) {
@@ -254,6 +254,18 @@ func (conf *Configuration) initialize() error {
 				conf.URL = "https://" + conf.URL[len("http://"):]
 			}
 		}
+	}
+
+	if !strings.HasSuffix(conf.ApiPrefix, "/") {
+		conf.ApiPrefix += "/"
+	}
+
+	if !strings.HasPrefix(conf.ApiPrefix, "/") {
+		return errors.Errorf("api_prefix must start with a slash, but doesn't: %s", conf.ApiPrefix)
+	}
+
+	if conf.URL != "" && !strings.HasSuffix(conf.URL, conf.ApiPrefix+"irma/") {
+		conf.Logger.Warnf("Are the URL and API-prefix set correctly?: %s does not end with %s.", conf.URL, conf.ApiPrefix+"irma/")
 	}
 
 	if len(conf.StaticSessions) != 0 && conf.JwtRSAPrivateKey == nil {
@@ -361,51 +373,11 @@ func (conf *Configuration) validatePermissionSet(requestor string, requestorperm
 }
 
 func (conf *Configuration) clientTlsConfig() (*tls.Config, error) {
-	return conf.readTlsConf(conf.ClientTlsCertificate, conf.ClientTlsCertificateFile, conf.ClientTlsPrivateKey, conf.ClientTlsPrivateKeyFile)
+	return server.TLSConf(conf.ClientTlsCertificate, conf.ClientTlsCertificateFile, conf.ClientTlsPrivateKey, conf.ClientTlsPrivateKeyFile)
 }
 
 func (conf *Configuration) tlsConfig() (*tls.Config, error) {
-	return conf.readTlsConf(conf.TlsCertificate, conf.TlsCertificateFile, conf.TlsPrivateKey, conf.TlsPrivateKeyFile)
-}
-
-func (conf *Configuration) readTlsConf(cert, certfile, key, keyfile string) (*tls.Config, error) {
-	if cert == "" && certfile == "" && key == "" && keyfile == "" {
-		return nil, nil
-	}
-
-	var certbts, keybts []byte
-	var err error
-	if certbts, err = common.ReadKey(cert, certfile); err != nil {
-		return nil, err
-	}
-	if keybts, err = common.ReadKey(key, keyfile); err != nil {
-		return nil, err
-	}
-
-	cer, err := tls.X509KeyPair(certbts, keybts)
-	if err != nil {
-		return nil, err
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{cer},
-		MinVersion:   tls.VersionTLS12,
-
-		// Safe according to https://safecurves.cr.yp.to/; fairly widely supported according to
-		// https://en.wikipedia.org/wiki/Comparison_of_TLS_implementations#Supported_elliptic_curves
-		CurvePreferences: []tls.CurveID{tls.X25519},
-
-		PreferServerCipherSuites: true,
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-		},
-	}, nil
+	return server.TLSConf(conf.TlsCertificate, conf.TlsCertificateFile, conf.TlsPrivateKey, conf.TlsPrivateKeyFile)
 }
 
 func (conf *Configuration) separateClientServer() bool {

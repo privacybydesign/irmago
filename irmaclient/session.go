@@ -29,8 +29,9 @@ type PinHandler func(proceed bool, pin string)
 
 // A Handler contains callbacks for communication to the user.
 type Handler interface {
-	StatusUpdate(action irma.Action, status irma.Status)
+	StatusUpdate(action irma.Action, status irma.ClientStatus)
 	ClientReturnURLSet(clientReturnURL string)
+	PairingRequired(pairingCode string)
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
@@ -111,10 +112,9 @@ var supportedVersions = map[int][]int{
 		5, // introduces condiscon feature
 		6, // introduces nonrevocation proofs
 		7, // introduces chained sessions
+		8, // introduces session binding
 	},
 }
-var minVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]}
-var maxVersion = &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]}
 
 // Session constructors
 
@@ -165,13 +165,13 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 		Action:         action,
 		Handler:        handler,
 		client:         client,
-		Version:        minVersion,
+		Version:        client.minVersion,
 		request:        request,
 		done:           doneChannel,
 		prepRevocation: make(chan error),
 	}
 	client.sessions.add(session)
-	session.Handler.StatusUpdate(session.Action, irma.StatusManualStarted)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusManualStarted)
 
 	session.processSessionInfo()
 	return session
@@ -212,8 +212,8 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	}
 	client.sessions.add(session)
 
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
-	min := minVersion
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
+	min := client.minVersion
 
 	// Check if the action is one of the supported types
 	switch session.Action {
@@ -232,7 +232,14 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	}
 
 	session.transport.SetHeader(irma.MinVersionHeader, min.String())
-	session.transport.SetHeader(irma.MaxVersionHeader, maxVersion.String())
+	session.transport.SetHeader(irma.MaxVersionHeader, client.maxVersion.String())
+
+	// From protocol version 2.8 also an authorization header must be included.
+	if client.maxVersion.Above(2, 7) {
+		clientAuth := common.NewSessionToken()
+		session.transport.SetHeader(irma.AuthorizationHeader, clientAuth)
+	}
+
 	if !strings.HasSuffix(session.ServerURL, "/") {
 		session.ServerURL += "/"
 	}
@@ -244,19 +251,58 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 // Core session methods
 
 // getSessionInfo retrieves the first message in the IRMA protocol (only in interactive sessions)
+// If needed, it also handles pairing.
 func (session *session) getSessionInfo() {
 	defer session.recoverFromPanic()
 
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 
 	// Get the first IRMA protocol message and parse it
-	err := session.transport.Get("", session.request)
+	cr := &irma.ClientSessionRequest{
+		Request: session.request, // As request is an interface, it needs to be initialized with a specific instance.
+	}
+	// UnmarshalJSON of ClientSessionRequest takes into account legacy protocols, so we do not have to check that here.
+	err := session.transport.Get("", cr)
 	if err != nil {
 		session.fail(err.(*irma.SessionError))
 		return
 	}
 
+	// Check whether pairing is needed, and if so, wait for it to be completed.
+	if cr.Options.PairingMethod != irma.PairingMethodNone {
+		if err = session.handlePairing(cr.Options.PairingCode); err != nil {
+			session.fail(err.(*irma.SessionError))
+			return
+		}
+	}
+
 	session.processSessionInfo()
+}
+
+func (session *session) handlePairing(pairingCode string) error {
+	session.Handler.PairingRequired(pairingCode)
+
+	statuschan := make(chan irma.ServerStatus)
+	errorchan := make(chan error)
+
+	go irma.WaitStatusChanged(session.transport, irma.ServerStatusPairing, statuschan, errorchan)
+	select {
+	case status := <-statuschan:
+		if status == irma.ServerStatusConnected {
+			return session.transport.Get("request", session.request)
+		} else {
+			return &irma.SessionError{ErrorType: irma.ErrorPairingRejected}
+		}
+	case err := <-errorchan:
+		if serr, ok := err.(*irma.SessionError); ok {
+			return serr
+		}
+		return &irma.SessionError{
+			ErrorType: irma.ErrorServerResponse,
+			Info:      "Pairing aborted by server",
+			Err:       err,
+		}
+	}
 }
 
 func requestorInfo(serverURL string, conf *irma.Configuration) *irma.RequestorInfo {
@@ -384,7 +430,7 @@ func (session *session) requestPermission() {
 		return
 	}
 
-	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusConnected)
 
 	// Ask for permission to execute the session
 	switch session.Action {
@@ -423,7 +469,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		session.fail(&irma.SessionError{ErrorType: irma.ErrorRequiredAttributeMissing, Err: err})
 		return
 	}
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 
 	// wait for revocation preparation to finish
 	err := <-session.prepRevocation
@@ -768,11 +814,11 @@ func (session *session) KeyshareError(manager *irma.SchemeManagerIdentifier, err
 }
 
 func (session *session) KeysharePin() {
-	session.Handler.StatusUpdate(session.Action, irma.StatusConnected)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusConnected)
 }
 
 func (session *session) KeysharePinOK() {
-	session.Handler.StatusUpdate(session.Action, irma.StatusCommunicating)
+	session.Handler.StatusUpdate(session.Action, irma.ClientStatusCommunicating)
 }
 
 func (s sessions) remove(token string) {

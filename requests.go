@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -18,11 +19,14 @@ import (
 )
 
 const (
-	LDContextDisclosureRequest = "https://irma.app/ld/request/disclosure/v2"
-	LDContextSignatureRequest  = "https://irma.app/ld/request/signature/v2"
-	LDContextIssuanceRequest   = "https://irma.app/ld/request/issuance/v2"
-	LDContextRevocationRequest = "https://irma.app/ld/request/revocation/v1"
-	DefaultJwtValidity         = 120
+	LDContextDisclosureRequest      = "https://irma.app/ld/request/disclosure/v2"
+	LDContextSignatureRequest       = "https://irma.app/ld/request/signature/v2"
+	LDContextIssuanceRequest        = "https://irma.app/ld/request/issuance/v2"
+	LDContextRevocationRequest      = "https://irma.app/ld/request/revocation/v1"
+	LDContextFrontendOptionsRequest = "https://irma.app/ld/request/frontendoptions/v1"
+	LDContextClientSessionRequest   = "https://irma.app/ld/request/client/v1"
+	LDContextSessionOptions         = "https://irma.app/ld/options/v1"
+	DefaultJwtValidity              = 120
 )
 
 // BaseRequest contains information used by all IRMA session types, such the context and nonce,
@@ -210,6 +214,31 @@ type AttributeRequest struct {
 	NotNull bool                    `json:"notNull,omitempty"`
 }
 
+type PairingMethod string
+
+const (
+	PairingMethodNone = "none"
+	PairingMethodPin  = "pin"
+)
+
+// An FrontendOptionsRequest asks for a options change of a particular session.
+type FrontendOptionsRequest struct {
+	LDContext     string        `json:"@context,omitempty"`
+	PairingMethod PairingMethod `json:"pairingMethod"`
+}
+
+// FrontendSessionRequest contains session parameters for the frontend.
+type FrontendSessionRequest struct {
+	// Authorization token to access frontend endpoints.
+	Authorization FrontendAuthorization `json:"authorization"`
+	// PairingRecommended indictes to the frontend that pairing is recommended when starting the session.
+	PairingRecommended bool `json:"pairingHint,omitempty"`
+	// MinProtocolVersion that the server supports for the frontend protocol.
+	MinProtocolVersion *ProtocolVersion `json:"minProtocolVersion"`
+	// MaxProtocolVersion that the server supports for the frontend protocol.
+	MaxProtocolVersion *ProtocolVersion `json:"maxProtocolVersion"`
+}
+
 type RevocationRequest struct {
 	LDContext      string                   `json:"@context,omitempty"`
 	CredentialType CredentialTypeIdentifier `json:"type"`
@@ -223,6 +252,20 @@ type NonRevocationRequest struct {
 }
 
 type NonRevocationParameters map[CredentialTypeIdentifier]*NonRevocationRequest
+
+type SessionOptions struct {
+	LDContext     string        `json:"@context,omitempty"`
+	PairingMethod PairingMethod `json:"pairingMethod"`
+	PairingCode   string        `json:"pairingCode,omitempty"`
+}
+
+// ClientSessionRequest contains all information irmaclient needs to know to initiate a session.
+type ClientSessionRequest struct {
+	LDContext       string           `json:"@context,omitempty"`
+	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
+	Options         *SessionOptions  `json:"options,omitempty"`
+	Request         SessionRequest   `json:"request,omitempty"`
+}
 
 func (choice *DisclosureChoice) Validate() error {
 	if choice == nil {
@@ -1091,4 +1134,58 @@ func SignRequestorRequest(request RequestorRequest, alg jwt.SigningMethod, key i
 // NewAttributeRequest requests the specified attribute.
 func NewAttributeRequest(attr string) AttributeRequest {
 	return AttributeRequest{Type: NewAttributeTypeIdentifier(attr)}
+}
+
+// NewFrontendOptionsRequest returns a new options request initialized with default values for each option
+func NewFrontendOptionsRequest() FrontendOptionsRequest {
+	return FrontendOptionsRequest{
+		LDContext:     LDContextFrontendOptionsRequest,
+		PairingMethod: PairingMethodNone,
+	}
+}
+
+func (or *FrontendOptionsRequest) Validate() error {
+	if or.LDContext != LDContextFrontendOptionsRequest {
+		return errors.New("Not a frontend options request")
+	}
+	return nil
+}
+
+func (cr *ClientSessionRequest) UnmarshalJSON(data []byte) error {
+	// Unmarshal in alias first to prevent infinite recursion
+	type alias ClientSessionRequest
+	err := json.Unmarshal(data, (*alias)(cr))
+	if err != nil {
+		return err
+	}
+	if cr.LDContext == LDContextClientSessionRequest {
+		return nil
+	}
+
+	// For legacy sessions initialize client request by hand using the fetched request
+	err = json.Unmarshal(data, cr.Request)
+	if err != nil {
+		return err
+	}
+	cr.LDContext = LDContextClientSessionRequest
+	cr.ProtocolVersion = cr.Request.Base().ProtocolVersion
+	cr.Options = &SessionOptions{
+		LDContext:     LDContextSessionOptions,
+		PairingMethod: PairingMethodNone,
+	}
+	return nil
+}
+
+func (cr *ClientSessionRequest) Validate() error {
+	if cr.LDContext != LDContextClientSessionRequest {
+		return errors.New("Not a client request")
+	}
+	// The 'Request' field is not required. When this field is empty, we have to skip the validation.
+	// We cannot detect this easily, because in Go empty structs are automatically populated with
+	// default values. We can also not use a pointer reference because SessionRequest is an interface.
+	// Therefore we use reflection to check whether the struct that implements the interface is empty.
+	if !reflect.ValueOf(cr.Request).Elem().IsZero() {
+		return cr.Request.Validate()
+	}
+	return nil
 }

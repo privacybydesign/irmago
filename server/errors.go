@@ -9,6 +9,7 @@ type Error struct {
 
 type ErrorType string
 
+// General errors
 var (
 	ErrorInvalidTimestamp          Error = Error{Type: "INVALID_TIMESTAMP", Status: 400, Description: "Timestamp was not an epoch boundary"}
 	ErrorIssuingDisabled           Error = Error{Type: "ISSUING_DISABLED", Status: 403, Description: "This server does not support issuing"}
@@ -19,6 +20,8 @@ var (
 	ErrorAttributesWrong           Error = Error{Type: "ATTRIBUTES_WRONG", Status: 400, Description: "Specified attribute(s) do not belong to this credential type or missing attributes"}
 	ErrorCannotIssue               Error = Error{Type: "CANNOT_ISSUE", Status: 500, Description: "Cannot issue this credential"}
 
+	ErrorIrmaUnauthorized     Error = Error{Type: "UNAUTHORIZED", Status: 403, Description: "You are not authorized to access the session"}
+	ErrorPairingRequired      Error = Error{Type: "PAIRING_REQUIRED", Status: 403, Description: "Pairing is required first"}
 	ErrorIssuanceFailed       Error = Error{Type: "ISSUANCE_FAILED", Status: 500, Description: "Failed to create credential(s)"}
 	ErrorInvalidProofs        Error = Error{Type: "INVALID_PROOFS", Status: 400, Description: "Invalid secret key commitments and/or disclosure proofs"}
 	ErrorAttributesMissing    Error = Error{Type: "ATTRIBUTES_MISSING", Status: 400, Description: "Not all requested-for attributes were present"}
@@ -37,4 +40,11 @@ var (
 	ErrorUnsupported     Error = Error{Type: "UNSUPPORTED", Status: 501, Description: "Unsupported by this server"}
 	ErrorInvalidRequest  Error = Error{Type: "INVALID_REQUEST", Status: 400, Description: "Invalid HTTP request"}
 	ErrorProtocolVersion Error = Error{Type: "PROTOCOL_VERSION", Status: 400, Description: "Protocol version negotiation failed"}
+	ErrorInternal        Error = Error{Type: "INTERNAL_ERROR", Status: 500, Description: "Internal server error"}
+)
+
+// Keyshare errors
+var (
+	ErrorUserNotRegistered = Error{Type: "USER_NOT_REGISTERED", Status: 403, Description: "User is not yet fully registered"}
+	ErrorInvalidJWT        = Error{Type: "UNAUTHORIZED", Status: 403, Description: "Invalid or expired jwt provided"}
 )

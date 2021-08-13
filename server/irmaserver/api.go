@@ -25,7 +25,7 @@ type Server struct {
 	sessions         sessionStore
 	scheduler        *gocron.Scheduler
 	stopScheduler    chan bool
-	handlers         map[string]server.SessionHandler
+	handlers         map[irma.RequestorToken]server.SessionHandler
 	serverSentEvents *sse.Server
 }
 
@@ -51,7 +51,7 @@ func New(conf *server.Configuration) (*Server, error) {
 	s := &Server{
 		conf:             conf,
 		scheduler:        gocron.NewScheduler(),
-		handlers:         make(map[string]server.SessionHandler),
+		handlers:         make(map[irma.RequestorToken]server.SessionHandler),
 		serverSentEvents: e,
 	}
 
@@ -60,8 +60,8 @@ func New(conf *server.Configuration) (*Server, error) {
 		fallthrough // no specification defaults to the memory session store
 	case "memory":
 		s.sessions = &memorySessionStore{
-			requestor: make(map[string]*session),
-			client:    make(map[string]*session),
+			requestor: make(map[irma.RequestorToken]*session),
+			client:    make(map[irma.ClientToken]*session),
 			conf:      conf,
 		}
 
@@ -133,16 +133,27 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
-	r.Route("/session/{token}", func(r chi.Router) {
+	r.Route("/session/{clientToken}", func(r chi.Router) {
 		r.Use(s.sessionMiddleware)
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)
 		r.Get("/statusevents", s.handleSessionStatusEvents)
+		r.Route("/frontend", func(r chi.Router) {
+			r.Use(s.frontendMiddleware)
+			r.Get("/status", s.handleFrontendStatus)
+			r.Get("/statusevents", s.handleFrontendStatusEvents)
+			r.Post("/options", s.handleFrontendOptionsPost)
+			r.Post("/pairingcompleted", s.handleFrontendPairingCompleted)
+		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.cacheMiddleware)
 			r.Get("/", s.handleSessionGet)
-			r.Post("/commitments", s.handleSessionCommitments)
-			r.Post("/proofs", s.handleSessionProofs)
+			r.Group(func(r chi.Router) {
+				r.Use(s.pairingMiddleware)
+				r.Get("/request", s.handleSessionGetRequest)
+				r.Post("/commitments", s.handleSessionCommitments)
+				r.Post("/proofs", s.handleSessionProofs)
+			})
 		})
 	})
 	r.Post("/session/{name}", s.handleStaticMessage)
@@ -173,27 +184,29 @@ func (s *Server) Stop() {
 }
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
-// The session token (the second return parameter) can be used in GetSessionResult()
-// and CancelSession().
+// The session requestorToken (the second return parameter) can be used in GetSessionResult()
+// and CancelSession(). The session's frontendAuth (the third return parameter) is needed
+// by frontend clients (i.e. browser libraries) to POST to the '/frontend' endpoints of the IRMA protocol.
 // The request parameter can be an irma.RequestorRequest, or an irma.SessionRequest, or a
 // ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
-func StartSession(request interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
+func StartSession(request interface{}, handler server.SessionHandler,
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.StartSession(request, handler)
 }
-func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, string, error) {
+func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.StartSessionWithContext(req, handler, context.Background())
 }
-func (s *Server) StartSessionWithContext(req interface{}, handler server.SessionHandler, ctx context.Context) (*irma.Qr, string, error) {
+func (s *Server) StartSessionWithContext(req interface{}, handler server.SessionHandler, ctx context.Context) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	request := rrequest.SessionRequest()
 	action := request.Action()
 
 	if err := s.validateRequest(request); err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	if action == irma.ActionIssuing {
 		// Include the AttributeTypeIdentifiers of random blind attributes to each CredentialRequest.
@@ -204,8 +217,26 @@ func (s *Server) StartSessionWithContext(req interface{}, handler server.Session
 		}
 
 		if err := s.validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
-			return nil, "", err
+			return nil, "", nil, err
 		}
+	}
+
+	pairingRecommended := false
+	if rrequest.Base().NextSession != nil && rrequest.Base().NextSession.URL != "" {
+		pairingRecommended = true
+	} else if action == irma.ActionDisclosing {
+		err := request.Disclosure().Disclose.Iterate(func(attr *irma.AttributeRequest) error {
+			if attr.Value != nil {
+				pairingRecommended = true
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, "", nil, err
+		}
+	} else {
+		// For issuing and signing actions, we always recommend pairing.
+		pairingRecommended = true
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
@@ -213,68 +244,104 @@ func (s *Server) StartSessionWithContext(req interface{}, handler server.Session
 	if err != nil {
 		return nil, "", err
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.Token}).Infof("Session started")
+	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.requestorToken}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token, "clienttoken": session.ClientToken}).Info("Session request: ", server.ToJson(rrequest))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken, "clienttoken": session.clientToken}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	if handler != nil {
-		s.handlers[session.Token] = handler
+		s.handlers[session.requestorToken] = handler
 	}
 	return &irma.Qr{
-		Type: action,
-		URL:  s.conf.URL + "session/" + session.ClientToken,
-	}, session.Token, nil
+			Type: action,
+			URL:  s.conf.URL + "session/" + string(session.clientToken),
+		},
+		session.requestorToken,
+		&irma.FrontendSessionRequest{
+			Authorization:      session.frontendAuth,
+			PairingRecommended: pairingRecommended,
+			MinProtocolVersion: minFrontendProtocolVersion,
+			MaxProtocolVersion: maxFrontendProtocolVersion,
+		},
+		nil
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
-func GetSessionResult(token string) (*server.SessionResult, error) {
-	return s.GetSessionResult(token)
+func GetSessionResult(requestorToken irma.RequestorToken) (*server.SessionResult, error) {
+	return s.GetSessionResult(requestorToken)
 }
-func (s *Server) GetSessionResult(token string) (*server.SessionResult, error) {
-	session, err := s.sessions.get(token)
+func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (*server.SessionResult, error) {
+	session, err := s.sessions.get(requestorToken)
 	if err != nil {
 		return nil, err
 	}
 	if session == nil {
-		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session result requested of unknown session %s", token)))
+		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session result requested of unknown session %s", requestorToken)))
 	}
 	return session.Result, nil
 }
 
 // GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
-func GetRequest(token string) (irma.RequestorRequest, error) {
-	return s.GetRequest(token)
+func GetRequest(requestorToken irma.RequestorToken) (irma.RequestorRequest, error) {
+	return s.GetRequest(requestorToken)
 }
-func (s *Server) GetRequest(token string) (irma.RequestorRequest, error) {
-	session, err := s.sessions.get(token)
+func (s *Server) GetRequest(requestorToken irma.RequestorToken) (irma.RequestorRequest, error) {
+	session, err := s.sessions.get(requestorToken)
 	if err != nil {
 		return nil, err
 	}
 	if session == nil {
-		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session request requested of unknown session %s", token)))
+		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session request requested of unknown session %s", requestorToken)))
 	}
 	return session.Rrequest, nil
 }
 
 // CancelSession cancels the specified IRMA session.
-func CancelSession(token string) error {
-	return s.CancelSession(token)
+func CancelSession(requestorToken irma.RequestorToken) error {
+	return s.CancelSession(requestorToken)
 }
-func (s *Server) CancelSession(token string) error {
-	session, err := s.sessions.get(token)
+func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
+	session, err := s.sessions.get(requestorToken)
 	if err != nil {
 		return err
 	}
 	if session == nil {
-		return server.LogError(errors.Errorf("can't cancel unknown session %s", token))
+		return server.LogError(errors.Errorf("can't cancel unknown session %s", requestorToken))
 	}
 	err = session.handleDelete()
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+// Requests a change of the session frontend options at the server.
+// Returns the updated session options struct. Frontend options can only be
+// changed when the client is not connected yet. Otherwise an error is returned.
+// Options that are not specified in the request, keep their old value.
+func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
+	return s.SetFrontendOptions(requestorToken, request)
+}
+func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
+	session := s.sessions.get(requestorToken)
+	if session == nil {
+		return nil, server.LogError(errors.Errorf("can't set frontend options of unknown session %s", requestorToken))
+	}
+	return session.updateFrontendOptions(request)
+}
+
+// Complete pairing between the irma client and the frontend. Returns
+// an error when no client is actually connected.
+func PairingCompleted(requestorToken irma.RequestorToken) error {
+	return s.PairingCompleted(requestorToken)
+}
+func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
+	session := s.sessions.get(requestorToken)
+	if session == nil {
+		return server.LogError(errors.Errorf("can't complete pairing of unknown session %s", requestorToken))
+	}
+	return session.pairingCompleted()
 }
 
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server
@@ -305,9 +372,9 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 
 	var session *session
 	if requestor {
-		session, _ = s.sessions.get(token) // SSE can only be used with storeType memory which does not contain errors.
+		session, _ = s.sessions.get(irma.RequestorToken(token)) // SSE can only be used with storeType memory which does not contain errors.
 	} else {
-		session, _ = s.sessions.clientGet(token) // SSE can only be used with storeType memory which does not contain errors.
+		session, _ = s.sessions.clientGet(irma.RequestorToken(token)) // SSE can only be used with storeType memory which does not contain errors.
 	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
@@ -325,7 +392,25 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	go func() {
 		time.Sleep(200 * time.Millisecond)
 		s.serverSentEvents.SendMessage("session/"+token, sse.NewMessage("", "", "open"))
+		s.serverSentEvents.SendMessage("frontendsession/"+token, sse.NewMessage("", "", "open"))
 	}()
 	s.serverSentEvents.ServeHTTP(w, r)
 	return nil
+}
+
+// SessionStatus retrieves a channel on which the current session status of the specified
+// IRMA session can be retrieved.
+func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
+	return s.SessionStatus(requestorToken)
+}
+func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
+	session := s.sessions.get(requestorToken)
+	if session == nil {
+		return nil, server.LogError(errors.Errorf("can't get session status of unknown session %s", requestorToken))
+	}
+
+	statusChan := make(chan irma.ServerStatus, 4)
+	statusChan <- session.status
+	session.statusChannels = append(session.statusChannels, statusChan)
+	return statusChan, nil
 }

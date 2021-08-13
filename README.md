@@ -24,27 +24,40 @@ To install the `irma` command line tool:
 
 ## Running the unit tests
 
-The tests can be run using:
+Some of the unit tests connect to locally running external services, namely PostgreSQL and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. They can be installed as follows.
 
-    go test -v -p 1 --tags=local_tests ./...
+#### PostgreSQL
+
+ * Install using e.g. `brew install postgresql`, or `apt-get install postgresql`, or via another package manager of your OS.
+ * Prepare the database and user:
+
+       create database test;
+       create user testuser with encrypted password 'testpassword';
+       grant all privileges on database test to testuser;
+
+   This only needs to be done once. No table or rows need to be created; the unit tests do this themselves.
+
+#### SMTP server
+For the SMTP server you can use [MailHog](https://github.com/mailhog/MailHog) (see also their [installation instructions](https://github.com/mailhog/MailHog#installation)):
+ * Install using `brew install mailhog` or `go get github.com/mailhog/MailHog`.
+ * Run using `MailHog`, or `~/go/bin/MailHog`, depending on your setup.
+
+For the unit tests it only matters that the SMTP server itself is running and accepts emails, but MailHog additionally comes with a webinterface showing incoming emails. By default this runs at <http://localhost:8025>.
+
+### Running the tests
+
+After installing PostgreSQL and MailHog, the tests can be run using:
+
+    go test -p 1 ./...
 
 * The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
 
-The command above only runs the local tests. These tests cover all regular use cases. The tests that are dependent on the [irma_keyshare_server](https://github.com/credentials/irma_keyshare_server) are skipped. These tests are only relevant for client implementations, like the IRMA app. 
+### Running without PostgreSQL or MailHog
 
-If you do want to also run the tests using a keyshare server, you have to run your own local instance. How to set up a keyshare server suitable for these tests is described below. After this is done, the tests can be added by removing the `--tags=local_tests` parameter from the command.
+If installing PostgreSQL or MailHog is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:
 
-### IRMA Keyshare Server
-An [irma_keyshare_server](https://github.com/credentials/irma_keyshare_server) suitable for testing `irmago` can be set up in the following way:
-
-- Copy or symlink the `irma_configuration` folder from `testdata/` to the configuration of the Keyshare server.
-    - Note that a `gradle appRun` won't automatically use the new `irma_configuration` folder if it was already built with an old one. For this, use `gradle clean`.
-- Add the keyshare user used in the unit tests to the keyshare database by a command like this:
-
-        mysql -uirma -pirma irma_keyshare < keyshareuser.sql
-
-- Make sure `check_user_enabled` is set to false in the Keyshare server configuration. Other options are already setup correctly in the example configuration.
+    go test -p 1 --tags=local_tests ./...
 
 ## Using a local Redis datastore
 Irmago can either store session states in memory (default) or in a Redis datastore. For local testing purposes you can use the standard [Redis docker container](https://hub.docker.com/_/redis):

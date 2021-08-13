@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -25,8 +26,11 @@ var Logger *logrus.Logger
 var ForceHTTPS = true
 
 const (
-	sessionChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	AlphanumericChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	NumericChars      = "0123456789"
+
 	sessionTokenLength = 20
+	pairingCodeLength  = 4
 )
 
 // AssertPathExists returns nil only if it has been successfully
@@ -273,15 +277,23 @@ type SSECtx struct {
 }
 
 func NewSessionToken() string {
-	r := make([]byte, sessionTokenLength)
+	return NewRandomString(sessionTokenLength, AlphanumericChars)
+}
+
+func NewPairingCode() string {
+	return NewRandomString(pairingCodeLength, NumericChars)
+}
+
+func NewRandomString(count int, characterSet string) string {
+	r := make([]byte, count)
 	_, err := rand.Read(r)
 	if err != nil {
 		panic(err)
 	}
 
-	b := make([]byte, sessionTokenLength)
+	b := make([]byte, count)
 	for i := range b {
-		b[i] = sessionChars[r[i]%byte(len(sessionChars))]
+		b[i] = characterSet[r[i]%byte(len(characterSet))]
 	}
 	return string(b)
 }
@@ -384,3 +396,8 @@ func SchemeFilename(dir string) (string, error) {
 }
 
 var SchemeFilenames = []string{"description.xml", "description.json"}
+
+// Helper for absorbing errors in the `defer x.Close()` pattern
+func Close(o io.Closer) {
+	_ = o.Close()
+}

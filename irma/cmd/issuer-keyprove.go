@@ -14,7 +14,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/keyproof"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 )
 
 var issuerKeyproveCmd = &cobra.Command{

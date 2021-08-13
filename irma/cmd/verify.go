@@ -8,7 +8,7 @@ import (
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/sietseringers/cobra"
+	"github.com/spf13/cobra"
 )
 
 // verifyCmd represents the verify command
