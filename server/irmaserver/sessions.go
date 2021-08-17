@@ -24,20 +24,14 @@ type session struct {
 	//TODO: check if we can get rid of this Mutex for Redis
 	sync.Mutex `json:-`
 	//TODO: note somewhere that state with redis will not support sse for the moment
-	sse         *sse.Server
-	locked      bool
-	sessions    sessionStore
-	conf        *server.Configuration
-	request     irma.SessionRequest
-	context     context.Context
-	toBeUpdated bool
-
-	frontendAuth       irma.FrontendAuthorization
-	implicitDisclosure irma.AttributeConDisCon
-	options            irma.SessionOptions
-	statusChannels     []chan irma.ServerStatus
-	clientAuth         irma.ClientAuthorization
-	next               *irma.Qr
+	sse            *sse.Server
+	locked         bool
+	sessions       sessionStore
+	conf           *server.Configuration
+	request        irma.SessionRequest
+	context        context.Context
+	toBeUpdated    bool
+	statusChannels []chan irma.ServerStatus
 
 	sessionData
 }
@@ -49,13 +43,17 @@ type sessionData struct {
 	Version            *irma.ProtocolVersion `json:",omitempty"`
 	Rrequest           irma.RequestorRequest
 	LegacyCompatible   bool // if the request is convertible to pre-condiscon format
-	ImplicitDisclosure irma.AttributeConDisCon
 	Status             irma.ServerStatus
 	PrevStatus         irma.ServerStatus
 	ResponseCache      responseCache
 	LastActive         time.Time
 	Result             *server.SessionResult
 	KssProofs          map[irma.SchemeManagerIdentifier]*gabi.ProofP
+	Next               *irma.Qr
+	FrontendAuth       irma.FrontendAuthorization
+	ImplicitDisclosure irma.AttributeConDisCon
+	Options            irma.SessionOptions
+	ClientAuth         irma.ClientAuthorization
 }
 
 type responseCache struct {
@@ -329,6 +327,11 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 			Type:          action,
 			Status:        irma.ServerStatusInitialized,
 		},
+		Options: irma.SessionOptions{
+			LDContext:     irma.LDContextSessionOptions,
+			PairingMethod: irma.PairingMethodNone,
+		},
+		FrontendAuth: frontendAuth,
 	}
 	ses := &session{
 		sessionData: sd,
@@ -337,12 +340,6 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 		conf:        s.conf,
 		request:     request.SessionRequest(),
 		context:     ctx,
-
-		options: irma.SessionOptions{
-			LDContext:     irma.LDContextSessionOptions,
-			PairingMethod: irma.PairingMethodNone,
-		},
-		frontendAuth: frontendAuth,
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")

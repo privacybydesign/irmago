@@ -96,13 +96,6 @@ func TestRedis(t *testing.T) {
 		JwtServerConfiguration = defaultJwtServerConfiguration
 	}()
 
-	// disable pairing
-	defaultMaxVersion := maxClientVersion
-	defer func() {
-		maxClientVersion = defaultMaxVersion
-	}()
-	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
-
 	t.Run("TestSigningSession", TestSigningSession)
 	t.Run("TestDisclosureSession", TestDisclosureSession)
 	t.Run("TestIssuanceSession", TestIssuanceSession)
@@ -112,13 +105,6 @@ func TestRedis(t *testing.T) {
 }
 
 func TestRedisRedundancy(t *testing.T) {
-	// disable pairing
-	defaultMaxVersion := maxClientVersion
-	defer func() {
-		maxClientVersion = defaultMaxVersion
-	}()
-	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
-
 	mr := startRedis(t)
 	defer mr.Close()
 
@@ -218,14 +204,6 @@ func TestRedisLibraryErrors(t *testing.T) {
 }
 
 func TestRedisHTTPErrors(t *testing.T) {
-	// TODO: check waarom dit blijft hangen
-	// disable pairing
-	defaultMaxVersion := maxClientVersion
-	defer func() {
-		maxClientVersion = defaultMaxVersion
-	}()
-	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
-
 	mr := startRedis(t)
 
 	config := redisConfigDecorator(mr, JwtServerConfiguration)()

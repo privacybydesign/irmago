@@ -259,7 +259,7 @@ func (s *Server) StartSessionWithContext(req interface{}, handler server.Session
 		},
 		session.RequestorToken,
 		&irma.FrontendSessionRequest{
-			Authorization:      session.frontendAuth,
+			Authorization:      session.FrontendAuth,
 			PairingRecommended: pairingRecommended,
 			MinProtocolVersion: minFrontendProtocolVersion,
 			MaxProtocolVersion: maxFrontendProtocolVersion,

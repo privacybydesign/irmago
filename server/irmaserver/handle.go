@@ -55,7 +55,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	if clientAuth == "" && session.Version.Above(2, 7) {
 		return nil, session.fail(server.ErrorIrmaUnauthorized, "No authorization header provided")
 	}
-	session.clientAuth = clientAuth
+	session.ClientAuth = clientAuth
 
 	// we include the latest revocation updates for the client here, as opposed to when the session
 	// was started, so that the client always gets the very latest revocation records
@@ -74,7 +74,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	logger.WithFields(logrus.Fields{"version": session.Version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.Version
 
-	if session.options.PairingMethod != irma.PairingMethodNone && session.Version.Above(2, 7) {
+	if session.Options.PairingMethod != irma.PairingMethodNone && session.Version.Above(2, 7) {
 		session.setStatus(irma.ServerStatusPairing)
 	} else {
 		session.setStatus(irma.ServerStatusConnected)
@@ -314,7 +314,7 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 		return err
 	}
 	session.Result.NextSession = token
-	session.next = qr
+	session.Next = qr
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well
@@ -323,7 +323,7 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 		return err
 	}
 	newsession.ImplicitDisclosure = disclosed
-	newsession.frontendAuth = session.frontendAuth
+	newsession.FrontendAuth = session.FrontendAuth
 	res.NextSession = qr
 
 	return nil
@@ -458,7 +458,7 @@ func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	status := irma.FrontendSessionStatus{Status: session.Status, NextSession: session.next}
+	status := irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next}
 	server.WriteResponse(w, status, nil)
 }
 

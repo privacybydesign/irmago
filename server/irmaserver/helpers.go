@@ -52,7 +52,7 @@ func (session *session) updateSSE() {
 		}
 	}
 
-	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.next})
+	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next})
 
 	if session.sse == nil {
 		return
@@ -74,16 +74,16 @@ func (session *session) updateFrontendOptions(request *irma.FrontendOptionsReque
 		return nil, errors.New("Frontend options can only be updated when session is in initialized state")
 	}
 	if request.PairingMethod == "" {
-		return &session.options, nil
+		return &session.Options, nil
 	} else if request.PairingMethod == irma.PairingMethodNone {
-		session.options.PairingCode = ""
+		session.Options.PairingCode = ""
 	} else if request.PairingMethod == irma.PairingMethodPin {
-		session.options.PairingCode = common.NewPairingCode()
+		session.Options.PairingCode = common.NewPairingCode()
 	} else {
 		return nil, errors.New("Pairing method unknown")
 	}
-	session.options.PairingMethod = request.PairingMethod
-	return &session.options, nil
+	session.Options.PairingMethod = request.PairingMethod
+	return &session.Options, nil
 }
 
 // Complete the pairing process of frontend and irma client
@@ -315,10 +315,10 @@ func (session *session) getClientRequest() (*irma.ClientSessionRequest, error) {
 	info := irma.ClientSessionRequest{
 		LDContext:       irma.LDContextClientSessionRequest,
 		ProtocolVersion: session.Version,
-		Options:         &session.options,
+		Options:         &session.Options,
 	}
 
-	if session.options.PairingMethod == irma.PairingMethodNone {
+	if session.Options.PairingMethod == irma.PairingMethodNone {
 		request, err := session.getRequest()
 		if err != nil {
 			return nil, err
@@ -465,7 +465,7 @@ func (s *Server) frontendMiddleware(next http.Handler) http.Handler {
 		session := r.Context().Value("session").(*session)
 		frontendAuth := irma.FrontendAuthorization(r.Header.Get(irma.AuthorizationHeader))
 
-		if frontendAuth != session.frontendAuth {
+		if frontendAuth != session.FrontendAuth {
 			server.WriteError(w, server.ErrorIrmaUnauthorized, "")
 			return
 		}
@@ -577,7 +577,7 @@ func (s *Server) pairingMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		clientAuth := irma.ClientAuthorization(r.Header.Get(irma.AuthorizationHeader))
-		if session.clientAuth != clientAuth {
+		if session.ClientAuth != clientAuth {
 			server.WriteError(w, server.ErrorIrmaUnauthorized, "")
 			return
 		}
