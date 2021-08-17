@@ -30,8 +30,8 @@ func (session *session) handleDelete() error {
 	}
 	session.markAlive()
 
-	session.Result = &server.SessionResult{Token: session.requestorToken, Status: server.ServerStatusCancelled, Type: session.Action}
-	session.setStatus(server.ServerStatusCancelled)
+	session.Result = &server.SessionResult{Token: session.RequestorToken, Status: irma.ServerStatusCancelled, Type: session.Action}
+	session.setStatus(irma.ServerStatusCancelled)
 	return session.sessions.update(session)
 }
 
@@ -43,16 +43,16 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	}
 
 	session.markAlive()
-	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken})
+	logger := session.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken})
 
 	var err error
-	if session.version, err = session.chooseProtocolVersion(min, max); err != nil {
+	if session.Version, err = session.chooseProtocolVersion(min, max); err != nil {
 		return nil, session.fail(server.ErrorProtocolVersion, "")
 	}
 
 	// Protocol versions below 2.8 don't include an authorization header. Therefore skip the authorization
 	// header presence check if a lower version is used.
-	if clientAuth == "" && session.version.Above(2, 7) {
+	if clientAuth == "" && session.Version.Above(2, 7) {
 		return nil, session.fail(server.ErrorIrmaUnauthorized, "No authorization header provided")
 	}
 	session.clientAuth = clientAuth
@@ -74,7 +74,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 	logger.WithFields(logrus.Fields{"version": session.Version.String()}).Debugf("Protocol version negotiated")
 	session.request.Base().ProtocolVersion = session.Version
 
-	if session.options.PairingMethod != irma.PairingMethodNone && session.version.Above(2, 7) {
+	if session.options.PairingMethod != irma.PairingMethodNone && session.Version.Above(2, 7) {
 		session.setStatus(irma.ServerStatusPairing)
 	} else {
 		session.setStatus(irma.ServerStatusConnected)
@@ -86,7 +86,7 @@ func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, c
 		return legacy, nil
 	}
 
-	if session.version.Below(2, 8) {
+	if session.Version.Below(2, 8) {
 		// These versions do not support the ClientSessionRequest format, so send the SessionRequest.
 		request, err := session.getRequest()
 		if err != nil {
@@ -116,7 +116,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	request := session.request.(*irma.SignatureRequest)
 	request.Disclose = append(request.Disclose, session.ImplicitDisclosure...)
 
-	session.result.Disclosed, session.result.ProofStatus, err = signature.Verify(session.conf.IrmaConfiguration, request)
+	session.Result.Disclosed, session.Result.ProofStatus, err = signature.Verify(session.conf.IrmaConfiguration, request)
 	if err != nil && err == irma.ErrMissingPublicKey {
 		rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 	} else if err != nil {
@@ -140,7 +140,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 	request := session.request.(*irma.DisclosureRequest)
 	request.Disclose = append(request.Disclose, session.ImplicitDisclosure...)
 
-	session.result.Disclosed, session.result.ProofStatus, err = disclosure.Verify(session.conf.IrmaConfiguration, request)
+	session.Result.Disclosed, session.Result.ProofStatus, err = disclosure.Verify(session.conf.IrmaConfiguration, request)
 	if err != nil && err == irma.ErrMissingPublicKey {
 		rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 	} else if err != nil {
@@ -313,7 +313,7 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	if err != nil {
 		return err
 	}
-	session.result.NextSession = token
+	session.Result.NextSession = token
 	session.next = qr
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
@@ -406,9 +406,9 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 	session.Unlock()
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
-		Arg:       string(session.clientToken),
+		Arg:       string(session.ClientToken),
 	}))
-	if err := s.SubscribeServerSentEvents(w, r, string(session.clientToken), false); err != nil {
+	if err := s.SubscribeServerSentEvents(w, r, string(session.ClientToken), false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}
@@ -444,7 +444,7 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	if session.version.Below(2, 8) {
+	if session.Version.Below(2, 8) {
 		server.WriteError(w, server.ErrorUnexpectedRequest, "Endpoint is not support in used protocol version")
 		return
 	}
@@ -458,7 +458,7 @@ func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	status := irma.FrontendSessionStatus{Status: session.status, NextSession: session.next}
+	status := irma.FrontendSessionStatus{Status: session.Status, NextSession: session.next}
 	server.WriteResponse(w, status, nil)
 }
 
@@ -468,9 +468,9 @@ func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Reque
 	session.Unlock()
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentFrontendSession,
-		Arg:       string(session.clientToken),
+		Arg:       string(session.ClientToken),
 	}))
-	if err := s.SubscribeServerSentEvents(w, r, string(session.clientToken), false); err != nil {
+	if err := s.SubscribeServerSentEvents(w, r, string(session.ClientToken), false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}

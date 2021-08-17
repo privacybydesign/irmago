@@ -331,7 +331,10 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) processLoginIrmaSessionResult(session *session) (server.Error, string) {
-	result := s.irmaserv.GetSessionResult(session.loginSessionToken)
+	result, err := s.irmaserv.GetSessionResult(session.loginSessionToken)
+	if err != nil {
+		return server.ErrorInternal, ""
+	}
 	if result == nil {
 		session.loginSessionToken = ""
 		return server.ErrorInternal, "unknown login session"
@@ -548,7 +551,10 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Error, string) {
-	result := s.irmaserv.GetSessionResult(session.emailSessionToken)
+	result, err := s.irmaserv.GetSessionResult(session.emailSessionToken)
+	if err != nil {
+		return server.ErrorInternal, ""
+	}
 	if result == nil {
 		session.emailSessionToken = ""
 		return server.ErrorInternal, "unknown login session"
@@ -567,7 +573,7 @@ func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Erro
 	}
 
 	email := *result.Disclosed[0][0].RawValue
-	err := s.db.addEmail(*session.userID, email)
+	err = s.db.addEmail(*session.userID, email)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not add email address to user")
 		return server.ErrorInternal, err.Error()

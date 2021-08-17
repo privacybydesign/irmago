@@ -194,7 +194,6 @@ func getJwt(t *testing.T, request irma.SessionRequest, sessiontype string, alg j
 	return j
 }
 
-
 func sessionHelperWithFrontendOptions(
 	t *testing.T,
 	request irma.SessionRequest,
@@ -202,8 +201,8 @@ func sessionHelperWithFrontendOptions(
 	client *irmaclient.Client,
 	frontendOptionsHandler func(handler *TestHandler),
 	pairingHandler func(handler *TestHandler),
-){
-	return sessionHelperWithFrontendOptionsAndConfig(t, request, sessiontype, client, frontendOptionsHandler, pairingHandler(), JwtServerConfiguration())
+) string {
+	return sessionHelperWithFrontendOptionsAndConfig(t, request, sessiontype, client, frontendOptionsHandler, pairingHandler, JwtServerConfiguration())
 }
 
 func sessionHelperWithFrontendOptionsAndConfig(
@@ -266,7 +265,7 @@ func sessionHelperWithFrontendOptionsAndConfig(
 	}
 
 	var res string
-	err = irma.NewHTTPTransport("http://localhost:48682/session/"+string(sesPkg.Token), false).Get(resultEndpoint, &resJwt)
+	err = irma.NewHTTPTransport("http://localhost:48682/session/"+string(sesPkg.Token), false).Get(resultEndpoint, &res)
 	require.NoError(t, err)
 
 	return res

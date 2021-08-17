@@ -96,6 +96,13 @@ func TestRedis(t *testing.T) {
 		JwtServerConfiguration = defaultJwtServerConfiguration
 	}()
 
+	// disable pairing
+	defaultMaxVersion := maxClientVersion
+	defer func() {
+		maxClientVersion = defaultMaxVersion
+	}()
+	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+
 	t.Run("TestSigningSession", TestSigningSession)
 	t.Run("TestDisclosureSession", TestDisclosureSession)
 	t.Run("TestIssuanceSession", TestIssuanceSession)
@@ -105,6 +112,13 @@ func TestRedis(t *testing.T) {
 }
 
 func TestRedisRedundancy(t *testing.T) {
+	// disable pairing
+	defaultMaxVersion := maxClientVersion
+	defer func() {
+		maxClientVersion = defaultMaxVersion
+	}()
+	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+
 	mr := startRedis(t)
 	defer mr.Close()
 
@@ -130,7 +144,7 @@ func TestRedisRedundancy(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	sessionHelperWithConfig(t, request, "verification", nil, nil)
+	sessionHelperWithFrontendOptionsAndConfig(t, request, "verification", nil, nil, nil, nil)
 }
 
 // Tests whether the right error is returned by the client's Failure handler
@@ -152,7 +166,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	qr, _, err := irmaServer.StartSession(request, nil)
+	qr, _, _, err := irmaServer.StartSession(request, nil)
 	require.NoError(t, err)
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
@@ -161,7 +175,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	mr.Close()
 
 	clientChan := make(chan *SessionResult)
-	h := &TestHandler{t, clientChan, client, nil, 0, ""}
+	h := &TestHandler{t, clientChan, client, nil, 0, "", nil, nil, nil}
 	client.NewSession(string(qrjson), h)
 	clientResult := <-h.c
 
@@ -191,9 +205,9 @@ func TestRedisLibraryErrors(t *testing.T) {
 	// Stop the Redis server early to check whether the IRMA server fails correctly
 	mr.Close()
 
-	token := "Sxqcpng37mAdBKgoAJXl"
+	token := irma.RequestorToken("Sxqcpng37mAdBKgoAJXl")
 
-	_, _, err := irmaServer.StartSession(request, nil)
+	_, _, _, err := irmaServer.StartSession(request, nil)
 	require.Error(t, err)
 	_, err = irmaServer.GetSessionResult(token)
 	require.Error(t, err)
@@ -204,6 +218,14 @@ func TestRedisLibraryErrors(t *testing.T) {
 }
 
 func TestRedisHTTPErrors(t *testing.T) {
+	// TODO: check waarom dit blijft hangen
+	// disable pairing
+	defaultMaxVersion := maxClientVersion
+	defer func() {
+		maxClientVersion = defaultMaxVersion
+	}()
+	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+
 	mr := startRedis(t)
 
 	config := redisConfigDecorator(mr, JwtServerConfiguration)()

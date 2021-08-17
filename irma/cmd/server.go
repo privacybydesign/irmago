@@ -118,14 +118,13 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Int("max-session-lifetime", 5, "maximum duration of a session once a client connects in minutes")
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
-	flags.Lookup("no-auth").Header = `Requestor authentication and default requestor permissions`
 
+	headers["store-type"] = "Session store configuration"
 	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
 	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
 	flags.String("redis-pw", "", "Redis server password")
 	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
 	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
-	flags.Lookup("store-type").Header = `Session store configuration`
 
 	headers["jwt-issuer"] = "JWT configuration"
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
@@ -257,11 +256,11 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	if conf.StoreType == "redis" {
 		conf.RedisSettings = &server.RedisSettings{}
 		if conf.RedisSettings.Addr = viper.GetString("redis-addr"); conf.RedisSettings.Addr == "" {
-			return errors.New("When Redis is used as session data store, a Redis URL must be specified with the --redis-addr flag.")
+			return nil, errors.New("When Redis is used as session data store, a Redis URL must be specified with the --redis-addr flag.")
 		}
 
 		if conf.RedisSettings.Password = viper.GetString("redis-pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis-allow-empty-password") {
-			return errors.New("When Redis is used as session data store, a Redis non-empty password must be specified with the --redis-pw flag. This restriction can be overwritten by setting the --redis-allow-empty-password flag to true.")
+			return nil, errors.New("When Redis is used as session data store, a Redis non-empty password must be specified with the --redis-pw flag. This restriction can be overwritten by setting the --redis-allow-empty-password flag to true.")
 		}
 
 		conf.RedisSettings.DB = viper.GetInt("redis-db")

@@ -242,22 +242,22 @@ func (s *Server) StartSessionWithContext(req interface{}, handler server.Session
 	request.Base().DevelopmentMode = !s.conf.Production
 	session, err := s.newSession(action, rrequest, ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.requestorToken}).Infof("Session started")
+	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.RequestorToken}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken, "clienttoken": session.clientToken}).Info("Session request: ", server.ToJson(rrequest))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken, "clienttoken": session.ClientToken}).Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	if handler != nil {
-		s.handlers[session.requestorToken] = handler
+		s.handlers[session.RequestorToken] = handler
 	}
 	return &irma.Qr{
 			Type: action,
-			URL:  s.conf.URL + "session/" + string(session.clientToken),
+			URL:  s.conf.URL + "session/" + string(session.ClientToken),
 		},
-		session.requestorToken,
+		session.RequestorToken,
 		&irma.FrontendSessionRequest{
 			Authorization:      session.frontendAuth,
 			PairingRecommended: pairingRecommended,
@@ -324,7 +324,10 @@ func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.Fronte
 	return s.SetFrontendOptions(requestorToken, request)
 }
 func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
-	session := s.sessions.get(requestorToken)
+	session, err := s.sessions.get(requestorToken)
+	if err != nil {
+		return nil, err
+	}
 	if session == nil {
 		return nil, server.LogError(errors.Errorf("can't set frontend options of unknown session %s", requestorToken))
 	}
@@ -337,7 +340,10 @@ func PairingCompleted(requestorToken irma.RequestorToken) error {
 	return s.PairingCompleted(requestorToken)
 }
 func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
-	session := s.sessions.get(requestorToken)
+	session, err := s.sessions.get(requestorToken)
+	if err != nil {
+		return err
+	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't complete pairing of unknown session %s", requestorToken))
 	}
@@ -374,7 +380,7 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	if requestor {
 		session, _ = s.sessions.get(irma.RequestorToken(token)) // SSE can only be used with storeType memory which does not contain errors.
 	} else {
-		session, _ = s.sessions.clientGet(irma.RequestorToken(token)) // SSE can only be used with storeType memory which does not contain errors.
+		session, _ = s.sessions.clientGet(irma.ClientToken(token)) // SSE can only be used with storeType memory which does not contain errors.
 	}
 	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
@@ -404,13 +410,16 @@ func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, 
 	return s.SessionStatus(requestorToken)
 }
 func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
-	session := s.sessions.get(requestorToken)
+	session, err := s.sessions.get(requestorToken)
+	if err != nil {
+		return nil, err
+	}
 	if session == nil {
 		return nil, server.LogError(errors.Errorf("can't get session status of unknown session %s", requestorToken))
 	}
 
 	statusChan := make(chan irma.ServerStatus, 4)
-	statusChan <- session.status
+	statusChan <- session.Status
 	session.statusChannels = append(session.statusChannels, statusChan)
 	return statusChan, nil
 }

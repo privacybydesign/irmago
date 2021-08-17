@@ -21,35 +21,6 @@ import (
 )
 
 type session struct {
-	//sync.Mutex
-	//locked bool
-	//
-	//action             irma.Action
-	//requestorToken     irma.RequestorToken
-	//clientToken        irma.ClientToken
-	//frontendAuth       irma.FrontendAuthorization
-	//version            *irma.ProtocolVersion
-	//rrequest           irma.RequestorRequest
-	//request            irma.SessionRequest
-	//legacyCompatible   bool // if the request is convertible to pre-condiscon format
-	//implicitDisclosure irma.AttributeConDisCon
-	//next               *irma.Qr
-	//
-	//options        irma.SessionOptions
-	//status         irma.ServerStatus
-	//prevStatus     irma.ServerStatus
-	//sse            *sse.Server
-	//statusChannels []chan irma.ServerStatus
-	//responseCache  responseCache
-	//
-	//clientAuth irma.ClientAuthorization
-	//lastActive time.Time
-	//result     *server.SessionResult
-	//
-	//kssProofs map[irma.SchemeManagerIdentifier]*gabi.ProofP
-	//
-	//conf     *server.Configuration
-	//sessions sessionStore
 	//TODO: check if we can get rid of this Mutex for Redis
 	sync.Mutex `json:-`
 	//TODO: note somewhere that state with redis will not support sse for the moment
@@ -63,6 +34,9 @@ type session struct {
 
 	frontendAuth       irma.FrontendAuthorization
 	implicitDisclosure irma.AttributeConDisCon
+	options            irma.SessionOptions
+	statusChannels     []chan irma.ServerStatus
+	clientAuth         irma.ClientAuthorization
 	next               *irma.Qr
 
 	sessionData
@@ -76,8 +50,8 @@ type sessionData struct {
 	Rrequest           irma.RequestorRequest
 	LegacyCompatible   bool // if the request is convertible to pre-condiscon format
 	ImplicitDisclosure irma.AttributeConDisCon
-	Status             server.Status
-	PrevStatus         server.Status
+	Status             irma.ServerStatus
+	PrevStatus         irma.ServerStatus
 	ResponseCache      responseCache
 	LastActive         time.Time
 	Result             *server.SessionResult
@@ -89,7 +63,7 @@ type responseCache struct {
 	Message       []byte
 	Response      []byte
 	Status        int
-	SessionStatus server.Status
+	SessionStatus irma.ServerStatus
 }
 
 type sessionStore interface {
@@ -186,7 +160,7 @@ func (s *memorySessionStore) deleteExpired() {
 		session.Lock()
 
 		timeout := maxSessionLifetime
-		if session.Status == server.StatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
+		if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 			timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
 		}
 
@@ -196,7 +170,7 @@ func (s *memorySessionStore) deleteExpired() {
 				session.markAlive()
 				session.setStatus(irma.ServerStatusTimeout)
 			} else {
-				s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Infof("Deleting session")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Deleting session")
 				expired = append(expired, token)
 			}
 		}
@@ -251,20 +225,20 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(temp.Rrequest, s.Rrequest)
 }
 
-func (s *redisSessionStore) get(t string) (*session, error) {
+func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 	//TODO: input validation string?
-	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+t).Result()
+	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
 		return nil, logAsRedisError(err)
 	}
 
-	return s.clientGet(val)
+	return s.clientGet(irma.ClientToken(val))
 }
 
-func (s *redisSessionStore) clientGet(t string) (*session, error) {
-	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+t).Result()
+func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
+	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -280,9 +254,9 @@ func (s *redisSessionStore) clientGet(t string) (*session, error) {
 	session.request = session.Rrequest.SessionRequest()
 
 	if session.LastActive.Add(maxSessionLifetime).Before(time.Now()) && !session.Status.Finished() {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.Token}).Infof("Session expired")
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Session expired")
 		session.markAlive()
-		session.setStatus(server.StatusTimeout)
+		session.setStatus(irma.ServerStatusTimeout)
 		_ = s.update(&session) // Worst case the TTL and status aren't updated. We won't deal with this error
 	}
 
@@ -291,7 +265,7 @@ func (s *redisSessionStore) clientGet(t string) (*session, error) {
 
 func (s *redisSessionStore) add(session *session) error {
 	timeout := 2 * maxSessionLifetime // logic similar to memory store
-	if session.Status == server.StatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
+	if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 		timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
 	} else if session.Status.Finished() {
 		timeout = maxSessionLifetime
@@ -302,11 +276,11 @@ func (s *redisSessionStore) add(session *session) error {
 		return logAsRedisError(err)
 	}
 
-	err = s.client.Set(session.context, requestorTokenLookupPrefix+session.sessionData.Token, session.sessionData.ClientToken, timeout).Err()
+	err = s.client.Set(session.context, requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.sessionData.ClientToken), timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
-	err = s.client.Set(session.context, clientTokenLookupPrefix+session.sessionData.ClientToken, sessionJSON, timeout).Err()
+	err = s.client.Set(session.context, clientTokenLookupPrefix+string(session.sessionData.ClientToken), sessionJSON, timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
@@ -342,13 +316,13 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 	}
 
 	sd := sessionData{
-		Action:      action,
-		Rrequest:    request,
-		LastActive:  time.Now(),
-		RequestorToken:       requestorToken,
-		ClientToken: clientToken,
-		Status:      server.StatusInitialized,
-		PrevStatus:  server.StatusInitialized,
+		Action:         action,
+		Rrequest:       request,
+		LastActive:     time.Now(),
+		RequestorToken: requestorToken,
+		ClientToken:    clientToken,
+		Status:         irma.ServerStatusInitialized,
+		PrevStatus:     irma.ServerStatusInitialized,
 		Result: &server.SessionResult{
 			LegacySession: request.SessionRequest().Base().Legacy(),
 			Token:         requestorToken,
@@ -368,7 +342,7 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 			LDContext:     irma.LDContextSessionOptions,
 			PairingMethod: irma.PairingMethodNone,
 		},
-		frontendAuth:   frontendAuth,
+		frontendAuth: frontendAuth,
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
