@@ -83,6 +83,10 @@ func (session *session) updateFrontendOptions(request *irma.FrontendOptionsReque
 		return nil, errors.New("Pairing method unknown")
 	}
 	session.Options.PairingMethod = request.PairingMethod
+	err := session.sessions.update(session)
+	if err != nil {
+		return nil, server.LogError(err)
+	}
 	return &session.Options, nil
 }
 
@@ -90,6 +94,10 @@ func (session *session) updateFrontendOptions(request *irma.FrontendOptionsReque
 func (session *session) pairingCompleted() error {
 	if session.Status == irma.ServerStatusPairing {
 		session.setStatus(irma.ServerStatusConnected)
+		err := session.sessions.update(session)
+		if err != nil {
+			return server.LogError(err)
+		}
 		return nil
 	}
 	return errors.New("Pairing was not enabled")

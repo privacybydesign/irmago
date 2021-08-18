@@ -315,6 +315,10 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	}
 	session.Result.NextSession = token
 	session.Next = qr
+	err = s.sessions.update(session)
+	if err != nil {
+		return server.LogError(err)
+	}
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well
@@ -324,6 +328,11 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	}
 	newsession.ImplicitDisclosure = disclosed
 	newsession.FrontendAuth = session.FrontendAuth
+	err = s.sessions.update(newsession)
+	if err != nil {
+		return server.LogError(err)
+	}
+
 	res.NextSession = qr
 
 	return nil

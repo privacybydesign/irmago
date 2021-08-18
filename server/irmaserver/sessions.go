@@ -274,11 +274,11 @@ func (s *redisSessionStore) add(session *session) error {
 		return logAsRedisError(err)
 	}
 
-	err = s.client.Set(session.context, requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.sessionData.ClientToken), timeout).Err()
+	err = s.client.Set(context.Background(), requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.sessionData.ClientToken), timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
-	err = s.client.Set(session.context, clientTokenLookupPrefix+string(session.sessionData.ClientToken), sessionJSON, timeout).Err()
+	err = s.client.Set(context.Background(), clientTokenLookupPrefix+string(session.sessionData.ClientToken), sessionJSON, timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
