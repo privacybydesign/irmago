@@ -309,9 +309,10 @@ func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
 	if session == nil {
 		return server.LogError(errors.Errorf("can't cancel unknown session %s", requestorToken))
 	}
-	err = session.handleDelete()
+	session.handleDelete()
+	err = session.sessions.update(session)
 	if err != nil {
-		return err
+		return server.LogError(err)
 	}
 	return nil
 }
@@ -331,7 +332,15 @@ func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request 
 	if session == nil {
 		return nil, server.LogError(errors.Errorf("can't set frontend options of unknown session %s", requestorToken))
 	}
-	return session.updateFrontendOptions(request)
+	options, err := session.updateFrontendOptions(request)
+	if err != nil {
+		return nil, err
+	}
+	err = session.sessions.update(session)
+	if err != nil {
+		return nil, server.LogError(err)
+	}
+	return options, nil
 }
 
 // Complete pairing between the irma client and the frontend. Returns
@@ -347,7 +356,15 @@ func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
 	if session == nil {
 		return server.LogError(errors.Errorf("can't complete pairing of unknown session %s", requestorToken))
 	}
-	return session.pairingCompleted()
+	err = session.pairingCompleted()
+	if err != nil {
+		return err
+	}
+	err = session.sessions.update(session)
+	if err != nil {
+		return server.LogError(err)
+	}
+	return nil
 }
 
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server

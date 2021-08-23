@@ -25,6 +25,7 @@ require (
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/jasonlvhit/gocron v0.0.0-20180312192515-54194c9749d4
+	github.com/jinzhu/copier v0.3.2
 	github.com/jinzhu/gorm v1.9.12
 	github.com/lib/pq v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.4 // indirect

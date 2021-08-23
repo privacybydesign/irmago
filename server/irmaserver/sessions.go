@@ -30,7 +30,6 @@ type session struct {
 	conf           *server.Configuration
 	request        irma.SessionRequest
 	context        context.Context
-	toBeUpdated    bool
 	statusChannels []chan irma.ServerStatus
 
 	sessionData
@@ -255,7 +254,6 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Session expired")
 		session.markAlive()
 		session.setStatus(irma.ServerStatusTimeout)
-		_ = s.update(&session) // Worst case the TTL and status aren't updated. We won't deal with this error
 	}
 
 	return &session, nil

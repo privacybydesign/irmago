@@ -24,15 +24,14 @@ import (
 // Maintaining the session state is done here, as well as checking whether the session is in the
 // appropriate status before handling the request.
 
-func (session *session) handleDelete() error {
+func (session *session) handleDelete() {
 	if session.Status.Finished() {
-		return nil
+		return
 	}
 	session.markAlive()
 
 	session.Result = &server.SessionResult{Token: session.RequestorToken, Status: irma.ServerStatusCancelled, Type: session.Action}
 	session.setStatus(irma.ServerStatusCancelled)
-	return session.sessions.update(session)
 }
 
 func (session *session) handleGetClientRequest(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization) (
@@ -315,10 +314,6 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	}
 	session.Result.NextSession = token
 	session.Next = qr
-	err = s.sessions.update(session)
-	if err != nil {
-		return server.LogError(err)
-	}
 
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well
@@ -426,11 +421,7 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
 	session.context = r.Context()
-	err := session.handleDelete()
-	if err != nil {
-		server.WriteError(w, server.ErrorInternal, "")
-		return
-	}
+	session.handleDelete()
 	w.WriteHeader(200)
 }
 

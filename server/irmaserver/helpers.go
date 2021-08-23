@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/jinzhu/copier"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -40,7 +41,6 @@ func (session *session) setStatus(status irma.ServerStatus) {
 	session.Status = status
 	session.Result.Status = status
 	session.updateSSE()
-	session.toBeUpdated = true
 }
 
 func (session *session) updateSSE() {
@@ -83,10 +83,6 @@ func (session *session) updateFrontendOptions(request *irma.FrontendOptionsReque
 		return nil, errors.New("Pairing method unknown")
 	}
 	session.Options.PairingMethod = request.PairingMethod
-	err := session.sessions.update(session)
-	if err != nil {
-		return nil, server.LogError(err)
-	}
 	return &session.Options, nil
 }
 
@@ -94,10 +90,6 @@ func (session *session) updateFrontendOptions(request *irma.FrontendOptionsReque
 func (session *session) pairingCompleted() error {
 	if session.Status == irma.ServerStatusPairing {
 		session.setStatus(irma.ServerStatusConnected)
-		err := session.sessions.update(session)
-		if err != nil {
-			return server.LogError(err)
-		}
 		return nil
 	}
 	return errors.New("Pairing was not enabled")
@@ -107,7 +99,6 @@ func (session *session) fail(err server.Error, message string) *irma.RemoteError
 	rerr := server.RemoteError(err, message)
 	session.setStatus(irma.ServerStatusCancelled)
 	session.Result = &server.SessionResult{Err: rerr, Token: session.RequestorToken, Status: irma.ServerStatusCancelled, Type: session.Action}
-	_ = session.sessions.update(session) // silently fail in order not to overwrite original error
 	return rerr
 }
 
@@ -534,6 +525,11 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		ctx := r.Context()
 		session.Lock()
 		session.locked = true
+		originalSession := session
+		err = copier.Copy(originalSession, session)
+		if err != nil {
+			originalSession = nil // if copying won't work, assume original and future session will differ
+		}
 		defer func() {
 			if session.PrevStatus != session.Status {
 				session.PrevStatus = session.Status
@@ -549,6 +545,16 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 					}
 				}
 			}
+
+			if reflect.DeepEqual(originalSession, session) {
+				err = session.sessions.update(session)
+				if err != nil {
+					_ = server.LogError(err)
+					server.WriteError(w, server.ErrorInternal, "")
+					return
+				}
+			}
+
 			if session.locked {
 				session.locked = false
 				session.Unlock()
@@ -557,15 +563,6 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
 
-		if session.toBeUpdated {
-			err = session.sessions.update(session)
-			if err != nil {
-				_ = server.LogError(err)
-				server.WriteError(w, server.ErrorInternal, "")
-				return
-			}
-			session.toBeUpdated = false
-		}
 	})
 }
 
