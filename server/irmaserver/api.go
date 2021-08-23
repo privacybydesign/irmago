@@ -317,7 +317,7 @@ func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
 	return nil
 }
 
-// Requests a change of the session frontend options at the server.
+// SetFrontendOptions requests a change of the session frontend options at the server.
 // Returns the updated session options struct. Frontend options can only be
 // changed when the client is not connected yet. Otherwise an error is returned.
 // Options that are not specified in the request, keep their old value.
@@ -343,7 +343,7 @@ func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request 
 	return options, nil
 }
 
-// Complete pairing between the irma client and the frontend. Returns
+// PairingCompleted completes pairing between the irma client and the frontend. Returns
 // an error when no client is actually connected.
 func PairingCompleted(requestorToken irma.RequestorToken) error {
 	return s.PairingCompleted(requestorToken)
