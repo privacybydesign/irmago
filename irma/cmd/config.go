@@ -55,6 +55,7 @@ func configureIRMAServer() *server.Configuration {
 		DisableTLS:             viper.GetBool("no_tls"),
 		Email:                  viper.GetString("email"),
 		EnableSSE:              viper.GetBool("sse"),
+		StoreType:              viper.GetString("store_type"),
 		Verbose:                viper.GetInt("verbose"),
 		Quiet:                  viper.GetBool("quiet"),
 		LogJSON:                viper.GetBool("log_json"),

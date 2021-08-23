@@ -173,32 +173,7 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 
 	// Read configuration from flags and/or environmental variables
 	conf := &requestorserver.Configuration{
-		// TODO: 		Configuration: configureIRMAServer(),
-		Configuration: &server.Configuration{
-			SchemesPath:            viper.GetString("schemes-path"),
-			SchemesAssetsPath:      viper.GetString("schemes-assets-path"),
-			SchemesUpdateInterval:  viper.GetInt("schemes-update"),
-			DisableSchemesUpdate:   viper.GetInt("schemes-update") == 0,
-			IssuerPrivateKeysPath:  viper.GetString("privkeys"),
-			RevocationDBType:       viper.GetString("revocation-db-type"),
-			RevocationDBConnStr:    viper.GetString("revocation-db-str"),
-			RevocationSettings:     irma.RevocationSettings{},
-			URL:                    viper.GetString("url"),
-			DisableTLS:             viper.GetBool("no-tls"),
-			Email:                  viper.GetString("email"),
-			EnableSSE:              viper.GetBool("sse"),
-			StoreType:              viper.GetString("store-type"),
-			Verbose:                viper.GetInt("verbose"),
-			Quiet:                  viper.GetBool("quiet"),
-			LogJSON:                viper.GetBool("log-json"),
-			Logger:                 logger,
-			Production:             viper.GetBool("production"),
-			JwtIssuer:              viper.GetString("jwt-issuer"),
-			JwtPrivateKey:          viper.GetString("jwt-privkey"),
-			JwtPrivateKeyFile:      viper.GetString("jwt-privkey-file"),
-			AllowUnsignedCallbacks: viper.GetBool("allow-unsigned-callbacks"),
-			AugmentClientReturnURL: viper.GetBool("augment-client-return-url"),
-		},
+		Configuration: configureIRMAServer(),
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose_perms"),
 			Signing:    handlePermission("sign_perms"),
@@ -255,15 +230,15 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	// Parse Redis store configuration
 	if conf.StoreType == "redis" {
 		conf.RedisSettings = &server.RedisSettings{}
-		if conf.RedisSettings.Addr = viper.GetString("redis-addr"); conf.RedisSettings.Addr == "" {
+		if conf.RedisSettings.Addr = viper.GetString("redis_addr"); conf.RedisSettings.Addr == "" {
 			return nil, errors.New("When Redis is used as session data store, a Redis URL must be specified with the --redis-addr flag.")
 		}
 
-		if conf.RedisSettings.Password = viper.GetString("redis-pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis-allow-empty-password") {
+		if conf.RedisSettings.Password = viper.GetString("redis_pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis_allow_empty_password") {
 			return nil, errors.New("When Redis is used as session data store, a Redis non-empty password must be specified with the --redis-pw flag. This restriction can be overwritten by setting the --redis-allow-empty-password flag to true.")
 		}
 
-		conf.RedisSettings.DB = viper.GetInt("redis-db")
+		conf.RedisSettings.DB = viper.GetInt("redis_db")
 	}
 
 	logger.Debug("Done configuring")
