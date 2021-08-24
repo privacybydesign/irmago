@@ -195,7 +195,7 @@ var IrmaServerConfiguration = func() *requestorserver.Configuration {
 			SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 			IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 			RevocationSettings: irma.RevocationSettings{
-				revocationTestCred:  {RevocationServerURL: "http://localhost:48683"},
+				revocationTestCred:  {RevocationServerURL: "http://localhost:48683", SSE: true},
 				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 			},
 		},
