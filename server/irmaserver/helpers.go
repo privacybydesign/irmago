@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/jinzhu/copier"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -344,6 +343,10 @@ func (session *session) getRequest() (irma.SessionRequest, error) {
 	return cpy.(*irma.IssuanceRequest), nil
 }
 
+func (s *sessionData) hash() [32]byte {
+	return sha256.Sum256([]byte(fmt.Sprintf("%v", s)))
+}
+
 // Other
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
@@ -525,11 +528,8 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		ctx := r.Context()
 		session.Lock()
 		session.locked = true
-		originalSession := session
-		err = copier.Copy(originalSession, session)
-		if err != nil {
-			originalSession = nil // if copying won't work, assume original and future session will differ
-		}
+		hashBefore := session.sessionData.hash()
+
 		defer func() {
 			if session.PrevStatus != session.Status {
 				session.PrevStatus = session.Status
@@ -546,7 +546,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				}
 			}
 
-			if reflect.DeepEqual(originalSession, session) {
+			if hashBefore != session.sessionData.hash() {
 				err = session.sessions.update(session)
 				if err != nil {
 					_ = server.LogError(err)
