@@ -104,6 +104,41 @@ func TestRedis(t *testing.T) {
 	t.Run("TestUnknownRequestorToken", TestUnknownRequestorToken)
 }
 
+func TestRedisUpdates(t *testing.T) {
+	mr := startRedis(t)
+	defaultIrmaServerConfiguration := IrmaServerConfiguration
+	IrmaServerConfiguration = redisConfigDecorator(mr, IrmaServerConfiguration)
+	defer func() {
+		mr.Close()
+		IrmaServerConfiguration = defaultIrmaServerConfiguration
+	}()
+
+	StartIrmaServer(t, false, "")
+	defer StopIrmaServer()
+	qr, token, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+	), nil)
+	require.NoError(t, err)
+
+	var o interface{}
+	transport := irma.NewHTTPTransport(qr.URL, false)
+	transport.SetHeader(irma.MinVersionHeader, "2.5")
+	transport.SetHeader(irma.MaxVersionHeader, "2.5")
+	clientToken, err := mr.Get("token:" + string(token))
+	require.NoError(t, err)
+
+	initialData, _ := mr.Get("session:" + clientToken)
+	require.NoError(t, transport.Get("", &o))
+	updatedData, _ := mr.Get("session:" + clientToken)
+	require.NoError(t, transport.Get("", &o))
+	latestData, _ := mr.Get("session:" + clientToken)
+
+	// First Get should update the data stored in Redis
+	require.NotEqual(t, updatedData, initialData)
+	// Second Get should not update the data stored in Redis
+	require.Equal(t, updatedData, latestData)
+}
+
 func TestRedisRedundancy(t *testing.T) {
 	mr := startRedis(t)
 	defer mr.Close()
