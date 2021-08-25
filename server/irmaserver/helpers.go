@@ -347,6 +347,39 @@ func (s *sessionData) hash() [32]byte {
 	return sha256.Sum256([]byte(fmt.Sprintf("%v", s)))
 }
 
+// UnmarshalJSON unmarshals sessionData.
+func (s *sessionData) UnmarshalJSON(data []byte) error {
+	type rawSessionData sessionData
+
+	var temp struct {
+		Rrequest json.RawMessage `json:",omitempty"`
+		rawSessionData
+	}
+
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	*s = sessionData(temp.rawSessionData)
+
+	if len(temp.Rrequest) == 0 {
+		s.Rrequest = nil
+		return errors.Errorf("temp.Rrequest == nil: %d \n", temp.Rrequest)
+	}
+
+	// unmarshal Rrequest
+	switch s.Action {
+	case "issuing":
+		s.Rrequest = &irma.IdentityProviderRequest{}
+	case "disclosing":
+		s.Rrequest = &irma.ServiceProviderRequest{}
+	case "signing":
+		s.Rrequest = &irma.SignatureRequestorRequest{}
+	}
+
+	return json.Unmarshal(temp.Rrequest, s.Rrequest)
+}
+
 // Other
 
 func (s *Server) doResultCallback(result *server.SessionResult) {
