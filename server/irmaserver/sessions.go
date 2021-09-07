@@ -21,8 +21,7 @@ import (
 
 type session struct {
 	//TODO: check if we can get rid of this Mutex for Redis
-	sync.Mutex `json:-`
-	//TODO: note somewhere that state with redis will not support sse for the moment
+	sync.Mutex     `json:-`
 	sse            *sse.Server
 	locked         bool
 	sessions       sessionStore
