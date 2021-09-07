@@ -27,7 +27,6 @@ type session struct {
 	sessions       sessionStore
 	conf           *server.Configuration
 	request        irma.SessionRequest
-	context        context.Context
 	statusChannels []chan irma.ServerStatus
 
 	sessionData
@@ -102,6 +101,8 @@ var (
 
 	minFrontendProtocolVersion = irma.NewVersion(1, 0)
 	maxFrontendProtocolVersion = irma.NewVersion(1, 1)
+
+	ctx = context.Background()
 )
 
 func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
@@ -189,7 +190,7 @@ func (s *memorySessionStore) deleteExpired() {
 
 func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 	//TODO: input validation string?
-	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+string(t)).Result()
+	val, err := s.client.Get(ctx, requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -200,7 +201,7 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 }
 
 func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
-	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+string(t)).Result()
+	val, err := s.client.Get(ctx, clientTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -237,11 +238,11 @@ func (s *redisSessionStore) add(session *session) error {
 		return logAsRedisError(err)
 	}
 
-	err = s.client.Set(context.Background(), requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.sessionData.ClientToken), timeout).Err()
+	err = s.client.Set(ctx, requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.sessionData.ClientToken), timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
-	err = s.client.Set(context.Background(), clientTokenLookupPrefix+string(session.sessionData.ClientToken), sessionJSON, timeout).Err()
+	err = s.client.Set(ctx, clientTokenLookupPrefix+string(session.sessionData.ClientToken), sessionJSON, timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
@@ -262,7 +263,7 @@ func (s *redisSessionStore) stop() {
 
 var one *big.Int = big.NewInt(1)
 
-func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, ctx context.Context) (*session, error) {
+func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) (*session, error) {
 	clientToken := irma.ClientToken(common.NewSessionToken())
 	requestorToken := irma.RequestorToken(common.NewSessionToken())
 	frontendAuth := irma.FrontendAuthorization(common.NewSessionToken())
@@ -302,7 +303,6 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, c
 		sse:         s.serverSentEvents,
 		conf:        s.conf,
 		request:     request.SessionRequest(),
-		context:     ctx,
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")

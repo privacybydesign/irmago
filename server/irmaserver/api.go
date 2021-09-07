@@ -194,9 +194,6 @@ func StartSession(request interface{}, handler server.SessionHandler,
 	return s.StartSession(request, handler)
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
-	return s.StartSessionWithContext(req, handler, context.Background())
-}
-func (s *Server) StartSessionWithContext(req interface{}, handler server.SessionHandler, ctx context.Context) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", nil, err
@@ -240,7 +237,7 @@ func (s *Server) StartSessionWithContext(req interface{}, handler server.Session
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	session, err := s.newSession(action, rrequest, ctx)
+	session, err := s.newSession(action, rrequest)
 	if err != nil {
 		return nil, "", nil, err
 	}
