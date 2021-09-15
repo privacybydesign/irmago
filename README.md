@@ -44,18 +44,28 @@ For the SMTP server you can use [MailHog](https://github.com/mailhog/MailHog) (s
 
 For the unit tests it only matters that the SMTP server itself is running and accepts emails, but MailHog additionally comes with a webinterface showing incoming emails. By default this runs at <http://localhost:8025>.
 
-### Running the tests manually
+### Running the tests
 
-After installing PostgreSQL and MailHog, the tests can be run using:
+In case you chose to start PostgreSQL and MailHog using `docker-compose`, you first need to start these services:
+
+    docker-compose up
+
+When PostgreSQL and MailHog are running, the tests can be run using:
 
     go test -p 1 ./...
 
 * The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
 
-### Running the tests using Docker
+### Running without PostgreSQL, MailHog or Docker
 
-You can run the tests using the command below. By default, all tests are run one-by-one without parallel execution.
+If installing PostgreSQL, MailHog or Docker is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:
+
+    go test -p 1 --tags=local_tests ./...
+
+### Running without Go
+
+You can also run the tests fully in Docker using the command below. This is useful when you don't want to install the Go compiler locally. By default, all tests are run one-by-one without parallel execution.
 
     docker-compose run test
 
@@ -63,12 +73,6 @@ You can override the default command by specifying command line options for `go 
 
     docker-compose run test ./internal/sessiontest -run TestDisclosureSession
 
-We always enforce the `-p 1` option to be used (see [above](#running-the-tests-manually)).
-
-### Running without PostgreSQL or MailHog
-
-If installing PostgreSQL or MailHog is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:
-
-    go test -p 1 --tags=local_tests ./...
+We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
 
 <!-- vim: set ts=4 sw=4: -->
