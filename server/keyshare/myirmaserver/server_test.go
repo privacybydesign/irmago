@@ -266,6 +266,7 @@ func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.
 		}
 		assert.NoError(t, err)
 	}()
+	time.Sleep(200 * time.Millisecond) // Give server time to start
 
 	return s, serv
 }
