@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi"
 	irma "github.com/privacybydesign/irmago"
@@ -269,6 +270,7 @@ func StartKeyshareServer(t *testing.T, db DB, emailserver string) (*Server, *htt
 		}
 		assert.NoError(t, err)
 	}()
+	time.Sleep(200 * time.Millisecond) // Give server time to start
 
 	return s, serv
 }
