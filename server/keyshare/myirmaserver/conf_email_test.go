@@ -4,6 +4,7 @@ package myirmaserver
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/privacybydesign/irmago/internal/test"
@@ -30,7 +31,7 @@ func TestConfEmailValidation(t *testing.T) {
 
 	conf := validConf(t)
 	conf.DBType = DBTypePostgres
-	conf.DBConnStr = "postgresql://localhost:5432/test"
+	conf.DBConnStr = test.PostgresTestUrl
 	_, err := New(conf)
 	assert.NoError(t, err)
 
@@ -39,7 +40,7 @@ func TestConfEmailValidation(t *testing.T) {
 
 	conf = validConfWithEmail(t)
 	conf.DBType = DBTypePostgres
-	conf.DBConnStr = "postgresql://localhost:54321/test"
+	conf.DBConnStr = strings.Replace(test.PostgresTestUrl, "5432", "54321", 1)
 	_, err = New(conf)
 	assert.Error(t, err)
 

@@ -24,7 +24,7 @@ To install the `irma` command line tool:
 
 ## Running the unit tests
 
-Some of the unit tests connect to locally running external services, namely PostgreSQL and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. They can be installed as follows.
+Some of the unit tests connect to locally running external services, namely PostgreSQL and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can either be done using `docker-compose` or by following the instructions below to install the services manually.
 
 #### PostgreSQL
 
@@ -44,7 +44,7 @@ For the SMTP server you can use [MailHog](https://github.com/mailhog/MailHog) (s
 
 For the unit tests it only matters that the SMTP server itself is running and accepts emails, but MailHog additionally comes with a webinterface showing incoming emails. By default this runs at <http://localhost:8025>.
 
-### Running the tests
+### Running the tests manually
 
 After installing PostgreSQL and MailHog, the tests can be run using:
 
@@ -52,6 +52,18 @@ After installing PostgreSQL and MailHog, the tests can be run using:
 
 * The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
+
+### Running the tests using Docker
+
+You can run the tests using the command below. By default, all tests are run one-by-one without parallel execution.
+
+    docker-compose run test
+
+You can override the default command by specifying command line options for `go test` manually, for example:
+
+    docker-compose run test ./internal/sessiontest -run TestDisclosureSession
+
+We always enforce the `-p 1` option to be used (see [above](#running-the-tests-manually)).
 
 ### Running without PostgreSQL or MailHog
 

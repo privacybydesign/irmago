@@ -1,0 +1,30 @@
+version: '3.1'
+
+services:
+  # Dependencies for running unit tests
+  postgres:
+    image: postgres:13-buster
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+      POSTGRES_DB: test
+    ports:
+      - 5432:5432
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+     - 1025:1025
+
+  # Service to run unit tests
+  test:
+    image: golang:1.16-buster
+    volumes:
+      - .:/irmago
+    depends_on:
+      - postgres
+      - mailhog
+    # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking for now.
+    network_mode: host
+    working_dir: /irmago
+    entrypoint: go test -p 1
+    command: ./...
