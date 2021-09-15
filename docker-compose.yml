@@ -13,17 +13,20 @@ services:
   mailhog:
     image: mailhog/mailhog
     ports:
-     - 1025:1025
+      - 1025:1025
 
   # Service to run unit tests
   test:
     image: golang:1.16-buster
+    # Add a test profile to prevent this service to be included when running docker-compose up.
+    profiles:
+      - test
     volumes:
       - .:/irmago
     depends_on:
       - postgres
       - mailhog
-    # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking for now.
+    # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
     working_dir: /irmago
     entrypoint: go test -p 1
