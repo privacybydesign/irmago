@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const PostgresTestUrl = "postgresql://localhost:5432/test"
+const PostgresTestUrl = "postgresql://testuser:testpassword@localhost:5432/test"
 
 func RunScriptOnDB(t *testing.T, filename string, allowErr bool) {
 	db, err := sql.Open("pgx", PostgresTestUrl)
