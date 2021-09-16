@@ -1,13 +1,27 @@
-FROM buildpack-deps:buster as build
+# Use variable base image, such that we can also build for other base images, like alpine.
+ARG BASE_IMAGE=debian:buster-slim
 
-WORKDIR /build
-RUN wget https://gitlab.science.ru.nl/irma/github-mirrors/irmago/-/jobs/artifacts/master/download?job=binaries -O artifact.zip -q
-RUN unzip -j artifact.zip
+FROM golang:1.16-buster as build
 
-FROM golang:1.16-alpine
+# Set build environment
+ENV GOOS=linux
+ENV GOARCH=amd64
+ENV CGO_ENABLED=0
 
-COPY --from=build /build/irma-master-linux-amd64 /usr/local/bin/irma
+# Build irma CLI tool
+COPY . /irmago
+WORKDIR /irmago
+RUN mkdir -p /build
+RUN go build -a -ldflags '-extldflags "-static"' -o "/build/irma" ./irma
 
-EXPOSE 8088
+FROM $BASE_IMAGE
 
-CMD [ "irma", "server"]
+# The debian image does not include openssl, so we have to install this first.
+RUN if which apt-get &> /dev/null; then apt-get update && apt-get install -y ca-certificates openssl; fi
+
+COPY --from=build /build/irma /usr/local/bin/irma
+
+# Include schemes in the Docker image to speed up the start-up time.
+RUN irma scheme download
+
+ENTRYPOINT ["irma"]
