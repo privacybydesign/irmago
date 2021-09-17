@@ -29,7 +29,7 @@ To install the `irma` command line tool:
 
 You can also include the `irma` command line tool in a Docker image, using a base image of your choice.
 
-    docker build --build-arg BASE_IMAGE=alpine .
+    docker build --build-arg BASE_IMAGE=alpine -t privacybydesign/irma .
 
 ## Running the unit tests
 
