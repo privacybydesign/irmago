@@ -4,8 +4,6 @@ ARG BASE_IMAGE=debian:buster-slim
 FROM golang:1.16-buster as build
 
 # Set build environment
-ENV GOOS=linux
-ENV GOARCH=amd64
 ENV CGO_ENABLED=0
 
 # Build irma CLI tool
