@@ -32,9 +32,20 @@ To install the `irma` command line tool:
 
     go install ./irma
 
-You can also include the `irma` command line tool in a Docker image, using a base image of your choice.
+You can also include the `irma` command line tool in a Docker image, using a base image of your choice. The default base image is Debian's `buster-slim`.
 
     docker build --build-arg BASE_IMAGE=alpine -t privacybydesign/irma:edge .
+
+When you build for production, we recommend you to build the [latest release](/releases/latest). You should replace `v0.0.0` with the latest version number.
+
+    docker build -t privacybydesign/irma https://github.com/privacybydesign/irmago#v0.0.0
+
+In case you want to build `v0.8.0` or lower, then you should do some extra steps. The `Dockerfile` was not part of the repository at that time.
+
+    VERSION=v0.8.0
+    git checkout $VERSION
+    git checkout master -- Dockerfile
+    docker build -t privacybydesign/irma:$VERSION .
 
 ## Running the unit tests
 
