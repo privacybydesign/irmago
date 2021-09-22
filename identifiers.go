@@ -128,6 +128,10 @@ func (oi metaObjectIdentifier) Root() string {
 	}
 }
 
+func (io metaObjectIdentifier) PartsCount() int {
+	return strings.Count(string(io), ".")
+}
+
 // NewRequestorSchemeIdentifier converts the specified identifier to a RequestorSchemeIdentifier.
 func NewRequestorSchemeIdentifier(id string) RequestorSchemeIdentifier {
 	return RequestorSchemeIdentifier{metaObjectIdentifier(id)}

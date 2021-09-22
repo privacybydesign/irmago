@@ -374,6 +374,10 @@ func (c AttributeCon) Validate() error {
 	credtypes := map[CredentialTypeIdentifier]struct{}{}
 	var last CredentialTypeIdentifier
 	for _, attr := range c {
+		count := attr.Type.PartsCount()
+		if count != 3 && count != 2 {
+			return errors.Errorf("Expected attribute request to consist of 4 or 3 parts, %d found", count+1)
+		}
 		typ := attr.Type.CredentialTypeIdentifier()
 		if _, contains := credtypes[typ]; contains && last != typ {
 			return errors.New("Within inner conjunctions, attributes from the same credential type must be adjacent")
@@ -784,6 +788,10 @@ func (ir *IssuanceRequest) Validate() error {
 		return errors.New("Empty issuance request")
 	}
 	for _, cred := range ir.Credentials {
+		count := cred.CredentialTypeID.PartsCount()
+		if count != 2 {
+			return errors.Errorf("Expected credential ID to consist of 3 parts, %d found", count+1)
+		}
 		if cred.Validity != nil && cred.Validity.Floor().Before(Timestamp(time.Now())) {
 			return errors.New("Expired credential request")
 		}
