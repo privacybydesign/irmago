@@ -106,8 +106,8 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		JwtPrivateKeyFile:       viper.GetString("jwt_privkey_file"),
 		JwtIssuer:               viper.GetString("jwt_issuer"),
 		JwtPinExpiry:            viper.GetInt("jwt_pin_expiry"),
-		StoragePrimaryKeyFile:   viper.GetString("storage_primary_keyfile"),
-		StorageFallbackKeyFiles: viper.GetStringSlice("storage_fallback_keyfile"),
+		StoragePrimaryKeyFile:   viper.GetString("storage_primary_key_file"),
+		StorageFallbackKeyFiles: viper.GetStringSlice("storage_fallback_key_file"),
 
 		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare_attribute")),
 
