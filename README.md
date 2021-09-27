@@ -22,6 +22,10 @@ For example, to start a simple IRMA session:
     IP=192.168.1.2 # Replace with your local IP address.
     docker-compose run -p 48680:48680 irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
 
+You can run the `irma keyshare server` locally using the test configuration in `testdata/configurations`.
+
+    docker-compose run -p 8080:8080 irma keyshare server -c ./testdata/configurations/keyshareserver.yml
+
 ## Installing
 
     git clone https://github.com/privacybydesign/irmago
