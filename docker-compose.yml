@@ -1,19 +1,24 @@
 version: '3.1'
 
 services:
-  # Dependencies for running unit tests
+  # Dependencies for running unit tests and for running the 'irma' command line tool using one of the test configurations.
   postgres:
     image: postgres:13-buster
     environment:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpassword
       POSTGRES_DB: test
+    networks:
+      - irma-net
     ports:
       - 5432:5432
   mailhog:
     image: mailhog/mailhog
+    networks:
+      - irma-net
     ports:
       - 1025:1025
+      - 8025:8025 # Port of the web interface
 
   # Service to run unit tests
   test:
@@ -39,3 +44,18 @@ services:
     # Add a run profile to prevent this service to be included when running docker-compose up.
     profiles:
       - run
+    volumes:
+      - .:/irmago
+    working_dir: /irmago
+    depends_on:
+      - postgres
+      - mailhog
+    networks:
+      - irma-net
+
+# Docker Desktop for MacOS does not support exposing ports when using host networking. Therefore,
+# we have to use bridge networking and expose the ports manually.
+# https://github.com/docker/for-mac/issues/1031
+networks:
+  irma-net:
+    driver: bridge
