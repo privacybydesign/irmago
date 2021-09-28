@@ -39,6 +39,3 @@ services:
     # Add a run profile to prevent this service to be included when running docker-compose up.
     profiles:
       - run
-    # Expose port 8088 for convenience, as it is the default port for the 'irma server' command.
-    ports:
-      - 8088:8088

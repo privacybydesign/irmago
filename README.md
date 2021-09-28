@@ -17,6 +17,11 @@ The easiest way to run the `irma` command line tool is using Docker.
 
     docker-compose run irma
 
+For example, to start a simple IRMA session:
+
+    IP=192.168.1.2 # Replace with your local IP address.
+    docker-compose run -p 48680:48680 irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
+
 ## Installing
 
     git clone https://github.com/privacybydesign/irmago
