@@ -11,6 +11,17 @@
 
 Technical documentation of all components of `irmago` and more can be found at https://irma.app/docs.
 
+## Running
+
+The easiest way to run the `irma` command line tool is using Docker.
+
+    docker-compose run irma
+
+For example, to start a simple IRMA session:
+
+    IP=192.168.1.2 # Replace with your local IP address.
+    docker-compose run -p 48680:48680 irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
+
 ## Installing
 
     git clone https://github.com/privacybydesign/irmago
@@ -21,6 +32,9 @@ To install the `irma` command line tool:
 
     go install ./irma
 
+You can also include the `irma` command line tool in a Docker image, using a base image of your choice.
+
+    docker build --build-arg BASE_IMAGE=alpine -t privacybydesign/irma:edge .
 
 ## Running the unit tests
 

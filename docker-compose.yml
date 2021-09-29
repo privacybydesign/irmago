@@ -31,3 +31,11 @@ services:
     working_dir: /irmago
     entrypoint: go test -p 1
     command: ./...
+
+  # Service to run the 'irma' command line tool
+  irma:
+    build: .
+    image: privacybydesign/irma:edge
+    # Add a run profile to prevent this service to be included when running docker-compose up.
+    profiles:
+      - run
