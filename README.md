@@ -36,7 +36,7 @@ You can also include the `irma` command line tool in a Docker image, using a bas
 
     docker build --build-arg BASE_IMAGE=alpine -t privacybydesign/irma:edge .
 
-When you build for production, we recommend you to build the [latest release](/releases/latest). You should replace `v0.0.0` with the latest version number.
+When you build for production, we recommend you to build the [latest release](https://github.com/privacybydesign/irmago/releases/latest). You should replace `v0.0.0` with the latest version number.
 
     docker build -t privacybydesign/irma https://github.com/privacybydesign/irmago#v0.0.0
 
