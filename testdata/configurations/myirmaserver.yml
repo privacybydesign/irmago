@@ -2,6 +2,8 @@ verbose: 2
 
 schemes_path: testdata/irma_configuration
 schemes_update: 0
+url: http://localhost:port/
+port: 8081
 
 cors_allowed_origins: "*"
 

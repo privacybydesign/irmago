@@ -30,15 +30,15 @@ func TestServerInvalidMessage(t *testing.T) {
 	myirmaServer, httpServer := StartMyIrmaServer(t, newMemoryDB(), "")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
-	test.HTTPGet(t, nil, "http://localhost:8080/user", nil, 400, nil)
+	test.HTTPGet(t, nil, "http://localhost:8081/user", nil, 400, nil)
 
-	test.HTTPGet(t, nil, "http://localhost:8080/user/logs/0", nil, 400, nil)
+	test.HTTPGet(t, nil, "http://localhost:8081/user/logs/0", nil, 400, nil)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/user/delete", "", nil, 400, nil)
+	test.HTTPPost(t, nil, "http://localhost:8081/user/delete", "", nil, 400, nil)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/email/add", "", nil, 400, nil)
+	test.HTTPPost(t, nil, "http://localhost:8081/email/add", "", nil, 400, nil)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/email/remove", "", nil, 400, nil)
+	test.HTTPPost(t, nil, "http://localhost:8081/email/remove", "", nil, 400, nil)
 }
 
 func textPlainHeader() http.Header {
@@ -63,11 +63,11 @@ func TestServerIrmaSessions(t *testing.T) {
 
 	client := test.NewHTTPClient()
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/irma", "", nil, 200, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/irma", "", nil, 200, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"username":"testuser","token":"testtoken"}`, nil, 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"username":"testuser","token":"testtoken"}`, nil, 204, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/email/add", "", nil, 200, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/email/add", "", nil, 200, nil)
 }
 
 func TestServerSessionMgmnt(t *testing.T) {
@@ -96,59 +96,59 @@ func TestServerSessionMgmnt(t *testing.T) {
 	client := test.NewHTTPClient()
 
 	var body []byte
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/irma", "", nil, 200, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/irma", "", nil, 200, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/token/candidates", "doesnotexist", textPlainHeader(), 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token/candidates", "doesnotexist", textPlainHeader(), 400, nil)
 
 	var cands []loginCandidate
-	test.HTTPPost(t, client, "http://localhost:8080/login/token/candidates", "testtoken", textPlainHeader(), 200, &cands)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token/candidates", "testtoken", textPlainHeader(), 200, &cands)
 	assert.Equal(t, 1, len(cands))
 	assert.Equal(t, "testuser", cands[0].Username)
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "doesnotexist", "username": "testuser"}`, nil, 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "doesnotexist", "username": "testuser"}`, nil, 400, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "testtoken", "username":"doesnotexist"}`, nil, 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "testtoken", "username":"doesnotexist"}`, nil, 400, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "testtoken", "username":"noemail"}`, nil, 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "testtoken", "username":"noemail"}`, nil, 400, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"token": "testtoken", "username":"testuser"}`, nil, 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "testtoken", "username":"testuser"}`, nil, 204, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("ok"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/logout", "", nil, 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/logout", "", nil, 204, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/verify", "doesnotexist", textPlainHeader(), 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/verify", "doesnotexist", textPlainHeader(), 400, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/verify", "testemailtoken", textPlainHeader(), 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/verify", "testemailtoken", textPlainHeader(), 204, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("ok"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8080/user/delete", "", nil, 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/user/delete", "", nil, 204, nil)
 
-	test.HTTPPost(t, client, "http://localhost:8080/checksession", "", nil, 200, &body)
+	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 }
 
@@ -182,28 +182,28 @@ func TestServerUserData(t *testing.T) {
 
 	client := test.NewHTTPClient()
 
-	test.HTTPPost(t, client, "http://localhost:8080/login/token", `{"username":"testuser", "token":"testtoken"}`, nil, 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"username":"testuser", "token":"testtoken"}`, nil, 204, nil)
 
 	var userdata user
-	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
+	test.HTTPGet(t, client, "http://localhost:8081/user", nil, 200, &userdata)
 	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, userdata.Emails)
 
-	test.HTTPPost(t, client, "http://localhost:8080/email/remove", "test@test.com", textPlainHeader(), 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/email/remove", "test@test.com", textPlainHeader(), 204, nil)
 
 	userdata = user{}
-	test.HTTPGet(t, client, "http://localhost:8080/user", nil, 200, &userdata)
+	test.HTTPGet(t, client, "http://localhost:8081/user", nil, 200, &userdata)
 	assert.Empty(t, userdata.Emails)
 
-	test.HTTPGet(t, client, "http://localhost:8080/user/logs/abcd", nil, 400, nil)
+	test.HTTPGet(t, client, "http://localhost:8081/user/logs/abcd", nil, 400, nil)
 
 	var logs []logEntry
-	test.HTTPGet(t, client, "http://localhost:8080/user/logs/0", nil, 200, &logs)
+	test.HTTPGet(t, client, "http://localhost:8081/user/logs/0", nil, 200, &logs)
 	assert.Equal(t, []logEntry{
 		{Timestamp: 110, Event: "test", Param: &strEmpty},
 		{Timestamp: 120, Event: "test2", Param: &str15},
 	}, logs)
 
-	test.HTTPGet(t, client, "http://localhost:8080/user/logs/1", nil, 200, &logs)
+	test.HTTPGet(t, client, "http://localhost:8081/user/logs/1", nil, 200, &logs)
 	assert.Equal(t, []logEntry{
 		{Timestamp: 120, Event: "test2", Param: &str15},
 	}, logs)
@@ -255,7 +255,7 @@ func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.
 	s.Stop()
 
 	serv := &http.Server{
-		Addr:    "localhost:8080",
+		Addr:    "localhost:8081",
 		Handler: r,
 	}
 
