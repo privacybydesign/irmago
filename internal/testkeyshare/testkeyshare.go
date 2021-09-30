@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-chi/chi"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -43,7 +42,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 			SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
 			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 			Logger:                l,
-			URL:                   "http://localhost:8080/irma_keyshare_server/api/v1/",
+			URL:                   "http://localhost:8080/",
 		},
 		DB:                    db,
 		JwtKeyID:              0,
@@ -53,12 +52,9 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 	})
 	require.NoError(t, err)
 
-	r := chi.NewRouter()
-	r.Mount("/irma_keyshare_server/api/v1/", s.Handler())
-
 	keyshareServ = &http.Server{
 		Addr:    "localhost:8080",
-		Handler: r,
+		Handler: s.Handler(),
 	}
 
 	go func() {
