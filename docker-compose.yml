@@ -12,6 +12,23 @@ services:
       - irma-net
     ports:
       - 5432:5432
+  postgres-init:
+    image: postgres:13-buster
+    environment:
+      PGHOST: postgres
+      PGUSER: testuser
+      PGPASSWORD: testpassword
+      PGDATABASE: test
+    networks:
+      - irma-net
+    depends_on:
+      - postgres
+    volumes:
+      - ./server/keyshare/schema.sql:/schema.sql
+      - ./server/keyshare/cleanup.sql:/cleanup.sql
+    # We have to wait until the database is up and running.
+    # Database might already be running, so we might need to do a cleanup first.
+    command: /bin/sh -c "sleep 5 && (psql -f schema.sql || (psql -f cleanup.sql && psql -f schema.sql))"
   mailhog:
     image: mailhog/mailhog
     networks:
@@ -49,6 +66,7 @@ services:
     working_dir: /irmago
     depends_on:
       - postgres
+      - postgres-init
       - mailhog
     networks:
       - irma-net
