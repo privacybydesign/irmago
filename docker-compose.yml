@@ -27,8 +27,8 @@ services:
       - ./server/keyshare/schema.sql:/schema.sql
       - ./server/keyshare/cleanup.sql:/cleanup.sql
     # We have to wait until the database is up and running.
-    # Database might already be running, so we might need to do a cleanup first.
-    command: /bin/sh -c "sleep 5 && (psql -f schema.sql || (psql -f cleanup.sql && psql -f schema.sql))"
+    # Database might already be running, so we need to do a cleanup first.
+    command: /bin/sh -c "sleep 5 && psql -f cleanup.sql && psql -f schema.sql"
   mailhog:
     image: mailhog/mailhog
     networks:
