@@ -7,13 +7,13 @@ port: 8081
 
 cors_allowed_origins: "*"
 
-email_server: mailhog:1025
+email_server: mailhog.localhost:1025
 email_from: test@example.com
 default_languange: en
 
 delete_delay: 1
 
-db_str: postgresql://testuser:testpassword@postgres:5432/test
+db_str: postgresql://testuser:testpassword@postgres.localhost:5432/test
 
 sse: true
 

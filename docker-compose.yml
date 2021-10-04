@@ -9,7 +9,10 @@ services:
       POSTGRES_PASSWORD: testpassword
       POSTGRES_DB: test
     networks:
-      - irma-net
+      # We use a localhost alias such that the test configuration also works for users who run it without Docker.
+      irma-net:
+        aliases:
+            - postgres.localhost
     ports:
       - 5432:5432
   postgres-init:
@@ -32,7 +35,10 @@ services:
   mailhog:
     image: mailhog/mailhog
     networks:
-      - irma-net
+      # We use a localhost alias such that the test configuration also works for users who run it without Docker.
+      irma-net:
+        aliases:
+          - mailhog.localhost
     ports:
       - 1025:1025
       - 8025:8025 # Port of the web interface
