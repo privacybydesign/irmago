@@ -23,7 +23,6 @@ type Server struct {
 	sessions         sessionStore
 	scheduler        *gocron.Scheduler
 	stopScheduler    chan bool
-	handlers         map[irma.RequestorToken]server.SessionHandler
 	serverSentEvents *sse.Server
 }
 
@@ -54,7 +53,6 @@ func New(conf *server.Configuration) (*Server, error) {
 			client:    make(map[irma.ClientToken]*session),
 			conf:      conf,
 		},
-		handlers:         make(map[irma.RequestorToken]server.SessionHandler),
 		serverSentEvents: e,
 	}
 
@@ -221,9 +219,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 	} else {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
-	if handler != nil {
-		s.handlers[session.requestorToken] = handler
-	}
+	session.handler = handler
 	return &irma.Qr{
 			Type: action,
 			URL:  s.conf.URL + "session/" + string(session.clientToken),

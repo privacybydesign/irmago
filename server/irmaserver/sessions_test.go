@@ -1,17 +1,48 @@
 package irmaserver
 
 import (
+	"testing"
+	"time"
+
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
-func TestMemoryStoreNoDeadlock(t *testing.T) {
-	logger := logrus.New()
+var logger = logrus.New()
+
+func init() {
+	irma.SetLogger(logger)
 	logger.Level = logrus.FatalLevel
+}
+
+func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
+	s, err := New(&server.Configuration{Logger: logger})
+	require.NoError(t, err)
+	defer s.Stop()
+
+	request := &irma.ServiceProviderRequest{
+		RequestorBaseRequest: irma.RequestorBaseRequest{
+			ClientTimeout: 1,
+		},
+		Request: irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")),
+	}
+
+	var handlerInvoked bool
+	_, _, _, err = s.StartSession(request, func(result *server.SessionResult) {
+		handlerInvoked = true
+	})
+	require.NoError(t, err)
+
+	time.Sleep(2 * time.Second)
+	s.sessions.deleteExpired()
+	time.Sleep(100 * time.Millisecond) // give session handler time to run
+
+	require.True(t, handlerInvoked)
+}
+
+func TestMemoryStoreNoDeadlock(t *testing.T) {
 	s, err := New(&server.Configuration{Logger: logger})
 	require.NoError(t, err)
 	defer s.Stop()

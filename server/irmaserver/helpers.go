@@ -523,11 +523,10 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				if r != nil {
 					*r.(*server.SessionResult) = *result
 				}
-				if session.status.Finished() {
-					if handler := s.handlers[result.Token]; handler != nil {
-						go handler(result)
-						delete(s.handlers, result.Token)
-					}
+				if session.status.Finished() && session.handler != nil {
+					handler := session.handler
+					session.handler = nil
+					go handler(result)
 				}
 			}
 			if session.locked {
