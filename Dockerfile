@@ -1,7 +1,7 @@
 # Use variable base image, such that we can also build for other base images, like alpine.
-ARG BASE_IMAGE=debian:buster-slim
+ARG BASE_IMAGE=debian:stable-slim
 
-FROM golang:1.16-buster as build
+FROM golang:1.16 as build
 
 # Set build environment
 ENV CGO_ENABLED=0

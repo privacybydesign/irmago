@@ -39,7 +39,7 @@ To install the `irma` command line tool:
 
     go install ./irma
 
-You can also include the `irma` command line tool in a Docker image, using a base image of your choice. The default base image is Debian's `buster-slim`.
+You can also include the `irma` command line tool in a Docker image, using a base image of your choice. The default base image is Debian's `stable-slim`.
 
     docker build --build-arg BASE_IMAGE=alpine -t privacybydesign/irma:edge .
 

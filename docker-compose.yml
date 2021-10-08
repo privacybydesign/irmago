@@ -3,7 +3,7 @@ version: '3.1'
 services:
   # Dependencies for running unit tests and for running the 'irma' command line tool using one of the test configurations.
   postgres:
-    image: postgres:13-buster
+    image: postgres:13
     environment:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpassword
@@ -16,7 +16,7 @@ services:
     ports:
       - 5432:5432
   postgres-init:
-    image: postgres:13-buster
+    image: postgres:13
     environment:
       PGHOST: postgres
       PGUSER: testuser
@@ -45,7 +45,7 @@ services:
 
   # Service to run unit tests
   test:
-    image: golang:1.16-buster
+    image: golang:1.16
     # Add a test profile to prevent this service to be included when running docker-compose up.
     profiles:
       - test
