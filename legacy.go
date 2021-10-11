@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains compatibility code for the legacy, pre-condiscon session requests,
@@ -98,16 +99,6 @@ func convertDisjunctions(disjunctions []LegacyLabeledDisjunction) (
 	return
 }
 
-func parseLDContext(bts []byte) (string, error) {
-	var v struct {
-		LDContext string `json:"@context"`
-	}
-	if err := json.Unmarshal(bts, &v); err != nil {
-		return "", err
-	}
-	return v.LDContext, nil
-}
-
 func checkType(typ, expected Action) error {
 	if typ != expected {
 		return errors.New("not a " + expected + " session request")
@@ -181,7 +172,7 @@ func (dr *DisclosureRequest) Legacy() (SessionRequest, error) {
 
 func (dr *DisclosureRequest) UnmarshalJSON(bts []byte) (err error) {
 	var ldContext string
-	if ldContext, err = parseLDContext(bts); err != nil {
+	if ldContext, err = common.ParseLDContext(bts); err != nil {
 		return err
 	}
 
@@ -228,7 +219,7 @@ func (sr *SignatureRequest) Legacy() (SessionRequest, error) {
 
 func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 	var ldContext string
-	if ldContext, err = parseLDContext(bts); err != nil {
+	if ldContext, err = common.ParseLDContext(bts); err != nil {
 		return err
 	}
 
@@ -285,7 +276,7 @@ func (ir *IssuanceRequest) Legacy() (SessionRequest, error) {
 
 func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 	var ldContext string
-	if ldContext, err = parseLDContext(bts); err != nil {
+	if ldContext, err = common.ParseLDContext(bts); err != nil {
 		return err
 	}
 
