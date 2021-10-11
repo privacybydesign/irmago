@@ -4,9 +4,12 @@ import (
 	//TODO: use redigo instead of redis-go v8?
 	"context"
 	"encoding/json"
+	"github.com/go-errors/errors"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bsm/redislock"
 
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/go-redis/redis/v8"
@@ -24,6 +27,7 @@ type session struct {
 	sync.Mutex     `json:-`
 	sse            *sse.Server
 	locked         bool
+	lock           *redislock.Lock
 	sessions       sessionStore
 	conf           *server.Configuration
 	request        irma.SessionRequest
@@ -65,6 +69,8 @@ type sessionStore interface {
 	clientGet(token irma.ClientToken) (*session, error)
 	add(session *session) error
 	update(session *session) error
+	lock(session *session) error
+	unlock(session *session) error
 	stop()
 }
 
@@ -78,6 +84,7 @@ type memorySessionStore struct {
 
 type redisSessionStore struct {
 	client *redis.Client
+	locker *redislock.Client
 	conf   *server.Configuration
 }
 
@@ -91,8 +98,12 @@ type UnknownSessionError interface {
 
 const (
 	maxSessionLifetime         = 5 * time.Minute // After this a session is cancelled
+	maxLockLifetime            = 5 * time.Second // After this the Redis lock self-deletes, preventing a deadlock
+	minLockRetryTime           = 30 * time.Millisecond
+	maxLockRetryTime           = 2 * time.Second
 	requestorTokenLookupPrefix = "token:"
 	clientTokenLookupPrefix    = "session:"
+	lockPrefix                 = "lock:"
 )
 
 var (
@@ -102,7 +113,8 @@ var (
 	minFrontendProtocolVersion = irma.NewVersion(1, 0)
 	maxFrontendProtocolVersion = irma.NewVersion(1, 1)
 
-	ctx = context.Background()
+	ctx                 = context.Background()
+	lockingRetryOptions = &redislock.Options{RetryStrategy: redislock.ExponentialBackoff(minLockRetryTime, maxLockRetryTime)}
 )
 
 func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
@@ -126,6 +138,19 @@ func (s *memorySessionStore) add(session *session) error {
 }
 
 func (s *memorySessionStore) update(_ *session) error {
+	return nil
+}
+
+func (s *memorySessionStore) lock(session *session) error {
+	session.Lock()
+	session.locked = true
+
+	return nil
+}
+
+func (s *memorySessionStore) unlock(session *session) error {
+	session.locked = false
+	session.Unlock()
 	return nil
 }
 
@@ -251,7 +276,50 @@ func (s *redisSessionStore) add(session *session) error {
 }
 
 func (s *redisSessionStore) update(session *session) error {
+	// Time passes between acquiring the lock and writing to Redis. Check before write action that lock is still valid.
+	if session.lock == nil {
+		return errors.New("Session lock is not set.")
+	} else if ttl, err := session.lock.TTL(ctx); err != nil {
+		return errors.New("Lock cannot be checked.")
+	} else if ttl == 0 {
+		return errors.New("No session lock available.")
+	}
 	return s.add(session)
+}
+
+func (s *redisSessionStore) lock(session *session) error {
+	// lock Mutex
+	session.Lock()
+	session.locked = true
+
+	// lock Redis
+	lock, err := s.locker.Obtain(context.Background(), lockPrefix+string(session.ClientToken), maxLockLifetime, lockingRetryOptions)
+	if err == redislock.ErrNotObtained {
+		return server.LogWarning(RedisError(err))
+	} else if err != nil {
+		return logAsRedisError(err)
+	}
+	session.lock = lock
+
+	return nil
+}
+
+func (s *redisSessionStore) unlock(session *session) error {
+	// unlock Redis
+	err := session.lock.Release(context.Background())
+
+	// no matter if error occurs or not, the Mutex must be unlocked
+	session.locked = false
+	session.Unlock()
+	session.lock = nil
+
+	// handle Redis error
+	if err == redislock.ErrLockNotHeld {
+		return server.LogWarning(RedisError(err))
+	} else if err != nil {
+		return logAsRedisError(err)
+	}
+	return nil
 }
 
 func (s *redisSessionStore) stop() {
@@ -263,10 +331,12 @@ func (s *redisSessionStore) stop() {
 
 var one *big.Int = big.NewInt(1)
 
-func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) (*session, error) {
+func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization) (*session, error) {
 	clientToken := irma.ClientToken(common.NewSessionToken())
 	requestorToken := irma.RequestorToken(common.NewSessionToken())
-	frontendAuth := irma.FrontendAuthorization(common.NewSessionToken())
+	if len(FrontendAuth) == 0 {
+		FrontendAuth = irma.FrontendAuthorization(common.NewSessionToken())
+	}
 
 	base := request.SessionRequest().Base()
 	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
@@ -295,7 +365,8 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) (
 			LDContext:     irma.LDContextSessionOptions,
 			PairingMethod: irma.PairingMethodNone,
 		},
-		FrontendAuth: frontendAuth,
+		FrontendAuth:       FrontendAuth,
+		ImplicitDisclosure: disclosed,
 	}
 	ses := &session{
 		sessionData: sd,
@@ -309,10 +380,14 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest) (
 	nonce, _ := gabi.GenerateNonce()
 	base.Nonce = nonce
 	base.Context = one
+
+	// lock session
+	_ = s.sessions.lock(ses)
 	err := s.sessions.add(ses)
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = s.sessions.unlock(ses) }()
 
 	return ses, nil
 }

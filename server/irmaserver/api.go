@@ -6,6 +6,7 @@ package irmaserver
 
 import (
 	"context"
+	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
 	"net/http"
 	"time"
@@ -81,6 +82,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		s.sessions = &redisSessionStore{
 			client: cl,
 			conf:   conf,
+			locker: redislock.New(cl),
 		}
 	default:
 		return nil, errors.New("storeType not known")
@@ -194,6 +196,9 @@ func StartSession(request interface{}, handler server.SessionHandler,
 	return s.StartSession(request, handler)
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+	return s.StartNextSession(req, handler, nil, "")
+}
+func (s *Server) StartNextSession(req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", nil, err
@@ -237,7 +242,7 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	session, err := s.newSession(action, rrequest)
+	session, err := s.newSession(action, rrequest, disclosed, FrontendAuth)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -306,6 +311,14 @@ func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
 	if session == nil {
 		return server.LogError(errors.Errorf("can't cancel unknown session %s", requestorToken))
 	}
+
+	// lock session
+	err = s.sessions.lock(session)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.sessions.unlock(session) }()
+
 	session.handleDelete()
 	err = session.sessions.update(session)
 	if err != nil {

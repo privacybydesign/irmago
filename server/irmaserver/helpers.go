@@ -559,8 +559,13 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		}
 
 		ctx := r.Context()
-		session.Lock()
-		session.locked = true
+		err = session.sessions.lock(session)
+		if err != nil {
+			// TODO: Can we differentiate between read and write actions? No locking needed for read-only.
+			// Possibly error can be ignored here and be handled in Redis update function only.
+			server.WriteError(w, server.ErrorInternal, "")
+			return
+		}
 		hashBefore := session.sessionData.hash()
 
 		defer func() {
@@ -589,8 +594,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			}
 
 			if session.locked {
-				session.locked = false
-				session.Unlock()
+				session.sessions.unlock(session)
 			}
 		}()
 

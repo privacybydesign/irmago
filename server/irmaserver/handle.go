@@ -308,25 +308,15 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	if next == nil {
 		return nil
 	}
-	qr, token, _, err := s.StartSession(next, nil)
+	// All attributes that were disclosed in the previous session, as well as any attributes
+	// from sessions before that, need to be disclosed in the new session as well.
+	// Therefore pass them as parameters to StartNextSession
+	qr, token, _, err := s.StartNextSession(next, nil, disclosed, session.FrontendAuth)
 	if err != nil {
 		return err
 	}
 	session.Result.NextSession = token
 	session.Next = qr
-
-	// All attributes that were disclosed in the previous session, as well as any attributes
-	// from sessions before that, need to be disclosed in the new session as well
-	newsession, err := s.sessions.get(token)
-	if err != nil {
-		return err
-	}
-	newsession.ImplicitDisclosure = disclosed
-	newsession.FrontendAuth = session.FrontendAuth
-	err = s.sessions.update(newsession)
-	if err != nil {
-		return server.LogError(err)
-	}
 
 	res.NextSession = qr
 
@@ -404,8 +394,7 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	session.locked = false
-	session.Unlock()
+	session.sessions.unlock(session)
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
 		Arg:       string(session.ClientToken),
@@ -460,8 +449,7 @@ func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	session.locked = false
-	session.Unlock()
+	session.sessions.unlock(session)
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentFrontendSession,
 		Arg:       string(session.ClientToken),
