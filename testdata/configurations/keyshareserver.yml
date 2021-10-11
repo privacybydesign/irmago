@@ -1,0 +1,24 @@
+verbose: 2
+
+schemes_path: testdata/irma_configuration
+schemes_update: 0
+privkeys: testdata/privatekeys
+url: http://localhost:8080/
+
+keyshare_attribute: test.test.mijnirma.email
+
+db_str: postgresql://testuser:testpassword@postgres.localhost:5432/test
+
+jwt_privkey_file: testdata/jwtkeys/kss-sk.pem
+storage_primary_key_file: testdata/keyshareStorageTestkey
+
+email_server: mailhog.localhost:1025
+email_from: test@example.com
+default_languange: en
+
+registration_email_subjects:
+  en: Hello
+registration_email_files:
+  en: testdata/emailtemplate.html
+verification_url:
+  en: http://example.com/verify/

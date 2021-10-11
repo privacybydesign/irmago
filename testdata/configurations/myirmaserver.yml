@@ -1,21 +1,26 @@
 verbose: 2
 
+schemes_path: testdata/irma_configuration
+schemes_update: 0
+url: http://localhost:port/
+port: 8081
+
 cors_allowed_origins: "*"
 
-email_server: localhost:1025
+email_server: mailhog.localhost:1025
 email_from: test@example.com
 default_languange: en
 
 delete_delay: 1
 
-db_connstring: postgresql://localhost:5432/test
+db_str: postgresql://testuser:testpassword@postgres.localhost:5432/test
 
 sse: true
 
 keyshare_attributes:
-  - pbdf.sidn-pbdf.irma.pseudonym
+  - test.test.mijnirma.email
 email_attributes:
-  - pbdf.sidn-pbdf.email.email
+  - test.test.email.email
 
 login_email_files:
   en: testdata/emailtemplate.html

@@ -11,6 +11,24 @@
 
 Technical documentation of all components of `irmago` and more can be found at https://irma.app/docs.
 
+## Running
+
+The easiest way to run the `irma` command line tool is using Docker.
+
+    docker-compose run irma
+
+For example, to start a simple IRMA session:
+
+    IP=192.168.1.2 # Replace with your local IP address.
+    docker-compose run -p 48680:48680 irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
+
+You can run the `irma keyshare` services locally using the test configuration in `testdata/configurations`.
+
+    # To run the IRMA keyshare server
+    docker-compose run -p 8080:8080 irma keyshare server -c ./testdata/configurations/keyshareserver.yml
+    # To run the MyIRMA backend server
+    docker-compose run -p 8081:8081 irma keyshare myirmaserver -c ./testdata/configurations/myirmaserver.yml
+
 ## Installing
 
     git clone https://github.com/privacybydesign/irmago
@@ -21,10 +39,24 @@ To install the `irma` command line tool:
 
     go install ./irma
 
+You can also include the `irma` command line tool in a Docker image, using a base image of your choice. The default base image is Debian's `stable-slim`.
+
+    docker build --build-arg BASE_IMAGE=alpine -t privacybydesign/irma:edge .
+
+When you build for production, we recommend you to build the [latest release](https://github.com/privacybydesign/irmago/releases/latest). You should replace `v0.0.0` with the latest version number.
+
+    docker build -t privacybydesign/irma https://github.com/privacybydesign/irmago.git#v0.0.0
+
+In case you want to build `v0.8.0` or lower, then you should do some extra steps. The `Dockerfile` was not part of the repository at that time.
+
+    VERSION=v0.8.0
+    git checkout $VERSION
+    git checkout master -- Dockerfile
+    docker build -t privacybydesign/irma:$VERSION .
 
 ## Running the unit tests
 
-Some of the unit tests connect to locally running external services, namely PostgreSQL and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. They can be installed as follows.
+Some of the unit tests connect to locally running external services, namely PostgreSQL and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can either be done using `docker-compose` or by following the instructions below to install the services manually.
 
 #### PostgreSQL
 
@@ -46,16 +78,20 @@ For the unit tests it only matters that the SMTP server itself is running and ac
 
 ### Running the tests
 
-After installing PostgreSQL and MailHog, the tests can be run using:
+In case you chose to start PostgreSQL and MailHog using `docker-compose`, you first need to start these services:
+
+    docker-compose up
+
+When PostgreSQL and MailHog are running, the tests can be run using:
 
     go test -p 1 ./...
 
 * The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
 
-### Running without PostgreSQL or MailHog
+### Running without PostgreSQL, MailHog or Docker
 
-If installing PostgreSQL or MailHog is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:
+If installing PostgreSQL, MailHog or Docker is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:
 
     go test -p 1 --tags=local_tests ./...
 
@@ -72,5 +108,18 @@ You can then start irmago with the store-type flag set to Redis and the [default
 ```
 irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password
 ```
+
+
+### Running without Go
+
+You can also run the tests fully in Docker using the command below. This is useful when you don't want to install the Go compiler locally. By default, all tests are run one-by-one without parallel execution.
+
+    docker-compose run test
+
+You can override the default command by specifying command line options for `go test` manually, for example:
+
+    docker-compose run test ./internal/sessiontest -run TestDisclosureSession
+
+We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
 
 <!-- vim: set ts=4 sw=4: -->

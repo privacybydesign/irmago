@@ -24,7 +24,7 @@ const emailTokenValidity = 24 // amount of time user's email validation token is
 
 // Initial amount of time user is forced to back off when having multiple pin failures (in seconds).
 // var so that tests may change it.
-var backoffStart int64 = 30
+var backoffStart int64 = 60
 
 func newPostgresDB(connstring string) (DB, error) {
 	db, err := sql.Open("pgx", connstring)
