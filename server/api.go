@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
@@ -196,17 +197,58 @@ func parseInput(request interface{}) (irma.RequestorRequest, error) {
 	case string:
 		return parseInput([]byte(r))
 	case []byte:
-		var attempts = []irma.Validator{&irma.ServiceProviderRequest{}, &irma.SignatureRequestorRequest{}, &irma.IdentityProviderRequest{}}
-		t, err := tryUnmarshalJson(r, attempts)
-		if err == nil {
-			return t.(irma.RequestorRequest), nil
+		var isRequestorRequest bool
+		context, err := common.ParseLDContext(r)
+		if err != nil {
+			return nil, err
 		}
-		attempts = []irma.Validator{&irma.DisclosureRequest{}, &irma.SignatureRequest{}, &irma.IssuanceRequest{}}
-		t, err = tryUnmarshalJson(r, attempts)
-		if err == nil {
-			return wrapSessionRequest(t.(irma.SessionRequest))
+		if context == "" {
+			context, err = common.ParseNestedLDContext(r)
+			if err != nil {
+				return nil, err
+			}
+			if context != "" {
+				isRequestorRequest = true
+			}
 		}
-		return nil, errors.New("Failed to JSON unmarshal request bytes")
+
+		if context == "" {
+			return parseLegacySessionRequest(r)
+		}
+
+		if isRequestorRequest {
+			var msg irma.RequestorRequest
+			switch context {
+			case irma.LDContextDisclosureRequest:
+				msg = &irma.ServiceProviderRequest{}
+			case irma.LDContextSignatureRequest:
+				msg = &irma.SignatureRequestorRequest{}
+			case irma.LDContextIssuanceRequest:
+				msg = &irma.IdentityProviderRequest{}
+			default:
+				return nil, errors.New("Invalid requestor request type")
+			}
+			if err := irma.UnmarshalValidate(r, msg); err != nil {
+				return nil, err
+			}
+			return msg, nil
+		} else {
+			var msg irma.SessionRequest
+			switch context {
+			case irma.LDContextDisclosureRequest:
+				msg = &irma.DisclosureRequest{}
+			case irma.LDContextSignatureRequest:
+				msg = &irma.SignatureRequest{}
+			case irma.LDContextIssuanceRequest:
+				msg = &irma.IssuanceRequest{}
+			default:
+				return nil, errors.New("Invalid session request type")
+			}
+			if err := irma.UnmarshalValidate(r, msg); err != nil {
+				return nil, err
+			}
+			return wrapSessionRequest(msg)
+		}
 	default:
 		return nil, errors.New("Invalid request type")
 	}
@@ -223,15 +265,6 @@ func wrapSessionRequest(request irma.SessionRequest) (irma.RequestorRequest, err
 	default:
 		return nil, errors.New("Invalid session type")
 	}
-}
-
-func tryUnmarshalJson(bts []byte, attempts []irma.Validator) (irma.Validator, error) {
-	for _, a := range attempts {
-		if err := irma.UnmarshalValidate(bts, a); err == nil {
-			return a, nil
-		}
-	}
-	return nil, errors.New("")
 }
 
 // LocalIP returns the IP address of one of the (non-loopback) network interfaces

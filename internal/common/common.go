@@ -401,3 +401,25 @@ var SchemeFilenames = []string{"description.xml", "description.json"}
 func Close(o io.Closer) {
 	_ = o.Close()
 }
+
+func ParseLDContext(bts []byte) (string, error) {
+	var v struct {
+		LDContext string `json:"@context"`
+	}
+	if err := json.Unmarshal(bts, &v); err != nil {
+		return "", err
+	}
+	return v.LDContext, nil
+}
+
+func ParseNestedLDContext(bts []byte) (string, error) {
+	var v struct {
+		Request struct {
+			LDContext string `json:"@context"`
+		} `json:"request"`
+	}
+	if err := json.Unmarshal(bts, &v); err != nil {
+		return "", err
+	}
+	return v.Request.LDContext, nil
+}
