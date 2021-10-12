@@ -968,8 +968,8 @@ func TestWizardConstructed(t *testing.T) {
 		[]IssueWizardItem{
 			credwizarditem("scheme.issuer.a"),
 			credwizarditem("scheme.issuer.b"),
-			credwizarditem("scheme.issuer.d"),
 			credwizarditem("scheme.issuer.c"),
+			credwizarditem("scheme.issuer.d"),
 			wizard.Contents[1][0][0],
 			wizard.Contents[2][0][0],
 		},
