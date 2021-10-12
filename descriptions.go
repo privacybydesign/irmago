@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -262,7 +264,14 @@ func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsm
 	var result []IssueWizardItem                         // to return
 	resultMap := map[CredentialTypeIdentifier]struct{}{} // to keep track of credentials already put in the result slice
 	for i := len(depTree) - 1; i >= 0; i-- {
+		var credIDs []CredentialTypeIdentifier
 		for id := range depTree[i] {
+			credIDs = append(credIDs, id)
+		}
+		sort.Slice(credIDs, func(i, j int) bool {
+			return strings.Compare(credIDs[i].String(), credIDs[j].String()) < 0
+		})
+		for _, id := range credIDs {
 			if _, ok := resultMap[id]; ok {
 				continue
 			}
