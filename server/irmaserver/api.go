@@ -135,8 +135,10 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
+	updatesSession := []string{"/status", "/statusevents"}
+
 	r.Route("/session/{clientToken}", func(r chi.Router) {
-		r.Use(s.sessionMiddleware)
+		r.Use(s.sessionMiddleware(updatesSession))
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)
 		r.Get("/statusevents", s.handleSessionStatusEvents)

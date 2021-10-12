@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
@@ -545,62 +546,77 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := irma.ClientToken(chi.URLParam(r, "clientToken"))
-		session, err := s.sessions.clientGet(token)
-		if err != nil {
-			server.WriteError(w, server.ErrorInternal, "")
-			return
-		}
-		if session == nil {
-			server.WriteError(w, server.ErrorSessionUnknown, "")
-			return
-		}
+func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token := irma.ClientToken(chi.URLParam(r, "clientToken"))
+			session, err := s.sessions.clientGet(token)
+			if err != nil {
+				server.WriteError(w, server.ErrorInternal, "")
+				return
+			}
+			if session == nil {
+				server.WriteError(w, server.ErrorSessionUnknown, "")
+				return
+			}
 
-		ctx := r.Context()
-		err = session.sessions.lock(session)
-		if err != nil {
-			// TODO: Can we differentiate between read and write actions? No locking needed for read-only.
-			// Possibly error can be ignored here and be handled in Redis update function only.
-			server.WriteError(w, server.ErrorInternal, "")
-			return
-		}
-		hashBefore := session.sessionData.hash()
+			ctx := r.Context()
 
-		defer func() {
-			if session.PrevStatus != session.Status {
-				session.PrevStatus = session.Status
-				result := session.Result
-				r := ctx.Value("sessionresult")
-				if r != nil {
-					*r.(*server.SessionResult) = *result
-				}
-				if session.Status.Finished() {
-					if handler := s.handlers[result.Token]; handler != nil {
-						go handler(result)
-						delete(s.handlers, result.Token)
-					}
+			// by default session needs to be locked
+			lock := true
+
+			// for certain endpoints read access for Redis without locking is sufficient
+			for _, e := range readOnly {
+				if strings.HasSuffix(r.URL.Path, e) && s.conf.StoreType == "redis" {
+					lock = false
 				}
 			}
 
-			if hashBefore != session.sessionData.hash() {
-				err = session.sessions.update(session)
+			// lock the session
+			if lock {
+				err = session.sessions.lock(session)
 				if err != nil {
-					_ = server.LogError(err)
 					server.WriteError(w, server.ErrorInternal, "")
 					return
 				}
 			}
 
-			if session.locked {
-				session.sessions.unlock(session)
-			}
-		}()
+			hashBefore := session.sessionData.hash()
 
-		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
+			defer func() {
+				if session.PrevStatus != session.Status {
+					session.PrevStatus = session.Status
+					result := session.Result
+					r := ctx.Value("sessionresult")
+					if r != nil {
+						*r.(*server.SessionResult) = *result
+					}
+					if session.Status.Finished() {
+						if handler := s.handlers[result.Token]; handler != nil {
+							go handler(result)
+							delete(s.handlers, result.Token)
+						}
+					}
+				}
 
-	})
+				if hashBefore != session.sessionData.hash() {
+					err = session.sessions.update(session)
+					if err != nil {
+						_ = server.LogError(err)
+						server.WriteError(w, server.ErrorInternal, "")
+						return
+					}
+				}
+
+				if session.locked {
+					_ = session.sessions.unlock(session) // error gets logged directly in sessionstore
+				}
+			}()
+
+			next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
+
+		})
+	}
 }
 
 func (s *Server) pairingMiddleware(next http.Handler) http.Handler {

@@ -23,7 +23,6 @@ import (
 )
 
 type session struct {
-	//TODO: check if we can get rid of this Mutex for Redis
 	sync.Mutex     `json:-`
 	sse            *sse.Server
 	locked         bool
@@ -288,32 +287,20 @@ func (s *redisSessionStore) update(session *session) error {
 }
 
 func (s *redisSessionStore) lock(session *session) error {
-	// lock Mutex
-	session.Lock()
-	session.locked = true
-
-	// lock Redis
 	lock, err := s.locker.Obtain(context.Background(), lockPrefix+string(session.ClientToken), maxLockLifetime, lockingRetryOptions)
 	if err == redislock.ErrNotObtained {
 		return server.LogWarning(RedisError(err))
 	} else if err != nil {
 		return logAsRedisError(err)
 	}
+	session.locked = true
 	session.lock = lock
 
 	return nil
 }
 
 func (s *redisSessionStore) unlock(session *session) error {
-	// unlock Redis
 	err := session.lock.Release(context.Background())
-
-	// no matter if error occurs or not, the Mutex must be unlocked
-	session.locked = false
-	session.Unlock()
-	session.lock = nil
-
-	// handle Redis error
 	if err == redislock.ErrLockNotHeld {
 		return server.LogWarning(RedisError(err))
 	} else if err != nil {
