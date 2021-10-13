@@ -198,9 +198,9 @@ func StartSession(request interface{}, handler server.SessionHandler,
 	return s.StartSession(request, handler)
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
-	return s.StartNextSession(req, handler, nil, "")
+	return s.startNextSession(req, handler, nil, "")
 }
-func (s *Server) StartNextSession(req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+func (s *Server) startNextSession(req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", nil, err

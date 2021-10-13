@@ -310,8 +310,8 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 	}
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well.
-	// Therefore pass them as parameters to StartNextSession
-	qr, token, _, err := s.StartNextSession(next, nil, disclosed, session.FrontendAuth)
+	// Therefore pass them as parameters to startNextSession
+	qr, token, _, err := s.startNextSession(next, nil, disclosed, session.FrontendAuth)
 	if err != nil {
 		return err
 	}
