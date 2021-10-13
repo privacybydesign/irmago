@@ -17,6 +17,24 @@ func init() {
 	logger.Level = logrus.FatalLevel
 }
 
+func TestSessionHandlerInvokedOnCancel(t *testing.T) {
+	s, err := New(&server.Configuration{Logger: logger})
+	require.NoError(t, err)
+	defer s.Stop()
+
+	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+
+	var handlerInvoked bool
+	_, token, _, err := s.StartSession(request, func(result *server.SessionResult) {
+		handlerInvoked = true
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, s.CancelSession(token))
+	time.Sleep(100 * time.Millisecond) // give session handler time to run
+	require.True(t, handlerInvoked)
+}
+
 func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
 	s, err := New(&server.Configuration{Logger: logger})
 	require.NoError(t, err)

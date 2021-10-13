@@ -51,6 +51,12 @@ func (session *session) onUpdate() {
 		}
 	}
 
+	if session.status.Finished() && session.handler != nil {
+		handler := session.handler
+		session.handler = nil
+		go handler(session.result)
+	}
+
 	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.status, NextSession: session.next})
 
 	if session.sse == nil {
@@ -96,8 +102,8 @@ func (session *session) pairingCompleted() error {
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
-	session.setStatus(irma.ServerStatusCancelled)
 	session.result = &server.SessionResult{Err: rerr, Token: session.requestorToken, Status: irma.ServerStatusCancelled, Type: session.action}
+	session.setStatus(irma.ServerStatusCancelled)
 	return rerr
 }
 
@@ -522,11 +528,6 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				r := ctx.Value("sessionresult")
 				if r != nil {
 					*r.(*server.SessionResult) = *result
-				}
-				if session.status.Finished() && session.handler != nil {
-					handler := session.handler
-					session.handler = nil
-					go handler(result)
 				}
 			}
 			if session.locked {

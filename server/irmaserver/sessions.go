@@ -139,10 +139,6 @@ func (s *memorySessionStore) deleteExpired() {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Infof("Session expired")
 				session.markAlive()
 				session.setStatus(irma.ServerStatusTimeout)
-				if handler := session.handler; handler != nil {
-					session.handler = nil
-					go handler(session.result)
-				}
 			} else {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Infof("Deleting session")
 				expired = append(expired, token)
