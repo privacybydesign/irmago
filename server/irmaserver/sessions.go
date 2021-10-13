@@ -112,7 +112,6 @@ var (
 	minFrontendProtocolVersion = irma.NewVersion(1, 0)
 	maxFrontendProtocolVersion = irma.NewVersion(1, 1)
 
-	ctx                 = context.Background()
 	lockingRetryOptions = &redislock.Options{RetryStrategy: redislock.ExponentialBackoff(minLockRetryTime, maxLockRetryTime)}
 )
 
@@ -214,7 +213,7 @@ func (s *memorySessionStore) deleteExpired() {
 
 func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 	//TODO: input validation string?
-	val, err := s.client.Get(ctx, requestorTokenLookupPrefix+string(t)).Result()
+	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -225,7 +224,7 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 }
 
 func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
-	val, err := s.client.Get(ctx, clientTokenLookupPrefix+string(t)).Result()
+	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -262,11 +261,11 @@ func (s *redisSessionStore) add(session *session) error {
 		return logAsRedisError(err)
 	}
 
-	err = s.client.Set(ctx, requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.sessionData.ClientToken), timeout).Err()
+	err = s.client.Set(context.Background(), requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.sessionData.ClientToken), timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
-	err = s.client.Set(ctx, clientTokenLookupPrefix+string(session.sessionData.ClientToken), sessionJSON, timeout).Err()
+	err = s.client.Set(context.Background(), clientTokenLookupPrefix+string(session.sessionData.ClientToken), sessionJSON, timeout).Err()
 	if err != nil {
 		return logAsRedisError(err)
 	}
@@ -278,7 +277,7 @@ func (s *redisSessionStore) update(session *session) error {
 	// Time passes between acquiring the lock and writing to Redis. Check before write action that lock is still valid.
 	if session.lock == nil {
 		return errors.New("Session lock is not set.")
-	} else if ttl, err := session.lock.TTL(ctx); err != nil {
+	} else if ttl, err := session.lock.TTL(context.Background()); err != nil {
 		return errors.New("Lock cannot be checked.")
 	} else if ttl == 0 {
 		return errors.New("No session lock available.")
