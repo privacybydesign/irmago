@@ -96,8 +96,8 @@ type UnknownSessionError interface {
 }
 
 const (
-	maxSessionLifetime         = 5 * time.Minute // After this a session is cancelled
-	maxLockLifetime            = 5 * time.Second // After this the Redis lock self-deletes, preventing a deadlock
+	maxSessionLifetime         = 5 * time.Minute        // After this a session is cancelled
+	maxLockLifetime            = 500 * time.Millisecond // After this the Redis lock self-deletes, preventing a deadlock
 	minLockRetryTime           = 30 * time.Millisecond
 	maxLockRetryTime           = 2 * time.Second
 	requestorTokenLookupPrefix = "token:"

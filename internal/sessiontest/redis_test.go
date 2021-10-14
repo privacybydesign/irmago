@@ -104,6 +104,22 @@ func TestRedis(t *testing.T) {
 	t.Run("TestUnknownRequestorToken", TestUnknownRequestorToken)
 }
 
+func checkErrorInternal(t *testing.T, err error) {
+	serr, ok := err.(*irma.SessionError)
+	require.True(t, ok)
+	require.NotNil(t, serr.RemoteError)
+	require.Equal(t, server.ErrorInternal.Status, serr.RemoteError.Status)
+	require.Equal(t, string(server.ErrorInternal.Type), serr.RemoteError.ErrorName)
+}
+
+func checkErrorSessionUnknown(t *testing.T, err error) {
+	serr, ok := err.(*irma.SessionError)
+	require.True(t, ok)
+	require.NotNil(t, serr.RemoteError)
+	require.Equal(t, server.ErrorSessionUnknown.Status, serr.RemoteError.Status)
+	require.Equal(t, string(server.ErrorSessionUnknown.Type), serr.RemoteError.ErrorName)
+}
+
 func TestRedisUpdates(t *testing.T) {
 	mr := startRedis(t)
 	defaultIrmaServerConfiguration := IrmaServerConfiguration
@@ -137,6 +153,14 @@ func TestRedisUpdates(t *testing.T) {
 	require.NotEqual(t, updatedData, initialData)
 	// Second Get should not update the data stored in Redis
 	require.Equal(t, updatedData, latestData)
+
+	// lock session for token
+	require.NoError(t, mr.Set("lock:"+clientToken, "bla"))
+	defer mr.Del("lock:" + clientToken)
+
+	// try to update locked session
+	err = transport.Get("", &o)
+	checkErrorInternal(t, err)
 }
 
 func TestRedisRedundancy(t *testing.T) {
@@ -248,22 +272,6 @@ func TestRedisHTTPErrors(t *testing.T) {
 	// Stop the Redis server early to check whether the IRMA client fails correctly
 	mr.Close()
 
-	checkErrorSessionUnknown := func(err error) {
-		serr, ok := err.(*irma.SessionError)
-		require.True(t, ok)
-		require.NotNil(t, serr.RemoteError)
-		require.Equal(t, server.ErrorSessionUnknown.Status, serr.RemoteError.Status)
-		require.Equal(t, string(server.ErrorSessionUnknown.Type), serr.RemoteError.ErrorName)
-	}
-
-	checkErrorInternal := func(err error) {
-		serr, ok := err.(*irma.SessionError)
-		require.True(t, ok)
-		require.NotNil(t, serr.RemoteError)
-		require.Equal(t, server.ErrorInternal.Status, serr.RemoteError.Status)
-		require.Equal(t, string(server.ErrorInternal.Type), serr.RemoteError.ErrorName)
-	}
-
 	url := fmt.Sprintf("http://localhost:%d", config.Port)
 	transport := irma.NewHTTPTransport(url, false)
 	transport.SetHeader("Authorization", TokenAuthenticationKey)
@@ -272,31 +280,31 @@ func TestRedisHTTPErrors(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 	err := transport.Post("session", nil, request)
-	checkErrorInternal(err)
+	checkErrorInternal(t, err)
 
 	// Check error response of requestor endpoints for sessions
 	transport.Server += "session/Sxqcpng37mAdBKgoAJXl/"
 	err = transport.Get("result", nil)
-	checkErrorSessionUnknown(err)
+	checkErrorSessionUnknown(t, err)
 	err = transport.Get("result-jwt", nil)
-	checkErrorSessionUnknown(err)
+	checkErrorSessionUnknown(t, err)
 	err = transport.Get("getproof", nil)
-	checkErrorSessionUnknown(err)
+	checkErrorSessionUnknown(t, err)
 	err = transport.Get("status", nil)
-	checkErrorSessionUnknown(err)
+	checkErrorSessionUnknown(t, err)
 	// TODO: Check for sse endpoint. We don't know yet whether this will be implemented for Redis.
 
 	// Check error response of irma endpoints
 	transport.Server = strings.Replace(transport.Server, "/session/", "/irma/session/", 1)
 	err = transport.Post("", nil, struct{}{})
-	checkErrorInternal(err)
+	checkErrorInternal(t, err)
 	err = transport.Delete()
-	checkErrorInternal(err)
+	checkErrorInternal(t, err)
 	err = transport.Post("commitments", nil, struct{}{})
-	checkErrorInternal(err)
+	checkErrorInternal(t, err)
 	err = transport.Post("proofs", nil, struct{}{})
-	checkErrorInternal(err)
+	checkErrorInternal(t, err)
 	err = transport.Get("status", nil)
-	checkErrorInternal(err)
+	checkErrorInternal(t, err)
 	// TODO: Check for sse endpoint. We don't know yet whether this will be implemented for Redis.
 }
