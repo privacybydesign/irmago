@@ -135,7 +135,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
-	readOnlyEndpoints := []string{"/status", "/statusevents"} //
+	readOnlyEndpoints := []string{"/status", "/statusevents"}
 
 	r.Route("/session/{clientToken}", func(r chi.Router) {
 		r.Use(s.sessionMiddleware(readOnlyEndpoints))
