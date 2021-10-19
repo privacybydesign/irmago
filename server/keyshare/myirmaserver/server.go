@@ -127,7 +127,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 	session := s.sessionFromCookie(r)
-	if session == nil || session.userID == nil {
+	if session == nil {
 		server.WriteString(w, "expired")
 		return
 	}
