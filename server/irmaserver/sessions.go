@@ -1,7 +1,6 @@
 package irmaserver
 
 import (
-	//TODO: use redigo instead of redis-go v8?
 	"context"
 	"encoding/json"
 	"github.com/go-errors/errors"
