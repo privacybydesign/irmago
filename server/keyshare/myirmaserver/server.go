@@ -372,7 +372,10 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	session := s.store.create()
 	sessiontoken := session.token
 
-	qr, loginToken, _, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.KeyshareAttributes...), nil)
+	qr, loginToken, frontendRequest, err := s.irmaserv.StartSession(
+		irma.NewDisclosureRequest(s.conf.KeyshareAttributes...),
+		nil,
+	)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for login")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -381,7 +384,10 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 
 	session.loginSessionToken = loginToken
 	s.setCookie(w, sessiontoken, s.conf.SessionLifetime)
-	server.WriteJson(w, qr)
+	server.WriteJson(w, server.SessionPackage{
+		SessionPtr:      qr,
+		FrontendRequest: frontendRequest,
+	})
 }
 
 func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
@@ -579,7 +585,10 @@ func (s *Server) processAddEmailIrmaSessionResult(session *session) (server.Erro
 func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
 
-	qr, emailToken, _, err := s.irmaserv.StartSession(irma.NewDisclosureRequest(s.conf.EmailAttributes...), nil)
+	qr, emailToken, frontendRequest, err := s.irmaserv.StartSession(
+		irma.NewDisclosureRequest(s.conf.EmailAttributes...),
+		nil,
+	)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for adding email address")
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -590,7 +599,10 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
 	s.setCookie(w, session.token, s.conf.SessionLifetime)
 
-	server.WriteJson(w, qr)
+	server.WriteJson(w, server.SessionPackage{
+		SessionPtr:      qr,
+		FrontendRequest: frontendRequest,
+	})
 }
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
