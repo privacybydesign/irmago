@@ -202,6 +202,7 @@ func (s *Server) setCookie(w http.ResponseWriter, token string, maxage int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    token,
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxage,
 		Secure:   s.conf.Production,
 		Path:     "/",
