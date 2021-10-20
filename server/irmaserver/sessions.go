@@ -379,13 +379,10 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, d
 	base.Nonce = nonce
 	base.Context = one
 
-	// lock session
-	_ = s.sessions.lock(ses)
 	err := s.sessions.add(ses)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = s.sessions.unlock(ses) }()
 
 	return ses, nil
 }
