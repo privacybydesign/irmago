@@ -95,6 +95,18 @@ If installing PostgreSQL, MailHog or Docker is not an option for you, then you c
 
     go test -p 1 --tags=local_tests ./...
 
+### Running without Go
+
+You can also run the tests fully in Docker using the command below. This is useful when you don't want to install the Go compiler locally. By default, all tests are run one-by-one without parallel execution.
+
+    docker-compose run test
+
+You can override the default command by specifying command line options for `go test` manually, for example:
+
+    docker-compose run test ./internal/sessiontest -run TestDisclosureSession
+
+We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
+
 ## Using a local Redis datastore
 Irmago can either store session states in memory (default) or in a Redis datastore. For local testing purposes you can use the standard [Redis docker container](https://hub.docker.com/_/redis):
 
@@ -108,18 +120,5 @@ You can then start irmago with the store-type flag set to Redis and the [default
 ```
 irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password
 ```
-
-
-### Running without Go
-
-You can also run the tests fully in Docker using the command below. This is useful when you don't want to install the Go compiler locally. By default, all tests are run one-by-one without parallel execution.
-
-    docker-compose run test
-
-You can override the default command by specifying command line options for `go test` manually, for example:
-
-    docker-compose run test ./internal/sessiontest -run TestDisclosureSession
-
-We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
 
 <!-- vim: set ts=4 sw=4: -->
