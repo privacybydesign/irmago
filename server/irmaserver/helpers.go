@@ -602,14 +602,14 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 				if hashBefore != session.sessionData.hash() {
 					err = session.sessions.update(session)
 					if err != nil {
-						_ = server.LogError(err)
+						// Error already logged in update method.
 						server.WriteError(w, server.ErrorInternal, "")
 						return
 					}
 				}
 
 				if session.locked {
-					_ = session.sessions.unlock(session) // error gets logged directly in sessionstore
+					_ = session.sessions.unlock(session) // error gets logged directly in session store and will not be forwarded to the client
 				}
 			}()
 

@@ -406,12 +406,13 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	}
 
 	var session *session
+	var err error
 	if requestor {
-		session, _ = s.sessions.get(irma.RequestorToken(token)) // SSE can only be used with storeType memory which does not contain errors.
+		session, err = s.sessions.get(irma.RequestorToken(token))
 	} else {
-		session, _ = s.sessions.clientGet(irma.ClientToken(token)) // SSE can only be used with storeType memory which does not contain errors.
+		session, err = s.sessions.clientGet(irma.ClientToken(token))
 	}
-	if session == nil {
+	if session == nil || err != nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
 	}
 	if session.Status.Finished() {

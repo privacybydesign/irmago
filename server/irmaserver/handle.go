@@ -394,7 +394,11 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	session.sessions.unlock(session)
+	// Unlock session, so SSE will not block the session.
+	// The error is ignored since in case of the in memory session store, no error can be produced.
+	// In case of the Redis datastore, a) SSE is currently not implemented and b) the lock would eventually automatically unlock.
+	_ = session.sessions.unlock(session)
+
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
 		Arg:       string(session.ClientToken),
@@ -449,7 +453,12 @@ func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
-	session.sessions.unlock(session)
+	// Unlock session, so frontend status events will not block the session.
+	// The error is ignored since in case of the in memory session store, no error can be produced.
+	// In case of the Redis datastore, the lock will eventually automatically unlock.
+	// Not being able to unlock will be inconvenient but not ever-lasting blocking.
+	_ = session.sessions.unlock(session)
+
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentFrontendSession,
 		Arg:       string(session.ClientToken),
