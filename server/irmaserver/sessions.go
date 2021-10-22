@@ -212,7 +212,6 @@ func (s *memorySessionStore) deleteExpired() {
 }
 
 func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
-	//TODO: input validation string?
 	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		s.conf.Logger.WithFields(logrus.Fields{"session": t}).Debugf("no corresponding clientToken found in Redis datastore")
@@ -220,9 +219,14 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 	} else if err != nil {
 		return nil, logAsRedisError(err)
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"session": t}).Debugf("clientToken [%s] found in Redis datastore", val)
 
-	return s.clientGet(irma.ClientToken(val))
+	clientToken, err := irma.ParseClientToken(val)
+	if err != nil {
+		return nil, logAsRedisError(err)
+	}
+	s.conf.Logger.WithFields(logrus.Fields{"session": t}).Debugf("clientToken [%s] found in Redis datastore", clientToken)
+
+	return s.clientGet(clientToken)
 }
 
 func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {

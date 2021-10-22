@@ -549,7 +549,12 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := irma.ClientToken(chi.URLParam(r, "clientToken"))
+			token, err := irma.ParseClientToken(chi.URLParam(r, "clientToken"))
+			if err != nil {
+				server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+				return
+			}
+
 			session, err := s.sessions.clientGet(token)
 			if err != nil {
 				server.WriteError(w, server.ErrorInternal, "")

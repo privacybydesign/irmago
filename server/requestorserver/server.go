@@ -302,7 +302,12 @@ func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	res, err := s.irmaserv.GetSessionResult(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
+	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -332,14 +337,24 @@ func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	err := s.irmaserv.CancelSession(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
+	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	err = s.irmaserv.CancelSession(requestorToken)
 	if err != nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 	}
 }
 
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
-	res, err := s.irmaserv.GetSessionResult(irma.RequestorToken(chi.URLParam(r, "requestorToken")))
+	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
@@ -363,7 +378,11 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestorToken := irma.RequestorToken(chi.URLParam(r, "requestorToken"))
+	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {
@@ -405,7 +424,11 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestorToken := irma.RequestorToken(chi.URLParam(r, "requestorToken"))
+	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(irmaserver.UnknownSessionError); ok {

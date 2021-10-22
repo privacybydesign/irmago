@@ -109,7 +109,12 @@ func GetSessionResult(token *C.char) (r *C.char) {
 
 	// Run the actual core function
 	var err error
-	result.SessionResult, err = s.GetSessionResult(irma.RequestorToken(C.GoString(token)))
+	requestorToken, err := irma.ParseRequestorToken(C.GoString(token))
+	if err != nil {
+		result.Error = err.Error()
+		return
+	}
+	result.SessionResult, err = s.GetSessionResult(requestorToken)
 
 	// And properly return results
 	if err != nil {
@@ -142,7 +147,12 @@ func GetRequest(token *C.char) (r *C.char) {
 
 	// Run the core function
 	var err error
-	result.RequestorRequestResult, err = s.GetRequest(irma.RequestorToken(C.GoString(token)))
+	requestorToken, err := irma.ParseRequestorToken(C.GoString(token))
+	if err != nil {
+		result.Error = err.Error()
+		return
+	}
+	result.RequestorRequestResult, err = s.GetRequest(requestorToken)
 
 	// And properly return results
 	if err != nil {
@@ -160,7 +170,11 @@ func CancelSession(token *C.char) *C.char {
 	}
 
 	// Run the core function
-	err := s.CancelSession(irma.RequestorToken(C.GoString(token)))
+	requestorToken, err := irma.ParseRequestorToken(C.GoString(token))
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	err = s.CancelSession(requestorToken)
 
 	if err != nil {
 		return C.CString(err.Error())

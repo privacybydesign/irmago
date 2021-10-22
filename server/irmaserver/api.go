@@ -408,9 +408,17 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	var session *session
 	var err error
 	if requestor {
-		session, err = s.sessions.get(irma.RequestorToken(token))
+		requestorToken, err := irma.ParseRequestorToken(token)
+		if err != nil {
+			return server.LogError(err)
+		}
+		session, err = s.sessions.get(requestorToken)
 	} else {
-		session, err = s.sessions.clientGet(irma.ClientToken(token))
+		clientToken, err := irma.ParseClientToken(token)
+		if err != nil {
+			return server.LogError(err)
+		}
+		session, err = s.sessions.clientGet(clientToken)
 	}
 	if session == nil || err != nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
