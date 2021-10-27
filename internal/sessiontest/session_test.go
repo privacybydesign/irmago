@@ -33,7 +33,7 @@ func TestDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 	jwtServerConfiguration := JwtServerConfiguration()
-	responseString := sessionHelperWithFrontendOptionsAndConfig(t, request, "verification", nil, nil, nil, jwtServerConfiguration)
+	responseString := sessionHelperWithFrontendOptionsAndConfig(t, request, nil, nil, nil, jwtServerConfiguration)
 
 	// Validate JWT
 	claims := struct {

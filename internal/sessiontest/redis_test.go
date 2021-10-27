@@ -3,17 +3,18 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+	"testing"
+
 	"github.com/alicebob/miniredis"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/stretchr/testify/require"
-	"io"
-	"net/http"
-	"strings"
-	"sync"
-	"testing"
 )
 
 func startRedis(t *testing.T) *miniredis.Miniredis {
@@ -189,7 +190,7 @@ func TestRedisRedundancy(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	sessionHelperWithFrontendOptionsAndConfig(t, request, "verification", nil, nil, nil, nil)
+	sessionHelperWithFrontendOptionsAndConfig(t, request, nil, nil, nil, nil)
 }
 
 // Tests whether the right error is returned by the client's Failure handler

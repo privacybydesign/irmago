@@ -126,6 +126,7 @@ func chainedServerHandler(t *testing.T) http.Handler {
 		require.NoError(t, r.Body.Close())
 
 		var result server.SessionResult
+		// TODO make this accept JWTs
 		require.NoError(t, json.Unmarshal(bts, &result))
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.Len(t, result.Disclosed, 1)
@@ -198,6 +199,7 @@ var IrmaServerConfiguration = func() *requestorserver.Configuration {
 				revocationTestCred:  {RevocationServerURL: "http://localhost:48683", SSE: true},
 				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 			},
+			JwtPrivateKeyFile: filepath.Join(testdata, "jwtkeys", "sk.pem"),
 		},
 		DisableRequestorAuthentication: true,
 		ListenAddress:                  "localhost",
