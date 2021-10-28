@@ -43,7 +43,7 @@ func TestKeyshareRegister(t *testing.T) {
 
 	require.Len(t, client.CredentialInfoList(), 1)
 
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
 	requestorSessionHelper(t, getIssuanceRequest(true), client, irmaServer)
@@ -57,7 +57,7 @@ func TestKeyshareSessions(t *testing.T) {
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	keyshareSessions(t, client, irmaServer)
 }
@@ -85,7 +85,7 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaS
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)

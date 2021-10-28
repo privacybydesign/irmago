@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -364,20 +365,26 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	storage, err := ioutil.TempDir("", "servertest")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
-	irmaServer := StartIrmaServer(t, false, storage)
+
+	conf := IrmaServerConfiguration()
+	conf.Configuration.URL = "http://localhost:48680"
+	conf.Configuration.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
+	conf.Configuration.SchemesPath = storage
+
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	conf := irmaServer.conf.IrmaConfiguration
-	sk, err := conf.PrivateKeys.Latest(credid.IssuerIdentifier())
+	irmaConf := irmaServer.conf.IrmaConfiguration
+	sk, err := irmaConf.PrivateKeys.Latest(credid.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NotNil(t, sk)
 
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
-	conf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	downloaded, err := conf.Download(issuanceRequest)
+	irmaConf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	downloaded, err := irmaConf.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.Equal(t, &irma.IrmaIdentifierSet{
 		SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
@@ -391,7 +398,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 		RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
 	}, downloaded)
 
-	sk, err = conf.PrivateKeys.Latest(credid.IssuerIdentifier())
+	sk, err = irmaConf.PrivateKeys.Latest(credid.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NotNil(t, sk)
 }
@@ -410,7 +417,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 
 	serverChan := make(chan *server.SessionResult)
 
-	irmaServer := StartIrmaServer(t, false, "") // Run a server with old configuration (level is non-optional)
+	irmaServer := StartIrmaServer(t, nil) // Run a server with old configuration (level is non-optional)
 	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
@@ -430,7 +437,11 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	require.True(t, reflect.DeepEqual(err, expectedError), "Incorrect missing identifierset")
 	irmaServer.Stop()
 
-	irmaServer = StartIrmaServer(t, true, "") // Run a server with updated configuration (level is optional)
+	// Run a server with updated configuration (level is optional)
+	conf := IrmaServerConfiguration()
+	conf.Configuration.URL = "http://localhost:48680"
+	conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+	irmaServer = StartIrmaServer(t, conf)
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
@@ -581,7 +592,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 		},
 	})
 
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	_, _, _, err := irmaServer.irma.StartSession(request, nil)
 	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
@@ -660,7 +671,7 @@ func TestPOSTSizeLimit(t *testing.T) {
 func TestChainedSessions(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey)
 	defer func() {
@@ -686,7 +697,7 @@ func TestChainedSessions(t *testing.T) {
 
 // Test to check whether session stores (like Redis) correctly handle non-existing sessions
 func TestUnknownRequestorToken(t *testing.T) {
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
 	result, err := irmaServer.irma.GetSessionResult("12345")

@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -56,7 +57,12 @@ func requestorSessionHelper(
 
 	opts := processOptions(options...)
 	if irmaServer == nil {
-		irmaServer = StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0, "")
+		conf := IrmaServerConfiguration()
+		conf.Configuration.URL = "http://localhost:48680"
+		if opts&sessionOptionUpdatedIrmaConfiguration > 0 {
+			conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+		}
+		irmaServer = StartIrmaServer(t, conf)
 		defer irmaServer.Stop()
 	}
 
@@ -108,7 +114,7 @@ func requestorSessionHelper(
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
 func TestRequestorInvalidRequest(t *testing.T) {
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	_, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
@@ -118,7 +124,7 @@ func TestRequestorInvalidRequest(t *testing.T) {
 }
 
 func TestRequestorDoubleGET(t *testing.T) {
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	qr, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
@@ -359,7 +365,7 @@ func TestClientDeveloperMode(t *testing.T) {
 	defer func() { common.ForceHTTPS = false }()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
 	// parseStorage returns a client with developer mode already enabled.
@@ -395,7 +401,7 @@ func TestClientDeveloperMode(t *testing.T) {
 func TestParallelSessions(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
 	// Ensure we don't have the requested attribute at first
@@ -445,7 +451,7 @@ func expireKey(t *testing.T, conf *irma.Configuration) {
 func TestIssueExpiredKey(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
 	// issuance sessions using valid, nonexpired public keys work

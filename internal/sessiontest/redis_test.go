@@ -130,7 +130,7 @@ func TestRedisUpdates(t *testing.T) {
 		IrmaServerConfiguration = defaultIrmaServerConfiguration
 	}()
 
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	qr, token, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
@@ -207,7 +207,7 @@ func TestRedisSessionFailure(t *testing.T) {
 		IrmaServerConfiguration = defaultIrmaServerConfiguration
 	}()
 
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -245,7 +245,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 		IrmaServerConfiguration = defaultIrmaServerConfiguration
 	}()
 
-	irmaServer := StartIrmaServer(t, false, "")
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
 	// Stop the Redis server early to check whether the IRMA server fails correctly

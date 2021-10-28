@@ -181,7 +181,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("POSTUpdates", func(t *testing.T) {
 		revServer := startRevocationServer(t, true)
 		defer revServer.Stop()
-		irmaServer := StartIrmaServer(t, false, "")
+		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
 
 		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.SyncDB(revocationTestCred))
@@ -334,7 +334,7 @@ func TestRevocationAll(t *testing.T) {
 	t.Run("UpdateSameIndex", func(t *testing.T) {
 		revServer := startRevocationServer(t, true)
 		defer revServer.Stop()
-		irmaServer := StartIrmaServer(t, false, "")
+		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
 
 		// get current accumulator
@@ -378,7 +378,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, client.NonrevUpdateFromServer(revocationTestCred))
 
 		// Start an IRMA server and let it update at revocation server
-		irmaServer := StartIrmaServer(t, false, "")
+		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
 		conf = irmaServer.conf.IrmaConfiguration.Revocation
 		require.NoError(t, conf.SyncDB(revocationTestCred))
@@ -401,7 +401,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("SameIrmaServer", func(t *testing.T) {
-		irmaServer := StartIrmaServer(t, false, "")
+		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
 
 		// issue a credential, populating irmaServer's revocation memdb
@@ -593,7 +593,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Start irma server and hackily temporarily disable revocation for our credtype
 		// by editing its irma.Configuration instance
-		irmaServer := StartIrmaServer(t, false, "")
+		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
 		conf := irmaServer.conf.IrmaConfiguration
 		credtyp := conf.CredentialTypes[revocationTestCred]

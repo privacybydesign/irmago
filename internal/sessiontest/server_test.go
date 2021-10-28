@@ -65,26 +65,13 @@ type IrmaServer struct {
 	conf *server.Configuration
 }
 
-func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) *IrmaServer {
-	testdata := test.FindTestdataFolder(t)
-	irmaconf := "irma_configuration"
-	if updatedIrmaConf {
-		irmaconf += "_updated"
+func StartIrmaServer(t *testing.T, conf *requestorserver.Configuration) *IrmaServer {
+	if conf == nil {
+		conf = IrmaServerConfiguration()
 	}
+	conf.Configuration.URL = "http://localhost:48680"
 
-	var assets string
-	path := filepath.Join(testdata, irmaconf)
-	if storage != "" {
-		assets = path
-		path = storage
-	}
-
-	conf := IrmaServerConfiguration().Configuration
-	conf.URL = "http://localhost:48680"
-	conf.SchemesPath = path
-	conf.SchemesAssetsPath = assets
-
-	irmaServer, err := irmaserver.New(conf)
+	irmaServer, err := irmaserver.New(conf.Configuration)
 
 	require.NoError(t, err)
 
@@ -96,7 +83,7 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) *IrmaSe
 	}()
 	return &IrmaServer{
 		irma: irmaServer,
-		conf: conf,
+		conf: conf.Configuration,
 		http: httpServer,
 	}
 }
