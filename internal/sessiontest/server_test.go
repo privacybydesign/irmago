@@ -32,6 +32,8 @@ var (
 
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
+
+	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
 )
 
 func init() {
@@ -209,7 +211,7 @@ var IrmaServerConfiguration = func() *requestorserver.Configuration {
 				revocationTestCred:  {RevocationServerURL: "http://localhost:48683", SSE: true},
 				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 			},
-			JwtPrivateKeyFile: filepath.Join(testdata, "jwtkeys", "sk.pem"),
+			JwtPrivateKeyFile: jwtPrivkeyPath,
 		},
 		DisableRequestorAuthentication: true,
 		ListenAddress:                  "localhost",
@@ -234,7 +236,7 @@ var JwtServerConfiguration = func() *requestorserver.Configuration {
 				revocationTestCred:  {RevocationServerURL: "http://localhost:48683"},
 				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 			},
-			JwtPrivateKeyFile: filepath.Join(testdata, "jwtkeys", "sk.pem"),
+			JwtPrivateKeyFile: jwtPrivkeyPath,
 			StaticSessions: map[string]interface{}{
 				"staticsession": irma.ServiceProviderRequest{
 					RequestorBaseRequest: irma.RequestorBaseRequest{

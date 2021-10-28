@@ -32,17 +32,19 @@ func TestSigningSession(t *testing.T) {
 func TestDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
-	jwtServerConfiguration := JwtServerConfiguration()
-	responseString := sessionHelperWithFrontendOptionsAndConfig(t, request, nil, nil, nil, jwtServerConfiguration)
+	bts, err := ioutil.ReadFile(jwtPrivkeyPath)
+	require.NoError(t, err)
+	sk, err := jwt.ParseRSAPrivateKeyFromPEM(bts)
+	require.NoError(t, err)
+	responseString := sessionHelper(t, request, "verification", nil)
 
 	// Validate JWT
 	claims := struct {
 		jwt.StandardClaims
-		*server.SessionResult
+		server.SessionResult
 	}{}
-	_, err := jwt.ParseWithClaims(responseString, &claims, func(token *jwt.Token) (interface{}, error) {
-		pk := jwtServerConfiguration.JwtRSAPrivateKey.PublicKey
-		return &pk, nil
+	_, err = jwt.ParseWithClaims(responseString, &claims, func(_ *jwt.Token) (interface{}, error) {
+		return &sk.PublicKey, nil
 	})
 	require.NoError(t, err)
 
