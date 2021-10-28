@@ -658,14 +658,16 @@ func TestPOSTSizeLimit(t *testing.T) {
 func TestChainedSessions(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	nextServer := StartNextRequestServer(t)
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
+	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey)
 	defer func() {
 		_ = nextServer.Close()
 	}()
 
 	var request irma.ServiceProviderRequest
 	require.NoError(t, irma.NewHTTPTransport("http://localhost:48686", false).Get("1", &request))
-	requestorSessionHelper(t, &request, client, nil)
+	requestorSessionHelper(t, &request, client, irmaServer)
 
 	// check that our credential instance is new
 	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()

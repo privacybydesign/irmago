@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -102,7 +104,7 @@ func (s *IrmaServer) Stop() {
 	_ = s.http.Close()
 }
 
-func chainedServerHandler(t *testing.T) http.Handler {
+func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 	mux := http.NewServeMux()
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
@@ -130,9 +132,15 @@ func chainedServerHandler(t *testing.T) http.Handler {
 		require.NoError(t, err)
 		require.NoError(t, r.Body.Close())
 
-		var result server.SessionResult
-		// TODO make this accept JWTs
-		require.NoError(t, json.Unmarshal(bts, &result))
+		claims := &struct {
+			jwt.StandardClaims
+			server.SessionResult
+		}{}
+		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (interface{}, error) {
+			return jwtPubKey, nil
+		})
+		require.NoError(t, err)
+		result := claims.SessionResult
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.Len(t, result.Disclosed, 1)
 		require.Len(t, result.Disclosed[0], 1)
@@ -178,10 +186,10 @@ func chainedServerHandler(t *testing.T) http.Handler {
 	return mux
 }
 
-func StartNextRequestServer(t *testing.T) *http.Server {
+func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey) *http.Server {
 	s := &http.Server{
 		Addr:    "localhost:48686",
-		Handler: chainedServerHandler(t),
+		Handler: chainedServerHandler(t, jwtPubKey),
 	}
 	go func() {
 		_ = s.ListenAndServe()
