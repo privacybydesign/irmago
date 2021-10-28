@@ -41,7 +41,13 @@ func processOptions(options ...sessionOption) sessionOption {
 	return opts
 }
 
-func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclient.Client, options ...sessionOption) *requestorSessionResult {
+func requestorSessionHelper(
+	t *testing.T,
+	request interface{},
+	client *irmaclient.Client,
+	irmaServer *IrmaServer,
+	options ...sessionOption,
+) *requestorSessionResult {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)
@@ -49,15 +55,15 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	}
 
 	opts := processOptions(options...)
-	if opts&sessionOptionReuseServer == 0 {
-		StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0, "")
-		defer StopIrmaServer()
+	if irmaServer == nil {
+		irmaServer = StartIrmaServer(t, opts&sessionOptionUpdatedIrmaConfiguration > 0, "")
+		defer irmaServer.Stop()
 	}
 
 	clientChan := make(chan *SessionResult, 2)
 	serverChan := make(chan *server.SessionResult)
 
-	qr, requestorToken, _, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
+	qr, requestorToken, _, err := irmaServer.irma.StartSession(request, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)
@@ -102,9 +108,9 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
 func TestRequestorInvalidRequest(t *testing.T) {
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
-	_, _, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
+	_, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
 		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
 	), nil)
@@ -112,9 +118,9 @@ func TestRequestorInvalidRequest(t *testing.T) {
 }
 
 func TestRequestorDoubleGET(t *testing.T) {
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
-	qr, _, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
+	qr, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
 	), nil)
 	require.NoError(t, err)
@@ -135,7 +141,7 @@ func TestRequestorSignatureSession(t *testing.T) {
 
 	var serverResult *requestorSessionResult
 	for _, opt := range []sessionOption{0, sessionOptionRetryPost} {
-		serverResult = requestorSessionHelper(t, irma.NewSignatureRequest("message", id), client, opt)
+		serverResult = requestorSessionHelper(t, irma.NewSignatureRequest("message", id), client, nil, opt)
 
 		require.Nil(t, serverResult.Err)
 		require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
@@ -178,7 +184,7 @@ func TestRequestorDisclosureMultipleAttrs(t *testing.T) {
 }
 
 func testRequestorDisclosure(t *testing.T, request *irma.DisclosureRequest, options ...sessionOption) *server.SessionResult {
-	serverResult := requestorSessionHelper(t, request, nil, options...)
+	serverResult := requestorSessionHelper(t, request, nil, nil, options...)
 	require.Nil(t, serverResult.Err)
 	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
 	return serverResult.SessionResult
@@ -216,7 +222,7 @@ func TestRequestorCombinedSessionMultipleAttributes(t *testing.T) {
 		]
 	}`), &ir))
 
-	require.Equal(t, irma.ServerStatusDone, requestorSessionHelper(t, &ir, nil).Status)
+	require.Equal(t, irma.ServerStatusDone, requestorSessionHelper(t, &ir, nil, nil).Status)
 }
 
 func testRequestorIssuance(t *testing.T, keyshare bool, client *irmaclient.Client) {
@@ -244,7 +250,7 @@ func testRequestorIssuance(t *testing.T, keyshare bool, client *irmaclient.Clien
 		})
 	}
 
-	result := requestorSessionHelper(t, request, client)
+	result := requestorSessionHelper(t, request, client, nil)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
@@ -266,7 +272,7 @@ func TestConDisCon(t *testing.T) {
 			"prefix":     "van",
 		},
 	})
-	requestorSessionHelper(t, ir, client)
+	requestorSessionHelper(t, ir, client, nil)
 
 	dr := irma.NewDisclosureRequest()
 	dr.Disclose = irma.AttributeConDisCon{
@@ -289,7 +295,7 @@ func TestConDisCon(t *testing.T) {
 		//},
 	}
 
-	requestorSessionHelper(t, dr, client)
+	requestorSessionHelper(t, dr, client, nil)
 }
 
 func TestOptionalDisclosure(t *testing.T) {
@@ -343,7 +349,7 @@ func TestOptionalDisclosure(t *testing.T) {
 		args.request.Disclosure().Disclose = args.attrs
 
 		// TestHandler always prefers the first option when given any choice, so it will not disclose the optional attribute
-		result := requestorSessionHelper(t, args.request, client)
+		result := requestorSessionHelper(t, args.request, client, nil)
 		require.True(t, reflect.DeepEqual(args.disclosed, result.Disclosed))
 	}
 }
@@ -353,13 +359,13 @@ func TestClientDeveloperMode(t *testing.T) {
 	defer func() { common.ForceHTTPS = false }()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
 
 	// parseStorage returns a client with developer mode already enabled.
 	// Do a session with our local testserver (without https)
 	issuanceRequest := getNameIssuanceRequest()
-	requestorSessionHelper(t, issuanceRequest, client, sessionOptionReuseServer)
+	requestorSessionHelper(t, issuanceRequest, client, irmaServer)
 	require.True(t, issuanceRequest.DevelopmentMode) // set to true by server
 
 	// RemoveStorage resets developer mode preference back to its default (disabled)
@@ -368,7 +374,7 @@ func TestClientDeveloperMode(t *testing.T) {
 
 	// Try to start another session with our non-https server
 	issuanceRequest = getNameIssuanceRequest()
-	qr, _, _, err := irmaServer.StartSession(issuanceRequest, nil)
+	qr, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
 	require.NoError(t, err)
 	c := make(chan *SessionResult, 1)
 	j, err := json.Marshal(qr)
@@ -389,8 +395,8 @@ func TestClientDeveloperMode(t *testing.T) {
 func TestParallelSessions(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
 
 	// Ensure we don't have the requested attribute at first
 	require.NoError(t, client.RemoveStorage())
@@ -403,7 +409,8 @@ func TestParallelSessions(t *testing.T) {
 		disclosure <- requestorSessionHelper(t,
 			getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")),
 			client,
-			sessionOptionUnsatisfiableRequest, sessionOptionReuseServer, sessionOptionWait,
+			irmaServer,
+			sessionOptionUnsatisfiableRequest, sessionOptionWait,
 		)
 	}()
 
@@ -414,7 +421,7 @@ func TestParallelSessions(t *testing.T) {
 	require.Zero(t, len(logs))
 
 	// Issue credential containing above attribute
-	requestorSessionHelper(t, getIssuanceRequest(false), client, sessionOptionReuseServer)
+	requestorSessionHelper(t, getIssuanceRequest(false), client, irmaServer)
 
 	// Running disclosure session should now finish using the new credential
 	result := <-disclosure
@@ -438,22 +445,22 @@ func expireKey(t *testing.T, conf *irma.Configuration) {
 func TestIssueExpiredKey(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
 
 	// issuance sessions using valid, nonexpired public keys work
-	result := requestorSessionHelper(t, getIssuanceRequest(true), client, sessionOptionReuseServer)
+	result := requestorSessionHelper(t, getIssuanceRequest(true), client, irmaServer)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 
 	// client aborts issuance sessions in case of expired public keys
 	expireKey(t, client.Configuration)
-	result = requestorSessionHelper(t, getIssuanceRequest(true), client, sessionOptionReuseServer, sessionOptionIgnoreError)
+	result = requestorSessionHelper(t, getIssuanceRequest(true), client, irmaServer, sessionOptionIgnoreError)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ServerStatusCancelled, result.Status)
 
 	// server aborts issuance sessions in case of expired public keys
-	expireKey(t, irmaServerConfiguration.IrmaConfiguration)
-	_, _, _, err := irmaServer.StartSession(getIssuanceRequest(true), nil)
+	expireKey(t, irmaServer.conf.IrmaConfiguration)
+	_, _, _, err := irmaServer.irma.StartSession(getIssuanceRequest(true), nil)
 	require.Error(t, err)
 }

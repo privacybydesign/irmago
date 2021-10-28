@@ -20,11 +20,6 @@ import (
 )
 
 var (
-	httpServer              *http.Server
-	nextRequestServer       *http.Server
-	irmaServer              *irmaserver.Server
-	irmaServerConfiguration *server.Configuration
-
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
 
@@ -60,7 +55,13 @@ func StartRequestorServer(t *testing.T, configuration *requestorserver.Configura
 	return requestorServer
 }
 
-func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) {
+type IrmaServer struct {
+	irma *irmaserver.Server
+	http *http.Server
+	conf *server.Configuration
+}
+
+func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) *IrmaServer {
 	testdata := test.FindTestdataFolder(t)
 	irmaconf := "irma_configuration"
 	if updatedIrmaConf {
@@ -74,27 +75,31 @@ func StartIrmaServer(t *testing.T, updatedIrmaConf bool, storage string) {
 		path = storage
 	}
 
-	irmaServerConfiguration = IrmaServerConfiguration().Configuration
-	irmaServerConfiguration.URL = "http://localhost:48680"
-	irmaServerConfiguration.SchemesPath = path
-	irmaServerConfiguration.SchemesAssetsPath = assets
+	conf := IrmaServerConfiguration().Configuration
+	conf.URL = "http://localhost:48680"
+	conf.SchemesPath = path
+	conf.SchemesAssetsPath = assets
 
-	var err error
-	irmaServer, err = irmaserver.New(irmaServerConfiguration)
+	irmaServer, err := irmaserver.New(conf)
 
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", irmaServer.HandlerFunc())
-	httpServer = &http.Server{Addr: "localhost:48680", Handler: mux}
+	httpServer := &http.Server{Addr: "localhost:48680", Handler: mux}
 	go func() {
 		_ = httpServer.ListenAndServe()
 	}()
+	return &IrmaServer{
+		irma: irmaServer,
+		conf: conf,
+		http: httpServer,
+	}
 }
 
-func StopIrmaServer() {
-	irmaServer.Stop()
-	_ = httpServer.Close()
+func (s *IrmaServer) Stop() {
+	s.irma.Stop()
+	_ = s.http.Close()
 }
 
 func chainedServerHandler(t *testing.T) http.Handler {
@@ -173,18 +178,15 @@ func chainedServerHandler(t *testing.T) http.Handler {
 	return mux
 }
 
-func StartNextRequestServer(t *testing.T) {
-	nextRequestServer = &http.Server{
+func StartNextRequestServer(t *testing.T) *http.Server {
+	s := &http.Server{
 		Addr:    "localhost:48686",
 		Handler: chainedServerHandler(t),
 	}
 	go func() {
-		_ = nextRequestServer.ListenAndServe()
+		_ = s.ListenAndServe()
 	}()
-}
-
-func StopNextRequestServer() {
-	_ = nextRequestServer.Close()
+	return s
 }
 
 var IrmaServerConfiguration = func() *requestorserver.Configuration {

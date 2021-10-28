@@ -68,7 +68,7 @@ func TestEmptyDisclosure(t *testing.T) {
 		},
 	}
 
-	res := requestorSessionHelper(t, request, nil)
+	res := requestorSessionHelper(t, request, nil, nil)
 	require.Nil(t, res.Err)
 	require.NotNil(t, res.SessionResult)
 	require.NotEmpty(t, res.SessionResult.Disclosed) // The outer conjunction was satisfied
@@ -102,7 +102,7 @@ func TestIssuanceDisclosureEmptyAttributes(t *testing.T) {
 
 	// Test disclosing our null attribute
 	req2 := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.prefix"))
-	res := requestorSessionHelper(t, req2, client)
+	res := requestorSessionHelper(t, req2, client, nil)
 	require.Nil(t, res.Err)
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
@@ -252,7 +252,7 @@ func TestUnsatisfiableDisclosureSession(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`[[[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"test.test.mijnirma.email","CredentialHash":"dc8d5f252ae0e87db6136ba74598682158bfe8d0d2e2fc4ee61dbf24aa2746d4","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.firstname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.familyname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]],[[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]]]`), &missing))
 	require.True(t, reflect.DeepEqual(
 		missing,
-		requestorSessionHelper(t, request, client, sessionOptionUnsatisfiableRequest).Missing),
+		requestorSessionHelper(t, request, client, nil, sessionOptionUnsatisfiableRequest).Missing),
 	)
 
 }
@@ -294,13 +294,13 @@ func TestOutdatedClientIrmaConfiguration(t *testing.T) {
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
-	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client).Err)
+	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client, nil).Err)
 
 	// client does not have updated irma_configuration with new attribute irma-demo.RU.studentCard.newAttribute,
 	// and the server does. Disclose an attribute from this credential. The client implicitly discloses value 0
 	// for the new attribute, and the server accepts.
 	req := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
-	require.Nil(t, requestorSessionHelper(t, req, client, sessionOptionUpdatedIrmaConfiguration).Err)
+	require.Nil(t, requestorSessionHelper(t, req, client, nil, sessionOptionUpdatedIrmaConfiguration).Err)
 }
 
 func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
@@ -315,7 +315,7 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
-	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client).Err)
+	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client, nil).Err)
 
 	// Trigger downloading the updated irma_configuration using a disclosure request containing the
 	// new attribute, and inform the client
@@ -332,11 +332,11 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	// Since our client has a new configuration it hides the new attribute that is not yet in the
 	// server's configuration. All proofs are however valid as they should be and the server accepts.
 	levelRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
-	require.Nil(t, requestorSessionHelper(t, levelRequest, client).Err)
+	require.Nil(t, requestorSessionHelper(t, levelRequest, client, nil).Err)
 
 	// Disclose newAttribute to a server with a new configuration. This attribute was added
 	// after we received a credential without it, so its value in this credential is 0.
-	res := requestorSessionHelper(t, newAttrRequest, client, sessionOptionUpdatedIrmaConfiguration)
+	res := requestorSessionHelper(t, newAttrRequest, client, nil, sessionOptionUpdatedIrmaConfiguration)
 	require.Nil(t, res.Err)
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
@@ -362,11 +362,11 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	storage, err := ioutil.TempDir("", "servertest")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
-	StartIrmaServer(t, false, storage)
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, false, storage)
+	defer irmaServer.Stop()
 
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	conf := irmaServerConfiguration.IrmaConfiguration
+	conf := irmaServer.conf.IrmaConfiguration
 	sk, err := conf.PrivateKeys.Latest(credid.IssuerIdentifier())
 	require.NoError(t, err)
 	require.NotNil(t, sk)
@@ -408,8 +408,8 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 
 	serverChan := make(chan *server.SessionResult)
 
-	StartIrmaServer(t, false, "") // Run a server with old configuration (level is non-optional)
-	_, _, _, err := irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	irmaServer := StartIrmaServer(t, false, "") // Run a server with old configuration (level is non-optional)
+	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	expectedError := &irma.RequiredAttributeMissingError{
@@ -426,17 +426,17 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 		},
 	}
 	require.True(t, reflect.DeepEqual(err, expectedError), "Incorrect missing identifierset")
-	StopIrmaServer()
+	irmaServer.Stop()
 
-	StartIrmaServer(t, true, "") // Run a server with updated configuration (level is optional)
+	irmaServer = StartIrmaServer(t, true, "") // Run a server with updated configuration (level is optional)
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, _, err = irmaServer.StartSession(issuanceRequest, func(result *server.SessionResult) {
+	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, func(result *server.SessionResult) {
 		serverChan <- result
 	})
 	require.NoError(t, err)
-	StopIrmaServer()
+	irmaServer.Stop()
 }
 
 func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
@@ -579,9 +579,9 @@ func TestBlindIssuanceSession(t *testing.T) {
 		},
 	})
 
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
-	_, _, _, err := irmaServer.StartSession(request, nil)
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
+	_, _, _, err := irmaServer.irma.StartSession(request, nil)
 	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
 
 	// Make the request valid
@@ -624,7 +624,7 @@ func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
 		},
 	})
 
-	res := requestorSessionHelper(t, request, client, sessionOptionUpdatedIrmaConfiguration, sessionOptionIgnoreError)
+	res := requestorSessionHelper(t, request, client, nil, sessionOptionUpdatedIrmaConfiguration, sessionOptionIgnoreError)
 	require.EqualError(t, res.clientResult.Err, "Error type: randomblind\nDescription: mismatch in randomblind attributes between server/client\nStatus code: 0")
 }
 
@@ -658,12 +658,14 @@ func TestPOSTSizeLimit(t *testing.T) {
 func TestChainedSessions(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	StartNextRequestServer(t)
-	defer StopNextRequestServer()
+	nextServer := StartNextRequestServer(t)
+	defer func() {
+		_ = nextServer.Close()
+	}()
 
 	var request irma.ServiceProviderRequest
 	require.NoError(t, irma.NewHTTPTransport("http://localhost:48686", false).Get("1", &request))
-	requestorSessionHelper(t, &request, client)
+	requestorSessionHelper(t, &request, client, nil)
 
 	// check that our credential instance is new
 	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
@@ -680,11 +682,12 @@ func TestChainedSessions(t *testing.T) {
 
 // Test to check whether session stores (like Redis) correctly handle non-existing sessions
 func TestUnknownRequestorToken(t *testing.T) {
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
 
-	result, err := irmaServer.GetSessionResult("12345")
+	result, err := irmaServer.irma.GetSessionResult("12345")
 
+	require.Error(t, err)
 	require.Equal(t, err.Error(), "session result requested of unknown session 12345")
 	require.Nil(t, result)
 }

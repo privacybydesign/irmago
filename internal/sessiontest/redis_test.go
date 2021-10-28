@@ -130,9 +130,9 @@ func TestRedisUpdates(t *testing.T) {
 		IrmaServerConfiguration = defaultIrmaServerConfiguration
 	}()
 
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
-	qr, token, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
+	qr, token, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
 	), nil)
 	require.NoError(t, err)
@@ -207,12 +207,12 @@ func TestRedisSessionFailure(t *testing.T) {
 		IrmaServerConfiguration = defaultIrmaServerConfiguration
 	}()
 
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	qr, _, _, err := irmaServer.StartSession(request, nil)
+	qr, _, _, err := irmaServer.irma.StartSession(request, nil)
 	require.NoError(t, err)
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
@@ -245,21 +245,21 @@ func TestRedisLibraryErrors(t *testing.T) {
 		IrmaServerConfiguration = defaultIrmaServerConfiguration
 	}()
 
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, false, "")
+	defer irmaServer.Stop()
 
 	// Stop the Redis server early to check whether the IRMA server fails correctly
 	mr.Close()
 
 	token := irma.RequestorToken("Sxqcpng37mAdBKgoAJXl")
 
-	_, _, _, err := irmaServer.StartSession(request, nil)
+	_, _, _, err := irmaServer.irma.StartSession(request, nil)
 	require.Error(t, err)
-	_, err = irmaServer.GetSessionResult(token)
+	_, err = irmaServer.irma.GetSessionResult(token)
 	require.Error(t, err)
-	err = irmaServer.CancelSession(token)
+	err = irmaServer.irma.CancelSession(token)
 	require.Error(t, err)
-	_, err = irmaServer.GetRequest(token)
+	_, err = irmaServer.irma.GetRequest(token)
 	require.Error(t, err)
 }
 
