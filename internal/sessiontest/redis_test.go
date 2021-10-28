@@ -23,8 +23,16 @@ func startRedis(t *testing.T) *miniredis.Miniredis {
 	return mr
 }
 
-func redisConfigDecorator(mr *miniredis.Miniredis, fn func() *requestorserver.Configuration) func() *requestorserver.Configuration {
+func redisRequestorConfigDecorator(mr *miniredis.Miniredis, fn func() *requestorserver.Configuration) func() *requestorserver.Configuration {
 	return func() *requestorserver.Configuration {
+		c := fn()
+		redisConfigDecorator(mr, func() *server.Configuration { return c.Configuration })()
+		return c
+	}
+}
+
+func redisConfigDecorator(mr *miniredis.Miniredis, fn func() *server.Configuration) func() *server.Configuration {
+	return func() *server.Configuration {
 		mr.FlushAll() // Flush Redis memory between different runs of the IRMA server to prevent side effects.
 		c := fn()
 		c.StoreType = "redis"
@@ -85,24 +93,16 @@ func startLoadBalancer(t *testing.T, irmaServers []int) *http.Server {
 }
 
 func TestRedis(t *testing.T) {
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	defaultJwtServerConfiguration := IrmaServerAuthConfiguration
-
 	mr := startRedis(t)
-	IrmaServerConfiguration = redisConfigDecorator(mr, IrmaServerConfiguration)
-	IrmaServerAuthConfiguration = redisConfigDecorator(mr, IrmaServerAuthConfiguration)
-	defer func() {
-		mr.Close()
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-		IrmaServerAuthConfiguration = defaultJwtServerConfiguration
-	}()
+	defer mr.Close()
 
-	t.Run("TestSigningSession", TestSigningSession)
-	t.Run("TestDisclosureSession", TestDisclosureSession)
-	t.Run("TestIssuanceSession", TestIssuanceSession)
-	t.Run("TestIssuedCredentialIsStored", TestIssuedCredentialIsStored)
-	t.Run("TestChainedSessions", TestChainedSessions)
-	t.Run("TestUnknownRequestorToken", TestUnknownRequestorToken)
+	t.Run("SigningSession", curry(testSigningSession, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
+	t.Run("DisclosureSession", curry(testDisclosureSession, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
+	t.Run("IssuanceSession", curry(testIssuanceSession, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
+	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
+
+	t.Run("ChainedSessions", curry(testChainedSessions, redisConfigDecorator(mr, IrmaServerConfiguration)))
+	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, redisConfigDecorator(mr, IrmaServerConfiguration)))
 }
 
 func checkErrorInternal(t *testing.T, err error) {
@@ -123,14 +123,9 @@ func checkErrorSessionUnknown(t *testing.T, err error) {
 
 func TestRedisUpdates(t *testing.T) {
 	mr := startRedis(t)
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	IrmaServerConfiguration = redisConfigDecorator(mr, IrmaServerConfiguration)
-	defer func() {
-		mr.Close()
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-	}()
+	defer mr.Close()
 
-	irmaServer := StartIrmaServer(t, nil)
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaServerConfiguration)())
 	defer irmaServer.Stop()
 	qr, token, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
@@ -172,7 +167,7 @@ func TestRedisRedundancy(t *testing.T) {
 	servers := make([]*requestorserver.Server, len(ports))
 
 	for i, port := range ports {
-		c := redisConfigDecorator(mr, IrmaServerConfiguration)()
+		c := redisRequestorConfigDecorator(mr, RequestorServerAuthConfiguration)()
 		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", port)
 		c.Port = port
 		rs := StartRequestorServer(t, c)
@@ -190,7 +185,7 @@ func TestRedisRedundancy(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	sessionHelperWithFrontendOptionsAndConfig(t, request, nil, nil, nil, nil)
+	doSession(t, request, nil, nil, nil, nil, nil, sessionOptionReuseServer)
 }
 
 // Tests whether the right error is returned by the client's Failure handler
@@ -200,14 +195,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	// Make sure Redis is used in the IrmaServerConfiguration
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	IrmaServerConfiguration = redisConfigDecorator(mr, IrmaServerConfiguration)
-	defer func() {
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-	}()
-
-	irmaServer := StartIrmaServer(t, nil)
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaServerConfiguration)())
 	defer irmaServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -238,14 +226,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	// Make sure Redis is used in the IrmaServerConfiguration
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	IrmaServerConfiguration = redisConfigDecorator(mr, IrmaServerConfiguration)
-	defer func() {
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-	}()
-
-	irmaServer := StartIrmaServer(t, nil)
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaServerConfiguration)())
 	defer irmaServer.Stop()
 
 	// Stop the Redis server early to check whether the IRMA server fails correctly
@@ -266,7 +247,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 func TestRedisHTTPErrors(t *testing.T) {
 	mr := startRedis(t)
 
-	config := redisConfigDecorator(mr, IrmaServerAuthConfiguration)()
+	config := redisRequestorConfigDecorator(mr, RequestorServerAuthConfiguration)()
 	rs := StartRequestorServer(t, config)
 	defer rs.Stop()
 

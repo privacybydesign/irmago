@@ -19,47 +19,92 @@ import (
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/require"
 )
 
-func TestSigningSession(t *testing.T) {
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	request := getSigningRequest(id)
-	sessionHelper(t, request, nil)
+// This file contains integration test functions that can be invoked against differing kinds of
+// servers (i.e. IRMA server vs. IRMA library) with differing configurations (e.g. Redis enabled, or
+// clients without pairing support), as follows.
+// - Each function has the following signature:
+//   *testing.T, interface{}, ...sessionOption
+//   Here the second parameter must be, when not-nil, of one of the following types:
+//   - func() *requestorserver.Configuration
+//   - func() *server.Configuration
+//   In the function, these parameters can be passed to doSession() which will, depending on the
+//   session options, start and stop a server of the appropriate type (server or library), as
+//   determined by the type of the configuration function.
+// - Each function may be converted to one suitable for Go testing, i.e. having signature
+//   *testing.T, using the curry() function.
+
+func TestIrmaServer(t *testing.T) {
+	t.Run("DisclosureSession", curry(testDisclosureSession, RequestorServerConfiguration))
+	t.Run("NoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, RequestorServerConfiguration))
+	t.Run("EmptyDisclosure", curry(testEmptyDisclosure, RequestorServerConfiguration))
+	t.Run("SigningSession", curry(testSigningSession, RequestorServerConfiguration))
+	t.Run("IssuanceSession", curry(testIssuanceSession, RequestorServerConfiguration))
+	t.Run("MultipleIssuanceSession", curry(testMultipleIssuanceSession, RequestorServerConfiguration))
+	t.Run("DefaultCredentialValidity", curry(testDefaultCredentialValidity, RequestorServerConfiguration))
+	t.Run("IssuanceDisclosureEmptyAttributes", curry(testIssuanceDisclosureEmptyAttributes, RequestorServerConfiguration))
+	t.Run("IssuanceOptionalZeroLengthAttributes", curry(testIssuanceOptionalZeroLengthAttributes, RequestorServerConfiguration))
+	t.Run("IssuanceOptionalSetAttributes", curry(testIssuanceOptionalSetAttributes, RequestorServerConfiguration))
+	t.Run("IssuanceSameAttributesNotSingleton", curry(testIssuanceSameAttributesNotSingleton, RequestorServerConfiguration))
+	t.Run("IssuancePairing", curry(testIssuancePairing, RequestorServerConfiguration))
+	t.Run("LargeAttribute", curry(testLargeAttribute, RequestorServerConfiguration))
+	t.Run("IssuanceSingletonCredential", curry(testIssuanceSingletonCredential, RequestorServerConfiguration))
+	t.Run("UnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, RequestorServerConfiguration))
+	t.Run("AttributeByteEncoding", curry(testAttributeByteEncoding, RequestorServerConfiguration))
+	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, RequestorServerConfiguration))
+	t.Run("BlindIssuanceSession", curry(testBlindIssuanceSession, RequestorServerConfiguration))
+	t.Run("DisablePairing", curry(testDisablePairing, RequestorServerConfiguration))
+	t.Run("DisclosureMultipleAttrs", curry(testDisclosureMultipleAttrs, RequestorServerConfiguration))
+	t.Run("CombinedSessionMultipleAttributes", curry(testCombinedSessionMultipleAttributes, RequestorServerConfiguration))
+	t.Run("ConDisCon", curry(testConDisCon, RequestorServerConfiguration))
+	t.Run("OptionalDisclosure", curry(testOptionalDisclosure, RequestorServerConfiguration))
 }
 
-func TestDisclosureSession(t *testing.T) {
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	request := getDisclosureRequest(id)
-	bts, err := ioutil.ReadFile(jwtPrivkeyPath)
-	require.NoError(t, err)
-	sk, err := jwt.ParseRSAPrivateKeyFromPEM(bts)
-	require.NoError(t, err)
-	responseString := sessionHelper(t, request, nil)
+func TestIrmaLibrary(t *testing.T) {
+	// Tests supporting only the IRMA library
+	t.Run("ChainedSessions", curry(testChainedSessions, IrmaServerConfiguration))
+	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, IrmaServerConfiguration))
+	t.Run("DisclosureNewAttributeUpdateSchemeManager", curry(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration))
+	t.Run("BlindIssuanceSessionDifferentAmountOfRandomBlinds", curry(testBlindIssuanceSessionDifferentAmountOfRandomBlinds, IrmaServerConfiguration))
+	t.Run("OutdatedClientIrmaConfiguration", curry(testOutdatedClientIrmaConfiguration, IrmaServerConfiguration))
 
-	// Validate JWT
-	claims := struct {
-		jwt.StandardClaims
-		server.SessionResult
-	}{}
-	_, err = jwt.ParseWithClaims(responseString, &claims, func(_ *jwt.Token) (interface{}, error) {
-		return &sk.PublicKey, nil
-	})
-	require.NoError(t, err)
+	// Tests also run against the IRMA server
+	t.Run("DisclosureSession", curry(testDisclosureSession, IrmaServerConfiguration))
+	t.Run("NoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, IrmaServerConfiguration))
+	t.Run("EmptyDisclosure", curry(testEmptyDisclosure, IrmaServerConfiguration))
+	t.Run("SigningSession", curry(testSigningSession, IrmaServerConfiguration))
+	t.Run("IssuanceSession", curry(testIssuanceSession, IrmaServerConfiguration))
+	t.Run("MultipleIssuanceSession", curry(testMultipleIssuanceSession, IrmaServerConfiguration))
+	t.Run("IssuancePairing", curry(testIssuancePairing, IrmaServerConfiguration))
+	t.Run("DisablePairing", curry(testDisablePairing, IrmaServerConfiguration))
+	t.Run("UnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, IrmaServerConfiguration))
 
-	// Check default expiration time
-	require.True(t, claims.IssuedAt+irma.DefaultJwtValidity == claims.ExpiresAt)
+	t.Run("StaticQRSession", curry(testStaticQRSession, nil)) // has its own configuration
 }
 
-func TestNoAttributeDisclosureSession(t *testing.T) {
+// curry takes (1) a test function which apart from *testing.T additionally accepting a
+// configuration function and session options, and (2) a configuration function and session objects,
+// and returns a function suitable for unit testing by applying the configuration function and
+// session options in the rightmost two parameter slots of the specified function.
+func curry(
+	test func(t *testing.T, conf interface{}, opts ...sessionOption),
+	conf interface{}, opts ...sessionOption,
+) func(*testing.T) {
+	return func(t *testing.T) {
+		test(t, conf, opts...)
+	}
+}
+
+func testNoAttributeDisclosureSession(t *testing.T, conf interface{}, opts ...sessionOption) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard")
 	request := getDisclosureRequest(id)
-	sessionHelper(t, request, nil)
+	doSession(t, request, nil, nil, nil, nil, conf, opts...)
 }
 
-func TestEmptyDisclosure(t *testing.T) {
+func testEmptyDisclosure(t *testing.T, conf interface{}, opts ...sessionOption) {
 	// Disclosure request asking for an attribute value that the client doesn't have,
 	// and an empty conjunction as first option, which is always chosen by the test session handler
 	val := "client doesn't have this attr"
@@ -71,68 +116,62 @@ func TestEmptyDisclosure(t *testing.T) {
 		},
 	}
 
-	res := requestorSessionHelper(t, request, nil, nil)
+	res := doSession(t, request, nil, nil, nil, nil, conf, opts...)
 	require.Nil(t, res.Err)
 	require.NotNil(t, res.SessionResult)
 	require.NotEmpty(t, res.SessionResult.Disclosed) // The outer conjunction was satisfied
 	require.Empty(t, res.SessionResult.Disclosed[0]) // by the empty set, so we get no attributes
 }
 
-func TestIssuanceSession(t *testing.T) {
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
-	request := getCombinedIssuanceRequest(id)
-	sessionHelper(t, request, nil)
-}
-
-func TestMultipleIssuanceSession(t *testing.T) {
+func testMultipleIssuanceSession(t *testing.T, conf interface{}, opts ...sessionOption) {
 	request := getMultipleIssuanceRequest()
-	sessionHelper(t, request, nil)
+	doSession(t, request, nil, nil, nil, nil, conf, opts...)
 }
 
-func TestDefaultCredentialValidity(t *testing.T) {
-	client, handler := parseStorage(t)
+func testDefaultCredentialValidity(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 	request := getIssuanceRequest(true)
-	sessionHelper(t, request, client)
+	doSession(t, request, client, nil, nil, nil, conf, opts...)
 }
 
-func TestIssuanceDisclosureEmptyAttributes(t *testing.T) {
-	client, handler := parseStorage(t)
+func testIssuanceDisclosureEmptyAttributes(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	req := getNameIssuanceRequest()
-	sessionHelper(t, req, client)
+	doSession(t, req, client, nil, nil, nil, conf, opts...)
 
 	// Test disclosing our null attribute
 	req2 := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.prefix"))
-	res := requestorSessionHelper(t, req2, client, nil)
+	res := doSession(t, req2, client, nil, nil, nil, conf, opts...)
 	require.Nil(t, res.Err)
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
 
-func TestIssuanceOptionalZeroLengthAttributes(t *testing.T) {
+func testIssuanceOptionalZeroLengthAttributes(t *testing.T, conf interface{}, opts ...sessionOption) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = ""
-	sessionHelper(t, req, nil)
+	doSession(t, req, nil, nil, nil, nil, conf, opts...)
 }
 
-func TestIssuanceOptionalSetAttributes(t *testing.T) {
+func testIssuanceOptionalSetAttributes(t *testing.T, conf interface{}, opts ...sessionOption) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = "van"
-	sessionHelper(t, req, nil)
+	doSession(t, req, nil, nil, nil, nil, conf, opts...)
 }
 
-func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
-	client, handler := parseStorage(t)
+func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	prevLen := len(client.CredentialInfoList())
 
 	req := getIssuanceRequest(true)
-	sessionHelper(t, req, client)
+	doSession(t, req, client, nil, nil, nil, conf, opts...)
 
 	req = getIssuanceRequest(false)
-	sessionHelper(t, req, client)
+	doSession(t, req, client, nil, nil, nil, conf, opts...)
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 
 	// Also check whether this is actually stored
@@ -141,7 +180,7 @@ func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
-func TestIssuancePairing(t *testing.T) {
+func testIssuancePairing(t *testing.T, conf interface{}, opts ...sessionOption) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
@@ -158,8 +197,7 @@ func TestIssuancePairing(t *testing.T) {
 		require.Equal(t, pairingCode, <-handler.pairingCodeChan)
 
 		// Check whether access to request endpoint is denied as long as pairing is not finished
-		clientTransport := extractClientTransport(handler.dismisser)
-		err := clientTransport.Get("request", struct{}{})
+		err := handler.clientTransport.Get("request", struct{}{})
 		require.Error(t, err)
 		sessionErr := err.(*irma.SessionError)
 		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
@@ -179,25 +217,25 @@ func TestIssuancePairing(t *testing.T) {
 		err = handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
 		require.NoError(t, err)
 	}
-	sessionHelperWithFrontendOptions(t, request, nil, frontendOptionsHandler, pairingHandler)
+	doSession(t, request, nil, nil, frontendOptionsHandler, pairingHandler, conf, opts...)
 }
 
-func TestLargeAttribute(t *testing.T) {
-	client, handler := parseStorage(t)
+func testLargeAttribute(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 
 	issuanceRequest := getSpecialIssuanceRequest(false, "1234567890123456789012345678901234567890") // 40 chars
-	sessionHelper(t, issuanceRequest, client)
+	doSession(t, issuanceRequest, client, nil, nil, nil, conf, opts...)
 
 	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
-	sessionHelper(t, disclosureRequest, client)
+	doSession(t, disclosureRequest, client, nil, nil, nil, conf, opts...)
 }
 
-func TestIssuanceSingletonCredential(t *testing.T) {
-	client, handler := parseStorage(t)
+func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton")
@@ -212,11 +250,11 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 
 	require.Nil(t, client.Attributes(credid, 0))
 
-	sessionHelper(t, request, client)
+	doSession(t, request, client, nil, nil, nil, conf, opts...)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 
-	sessionHelper(t, request, client)
+	doSession(t, request, client, nil, nil, nil, conf, opts...)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 
@@ -227,8 +265,8 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 	require.Nil(t, client.Attributes(credid, 1))
 }
 
-func TestUnsatisfiableDisclosureSession(t *testing.T) {
-	client, handler := parseStorage(t)
+func testUnsatisfiableDisclosureSession(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	request := irma.NewDisclosureRequest()
@@ -255,7 +293,7 @@ func TestUnsatisfiableDisclosureSession(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`[[[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"test.test.mijnirma.email","CredentialHash":"dc8d5f252ae0e87db6136ba74598682158bfe8d0d2e2fc4ee61dbf24aa2746d4","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.firstname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.familyname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]],[[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]]]`), &missing))
 	require.True(t, reflect.DeepEqual(
 		missing,
-		requestorSessionHelper(t, request, client, nil, sessionOptionUnsatisfiableRequest).Missing),
+		doSession(t, request, client, nil, nil, nil, nil, append(opts, sessionOptionUnsatisfiableRequest)...).Missing),
 	)
 
 }
@@ -266,8 +304,8 @@ that in Java, when converting a bigint to or from a byte array, the most signifi
 indicates the sign of the integer. In Go this is not the case. This resulted in invalid
 signatures being issued in the issuance protocol in two distinct ways, of which we test here
 that they have been fixed. */
-func TestAttributeByteEncoding(t *testing.T) {
-	client, handler := parseStorage(t)
+func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
@@ -278,7 +316,7 @@ func TestAttributeByteEncoding(t *testing.T) {
 	significant (sign) bit. We test that the Java implementation correctly removes the extraneous
 	0 byte. */
 	request := getSpecialIssuanceRequest(false, "a23456789012345678901234567890")
-	sessionHelper(t, request, client)
+	doSession(t, request, client, nil, nil, nil, conf, opts...)
 
 	/* After converting the attribute below to bytes (using UTF8, on which Java and Go do agree),
 	the most significant bit of the byte version of this attribute is 1. In the []byte->bigint
@@ -287,27 +325,33 @@ func TestAttributeByteEncoding(t *testing.T) {
 	here that the Java correctly prepends a 0 byte just before this conversion in order to get
 	the same positive bigint. */
 	request = getSpecialIssuanceRequest(false, "é")
-	sessionHelper(t, request, client)
+	doSession(t, request, client, nil, nil, nil, conf, opts...)
 }
 
-func TestOutdatedClientIrmaConfiguration(t *testing.T) {
-	client, handler := parseStorage(t)
+func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ...sessionOption) {
+	require.IsType(t, IrmaServerConfiguration, conf)
+	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
+
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
-	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client, nil).Err)
+	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, conf, opts...).Err)
 
 	// client does not have updated irma_configuration with new attribute irma-demo.RU.studentCard.newAttribute,
 	// and the server does. Disclose an attribute from this credential. The client implicitly discloses value 0
 	// for the new attribute, and the server accepts.
 	req := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
-	require.Nil(t, requestorSessionHelper(t, req, client, nil, sessionOptionUpdatedIrmaConfiguration).Err)
+	require.Nil(t, doSession(t, req, client, nil, nil, nil, irmaServerConf, opts...).Err)
 }
 
-func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
+func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{}, opts ...sessionOption) {
+	require.IsType(t, IrmaServerConfiguration, conf)
+	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
+
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
@@ -318,7 +362,7 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
-	require.Nil(t, requestorSessionHelper(t, getIssuanceRequest(true), client, nil).Err)
+	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, conf, opts...).Err)
 
 	// Trigger downloading the updated irma_configuration using a disclosure request containing the
 	// new attribute, and inform the client
@@ -335,11 +379,11 @@ func TestDisclosureNewAttributeUpdateSchemeManager(t *testing.T) {
 	// Since our client has a new configuration it hides the new attribute that is not yet in the
 	// server's configuration. All proofs are however valid as they should be and the server accepts.
 	levelRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
-	require.Nil(t, requestorSessionHelper(t, levelRequest, client, nil).Err)
+	require.Nil(t, doSession(t, levelRequest, client, nil, nil, nil, conf, opts...).Err)
 
 	// Disclose newAttribute to a server with a new configuration. This attribute was added
 	// after we received a credential without it, so its value in this credential is 0.
-	res := requestorSessionHelper(t, newAttrRequest, client, nil, sessionOptionUpdatedIrmaConfiguration)
+	res := doSession(t, newAttrRequest, client, nil, nil, nil, irmaServerConf, opts...)
 	require.Nil(t, res.Err)
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
@@ -367,9 +411,8 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
 
 	conf := IrmaServerConfiguration()
-	conf.Configuration.URL = "http://localhost:48680"
-	conf.Configuration.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
-	conf.Configuration.SchemesPath = storage
+	conf.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
+	conf.SchemesPath = storage
 
 	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
@@ -415,12 +458,8 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
-	serverChan := make(chan *server.SessionResult)
-
 	irmaServer := StartIrmaServer(t, nil) // Run a server with old configuration (level is non-optional)
-	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, func(result *server.SessionResult) {
-		serverChan <- result
-	})
+	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
 	expectedError := &irma.RequiredAttributeMissingError{
 		ErrorType: irma.ErrorRequiredAttributeMissing,
 		Missing: &irma.IrmaIdentifierSet{
@@ -439,15 +478,12 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 
 	// Run a server with updated configuration (level is optional)
 	conf := IrmaServerConfiguration()
-	conf.Configuration.URL = "http://localhost:48680"
 	conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
 	irmaServer = StartIrmaServer(t, conf)
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, func(result *server.SessionResult) {
-		serverChan <- result
-	})
+	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, nil)
 	require.NoError(t, err)
 	irmaServer.Stop()
 }
@@ -518,10 +554,10 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 	require.True(t, reflect.DeepEqual(expectedErr, err), "Download() returned incorrect missing identifier set")
 }
 
-func TestStaticQRSession(t *testing.T) {
-	client, handler := parseStorage(t)
+func testStaticQRSession(t *testing.T, _ interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
-	rs := StartRequestorServer(t, IrmaServerAuthConfiguration())
+	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
 	defer rs.Stop()
 
 	// start server to receive session result callback after the session
@@ -555,25 +591,25 @@ func TestStaticQRSession(t *testing.T) {
 	require.True(t, received)
 }
 
-func TestIssuedCredentialIsStored(t *testing.T) {
-	client, handler := parseStorage(t)
+func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	issuanceRequest := getNameIssuanceRequest()
-	sessionHelper(t, issuanceRequest, client)
+	doSession(t, issuanceRequest, client, nil, nil, nil, conf, opts...)
 	require.NoError(t, client.Close())
 
 	client, handler = parseExistingStorage(t, handler.storage)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
-	sessionHelper(t, getDisclosureRequest(id), client)
+	doSession(t, getDisclosureRequest(id), client, nil, nil, nil, conf, opts...)
 }
 
-func TestBlindIssuanceSession(t *testing.T) {
+func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...sessionOption) {
 	credID := irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas")
 	attrID1 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.election")
 	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
 
-	client, handler := parseStorage(t)
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
@@ -593,14 +629,14 @@ func TestBlindIssuanceSession(t *testing.T) {
 	})
 
 	irmaServer := StartIrmaServer(t, nil)
-	defer irmaServer.Stop()
 	_, _, _, err := irmaServer.irma.StartSession(request, nil)
+	irmaServer.Stop()
 	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
 
 	// Make the request valid
 	delete(request.Credentials[0].Attributes, "votingnumber")
 
-	sessionHelper(t, request, client)
+	doSession(t, request, client, nil, nil, nil, conf, opts...)
 	attrList := client.Attributes(credID, 0)
 
 	// Since attrList.Ints does not include the secret key,
@@ -615,12 +651,15 @@ func TestBlindIssuanceSession(t *testing.T) {
 // In this test we simulate a scenario where the client has an out-of-date configuration compared to the server.
 // The server has updated configuration in which two randomblind attributes are present.
 // The client has only one. The client should notice and and abort the session.
-func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
+func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf interface{}, opts ...sessionOption) {
+	require.IsType(t, IrmaServerConfiguration, conf)
+	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
+
 	credID := irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas")
 	attrID1 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.election")
 	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
 
-	client, handler := parseStorage(t)
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
@@ -637,12 +676,13 @@ func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
 		},
 	})
 
-	res := requestorSessionHelper(t, request, client, nil, sessionOptionUpdatedIrmaConfiguration, sessionOptionIgnoreError)
+	res := doSession(t, request, client, nil, nil, nil, irmaServerConf, append(opts, sessionOptionIgnoreError)...)
+	require.NotNil(t, res.clientResult)
 	require.EqualError(t, res.clientResult.Err, "Error type: randomblind\nDescription: mismatch in randomblind attributes between server/client\nStatus code: 0")
 }
 
 func TestPOSTSizeLimit(t *testing.T) {
-	rs := StartRequestorServer(t, IrmaServerConfiguration())
+	rs := StartRequestorServer(t, RequestorServerConfiguration())
 	defer rs.Stop()
 
 	server.PostSizeLimit = 1 << 10
@@ -668,10 +708,12 @@ func TestPOSTSizeLimit(t *testing.T) {
 	require.Equal(t, "http: request body too large", rerr.Message)
 }
 
-func TestChainedSessions(t *testing.T) {
-	client, handler := parseStorage(t)
+func testChainedSessions(t *testing.T, conf interface{}, opts ...sessionOption) {
+	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
-	irmaServer := StartIrmaServer(t, nil)
+
+	require.IsType(t, IrmaServerConfiguration, conf)
+	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
 	defer irmaServer.Stop()
 	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey)
 	defer func() {
@@ -680,7 +722,7 @@ func TestChainedSessions(t *testing.T) {
 
 	var request irma.ServiceProviderRequest
 	require.NoError(t, irma.NewHTTPTransport("http://localhost:48686", false).Get("1", &request))
-	requestorSessionHelper(t, &request, client, irmaServer)
+	doSession(t, &request, client, irmaServer, nil, nil, nil)
 
 	// check that our credential instance is new
 	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
@@ -696,8 +738,9 @@ func TestChainedSessions(t *testing.T) {
 }
 
 // Test to check whether session stores (like Redis) correctly handle non-existing sessions
-func TestUnknownRequestorToken(t *testing.T) {
-	irmaServer := StartIrmaServer(t, nil)
+func testUnknownRequestorToken(t *testing.T, conf interface{}, opts ...sessionOption) {
+	require.IsType(t, IrmaServerConfiguration, conf)
+	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
 	defer irmaServer.Stop()
 
 	result, err := irmaServer.irma.GetSessionResult("12345")
@@ -707,7 +750,7 @@ func TestUnknownRequestorToken(t *testing.T) {
 	require.Nil(t, result)
 }
 
-func TestDisablePairing(t *testing.T) {
+func testDisablePairing(t *testing.T, conf interface{}, opts ...sessionOption) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
@@ -715,5 +758,13 @@ func TestDisablePairing(t *testing.T) {
 		_ = setPairingMethod(irma.PairingMethodPin, handler)
 		_ = setPairingMethod(irma.PairingMethodNone, handler)
 	}
-	sessionHelperWithFrontendOptions(t, request, nil, frontendOptionsHandler, nil)
+	doSession(t, request, nil, nil, frontendOptionsHandler, nil, conf, opts...)
+}
+
+func updatedSchemeConfigDecorator(fn func() *server.Configuration) func() *server.Configuration {
+	return func() *server.Configuration {
+		c := fn()
+		c.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+		return c
+	}
 }

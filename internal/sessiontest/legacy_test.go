@@ -18,55 +18,45 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	// Test whether credential from legacy storage is still usable
 	idStudentCard := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(idStudentCard)
-	sessionHelper(t, request, client)
+	doSession(t, request, client, nil, nil, nil, nil)
 
 	// Issue new credential
-	sessionHelper(t, getMultipleIssuanceRequest(), client)
+	doSession(t, getMultipleIssuanceRequest(), client, nil, nil, nil, nil)
 
 	// Test whether credential is still there
 	idRoot := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
-	sessionHelper(t, getDisclosureRequest(idRoot), client)
+	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil)
 
 	// Re-open client
 	require.NoError(t, client.Close())
 	client, handler = parseExistingStorage(t, handler.storage)
 
 	// Test whether credential is still there after the storage has been reloaded
-	sessionHelper(t, getDisclosureRequest(idRoot), client)
+	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil)
 }
 
 func TestWithoutPairingSupport(t *testing.T) {
-	defaultMaxVersion := maxClientVersion
-	defer func() {
-		maxClientVersion = defaultMaxVersion
-	}()
-	maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+	t.Run("TestSigningSession", curry(testSigningSession, nil, sessionOptionOldClient))
+	t.Run("TestDisclosureSession", curry(testDisclosureSession, nil, sessionOptionOldClient))
+	t.Run("TestNoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, nil, sessionOptionOldClient))
+	t.Run("TestEmptyDisclosure", curry(testEmptyDisclosure, nil, sessionOptionOldClient))
+	t.Run("TestIssuanceSession", curry(testIssuanceSession, nil, sessionOptionOldClient))
+	t.Run("TestMultipleIssuanceSession", curry(testMultipleIssuanceSession, nil, sessionOptionOldClient))
+	t.Run("TestDefaultCredentialValidity", curry(testDefaultCredentialValidity, nil, sessionOptionOldClient))
+	t.Run("TestIssuanceDisclosureEmptyAttributes", curry(testIssuanceDisclosureEmptyAttributes, nil, sessionOptionOldClient))
+	t.Run("TestIssuanceOptionalZeroLengthAttributes", curry(testIssuanceOptionalZeroLengthAttributes, nil, sessionOptionOldClient))
+	t.Run("TestIssuanceOptionalSetAttributes", curry(testIssuanceOptionalSetAttributes, nil, sessionOptionOldClient))
+	t.Run("TestIssuanceSameAttributesNotSingleton", curry(testIssuanceSameAttributesNotSingleton, nil, sessionOptionOldClient))
+	t.Run("TestIssuancePairing", curry(testIssuancePairing, nil, sessionOptionOldClient))
+	t.Run("TestLargeAttribute", curry(testLargeAttribute, nil, sessionOptionOldClient))
+	t.Run("TestIssuanceSingletonCredential", curry(testIssuanceSingletonCredential, nil, sessionOptionOldClient))
+	t.Run("TestUnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, nil, sessionOptionOldClient))
+	t.Run("TestAttributeByteEncoding", curry(testAttributeByteEncoding, nil, sessionOptionOldClient))
+	t.Run("TestIssuedCredentialIsStored", curry(testIssuedCredentialIsStored, nil, sessionOptionOldClient))
+	t.Run("TestDisablePairing", curry(testDisablePairing, nil, sessionOptionOldClient))
 
-	t.Run("TestSigningSession", TestSigningSession)
-	t.Run("TestDisclosureSession", TestDisclosureSession)
-	t.Run("TestNoAttributeDisclosureSession", TestNoAttributeDisclosureSession)
-	t.Run("TestEmptyDisclosure", TestEmptyDisclosure)
-	t.Run("TestIssuanceSession", TestIssuanceSession)
-	t.Run("TestMultipleIssuanceSession", TestMultipleIssuanceSession)
-	t.Run("TestDefaultCredentialValidity", TestDefaultCredentialValidity)
-	t.Run("TestIssuanceDisclosureEmptyAttributes", TestIssuanceDisclosureEmptyAttributes)
-	t.Run("TestIssuanceOptionalZeroLengthAttributes", TestIssuanceOptionalZeroLengthAttributes)
-	t.Run("TestIssuanceOptionalSetAttributes", TestIssuanceOptionalSetAttributes)
-	t.Run("TestIssuanceSameAttributesNotSingleton", TestIssuanceSameAttributesNotSingleton)
-	t.Run("TestIssuancePairing", TestIssuancePairing)
-	t.Run("TestLargeAttribute", TestLargeAttribute)
-	t.Run("TestIssuanceSingletonCredential", TestIssuanceSingletonCredential)
-	t.Run("TestUnsatisfiableDisclosureSession", TestUnsatisfiableDisclosureSession)
-	t.Run("TestAttributeByteEncoding", TestAttributeByteEncoding)
-	t.Run("TestOutdatedClientIrmaConfiguration", TestOutdatedClientIrmaConfiguration)
-	t.Run("TestDisclosureNewAttributeUpdateSchemeManager", TestDisclosureNewAttributeUpdateSchemeManager)
-	t.Run("TestIssueNewAttributeUpdateSchemeManager", TestIssueNewAttributeUpdateSchemeManager)
-	t.Run("TestIssueOptionalAttributeUpdateSchemeManager", TestIssueOptionalAttributeUpdateSchemeManager)
-	t.Run("TestIssueNewCredTypeUpdateSchemeManager", TestIssueNewCredTypeUpdateSchemeManager)
-	t.Run("TestDisclosureNewCredTypeUpdateSchemeManager", TestDisclosureNewCredTypeUpdateSchemeManager)
-	t.Run("TestDisclosureNonexistingCredTypeUpdateSchemeManager", TestDisclosureNonexistingCredTypeUpdateSchemeManager)
-	t.Run("TestStaticQRSession", TestStaticQRSession)
-	t.Run("TestIssuedCredentialIsStored", TestIssuedCredentialIsStored)
-	t.Run("TestPOSTSizeLimit", TestPOSTSizeLimit)
-	t.Run("TestDisablePairing", TestDisablePairing)
+	t.Run("TestOutdatedClientIrmaConfiguration", curry(testOutdatedClientIrmaConfiguration, IrmaServerConfiguration, sessionOptionOldClient))
+	t.Run("TestDisclosureNewAttributeUpdateSchemeManager", curry(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration, sessionOptionOldClient))
+
+	t.Run("TestStaticQRSession", curry(testStaticQRSession, nil, sessionOptionOldClient))
 }

@@ -36,6 +36,12 @@ var (
 	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
 )
 
+type IrmaServer struct {
+	irma *irmaserver.Server
+	http *http.Server
+	conf *server.Configuration
+}
+
 func init() {
 	common.ForceHTTPS = false // globally disable https enforcement
 	irma.SetLogger(logger)
@@ -59,20 +65,12 @@ func StartRequestorServer(t *testing.T, configuration *requestorserver.Configura
 	return requestorServer
 }
 
-type IrmaServer struct {
-	irma *irmaserver.Server
-	http *http.Server
-	conf *server.Configuration
-}
-
-func StartIrmaServer(t *testing.T, conf *requestorserver.Configuration) *IrmaServer {
+func StartIrmaServer(t *testing.T, conf *server.Configuration) *IrmaServer {
 	if conf == nil {
 		conf = IrmaServerConfiguration()
 	}
-	conf.Configuration.URL = "http://localhost:48680"
 
-	irmaServer, err := irmaserver.New(conf.Configuration)
-
+	irmaServer, err := irmaserver.New(conf)
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()
@@ -83,7 +81,7 @@ func StartIrmaServer(t *testing.T, conf *requestorserver.Configuration) *IrmaSer
 	}()
 	return &IrmaServer{
 		irma: irmaServer,
-		conf: conf.Configuration,
+		conf: conf,
 		http: httpServer,
 	}
 }
@@ -186,33 +184,39 @@ func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey) *http.Server
 	return s
 }
 
-var IrmaServerConfiguration = func() *requestorserver.Configuration {
-	return &requestorserver.Configuration{
-		Configuration: &server.Configuration{
-			URL:                   "http://localhost:48682/irma",
-			Logger:                logger,
-			DisableSchemesUpdate:  true,
-			SchemesPath:           filepath.Join(testdata, "irma_configuration"),
-			IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-			RevocationSettings: irma.RevocationSettings{
-				revocationTestCred:  {RevocationServerURL: "http://localhost:48683", SSE: true},
-				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
-			},
-			JwtPrivateKeyFile: jwtPrivkeyPath,
-			StaticSessions: map[string]interface{}{
-				"staticsession": irma.ServiceProviderRequest{
-					RequestorBaseRequest: irma.RequestorBaseRequest{
-						CallbackURL: "http://localhost:48685",
-					},
-					Request: &irma.DisclosureRequest{
-						BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
-						Disclose: irma.AttributeConDisCon{
-							{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
-						},
+func IrmaServerConfiguration() *server.Configuration {
+	return &server.Configuration{
+		URL:                   "http://localhost:48680",
+		Logger:                logger,
+		DisableSchemesUpdate:  true,
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		RevocationSettings: irma.RevocationSettings{
+			revocationTestCred:  {RevocationServerURL: "http://localhost:48683", SSE: true},
+			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
+		},
+		JwtPrivateKeyFile: jwtPrivkeyPath,
+		StaticSessions: map[string]interface{}{
+			"staticsession": irma.ServiceProviderRequest{
+				RequestorBaseRequest: irma.RequestorBaseRequest{
+					CallbackURL: "http://localhost:48685",
+				},
+				Request: &irma.DisclosureRequest{
+					BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
+					Disclose: irma.AttributeConDisCon{
+						{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
 					},
 				},
 			},
 		},
+	}
+}
+
+func RequestorServerConfiguration() *requestorserver.Configuration {
+	irmaServerConf := IrmaServerConfiguration()
+	irmaServerConf.URL = "http://localhost:48682/irma"
+	return &requestorserver.Configuration{
+		Configuration:                  irmaServerConf,
 		DisableRequestorAuthentication: true,
 		ListenAddress:                  "localhost",
 		Port:                           48682,
@@ -225,8 +229,8 @@ var IrmaServerConfiguration = func() *requestorserver.Configuration {
 	}
 }
 
-var IrmaServerAuthConfiguration = func() *requestorserver.Configuration {
-	conf := IrmaServerConfiguration()
+func RequestorServerAuthConfiguration() *requestorserver.Configuration {
+	conf := RequestorServerConfiguration()
 	conf.DisableRequestorAuthentication = false
 	conf.Requestors = map[string]requestorserver.Requestor{
 		"requestor1": {

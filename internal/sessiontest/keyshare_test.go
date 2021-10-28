@@ -25,7 +25,7 @@ func TestManualKeyshareSession(t *testing.T) {
 func TestRequestorIssuanceKeyshareSession(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
-	testRequestorIssuance(t, true, nil)
+	doIssuanceSession(t, true, nil, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {
@@ -46,7 +46,7 @@ func TestKeyshareRegister(t *testing.T) {
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
-	requestorSessionHelper(t, getIssuanceRequest(true), client, irmaServer)
+	doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil)
 	keyshareSessions(t, client, irmaServer)
 }
 
@@ -73,15 +73,15 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaS
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
-	requestorSessionHelper(t, issuanceRequest, client, irmaServer)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
 
 	disclosureRequest := getDisclosureRequest(id)
 	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	requestorSessionHelper(t, disclosureRequest, client, irmaServer)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
 
 	sigRequest := getSigningRequest(id)
 	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	requestorSessionHelper(t, sigRequest, client, irmaServer)
+	doSession(t, sigRequest, client, irmaServer, nil, nil, nil)
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
@@ -92,7 +92,7 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
-	requestorSessionHelper(t, request, nil, irmaServer)
+	doSession(t, request, nil, irmaServer, nil, nil, nil)
 
 	id = irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request = irma.NewIssuanceRequest([]*irma.CredentialRequest{
@@ -103,5 +103,5 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 			},
 		},
 	}, id)
-	requestorSessionHelper(t, request, nil, irmaServer)
+	doSession(t, request, nil, irmaServer, nil, nil, nil)
 }

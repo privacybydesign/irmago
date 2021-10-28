@@ -115,7 +115,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 	defer test.ClearTestStorage(t, handler.storage)
 
 	// First, we need to issue an extra credential (BSN)
-	sessionHelper(t, getMultipleIssuanceRequest(), client)
+	doSession(t, getMultipleIssuanceRequest(), client, nil, nil, nil, nil)
 
 	// Request to sign with both BSN and StudentID
 	request := irma.NewSignatureRequest("I owe you everything",

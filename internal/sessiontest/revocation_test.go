@@ -33,7 +33,7 @@ var (
 func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler, server *irmaserver.Server) {
 	// issue first credential
 	credid := attr.CredentialTypeIdentifier()
-	result := requestorSessionHelper(t, revocationIssuanceRequest(t, credid), client, nil)
+	result := doSession(t, revocationIssuanceRequest(t, credid), client, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	// Issue second credential, which may overwrite the first one in case of singleton credtypes.
@@ -42,7 +42,7 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	issrequest := revocationIssuanceRequest(t, credid)
 	key := issrequest.Credentials[0].RevocationKey
 	issrequest.Credentials[0].RevocationKey = key + "2"
-	result = requestorSessionHelper(t, issrequest, client, nil)
+	result = doSession(t, issrequest, client, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	// perform disclosure session (of key2) with nonrevocation proof
@@ -105,7 +105,7 @@ func TestRevocationAll(t *testing.T) {
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
 		request := revocationIssuanceRequest(t, revocationTestCred)
-		result := requestorSessionHelper(t, request, client, revServer)
+		result := doSession(t, request, client, revServer, nil, nil, nil)
 		require.Nil(t, result.Err)
 
 		// do disclosure and signature sessions
@@ -146,12 +146,15 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("AttributeBasedSignature", func(t *testing.T) {
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
+
 		revServer, client, handler := revocationSetup(t, nil)
 		defer test.ClearTestStorage(t, handler.storage)
 		defer revServer.Stop()
 
 		request := revocationSigRequest()
-		result := revocationSession(t, client, request, nil)
+		result := revocationSession(t, client, request, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 		require.NotNil(t, result.Signature)
@@ -549,7 +552,11 @@ func TestRevocationAll(t *testing.T) {
 		require.NotNil(t, result.Disclosed[0][0])
 		require.True(t, result.Disclosed[0][0].NotRevoked)
 		require.NotNil(t, result.Disclosed[0][0].NotRevokedBefore)
-		require.True(t, result.Disclosed[0][0].NotRevokedBefore.After(irma.Timestamp(start)))
+
+		// notRevokedBefore is truncated, so also truncate the start time to get a sensible comparison
+		start = start.Truncate(time.Second)
+		notRevokedBefore := (*time.Time)(result.Disclosed[0][0].NotRevokedBefore)
+		require.True(t, notRevokedBefore.Equal(start) || notRevokedBefore.After(start))
 	})
 
 	t.Run("Cache", func(t *testing.T) {
@@ -603,12 +610,12 @@ func TestRevocationAll(t *testing.T) {
 		credtyp.AttributeTypes = credtyp.AttributeTypes[:len(credtyp.AttributeTypes)-1]
 
 		// Issue non-revocation-aware credential instance
-		result := requestorSessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+		result := doSession(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 			CredentialTypeID: revocationTestCred,
 			Attributes: map[string]string{
 				"BSN": "299792458",
 			},
-		}}), client, irmaServer)
+		}}), client, irmaServer, nil, nil, nil)
 		require.Nil(t, result.Err)
 
 		// Restore revocation setup
@@ -693,7 +700,7 @@ func revocationSession(t *testing.T, client *irmaclient.Client, request irma.Ses
 	if request == nil {
 		request = revocationRequest(revocationTestAttr)
 	}
-	result := requestorSessionHelper(t, request, client, irmaServer, options...)
+	result := doSession(t, request, client, irmaServer, nil, nil, nil, options...)
 	if processOptions(options...)&sessionOptionIgnoreError == 0 && result.SessionResult != nil {
 		require.Nil(t, result.Err)
 	}
@@ -706,7 +713,7 @@ func revocationSetup(t *testing.T, irmaServer *IrmaServer) (*IrmaServer, *irmacl
 
 	// issue a MijnOverheid.root instance with revocation enabled
 	client, handler := parseStorage(t)
-	result := requestorSessionHelper(t, revocationIssuanceRequest(t, revocationTestCred), client, irmaServer)
+	result := doSession(t, revocationIssuanceRequest(t, revocationTestCred), client, irmaServer, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	return revServer, client, handler
