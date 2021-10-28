@@ -86,15 +86,15 @@ func startLoadBalancer(t *testing.T, irmaServers []int) *http.Server {
 
 func TestRedis(t *testing.T) {
 	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	defaultJwtServerConfiguration := JwtServerConfiguration
+	defaultJwtServerConfiguration := IrmaServerAuthConfiguration
 
 	mr := startRedis(t)
 	IrmaServerConfiguration = redisConfigDecorator(mr, IrmaServerConfiguration)
-	JwtServerConfiguration = redisConfigDecorator(mr, JwtServerConfiguration)
+	IrmaServerAuthConfiguration = redisConfigDecorator(mr, IrmaServerAuthConfiguration)
 	defer func() {
 		mr.Close()
 		IrmaServerConfiguration = defaultIrmaServerConfiguration
-		JwtServerConfiguration = defaultJwtServerConfiguration
+		IrmaServerAuthConfiguration = defaultJwtServerConfiguration
 	}()
 
 	t.Run("TestSigningSession", TestSigningSession)
@@ -266,7 +266,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 func TestRedisHTTPErrors(t *testing.T) {
 	mr := startRedis(t)
 
-	config := redisConfigDecorator(mr, JwtServerConfiguration)()
+	config := redisConfigDecorator(mr, IrmaServerAuthConfiguration)()
 	rs := StartRequestorServer(t, config)
 	defer rs.Stop()
 

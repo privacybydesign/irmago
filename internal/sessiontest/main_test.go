@@ -203,7 +203,7 @@ func sessionHelperWithFrontendOptions(
 	frontendOptionsHandler func(handler *TestHandler),
 	pairingHandler func(handler *TestHandler),
 ) string {
-	return sessionHelperWithFrontendOptionsAndConfig(t, request, client, frontendOptionsHandler, pairingHandler, JwtServerConfiguration())
+	return sessionHelperWithFrontendOptionsAndConfig(t, request, client, frontendOptionsHandler, pairingHandler, IrmaServerAuthConfiguration())
 }
 
 func sessionHelperWithFrontendOptionsAndConfig(

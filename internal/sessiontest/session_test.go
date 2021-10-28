@@ -510,7 +510,7 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 func TestStaticQRSession(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	rs := StartRequestorServer(t, JwtServerConfiguration())
+	rs := StartRequestorServer(t, IrmaServerAuthConfiguration())
 	defer rs.Stop()
 
 	// start server to receive session result callback after the session

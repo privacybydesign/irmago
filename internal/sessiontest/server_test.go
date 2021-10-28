@@ -212,31 +212,6 @@ var IrmaServerConfiguration = func() *requestorserver.Configuration {
 				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
 			},
 			JwtPrivateKeyFile: jwtPrivkeyPath,
-		},
-		DisableRequestorAuthentication: true,
-		ListenAddress:                  "localhost",
-		Port:                           48682,
-		Permissions: requestorserver.Permissions{
-			Disclosing: []string{"*"},
-			Signing:    []string{"*"},
-			Issuing:    []string{"*"},
-		},
-	}
-}
-
-var JwtServerConfiguration = func() *requestorserver.Configuration {
-	return &requestorserver.Configuration{
-		Configuration: &server.Configuration{
-			URL:                   "http://localhost:48682/irma",
-			Logger:                logger,
-			DisableSchemesUpdate:  true,
-			SchemesPath:           filepath.Join(testdata, "irma_configuration"),
-			IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-			RevocationSettings: irma.RevocationSettings{
-				revocationTestCred:  {RevocationServerURL: "http://localhost:48683"},
-				revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
-			},
-			JwtPrivateKeyFile: jwtPrivkeyPath,
 			StaticSessions: map[string]interface{}{
 				"staticsession": irma.ServiceProviderRequest{
 					RequestorBaseRequest: irma.RequestorBaseRequest{
@@ -251,28 +226,34 @@ var JwtServerConfiguration = func() *requestorserver.Configuration {
 				},
 			},
 		},
+		DisableRequestorAuthentication: true,
 		ListenAddress:                  "localhost",
 		Port:                           48682,
-		DisableRequestorAuthentication: false,
 		MaxRequestAge:                  3,
 		Permissions: requestorserver.Permissions{
 			Disclosing: []string{"*"},
 			Signing:    []string{"*"},
 			Issuing:    []string{"*"},
 		},
-		Requestors: map[string]requestorserver.Requestor{
-			"requestor1": {
-				AuthenticationMethod:  requestorserver.AuthenticationMethodPublicKey,
-				AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
-			},
-			"requestor2": {
-				AuthenticationMethod: requestorserver.AuthenticationMethodToken,
-				AuthenticationKey:    TokenAuthenticationKey,
-			},
-			"requestor3": {
-				AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
-				AuthenticationKey:    HmacAuthenticationKey,
-			},
+	}
+}
+
+var IrmaServerAuthConfiguration = func() *requestorserver.Configuration {
+	conf := IrmaServerConfiguration()
+	conf.DisableRequestorAuthentication = false
+	conf.Requestors = map[string]requestorserver.Requestor{
+		"requestor1": {
+			AuthenticationMethod:  requestorserver.AuthenticationMethodPublicKey,
+			AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
+		},
+		"requestor2": {
+			AuthenticationMethod: requestorserver.AuthenticationMethodToken,
+			AuthenticationKey:    TokenAuthenticationKey,
+		},
+		"requestor3": {
+			AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
+			AuthenticationKey:    HmacAuthenticationKey,
 		},
 	}
+	return conf
 }
