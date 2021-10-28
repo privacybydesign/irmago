@@ -26,7 +26,7 @@ import (
 func TestSigningSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getSigningRequest(id)
-	sessionHelper(t, request, "signature", nil)
+	sessionHelper(t, request, nil)
 }
 
 func TestDisclosureSession(t *testing.T) {
@@ -36,7 +36,7 @@ func TestDisclosureSession(t *testing.T) {
 	require.NoError(t, err)
 	sk, err := jwt.ParseRSAPrivateKeyFromPEM(bts)
 	require.NoError(t, err)
-	responseString := sessionHelper(t, request, "verification", nil)
+	responseString := sessionHelper(t, request, nil)
 
 	// Validate JWT
 	claims := struct {
@@ -55,7 +55,7 @@ func TestDisclosureSession(t *testing.T) {
 func TestNoAttributeDisclosureSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard")
 	request := getDisclosureRequest(id)
-	sessionHelper(t, request, "verification", nil)
+	sessionHelper(t, request, nil)
 }
 
 func TestEmptyDisclosure(t *testing.T) {
@@ -80,19 +80,19 @@ func TestEmptyDisclosure(t *testing.T) {
 func TestIssuanceSession(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
-	sessionHelper(t, request, "issue", nil)
+	sessionHelper(t, request, nil)
 }
 
 func TestMultipleIssuanceSession(t *testing.T) {
 	request := getMultipleIssuanceRequest()
-	sessionHelper(t, request, "issue", nil)
+	sessionHelper(t, request, nil)
 }
 
 func TestDefaultCredentialValidity(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 	request := getIssuanceRequest(true)
-	sessionHelper(t, request, "issue", client)
+	sessionHelper(t, request, client)
 }
 
 func TestIssuanceDisclosureEmptyAttributes(t *testing.T) {
@@ -100,7 +100,7 @@ func TestIssuanceDisclosureEmptyAttributes(t *testing.T) {
 	defer test.ClearTestStorage(t, handler.storage)
 
 	req := getNameIssuanceRequest()
-	sessionHelper(t, req, "issue", client)
+	sessionHelper(t, req, client)
 
 	// Test disclosing our null attribute
 	req2 := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.prefix"))
@@ -112,13 +112,13 @@ func TestIssuanceDisclosureEmptyAttributes(t *testing.T) {
 func TestIssuanceOptionalZeroLengthAttributes(t *testing.T) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = ""
-	sessionHelper(t, req, "issue", nil)
+	sessionHelper(t, req, nil)
 }
 
 func TestIssuanceOptionalSetAttributes(t *testing.T) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = "van"
-	sessionHelper(t, req, "issue", nil)
+	sessionHelper(t, req, nil)
 }
 
 func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
@@ -128,10 +128,10 @@ func TestIssuanceSameAttributesNotSingleton(t *testing.T) {
 	prevLen := len(client.CredentialInfoList())
 
 	req := getIssuanceRequest(true)
-	sessionHelper(t, req, "issue", client)
+	sessionHelper(t, req, client)
 
 	req = getIssuanceRequest(false)
-	sessionHelper(t, req, "issue", client)
+	sessionHelper(t, req, client)
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 
 	// Also check whether this is actually stored
@@ -178,7 +178,7 @@ func TestIssuancePairing(t *testing.T) {
 		err = handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
 		require.NoError(t, err)
 	}
-	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, pairingHandler)
+	sessionHelperWithFrontendOptions(t, request, nil, frontendOptionsHandler, pairingHandler)
 }
 
 func TestLargeAttribute(t *testing.T) {
@@ -189,10 +189,10 @@ func TestLargeAttribute(t *testing.T) {
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 
 	issuanceRequest := getSpecialIssuanceRequest(false, "1234567890123456789012345678901234567890") // 40 chars
-	sessionHelper(t, issuanceRequest, "issue", client)
+	sessionHelper(t, issuanceRequest, client)
 
 	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
-	sessionHelper(t, disclosureRequest, "verification", client)
+	sessionHelper(t, disclosureRequest, client)
 }
 
 func TestIssuanceSingletonCredential(t *testing.T) {
@@ -211,11 +211,11 @@ func TestIssuanceSingletonCredential(t *testing.T) {
 
 	require.Nil(t, client.Attributes(credid, 0))
 
-	sessionHelper(t, request, "issue", client)
+	sessionHelper(t, request, client)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 
-	sessionHelper(t, request, "issue", client)
+	sessionHelper(t, request, client)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 
@@ -277,7 +277,7 @@ func TestAttributeByteEncoding(t *testing.T) {
 	significant (sign) bit. We test that the Java implementation correctly removes the extraneous
 	0 byte. */
 	request := getSpecialIssuanceRequest(false, "a23456789012345678901234567890")
-	sessionHelper(t, request, "issue", client)
+	sessionHelper(t, request, client)
 
 	/* After converting the attribute below to bytes (using UTF8, on which Java and Go do agree),
 	the most significant bit of the byte version of this attribute is 1. In the []byte->bigint
@@ -286,7 +286,7 @@ func TestAttributeByteEncoding(t *testing.T) {
 	here that the Java correctly prepends a 0 byte just before this conversion in order to get
 	the same positive bigint. */
 	request = getSpecialIssuanceRequest(false, "é")
-	sessionHelper(t, request, "issue", client)
+	sessionHelper(t, request, client)
 }
 
 func TestOutdatedClientIrmaConfiguration(t *testing.T) {
@@ -549,12 +549,12 @@ func TestIssuedCredentialIsStored(t *testing.T) {
 	defer test.ClearTestStorage(t, handler.storage)
 
 	issuanceRequest := getNameIssuanceRequest()
-	sessionHelper(t, issuanceRequest, "issue", client)
+	sessionHelper(t, issuanceRequest, client)
 	require.NoError(t, client.Close())
 
 	client, handler = parseExistingStorage(t, handler.storage)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
-	sessionHelper(t, getDisclosureRequest(id), "verification", client)
+	sessionHelper(t, getDisclosureRequest(id), client)
 }
 
 func TestBlindIssuanceSession(t *testing.T) {
@@ -589,7 +589,7 @@ func TestBlindIssuanceSession(t *testing.T) {
 	// Make the request valid
 	delete(request.Credentials[0].Attributes, "votingnumber")
 
-	sessionHelper(t, request, "issue", client)
+	sessionHelper(t, request, client)
 	attrList := client.Attributes(credID, 0)
 
 	// Since attrList.Ints does not include the secret key,
@@ -704,5 +704,5 @@ func TestDisablePairing(t *testing.T) {
 		_ = setPairingMethod(irma.PairingMethodPin, handler)
 		_ = setPairingMethod(irma.PairingMethodNone, handler)
 	}
-	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, nil)
+	sessionHelperWithFrontendOptions(t, request, nil, frontendOptionsHandler, nil)
 }

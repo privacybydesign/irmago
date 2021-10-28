@@ -198,7 +198,6 @@ func getJwt(t *testing.T, request irma.SessionRequest, alg jwt.SigningMethod) st
 func sessionHelperWithFrontendOptions(
 	t *testing.T,
 	request irma.SessionRequest,
-	sessiontype string,
 	client *irmaclient.Client,
 	frontendOptionsHandler func(handler *TestHandler),
 	pairingHandler func(handler *TestHandler),
@@ -263,8 +262,8 @@ func sessionHelperWithFrontendOptionsAndConfig(
 	return res
 }
 
-func sessionHelper(t *testing.T, request irma.SessionRequest, sessiontype string, client *irmaclient.Client) string {
-	return sessionHelperWithFrontendOptions(t, request, sessiontype, client, nil, nil)
+func sessionHelper(t *testing.T, request irma.SessionRequest, client *irmaclient.Client) string {
+	return sessionHelperWithFrontendOptions(t, request, client, nil, nil)
 }
 
 func extractClientTransport(dismisser irmaclient.SessionDismisser) *irma.HTTPTransport {

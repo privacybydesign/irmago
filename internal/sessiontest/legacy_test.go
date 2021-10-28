@@ -18,21 +18,21 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	// Test whether credential from legacy storage is still usable
 	idStudentCard := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(idStudentCard)
-	sessionHelper(t, request, "verification", client)
+	sessionHelper(t, request, client)
 
 	// Issue new credential
-	sessionHelper(t, getMultipleIssuanceRequest(), "issue", client)
+	sessionHelper(t, getMultipleIssuanceRequest(), client)
 
 	// Test whether credential is still there
 	idRoot := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
-	sessionHelper(t, getDisclosureRequest(idRoot), "verification", client)
+	sessionHelper(t, getDisclosureRequest(idRoot), client)
 
 	// Re-open client
 	require.NoError(t, client.Close())
 	client, handler = parseExistingStorage(t, handler.storage)
 
 	// Test whether credential is still there after the storage has been reloaded
-	sessionHelper(t, getDisclosureRequest(idRoot), "verification", client)
+	sessionHelper(t, getDisclosureRequest(idRoot), client)
 }
 
 func TestWithoutPairingSupport(t *testing.T) {
