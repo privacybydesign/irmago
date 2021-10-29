@@ -117,7 +117,7 @@ func (client *Client) nonrevUpdate(id irma.CredentialTypeIdentifier, updates map
 	lowest := map[uint]uint64{}
 	attrs := client.attrs(id)
 
-	// Per credential and issuer key counter we may posess multiple credential instances.
+	// Per credential and issuer key counter we may possess multiple credential instances.
 	// Of the nonrevocation witnesses of these, take the lowest index.
 	for i := 0; i < len(attrs); i++ {
 		cred, err := client.credential(id, i)
