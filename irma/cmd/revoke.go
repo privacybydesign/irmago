@@ -60,7 +60,11 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 		transport.SetHeader("Authorization", key)
 		err = transport.Post("revocation", nil, request)
 	case "hmac", "rsa":
-		sk, jwtalg, err := configureJWTKey(authmethod, key)
+		// Prevent that err is redeclared in the inner scope
+		sk, jwtalg, errJwtKey := configureJWTKey(authmethod, key)
+		if errJwtKey != nil {
+			die("failed to configure JWT key", errJwtKey)
+		}
 		j := irma.RevocationJwt{
 			ServerJwt: irma.ServerJwt{
 				ServerName: name,
@@ -68,9 +72,10 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 			},
 			Request: request,
 		}
-		jwtstr, err := j.Sign(jwtalg, sk)
-		if err != nil {
-			die("failed to sign JWT", err)
+		// Prevent that err is redeclared in the inner scope
+		jwtstr, errJwtSign := j.Sign(jwtalg, sk)
+		if errJwtSign != nil {
+			die("failed to sign JWT", errJwtSign)
 		}
 		err = transport.Post("revocation", nil, jwtstr)
 	default:

@@ -217,6 +217,9 @@ func (s *storage) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 	}
 	k := s.logEntryKeyToBytes(entry.ID)
 	v, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
 
 	return b.Put(k, v)
 }

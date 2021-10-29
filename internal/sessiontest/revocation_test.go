@@ -489,7 +489,7 @@ func TestRevocationAll(t *testing.T) {
 		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
 
 		// Check that issuance record is gone
-		rec, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
+		_, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
 		require.Equal(t, irma.ErrUnknownRevocationKey, err)
 	})
 
@@ -518,7 +518,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// revoke all remaining records, should be none left afterwards
 		require.NoError(t, rev.Revoke(revocationTestCred, "1", time.Time{}))
-		r2, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
+		_, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
 		require.Equal(t, irma.ErrUnknownRevocationKey, err)
 
 		// fetch and verify update message
