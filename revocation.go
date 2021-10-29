@@ -399,6 +399,9 @@ func (rs *RevocationStorage) revoke(tx sqlRevStorage, id CredentialTypeIdentifie
 
 	// get all relevant accumulators and events from the database
 	accs, events, err := rs.revokeReadRecords(tx, id, issrecords)
+	if err != nil {
+		return err
+	}
 
 	// For each issuance record, perform revocation, adding an Event and advancing the accumulator
 	for _, issrecord := range issrecords {

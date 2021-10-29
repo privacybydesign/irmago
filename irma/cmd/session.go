@@ -138,7 +138,7 @@ func libraryRequest(
 			return nil, errors.WrapPrefix(err, "Failed to start listening for session statuses", 0)
 		}
 
-		_, err = handlePairing(sessionOptions, statuschan, func() error {
+		err = handlePairing(sessionOptions, statuschan, func() error {
 			return irmaServer.PairingCompleted(requestorToken)
 		})
 		if err != nil {
@@ -200,9 +200,8 @@ func serverRequest(
 	go func() {
 		defer wg.Done()
 
-		var status irma.ServerStatus
 		if pairing {
-			status, err = handlePairing(sessionOptions, statuschan, func() error {
+			err = handlePairing(sessionOptions, statuschan, func() error {
 				err = frontendTransport.Post("frontend/pairingcompleted", nil, nil)
 				if err != nil {
 					return errors.WrapPrefix(err, "Failed to complete pairing", 0)
@@ -223,7 +222,7 @@ func serverRequest(
 		}
 
 		// Wait until client finishes
-		status = <-statuschan
+		status := <-statuschan
 		if status != irma.ServerStatusCancelled && status != irma.ServerStatusDone {
 			err = errors.Errorf("Unexpected status: %s", status)
 			return
@@ -277,8 +276,7 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 	return pkg.SessionPtr, pkg.FrontendRequest, transport, err
 }
 
-func handlePairing(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completePairing func() error) (
-	irma.ServerStatus, error) {
+func handlePairing(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completePairing func() error) error {
 	errorChan := make(chan error)
 	pairingStarted := false
 	for {
@@ -293,9 +291,9 @@ func handlePairing(options *irma.SessionOptions, statusChan chan irma.ServerStat
 			} else if status == irma.ServerStatusConnected && !pairingStarted {
 				fmt.Println("Pairing is not supported by the connected device.")
 			}
-			return status, nil
+			return nil
 		case err := <-errorChan:
-			return "", err
+			return err
 		}
 	}
 }
