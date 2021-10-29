@@ -213,7 +213,7 @@ const (
 	ErrorHTTPS = ErrorType("https")
 	// Invalid client JWT in first IRMA message
 	ErrorInvalidJWT = ErrorType("invalidJwt")
-	// Unkown session type (not disclosing, signing, or issuing)
+	// Unknown session type (not disclosing, signing, or issuing)
 	ErrorUnknownAction = ErrorType("unknownAction")
 	// Crypto error during calculation of our response (second IRMA message)
 	ErrorCrypto = ErrorType("crypto")

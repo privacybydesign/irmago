@@ -10,7 +10,7 @@ Arguments:   none
 Description: Check session status, fetching any pending errors from operations following IRMA sessions
 Returns:     - `expired` if user is not logged in
              - `ok` if user is logged in
-             - error text if an error occured during IRMA session processing
+             - error text if an error occurred during IRMA session processing
 
 -- IRMA LOGIN --
 POST /login/irma

@@ -305,7 +305,7 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 }
 
 // addCredential adds the specified credential to the Client, saving its signature
-// imediately, and optionally cm.attributes as well.
+// immediately, and optionally cm.attributes as well.
 func (client *Client) addCredential(cred *credential) (err error) {
 	id := irma.NewCredentialTypeIdentifier("")
 	if cred.CredentialType() != nil {
@@ -478,7 +478,7 @@ func (client *Client) RemoveStorage() error {
 
 // Attribute and credential getter methods
 
-// attrs returns cm.attributes[id], initializing it to an empty slice if neccesary
+// attrs returns cm.attributes[id], initializing it to an empty slice if necessary
 func (client *Client) attrs(id irma.CredentialTypeIdentifier) []*irma.AttributeList {
 	list, exists := client.attributes[id]
 	if !exists {
@@ -488,7 +488,7 @@ func (client *Client) attrs(id irma.CredentialTypeIdentifier) []*irma.AttributeL
 	return list
 }
 
-// creds returns cm.credentials[id], initializing it to an empty map if neccesary
+// creds returns cm.credentials[id], initializing it to an empty map if necessary
 func (client *Client) creds(id irma.CredentialTypeIdentifier) map[int]*credential {
 	list, exists := client.credentialsCache[id]
 	if !exists {
@@ -657,7 +657,7 @@ func (client *Client) addCredSuggestion(
 }
 
 // satsifiesCon returns:
-//  - if the attrs can satsify the conjunction (as long as it is usable),
+//  - if the attrs can satisfy the conjunction (as long as it is usable),
 //  - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
 //    a nonrevocation proof is required).
 func (client *Client) satisfiesCon(base *irma.BaseRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {

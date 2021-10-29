@@ -319,7 +319,7 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 	var attrval *string
 	credtype := metadata.CredentialType()
 	if credtype == nil {
-		return nil, nil, errors.New("ProofList contained a disclosure proof of an unkown credential type")
+		return nil, nil, errors.New("ProofList contained a disclosure proof of an unknown credential type")
 	}
 	if index == 1 {
 		attrid = NewAttributeTypeIdentifier(credtype.Identifier().String())
