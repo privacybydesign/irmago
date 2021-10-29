@@ -111,15 +111,15 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 	// Set minimum supported version to 2.5 if condiscon compatibility is required
 	minServer := minProtocolVersion
 	if !session.legacyCompatible {
-		minServer = &irma.ProtocolVersion{2, 5}
+		minServer = &irma.ProtocolVersion{Major: 2, Minor: 5}
 	}
 	// Set minimum to 2.6 if nonrevocation is required
 	if len(session.request.Base().Revocation) > 0 {
-		minServer = &irma.ProtocolVersion{2, 6}
+		minServer = &irma.ProtocolVersion{Major: 2, Minor: 6}
 	}
 	// Set minimum to 2.7 if chained session are used
 	if session.rrequest.Base().NextSession != nil {
-		minServer = &irma.ProtocolVersion{2, 7}
+		minServer = &irma.ProtocolVersion{Major: 2, Minor: 7}
 	}
 
 	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {
