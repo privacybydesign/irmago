@@ -108,14 +108,14 @@ You can override the default command by specifying command line options for `go 
 We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
 
 ## Using a local Redis datastore
-Irmago can either store session states in memory (default) or in a Redis datastore. For local testing purposes you can use the standard [Redis docker container](https://hub.docker.com/_/redis):
+`irmago` can either store session states in memory (default) or in a Redis datastore. For local testing purposes you can use the standard [Redis docker container](https://hub.docker.com/_/redis):
 
 ```
 docker pull redis
 docker run --name redis-test-instance -p 6379:6379 -d redis
 ```
 
-You can then start irmago with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
+You can then start `irma` with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
 
 ```
 irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password
