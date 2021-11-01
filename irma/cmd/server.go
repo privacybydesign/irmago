@@ -235,7 +235,7 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 		}
 
 		if conf.RedisSettings.Password = viper.GetString("redis_pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis_allow_empty_password") {
-			return nil, errors.New("When Redis is used as session data store, a Redis non-empty password must be specified with the --redis-pw flag. This restriction can be overwritten by setting the --redis-allow-empty-password flag to true.")
+			return nil, errors.New("When Redis is used as session data store, a non-empty Redis password must be specified with the --redis-pw flag. This restriction can be relaxed by setting the --redis-allow-empty-password flag to true.")
 		}
 
 		conf.RedisSettings.DB = viper.GetInt("redis_db")
