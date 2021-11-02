@@ -197,10 +197,13 @@ func StartSession(request interface{}, handler server.SessionHandler,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.StartSession(request, handler)
 }
-func (s *Server) StartSession(req interface{}, handler server.SessionHandler) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.startNextSession(req, handler, nil, "")
 }
-func (s *Server) startNextSession(req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+func (s *Server) startNextSession(
+	req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization,
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", nil, err
@@ -250,9 +253,13 @@ func (s *Server) startNextSession(req interface{}, handler server.SessionHandler
 	}
 	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.RequestorToken}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken, "clienttoken": session.ClientToken}).Info("Session request: ", server.ToJson(rrequest))
+		s.conf.Logger.
+			WithFields(logrus.Fields{"session": session.RequestorToken, "clienttoken": session.ClientToken}).
+			Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+		s.conf.Logger.
+			WithFields(logrus.Fields{"session": session.RequestorToken}).
+			Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	if handler != nil {
 		s.handlers[session.RequestorToken] = handler
@@ -281,7 +288,9 @@ func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (*server.S
 		return nil, err
 	}
 	if session == nil {
-		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session result requested of unknown session %s", requestorToken)))
+		err = UnknownSessionError(errors.Errorf("session result requested of unknown session %s", requestorToken))
+		_ = server.LogWarning(err)
+		return nil, err
 	}
 	return session.Result, nil
 }
@@ -296,7 +305,9 @@ func (s *Server) GetRequest(requestorToken irma.RequestorToken) (irma.RequestorR
 		return nil, err
 	}
 	if session == nil {
-		return nil, server.LogWarning(UnknownSessionError(errors.Errorf("session request requested of unknown session %s", requestorToken)))
+		err = UnknownSessionError(errors.Errorf("session request requested of unknown session %s", requestorToken))
+		_ = server.LogWarning(err)
+		return nil, err
 	}
 	return session.Rrequest, nil
 }

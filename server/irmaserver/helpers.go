@@ -32,11 +32,14 @@ import (
 
 func (session *session) markAlive() {
 	session.LastActive = time.Now()
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("Session marked active, expiry delayed")
+	session.conf.Logger.
+		WithFields(logrus.Fields{"session": session.RequestorToken}).
+		Debugf("Session marked active, expiry delayed")
 }
 
 func (session *session) setStatus(status irma.ServerStatus) {
-	session.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken, "prevStatus": session.PrevStatus, "status": status}).
+	session.conf.Logger.
+		WithFields(logrus.Fields{"session": session.RequestorToken, "prevStatus": session.PrevStatus, "status": status}).
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
