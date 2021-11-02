@@ -176,7 +176,7 @@ type ClientToken string
 
 // ParseClientToken parses a string to a ClientToken after validating the input.
 func ParseClientToken(input string) (ClientToken, error) {
-	if match, _ := regexp.MatchString(common.SessionTokenRegex, input); match {
+	if match := regexp.MustCompile(common.SessionTokenRegex).MatchString(input); match {
 		return ClientToken(input), nil
 	} else {
 		return "", errors.New("string did not pass input validation for clientToken")
@@ -185,7 +185,7 @@ func ParseClientToken(input string) (ClientToken, error) {
 
 // ParseRequestorToken parses a string to a ClientToken after validating the input.
 func ParseRequestorToken(input string) (RequestorToken, error) {
-	if match, _ := regexp.MatchString(common.SessionTokenRegex, input); match {
+	if match := regexp.MustCompile(common.SessionTokenRegex).MatchString(input); match {
 		return RequestorToken(input), nil
 	} else {
 		return "", errors.New("string did not pass input validation for requestorToken")
