@@ -46,7 +46,7 @@ type Configuration struct {
 	// DisabledRequestorSchemes keeps track of any error of the requestorscheme if it
 	// did not parse successfully
 	DisabledRequestorSchemes map[RequestorSchemeIdentifier]*SchemeManagerError
-	// DisabledSchemeManagers keeps track of schemes that did not parse  successfully
+	// DisabledSchemeManagers keeps track of schemes that did not parse successfully
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
 	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
 
