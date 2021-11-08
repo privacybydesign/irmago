@@ -287,11 +287,6 @@ func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (*server.S
 	if err != nil {
 		return nil, err
 	}
-	if session == nil {
-		err = &UnknownSessionError{requestorToken}
-		_ = server.LogWarning(err)
-		return nil, err
-	}
 	return session.Result, nil
 }
 
@@ -302,11 +297,6 @@ func GetRequest(requestorToken irma.RequestorToken) (irma.RequestorRequest, erro
 func (s *Server) GetRequest(requestorToken irma.RequestorToken) (irma.RequestorRequest, error) {
 	session, err := s.sessions.get(requestorToken)
 	if err != nil {
-		return nil, err
-	}
-	if session == nil {
-		err = &UnknownSessionError{requestorToken}
-		_ = server.LogWarning(err)
 		return nil, err
 	}
 	return session.Rrequest, nil
@@ -320,9 +310,6 @@ func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
 	session, err := s.sessions.get(requestorToken)
 	if err != nil {
 		return err
-	}
-	if session == nil {
-		return server.LogError(errors.Errorf("can't cancel unknown session %s", requestorToken))
 	}
 
 	// lock session
@@ -352,9 +339,6 @@ func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request 
 	if err != nil {
 		return nil, err
 	}
-	if session == nil {
-		return nil, server.LogError(errors.Errorf("can't set frontend options of unknown session %s", requestorToken))
-	}
 	options, err := session.updateFrontendOptions(request)
 	if err != nil {
 		return nil, err
@@ -375,9 +359,6 @@ func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
 	session, err := s.sessions.get(requestorToken)
 	if err != nil {
 		return err
-	}
-	if session == nil {
-		return server.LogError(errors.Errorf("can't complete pairing of unknown session %s", requestorToken))
 	}
 	err = session.pairingCompleted()
 	if err != nil {
@@ -431,16 +412,17 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 		}
 		session, storeError = s.sessions.clientGet(clientToken)
 	}
-	if session == nil {
-		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
-	}
 	if storeError != nil {
-		// In no flow, you should end up with an storeError. If you do, be alarmed!
-		// Only the Redis session store implementation actively uses these errors. As the Redis session store
-		// currently cannot be used in combination with SSE, there should be no storeError here.
-		// Furthermore, the specific storeError is already logged in `session.go` and does not have
-		// to be logged again.
-		return server.LogError(errors.Errorf("unexpectedly triggered error when trying to receive session %s", token))
+		if _, ok := storeError.(*RedisError); ok {
+			// In no flow, you should end up with an storeError. If you do, be alarmed!
+			// Only the Redis session store implementation actively uses these errors. As the Redis session store
+			// currently cannot be used in combination with SSE, there should be no storeError here.
+			// Furthermore, the specific storeError is already logged in `session.go` and does not have
+			// to be logged again.
+			return server.LogError(errors.Errorf("unexpectedly triggered error when trying to receive session %s", token))
+		} else {
+			return storeError
+		}
 	}
 	if session.Status.Finished() {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
@@ -470,9 +452,6 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (chan irma.Se
 	session, err := s.sessions.get(requestorToken)
 	if err != nil {
 		return nil, err
-	}
-	if session == nil {
-		return nil, server.LogError(errors.Errorf("can't get session status of unknown session %s", requestorToken))
 	}
 
 	statusChan := make(chan irma.ServerStatus, 4)

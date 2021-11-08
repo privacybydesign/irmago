@@ -96,11 +96,16 @@ func (err *RedisError) Error() string {
 }
 
 type UnknownSessionError struct {
-	token irma.RequestorToken
+	requestorToken irma.RequestorToken
+	clientToken    irma.ClientToken
 }
 
 func (err *UnknownSessionError) Error() string {
-	return fmt.Sprintf("session result requested of unknown session %s", err.token)
+	if err.requestorToken != "" {
+		return fmt.Sprintf("session result requested of unknown session %s", err.requestorToken)
+	} else {
+		return fmt.Sprintf("session result requested of unknown session with clientToken %s", err.clientToken)
+	}
 }
 
 const (
@@ -125,13 +130,22 @@ var (
 func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
-	return s.requestor[t], nil
+	if s.requestor[t] != nil {
+		return s.requestor[t], nil
+	} else {
+		return nil, server.LogError(&UnknownSessionError{t, ""})
+	}
 }
 
 func (s *memorySessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
-	return s.client[t], nil
+
+	if s.client[t] != nil {
+		return s.client[t], nil
+	} else {
+		return nil, server.LogError(&UnknownSessionError{"", t})
+	}
 }
 
 func (s *memorySessionStore) add(session *session) error {
@@ -222,8 +236,7 @@ func (s *memorySessionStore) deleteExpired() {
 func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
-		s.conf.Logger.WithFields(logrus.Fields{"session": t}).Debugf("no corresponding clientToken found in Redis datastore")
-		return nil, nil
+		return nil, server.LogError(&UnknownSessionError{t, ""})
 	} else if err != nil {
 		return nil, logAsRedisError(err)
 	}
@@ -240,8 +253,7 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
-		s.conf.Logger.Debugf("no session for clientToken [%s] found in Redis datastore", t)
-		return nil, nil
+		return nil, server.LogError(&UnknownSessionError{"", t})
 	} else if err != nil {
 		return nil, logAsRedisError(err)
 	}

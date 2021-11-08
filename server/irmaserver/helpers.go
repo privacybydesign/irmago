@@ -559,11 +559,11 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 
 			session, err := s.sessions.clientGet(token)
 			if err != nil {
-				server.WriteError(w, server.ErrorInternal, "")
-				return
-			}
-			if session == nil {
-				server.WriteError(w, server.ErrorSessionUnknown, "")
+				if _, ok := err.(*UnknownSessionError); ok {
+					server.WriteError(w, server.ErrorSessionUnknown, "")
+				} else {
+					server.WriteError(w, server.ErrorInternal, "")
+				}
 				return
 			}
 
@@ -574,6 +574,7 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 
 			// for certain endpoints read access for Redis without locking is sufficient
 			for _, e := range readOnly {
+				// TODO: kan dit mooier? s.conf.StoreType == "redis"
 				if strings.HasSuffix(r.URL.Path, e) && s.conf.StoreType == "redis" {
 					lock = false
 				}
@@ -588,6 +589,7 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 				}
 			}
 
+			// TODO: als we dit alleen met redis nodig hebben, kan het dan apart?
 			hashBefore := session.sessionData.hash()
 
 			defer func() {
@@ -607,6 +609,8 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 				}
 
 				if hashBefore != session.sessionData.hash() {
+					// TODO: story app + frontend to retry for internal server errors?
+					// logs where error occurs, no passing needed as not communicated with client
 					err = session.sessions.update(session)
 					if err != nil {
 						// Error already logged in update method.
