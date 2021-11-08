@@ -231,7 +231,7 @@ func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.
 		LoginEmailSubjects: map[string]string{
 			"en": "testsubject",
 		},
-		LoginEmailBaseURL: map[string]string{
+		LoginURL: map[string]string{
 			"en": "http://example.com/verify/",
 		},
 		DeleteEmailFiles: map[string]string{
