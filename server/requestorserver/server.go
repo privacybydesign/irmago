@@ -309,7 +309,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(irmaserver.UnknownSessionError); ok {
+		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
 		} else {
 			server.WriteError(w, server.ErrorInternal, "")
@@ -356,7 +356,7 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(irmaserver.UnknownSessionError); ok {
+		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
 		} else {
 			server.WriteError(w, server.ErrorInternal, "")
@@ -385,7 +385,7 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(irmaserver.UnknownSessionError); ok {
+		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
 		} else {
 			server.WriteError(w, server.ErrorInternal, "")
@@ -395,7 +395,7 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 
 	request, err := s.irmaserv.GetRequest(res.Token)
 	if err != nil {
-		if _, ok := err.(irmaserver.UnknownSessionError); ok {
+		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
 		} else {
 			server.WriteError(w, server.ErrorInternal, "")
@@ -431,7 +431,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(irmaserver.UnknownSessionError); ok {
+		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
 			server.WriteError(w, server.ErrorSessionUnknown, "")
 		} else {
 			server.WriteError(w, server.ErrorInternal, "")
@@ -576,7 +576,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	// Everything is authenticated and parsed, we're good to go!
 	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
 	if err != nil {
-		if _, ok := err.(irmaserver.RedisError); ok {
+		if _, ok := err.(*irmaserver.RedisError); ok {
 			server.WriteError(w, server.ErrorInternal, "")
 		} else {
 			server.WriteError(w, server.ErrorInvalidRequest, err.Error())

@@ -288,7 +288,7 @@ func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (*server.S
 		return nil, err
 	}
 	if session == nil {
-		err = UnknownSessionError(errors.Errorf("session result requested of unknown session %s", requestorToken))
+		err = &UnknownSessionError{requestorToken}
 		_ = server.LogWarning(err)
 		return nil, err
 	}
@@ -305,7 +305,7 @@ func (s *Server) GetRequest(requestorToken irma.RequestorToken) (irma.RequestorR
 		return nil, err
 	}
 	if session == nil {
-		err = UnknownSessionError(errors.Errorf("session request requested of unknown session %s", requestorToken))
+		err = &UnknownSessionError{requestorToken}
 		_ = server.LogWarning(err)
 		return nil, err
 	}

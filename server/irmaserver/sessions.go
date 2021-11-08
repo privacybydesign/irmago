@@ -3,6 +3,7 @@ package irmaserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/go-errors/errors"
 	"strings"
 	"sync"
@@ -86,12 +87,20 @@ type redisSessionStore struct {
 	conf   *server.Configuration
 }
 
-type RedisError interface {
-	Error() string
+type RedisError struct {
+	err error
 }
 
-type UnknownSessionError interface {
-	Error() string
+func (err *RedisError) Error() string {
+	return fmt.Sprintf("redis error: %s", err.err)
+}
+
+type UnknownSessionError struct {
+	token irma.RequestorToken
+}
+
+func (err *UnknownSessionError) Error() string {
+	return fmt.Sprintf("session result requested of unknown session %s", err.token)
 }
 
 const (
@@ -299,7 +308,7 @@ func (s *redisSessionStore) lock(session *session) error {
 	if err == redislock.ErrNotObtained {
 		// It is possible that the session is already locked. However, it should not happen often. If you get this warning often,
 		// you should investigate why.
-		return server.LogWarning(RedisError(err))
+		return server.LogWarning(&RedisError{err})
 	} else if err != nil {
 		return logAsRedisError(err)
 	}
@@ -392,5 +401,5 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, d
 }
 
 func logAsRedisError(err error) error {
-	return server.LogError(RedisError(err))
+	return server.LogError(&RedisError{err})
 }

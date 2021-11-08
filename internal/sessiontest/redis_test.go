@@ -285,13 +285,13 @@ func TestRedisHTTPErrors(t *testing.T) {
 	// Check error response of requestor endpoints for sessions
 	transport.Server += "session/Sxqcpng37mAdBKgoAJXl/"
 	err = transport.Get("result", nil)
-	checkErrorSessionUnknown(t, err)
+	checkErrorInternal(t, err)
 	err = transport.Get("result-jwt", nil)
-	checkErrorSessionUnknown(t, err)
+	checkErrorInternal(t, err)
 	err = transport.Get("getproof", nil)
-	checkErrorSessionUnknown(t, err)
+	checkErrorInternal(t, err)
 	err = transport.Get("status", nil)
-	checkErrorSessionUnknown(t, err)
+	checkErrorInternal(t, err)
 	// TODO: Check for sse endpoint. We don't know yet whether this will be implemented for Redis.
 
 	// Check error response of irma endpoints
