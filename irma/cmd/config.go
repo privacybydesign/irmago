@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -61,7 +62,7 @@ func configureIRMAServer() *server.Configuration {
 		LogJSON:                viper.GetBool("log_json"),
 		Logger:                 logger,
 		Production:             viper.GetBool("production"),
-		MaxSessionLifetime:     viper.GetInt("max_session_lifetime"),
+		MaxSessionLifetime:     time.Duration(viper.GetInt("max_session_lifetime")) * time.Minute,
 		JwtIssuer:              viper.GetString("jwt_issuer"),
 		JwtPrivateKey:          viper.GetString("jwt_privkey"),
 		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
