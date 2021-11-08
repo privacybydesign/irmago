@@ -417,22 +417,30 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	}
 
 	var session *session
-	var err error
+	var storeError error
 	if requestor {
-		requestorToken, err := irma.ParseRequestorToken(token)
-		if err != nil {
-			return server.LogError(err)
+		requestorToken, e := irma.ParseRequestorToken(token)
+		if e != nil {
+			return server.LogError(e)
 		}
-		session, err = s.sessions.get(requestorToken)
+		session, storeError = s.sessions.get(requestorToken)
 	} else {
-		clientToken, err := irma.ParseClientToken(token)
-		if err != nil {
-			return server.LogError(err)
+		clientToken, e := irma.ParseClientToken(token)
+		if e != nil {
+			return server.LogError(e)
 		}
-		session, err = s.sessions.clientGet(clientToken)
+		session, storeError = s.sessions.clientGet(clientToken)
 	}
-	if session == nil || err != nil {
+	if session == nil {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
+	}
+	if storeError != nil {
+		// In no flow, you should end up with an storeError. If you do, be alarmed!
+		// Only the Redis session store implementation actively uses these errors. As the Redis session store
+		// currently cannot be used in combination with SSE, there should be no storeError here.
+		// Furthermore, the specific storeError is already logged in `session.go` and does not have
+		// to be logged again.
+		return server.LogError(errors.Errorf("unexpectedly triggered error when trying to receive session %s", token))
 	}
 	if session.Status.Finished() {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
