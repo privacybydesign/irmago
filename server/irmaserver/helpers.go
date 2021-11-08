@@ -364,12 +364,11 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	*s = sessionData(temp.rawSessionData)
-
 	if len(temp.Rrequest) == 0 {
-		s.Rrequest = nil
 		return errors.Errorf("temp.Rrequest == nil: %d \n", temp.Rrequest)
 	}
+
+	*s = sessionData(temp.rawSessionData)
 
 	// unmarshal Rrequest
 	switch s.Action {
