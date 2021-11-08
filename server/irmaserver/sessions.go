@@ -23,7 +23,7 @@ import (
 )
 
 type session struct {
-	sync.Mutex     `json:-`
+	sync.Mutex
 	sse            *sse.Server
 	locked         bool
 	lock           *redislock.Lock
