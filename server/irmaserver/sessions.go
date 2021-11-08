@@ -320,6 +320,7 @@ func (s *redisSessionStore) lock(session *session) error {
 }
 
 func (s *redisSessionStore) unlock(session *session) error {
+	session.locked = false
 	err := session.lock.Release(context.Background())
 	if err == redislock.ErrLockNotHeld {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("lock could not be released as the lock was not held")
