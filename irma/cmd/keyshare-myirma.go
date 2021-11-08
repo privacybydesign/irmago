@@ -109,7 +109,7 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 
 		LoginEmailSubjects:    viper.GetStringMapString("login_email_subjects"),
 		LoginEmailFiles:       viper.GetStringMapString("login_email_files"),
-		LoginEmailBaseURL:     viper.GetStringMapString("login_url"),
+		LoginURL:              viper.GetStringMapString("login_url"),
 		DeleteEmailFiles:      viper.GetStringMapString("delete_email_files"),
 		DeleteEmailSubjects:   viper.GetStringMapString("delete_email_subjects"),
 		DeleteAccountFiles:    viper.GetStringMapString("delete_account_files"),

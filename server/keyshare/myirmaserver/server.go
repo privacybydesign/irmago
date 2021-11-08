@@ -225,7 +225,7 @@ func (s *Server) sendLoginEmail(request emailLoginRequest) error {
 		return err
 	}
 
-	baseURL := s.conf.TranslateString(s.conf.LoginEmailBaseURL, request.Language)
+	baseURL := s.conf.TranslateString(s.conf.LoginURL, request.Language)
 	return s.conf.SendEmail(
 		s.conf.loginEmailTemplates,
 		s.conf.LoginEmailSubjects,
