@@ -203,6 +203,7 @@ func (s *Server) Handler() http.Handler {
 		r.Route("/session", func(r chi.Router) {
 			r.Post("/", s.handleCreateSession)
 			r.Route("/{requestorToken}", func(r chi.Router) {
+				r.Use(s.tokenMiddleware)
 				r.Delete("/", s.handleDelete)
 				r.Get("/status", s.handleStatus)
 				r.Get("/statusevents", s.handleStatusEvents)
@@ -273,6 +274,18 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	s.createSession(w, requestor, rrequest)
 }
 
+func (s *Server) tokenMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
+		if err != nil {
+			server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+			return
+		}
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "requestorToken", requestorToken)))
+	})
+}
+
 func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -302,11 +315,8 @@ func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
+	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
+
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
@@ -321,13 +331,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
-	requestorToken := chi.URLParam(r, "requestorToken")
+	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
+
 	s.conf.Logger.WithFields(logrus.Fields{"session": requestorToken}).Debug("new client subscribed to server sent events")
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
-		Arg:       requestorToken,
+		Arg:       string(requestorToken),
 	}))
-	if err := s.irmaserv.SubscribeServerSentEvents(w, r, requestorToken, true); err != nil {
+	if err := s.irmaserv.SubscribeServerSentEvents(w, r, string(requestorToken), true); err != nil {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      server.ErrorUnsupported.Status,
 			ErrorName:   string(server.ErrorUnsupported.Type),
@@ -337,23 +348,17 @@ func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
-	err = s.irmaserv.CancelSession(requestorToken)
+	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
+
+	err := s.irmaserv.CancelSession(requestorToken)
 	if err != nil {
 		server.WriteError(w, server.ErrorSessionUnknown, "")
 	}
 }
 
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
-	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
+	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
+
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
@@ -378,11 +383,8 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
+	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
+
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
@@ -424,11 +426,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestorToken, err := irma.ParseRequestorToken(chi.URLParam(r, "requestorToken"))
-	if err != nil {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
+	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
 		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
