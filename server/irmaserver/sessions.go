@@ -265,6 +265,7 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 		return nil, logAsRedisError(err)
 	}
 	session.request = session.Rrequest.SessionRequest()
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("Session received from Redis datastore")
 
 	if session.LastActive.Add(s.conf.MaxSessionLifetime).Before(time.Now()) && !session.Status.Finished() {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Session expired")
@@ -272,7 +273,6 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 		session.setStatus(irma.ServerStatusTimeout)
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("Session received from Redis datastores")
 	return &session, nil
 }
 
