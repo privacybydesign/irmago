@@ -245,7 +245,7 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 	if err != nil {
 		return nil, logAsRedisError(err)
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"session": t}).Debugf("clientToken [%s] found in Redis datastore", clientToken)
+	s.conf.Logger.WithFields(logrus.Fields{"session": t}).Debugf("clientToken %s found in Redis datastore", clientToken)
 
 	return s.clientGet(clientToken)
 }
@@ -305,11 +305,11 @@ func (s *redisSessionStore) add(session *session) error {
 func (s *redisSessionStore) update(session *session) error {
 	// Time passes between acquiring the lock and writing to Redis. Check before write action that lock is still valid.
 	if session.lock == nil {
-		return logAsRedisError(errors.Errorf("lock is not set for session with requestorToken [%s]", session.RequestorToken))
+		return logAsRedisError(errors.Errorf("lock is not set for session with requestorToken %s", session.RequestorToken))
 	} else if ttl, err := session.lock.TTL(context.Background()); err != nil {
 		return logAsRedisError(err)
 	} else if ttl == 0 {
-		return logAsRedisError(errors.Errorf("no session lock available for session with requestorToken [%s]", session.RequestorToken))
+		return logAsRedisError(errors.Errorf("no session lock available for session with requestorToken %s", session.RequestorToken))
 	}
 	return s.add(session)
 }
