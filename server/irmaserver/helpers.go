@@ -34,7 +34,7 @@ func (session *session) markAlive() {
 	session.LastActive = time.Now()
 	session.conf.Logger.
 		WithFields(logrus.Fields{"session": session.RequestorToken}).
-		Debugf("Session marked active, expiry delayed")
+		Debugf("Session marked active, deletion delayed")
 }
 
 func (session *session) setStatus(status irma.ServerStatus) {
