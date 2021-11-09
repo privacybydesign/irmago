@@ -316,11 +316,9 @@ func (s *redisSessionStore) update(session *session) error {
 
 func (s *redisSessionStore) lock(session *session) error {
 	lock, err := s.locker.Obtain(context.Background(), lockPrefix+string(session.ClientToken), maxLockLifetime, lockingRetryOptions)
-	if err == redislock.ErrNotObtained {
-		// It is possible that the session is already locked. However, it should not happen often. If you get this warning often,
-		// you should investigate why.
-		return server.LogWarning(&RedisError{err})
-	} else if err != nil {
+	if err != nil {
+		// It is possible that the session is already locked. However, it should not happen often.
+		// If you get the redislock.ErrNotObtained error often, you should investigate why.
 		return logAsRedisError(err)
 	}
 	session.locked = true
