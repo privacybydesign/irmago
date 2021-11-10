@@ -348,7 +348,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	err := s.irmaserv.CancelSession(requestorToken)
 	if err != nil {
-		server.WriteError(w, server.ErrorSessionUnknown, "")
+		mapToServerError(w, err)
 	}
 }
 
