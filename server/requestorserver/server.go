@@ -439,7 +439,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 
 	request, err := s.irmaserv.GetRequest(requestorToken)
 	if err != nil {
-		server.WriteError(w, server.ErrorInternal, "")
+		mapToServerError(w, err)
 		return
 	}
 	validity := request.Base().ResultJwtValidity
