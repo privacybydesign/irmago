@@ -55,8 +55,8 @@ func TestWithoutPairingSupport(t *testing.T) {
 	t.Run("TestIssuedCredentialIsStored", curry(testIssuedCredentialIsStored, nil, sessionOptionOldClient))
 	t.Run("TestDisablePairing", curry(testDisablePairing, nil, sessionOptionOldClient))
 
-	t.Run("TestOutdatedClientIrmaConfiguration", curry(testOutdatedClientIrmaConfiguration, IrmaServerConfiguration, sessionOptionOldClient))
-	t.Run("TestDisclosureNewAttributeUpdateSchemeManager", curry(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration, sessionOptionOldClient))
+	t.Run("TestOutdatedClientIrmaConfiguration", curry(testOutdatedClientIrmaConfiguration, IrmaLibraryConfiguration, sessionOptionOldClient))
+	t.Run("TestDisclosureNewAttributeUpdateSchemeManager", curry(testDisclosureNewAttributeUpdateSchemeManager, IrmaLibraryConfiguration, sessionOptionOldClient))
 
 	t.Run("TestStaticQRSession", curry(testStaticQRSession, nil, sessionOptionOldClient))
 }

@@ -96,13 +96,13 @@ func TestRedis(t *testing.T) {
 	mr := startRedis(t)
 	defer mr.Close()
 
-	t.Run("SigningSession", curry(testSigningSession, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
-	t.Run("DisclosureSession", curry(testDisclosureSession, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
-	t.Run("IssuanceSession", curry(testIssuanceSession, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
-	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, RequestorServerConfiguration)))
+	t.Run("SigningSession", curry(testSigningSession, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
+	t.Run("DisclosureSession", curry(testDisclosureSession, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
+	t.Run("IssuanceSession", curry(testIssuanceSession, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
+	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
 
-	t.Run("ChainedSessions", curry(testChainedSessions, redisConfigDecorator(mr, IrmaServerConfiguration)))
-	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, redisConfigDecorator(mr, IrmaServerConfiguration)))
+	t.Run("ChainedSessions", curry(testChainedSessions, redisConfigDecorator(mr, IrmaLibraryConfiguration)))
+	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, redisConfigDecorator(mr, IrmaLibraryConfiguration)))
 }
 
 func checkErrorInternal(t *testing.T, err error) {
@@ -125,7 +125,7 @@ func TestRedisUpdates(t *testing.T) {
 	mr := startRedis(t)
 	defer mr.Close()
 
-	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaServerConfiguration)())
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaLibraryConfiguration)())
 	defer irmaServer.Stop()
 	qr, token, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
@@ -167,7 +167,7 @@ func TestRedisRedundancy(t *testing.T) {
 	servers := make([]*requestorserver.Server, len(ports))
 
 	for i, port := range ports {
-		c := redisRequestorConfigDecorator(mr, RequestorServerAuthConfiguration)()
+		c := redisRequestorConfigDecorator(mr, JwtServerConfiguration)()
 		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", port)
 		c.Port = port
 		rs := StartRequestorServer(t, c)
@@ -195,7 +195,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaServerConfiguration)())
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaLibraryConfiguration)())
 	defer irmaServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -226,7 +226,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaServerConfiguration)())
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaLibraryConfiguration)())
 	defer irmaServer.Stop()
 
 	// Stop the Redis server early to check whether the IRMA server fails correctly
@@ -247,7 +247,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 func TestRedisHTTPErrors(t *testing.T) {
 	mr := startRedis(t)
 
-	config := redisRequestorConfigDecorator(mr, RequestorServerAuthConfiguration)()
+	config := redisRequestorConfigDecorator(mr, JwtServerConfiguration)()
 	rs := StartRequestorServer(t, config)
 	defer rs.Stop()
 

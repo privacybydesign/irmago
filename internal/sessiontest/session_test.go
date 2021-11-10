@@ -38,49 +38,49 @@ import (
 //   *testing.T, using the curry() function.
 
 func TestIrmaServer(t *testing.T) {
-	t.Run("DisclosureSession", curry(testDisclosureSession, RequestorServerConfiguration))
-	t.Run("NoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, RequestorServerConfiguration))
-	t.Run("EmptyDisclosure", curry(testEmptyDisclosure, RequestorServerConfiguration))
-	t.Run("SigningSession", curry(testSigningSession, RequestorServerConfiguration))
-	t.Run("IssuanceSession", curry(testIssuanceSession, RequestorServerConfiguration))
-	t.Run("MultipleIssuanceSession", curry(testMultipleIssuanceSession, RequestorServerConfiguration))
-	t.Run("DefaultCredentialValidity", curry(testDefaultCredentialValidity, RequestorServerConfiguration))
-	t.Run("IssuanceDisclosureEmptyAttributes", curry(testIssuanceDisclosureEmptyAttributes, RequestorServerConfiguration))
-	t.Run("IssuanceOptionalZeroLengthAttributes", curry(testIssuanceOptionalZeroLengthAttributes, RequestorServerConfiguration))
-	t.Run("IssuanceOptionalSetAttributes", curry(testIssuanceOptionalSetAttributes, RequestorServerConfiguration))
-	t.Run("IssuanceSameAttributesNotSingleton", curry(testIssuanceSameAttributesNotSingleton, RequestorServerConfiguration))
-	t.Run("IssuancePairing", curry(testIssuancePairing, RequestorServerConfiguration))
-	t.Run("LargeAttribute", curry(testLargeAttribute, RequestorServerConfiguration))
-	t.Run("IssuanceSingletonCredential", curry(testIssuanceSingletonCredential, RequestorServerConfiguration))
-	t.Run("UnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, RequestorServerConfiguration))
-	t.Run("AttributeByteEncoding", curry(testAttributeByteEncoding, RequestorServerConfiguration))
-	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, RequestorServerConfiguration))
-	t.Run("BlindIssuanceSession", curry(testBlindIssuanceSession, RequestorServerConfiguration))
-	t.Run("DisablePairing", curry(testDisablePairing, RequestorServerConfiguration))
-	t.Run("DisclosureMultipleAttrs", curry(testDisclosureMultipleAttrs, RequestorServerConfiguration))
-	t.Run("CombinedSessionMultipleAttributes", curry(testCombinedSessionMultipleAttributes, RequestorServerConfiguration))
-	t.Run("ConDisCon", curry(testConDisCon, RequestorServerConfiguration))
-	t.Run("OptionalDisclosure", curry(testOptionalDisclosure, RequestorServerConfiguration))
-}
-
-func TestIrmaLibrary(t *testing.T) {
-	// Tests supporting only the IRMA library
-	t.Run("ChainedSessions", curry(testChainedSessions, IrmaServerConfiguration))
-	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, IrmaServerConfiguration))
-	t.Run("DisclosureNewAttributeUpdateSchemeManager", curry(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration))
-	t.Run("BlindIssuanceSessionDifferentAmountOfRandomBlinds", curry(testBlindIssuanceSessionDifferentAmountOfRandomBlinds, IrmaServerConfiguration))
-	t.Run("OutdatedClientIrmaConfiguration", curry(testOutdatedClientIrmaConfiguration, IrmaServerConfiguration))
-
-	// Tests also run against the IRMA server
 	t.Run("DisclosureSession", curry(testDisclosureSession, IrmaServerConfiguration))
 	t.Run("NoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, IrmaServerConfiguration))
 	t.Run("EmptyDisclosure", curry(testEmptyDisclosure, IrmaServerConfiguration))
 	t.Run("SigningSession", curry(testSigningSession, IrmaServerConfiguration))
 	t.Run("IssuanceSession", curry(testIssuanceSession, IrmaServerConfiguration))
 	t.Run("MultipleIssuanceSession", curry(testMultipleIssuanceSession, IrmaServerConfiguration))
+	t.Run("DefaultCredentialValidity", curry(testDefaultCredentialValidity, IrmaServerConfiguration))
+	t.Run("IssuanceDisclosureEmptyAttributes", curry(testIssuanceDisclosureEmptyAttributes, IrmaServerConfiguration))
+	t.Run("IssuanceOptionalZeroLengthAttributes", curry(testIssuanceOptionalZeroLengthAttributes, IrmaServerConfiguration))
+	t.Run("IssuanceOptionalSetAttributes", curry(testIssuanceOptionalSetAttributes, IrmaServerConfiguration))
+	t.Run("IssuanceSameAttributesNotSingleton", curry(testIssuanceSameAttributesNotSingleton, IrmaServerConfiguration))
 	t.Run("IssuancePairing", curry(testIssuancePairing, IrmaServerConfiguration))
-	t.Run("DisablePairing", curry(testDisablePairing, IrmaServerConfiguration))
+	t.Run("LargeAttribute", curry(testLargeAttribute, IrmaServerConfiguration))
+	t.Run("IssuanceSingletonCredential", curry(testIssuanceSingletonCredential, IrmaServerConfiguration))
 	t.Run("UnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, IrmaServerConfiguration))
+	t.Run("AttributeByteEncoding", curry(testAttributeByteEncoding, IrmaServerConfiguration))
+	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, IrmaServerConfiguration))
+	t.Run("BlindIssuanceSession", curry(testBlindIssuanceSession, IrmaServerConfiguration))
+	t.Run("DisablePairing", curry(testDisablePairing, IrmaServerConfiguration))
+	t.Run("DisclosureMultipleAttrs", curry(testDisclosureMultipleAttrs, IrmaServerConfiguration))
+	t.Run("CombinedSessionMultipleAttributes", curry(testCombinedSessionMultipleAttributes, IrmaServerConfiguration))
+	t.Run("ConDisCon", curry(testConDisCon, IrmaServerConfiguration))
+	t.Run("OptionalDisclosure", curry(testOptionalDisclosure, IrmaServerConfiguration))
+}
+
+func TestIrmaLibrary(t *testing.T) {
+	// Tests supporting only the IRMA library
+	t.Run("ChainedSessions", curry(testChainedSessions, IrmaLibraryConfiguration))
+	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, IrmaLibraryConfiguration))
+	t.Run("DisclosureNewAttributeUpdateSchemeManager", curry(testDisclosureNewAttributeUpdateSchemeManager, IrmaLibraryConfiguration))
+	t.Run("BlindIssuanceSessionDifferentAmountOfRandomBlinds", curry(testBlindIssuanceSessionDifferentAmountOfRandomBlinds, IrmaLibraryConfiguration))
+	t.Run("OutdatedClientIrmaConfiguration", curry(testOutdatedClientIrmaConfiguration, IrmaLibraryConfiguration))
+
+	// Tests also run against the IRMA server
+	t.Run("DisclosureSession", curry(testDisclosureSession, IrmaLibraryConfiguration))
+	t.Run("NoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, IrmaLibraryConfiguration))
+	t.Run("EmptyDisclosure", curry(testEmptyDisclosure, IrmaLibraryConfiguration))
+	t.Run("SigningSession", curry(testSigningSession, IrmaLibraryConfiguration))
+	t.Run("IssuanceSession", curry(testIssuanceSession, IrmaLibraryConfiguration))
+	t.Run("MultipleIssuanceSession", curry(testMultipleIssuanceSession, IrmaLibraryConfiguration))
+	t.Run("IssuancePairing", curry(testIssuancePairing, IrmaLibraryConfiguration))
+	t.Run("DisablePairing", curry(testDisablePairing, IrmaLibraryConfiguration))
+	t.Run("UnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, IrmaLibraryConfiguration))
 
 	t.Run("StaticQRSession", curry(testStaticQRSession, nil)) // has its own configuration
 }
@@ -329,7 +329,7 @@ func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...sessionOp
 }
 
 func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ...sessionOption) {
-	require.IsType(t, IrmaServerConfiguration, conf)
+	require.IsType(t, IrmaLibraryConfiguration, conf)
 	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
 
 	client, handler := parseStorage(t, opts...)
@@ -348,7 +348,7 @@ func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ..
 }
 
 func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{}, opts ...sessionOption) {
-	require.IsType(t, IrmaServerConfiguration, conf)
+	require.IsType(t, IrmaLibraryConfiguration, conf)
 	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
 
 	client, handler := parseStorage(t, opts...)
@@ -410,7 +410,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
 
-	conf := IrmaServerConfiguration()
+	conf := IrmaLibraryConfiguration()
 	conf.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
 	conf.SchemesPath = storage
 
@@ -477,7 +477,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	irmaServer.Stop()
 
 	// Run a server with updated configuration (level is optional)
-	conf := IrmaServerConfiguration()
+	conf := IrmaLibraryConfiguration()
 	conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
 	irmaServer = StartIrmaServer(t, conf)
 	_, err = client.Configuration.Download(issuanceRequest)
@@ -557,7 +557,7 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 func testStaticQRSession(t *testing.T, _ interface{}, opts ...sessionOption) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
-	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
+	rs := StartRequestorServer(t, JwtServerConfiguration())
 	defer rs.Stop()
 
 	// start server to receive session result callback after the session
@@ -652,7 +652,7 @@ func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...sessionOpt
 // The server has updated configuration in which two randomblind attributes are present.
 // The client has only one. The client should notice and and abort the session.
 func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf interface{}, opts ...sessionOption) {
-	require.IsType(t, IrmaServerConfiguration, conf)
+	require.IsType(t, IrmaLibraryConfiguration, conf)
 	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
 
 	credID := irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas")
@@ -682,7 +682,7 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf in
 }
 
 func TestPOSTSizeLimit(t *testing.T) {
-	rs := StartRequestorServer(t, RequestorServerConfiguration())
+	rs := StartRequestorServer(t, IrmaServerConfiguration())
 	defer rs.Stop()
 
 	server.PostSizeLimit = 1 << 10
@@ -712,7 +712,7 @@ func testChainedSessions(t *testing.T, conf interface{}, opts ...sessionOption) 
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	require.IsType(t, IrmaServerConfiguration, conf)
+	require.IsType(t, IrmaLibraryConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
 	defer irmaServer.Stop()
 	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey)
@@ -739,7 +739,7 @@ func testChainedSessions(t *testing.T, conf interface{}, opts ...sessionOption) 
 
 // Test to check whether session stores (like Redis) correctly handle non-existing sessions
 func testUnknownRequestorToken(t *testing.T, conf interface{}, opts ...sessionOption) {
-	require.IsType(t, IrmaServerConfiguration, conf)
+	require.IsType(t, IrmaLibraryConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
 	defer irmaServer.Stop()
 

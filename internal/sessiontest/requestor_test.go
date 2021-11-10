@@ -18,9 +18,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TODO: restructure files:
+// - all test helper code (doSession & friends) to one file
+// - all configurable tests to one file
+// - all normal tests to one file
+// - decide where the rest of the infrastructure goes (server starting, configuration, the rest)
+
 type (
+	// TODO rename to option? (including constants)
 	sessionOption int
 
+	// TODO rename to stopper
 	stoppable interface {
 		Stop()
 	}
@@ -88,7 +96,7 @@ func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf 
 		rs := StartRequestorServer(t, c)
 		return rs, c, true
 	default:
-		c := RequestorServerAuthConfiguration()
+		c := JwtServerConfiguration()
 		rs := StartRequestorServer(t, c)
 		return rs, c, true
 	}
