@@ -347,8 +347,14 @@ func (session *session) getRequest() (irma.SessionRequest, error) {
 	return cpy.(*irma.IssuanceRequest), nil
 }
 
-func (s *sessionData) hash() [32]byte {
-	return sha256.Sum256([]byte(fmt.Sprintf("%v", s)))
+func (s *sessionData) hash() ([32]byte, error) {
+	// Note: This marshalling does not consider the order of the `map[irma.SchemeManagerIdentifier]*gabi.ProofP` items.
+	sessionJSON, err := json.Marshal(s)
+	if err != nil {
+		return [32]byte{0}, server.LogError(err)
+	}
+
+	return sha256.Sum256(sessionJSON), nil
 }
 
 // UnmarshalJSON unmarshals sessionData.
@@ -588,7 +594,11 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 				}
 			}
 
-			hashBefore := session.sessionData.hash()
+			hashBefore, err := session.sessionData.hash()
+			if err != nil {
+				server.WriteError(w, server.ErrorInternal, "")
+				return
+			}
 
 			defer func() {
 				if session.PrevStatus != session.Status {
@@ -606,7 +616,12 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 					}
 				}
 
-				if hashBefore != session.sessionData.hash() {
+				hashAfter, err := session.sessionData.hash()
+				if err != nil {
+					server.WriteError(w, server.ErrorInternal, "")
+					return
+				}
+				if hashBefore != hashAfter {
 					err = session.sessions.update(session)
 					if err != nil {
 						// Error already logged in update method.
