@@ -319,11 +319,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
-			server.WriteError(w, server.ErrorSessionUnknown, "")
-		} else {
-			server.WriteError(w, server.ErrorInternal, "")
-		}
+		mapToServerError(w, err)
 		return
 	}
 
@@ -361,11 +357,7 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
-			server.WriteError(w, server.ErrorSessionUnknown, "")
-		} else {
-			server.WriteError(w, server.ErrorInternal, "")
-		}
+		mapToServerError(w, err)
 		return
 	}
 
@@ -387,21 +379,13 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
-			server.WriteError(w, server.ErrorSessionUnknown, "")
-		} else {
-			server.WriteError(w, server.ErrorInternal, "")
-		}
+		mapToServerError(w, err)
 		return
 	}
 
 	request, err := s.irmaserv.GetRequest(res.Token)
 	if err != nil {
-		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
-			server.WriteError(w, server.ErrorSessionUnknown, "")
-		} else {
-			server.WriteError(w, server.ErrorInternal, "")
-		}
+		mapToServerError(w, err)
 		return
 	}
 
@@ -429,11 +413,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
 	res, err := s.irmaserv.GetSessionResult(requestorToken)
 	if err != nil {
-		if _, ok := err.(*irmaserver.UnknownSessionError); ok {
-			server.WriteError(w, server.ErrorSessionUnknown, "")
-		} else {
-			server.WriteError(w, server.ErrorInternal, "")
-		}
+		mapToServerError(w, err)
 		return
 	}
 
@@ -630,4 +610,12 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.Re
 		return false
 	}
 	return true
+}
+
+func mapToServerError(w http.ResponseWriter, err error) {
+	if _, ok := err.(*irmaserver.UnknownSessionError); ok {
+		server.WriteError(w, server.ErrorSessionUnknown, "")
+	} else {
+		server.WriteError(w, server.ErrorInternal, "")
+	}
 }
