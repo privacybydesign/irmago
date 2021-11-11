@@ -138,7 +138,9 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	readOnlyEndpoints := []string{"/status", "/statusevents"}
 
 	r.Route("/session/{clientToken}", func(r chi.Router) {
-		r.Use(s.sessionMiddleware(readOnlyEndpoints))
+		r.Use(s.sessionGetMiddleware)
+		r.Use(s.sessionLockMiddleware(readOnlyEndpoints))
+		r.Use(s.sessionUpdateMiddleware)
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)
 		r.Get("/statusevents", s.handleSessionStatusEvents)

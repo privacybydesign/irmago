@@ -554,26 +554,32 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Handler {
+func (s *Server) sessionGetMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, err := irma.ParseClientToken(chi.URLParam(r, "clientToken"))
+		if err != nil {
+			server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+			return
+		}
+
+		session, err := s.sessions.clientGet(token)
+		if err != nil {
+			if _, ok := err.(*UnknownSessionError); ok {
+				server.WriteError(w, server.ErrorSessionUnknown, "")
+			} else {
+				server.WriteError(w, server.ErrorInternal, "")
+			}
+			return
+		}
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
+	})
+}
+
+func (s *Server) sessionLockMiddleware(readOnly []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token, err := irma.ParseClientToken(chi.URLParam(r, "clientToken"))
-			if err != nil {
-				server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-				return
-			}
-
-			session, err := s.sessions.clientGet(token)
-			if err != nil {
-				if _, ok := err.(*UnknownSessionError); ok {
-					server.WriteError(w, server.ErrorSessionUnknown, "")
-				} else {
-					server.WriteError(w, server.ErrorInternal, "")
-				}
-				return
-			}
-
-			ctx := r.Context()
+			session := r.Context().Value("session").(*session)
 
 			// by default session needs to be locked
 			lock := true
@@ -587,24 +593,47 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 
 			// lock the session
 			if lock {
-				err = session.sessions.lock(session)
+				err := session.sessions.lock(session)
 				if err != nil {
 					server.WriteError(w, server.ErrorInternal, "")
 					return
 				}
 			}
 
-			hashBefore, err := session.sessionData.hash()
+			defer func() {
+				if session.locked {
+					_ = session.sessions.unlock(session) // error gets logged directly in session store and will not be forwarded to the client
+				}
+			}()
+
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
+
+		})
+	}
+}
+
+func (s *Server) sessionUpdateMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session := r.Context().Value("session").(*session)
+
+		hashBefore, err := session.sessionData.hash()
+		if err != nil {
+			server.WriteError(w, server.ErrorInternal, "")
+			return
+		}
+
+		defer func() {
+			hashAfter, err := session.sessionData.hash()
 			if err != nil {
 				server.WriteError(w, server.ErrorInternal, "")
 				return
 			}
-
-			defer func() {
+			if hashBefore != hashAfter {
+				// TODO: remove this after merging master into this branch
 				if session.PrevStatus != session.Status {
 					session.PrevStatus = session.Status
 					result := session.Result
-					r := ctx.Value("sessionresult")
+					r := r.Context().Value("sessionresult")
 					if r != nil {
 						*r.(*server.SessionResult) = *result
 					}
@@ -616,29 +645,25 @@ func (s *Server) sessionMiddleware(readOnly []string) func(http.Handler) http.Ha
 					}
 				}
 
-				hashAfter, err := session.sessionData.hash()
+				// TODO: use this instead after merging
+				//result := session.Result
+				//r := r.Context().Value("sessionresult")
+				//if r != nil {
+				//	*r.(*server.SessionResult) = *result
+				//}
+
+				err = session.sessions.update(session)
 				if err != nil {
+					// Error already logged in update method.
 					server.WriteError(w, server.ErrorInternal, "")
 					return
 				}
-				if hashBefore != hashAfter {
-					err = session.sessions.update(session)
-					if err != nil {
-						// Error already logged in update method.
-						server.WriteError(w, server.ErrorInternal, "")
-						return
-					}
-				}
+			}
+		}()
 
-				if session.locked {
-					_ = session.sessions.unlock(session) // error gets logged directly in session store and will not be forwarded to the client
-				}
-			}()
+		next.ServeHTTP(w, r)
 
-			next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, "session", session)))
-
-		})
-	}
+	})
 }
 
 func (s *Server) pairingMiddleware(next http.Handler) http.Handler {
