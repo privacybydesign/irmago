@@ -298,7 +298,7 @@ func (s *redisSessionStore) add(session *session) error {
 		return logAsRedisError(err)
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("session added to Redis datastore")
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("session added or updated in Redis datastore")
 	return nil
 }
 
