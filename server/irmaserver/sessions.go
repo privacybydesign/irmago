@@ -207,11 +207,11 @@ func (s *memorySessionStore) deleteExpired() {
 
 		if session.LastActive.Add(timeout).Before(time.Now()) {
 			if !session.Status.Finished() {
-				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Session expired")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session expired")
 				session.markAlive()
 				session.setStatus(irma.ServerStatusTimeout)
 			} else {
-				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Deleting session")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting session")
 				expired = append(expired, token)
 			}
 		}
@@ -245,7 +245,7 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 	if err != nil {
 		return nil, logAsRedisError(err)
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"session": t}).Debugf("clientToken %s found in Redis datastore", clientToken)
+	s.conf.Logger.WithFields(logrus.Fields{"session": t, "clientToken": clientToken}).Debug("clientToken found in Redis datastore")
 
 	return s.clientGet(clientToken)
 }
@@ -265,10 +265,10 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 		return nil, logAsRedisError(err)
 	}
 	session.request = session.Rrequest.SessionRequest()
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("Session received from Redis datastore")
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
 	if session.LastActive.Add(s.conf.MaxSessionLifetime).Before(time.Now()) && !session.Status.Finished() {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Infof("Session expired")
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session expired")
 		session.markAlive()
 		session.setStatus(irma.ServerStatusTimeout)
 	}
@@ -298,7 +298,7 @@ func (s *redisSessionStore) add(session *session) error {
 		return logAsRedisError(err)
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("session added or updated in Redis datastore")
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session added or updated in Redis datastore")
 	return nil
 }
 
@@ -323,7 +323,7 @@ func (s *redisSessionStore) lock(session *session) error {
 	}
 	session.locked = true
 	session.lock = lock
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("session locked successfully")
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session locked successfully")
 
 	return nil
 }
@@ -337,7 +337,7 @@ func (s *redisSessionStore) unlock(session *session) error {
 	} else if err != nil {
 		return logAsRedisError(err)
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debugf("session unlocked successfully")
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session unlocked successfully")
 
 	return nil
 }
