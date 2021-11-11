@@ -58,6 +58,10 @@ func processOptions(options ...sessionOption) sessionOption {
 	return opts
 }
 
+// startServer ensures that an IRMA server or library is running, if and when required, as specified
+// by the parameters:
+// - If irmaServer is not nil or sessionOptionReuseServer is enabled, this function does nothing.
+// - Otherwise an IRMA server or library is started, depending on the type of conf.
 func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf interface{}) (stoppable, interface{}, bool) {
 	if irmaServer != nil {
 		if opts&sessionOptionReuseServer > 0 {
@@ -90,6 +94,8 @@ func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf 
 	}
 }
 
+// startSession starts an IRMA session using the specified session request, against an IRMA server
+// or library, as determined by the type of serv.
 func startSession(t *testing.T, serv stoppable, conf interface{}, request interface{}) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
@@ -128,6 +134,7 @@ func startSession(t *testing.T, serv stoppable, conf interface{}, request interf
 	}
 }
 
+// getSessionResult retrieves the session result from the IRMA server or library.
 func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stoppable, opts sessionOption) *server.SessionResult {
 	if opts&sessionOptionWait > 0 {
 		require.IsType(t, &IrmaServer{}, serv)
@@ -198,6 +205,16 @@ func createSessionHandler(
 	return &handler, clientChan
 }
 
+// doSession performs an IRMA session using the specified session request.
+//
+// It uses the specified client if specified, otherwise it creates one.
+//
+// The request is run against an IRMA server or library, as follows:
+//   - irmaServer is used if not nil.
+//   - If sessionOptionReuseServer is specified, irmaServer must be nil and the request is run
+//     against an IRMA server which is expected to be already running.
+//   - Otherwise, an IRMA server or library is created and used, depending on whether the config
+//     parameter is of type func() *server.Configuration or func() *requestorserver.Configuration
 func doSession(
 	t *testing.T,
 	request interface{},
