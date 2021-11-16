@@ -280,7 +280,11 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 
 func (s *redisSessionStore) add(session *session) error {
 	lifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
-	timeout := 2 * lifetime // logic similar to memory store
+	// After the timeout, the session will automatically be removed. Therefore the timeout needs to
+	// be significantly longer than the session lifetime. Factor 2 was chosen since it matches the logic
+	// used in the memory store: After the session expired, the session will be marked as timed out
+	// and will exist for another session lifetime.
+	timeout := 2 * lifetime
 	if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 		timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
 	} else if session.Status.Finished() {
