@@ -5,17 +5,15 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
+	"regexp"
+	"strconv"
+	"strings"
 )
 
 // Configuration contains configuration for the irmaserver library and irmad.
@@ -58,7 +56,7 @@ type Configuration struct {
 	StaticSessionRequests map[string]irma.RequestorRequest `json:"-"`
 
 	// Session Timeout in minutes (default value 0 means 5)
-	MaxSessionLifetime time.Duration `json:"max_session_lifetime" mapstructure:"max_session_lifetime"`
+	MaxSessionLifetime int `json:"max_session_lifetime" mapstructure:"max_session_lifetime"`
 
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
@@ -109,8 +107,8 @@ func (conf *Configuration) Check() error {
 	irma.SetLogger(conf.Logger)
 
 	// Use default session lifetime if not specified
-	if conf.MaxSessionLifetime == 0*time.Minute {
-		conf.MaxSessionLifetime = 5 * time.Minute
+	if conf.MaxSessionLifetime == 0 {
+		conf.MaxSessionLifetime = 5
 	}
 
 	// loop to avoid repetetive err != nil line triplets

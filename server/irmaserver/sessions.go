@@ -202,7 +202,7 @@ func (s *memorySessionStore) deleteExpired() {
 	for token, session := range toCheck {
 		session.Lock()
 
-		timeout := s.conf.MaxSessionLifetime
+		timeout := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
 		if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 			timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
 		}
@@ -269,7 +269,7 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	session.request = session.Rrequest.SessionRequest()
 	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
-	if session.LastActive.Add(s.conf.MaxSessionLifetime).Before(time.Now()) && !session.Status.Finished() {
+	if session.LastActive.Add(time.Duration(s.conf.MaxSessionLifetime)*time.Minute).Before(time.Now()) && !session.Status.Finished() {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session expired")
 		session.markAlive()
 		session.setStatus(irma.ServerStatusTimeout)
@@ -279,11 +279,12 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 }
 
 func (s *redisSessionStore) add(session *session) error {
-	timeout := 2 * s.conf.MaxSessionLifetime // logic similar to memory store
+	lifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
+	timeout := 2 * lifetime // logic similar to memory store
 	if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 		timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
 	} else if session.Status.Finished() {
-		timeout = s.conf.MaxSessionLifetime
+		timeout = lifetime
 	}
 
 	sessionJSON, err := json.Marshal(session.sessionData)

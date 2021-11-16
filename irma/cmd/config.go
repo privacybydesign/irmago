@@ -2,16 +2,14 @@ package cmd
 
 import (
 	"crypto/tls"
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"net/smtp"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
-
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare"
 
 	"github.com/go-errors/errors"
 	"github.com/mitchellh/mapstructure"
@@ -62,7 +60,7 @@ func configureIRMAServer() *server.Configuration {
 		LogJSON:                viper.GetBool("log_json"),
 		Logger:                 logger,
 		Production:             viper.GetBool("production"),
-		MaxSessionLifetime:     time.Duration(viper.GetInt("max_session_lifetime")) * time.Minute,
+		MaxSessionLifetime:     viper.GetInt("max_session_lifetime"),
 		JwtIssuer:              viper.GetString("jwt_issuer"),
 		JwtPrivateKey:          viper.GetString("jwt_privkey"),
 		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
