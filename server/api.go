@@ -28,7 +28,7 @@ var Logger *logrus.Logger = logrus.StandardLogger()
 
 type SessionPackage struct {
 	SessionPtr      *irma.Qr                     `json:"sessionPtr"`
-	Token           irma.RequestorToken          `json:"token"`
+	Token           irma.RequestorToken          `json:"token,omitempty"`
 	FrontendRequest *irma.FrontendSessionRequest `json:"frontendRequest"`
 }
 

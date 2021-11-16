@@ -52,7 +52,7 @@ type Configuration struct {
 	// Configuration for email sending during login (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
 
-	LoginEmailBaseURL map[string]string `json:"login_email_base_url" mapstructure:"login_email_base_url"`
+	LoginURL map[string]string `json:"login_url" mapstructure:"login_url"`
 
 	LoginEmailFiles       map[string]string `json:"login_email_files" mapstructure:"login_email_files"`
 	LoginEmailSubjects    map[string]string `json:"login_email_subjects" mapstructure:"login_email_subjects"`
@@ -115,7 +115,7 @@ func processConfiguration(conf *Configuration) error {
 		); err != nil {
 			return server.LogError(err)
 		}
-		if _, ok := conf.LoginEmailBaseURL[conf.DefaultLanguage]; !ok {
+		if _, ok := conf.LoginURL[conf.DefaultLanguage]; !ok {
 			return server.LogError(errors.Errorf("Missing login email base url for default language"))
 		}
 	}

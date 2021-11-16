@@ -55,6 +55,12 @@ func (session *session) updateSSE() {
 		}
 	}
 
+	if session.Status.Finished() && session.handler != nil {
+		handler := session.handler
+		session.handler = nil
+		go handler(session.Result)
+	}
+
 	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next})
 
 	if session.sse == nil {
@@ -100,8 +106,8 @@ func (session *session) pairingCompleted() error {
 
 func (session *session) fail(err server.Error, message string) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
-	session.setStatus(irma.ServerStatusCancelled)
 	session.Result = &server.SessionResult{Err: rerr, Token: session.RequestorToken, Status: irma.ServerStatusCancelled, Type: session.Action}
+	session.setStatus(irma.ServerStatusCancelled)
 	return rerr
 }
 
@@ -109,15 +115,15 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 	// Set minimum supported version to 2.5 if condiscon compatibility is required
 	minServer := minProtocolVersion
 	if !session.LegacyCompatible {
-		minServer = &irma.ProtocolVersion{2, 5}
+		minServer = &irma.ProtocolVersion{Major: 2, Minor: 5}
 	}
 	// Set minimum to 2.6 if nonrevocation is required
 	if len(session.request.Base().Revocation) > 0 {
-		minServer = &irma.ProtocolVersion{2, 6}
+		minServer = &irma.ProtocolVersion{Major: 2, Minor: 6}
 	}
 	// Set minimum to 2.7 if chained session are used
 	if session.Rrequest.Base().NextSession != nil {
-		minServer = &irma.ProtocolVersion{2, 7}
+		minServer = &irma.ProtocolVersion{Major: 2, Minor: 7}
 	}
 
 	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {
@@ -629,28 +635,11 @@ func (s *Server) sessionUpdateMiddleware(next http.Handler) http.Handler {
 				return
 			}
 			if hashBefore != hashAfter {
-				// TODO: remove this after merging master into this branch
-				if session.PrevStatus != session.Status {
-					session.PrevStatus = session.Status
-					result := session.Result
-					r := r.Context().Value("sessionresult")
-					if r != nil {
-						*r.(*server.SessionResult) = *result
-					}
-					if session.Status.Finished() {
-						if handler := s.handlers[result.Token]; handler != nil {
-							go handler(result)
-							delete(s.handlers, result.Token)
-						}
-					}
+				result := session.Result
+				r := r.Context().Value("sessionresult")
+				if r != nil {
+					*r.(*server.SessionResult) = *result
 				}
-
-				// TODO: use this instead after merging
-				//result := session.Result
-				//r := r.Context().Value("sessionresult")
-				//if r != nil {
-				//	*r.(*server.SessionResult) = *result
-				//}
 
 				err = session.sessions.update(session)
 				if err != nil {

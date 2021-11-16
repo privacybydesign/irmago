@@ -46,7 +46,7 @@ type Configuration struct {
 	// DisabledRequestorSchemes keeps track of any error of the requestorscheme if it
 	// did not parse successfully
 	DisabledRequestorSchemes map[RequestorSchemeIdentifier]*SchemeManagerError
-	// DisabledSchemeManagers keeps track of schemes that did not parse  succesfully
+	// DisabledSchemeManagers keeps track of schemes that did not parse successfully
 	// (i.e., invalid signature, parsing error), and the problem that occurred when parsing them
 	DisabledSchemeManagers map[SchemeManagerIdentifier]*SchemeManagerError
 
@@ -223,7 +223,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 // ParseOrRestoreFolder parses the irma_configuration folder, and when possible attempts to restore
 // any broken schemes from their remote.
 // Any error encountered during parsing is considered recoverable only if it is of type *SchemeManagerError;
-// In this case the scheme in which it occured is downloaded from its remote and re-parsed.
+// In this case the scheme in which it occurred is downloaded from its remote and re-parsed.
 // If any other error is encountered at any time, it is returned immediately.
 // If no error is returned, parsing and possibly restoring has been succesfull, and there should be no
 // disabled schemes.
@@ -619,7 +619,7 @@ func (conf *Configuration) checkIdentifiers(session SessionRequest) (*IrmaIdenti
 	return missing, requiredMissing, nil
 }
 
-// CheckSchemes verifies that all schemes occuring in the specified session request occur in this
+// CheckSchemes verifies that all schemes occurring in the specified session request occur in this
 // instance.
 func (conf *Configuration) checkSchemes(session SessionRequest, missing *IrmaIdentifierSet) {
 	for id := range session.Identifiers().SchemeManagers {

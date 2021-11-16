@@ -231,7 +231,7 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	return token.SignedString(c.jwtPrivateKey)
 }
 
-// Pad pin string into 64 bytes, extending it with 0s if neccessary
+// Pad pin string into 64 bytes, extending it with 0s if necessary
 func padPin(pin string) ([64]byte, error) {
 	data := []byte(pin)
 	if len(data) > 64 {

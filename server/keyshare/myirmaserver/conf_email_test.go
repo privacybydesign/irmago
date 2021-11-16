@@ -18,7 +18,7 @@ func validConfWithEmail(t *testing.T) *Configuration {
 	conf.DefaultLanguage = "en"
 	conf.LoginEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
 	conf.LoginEmailSubjects = map[string]string{"en": "testsubject"}
-	conf.LoginEmailBaseURL = map[string]string{"en": "localhost:8000/test/"}
+	conf.LoginURL = map[string]string{"en": "localhost:8000/test/"}
 	conf.DeleteEmailFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
 	conf.DeleteEmailSubjects = map[string]string{"en": "testsubject"}
 	conf.DeleteAccountFiles = map[string]string{"en": filepath.Join(testdataPath, "emailtemplate.html")}
@@ -65,7 +65,7 @@ func TestConfEmailValidation(t *testing.T) {
 	assert.Error(t, err)
 
 	conf = validConfWithEmail(t)
-	conf.LoginEmailBaseURL = map[string]string{}
+	conf.LoginURL = map[string]string{}
 	_, err = New(conf)
 	assert.Error(t, err)
 

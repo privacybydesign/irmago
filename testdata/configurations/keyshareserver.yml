@@ -21,4 +21,4 @@ registration_email_subjects:
 registration_email_files:
   en: testdata/emailtemplate.html
 verification_url:
-  en: http://example.com/verify/
+  en: http://localhost:3000/#verify=

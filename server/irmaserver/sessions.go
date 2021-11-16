@@ -31,6 +31,7 @@ type session struct {
 	conf           *server.Configuration
 	request        irma.SessionRequest
 	statusChannels []chan irma.ServerStatus
+	handler        server.SessionHandler
 
 	sessionData
 }

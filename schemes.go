@@ -202,7 +202,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	//   conf instance is touched.
 	// We do this by creating a temporary copy on disk of the scheme, which we then update,
 	// verify, and parse into another *Configuration instance. Only after all possible errors have
-	// occured do we modify the scheme on disk and in memory.
+	// occurred do we modify the scheme on disk and in memory.
 
 	// copy the scheme on disk to a new temporary directory
 	dir, newschemepath, err := conf.tempSchemeCopy(scheme)
@@ -1283,13 +1283,13 @@ func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 		}
 		for _, hostname := range requestor.Hostnames {
 			if _, ok := conf.Requestors[hostname]; ok {
-				return errors.Errorf("Double occurence of hostname %s", hostname)
+				return errors.Errorf("Double occurrence of hostname %s", hostname)
 			}
 			conf.Requestors[hostname] = requestor
 		}
 		for id, wizard := range requestor.Wizards {
 			if _, ok := conf.IssueWizards[id]; ok {
-				return errors.Errorf("Double occurence of issue wizard %s", id)
+				return errors.Errorf("Double occurrence of issue wizard %s", id)
 			}
 			conf.IssueWizards[id] = wizard
 		}

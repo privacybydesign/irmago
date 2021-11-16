@@ -1,6 +1,6 @@
 package server
 
-// Error represents an error that occured during an IRMA sessions.
+// Error represents an error that occurred during an IRMA sessions.
 type Error struct {
 	Type        ErrorType `json:"error"`
 	Status      int       `json:"status"`
