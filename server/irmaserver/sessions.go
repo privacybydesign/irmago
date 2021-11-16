@@ -44,7 +44,6 @@ type sessionData struct {
 	Rrequest           irma.RequestorRequest
 	LegacyCompatible   bool // if the request is convertible to pre-condiscon format
 	Status             irma.ServerStatus
-	PrevStatus         irma.ServerStatus
 	ResponseCache      responseCache
 	LastActive         time.Time
 	Result             *server.SessionResult
@@ -384,7 +383,6 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, d
 		RequestorToken: requestorToken,
 		ClientToken:    clientToken,
 		Status:         irma.ServerStatusInitialized,
-		PrevStatus:     irma.ServerStatusInitialized,
 		Result: &server.SessionResult{
 			LegacySession: request.SessionRequest().Base().Legacy(),
 			Token:         requestorToken,
