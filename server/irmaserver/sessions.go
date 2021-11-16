@@ -130,8 +130,9 @@ var (
 func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
-	if s.requestor[t] != nil {
-		return s.requestor[t], nil
+	ses := s.requestor[t]
+	if ses != nil {
+		return ses, nil
 	} else {
 		return nil, server.LogError(&UnknownSessionError{t, ""})
 	}
@@ -141,8 +142,9 @@ func (s *memorySessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	s.RLock()
 	defer s.RUnlock()
 
-	if s.client[t] != nil {
-		return s.client[t], nil
+	ses := s.client[t]
+	if ses != nil {
+		return ses, nil
 	} else {
 		return nil, server.LogError(&UnknownSessionError{"", t})
 	}
