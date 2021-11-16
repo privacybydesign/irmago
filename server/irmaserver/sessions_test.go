@@ -54,7 +54,7 @@ func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
-	s.sessions.deleteExpired()
+	s.sessions.(*memorySessionStore).deleteExpired()
 	time.Sleep(100 * time.Millisecond) // give session handler time to run
 
 	require.True(t, handlerInvoked)
