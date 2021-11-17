@@ -43,10 +43,10 @@ func (session *session) setStatus(status irma.ServerStatus) {
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
-	session.onStateChange()
+	session.onStatusChange()
 }
 
-func (session *session) onStateChange() {
+func (session *session) onStatusChange() {
 	// Send status update to all listener channels
 	for _, statusChan := range session.statusChannels {
 		statusChan <- session.Status
