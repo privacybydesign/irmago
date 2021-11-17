@@ -76,6 +76,7 @@ func (session *session) onStateChange() {
 	session.sse.SendMessage("session/"+string(session.RequestorToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.Status)),
 	)
+	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next})
 	session.sse.SendMessage("frontendsession/"+string(session.ClientToken),
 		sse.SimpleMessage(string(frontendstatus)),
 	)
