@@ -204,6 +204,9 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 func (s *Server) startNextSession(
 	req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+	if s.conf.StoreType == "redis" && handler != nil {
+		return nil, "", nil, errors.Errorf("Handlers cannot be used in combination with Redis.")
+	}
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", nil, err
