@@ -43,10 +43,10 @@ func (session *session) setStatus(status irma.ServerStatus) {
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
-	session.updateSSE()
+	session.onStateChange()
 }
 
-func (session *session) updateSSE() {
+func (session *session) onStateChange() {
 	// Send status update to all listener channels
 	for _, statusChan := range session.statusChannels {
 		statusChan <- session.Status
@@ -55,14 +55,18 @@ func (session *session) updateSSE() {
 		}
 	}
 
-	if session.Status.Finished() && session.handler != nil {
-		handler := session.handler
-		session.handler = nil
-		go handler(session.Result)
+	// Execute callback and handler if status is Finished
+	if session.Status.Finished() {
+		session.doResultCallback()
+
+		if session.handler != nil {
+			handler := session.handler
+			session.handler = nil
+			go handler(session.Result)
+		}
 	}
 
-	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next})
-
+	// Send updates in case SSE is used
 	if session.sse == nil {
 		return
 	}
@@ -74,6 +78,19 @@ func (session *session) updateSSE() {
 	)
 	session.sse.SendMessage("frontendsession/"+string(session.ClientToken),
 		sse.SimpleMessage(string(frontendstatus)),
+	)
+}
+
+func (session *session) doResultCallback() {
+	url := session.Rrequest.Base().CallbackURL
+	if url == "" {
+		return
+	}
+	server.DoResultCallback(url,
+		session.Result,
+		session.conf.JwtIssuer,
+		session.Rrequest.Base().ResultJwtValidity,
+		session.conf.JwtRSAPrivateKey,
 	)
 }
 

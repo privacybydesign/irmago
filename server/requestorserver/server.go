@@ -489,24 +489,6 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(pubBytes)
 }
 
-func (s *Server) doResultCallback(result *server.SessionResult) {
-	request, err := s.irmaserv.GetRequest(result.Token)
-	if err != nil {
-		return
-	}
-
-	url := request.Base().CallbackURL
-	if url == "" {
-		return
-	}
-	server.DoResultCallback(url,
-		result,
-		s.conf.JwtIssuer,
-		request.Base().ResultJwtValidity,
-		s.conf.JwtRSAPrivateKey,
-	)
-}
-
 func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
 	// Authorize request: check if the requestor is allowed to verify or issue
 	// the requested attributes or credentials
@@ -552,7 +534,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, s.doResultCallback)
+	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil)
 	if err != nil {
 		if _, ok := err.(*irmaserver.RedisError); ok {
 			server.WriteError(w, server.ErrorInternal, "")
