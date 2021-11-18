@@ -403,7 +403,7 @@ func (s *Server) handleSessionStatusEvents(w http.ResponseWriter, r *http.Reques
 		Component: server.ComponentSession,
 		Arg:       string(session.ClientToken),
 	}))
-	if err := s.SubscribeServerSentEvents(w, r, string(session.ClientToken), false); err != nil {
+	if err := s.subscribeServerSentEvents(w, r, session, false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}
@@ -463,7 +463,7 @@ func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Reque
 		Component: server.ComponentFrontendSession,
 		Arg:       string(session.ClientToken),
 	}))
-	if err := s.SubscribeServerSentEvents(w, r, string(session.ClientToken), false); err != nil {
+	if err := s.subscribeServerSentEvents(w, r, session, false); err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
 	}

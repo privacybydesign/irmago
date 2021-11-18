@@ -27,6 +27,7 @@ type session struct {
 	sse            *sse.Server
 	locked         bool
 	lock           *redislock.Lock
+	hashBefore     [32]byte
 	sessions       sessionStore
 	conf           *server.Configuration
 	request        irma.SessionRequest
@@ -68,7 +69,6 @@ type sessionStore interface {
 	clientGet(token irma.ClientToken) (*session, error)
 	add(session *session) error
 	update(session *session) error
-	lock(session *session) error
 	unlock(session *session) error
 	stop()
 }
@@ -132,6 +132,9 @@ func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
 	defer s.RUnlock()
 	ses := s.requestor[t]
 	if ses != nil {
+		ses.Lock()
+		ses.locked = true
+
 		return ses, nil
 	} else {
 		return nil, server.LogError(&UnknownSessionError{t, ""})
@@ -144,6 +147,9 @@ func (s *memorySessionStore) clientGet(t irma.ClientToken) (*session, error) {
 
 	ses := s.client[t]
 	if ses != nil {
+		ses.Lock()
+		ses.locked = true
+
 		return ses, nil
 	} else {
 		return nil, server.LogError(&UnknownSessionError{"", t})
@@ -162,16 +168,11 @@ func (s *memorySessionStore) update(_ *session) error {
 	return nil
 }
 
-func (s *memorySessionStore) lock(session *session) error {
-	session.Lock()
-	session.locked = true
-
-	return nil
-}
-
 func (s *memorySessionStore) unlock(session *session) error {
-	session.locked = false
-	session.Unlock()
+	if session.locked {
+		session.locked = false
+		session.Unlock()
+	}
 
 	return nil
 }
@@ -253,6 +254,22 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 }
 
 func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
+	var session session
+	session.conf = s.conf
+	session.sessions = s
+
+	// lock via clientToken since requestorToken first fetches clientToken en then comes here, this is fine
+	lock, err := s.locker.Obtain(context.Background(), lockPrefix+string(t), maxLockLifetime, lockingRetryOptions)
+	if err != nil {
+		// It is possible that the session is already locked. However, it should not happen often.
+		// If you get the redislock.ErrNotObtained error often, you should investigate why.
+		return nil, logAsRedisError(err)
+	}
+	session.locked = true
+	session.lock = lock
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session locked successfully")
+
+	// get the session data
 	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return nil, server.LogError(&UnknownSessionError{"", t})
@@ -260,15 +277,16 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 		return nil, logAsRedisError(err)
 	}
 
-	var session session
-	session.conf = s.conf
-	session.sessions = s
 	if err := json.Unmarshal([]byte(val), &session.sessionData); err != nil {
 		return nil, logAsRedisError(err)
 	}
 	session.request = session.Rrequest.SessionRequest()
 	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
+	// hashing the current session data needs to take place before the timeout check to detect all changes!
+	session.hashBefore, err = session.sessionData.hash()
+
+	// timeout check
 	lifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
 	if session.LastActive.Add(lifetime).Before(time.Now()) && !session.Status.Finished() {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session expired")
@@ -311,6 +329,16 @@ func (s *redisSessionStore) add(session *session) error {
 }
 
 func (s *redisSessionStore) update(session *session) error {
+	hashAfter, err := session.hash()
+	if err != nil {
+		// Continue and still run the update function. Better safe than sorry.
+		// Also, the error is already logged in the hash function itself
+	}
+	if session.hashBefore == hashAfter {
+		// if nothing changed, updating is not necessary
+		return nil
+	}
+
 	// Time passes between acquiring the lock and writing to Redis. Check before write action that lock is still valid.
 	if session.lock == nil {
 		return logAsRedisError(errors.Errorf("lock is not set for session with requestorToken %s", session.RequestorToken))
@@ -322,31 +350,17 @@ func (s *redisSessionStore) update(session *session) error {
 	return s.add(session)
 }
 
-func (s *redisSessionStore) lock(session *session) error {
-	lock, err := s.locker.Obtain(context.Background(), lockPrefix+string(session.ClientToken), maxLockLifetime, lockingRetryOptions)
-	if err != nil {
-		// It is possible that the session is already locked. However, it should not happen often.
-		// If you get the redislock.ErrNotObtained error often, you should investigate why.
-		return logAsRedisError(err)
-	}
-	session.locked = true
-	session.lock = lock
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session locked successfully")
-
-	return nil
-}
-
 func (s *redisSessionStore) unlock(session *session) error {
-	session.locked = false
-	err := session.lock.Release(context.Background())
-	if err == redislock.ErrLockNotHeld {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("lock could not be released as the lock was not held")
-		return nil
-	} else if err != nil {
-		return logAsRedisError(err)
+	if session.locked {
+		err := session.lock.Release(context.Background())
+		if err == redislock.ErrLockNotHeld {
+			s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Redis lock could not be released as the lock was not held")
+		} else if err != nil {
+			return logAsRedisError(err)
+		}
+		session.locked = false
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session unlocked successfully")
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session unlocked successfully")
-
 	return nil
 }
 

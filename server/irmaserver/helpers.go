@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
@@ -371,6 +370,16 @@ func (session *session) getRequest() (irma.SessionRequest, error) {
 	return cpy.(*irma.IssuanceRequest), nil
 }
 
+func (session *session) updateAndUnlock() error {
+	err := session.sessions.update(session)
+	if err != nil {
+		return err
+	}
+	_ = session.sessions.unlock(session)
+
+	return nil
+}
+
 func (s *sessionData) hash() ([32]byte, error) {
 	// Note: This marshalling does not consider the order of the `map[irma.SchemeManagerIdentifier]*gabi.ProofP` items.
 	sessionJSON, err := json.Marshal(s)
@@ -578,7 +587,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) sessionGetMiddleware(next http.Handler) http.Handler {
+func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := irma.ParseClientToken(chi.URLParam(r, "clientToken"))
 		if err != nil {
@@ -596,80 +605,22 @@ func (s *Server) sessionGetMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
-	})
-}
-
-func (s *Server) sessionLockMiddleware(readOnly []string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			session := r.Context().Value("session").(*session)
-
-			// by default session needs to be locked
-			lock := true
-
-			// for certain endpoints read access for Redis without locking is sufficient
-			for _, e := range readOnly {
-				if strings.HasSuffix(r.URL.Path, e) && s.conf.StoreType == "redis" {
-					lock = false
-				}
-			}
-
-			// lock the session
-			if lock {
-				err := session.sessions.lock(session)
-				if err != nil {
-					server.WriteError(w, server.ErrorInternal, "")
-					return
-				}
-			}
-
-			defer func() {
-				if session.locked {
-					_ = session.sessions.unlock(session) // error gets logged directly in session store and will not be forwarded to the client
-				}
-			}()
-
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
-
-		})
-	}
-}
-
-func (s *Server) sessionUpdateMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := r.Context().Value("session").(*session)
-
-		hashBefore, err := session.sessionData.hash()
-		if err != nil {
-			server.WriteError(w, server.ErrorInternal, "")
-			return
-		}
-
 		defer func() {
-			hashAfter, err := session.sessionData.hash()
+			err := session.updateAndUnlock()
 			if err != nil {
+				// Error already logged in update method.
 				server.WriteError(w, server.ErrorInternal, "")
 				return
 			}
-			if hashBefore != hashAfter {
-				result := session.Result
-				r := r.Context().Value("sessionresult")
-				if r != nil {
-					*r.(*server.SessionResult) = *result
-				}
 
-				err = session.sessions.update(session)
-				if err != nil {
-					// Error already logged in update method.
-					server.WriteError(w, server.ErrorInternal, "")
-					return
-				}
+			result := session.Result
+			r := r.Context().Value("sessionresult")
+			if r != nil {
+				*r.(*server.SessionResult) = *result
 			}
 		}()
 
-		next.ServeHTTP(w, r)
-
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
 	})
 }
 

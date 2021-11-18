@@ -133,12 +133,8 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
-	readOnlyEndpoints := []string{"/status", "/statusevents"}
-
 	r.Route("/session/{clientToken}", func(r chi.Router) {
-		r.Use(s.sessionGetMiddleware)
-		r.Use(s.sessionLockMiddleware(readOnlyEndpoints))
-		r.Use(s.sessionUpdateMiddleware)
+		r.Use(s.sessionMiddleware)
 		r.Delete("/", s.handleSessionDelete)
 		r.Get("/status", s.handleSessionStatus)
 		r.Get("/statusevents", s.handleSessionStatusEvents)
@@ -288,6 +284,11 @@ func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (*server.S
 	if err != nil {
 		return nil, err
 	}
+	err = session.updateAndUnlock()
+	if err != nil {
+		return nil, err
+	}
+
 	return session.Result, nil
 }
 
@@ -300,6 +301,12 @@ func (s *Server) GetRequest(requestorToken irma.RequestorToken) (irma.RequestorR
 	if err != nil {
 		return nil, err
 	}
+
+	err = session.updateAndUnlock()
+	if err != nil {
+		return nil, err
+	}
+
 	return session.Rrequest, nil
 }
 
@@ -313,19 +320,9 @@ func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
 		return err
 	}
 
-	// lock session
-	err = s.sessions.lock(session)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = s.sessions.unlock(session) }()
-
 	session.handleDelete()
-	err = session.sessions.update(session)
-	if err != nil {
-		return server.LogError(err)
-	}
-	return nil
+
+	return session.updateAndUnlock()
 }
 
 // SetFrontendOptions requests a change of the session frontend options at the server.
@@ -344,10 +341,12 @@ func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request 
 	if err != nil {
 		return nil, err
 	}
-	err = session.sessions.update(session)
+
+	err = session.updateAndUnlock()
 	if err != nil {
-		return nil, server.LogError(err)
+		return nil, err
 	}
+
 	return options, nil
 }
 
@@ -361,15 +360,13 @@ func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
 	if err != nil {
 		return err
 	}
+
 	err = session.pairingCompleted()
 	if err != nil {
 		return err
 	}
-	err = session.sessions.update(session)
-	if err != nil {
-		return server.LogError(err)
-	}
-	return nil
+
+	return session.updateAndUnlock()
 }
 
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server
@@ -384,35 +381,17 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
 // of the specified IRMA session.
-func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
-	return s.SubscribeServerSentEvents(w, r, token, requestor)
-}
-func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token irma.RequestorToken) error {
 	if !s.conf.EnableSSE {
-		server.WriteResponse(w, nil, &irma.RemoteError{
-			Status:      500,
-			Description: "Server sent events disabled",
-			ErrorName:   "SSE_DISABLED",
-		})
-		s.conf.Logger.Info("GET /statusevents: endpoint disabled (see --sse in irma server -h)")
-		return nil
+		return server.LogError(errors.New("Server sent events disabled"))
+	}
+	session, storeError := s.sessions.get(token)
+
+	err := session.updateAndUnlock()
+	if err != nil {
+		return err
 	}
 
-	var session *session
-	var storeError error
-	if requestor {
-		requestorToken, e := irma.ParseRequestorToken(token)
-		if e != nil {
-			return server.LogError(e)
-		}
-		session, storeError = s.sessions.get(requestorToken)
-	} else {
-		clientToken, e := irma.ParseClientToken(token)
-		if e != nil {
-			return server.LogError(e)
-		}
-		session, storeError = s.sessions.clientGet(clientToken)
-	}
 	if storeError != nil {
 		if _, ok := storeError.(*RedisError); ok {
 			// In no flow, you should end up with an storeError. If you do, be alarmed!
@@ -425,6 +404,28 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 			return storeError
 		}
 	}
+
+	return s.subscribeServerSentEvents(w, r, session, true)
+}
+
+func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Request, session *session, requestor bool) error {
+	if !s.conf.EnableSSE {
+		server.WriteResponse(w, nil, &irma.RemoteError{
+			Status:      500,
+			Description: "Server sent events disabled",
+			ErrorName:   "SSE_DISABLED",
+		})
+		s.conf.Logger.Info("GET /statusevents: endpoint disabled (see --sse in irma server -h)")
+		return nil
+	}
+
+	var token string
+	if requestor {
+		token = string(session.RequestorToken)
+	} else {
+		token = string(session.ClientToken)
+	}
+
 	if session.Status.Finished() {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
 	}
@@ -451,6 +452,11 @@ func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, 
 }
 func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
 	session, err := s.sessions.get(requestorToken)
+	if err != nil {
+		return nil, err
+	}
+
+	err = session.updateAndUnlock()
 	if err != nil {
 		return nil, err
 	}

@@ -334,7 +334,7 @@ func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 		Component: server.ComponentSession,
 		Arg:       string(requestorToken),
 	}))
-	if err := s.irmaserv.SubscribeServerSentEvents(w, r, string(requestorToken), true); err != nil {
+	if err := s.irmaserv.SubscribeServerSentEvents(w, r, requestorToken); err != nil {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      server.ErrorUnsupported.Status,
 			ErrorName:   string(server.ErrorUnsupported.Type),
