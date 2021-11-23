@@ -71,8 +71,8 @@ type CredentialType struct {
 	XMLVersion            int      `xml:"version,attr"`
 	XMLName               xml.Name `xml:"IssueSpecification"`
 
-	IssueURL     TranslatedString `xml:"IssueURL"`
-	IsULIssueURL bool             `xml:"IsULIssueURL"`
+	IssueURL     *TranslatedString `xml:"IssueURL"`
+	IsULIssueURL bool              `xml:"IsULIssueURL"`
 
 	DeprecatedSince Timestamp
 
@@ -83,11 +83,11 @@ type CredentialType struct {
 	BackgroundGradientEnd   string
 
 	IsInCredentialStore bool
-	Category            TranslatedString
-	FAQIntro            TranslatedString
-	FAQPurpose          TranslatedString
-	FAQContent          TranslatedString
-	FAQHowto            TranslatedString
+	Category            *TranslatedString
+	FAQIntro            *TranslatedString
+	FAQPurpose          *TranslatedString
+	FAQContent          *TranslatedString
+	FAQHowto            *TranslatedString
 	FAQSummary          *TranslatedString
 }
 

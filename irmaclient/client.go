@@ -637,7 +637,7 @@ func (client *Client) addCredSuggestion(
 	}
 
 	// Show option to add extra cards of non-singleton
-	if len(credType.IssueURL) != 0 && !credType.IsSingleton && !fixedAttrValue {
+	if (credType.IssueURL != nil && len(*credType.IssueURL) != 0) && !credType.IsSingleton && !fixedAttrValue {
 		return true
 	}
 

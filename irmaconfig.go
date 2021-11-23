@@ -765,13 +765,7 @@ func (conf *Configuration) validateTranslations(file string, o interface{}) {
 		field := v.Field(i)
 		name := v.Type().Field(i).Name
 		translatedString := TranslatedString{}
-		if (field.Type() != reflect.TypeOf(translatedString) && field.Type() != reflect.TypeOf(&translatedString)) ||
-			name == "IssueURL" ||
-			name == "Category" ||
-			name == "FAQIntro" ||
-			name == "FAQPurpose" ||
-			name == "FAQContent" ||
-			name == "FAQHowto" {
+		if field.Type() != reflect.TypeOf(translatedString) && field.Type() != reflect.TypeOf(&translatedString) {
 			continue
 		}
 		var val TranslatedString
