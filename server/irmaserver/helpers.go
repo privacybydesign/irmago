@@ -380,14 +380,14 @@ func (session *session) updateAndUnlock() error {
 	return nil
 }
 
-func (s *sessionData) hash() ([32]byte, error) {
+func (s *sessionData) hash() [32]byte {
 	// Note: This marshalling does not consider the order of the `map[irma.SchemeManagerIdentifier]*gabi.ProofP` items.
 	sessionJSON, err := json.Marshal(s)
 	if err != nil {
-		return [32]byte{0}, server.LogError(err)
+		panic(err)
 	}
 
-	return sha256.Sum256(sessionJSON), nil
+	return sha256.Sum256(sessionJSON)
 }
 
 // UnmarshalJSON unmarshals sessionData.

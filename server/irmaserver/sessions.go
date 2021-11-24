@@ -282,7 +282,7 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
 	// hashing the current session data needs to take place before the timeout check to detect all changes!
-	session.hashBefore, err = session.sessionData.hash()
+	session.hashBefore = session.sessionData.hash()
 
 	// timeout check
 	lifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
@@ -327,12 +327,7 @@ func (s *redisSessionStore) add(session *session) error {
 }
 
 func (s *redisSessionStore) update(session *session) error {
-	hashAfter, err := session.hash()
-	if err != nil {
-		// Continue and still run the update function. Better safe than sorry.
-		// Also, the error is already logged in the hash function itself
-	}
-	if session.hashBefore == hashAfter {
+	if session.hashBefore == session.hash() {
 		// if nothing changed, updating is not necessary
 		return nil
 	}
