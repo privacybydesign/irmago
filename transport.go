@@ -3,6 +3,7 @@ package irma
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -42,6 +43,8 @@ var Logger *logrus.Logger
 
 var transportlogger *log.Logger
 
+var tlsClientConfig *tls.Config
+
 func init() {
 	logger := logrus.New()
 	logger.SetFormatter(&prefixed.TextFormatter{
@@ -60,6 +63,12 @@ func SetLogger(logger *logrus.Logger) {
 	sseclient.Logger = log.New(Logger.WithField("type", "sseclient").WriterLevel(logrus.TraceLevel), "", 0)
 }
 
+// SetTLSClientConfig sets the TLS configuration being used for future outbound connections.
+// A TLS configuration instance should not be modified after being set.
+func SetTLSClientConfig(config *tls.Config) {
+	tlsClientConfig = config
+}
+
 // NewHTTPTransport returns a new HTTPTransport.
 func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	if Logger.IsLevelEnabled(logrus.TraceLevel) {
@@ -73,17 +82,18 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	}
 
 	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS)
-	var innerTransport http.Transport
-
-	innerTransport.Dial = func(network, addr string) (c net.Conn, err error) {
-		c, err = net.Dial(network, addr)
-		if err != nil {
-			return c, err
-		}
-		if err = disable_sigpipe.DisableSigPipe(c); err != nil {
-			return c, err
-		}
-		return c, nil
+	innerTransport := &http.Transport{
+		TLSClientConfig: tlsClientConfig,
+		Dial: func(network, addr string) (c net.Conn, err error) {
+			c, err = net.Dial(network, addr)
+			if err != nil {
+				return c, err
+			}
+			if err = disable_sigpipe.DisableSigPipe(c); err != nil {
+				return c, err
+			}
+			return c, nil
+		},
 	}
 
 	client := &retryablehttp.Client{
@@ -98,7 +108,7 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 		},
 		HTTPClient: &http.Client{
 			Timeout:   time.Second * 3,
-			Transport: &innerTransport,
+			Transport: innerTransport,
 		},
 	}
 
