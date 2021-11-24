@@ -69,7 +69,7 @@ type sessionStore interface {
 	clientGet(token irma.ClientToken) (*session, error)
 	add(session *session) error
 	update(session *session) error
-	unlock(session *session) error
+	unlock(session *session)
 	stop()
 }
 
@@ -168,13 +168,11 @@ func (s *memorySessionStore) update(_ *session) error {
 	return nil
 }
 
-func (s *memorySessionStore) unlock(session *session) error {
+func (s *memorySessionStore) unlock(session *session) {
 	if session.locked {
 		session.locked = false
 		session.Unlock()
 	}
-
-	return nil
 }
 
 func (s *memorySessionStore) stop() {
@@ -350,18 +348,19 @@ func (s *redisSessionStore) update(session *session) error {
 	return s.add(session)
 }
 
-func (s *redisSessionStore) unlock(session *session) error {
-	if session.locked {
-		err := session.lock.Release(context.Background())
-		if err == redislock.ErrLockNotHeld {
-			s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Redis lock could not be released as the lock was not held")
-		} else if err != nil {
-			return logAsRedisError(err)
-		}
-		session.locked = false
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session unlocked successfully")
+func (s *redisSessionStore) unlock(session *session) {
+	if !session.locked {
+		return
 	}
-	return nil
+	err := session.lock.Release(context.Background())
+	if err == redislock.ErrLockNotHeld {
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Redis lock could not be released as the lock was not held")
+	} else if err != nil {
+		_ = logAsRedisError(err)
+		return
+	}
+	session.locked = false
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session unlocked successfully")
 }
 
 func (s *redisSessionStore) stop() {

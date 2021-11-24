@@ -375,7 +375,7 @@ func (session *session) updateAndUnlock() error {
 	if err != nil {
 		return err
 	}
-	_ = session.sessions.unlock(session)
+	session.sessions.unlock(session)
 
 	return nil
 }
