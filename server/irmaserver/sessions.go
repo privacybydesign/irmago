@@ -27,7 +27,7 @@ type session struct {
 	sse            *sse.Server
 	locked         bool
 	lock           *redislock.Lock
-	hashBefore     [32]byte
+	hashBefore     *[32]byte
 	sessions       sessionStore
 	conf           *server.Configuration
 	request        irma.SessionRequest
@@ -252,9 +252,10 @@ func (s *redisSessionStore) get(t irma.RequestorToken) (*session, error) {
 }
 
 func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
-	var session session
-	session.conf = s.conf
-	session.sessions = s
+	session := &session{
+		sessions: s,
+		conf:     s.conf,
+	}
 
 	// lock via clientToken since requestorToken first fetches clientToken en then comes here, this is fine
 	lock, err := s.locker.Obtain(context.Background(), lockPrefix+string(t), maxLockLifetime, lockingRetryOptions)
@@ -270,19 +271,20 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	// get the session data
 	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
-		return nil, server.LogError(&UnknownSessionError{"", t})
+		return session, server.LogError(&UnknownSessionError{"", t})
 	} else if err != nil {
-		return nil, logAsRedisError(err)
+		return session, logAsRedisError(err)
 	}
 
 	if err := json.Unmarshal([]byte(val), &session.sessionData); err != nil {
-		return nil, logAsRedisError(err)
+		return session, logAsRedisError(err)
 	}
 	session.request = session.Rrequest.SessionRequest()
 	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
 	// hashing the current session data needs to take place before the timeout check to detect all changes!
-	session.hashBefore = session.sessionData.hash()
+	hash := session.sessionData.hash()
+	session.hashBefore = &hash
 
 	// timeout check
 	lifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
@@ -292,7 +294,7 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 		session.setStatus(irma.ServerStatusTimeout)
 	}
 
-	return &session, nil
+	return session, nil
 }
 
 func (s *redisSessionStore) add(session *session) error {
@@ -327,7 +329,8 @@ func (s *redisSessionStore) add(session *session) error {
 }
 
 func (s *redisSessionStore) update(session *session) error {
-	if session.hashBefore == session.hash() {
+	hash := session.hash()
+	if session.hashBefore == nil || *session.hashBefore == hash {
 		// if nothing changed, updating is not necessary
 		return nil
 	}
