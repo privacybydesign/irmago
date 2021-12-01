@@ -371,7 +371,7 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 		return server.LogError(errors.New("Server sent events disabled"))
 	}
 	session, err := s.sessions.get(token)
-	defer func() { err = updateAndUnlock(session, err) }()
+	err = updateAndUnlock(session, err)
 	if err != nil {
 		if _, ok := err.(*RedisError); ok {
 			// In no flow, you should end up with an storeError. If you do, be alarmed!
@@ -438,7 +438,7 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 	}
 
 	session, err := s.sessions.get(requestorToken)
-	defer func() { err = updateAndUnlock(session, err) }()
+	err = updateAndUnlock(session, err)
 	if err != nil {
 		return
 	}
