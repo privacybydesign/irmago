@@ -451,6 +451,10 @@ func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, 
 	return s.SessionStatus(requestorToken)
 }
 func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
+	if s.conf.StoreType == "redis" {
+		return nil, errors.New("SessionStatus cannot be used in combination with Redis.")
+	}
+
 	session, err := s.sessions.get(requestorToken)
 	if err != nil {
 		return nil, err
