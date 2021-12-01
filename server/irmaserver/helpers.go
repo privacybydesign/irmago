@@ -424,24 +424,6 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 
 // Other
 
-func (s *Server) doResultCallback(result *server.SessionResult) {
-	request, err := s.GetRequest(result.Token)
-	if err != nil {
-		return
-	}
-
-	url := request.Base().CallbackURL
-	if url == "" {
-		return
-	}
-	server.DoResultCallback(url,
-		result,
-		s.conf.JwtIssuer,
-		request.Base().ResultJwtValidity,
-		s.conf.JwtRSAPrivateKey,
-	)
-}
-
 func (s *Server) validateRequest(request irma.SessionRequest) error {
 	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
 		return err
