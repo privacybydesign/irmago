@@ -271,6 +271,8 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	// get the session data
 	val, err := s.client.Get(context.Background(), clientTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
+		// Both session and error need to be returned. The session will already be locked and needs to
+		// be passed along, so it can be unlocked later.
 		return session, server.LogError(&UnknownSessionError{"", t})
 	} else if err != nil {
 		return session, logAsRedisError(err)
@@ -354,6 +356,8 @@ func (s *redisSessionStore) unlock(session *session) {
 	if err == redislock.ErrLockNotHeld {
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Redis lock could not be released as the lock was not held")
 	} else if err != nil {
+		// The Redis lock will be set free eventually after the `maxLockLifetime`. So it is safe to
+		// ignore this error.
 		_ = logAsRedisError(err)
 		return
 	}

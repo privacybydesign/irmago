@@ -449,6 +449,11 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 	return
 }
 
+// updateAndUnlock is a helper function that is mainly used in defer functions to make sure a session
+// is updated and unlocked eventually. Each session gets locked automatically in the session store's
+// `get` and `getClient` methods.
+// If the passed error is not nil it is always returned, as this first error is more important for
+// the eventual response. Otherwise, the return value of ses.updateAndUnlock() is returned.
 func updateAndUnlock(ses *session, err error) (e error) {
 	if ses == nil {
 		return err
