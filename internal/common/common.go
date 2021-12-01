@@ -7,15 +7,14 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"github.com/go-errors/errors"
+	"github.com/privacybydesign/gabi/big"
+	"github.com/sirupsen/logrus"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
-
-	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi/big"
-	"github.com/sirupsen/logrus"
 )
 
 var Logger *logrus.Logger
@@ -29,8 +28,10 @@ const (
 	AlphanumericChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	NumericChars      = "0123456789"
 
-	sessionTokenLength = 20
+	sessionTokenLength = 20 // duplicated in SessionTokenRegex as strconv.Itoa cannot be used in const block
 	pairingCodeLength  = 4
+
+	SessionTokenRegex = "[" + AlphanumericChars + "]{20}"
 )
 
 // AssertPathExists returns nil only if it has been successfully

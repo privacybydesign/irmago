@@ -160,7 +160,7 @@ func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteE
 	w.WriteHeader(status)
 	_, err := w.Write(bts)
 	if err != nil {
-		LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+		_ = LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
 	}
 }
 
@@ -170,7 +170,7 @@ func WriteString(w http.ResponseWriter, str string) {
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(str))
 	if err != nil {
-		LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+		_ = LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
 	}
 }
 
@@ -398,8 +398,8 @@ func LogError(err error) error {
 	return log(logrus.ErrorLevel, err)
 }
 
-func LogWarning(err error) {
-	_ = log(logrus.WarnLevel, err)
+func LogWarning(err error) error {
+	return log(logrus.WarnLevel, err)
 }
 
 func LogRequest(typ, proto, method, url, from string, headers http.Header, message []byte) {

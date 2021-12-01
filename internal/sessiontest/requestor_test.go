@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,16 +55,12 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 		defer StopIrmaServer()
 	}
 
-	clientChan := make(chan *SessionResult, 2)
-	serverChan := make(chan *server.SessionResult)
-
-	qr, requestorToken, _, err := irmaServer.StartSession(request, func(result *server.SessionResult) {
-		serverChan <- result
-	})
+	qr, requestorToken, _, err := irmaServer.StartSession(request, nil)
 	require.NoError(t, err)
 
 	var h irmaclient.Handler
 	requestor := expectedRequestorInfo(t, client.Configuration)
+	clientChan := make(chan *SessionResult, 2)
 	if opts&sessionOptionUnsatisfiableRequest > 0 {
 		h = &UnsatisfiableTestHandler{TestHandler: TestHandler{t, clientChan, client, requestor, 0, "", nil, nil, nil}}
 	} else {
@@ -87,7 +84,15 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 		return &requestorSessionResult{nil, nil, clientResult.Missing, dismisser}
 	}
 
-	serverResult := <-serverChan
+	var serverResult *server.SessionResult
+	if opts&sessionOptionWait > 0 {
+		serverResult = waitSessionFinished(t, irmaServer, requestorToken)
+	} else if opts&sessionOptionUnsatisfiableRequest == 0 {
+		time.Sleep(100 * time.Millisecond) // wait for server to finish session
+		serverResult, err = irmaServer.GetSessionResult(requestorToken)
+		require.NoError(t, err)
+	}
+
 	require.Equal(t, requestorToken, serverResult.Token)
 
 	if opts&sessionOptionRetryPost > 0 {
@@ -98,6 +103,17 @@ func requestorSessionHelper(t *testing.T, request interface{}, client *irmaclien
 	}
 
 	return &requestorSessionResult{serverResult, clientResult, nil, dismisser}
+}
+
+func waitSessionFinished(t *testing.T, irmaServer *irmaserver.Server, token irma.RequestorToken) *server.SessionResult {
+	for {
+		res, err := irmaServer.GetSessionResult(token)
+		require.NoError(t, err)
+		if res.Status.Finished() {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // Check that nonexistent IRMA identifiers in the session request fail the session

@@ -1,0 +1,4 @@
+redis_addr: "localhost:6379"
+redis_pw: ""
+redis_db: 0
+redis_allow_empty_password: true

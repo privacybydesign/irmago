@@ -119,6 +119,13 @@ func setFlags(cmd *cobra.Command, production bool) error {
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
+	headers["store-type"] = "Session store configuration"
+	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
+	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
+	flags.String("redis-pw", "", "Redis server password")
+	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
+	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
+
 	headers["jwt-issuer"] = "JWT configuration"
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
 	flags.String("jwt-privkey", "", "JWT private key")
@@ -218,6 +225,20 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	}
 	for i, s := range m {
 		conf.RevocationSettings[irma.NewCredentialTypeIdentifier(i)] = s
+	}
+
+	// Parse Redis store configuration
+	if conf.StoreType == "redis" {
+		conf.RedisSettings = &server.RedisSettings{}
+		if conf.RedisSettings.Addr = viper.GetString("redis_addr"); conf.RedisSettings.Addr == "" {
+			return nil, errors.New("When Redis is used as session data store, a Redis URL must be specified with the --redis-addr flag.")
+		}
+
+		if conf.RedisSettings.Password = viper.GetString("redis_pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis_allow_empty_password") {
+			return nil, errors.New("When Redis is used as session data store, a non-empty Redis password must be specified with the --redis-pw flag. This restriction can be relaxed by setting the --redis-allow-empty-password flag to true.")
+		}
+
+		conf.RedisSettings.DB = viper.GetInt("redis_db")
 	}
 
 	logger.Debug("Done configuring")

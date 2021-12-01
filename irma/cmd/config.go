@@ -2,15 +2,14 @@ package cmd
 
 import (
 	"crypto/tls"
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"net/smtp"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare"
 
 	"github.com/go-errors/errors"
 	"github.com/mitchellh/mapstructure"
@@ -55,6 +54,7 @@ func configureIRMAServer() *server.Configuration {
 		DisableTLS:             viper.GetBool("no_tls"),
 		Email:                  viper.GetString("email"),
 		EnableSSE:              viper.GetBool("sse"),
+		StoreType:              viper.GetString("store_type"),
 		Verbose:                viper.GetInt("verbose"),
 		Quiet:                  viper.GetBool("quiet"),
 		LogJSON:                viper.GetBool("log_json"),

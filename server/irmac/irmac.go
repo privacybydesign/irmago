@@ -8,11 +8,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	irma "github.com/privacybydesign/irmago"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-
-	irma "github.com/privacybydesign/irmago"
 
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -88,47 +87,79 @@ func StartSession(requestString *C.char) (r *C.char) {
 }
 
 //export GetSessionResult
-func GetSessionResult(token *C.char) *C.char {
+func GetSessionResult(token *C.char) (r *C.char) {
+	// Create struct for return information
+	result := struct {
+		SessionResult *server.SessionResult
+		Error         string
+	}{}
+	defer func() {
+		j, e := json.Marshal(result)
+		if e != nil {
+			// encoding error, should never occur
+			panic(e)
+		}
+		r = C.CString(string(j))
+	}()
+
 	// Check that we have required input
 	if token == nil {
 		return nil
 	}
 
 	// Run the actual core function
-	result := s.GetSessionResult(irma.RequestorToken(C.GoString(token)))
+	var err error
+	requestorToken, err := irma.ParseRequestorToken(C.GoString(token))
+	if err != nil {
+		result.Error = err.Error()
+		return
+	}
+	result.SessionResult, err = s.GetSessionResult(requestorToken)
 
 	// And properly return results
-	if result == nil {
-		return nil
-	}
-	resultJson, err := json.Marshal(result)
 	if err != nil {
-		// encoding error, should never occur
-		panic(err)
+		result.Error = err.Error()
+		return
 	}
-	return C.CString(string(resultJson))
+	return
 }
 
 //export GetRequest
-func GetRequest(token *C.char) *C.char {
+func GetRequest(token *C.char) (r *C.char) {
+	// Create struct for return information
+	result := struct {
+		RequestorRequestResult irma.RequestorRequest
+		Error                  string
+	}{}
+	defer func() {
+		j, e := json.Marshal(result)
+		if e != nil {
+			// encoding error, should never occur
+			panic(e)
+		}
+		r = C.CString(string(j))
+	}()
+
 	// Check that we have required input
 	if token == nil {
 		return nil
 	}
 
 	// Run the core function
-	result := s.GetRequest(irma.RequestorToken(C.GoString(token)))
+	var err error
+	requestorToken, err := irma.ParseRequestorToken(C.GoString(token))
+	if err != nil {
+		result.Error = err.Error()
+		return
+	}
+	result.RequestorRequestResult, err = s.GetRequest(requestorToken)
 
 	// And properly return results
-	if result == nil {
-		return nil
-	}
-	resultJson, err := json.Marshal(result)
 	if err != nil {
-		// encoding error, should never occur
-		panic(err)
+		result.Error = err.Error()
+		return
 	}
-	return C.CString(string(resultJson))
+	return
 }
 
 //export CancelSession
@@ -139,7 +170,11 @@ func CancelSession(token *C.char) *C.char {
 	}
 
 	// Run the core function
-	err := s.CancelSession(irma.RequestorToken(C.GoString(token)))
+	requestorToken, err := irma.ParseRequestorToken(C.GoString(token))
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	err = s.CancelSession(requestorToken)
 
 	if err != nil {
 		return C.CString(err.Error())

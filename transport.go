@@ -244,7 +244,9 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	if err != nil {
 		return err
 	}
-	if method == http.MethodDelete {
+
+	// For DELETE requests it's common to receive a '204 No Content' on success.
+	if method == http.MethodDelete && (res.StatusCode == http.StatusOK || res.StatusCode == http.StatusNoContent) {
 		return nil
 	}
 
@@ -313,6 +315,6 @@ func (transport *HTTPTransport) Get(url string, result interface{}) error {
 }
 
 // Delete performs a DELETE.
-func (transport *HTTPTransport) Delete() {
-	_ = transport.jsonRequest("", http.MethodDelete, nil, nil)
+func (transport *HTTPTransport) Delete() error {
+	return transport.jsonRequest("", http.MethodDelete, nil, nil)
 }

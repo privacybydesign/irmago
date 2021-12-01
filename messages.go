@@ -3,7 +3,9 @@ package irma
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/privacybydesign/irmago/internal/common"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -171,6 +173,24 @@ type Qr struct {
 // Tokens to identify a session from the perspective of the different agents
 type RequestorToken string
 type ClientToken string
+
+// ParseClientToken parses a string to a ClientToken after validating the input.
+func ParseClientToken(input string) (ClientToken, error) {
+	if match := regexp.MustCompile(common.SessionTokenRegex).MatchString(input); match {
+		return ClientToken(input), nil
+	} else {
+		return "", errors.New("string did not pass input validation for clientToken")
+	}
+}
+
+// ParseRequestorToken parses a string to a ClientToken after validating the input.
+func ParseRequestorToken(input string) (RequestorToken, error) {
+	if match := regexp.MustCompile(common.SessionTokenRegex).MatchString(input); match {
+		return RequestorToken(input), nil
+	} else {
+		return "", errors.New("string did not pass input validation for requestorToken")
+	}
+}
 
 // Authorization headers
 type ClientAuthorization string

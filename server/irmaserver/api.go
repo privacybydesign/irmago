@@ -5,6 +5,9 @@
 package irmaserver
 
 import (
+	"context"
+	"github.com/bsm/redislock"
+	"github.com/go-redis/redis/v8"
 	"net/http"
 	"time"
 
@@ -46,19 +49,42 @@ func New(conf *server.Configuration) (*Server, error) {
 	conf.IrmaConfiguration.Revocation.ServerSentEvents = e
 
 	s := &Server{
-		conf:      conf,
-		scheduler: gocron.NewScheduler(),
-		sessions: &memorySessionStore{
-			requestor: make(map[irma.RequestorToken]*session),
-			client:    make(map[irma.ClientToken]*session),
-			conf:      conf,
-		},
+		conf:             conf,
+		scheduler:        gocron.NewScheduler(),
 		serverSentEvents: e,
 	}
 
-	s.scheduler.Every(10).Seconds().Do(func() {
-		s.sessions.deleteExpired()
-	})
+	switch conf.StoreType {
+	case "":
+		fallthrough // no specification defaults to the memory session store
+	case "memory":
+		s.sessions = &memorySessionStore{
+			requestor: make(map[irma.RequestorToken]*session),
+			client:    make(map[irma.ClientToken]*session),
+			conf:      conf,
+		}
+
+		s.scheduler.Every(10).Seconds().Do(func() {
+			s.sessions.(*memorySessionStore).deleteExpired()
+		})
+	case "redis":
+		//setup client
+		cl := redis.NewClient(&redis.Options{
+			Addr:     conf.RedisSettings.Addr,
+			Password: conf.RedisSettings.Password,
+			DB:       conf.RedisSettings.DB,
+		})
+		if err := cl.Ping(context.Background()).Err(); err != nil {
+			return nil, err
+		}
+		s.sessions = &redisSessionStore{
+			client: cl,
+			conf:   conf,
+			locker: redislock.New(cl),
+		}
+	default:
+		return nil, errors.New("storeType not known")
+	}
 
 	s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
 		for credid, settings := range s.conf.RevocationSettings {
@@ -151,7 +177,7 @@ func Stop() {
 }
 func (s *Server) Stop() {
 	if err := s.conf.IrmaConfiguration.Revocation.Close(); err != nil {
-		server.LogWarning(err)
+		_ = server.LogWarning(err)
 	}
 	s.stopScheduler <- true
 	s.sessions.stop()
@@ -169,6 +195,14 @@ func StartSession(request interface{}, handler server.SessionHandler,
 }
 func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+	return s.startNextSession(req, handler, nil, "")
+}
+func (s *Server) startNextSession(
+	req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization,
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+	if s.conf.StoreType == "redis" && handler != nil {
+		return nil, "", nil, errors.New("Handlers cannot be used in combination with Redis.")
+	}
 	rrequest, err := server.ParseSessionRequest(req)
 	if err != nil {
 		return nil, "", nil, err
@@ -212,21 +246,28 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	session := s.newSession(action, rrequest)
-	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.requestorToken}).Infof("Session started")
+	session, err := s.newSession(action, rrequest, disclosed, FrontendAuth)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": session.RequestorToken}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken, "clienttoken": session.clientToken}).Info("Session request: ", server.ToJson(rrequest))
+		s.conf.Logger.
+			WithFields(logrus.Fields{"session": session.RequestorToken, "clienttoken": session.ClientToken}).
+			Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.requestorToken}).Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
+		s.conf.Logger.
+			WithFields(logrus.Fields{"session": session.RequestorToken}).
+			Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	session.handler = handler
 	return &irma.Qr{
 			Type: action,
-			URL:  s.conf.URL + "session/" + string(session.clientToken),
+			URL:  s.conf.URL + "session/" + string(session.ClientToken),
 		},
-		session.requestorToken,
+		session.RequestorToken,
 		&irma.FrontendSessionRequest{
-			Authorization:      session.frontendAuth,
+			Authorization:      session.FrontendAuth,
 			PairingRecommended: pairingRecommended,
 			MinProtocolVersion: minFrontendProtocolVersion,
 			MaxProtocolVersion: maxFrontendProtocolVersion,
@@ -235,70 +276,82 @@ func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
 }
 
 // GetSessionResult retrieves the result of the specified IRMA session.
-func GetSessionResult(requestorToken irma.RequestorToken) *server.SessionResult {
+func GetSessionResult(requestorToken irma.RequestorToken) (*server.SessionResult, error) {
 	return s.GetSessionResult(requestorToken)
 }
-func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) *server.SessionResult {
-	session := s.sessions.get(requestorToken)
-	if session == nil {
-		s.conf.Logger.Warn("Session result requested of unknown session ", requestorToken)
-		return nil
+func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (res *server.SessionResult, err error) {
+	session, err := s.sessions.get(requestorToken)
+	defer func() { err = updateAndUnlock(session, err) }()
+	if err != nil {
+		return
 	}
-	return session.result
+
+	res = session.Result
+	return
 }
 
 // GetRequest retrieves the request submitted by the requestor that started the specified IRMA session.
-func GetRequest(token irma.RequestorToken) irma.RequestorRequest {
-	return s.GetRequest(token)
+func GetRequest(requestorToken irma.RequestorToken) (irma.RequestorRequest, error) {
+	return s.GetRequest(requestorToken)
 }
-func (s *Server) GetRequest(requestorToken irma.RequestorToken) irma.RequestorRequest {
-	session := s.sessions.get(requestorToken)
-	if session == nil {
-		s.conf.Logger.Warn("Session request requested of unknown session ", requestorToken)
-		return nil
+func (s *Server) GetRequest(requestorToken irma.RequestorToken) (req irma.RequestorRequest, err error) {
+	session, err := s.sessions.get(requestorToken)
+	defer func() { err = updateAndUnlock(session, err) }()
+	if err != nil {
+		return
 	}
-	return session.rrequest
+
+	req = session.Rrequest
+	return
 }
 
 // CancelSession cancels the specified IRMA session.
 func CancelSession(requestorToken irma.RequestorToken) error {
 	return s.CancelSession(requestorToken)
 }
-func (s *Server) CancelSession(requestorToken irma.RequestorToken) error {
-	session := s.sessions.get(requestorToken)
-	if session == nil {
-		return server.LogError(errors.Errorf("can't cancel unknown session %s", requestorToken))
+func (s *Server) CancelSession(requestorToken irma.RequestorToken) (err error) {
+	session, err := s.sessions.get(requestorToken)
+	defer func() { err = updateAndUnlock(session, err) }()
+	if err != nil {
+		return
 	}
+
 	session.handleDelete()
-	return nil
+	return
 }
 
-// Requests a change of the session frontend options at the server.
+// SetFrontendOptions requests a change of the session frontend options at the server.
 // Returns the updated session options struct. Frontend options can only be
 // changed when the client is not connected yet. Otherwise an error is returned.
 // Options that are not specified in the request, keep their old value.
 func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
 	return s.SetFrontendOptions(requestorToken, request)
 }
-func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
-	session := s.sessions.get(requestorToken)
-	if session == nil {
-		return nil, server.LogError(errors.Errorf("can't set frontend options of unknown session %s", requestorToken))
+func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (o *irma.SessionOptions, err error) {
+	session, err := s.sessions.get(requestorToken)
+	defer func() { err = updateAndUnlock(session, err) }()
+	if err != nil {
+		return
 	}
-	return session.updateFrontendOptions(request)
+	o, err = session.updateFrontendOptions(request)
+
+	return
 }
 
-// Complete pairing between the irma client and the frontend. Returns
+// PairingCompleted completes pairing between the irma client and the frontend. Returns
 // an error when no client is actually connected.
 func PairingCompleted(requestorToken irma.RequestorToken) error {
 	return s.PairingCompleted(requestorToken)
 }
-func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
-	session := s.sessions.get(requestorToken)
-	if session == nil {
-		return server.LogError(errors.Errorf("can't complete pairing of unknown session %s", requestorToken))
+func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) (err error) {
+	session, err := s.sessions.get(requestorToken)
+	defer func() { err = updateAndUnlock(session, err) }()
+	if err != nil {
+		return
 	}
-	return session.pairingCompleted()
+
+	err = session.pairingCompleted()
+	return
 }
 
 // Revoke revokes the earlier issued credential specified by key. (Can only be used if this server
@@ -313,10 +366,31 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 
 // SubscribeServerSentEvents subscribes the HTTP client to server sent events on status updates
 // of the specified IRMA session.
-func SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
-	return s.SubscribeServerSentEvents(w, r, token, requestor)
+func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token irma.RequestorToken) (err error) {
+	if !s.conf.EnableSSE {
+		return server.LogError(errors.New("Server sent events disabled"))
+	}
+	session, err := s.sessions.get(token)
+	err = updateAndUnlock(session, err)
+	if err != nil {
+		if _, ok := err.(*RedisError); ok {
+			// In no flow, you should end up with an storeError. If you do, be alarmed!
+			// Only the Redis session store implementation actively uses these errors. As the Redis session store
+			// currently cannot be used in combination with SSE, there should be no storeError here.
+			// Furthermore, the specific storeError is already logged in `session.go` and does not have
+			// to be logged again.
+			err = server.LogError(errors.Errorf("unexpectedly triggered error when trying to receive session %s", token))
+			return
+		} else {
+			return
+		}
+	}
+
+	err = s.subscribeServerSentEvents(w, r, session, true)
+	return
 }
-func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token string, requestor bool) error {
+
+func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Request, session *session, requestor bool) error {
 	if !s.conf.EnableSSE {
 		server.WriteResponse(w, nil, &irma.RemoteError{
 			Status:      500,
@@ -327,16 +401,14 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 		return nil
 	}
 
-	var session *session
+	var token string
 	if requestor {
-		session = s.sessions.get(irma.RequestorToken(token))
+		token = string(session.RequestorToken)
 	} else {
-		session = s.sessions.clientGet(irma.ClientToken(token))
+		token = string(session.ClientToken)
 	}
-	if session == nil {
-		return server.LogError(errors.Errorf("can't subscribe to server sent events of unknown session %s", token))
-	}
-	if session.status.Finished() {
+
+	if session.Status.Finished() {
 		return server.LogError(errors.Errorf("can't subscribe to server sent events of finished session %s", token))
 	}
 
@@ -360,14 +432,35 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
 	return s.SessionStatus(requestorToken)
 }
-func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
-	session := s.sessions.get(requestorToken)
-	if session == nil {
-		return nil, server.LogError(errors.Errorf("can't get session status of unknown session %s", requestorToken))
+func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan chan irma.ServerStatus, err error) {
+	if s.conf.StoreType == "redis" {
+		return nil, errors.New("SessionStatus cannot be used in combination with Redis.")
 	}
 
-	statusChan := make(chan irma.ServerStatus, 4)
-	statusChan <- session.status
+	session, err := s.sessions.get(requestorToken)
+	err = updateAndUnlock(session, err)
+	if err != nil {
+		return
+	}
+
+	statusChan = make(chan irma.ServerStatus, 4)
+	statusChan <- session.Status
 	session.statusChannels = append(session.statusChannels, statusChan)
-	return statusChan, nil
+	return
+}
+
+// updateAndUnlock is a helper function that is mainly used in defer functions to make sure a session
+// is updated and unlocked eventually. Each session gets locked automatically in the session store's
+// `get` and `getClient` methods.
+// If the passed error is not nil it is always returned, as this first error is more important for
+// the eventual response. Otherwise, the return value of ses.updateAndUnlock() is returned.
+func updateAndUnlock(ses *session, err error) (e error) {
+	if ses == nil {
+		return err
+	}
+	e = ses.updateAndUnlock()
+	if err == nil {
+		err = e
+	}
+	return
 }
