@@ -1017,7 +1017,7 @@ func (scheme *SchemeManager) validate(conf *Configuration) (error, SchemeManager
 			return errors.Errorf("Scheme %s has keyshare URL but no keyshare public key kss-0.pem", scheme.ID), SchemeManagerStatusParsingError
 		}
 	}
-	conf.validateTranslations(fmt.Sprintf("Scheme %s", scheme.ID), scheme)
+	conf.validateTranslations(fmt.Sprintf("Scheme %s", scheme.ID), scheme, scheme.Languages)
 
 	// Verify that all other files are validly signed
 	if err := scheme.verifyFiles(conf); err != nil {
@@ -1328,6 +1328,9 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 
 	// Verify all requestors
 	for _, requestor := range requestors {
+		if len(requestor.Languages) == 0 {
+			requestor.Languages = scheme.Languages
+		}
 		if scheme.Demo && len(requestor.Hostnames) > 0 {
 			return errors.New("Demo requestor has hostnames: only allowed for non-demo schemes"), SchemeManagerStatusParsingError
 		}
@@ -1340,6 +1343,9 @@ func (scheme *RequestorScheme) validate(conf *Configuration) (error, SchemeManag
 			}
 		}
 		for id, wizard := range requestor.Wizards {
+			if len(wizard.Languages) == 0 {
+				wizard.Languages = requestor.Languages
+			}
 			if id != wizard.ID || id.RequestorIdentifier() != requestor.ID {
 				return errors.Errorf("issue wizard %s has incorrect ID", id), SchemeManagerStatusParsingError
 			}

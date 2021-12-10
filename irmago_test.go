@@ -1237,7 +1237,11 @@ func TestIssueWizardFAQSummariesValidation(t *testing.T) {
 	credTypeID2 := credid("a.b.a")
 	conf.CredentialTypes[credTypeID] = credtype(credTypeID.String())
 	conf.CredentialTypes[credTypeID2] = credtype(credTypeID2.String())
-	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypeID}
+	tester := IssueWizardItem{
+		Type:       IssueWizardItemTypeCredential,
+		Credential: &credTypeID,
+		languages:  []string{"en", "nl"},
+	}
 	schemeMan := SchemeManager{}
 	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypeID.SchemeManagerIdentifier(): &schemeMan}
 
