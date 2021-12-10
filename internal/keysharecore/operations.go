@@ -13,7 +13,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 var (

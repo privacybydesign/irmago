@@ -19,7 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/server"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/require"
 )
 

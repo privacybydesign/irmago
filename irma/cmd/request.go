@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/mdp/qrterminal"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
