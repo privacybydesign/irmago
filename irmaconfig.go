@@ -648,7 +648,7 @@ func (conf *Configuration) checkIssuers(set *IrmaIdentifierSet, missing *IrmaIde
 
 func (conf *Configuration) validateIssuer(scheme *SchemeManager, issuer *Issuer, dir string) error {
 	issuerid := issuer.Identifier()
-	conf.validateTranslations(fmt.Sprintf("Issuer %s", issuerid.String()), issuer, issuer.languages(conf))
+	conf.validateTranslations(fmt.Sprintf("Issuer %s", issuerid.String()), issuer, issuer.Languages)
 	// Check that the issuer has public keys
 	pkpath := filepath.Join(scheme.path(), issuer.ID, "PublicKeys", "*")
 	files, err := filepath.Glob(pkpath)
@@ -665,7 +665,7 @@ func (conf *Configuration) validateIssuer(scheme *SchemeManager, issuer *Issuer,
 	if scheme.ID != issuer.SchemeManagerID {
 		return errors.Errorf("Issuer %s has wrong SchemeManager %s", issuerid.String(), issuer.SchemeManagerID)
 	}
-	if err = validateDemoPrefix(issuer.Name, issuer.languages(conf)); scheme.Demo && err != nil {
+	if err = validateDemoPrefix(issuer.Name, issuer.Languages); scheme.Demo && err != nil {
 		return errors.Errorf("Name of demo issuer %s invalid: %s", issuer.ID, err.Error())
 	}
 	if err = common.AssertPathExists(filepath.Join(dir, "logo.png")); err != nil {
@@ -676,7 +676,7 @@ func (conf *Configuration) validateIssuer(scheme *SchemeManager, issuer *Issuer,
 
 func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer *Issuer, cred *CredentialType, dir string) error {
 	credid := cred.Identifier()
-	conf.validateTranslations(fmt.Sprintf("Credential type %s", credid.String()), cred, cred.languages(conf))
+	conf.validateTranslations(fmt.Sprintf("Credential type %s", credid.String()), cred, cred.Languages)
 	if cred.XMLVersion < 4 {
 		return errors.New("Unsupported credential type description")
 	}
@@ -689,7 +689,7 @@ func (conf *Configuration) validateCredentialType(manager *SchemeManager, issuer
 	if cred.SchemeManagerID != manager.ID {
 		return errors.Errorf("Credential type %s has wrong SchemeManager %s", credid.String(), cred.SchemeManagerID)
 	}
-	if err := validateDemoPrefix(cred.Name, cred.languages(conf)); manager.Demo && err != nil {
+	if err := validateDemoPrefix(cred.Name, cred.Languages); manager.Demo && err != nil {
 		return errors.Errorf("Name of demo credential %s invalid: %s", credid.String(), err.Error())
 	}
 
@@ -717,7 +717,7 @@ func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 	}
 	for i, attr := range cred.AttributeTypes {
 		if !attr.RevocationAttribute {
-			conf.validateTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr, cred.languages(conf))
+			conf.validateTranslations(fmt.Sprintf("Attribute %s of credential type %s", attr.ID, cred.Identifier().String()), attr, cred.Languages)
 		}
 		index := i
 		if attr.DisplayIndex != nil {

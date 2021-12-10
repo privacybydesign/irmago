@@ -688,13 +688,6 @@ func (ct CredentialType) AttributeType(ai AttributeTypeIdentifier) *AttributeTyp
 	return ct.AttributeTypes[i]
 }
 
-func (ct CredentialType) languages(conf *Configuration) []string {
-	if len(ct.Languages) != 0 {
-		return ct.Languages
-	}
-	return conf.Issuers[ct.IssuerIdentifier()].languages(conf)
-}
-
 // TranslatedString is a map of translated strings.
 type TranslatedString map[string]string
 
@@ -813,13 +806,6 @@ func (id *Issuer) Identifier() IssuerIdentifier {
 
 func (id *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(id.SchemeManagerID)
-}
-
-func (id *Issuer) languages(conf *Configuration) []string {
-	if len(id.Languages) != 0 {
-		return id.Languages
-	}
-	return conf.SchemeManagers[id.SchemeManagerIdentifier()].Languages
 }
 
 func (ri *RequestorInfo) logoPath(scheme *RequestorScheme) string {

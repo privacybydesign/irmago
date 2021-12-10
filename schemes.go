@@ -918,6 +918,9 @@ func (scheme *SchemeManager) parseContents(conf *Configuration) error {
 			return errors.New("Unsupported issuer description")
 		}
 
+		if len(issuer.Languages) == 0 {
+			issuer.Languages = scheme.Languages
+		}
 		if err = conf.validateIssuer(scheme, issuer, dir); err != nil {
 			return err
 		}
@@ -1183,6 +1186,9 @@ func (scheme *SchemeManager) parseCredentialsFolder(conf *Configuration, issuer 
 		}
 		if !exists {
 			return nil
+		}
+		if len(cred.Languages) == 0 {
+			cred.Languages = issuer.Languages
 		}
 		if err = conf.validateCredentialType(scheme, issuer, cred, dir); err != nil {
 			return err
