@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt"
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"

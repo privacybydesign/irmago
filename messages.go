@@ -11,9 +11,9 @@ import (
 
 	"fmt"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt"
 	"github.com/privacybydesign/gabi"
 )
 

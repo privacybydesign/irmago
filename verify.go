@@ -4,8 +4,8 @@ import (
 	"crypto/rsa"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"

@@ -12,8 +12,8 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt"
 )
 
 var (

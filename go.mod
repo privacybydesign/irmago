@@ -10,7 +10,6 @@ require (
 	github.com/bwesterb/go-atum v1.0.0
 	github.com/certifi/gocertifi v0.0.0-20180118203423-deb3ae2ef261 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/eknkc/basex v1.0.0
 	github.com/fxamacker/cbor v1.5.0
 	github.com/getsentry/raven-go v0.0.0-20180121060056-563b81fc02b7
@@ -20,6 +19,7 @@ require (
 	github.com/go-redis/redis/v8 v8.8.0
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
+	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/gomodule/redigo v1.8.4 // indirect
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hashicorp/go-retryablehttp v0.6.2
