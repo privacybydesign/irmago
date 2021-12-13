@@ -16,9 +16,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
+	"github.com/golang-jwt/jwt/v4"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
