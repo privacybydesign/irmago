@@ -11,12 +11,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"github.com/alicebob/miniredis/v2"
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/requestorserver"
-	"github.com/stretchr/testify/require"
 	"io"
 	"math/big"
 	"net"
@@ -26,6 +20,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/requestorserver"
+	"github.com/stretchr/testify/require"
 )
 
 func startRedis(t *testing.T, enableTLS bool) (*miniredis.Miniredis, string) {
@@ -137,6 +138,32 @@ func TestRedis(t *testing.T) {
 	t.Run("TestIssuedCredentialIsStored", TestIssuedCredentialIsStored)
 	t.Run("TestChainedSessions", TestChainedSessions)
 	t.Run("TestUnknownRequestorToken", TestUnknownRequestorToken)
+}
+
+func TestRedisTLSConfig(t *testing.T) {
+	mr, cert := startRedis(t, true)
+	defer mr.Close()
+
+	// Check that specifying a certificate for Redis is not allowed when Redis TLS is disabled
+	configFunc := redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)
+	config := configFunc()
+	config.RedisSettings.DisableTLS = true
+	_, err := requestorserver.New(config)
+	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+
+	// Check that specifying a path to a certificate for Redis is not allowed when Redis TLS is disabled
+	config = configFunc()
+	config.RedisSettings.DisableTLS = true
+	config.RedisSettings.TLSCertificate = ""
+	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
+	_, err = requestorserver.New(config)
+	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+
+	// Check that specifying both a certificate and a path to a(nother) certificate is not allowed
+	config = configFunc()
+	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
+	_, err = requestorserver.New(config)
+	require.EqualError(t, err, "Redis TLS config failed: provide either key or path to key")
 }
 
 func TestRedisWithTLSCertFile(t *testing.T) {
