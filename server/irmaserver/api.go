@@ -8,11 +8,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"net/http"
+	"time"
+
 	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
 	"github.com/privacybydesign/irmago/internal/common"
-	"net/http"
-	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/go-chi/chi"
@@ -85,7 +86,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			TLSConfig: tlsConfig,
 		})
 		if err := cl.Ping(context.Background()).Err(); err != nil {
-			return nil, err
+			return nil, errors.WrapPrefix(err, "failed to connect to Redis", 0)
 		}
 
 		s.sessions = &redisSessionStore{
