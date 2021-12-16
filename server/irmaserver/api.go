@@ -117,14 +117,14 @@ func New(conf *server.Configuration) (*Server, error) {
 
 func redisTLSConfig(conf *server.Configuration) (*tls.Config, error) {
 	if conf.RedisSettings.DisableTLS {
+		if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
+			err := errors.New("Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+		}
 		return nil, nil
 	}
 
 	if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
-		if conf.RedisSettings.DisableTLS {
-			err := errors.New("Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
-			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
-		}
 		cert, err := common.ReadKey(conf.RedisSettings.TLSCertificate, conf.RedisSettings.TLSCertificateFile)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
