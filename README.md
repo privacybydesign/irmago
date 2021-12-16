@@ -118,7 +118,7 @@ docker run --name redis-test-instance -p 6379:6379 -d redis
 You can then start `irma` with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
 
 ```
-irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password
+irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password --redis-no-tls
 ```
 
 <!-- vim: set ts=4 sw=4: -->

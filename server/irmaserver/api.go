@@ -6,10 +6,14 @@ package irmaserver
 
 import (
 	"context"
-	"github.com/bsm/redislock"
-	"github.com/go-redis/redis/v8"
+	"crypto/tls"
+	"crypto/x509"
 	"net/http"
 	"time"
+
+	"github.com/bsm/redislock"
+	"github.com/go-redis/redis/v8"
+	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/go-chi/chi"
@@ -68,15 +72,23 @@ func New(conf *server.Configuration) (*Server, error) {
 			s.sessions.(*memorySessionStore).deleteExpired()
 		})
 	case "redis":
-		//setup client
-		cl := redis.NewClient(&redis.Options{
-			Addr:     conf.RedisSettings.Addr,
-			Password: conf.RedisSettings.Password,
-			DB:       conf.RedisSettings.DB,
-		})
-		if err := cl.Ping(context.Background()).Err(); err != nil {
+		// Configure Redis TLS. If Redis TLS is disabled, tlsConfig becomes nil and the redis client will not use TLS.
+		tlsConfig, err := redisTLSConfig(conf)
+		if err != nil {
 			return nil, err
 		}
+
+		// setup client
+		cl := redis.NewClient(&redis.Options{
+			Addr:      conf.RedisSettings.Addr,
+			Password:  conf.RedisSettings.Password,
+			DB:        conf.RedisSettings.DB,
+			TLSConfig: tlsConfig,
+		})
+		if err := cl.Ping(context.Background()).Err(); err != nil {
+			return nil, errors.WrapPrefix(err, "failed to connect to Redis", 0)
+		}
+
 		s.sessions = &redisSessionStore{
 			client: cl,
 			conf:   conf,
@@ -101,6 +113,38 @@ func New(conf *server.Configuration) (*Server, error) {
 	s.stopScheduler = s.scheduler.Start()
 
 	return s, nil
+}
+
+func redisTLSConfig(conf *server.Configuration) (*tls.Config, error) {
+	if conf.RedisSettings.DisableTLS {
+		if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
+			err := errors.New("Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+		}
+		return nil, nil
+	}
+
+	if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
+		cert, err := common.ReadKey(conf.RedisSettings.TLSCertificate, conf.RedisSettings.TLSCertificateFile)
+		if err != nil {
+			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+		}
+		tlsConfig := &tls.Config{
+			RootCAs: x509.NewCertPool(),
+		}
+		tlsConfig.RootCAs.AppendCertsFromPEM(cert)
+		return tlsConfig, nil
+	}
+
+	// By default, the certificate pool of the system is used
+	systemCerts, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+	}
+	tlsConfig := &tls.Config{
+		RootCAs: systemCerts,
+	}
+	return tlsConfig, nil
 }
 
 // HandlerFunc returns a http.HandlerFunc that handles the IRMA protocol

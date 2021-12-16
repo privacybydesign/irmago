@@ -123,8 +123,11 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
 	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
 	flags.String("redis-pw", "", "Redis server password")
-	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
 	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
+	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
+	flags.String("redis-tls-cert", "", "use Redis TLS with specific certificate or certificate authority")
+	flags.String("redis-tls-cert-file", "", "use Redis TLS path to specific certificate or certificate authority")
+	flags.Bool("redis-no-tls", false, "disable Redis TLS (by default, Redis TLS is enabled with the system certificate pool)")
 
 	headers["jwt-issuer"] = "JWT configuration"
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
@@ -143,7 +146,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("client-tls-cert-file", "", "path to TLS certificate (chain) for IRMA app server")
 	flags.String("client-tls-privkey", "", "TLS private key for IRMA app server")
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
-	flags.Bool("no-tls", false, "Disable TLS")
+	flags.Bool("no-tls", false, "disable TLS")
 
 	headers["email"] = "Email address (see README for more info)"
 	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
@@ -239,6 +242,10 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 		}
 
 		conf.RedisSettings.DB = viper.GetInt("redis_db")
+
+		conf.RedisSettings.TLSCertificate = viper.GetString("redis_tls_cert")
+		conf.RedisSettings.TLSCertificateFile = viper.GetString("redis_tls_cert_file")
+		conf.RedisSettings.DisableTLS = viper.GetBool("redis_no_tls")
 	}
 
 	logger.Debug("Done configuring")
