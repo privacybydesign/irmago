@@ -412,7 +412,13 @@ func (s *Server) Revoke(credid irma.CredentialTypeIdentifier, key string, issued
 // of the specified IRMA session.
 func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Request, token irma.RequestorToken) (err error) {
 	if !s.conf.EnableSSE {
-		return server.LogError(errors.New("Server sent events disabled"))
+		server.WriteResponse(w, nil, &irma.RemoteError{
+			Status:      500,
+			Description: "Server sent events disabled",
+			ErrorName:   "SSE_DISABLED",
+		})
+		s.conf.Logger.Info("GET /statusevents: endpoint disabled (see --sse in irma server -h)")
+		return nil
 	}
 	session, err := s.sessions.get(token)
 	err = updateAndUnlock(session, err)
