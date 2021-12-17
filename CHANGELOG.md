@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* Support for [stateless IRMA server using Redis](https://irma.app/docs/v0.9.0/stateless)
+* Support for [stateless IRMA server using Redis](https://irma.app/docs/stateless)
 * Added Dockerfile and docker-compose files for running `irma`, the unit tests, and/or the services required by the unit tests
 
 ### Changes
