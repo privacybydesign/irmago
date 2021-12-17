@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2021-12-17
+
+### Added
+
+* Support for [stateless IRMA server using Redis](https://irma.app/docs/next/stateless)
+* Added Dockerfile and docker-compose files for running `irma`, the unit tests, and/or the services required by the unit tests
+
+### Changes
+
+* Improve error messages of IRMA server in case of invalid session requests
+
+### Fixed
+
+* Fix panic when an issuance request contains a credential ID consisting of less than three parts
+* Ensure session handler callback function, when specified, is also called when session expires
+* Several small bugs in MyIRMA backend server
+
+
 ## [0.8.0] - 2021-07-27
 This release contains several large new features. In particular, the shoulder surf prevention feature brings a number of breaking changes in the API, mainly within the `irmaserver` package.
 
@@ -191,6 +209,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.9.0]: https://github.com/privacybydesign/irmago/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/privacybydesign/irmago/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/privacybydesign/irmago/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/privacybydesign/irmago/compare/v0.6.0...v0.6.1
