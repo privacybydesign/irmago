@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
+	sseclient "github.com/sietseringers/go-sse"
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
@@ -698,4 +700,90 @@ func TestDisablePairing(t *testing.T) {
 		_ = setPairingMethod(irma.PairingMethodNone, handler)
 	}
 	sessionHelperWithFrontendOptions(t, request, "issue", nil, frontendOptionsHandler, nil)
+}
+
+func TestStatusEventsSSE(t *testing.T) {
+	// Start a server with SSE enabled
+	conf := IrmaServerConfiguration()
+	conf.EnableSSE = true
+	rs := StartRequestorServer(t, conf)
+	defer rs.Stop()
+
+	// Start a session at the server
+	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	sesPkg, _ := startSession(t, request, "verification", false)
+
+	// Start SSE connections to the SSE endpoints
+	url := fmt.Sprintf("http://localhost:%d/session/%s/statusevents", conf.Port, sesPkg.Token)
+	requestorStatuschan, requestorCancel := listenStatusEventsSSE(t, url)
+	frontendStatuschan, frontendCancel := listenStatusEventsSSE(t, sesPkg.SessionPtr.URL+"/statusevents")
+
+	// Wait for the session to start and the SSE HTTP connections to be made
+	time.Sleep(100 * time.Millisecond)
+
+	// Make a client, and let it perform the session
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	h := &TestHandler{
+		t:                  t,
+		c:                  make(chan *SessionResult),
+		client:             client,
+		expectedServerName: expectedRequestorInfo(t, client.Configuration),
+	}
+	qrjson, err := json.Marshal(sesPkg.SessionPtr)
+	require.NoError(t, err)
+	client.NewSession(string(qrjson), h)
+
+	// Both channels should now receive "CONNECTED" and "DONE" in quick succession as the client
+	// connects and then finishes the session.
+	done := make(chan struct{})
+	go func() {
+		require.Equal(t, irma.ServerStatusConnected, <-requestorStatuschan)
+		require.Equal(t, irma.ServerStatusConnected, <-frontendStatuschan)
+		require.Equal(t, irma.ServerStatusDone, <-requestorStatuschan)
+		require.Equal(t, irma.ServerStatusDone, <-frontendStatuschan)
+		done <- struct{}{}
+	}()
+
+	// Stop waiting for events to arrive if it takes too long
+	select {
+	case <-done: // all ok, do nothing
+	case <-time.After(5 * time.Second):
+		// Cancel SSE requests, to ensure the goroutine above finishes so the test ends
+		requestorCancel()
+		frontendCancel()
+		t.Fatal("SSE events took too long to arrive")
+	}
+}
+
+// listenStatusEventsSSE is a helper function that connects to a SSE statusevents endpoint, and emits events
+// received on it to the returned channel. Partially copied from subscribeSSE() in wait_status.go.
+func listenStatusEventsSSE(t *testing.T, url string) (chan irma.ServerStatus, func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	statuschan := make(chan irma.ServerStatus)
+	events := make(chan *sseclient.Event)
+
+	// Start reading SSE events from the channel to which sseclient.Notify() will write
+	go func() {
+		for {
+			e := <-events
+			if e == nil || e.Type == "open" {
+				continue
+			}
+			status := irma.ServerStatus(strings.Trim(string(e.Data), `"`))
+			statuschan <- status
+			if status.Finished() {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	// Open SSE HTTP connection (in a goroutine since it is long-lived)
+	go func() {
+		defer close(statuschan)
+		require.NoError(t, sseclient.Notify(ctx, url, true, events))
+	}()
+
+	return statuschan, cancel
 }
