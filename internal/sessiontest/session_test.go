@@ -781,8 +781,8 @@ func listenStatusEventsSSE(t *testing.T, url string) (chan irma.ServerStatus, fu
 
 	// Open SSE HTTP connection (in a goroutine since it is long-lived)
 	go func() {
+		defer close(statuschan)
 		require.NoError(t, sseclient.Notify(ctx, url, true, events))
-		close(statuschan)
 	}()
 
 	return statuschan, cancel
