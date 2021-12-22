@@ -3,6 +3,10 @@
 		<en>Demo Student Card</en>
 		<nl>Demo Studentenkaart</nl>
 	</Name>
+	<IssueURL>
+		<en>https://example.com</en>
+		<nl>https://example.com</nl>
+	</IssueURL>
 	<SchemeManager>irma-demo</SchemeManager>
 	<IssuerID>RU</IssuerID>
 	<CredentialID>studentCard</CredentialID>
