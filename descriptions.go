@@ -728,6 +728,8 @@ func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	return nil
 }
 
+// validate checks that all specified languages are present in the TranslatedString, and returns
+// those that are not or are empty.
 func (ts *TranslatedString) validate(langs []string) []string {
 	var invalidLangs []string
 	for _, lang := range langs {
