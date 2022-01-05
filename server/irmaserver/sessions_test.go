@@ -1,6 +1,8 @@
 package irmaserver
 
 import (
+	"github.com/privacybydesign/irmago/internal/test"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,8 +19,15 @@ func init() {
 	logger.Level = logrus.FatalLevel
 }
 
+func sessionsConf(t *testing.T) *server.Configuration {
+	return &server.Configuration{
+		Logger:      logger,
+		SchemesPath: filepath.Join(test.FindTestdataFolder(t), "irma_configuration"),
+	}
+}
+
 func TestSessionHandlerInvokedOnCancel(t *testing.T) {
-	s, err := New(&server.Configuration{Logger: logger})
+	s, err := New(sessionsConf(t))
 	require.NoError(t, err)
 	defer s.Stop()
 
@@ -36,7 +45,7 @@ func TestSessionHandlerInvokedOnCancel(t *testing.T) {
 }
 
 func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
-	s, err := New(&server.Configuration{Logger: logger})
+	s, err := New(sessionsConf(t))
 	require.NoError(t, err)
 	defer s.Stop()
 
@@ -61,7 +70,7 @@ func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
 }
 
 func TestMemoryStoreNoDeadlock(t *testing.T) {
-	s, err := New(&server.Configuration{Logger: logger})
+	s, err := New(sessionsConf(t))
 	require.NoError(t, err)
 	defer s.Stop()
 
