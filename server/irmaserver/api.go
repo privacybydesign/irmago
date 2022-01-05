@@ -504,13 +504,13 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 // `get` and `getClient` methods.
 // If the passed error is not nil it is always returned, as this first error is more important for
 // the eventual response. Otherwise, the return value of ses.updateAndUnlock() is returned.
-func updateAndUnlock(ses *session, err error) (e error) {
+func updateAndUnlock(ses *session, err error) error {
 	if ses == nil {
 		return err
 	}
-	e = ses.updateAndUnlock()
-	if err == nil {
-		err = e
+	e := ses.updateAndUnlock()
+	if err != nil {
+		return err
 	}
-	return
+	return e
 }
