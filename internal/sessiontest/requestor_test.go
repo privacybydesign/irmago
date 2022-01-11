@@ -8,13 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/privacybydesign/irmago/server/requestorserver"
+
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -146,11 +148,7 @@ func startSession(t *testing.T, serv stoppable, conf interface{}, request interf
 func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stoppable, opts sessionOption) *server.SessionResult {
 	if opts&sessionOptionWait > 0 {
 		require.IsType(t, &IrmaServer{}, serv)
-		statuschan, err := serv.(*IrmaServer).irma.SessionStatus(sesPkg.Token)
-		require.NoError(t, err)
-		for <-statuschan != irma.ServerStatusDone {
-			continue
-		}
+		waitSessionFinished(t, serv.(*IrmaServer).irma, sesPkg.Token)
 	} else {
 		// wait for server to finish processing the session
 		time.Sleep(100 * time.Millisecond)
@@ -281,6 +279,17 @@ func doSession(
 	}
 
 	return &requestorSessionResult{serverResult, clientResult, nil, dismisser}
+}
+
+func waitSessionFinished(t *testing.T, irmaServer *irmaserver.Server, token irma.RequestorToken) *server.SessionResult {
+	for {
+		res, err := irmaServer.GetSessionResult(token)
+		require.NoError(t, err)
+		if res.Status.Finished() {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // Check that nonexistent IRMA identifiers in the session request fail the session

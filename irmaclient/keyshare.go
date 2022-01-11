@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/bwesterb/go-atum"
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"

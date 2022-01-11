@@ -1,15 +1,27 @@
 package sessiontest
 
 import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
-	"github.com/alicebob/miniredis"
+	"github.com/alicebob/miniredis/v2"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
@@ -17,27 +29,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func startRedis(t *testing.T) *miniredis.Miniredis {
-	mr, err := miniredis.Run()
-	require.NoError(t, err)
-	return mr
+func startRedis(t *testing.T, enableTLS bool) (*miniredis.Miniredis, string) {
+	mr := miniredis.NewMiniRedis()
+
+	if !enableTLS {
+		require.NoError(t, mr.Start())
+		return mr, ""
+	}
+
+	// By default, the IRMA server will use the system cert pool. This cannot be unit tested in an acceptable way.
+	// Therefore, in the standard Redis tests, we use a generated self-signed certificate.
+	certPair, cert := generateCertPair(t)
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{certPair},
+	}
+	require.NoError(t, mr.StartTLS(tlsConfig))
+	return mr, cert
 }
 
-func redisRequestorConfigDecorator(mr *miniredis.Miniredis, fn func() *requestorserver.Configuration) func() *requestorserver.Configuration {
+func redisRequestorConfigDecorator(mr *miniredis.Miniredis, cert string, certfile string, fn func() *requestorserver.Configuration) func() *requestorserver.Configuration {
 	return func() *requestorserver.Configuration {
 		c := fn()
-		redisConfigDecorator(mr, func() *server.Configuration { return c.Configuration })()
+		redisConfigDecorator(mr, cert, certfile, func() *server.Configuration { return c.Configuration })()
 		return c
 	}
 }
 
-func redisConfigDecorator(mr *miniredis.Miniredis, fn func() *server.Configuration) func() *server.Configuration {
+func redisConfigDecorator(mr *miniredis.Miniredis, cert string, certfile string, fn func() *server.Configuration) func() *server.Configuration {
 	return func() *server.Configuration {
 		mr.FlushAll() // Flush Redis memory between different runs of the IRMA server to prevent side effects.
 		c := fn()
 		c.StoreType = "redis"
 		c.RedisSettings = &server.RedisSettings{}
 		c.RedisSettings.Addr = mr.Host() + ":" + mr.Port()
+
+		if cert != "" {
+			c.RedisSettings.TLSCertificate = cert
+		} else if certfile != "" {
+			c.RedisSettings.TLSCertificateFile = certfile
+		} else {
+			c.RedisSettings.DisableTLS = true
+		}
 		return c
 	}
 }
@@ -93,16 +125,69 @@ func startLoadBalancer(t *testing.T, irmaServers []int) *http.Server {
 }
 
 func TestRedis(t *testing.T) {
-	mr := startRedis(t)
+	// Here and elsewhere when generically testing Redis, we populate the RedisSettings.TLSCertificate field
+	// with a generated self-signed certificate.
+	mr, cert := startRedis(t, true)
 	defer mr.Close()
 
-	t.Run("SigningSession", curry(testSigningSession, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
-	t.Run("DisclosureSession", curry(testDisclosureSession, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
-	t.Run("IssuanceSession", curry(testIssuanceSession, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
-	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, IrmaServerConfiguration)))
+	t.Run("SigningSession", curry(testSigningSession, redisRequestorConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("DisclosureSession", curry(testDisclosureSession, redisRequestorConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("IssuanceSession", curry(testIssuanceSession, redisRequestorConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
 
-	t.Run("ChainedSessions", curry(testChainedSessions, redisConfigDecorator(mr, IrmaLibraryConfiguration)))
-	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, redisConfigDecorator(mr, IrmaLibraryConfiguration)))
+	t.Run("ChainedSessions", curry(testChainedSessions, redisConfigDecorator(mr, cert, "", IrmaLibraryConfiguration)))
+	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, redisConfigDecorator(mr, cert, "", IrmaLibraryConfiguration)))
+}
+
+func TestRedisTLSConfig(t *testing.T) {
+	mr, cert := startRedis(t, true)
+	defer mr.Close()
+
+	// Check that specifying a certificate for Redis is not allowed when Redis TLS is disabled
+	configFunc := redisRequestorConfigDecorator(mr, cert, "", IrmaServerConfiguration)
+	config := configFunc()
+	config.RedisSettings.DisableTLS = true
+	_, err := requestorserver.New(config)
+	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+
+	// Check that specifying a path to a certificate for Redis is not allowed when Redis TLS is disabled
+	config = configFunc()
+	config.RedisSettings.DisableTLS = true
+	config.RedisSettings.TLSCertificate = ""
+	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
+	_, err = requestorserver.New(config)
+	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+
+	// Check that specifying both a certificate and a path to a(nother) certificate is not allowed
+	config = configFunc()
+	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
+	_, err = requestorserver.New(config)
+	require.EqualError(t, err, "Redis TLS config failed: provide either key or path to key")
+}
+
+func TestRedisWithTLSCertFile(t *testing.T) {
+	mr, cert := startRedis(t, true)
+	defer mr.Close()
+
+	// Write the generated certificate to a temp file so RedisSettings.TLSCertificateFile in the Redis
+	// config decorator can be populated with the certfile.
+	file, err := os.CreateTemp("", "")
+	require.NoError(t, err)
+	_, err = file.Write([]byte(cert))
+	require.NoError(t, err)
+	certfile := file.Name()
+	defer func() {
+		require.NoError(t, os.Remove(certfile))
+	}()
+
+	t.Run("TestDisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", certfile, IrmaLibraryConfiguration)))
+}
+
+func TestRedisWithoutTLS(t *testing.T) {
+	mr, _ := startRedis(t, false)
+	defer mr.Close()
+
+	t.Run("TestDisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", "", IrmaLibraryConfiguration)))
 }
 
 func checkErrorInternal(t *testing.T, err error) {
@@ -122,10 +207,10 @@ func checkErrorSessionUnknown(t *testing.T, err error) {
 }
 
 func TestRedisUpdates(t *testing.T) {
-	mr := startRedis(t)
+	mr, cert := startRedis(t, true)
 	defer mr.Close()
 
-	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaLibraryConfiguration)())
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaLibraryConfiguration)())
 	defer irmaServer.Stop()
 	qr, token, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
@@ -160,14 +245,14 @@ func TestRedisUpdates(t *testing.T) {
 }
 
 func TestRedisRedundancy(t *testing.T) {
-	mr := startRedis(t)
+	mr, cert := startRedis(t, true)
 	defer mr.Close()
 
 	ports := []int{48690, 48691, 48692}
 	servers := make([]*requestorserver.Server, len(ports))
 
 	for i, port := range ports {
-		c := redisRequestorConfigDecorator(mr, JwtServerConfiguration)()
+		c := redisRequestorConfigDecorator(mr, cert, "", JwtServerConfiguration)()
 		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", port)
 		c.Port = port
 		rs := StartRequestorServer(t, c)
@@ -190,12 +275,12 @@ func TestRedisRedundancy(t *testing.T) {
 
 // Tests whether the right error is returned by the client's Failure handler
 func TestRedisSessionFailure(t *testing.T) {
-	mr := startRedis(t)
+	mr, cert := startRedis(t, true)
 
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaLibraryConfiguration)())
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaLibraryConfiguration)())
 	defer irmaServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -221,12 +306,12 @@ func TestRedisSessionFailure(t *testing.T) {
 }
 
 func TestRedisLibraryErrors(t *testing.T) {
-	mr := startRedis(t)
+	mr, cert := startRedis(t, true)
 
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, IrmaLibraryConfiguration)())
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaLibraryConfiguration)())
 	defer irmaServer.Stop()
 
 	// Stop the Redis server early to check whether the IRMA server fails correctly
@@ -245,9 +330,9 @@ func TestRedisLibraryErrors(t *testing.T) {
 }
 
 func TestRedisHTTPErrors(t *testing.T) {
-	mr := startRedis(t)
+	mr, cert := startRedis(t, true)
 
-	config := redisRequestorConfigDecorator(mr, JwtServerConfiguration)()
+	config := redisRequestorConfigDecorator(mr, cert, "", JwtServerConfiguration)()
 	rs := StartRequestorServer(t, config)
 	defer rs.Stop()
 
@@ -289,4 +374,41 @@ func TestRedisHTTPErrors(t *testing.T) {
 	err = transport.Get("status", nil)
 	checkErrorInternal(t, err)
 	// TODO: Check for sse endpoint. We don't know yet whether this will be implemented for Redis.
+}
+
+func generateCertPair(t *testing.T) (tls.Certificate, string) {
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"IRMA"},
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(time.Hour * 24 * 180),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
+	certOut := &bytes.Buffer{}
+	require.NoError(t, pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
+
+	keyOut := &bytes.Buffer{}
+	b, err := x509.MarshalECPrivateKey(priv)
+	require.NoError(t, err)
+	require.NoError(t, pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: b}))
+
+	certPEM := certOut.Bytes()
+	certPair, err := tls.X509KeyPair(certPEM, keyOut.Bytes())
+	require.NoError(t, err)
+
+	return certPair, string(certPEM)
 }

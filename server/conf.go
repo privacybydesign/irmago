@@ -5,8 +5,8 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -96,6 +96,10 @@ type RedisSettings struct {
 	Addr     string `json:"address,omitempty" mapstructure:"address"`
 	Password string `json:"password,omitempty" mapstructure:"password"`
 	DB       int    `json:"db,omitempty" mapstructure:"db"`
+
+	TLSCertificate     string `json:"tls_cert,omitempty" mapstructure:"tls_cert"`
+	TLSCertificateFile string `json:"tls_cert_file,omitempty" mapstructure:"tls_cert_file"`
+	DisableTLS         bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
 // Check ensures that the Configuration is loaded, usable and free of errors.

@@ -10,14 +10,13 @@ import (
 	"log"
 	"net/http"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
-	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -43,10 +42,10 @@ func (session *session) setStatus(status irma.ServerStatus) {
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
-	session.updateSSE()
+	session.onStatusChange()
 }
 
-func (session *session) updateSSE() {
+func (session *session) onStatusChange() {
 	// Send status update to all listener channels
 	for _, statusChan := range session.statusChannels {
 		statusChan <- session.Status
@@ -55,14 +54,18 @@ func (session *session) updateSSE() {
 		}
 	}
 
-	if session.Status.Finished() && session.handler != nil {
-		handler := session.handler
-		session.handler = nil
-		go handler(session.Result)
+	// Execute callback and handler if status is Finished
+	if session.Status.Finished() {
+		session.doResultCallback()
+
+		if session.handler != nil {
+			handler := session.handler
+			session.handler = nil
+			go handler(session.Result)
+		}
 	}
 
-	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next})
-
+	// Send updates in case SSE is used
 	if session.sse == nil {
 		return
 	}
@@ -72,8 +75,22 @@ func (session *session) updateSSE() {
 	session.sse.SendMessage("session/"+string(session.RequestorToken),
 		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.Status)),
 	)
+	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next})
 	session.sse.SendMessage("frontendsession/"+string(session.ClientToken),
 		sse.SimpleMessage(string(frontendstatus)),
+	)
+}
+
+func (session *session) doResultCallback() {
+	url := session.Rrequest.Base().CallbackURL
+	if url == "" {
+		return
+	}
+	server.DoResultCallback(url,
+		session.Result,
+		session.conf.JwtIssuer,
+		session.Rrequest.Base().ResultJwtValidity,
+		session.conf.JwtRSAPrivateKey,
 	)
 }
 
@@ -353,14 +370,24 @@ func (session *session) getRequest() (irma.SessionRequest, error) {
 	return cpy.(*irma.IssuanceRequest), nil
 }
 
-func (s *sessionData) hash() ([32]byte, error) {
+func (session *session) updateAndUnlock() error {
+	err := session.sessions.update(session)
+	if err != nil {
+		return err
+	}
+	session.sessions.unlock(session)
+
+	return nil
+}
+
+func (s *sessionData) hash() [32]byte {
 	// Note: This marshalling does not consider the order of the `map[irma.SchemeManagerIdentifier]*gabi.ProofP` items.
 	sessionJSON, err := json.Marshal(s)
 	if err != nil {
-		return [32]byte{0}, server.LogError(err)
+		panic(err)
 	}
 
-	return sha256.Sum256(sessionJSON), nil
+	return sha256.Sum256(sessionJSON)
 }
 
 // UnmarshalJSON unmarshals sessionData.
@@ -396,24 +423,6 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 }
 
 // Other
-
-func (s *Server) doResultCallback(result *server.SessionResult) {
-	request, err := s.GetRequest(result.Token)
-	if err != nil {
-		return
-	}
-
-	url := request.Base().CallbackURL
-	if url == "" {
-		return
-	}
-	server.DoResultCallback(url,
-		result,
-		s.conf.JwtIssuer,
-		request.Base().ResultJwtValidity,
-		s.conf.JwtRSAPrivateKey,
-	)
-}
 
 func (s *Server) validateRequest(request irma.SessionRequest) error {
 	if _, err := s.conf.IrmaConfiguration.Download(request); err != nil {
@@ -560,7 +569,7 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) sessionGetMiddleware(next http.Handler) http.Handler {
+func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := irma.ParseClientToken(chi.URLParam(r, "clientToken"))
 		if err != nil {
@@ -578,80 +587,22 @@ func (s *Server) sessionGetMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
-	})
-}
-
-func (s *Server) sessionLockMiddleware(readOnly []string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			session := r.Context().Value("session").(*session)
-
-			// by default session needs to be locked
-			lock := true
-
-			// for certain endpoints read access for Redis without locking is sufficient
-			for _, e := range readOnly {
-				if strings.HasSuffix(r.URL.Path, e) && s.conf.StoreType == "redis" {
-					lock = false
-				}
-			}
-
-			// lock the session
-			if lock {
-				err := session.sessions.lock(session)
-				if err != nil {
-					server.WriteError(w, server.ErrorInternal, "")
-					return
-				}
-			}
-
-			defer func() {
-				if session.locked {
-					_ = session.sessions.unlock(session) // error gets logged directly in session store and will not be forwarded to the client
-				}
-			}()
-
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
-
-		})
-	}
-}
-
-func (s *Server) sessionUpdateMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := r.Context().Value("session").(*session)
-
-		hashBefore, err := session.sessionData.hash()
-		if err != nil {
-			server.WriteError(w, server.ErrorInternal, "")
-			return
-		}
-
 		defer func() {
-			hashAfter, err := session.sessionData.hash()
+			err := session.updateAndUnlock()
 			if err != nil {
+				// Error already logged in update method.
 				server.WriteError(w, server.ErrorInternal, "")
 				return
 			}
-			if hashBefore != hashAfter {
-				result := session.Result
-				r := r.Context().Value("sessionresult")
-				if r != nil {
-					*r.(*server.SessionResult) = *result
-				}
 
-				err = session.sessions.update(session)
-				if err != nil {
-					// Error already logged in update method.
-					server.WriteError(w, server.ErrorInternal, "")
-					return
-				}
+			result := session.Result
+			r := r.Context().Value("sessionresult")
+			if r != nil {
+				*r.(*server.SessionResult) = *result
 			}
 		}()
 
-		next.ServeHTTP(w, r)
-
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
 	})
 }
 
