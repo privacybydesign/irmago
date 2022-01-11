@@ -68,13 +68,17 @@ func processOptions(options ...sessionOption) sessionOption {
 	return opts
 }
 
+func (o sessionOption) enabled(opt sessionOption) bool {
+	return o&opt > 0
+}
+
 // startServer ensures that an IRMA server or library is running, if and when required, as specified
 // by the parameters:
 // - If irmaServer is not nil or sessionOptionReuseServer is enabled, this function does nothing.
 // - Otherwise an IRMA server or library is started, depending on the type of conf.
 func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf interface{}) (stoppable, interface{}, bool) {
 	if irmaServer != nil {
-		if opts&sessionOptionReuseServer > 0 {
+		if opts.enabled(sessionOptionReuseServer) {
 			require.FailNow(t, "either specify irmaServer or sessionOptionReuseServer")
 			return nil, nil, false
 		}
@@ -84,7 +88,7 @@ func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf 
 		}
 		return irmaServer, nil, false
 	}
-	if opts&sessionOptionReuseServer > 0 {
+	if opts.enabled(sessionOptionReuseServer) {
 		return nil, nil, false
 	}
 
@@ -146,7 +150,7 @@ func startSession(t *testing.T, serv stoppable, conf interface{}, request interf
 
 // getSessionResult retrieves the session result from the IRMA server or library.
 func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stoppable, opts sessionOption) *server.SessionResult {
-	if opts&sessionOptionWait > 0 {
+	if opts.enabled(sessionOptionWait) {
 		require.IsType(t, &IrmaServer{}, serv)
 		waitSessionFinished(t, serv.(*IrmaServer).irma, sesPkg.Token)
 	} else {
@@ -196,7 +200,7 @@ func createSessionHandler(
 	clientChan := make(chan *SessionResult, 2)
 	requestor := expectedRequestorInfo(t, client.Configuration)
 	handler := TestHandler{t: t, c: clientChan, client: client, expectedServerName: requestor}
-	if opts&sessionOptionUnsatisfiableRequest > 0 {
+	if opts.enabled(sessionOptionUnsatisfiableRequest) {
 		return &UnsatisfiableTestHandler{TestHandler: handler}, clientChan
 	}
 
@@ -205,7 +209,7 @@ func createSessionHandler(
 		handler.frontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
 		handler.frontendTransport.SetHeader(irma.AuthorizationHeader, string(sesPkg.FrontendRequest.Authorization))
 	}
-	if opts&sessionOptionClientWait > 0 {
+	if opts.enabled(sessionOptionClientWait) {
 		handler.wait = 2 * time.Second
 	}
 	return &handler, clientChan
@@ -260,11 +264,11 @@ func doSession(
 	}
 
 	clientResult := <-clientChan
-	if opts&sessionOptionIgnoreError == 0 && clientResult != nil {
+	if !opts.enabled(sessionOptionIgnoreError) && clientResult != nil {
 		require.NoError(t, clientResult.Err)
 	}
 
-	if opts&sessionOptionUnsatisfiableRequest > 0 && opts&sessionOptionWait == 0 {
+	if opts.enabled(sessionOptionUnsatisfiableRequest) && !opts.enabled(sessionOptionWait) {
 		require.NotNil(t, clientResult)
 		return &requestorSessionResult{nil, nil, clientResult.Missing, dismisser}
 	}
@@ -272,7 +276,7 @@ func doSession(
 	serverResult := getSessionResult(t, sesPkg, serv, opts)
 	require.Equal(t, sesPkg.Token, serverResult.Token)
 
-	if opts&sessionOptionRetryPost > 0 {
+	if opts.enabled(sessionOptionRetryPost) {
 		var result string
 		err := clientTransport.Post("proofs", &result, sessionHandler.(*TestHandler).result)
 		require.NoError(t, err)
