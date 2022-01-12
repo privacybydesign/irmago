@@ -108,9 +108,9 @@ func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf 
 	}
 }
 
-// startSession starts an IRMA session using the specified session request, against an IRMA server
+// startSessionAtServer starts an IRMA session using the specified session request, against an IRMA server
 // or library, as determined by the type of serv.
-func startSession(t *testing.T, serv stoppable, conf interface{}, request interface{}) *server.SessionPackage {
+func startSessionAtServer(t *testing.T, serv stoppable, conf interface{}, request interface{}) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
 		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil)
@@ -146,6 +146,15 @@ func startSession(t *testing.T, serv stoppable, conf interface{}, request interf
 		require.NoError(t, err)
 		return &sesPkg
 	}
+}
+
+func startSessionAtClient(t *testing.T, sesPkg *server.SessionPackage, client *irmaclient.Client, sessionHandler sessionHandler) (*irma.HTTPTransport, irmaclient.SessionDismisser) {
+	j, err := json.Marshal(sesPkg.SessionPtr)
+	require.NoError(t, err)
+	dismisser := client.NewSession(string(j), sessionHandler)
+	clientTransport := extractClientTransport(dismisser)
+	sessionHandler.SetClientTransport(clientTransport)
+	return clientTransport, dismisser
 }
 
 // getSessionResult retrieves the session result from the IRMA server or library.
@@ -247,17 +256,14 @@ func doSession(
 		defer serv.Stop()
 	}
 
-	sesPkg := startSession(t, serv, conf, request)
+	sesPkg := startSessionAtServer(t, serv, conf, request)
 	sessionHandler, clientChan := createSessionHandler(t, opts, client, sesPkg, frontendOptionsHandler, pairingHandler)
+
 	if frontendOptionsHandler != nil {
 		frontendOptionsHandler(sessionHandler.(*TestHandler))
 	}
 
-	j, err := json.Marshal(sesPkg.SessionPtr)
-	require.NoError(t, err)
-	dismisser := client.NewSession(string(j), sessionHandler)
-	clientTransport := extractClientTransport(dismisser)
-	sessionHandler.SetClientTransport(clientTransport)
+	clientTransport, dismisser := startSessionAtClient(t, sesPkg, client, sessionHandler)
 
 	if pairingHandler != nil {
 		pairingHandler(sessionHandler.(*TestHandler))
