@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"database/sql"
+	"strconv"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -90,7 +91,7 @@ func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 			err = t.conf.SendEmail(
 				t.conf.deleteExpiredAccountTemplate,
 				t.conf.DeleteExpiredAccountSubjects,
-				map[string]string{"Username": username, "Email": email},
+				map[string]string{"Username": username, "Email": email, "Delay": strconv.Itoa(t.conf.DeleteDelay)},
 				[]string{email},
 				lang,
 			)
