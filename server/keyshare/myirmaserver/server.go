@@ -160,17 +160,20 @@ func (s *Server) sendDeleteEmails(session *session) error {
 		return err
 	}
 
-	emails := make([]string, 0, len(user.Emails))
 	for _, email := range user.Emails {
-		emails = append(emails, email.Email)
+		err := s.conf.SendEmail(
+			s.conf.deleteAccountTemplates,
+			s.conf.DeleteAccountFiles,
+			map[string]string{"Username": user.Username, "Email": email.Email, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
+			email.Email,
+			user.language,
+		)
+		if err != nil {
+			return err
+		}
 	}
-	return s.conf.SendEmail(
-		s.conf.deleteAccountTemplates,
-		s.conf.DeleteAccountFiles,
-		map[string]string{"Username": user.Username, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
-		emails,
-		user.language,
-	)
+
+	return nil
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +233,7 @@ func (s *Server) sendLoginEmail(request emailLoginRequest) error {
 		s.conf.loginEmailTemplates,
 		s.conf.LoginEmailSubjects,
 		map[string]string{"TokenURL": baseURL + token},
-		[]string{request.Email},
+		request.Email,
 		request.Language,
 	)
 }
@@ -514,7 +517,7 @@ func (s *Server) processRemoveEmail(session *session, email string) error {
 			s.conf.deleteEmailTemplates,
 			s.conf.DeleteEmailSubjects,
 			map[string]string{"Username": user.Username, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
-			[]string{email},
+			email,
 			user.language,
 		)
 		if err != nil {

@@ -92,7 +92,7 @@ func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 				t.conf.deleteExpiredAccountTemplate,
 				t.conf.DeleteExpiredAccountSubjects,
 				map[string]string{"Username": username, "Email": email, "Delay": strconv.Itoa(t.conf.DeleteDelay)},
-				[]string{email},
+				email,
 				lang,
 			)
 			return err
