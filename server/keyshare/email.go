@@ -60,7 +60,7 @@ func (conf EmailConfiguration) SendEmail(
 	templates map[string]*template.Template,
 	subjects map[string]string,
 	templateData map[string]string,
-	emails []string,
+	email string,
 	lang string,
 ) error {
 	var msg bytes.Buffer
@@ -70,19 +70,17 @@ func (conf EmailConfiguration) SendEmail(
 		return err
 	}
 
-	for _, email := range emails {
-		err = sendHTMLEmail(
-			conf.EmailServer,
-			conf.EmailAuth,
-			conf.EmailFrom,
-			email,
-			conf.TranslateString(subjects, lang),
-			msg.Bytes(),
-		)
-		if err != nil {
-			server.Logger.WithField("error", err).Error("Could not send email")
-			return err
-		}
+	err = sendHTMLEmail(
+		conf.EmailServer,
+		conf.EmailAuth,
+		conf.EmailFrom,
+		email,
+		conf.TranslateString(subjects, lang),
+		msg.Bytes(),
+	)
+	if err != nil {
+		server.Logger.WithField("error", err).Error("Could not send email")
+		return err
 	}
 
 	return nil
