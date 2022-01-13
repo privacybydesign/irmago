@@ -161,16 +161,15 @@ func (s *Server) sendDeleteEmails(session *session) error {
 	}
 
 	for _, email := range user.Emails {
-		err := s.conf.SendEmail(
+		// The error gets already logged in the SendEmail method. We can still proceed with deleting
+		// the user account, even if one or more notification mails could not be sent.
+		_ = s.conf.SendEmail(
 			s.conf.deleteAccountTemplates,
 			s.conf.DeleteAccountFiles,
 			map[string]string{"Username": user.Username, "Email": email.Email, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
 			email.Email,
 			user.language,
 		)
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
