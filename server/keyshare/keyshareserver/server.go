@@ -511,7 +511,7 @@ func (s *Server) sendRegistrationEmail(user *User, language, email string) error
 		s.conf.registrationEmailTemplates,
 		s.conf.RegistrationEmailSubjects,
 		map[string]string{"VerificationURL": verificationBaseURL + token},
-		[]string{email},
+		email,
 		language,
 	)
 }

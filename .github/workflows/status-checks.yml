@@ -1,0 +1,74 @@
+# Workflow to check whether changes to master fulfill all requirements.
+name: Status checks
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16
+
+      - name: Build
+        run: go build -v -o irma-linux-amd64 ./irma
+
+  # We only check the build stage of the Dockerfile, because building the full Dockerfile requires
+  # downloading IRMA schemes. We check the status of the full Dockerfile once every week on master
+  # in the weekly-master-checks.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Run Dockerfile build stage
+      run: docker build -t privacybydesign/irma:build --target build .
+
+    - name: Test Docker image
+      # Because we have only run the build stage, we have to explicitly set irma as entrypoint.
+      run: docker run --entrypoint irma privacybydesign/irma:build version
+      
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16
+
+    - name: Run gofmt
+      run: gofmt -d -e .
+      
+    - name: Run go vet
+      run: go vet ./...
+      
+    - name: Install ineffassign
+      run: go install github.com/gordonklaus/ineffassign@latest
+      
+    - name: Run ineffassign
+      run: ineffassign ./...
+      
+    - name: Install misspell
+      run: go install github.com/client9/misspell/cmd/misspell@latest
+      
+    - name: Run misspell
+      run: misspell -error .
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run all unit tests
+        run: docker-compose run test -v ./...
