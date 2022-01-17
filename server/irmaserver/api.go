@@ -263,7 +263,8 @@ func (s *Server) startNextSession(
 		// This way, the client can check prematurely, i.e., before the session,
 		// if it has the same random blind attributes in it's configuration.
 		for _, cred := range request.(*irma.IssuanceRequest).Credentials {
-			cred.RandomBlindAttributeTypeIDs = s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID].RandomBlindAttributeNames()
+			credType := s.conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID]
+			cred.RandomBlindAttributeTypeIDs = credType.RandomBlindAttributeNames()
 		}
 
 		if err := s.validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {

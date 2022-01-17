@@ -616,6 +616,7 @@ func TestBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T) {
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID2), "AttributeType %s not found", attrID2)
 	require.True(t, client.Configuration.AttributeTypes[attrID2].RandomBlind, "AttributeType votingnumber is not of type random blind")
+	require.ElementsMatch(t, []string{"votingnumber"}, client.Configuration.CredentialTypes[credID].RandomBlindAttributeNames())
 
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
