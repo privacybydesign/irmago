@@ -140,6 +140,7 @@ func startSessionAtServer(t *testing.T, serv stoppable, conf interface{}, reques
 			j, err := irma.SignSessionRequest(request.(irma.SessionRequest), jwt.SigningMethodRS256, sk, "requestor1")
 			require.NoError(t, err)
 			err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, j)
+			require.NoError(t, err)
 		} else {
 			err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, request)
 		}
