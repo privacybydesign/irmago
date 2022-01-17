@@ -13,7 +13,7 @@ variables:
   GOFLAGS: -mod=readonly
   GOPATH: ${CI_PROJECT_DIR}/vendor/go
   PACKAGE_NAME: github.com/privacybydesign/irmago
-  PLATFORMS: linux/amd64 darwin/amd64 windows/amd64 linux/arm linux/arm64
+  PLATFORMS: linux/amd64 darwin/amd64 darwin/arm64 windows/amd64 linux/arm linux/arm64
 
 before_script:
   - set -euxo pipefail
