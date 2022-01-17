@@ -225,6 +225,17 @@ func createSessionHandler(
 	return &handler, clientChan
 }
 
+func waitSessionFinished(t *testing.T, irmaServer *irmaserver.Server, token irma.RequestorToken) *server.SessionResult {
+	for {
+		res, err := irmaServer.GetSessionResult(token)
+		require.NoError(t, err)
+		if res.Status.Finished() {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // doSession performs an IRMA session using the specified session request.
 //
 // It uses the specified client if specified, otherwise it creates one.
@@ -290,17 +301,6 @@ func doSession(
 	}
 
 	return &requestorSessionResult{serverResult, clientResult, nil, dismisser}
-}
-
-func waitSessionFinished(t *testing.T, irmaServer *irmaserver.Server, token irma.RequestorToken) *server.SessionResult {
-	for {
-		res, err := irmaServer.GetSessionResult(token)
-		require.NoError(t, err)
-		if res.Status.Finished() {
-			return res
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
 }
 
 // Check that nonexistent IRMA identifiers in the session request fail the session
