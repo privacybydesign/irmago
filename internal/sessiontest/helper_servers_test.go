@@ -59,8 +59,8 @@ func init() {
 // and returns a function suitable for unit testing by applying the configuration function and
 // session options in the rightmost two parameter slots of the specified function.
 func curry(
-	test func(t *testing.T, conf interface{}, opts ...sessionOption),
-	conf interface{}, opts ...sessionOption,
+	test func(t *testing.T, conf interface{}, opts ...option),
+	conf interface{}, opts ...option,
 ) func(*testing.T) {
 	return func(t *testing.T) {
 		test(t, conf, opts...)

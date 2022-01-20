@@ -75,7 +75,7 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	// try to perform session with revoked credential
 	// client notices that his credential is revoked and aborts
 	logger.Info("step 5")
-	result = revocationSession(t, client, request, nil, sessionOptionUnsatisfiableRequest)
+	result = revocationSession(t, client, request, nil, optionUnsatisfiableRequest)
 	require.NotEmpty(t, result.Missing)
 	require.NotNil(t, result.Dismisser)
 	result.Dismisser.Dismiss()
@@ -123,7 +123,7 @@ func TestRevocationAll(t *testing.T) {
 		)
 
 		// try another disclosure
-		result = revocationSession(t, client, nil, revServer, sessionOptionUnsatisfiableRequest)
+		result = revocationSession(t, client, nil, revServer, optionUnsatisfiableRequest)
 		require.NotEmpty(t, result.Missing)
 	})
 
@@ -228,7 +228,7 @@ func TestRevocationAll(t *testing.T) {
 		// stop revocation server so the verifier cannot fetch revocation state
 		revServer.Stop()
 
-		result := revocationSession(t, client, nil, nil, sessionOptionIgnoreError)
+		result := revocationSession(t, client, nil, nil, optionIgnoreError)
 		require.Equal(t, irma.ServerStatusCancelled, result.Status)
 		require.NotNil(t, result.Err)
 		require.Equal(t, result.Err.ErrorName, string(server.ErrorRevocation.Type))
@@ -544,7 +544,7 @@ func TestRevocationAll(t *testing.T) {
 
 		request := revocationRequest(revocationTestAttr)
 		request.Revocation[revocationTestCred].Tolerance = 1
-		result = revocationSession(t, client, request, nil, sessionOptionClientWait)
+		result = revocationSession(t, client, request, nil, optionClientWait)
 
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
@@ -626,7 +626,7 @@ func TestRevocationAll(t *testing.T) {
 
 		// Try disclosure session requiring nonrevocation proof
 		// client notices it has no revocation-aware credential instance and aborts
-		result = revocationSession(t, client, nil, irmaServer, sessionOptionUnsatisfiableRequest)
+		result = revocationSession(t, client, nil, irmaServer, optionUnsatisfiableRequest)
 		require.NotEmpty(t, result.Missing)
 	})
 }
@@ -696,12 +696,12 @@ func revocationRequest(attr irma.AttributeTypeIdentifier) *irma.DisclosureReques
 	return req
 }
 
-func revocationSession(t *testing.T, client *irmaclient.Client, request irma.SessionRequest, irmaServer *IrmaServer, options ...sessionOption) *requestorSessionResult {
+func revocationSession(t *testing.T, client *irmaclient.Client, request irma.SessionRequest, irmaServer *IrmaServer, options ...option) *requestorSessionResult {
 	if request == nil {
 		request = revocationRequest(revocationTestAttr)
 	}
 	result := doSession(t, request, client, irmaServer, nil, nil, nil, options...)
-	if processOptions(options...)&sessionOptionIgnoreError == 0 && result.SessionResult != nil {
+	if processOptions(options...)&optionIgnoreError == 0 && result.SessionResult != nil {
 		require.Nil(t, result.Err)
 	}
 	return result

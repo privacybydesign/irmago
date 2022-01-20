@@ -31,12 +31,12 @@ func TestMain(m *testing.M) {
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T, opts ...sessionOption) (*irmaclient.Client, *TestClientHandler) {
+func parseStorage(t *testing.T, opts ...option) (*irmaclient.Client, *TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage, opts...)
 }
 
-func parseExistingStorage(t *testing.T, storage string, options ...sessionOption) (*irmaclient.Client, *TestClientHandler) {
+func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.Client, *TestClientHandler) {
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
 	client, err := irmaclient.New(
@@ -48,7 +48,7 @@ func parseExistingStorage(t *testing.T, storage string, options ...sessionOption
 
 	// Set max version we want to test on
 	opts := processOptions(options...)
-	if opts.enabled(sessionOptionOldClient) {
+	if opts.enabled(optionOldClient) {
 		version := extractClientMaxVersion(client)
 		*version = *maxClientVersion
 	}

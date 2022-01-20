@@ -262,7 +262,7 @@ func TestRedisRedundancy(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	doSession(t, request, nil, nil, nil, nil, nil, sessionOptionReuseServer)
+	doSession(t, request, nil, nil, nil, nil, nil, optionReuseServer)
 }
 
 // Tests whether the right error is returned by the client's Failure handler
