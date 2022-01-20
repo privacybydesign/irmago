@@ -36,7 +36,6 @@ var (
 	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
 )
 
-// TODO rename to IrmaLibrary (including instantiations)
 type IrmaServer struct {
 	irma *irmaserver.Server
 	http *http.Server
@@ -68,7 +67,6 @@ func curry(
 	}
 }
 
-// TODO rename to StartIrmaServer
 func StartRequestorServer(t *testing.T, configuration *requestorserver.Configuration) *requestorserver.Server {
 	requestorServer, err := requestorserver.New(configuration)
 	require.NoError(t, err)
@@ -80,10 +78,9 @@ func StartRequestorServer(t *testing.T, configuration *requestorserver.Configura
 	return requestorServer
 }
 
-// TODO rename to StartIrmaLibrary
 func StartIrmaServer(t *testing.T, conf *server.Configuration) *IrmaServer {
 	if conf == nil {
-		conf = IrmaLibraryConfiguration()
+		conf = IrmaServerConfiguration()
 	}
 
 	irmaServer, err := irmaserver.New(conf)
@@ -200,7 +197,7 @@ func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey) *http.Server
 	return s
 }
 
-func IrmaLibraryConfiguration() *server.Configuration {
+func IrmaServerConfiguration() *server.Configuration {
 	return &server.Configuration{
 		URL:                   "http://localhost:48680",
 		Logger:                logger,
@@ -228,8 +225,8 @@ func IrmaLibraryConfiguration() *server.Configuration {
 	}
 }
 
-func IrmaServerConfiguration() *requestorserver.Configuration {
-	irmaServerConf := IrmaLibraryConfiguration()
+func RequestorServerConfiguration() *requestorserver.Configuration {
+	irmaServerConf := IrmaServerConfiguration()
 	irmaServerConf.URL = "http://localhost:48682/irma"
 	return &requestorserver.Configuration{
 		Configuration:                  irmaServerConf,
@@ -245,9 +242,8 @@ func IrmaServerConfiguration() *requestorserver.Configuration {
 	}
 }
 
-// TODO rename to IrmaServerAuthConfiguration
-func JwtServerConfiguration() *requestorserver.Configuration {
-	conf := IrmaServerConfiguration()
+func RequestorServerAuthConfiguration() *requestorserver.Configuration {
+	conf := RequestorServerConfiguration()
 	conf.DisableRequestorAuthentication = false
 	conf.Requestors = map[string]requestorserver.Requestor{
 		"requestor1": {

@@ -94,7 +94,7 @@ func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf 
 		rs := StartRequestorServer(t, c)
 		return rs, c, true
 	default:
-		c := JwtServerConfiguration()
+		c := RequestorServerAuthConfiguration()
 		rs := StartRequestorServer(t, c)
 		return rs, c, true
 	}
