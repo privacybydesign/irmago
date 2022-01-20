@@ -22,7 +22,7 @@ func TestManualKeyshareSession(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 }
 
-func TestRequestorIssuanceKeyshareSession(t *testing.T) {
+func TestIssuanceKeyshareSession(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	doIssuanceSession(t, true, nil, nil)
