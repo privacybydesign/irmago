@@ -18,11 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO: restructure files:
-// - all configurable tests to one file
-// - all normal tests to one file
-// - decide where the rest of the infrastructure goes (server starting, configuration, the rest)
-
 type (
 	// TODO rename to option? (including constants)
 	sessionOption int

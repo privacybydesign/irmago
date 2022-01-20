@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -21,8 +22,6 @@ import (
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 	sseclient "github.com/sietseringers/go-sse"
-
-	"github.com/go-errors/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -378,172 +377,6 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
 
-func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
-	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	issuanceRequest := getIssuanceRequest(true)
-	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
-	_, err := client.Configuration.Download(issuanceRequest)
-	require.NoError(t, err)
-	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
-}
-
-func TestIrmaServerPrivateKeysFolder(t *testing.T) {
-	storage, err := ioutil.TempDir("", "servertest")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
-
-	conf := IrmaLibraryConfiguration()
-	conf.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
-	conf.SchemesPath = storage
-
-	irmaServer := StartIrmaServer(t, conf)
-	defer irmaServer.Stop()
-
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	irmaConf := irmaServer.conf.IrmaConfiguration
-	sk, err := irmaConf.PrivateKeys.Latest(credid.IssuerIdentifier())
-	require.NoError(t, err)
-	require.NotNil(t, sk)
-
-	issuanceRequest := getIssuanceRequest(true)
-	delete(issuanceRequest.Credentials[0].Attributes, "level")
-
-	irmaConf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	downloaded, err := irmaConf.Download(issuanceRequest)
-	require.NoError(t, err)
-	require.Equal(t, &irma.IrmaIdentifierSet{
-		SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
-		Issuers:        map[irma.IssuerIdentifier]struct{}{},
-		CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
-			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"):  {},
-			irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"): {},
-		},
-		PublicKeys:       map[irma.IssuerIdentifier][]uint{},
-		AttributeTypes:   map[irma.AttributeTypeIdentifier]struct{}{},
-		RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
-	}, downloaded)
-
-	sk, err = irmaConf.PrivateKeys.Latest(credid.IssuerIdentifier())
-	require.NoError(t, err)
-	require.NotNil(t, sk)
-}
-
-func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
-	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	issuanceRequest := getIssuanceRequest(true)
-	delete(issuanceRequest.Credentials[0].Attributes, "level")
-
-	irmaServer := StartIrmaServer(t, nil) // Run a server with old configuration (level is non-optional)
-	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
-	expectedError := &irma.RequiredAttributeMissingError{
-		ErrorType: irma.ErrorRequiredAttributeMissing,
-		Missing: &irma.IrmaIdentifierSet{
-			SchemeManagers:   map[irma.SchemeManagerIdentifier]struct{}{},
-			RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
-			Issuers:          map[irma.IssuerIdentifier]struct{}{},
-			CredentialTypes:  map[irma.CredentialTypeIdentifier]struct{}{},
-			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
-			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
-				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"): struct{}{},
-			},
-		},
-	}
-	require.True(t, reflect.DeepEqual(err, expectedError), "Incorrect missing identifierset")
-	irmaServer.Stop()
-
-	// Run a server with updated configuration (level is optional)
-	conf := IrmaLibraryConfiguration()
-	conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
-	irmaServer = StartIrmaServer(t, conf)
-	_, err = client.Configuration.Download(issuanceRequest)
-	require.NoError(t, err)
-	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, nil)
-	require.NoError(t, err)
-	irmaServer.Stop()
-}
-
-func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-
-	delete(client.Configuration.CredentialTypes, credid)
-	require.NotContains(t, client.Configuration.CredentialTypes, credid)
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	request := getIssuanceRequest(true)
-	_, err := client.Configuration.Download(request)
-	require.NoError(t, err)
-
-	require.Contains(t, client.Configuration.CredentialTypes, credid)
-}
-
-func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
-	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
-	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
-
-	delete(client.Configuration.CredentialTypes, credid)
-	require.NotContains(t, client.Configuration.CredentialTypes, credid)
-
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
-	request := irma.NewDisclosureRequest(attrid)
-	_, err := client.Configuration.Download(request)
-	require.NoError(t, err)
-	require.Contains(t, client.Configuration.CredentialTypes, credid)
-}
-
-func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-	request := irma.NewDisclosureRequest(
-		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),        // non-existing issuer
-		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),         // non-existing credential
-		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"), // non-existing attribute
-	)
-	_, err := client.Configuration.Download(request)
-	require.Error(t, err)
-
-	expectedErr := &irma.UnknownIdentifierError{
-		ErrorType: irma.ErrorUnknownIdentifier,
-		Missing: &irma.IrmaIdentifierSet{
-			SchemeManagers:   map[irma.SchemeManagerIdentifier]struct{}{},
-			RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
-			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
-			Issuers: map[irma.IssuerIdentifier]struct{}{
-				irma.NewIssuerIdentifier("irma-demo.baz"): struct{}{},
-			},
-			CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
-				irma.NewCredentialTypeIdentifier("irma-demo.RU.foo"):  struct{}{},
-				irma.NewCredentialTypeIdentifier("irma-demo.baz.qux"): struct{}{},
-			},
-			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
-				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"): struct{}{},
-			},
-		},
-	}
-	require.True(t, reflect.DeepEqual(expectedErr, err), "Download() returned incorrect missing identifier set")
-}
-
 func testStaticQRSession(t *testing.T, _ interface{}, opts ...sessionOption) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -671,33 +504,6 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf in
 	require.EqualError(t, res.clientResult.Err, "Error type: randomblind\nDescription: mismatch in randomblind attributes between server/client\nStatus code: 0")
 }
 
-func TestPOSTSizeLimit(t *testing.T) {
-	rs := StartRequestorServer(t, IrmaServerConfiguration())
-	defer rs.Stop()
-
-	server.PostSizeLimit = 1 << 10
-	defer func() {
-		server.PostSizeLimit = 10 << 20
-	}()
-
-	req, err := http.NewRequest(
-		http.MethodPost,
-		"http://localhost:48682/session/",
-		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
-	)
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	http.DefaultClient.Timeout = 30 * time.Second
-	res, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	bts, err := ioutil.ReadAll(res.Body)
-	require.NoError(t, err)
-
-	var rerr irma.RemoteError
-	require.NoError(t, json.Unmarshal(bts, &rerr))
-	require.Equal(t, "http: request body too large", rerr.Message)
-}
-
 func testChainedSessions(t *testing.T, conf interface{}, opts ...sessionOption) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
@@ -757,120 +563,6 @@ func updatedSchemeConfigDecorator(fn func() *server.Configuration) func() *serve
 		c.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
 		return c
 	}
-}
-
-func TestStatusEventsSSE(t *testing.T) {
-	// Start a server with SSE enabled
-	conf := IrmaServerConfiguration()
-	conf.EnableSSE = true
-	rs := StartRequestorServer(t, conf)
-	defer rs.Stop()
-
-	// Start a session at the server
-	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sesPkg := startSessionAtServer(t, rs, conf, request)
-
-	// Start SSE connections to the SSE endpoints
-	url := fmt.Sprintf("http://localhost:%d/session/%s/statusevents", conf.Port, sesPkg.Token)
-	requestorStatuschan, requestorCancel := listenStatusEventsSSE(t, url)
-	frontendStatuschan, frontendCancel := listenStatusEventsSSE(t, sesPkg.SessionPtr.URL+"/statusevents")
-
-	// Wait for the session to start and the SSE HTTP connections to be made
-	time.Sleep(100 * time.Millisecond)
-
-	// Make a client, and let it perform the session
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
-	h := &TestHandler{
-		t:                  t,
-		c:                  make(chan *SessionResult),
-		client:             client,
-		expectedServerName: expectedRequestorInfo(t, client.Configuration),
-	}
-	qrjson, err := json.Marshal(sesPkg.SessionPtr)
-	require.NoError(t, err)
-	client.NewSession(string(qrjson), h)
-
-	// Both channels should now receive "CONNECTED" and "DONE" in quick succession as the client
-	// connects and then finishes the session.
-	done := make(chan struct{})
-	go func() {
-		require.Equal(t, irma.ServerStatusConnected, <-requestorStatuschan)
-		require.Equal(t, irma.ServerStatusConnected, <-frontendStatuschan)
-		require.Equal(t, irma.ServerStatusDone, <-requestorStatuschan)
-		require.Equal(t, irma.ServerStatusDone, <-frontendStatuschan)
-		done <- struct{}{}
-	}()
-
-	// Stop waiting for events to arrive if it takes too long
-	select {
-	case <-done: // all ok, do nothing
-	case <-time.After(5 * time.Second):
-		// Cancel SSE requests, to ensure the goroutine above finishes so the test ends
-		requestorCancel()
-		frontendCancel()
-		t.Fatal("SSE events took too long to arrive")
-	}
-}
-
-// listenStatusEventsSSE is a helper function that connects to a SSE statusevents endpoint, and emits events
-// received on it to the returned channel. Partially copied from subscribeSSE() in wait_status.go.
-func listenStatusEventsSSE(t *testing.T, url string) (chan irma.ServerStatus, func()) {
-	ctx, cancel := context.WithCancel(context.Background())
-	statuschan := make(chan irma.ServerStatus)
-	events := make(chan *sseclient.Event)
-
-	// Start reading SSE events from the channel to which sseclient.Notify() will write
-	go func() {
-		for {
-			e := <-events
-			if e == nil || e.Type == "open" {
-				continue
-			}
-			status := irma.ServerStatus(strings.Trim(string(e.Data), `"`))
-			statuschan <- status
-			if status.Finished() {
-				cancel()
-				return
-			}
-		}
-	}()
-
-	// Open SSE HTTP connection (in a goroutine since it is long-lived)
-	go func() {
-		defer close(statuschan)
-		require.NoError(t, sseclient.Notify(ctx, url, true, events))
-	}()
-
-	return statuschan, cancel
-}
-
-// Check that nonexistent IRMA identifiers in the session request fail the session
-func TestInvalidRequest(t *testing.T) {
-	irmaServer := StartIrmaServer(t, nil)
-	defer irmaServer.Stop()
-	_, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
-		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
-		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
-	), nil)
-	require.Error(t, err)
-}
-
-func TestDoubleGET(t *testing.T) {
-	irmaServer := StartIrmaServer(t, nil)
-	defer irmaServer.Stop()
-	qr, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
-		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
-	), nil)
-	require.NoError(t, err)
-
-	// Simulate the first GET by the client in the session protocol, twice
-	var o interface{}
-	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.MinVersionHeader, "2.5")
-	transport.SetHeader(irma.MaxVersionHeader, "2.5")
-	require.NoError(t, transport.Get("", &o))
-	require.NoError(t, transport.Get("", &o))
 }
 
 func testSigningSession(t *testing.T, conf interface{}, opts ...sessionOption) {
@@ -1084,6 +776,315 @@ func testOptionalDisclosure(t *testing.T, conf interface{}, opts ...sessionOptio
 		result := doSession(t, args.request, client, nil, nil, nil, conf, opts...)
 		require.True(t, reflect.DeepEqual(args.disclosed, result.Disclosed))
 	}
+}
+
+// The following tests are currently not reused with different server/configuration types.
+
+func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
+	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	issuanceRequest := getIssuanceRequest(true)
+	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
+	_, err := client.Configuration.Download(issuanceRequest)
+	require.NoError(t, err)
+	require.True(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
+}
+
+func TestIrmaServerPrivateKeysFolder(t *testing.T) {
+	storage, err := ioutil.TempDir("", "servertest")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
+
+	conf := IrmaLibraryConfiguration()
+	conf.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
+	conf.SchemesPath = storage
+
+	irmaServer := StartIrmaServer(t, conf)
+	defer irmaServer.Stop()
+
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	irmaConf := irmaServer.conf.IrmaConfiguration
+	sk, err := irmaConf.PrivateKeys.Latest(credid.IssuerIdentifier())
+	require.NoError(t, err)
+	require.NotNil(t, sk)
+
+	issuanceRequest := getIssuanceRequest(true)
+	delete(issuanceRequest.Credentials[0].Attributes, "level")
+
+	irmaConf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	downloaded, err := irmaConf.Download(issuanceRequest)
+	require.NoError(t, err)
+	require.Equal(t, &irma.IrmaIdentifierSet{
+		SchemeManagers: map[irma.SchemeManagerIdentifier]struct{}{},
+		Issuers:        map[irma.IssuerIdentifier]struct{}{},
+		CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
+			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"):  {},
+			irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"): {},
+		},
+		PublicKeys:       map[irma.IssuerIdentifier][]uint{},
+		AttributeTypes:   map[irma.AttributeTypeIdentifier]struct{}{},
+		RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
+	}, downloaded)
+
+	sk, err = irmaConf.PrivateKeys.Latest(credid.IssuerIdentifier())
+	require.NoError(t, err)
+	require.NotNil(t, sk)
+}
+
+func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
+	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	issuanceRequest := getIssuanceRequest(true)
+	delete(issuanceRequest.Credentials[0].Attributes, "level")
+
+	irmaServer := StartIrmaServer(t, nil) // Run a server with old configuration (level is non-optional)
+	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
+	expectedError := &irma.RequiredAttributeMissingError{
+		ErrorType: irma.ErrorRequiredAttributeMissing,
+		Missing: &irma.IrmaIdentifierSet{
+			SchemeManagers:   map[irma.SchemeManagerIdentifier]struct{}{},
+			RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
+			Issuers:          map[irma.IssuerIdentifier]struct{}{},
+			CredentialTypes:  map[irma.CredentialTypeIdentifier]struct{}{},
+			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
+			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
+				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"): struct{}{},
+			},
+		},
+	}
+	require.True(t, reflect.DeepEqual(err, expectedError), "Incorrect missing identifierset")
+	irmaServer.Stop()
+
+	// Run a server with updated configuration (level is optional)
+	conf := IrmaLibraryConfiguration()
+	conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+	irmaServer = StartIrmaServer(t, conf)
+	_, err = client.Configuration.Download(issuanceRequest)
+	require.NoError(t, err)
+	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
+	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, nil)
+	require.NoError(t, err)
+	irmaServer.Stop()
+}
+
+func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+
+	delete(client.Configuration.CredentialTypes, credid)
+	require.NotContains(t, client.Configuration.CredentialTypes, credid)
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	request := getIssuanceRequest(true)
+	_, err := client.Configuration.Download(request)
+	require.NoError(t, err)
+
+	require.Contains(t, client.Configuration.CredentialTypes, credid)
+}
+
+func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
+	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
+	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
+
+	delete(client.Configuration.CredentialTypes, credid)
+	require.NotContains(t, client.Configuration.CredentialTypes, credid)
+
+	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	request := irma.NewDisclosureRequest(attrid)
+	_, err := client.Configuration.Download(request)
+	require.NoError(t, err)
+	require.Contains(t, client.Configuration.CredentialTypes, credid)
+}
+
+func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	request := irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),        // non-existing issuer
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),         // non-existing credential
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"), // non-existing attribute
+	)
+	_, err := client.Configuration.Download(request)
+	require.Error(t, err)
+
+	expectedErr := &irma.UnknownIdentifierError{
+		ErrorType: irma.ErrorUnknownIdentifier,
+		Missing: &irma.IrmaIdentifierSet{
+			SchemeManagers:   map[irma.SchemeManagerIdentifier]struct{}{},
+			RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
+			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
+			Issuers: map[irma.IssuerIdentifier]struct{}{
+				irma.NewIssuerIdentifier("irma-demo.baz"): struct{}{},
+			},
+			CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
+				irma.NewCredentialTypeIdentifier("irma-demo.RU.foo"):  struct{}{},
+				irma.NewCredentialTypeIdentifier("irma-demo.baz.qux"): struct{}{},
+			},
+			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
+				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"): struct{}{},
+			},
+		},
+	}
+	require.True(t, reflect.DeepEqual(expectedErr, err), "Download() returned incorrect missing identifier set")
+}
+
+func TestPOSTSizeLimit(t *testing.T) {
+	rs := StartRequestorServer(t, IrmaServerConfiguration())
+	defer rs.Stop()
+
+	server.PostSizeLimit = 1 << 10
+	defer func() {
+		server.PostSizeLimit = 10 << 20
+	}()
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://localhost:48682/session/",
+		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	http.DefaultClient.Timeout = 30 * time.Second
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	bts, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	var rerr irma.RemoteError
+	require.NoError(t, json.Unmarshal(bts, &rerr))
+	require.Equal(t, "http: request body too large", rerr.Message)
+}
+
+func TestStatusEventsSSE(t *testing.T) {
+	// Start a server with SSE enabled
+	conf := IrmaServerConfiguration()
+	conf.EnableSSE = true
+	rs := StartRequestorServer(t, conf)
+	defer rs.Stop()
+
+	// Start a session at the server
+	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	sesPkg := startSessionAtServer(t, rs, conf, request)
+
+	// Start SSE connections to the SSE endpoints
+	url := fmt.Sprintf("http://localhost:%d/session/%s/statusevents", conf.Port, sesPkg.Token)
+	requestorStatuschan, requestorCancel := listenStatusEventsSSE(t, url)
+	frontendStatuschan, frontendCancel := listenStatusEventsSSE(t, sesPkg.SessionPtr.URL+"/statusevents")
+
+	// Wait for the session to start and the SSE HTTP connections to be made
+	time.Sleep(100 * time.Millisecond)
+
+	// Make a client, and let it perform the session
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+	h := &TestHandler{
+		t:                  t,
+		c:                  make(chan *SessionResult),
+		client:             client,
+		expectedServerName: expectedRequestorInfo(t, client.Configuration),
+	}
+	qrjson, err := json.Marshal(sesPkg.SessionPtr)
+	require.NoError(t, err)
+	client.NewSession(string(qrjson), h)
+
+	// Both channels should now receive "CONNECTED" and "DONE" in quick succession as the client
+	// connects and then finishes the session.
+	done := make(chan struct{})
+	go func() {
+		require.Equal(t, irma.ServerStatusConnected, <-requestorStatuschan)
+		require.Equal(t, irma.ServerStatusConnected, <-frontendStatuschan)
+		require.Equal(t, irma.ServerStatusDone, <-requestorStatuschan)
+		require.Equal(t, irma.ServerStatusDone, <-frontendStatuschan)
+		done <- struct{}{}
+	}()
+
+	// Stop waiting for events to arrive if it takes too long
+	select {
+	case <-done: // all ok, do nothing
+	case <-time.After(5 * time.Second):
+		// Cancel SSE requests, to ensure the goroutine above finishes so the test ends
+		requestorCancel()
+		frontendCancel()
+		t.Fatal("SSE events took too long to arrive")
+	}
+}
+
+// listenStatusEventsSSE is a helper function that connects to a SSE statusevents endpoint, and emits events
+// received on it to the returned channel. Partially copied from subscribeSSE() in wait_status.go.
+func listenStatusEventsSSE(t *testing.T, url string) (chan irma.ServerStatus, func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	statuschan := make(chan irma.ServerStatus)
+	events := make(chan *sseclient.Event)
+
+	// Start reading SSE events from the channel to which sseclient.Notify() will write
+	go func() {
+		for {
+			e := <-events
+			if e == nil || e.Type == "open" {
+				continue
+			}
+			status := irma.ServerStatus(strings.Trim(string(e.Data), `"`))
+			statuschan <- status
+			if status.Finished() {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	// Open SSE HTTP connection (in a goroutine since it is long-lived)
+	go func() {
+		defer close(statuschan)
+		require.NoError(t, sseclient.Notify(ctx, url, true, events))
+	}()
+
+	return statuschan, cancel
+}
+
+// Check that nonexistent IRMA identifiers in the session request fail the session
+func TestInvalidRequest(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	_, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
+		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
+	), nil)
+	require.Error(t, err)
+}
+
+func TestDoubleGET(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	qr, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+	), nil)
+	require.NoError(t, err)
+
+	// Simulate the first GET by the client in the session protocol, twice
+	var o interface{}
+	transport := irma.NewHTTPTransport(qr.URL, false)
+	transport.SetHeader(irma.MinVersionHeader, "2.5")
+	transport.SetHeader(irma.MaxVersionHeader, "2.5")
+	require.NoError(t, transport.Get("", &o))
+	require.NoError(t, transport.Get("", &o))
 }
 
 func TestClientDeveloperMode(t *testing.T) {
