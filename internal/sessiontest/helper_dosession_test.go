@@ -22,8 +22,7 @@ type (
 	// TODO rename to option? (including constants)
 	sessionOption int
 
-	// TODO rename to stopper
-	stoppable interface {
+	stopper interface {
 		Stop()
 	}
 
@@ -68,7 +67,7 @@ func (o sessionOption) enabled(opt sessionOption) bool {
 // by the parameters:
 // - If irmaServer is not nil or sessionOptionReuseServer is enabled, this function does nothing.
 // - Otherwise an IRMA server or library is started, depending on the type of conf.
-func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf interface{}) (stoppable, interface{}, bool) {
+func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf interface{}) (stopper, interface{}, bool) {
 	if irmaServer != nil {
 		if opts.enabled(sessionOptionReuseServer) {
 			require.FailNow(t, "either specify irmaServer or sessionOptionReuseServer")
@@ -102,7 +101,7 @@ func startServer(t *testing.T, opts sessionOption, irmaServer *IrmaServer, conf 
 
 // startSessionAtServer starts an IRMA session using the specified session request, against an IRMA server
 // or library, as determined by the type of serv.
-func startSessionAtServer(t *testing.T, serv stoppable, conf interface{}, request interface{}) *server.SessionPackage {
+func startSessionAtServer(t *testing.T, serv stopper, conf interface{}, request interface{}) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
 		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil)
@@ -151,7 +150,7 @@ func startSessionAtClient(t *testing.T, sesPkg *server.SessionPackage, client *i
 }
 
 // getSessionResult retrieves the session result from the IRMA server or library.
-func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stoppable, opts sessionOption) *server.SessionResult {
+func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper, opts sessionOption) *server.SessionResult {
 	if opts.enabled(sessionOptionWait) {
 		require.IsType(t, &IrmaServer{}, serv)
 		waitSessionFinished(t, serv.(*IrmaServer).irma, sesPkg.Token)
