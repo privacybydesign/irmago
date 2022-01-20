@@ -180,14 +180,14 @@ func TestRedisWithTLSCertFile(t *testing.T) {
 		require.NoError(t, os.Remove(certfile))
 	}()
 
-	t.Run("TestDisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", certfile, IrmaServerConfiguration)))
+	t.Run("DisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", certfile, IrmaServerConfiguration)))
 }
 
 func TestRedisWithoutTLS(t *testing.T) {
 	mr, _ := startRedis(t, false)
 	defer mr.Close()
 
-	t.Run("TestDisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", "", IrmaServerConfiguration)))
+	t.Run("DisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", "", IrmaServerConfiguration)))
 }
 
 func checkErrorInternal(t *testing.T, err error) {
