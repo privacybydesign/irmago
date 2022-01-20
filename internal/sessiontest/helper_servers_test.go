@@ -55,6 +55,19 @@ func init() {
 	}
 }
 
+// curry takes (1) a test function which apart from *testing.T additionally accepting a
+// configuration function and session options, and (2) a configuration function and session objects,
+// and returns a function suitable for unit testing by applying the configuration function and
+// session options in the rightmost two parameter slots of the specified function.
+func curry(
+	test func(t *testing.T, conf interface{}, opts ...sessionOption),
+	conf interface{}, opts ...sessionOption,
+) func(*testing.T) {
+	return func(t *testing.T) {
+		test(t, conf, opts...)
+	}
+}
+
 // TODO rename to StartIrmaServer
 func StartRequestorServer(t *testing.T, configuration *requestorserver.Configuration) *requestorserver.Server {
 	requestorServer, err := requestorserver.New(configuration)
