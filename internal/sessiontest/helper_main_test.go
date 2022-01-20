@@ -16,8 +16,7 @@ import (
 )
 
 // Defines the maximum protocol version of an irmaclient in tests
-// TODO: rename to prePairingClientVersion
-var maxClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+var prePairingClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
 
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
@@ -48,9 +47,9 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 
 	// Set max version we want to test on
 	opts := processOptions(options...)
-	if opts.enabled(optionOldClient) {
+	if opts.enabled(optionPrePairingClient) {
 		version := extractClientMaxVersion(client)
-		*version = *maxClientVersion
+		*version = *prePairingClientVersion
 	}
 
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})

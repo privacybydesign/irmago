@@ -47,7 +47,7 @@ const (
 	optionReuseServer
 	optionClientWait
 	optionWait
-	optionOldClient
+	optionPrePairingClient
 )
 
 func processOptions(options ...option) option {
