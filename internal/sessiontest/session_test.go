@@ -395,7 +395,7 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 	// setup static QR and other variables
 	qr := &irma.Qr{
 		Type: irma.ActionRedirect,
-		URL:  "http://localhost:48682/irma/session/staticsession",
+		URL:  requestorServerURL + "/irma/session/staticsession",
 	}
 	bts, err := json.Marshal(qr)
 	require.NoError(t, err)
@@ -957,7 +957,7 @@ func TestPOSTSizeLimit(t *testing.T) {
 
 	req, err := http.NewRequest(
 		http.MethodPost,
-		"http://localhost:48682/session/",
+		requestorServerURL+"/session/",
 		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
 	)
 	require.NoError(t, err)

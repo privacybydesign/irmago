@@ -115,7 +115,7 @@ func (lb *DummyLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func startLoadBalancer(t *testing.T, irmaServers []int) *http.Server {
 	lb := &http.Server{
-		Addr:    "localhost:48682",
+		Addr:    fmt.Sprintf("localhost:%d", requestorServerPort),
 		Handler: &DummyLoadBalancer{t: t, irmaServers: irmaServers, index: 0},
 	}
 	go func() {

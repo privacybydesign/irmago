@@ -125,7 +125,7 @@ func startSessionAtServer(t *testing.T, serv stopper, conf interface{}, request 
 		} else {
 			useJWTs = true
 		}
-		url := "http://localhost:48682"
+		url := requestorServerURL
 		if useJWTs {
 			skbts, err := ioutil.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
 			require.NoError(t, err)
@@ -169,7 +169,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 		return result
 	default:
 		var res string
-		err := irma.NewHTTPTransport("http://localhost:48682/session/"+string(sesPkg.Token), false).Get("result-jwt", &res)
+		err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-jwt", &res)
 		require.NoError(t, err)
 
 		bts, err := ioutil.ReadFile(jwtPrivkeyPath)

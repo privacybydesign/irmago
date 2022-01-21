@@ -225,14 +225,19 @@ func IrmaServerConfiguration() *server.Configuration {
 	}
 }
 
+const (
+	requestorServerPort = 48682
+	requestorServerURL  = "http://localhost:48682"
+)
+
 func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf := IrmaServerConfiguration()
-	irmaServerConf.URL = "http://localhost:48682/irma"
+	irmaServerConf.URL = requestorServerURL + "/irma"
 	return &requestorserver.Configuration{
 		Configuration:                  irmaServerConf,
 		DisableRequestorAuthentication: true,
 		ListenAddress:                  "localhost",
-		Port:                           48682,
+		Port:                           requestorServerPort,
 		MaxRequestAge:                  3,
 		Permissions: requestorserver.Permissions{
 			Disclosing: []string{"*"},
