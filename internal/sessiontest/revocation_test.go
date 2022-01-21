@@ -767,7 +767,7 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 
 func revocationConf(_ *testing.T) *server.Configuration {
 	return &server.Configuration{
-		URL:                   "http://localhost:48683",
+		URL:                   revocationServerURL,
 		Logger:                logger,
 		EnableSSE:             true,
 		DisableSchemesUpdate:  true,
@@ -804,7 +804,7 @@ func startRevocationServer(t *testing.T, droptables bool) *IrmaServer {
 	require.NoError(t, err)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", revocationServer.HandlerFunc())
-	revocationHttpServer := &http.Server{Addr: "localhost:48683", Handler: mux}
+	revocationHttpServer := &http.Server{Addr: fmt.Sprintf("localhost:%d", revocationServerPort), Handler: mux}
 	go func() {
 		_ = revocationHttpServer.ListenAndServe()
 	}()

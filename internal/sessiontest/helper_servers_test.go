@@ -3,6 +3,7 @@ package sessiontest
 import (
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
@@ -34,6 +35,24 @@ var (
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 
 	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
+)
+
+const (
+	irmaServerPort = 48680
+
+	schemeServerURL = "http://localhost:48681"
+
+	requestorServerPort = 48682
+	requestorServerURL  = "http://localhost:48682"
+
+	revocationServerPort = 48683
+	revocationServerURL  = "http://localhost:48683"
+
+	staticSessionServerPort = 48685
+	staticSessionServerURL  = "http://localhost:48685"
+
+	nextSessionServerPort = 48686
+	nextSessionServerURL  = "http://localhost:48686"
 )
 
 type IrmaServer struct {
@@ -89,7 +108,7 @@ func StartIrmaServer(t *testing.T, conf *server.Configuration) *IrmaServer {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", irmaServer.HandlerFunc())
-	httpServer := &http.Server{Addr: "localhost:48680", Handler: mux}
+	httpServer := &http.Server{Addr: fmt.Sprintf("localhost:%d", irmaServerPort), Handler: mux}
 	go func() {
 		_ = httpServer.ListenAndServe()
 	}()
@@ -118,7 +137,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 		request := &irma.ServiceProviderRequest{
 			Request: getDisclosureRequest(id),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: &irma.NextSessionData{URL: "http://localhost:48686/2"},
+				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/2"},
 			},
 		}
 		bts, err := json.Marshal(request)
@@ -161,7 +180,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 		bts, err = json.Marshal(irma.IdentityProviderRequest{
 			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{cred}),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: &irma.NextSessionData{URL: "http://localhost:48686/3"},
+				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/3"},
 			},
 		})
 		require.NoError(t, err)
@@ -189,7 +208,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 
 func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey) *http.Server {
 	s := &http.Server{
-		Addr:    "localhost:48686",
+		Addr:    fmt.Sprintf("localhost:%d", nextSessionServerPort),
 		Handler: chainedServerHandler(t, jwtPubKey),
 	}
 	go func() {
@@ -200,20 +219,20 @@ func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey) *http.Server
 
 func IrmaServerConfiguration() *server.Configuration {
 	return &server.Configuration{
-		URL:                   "http://localhost:48680",
+		URL:                   fmt.Sprintf("http://localhost:%d", irmaServerPort),
 		Logger:                logger,
 		DisableSchemesUpdate:  true,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
-			revocationTestCred:  {RevocationServerURL: "http://localhost:48683", SSE: true},
-			revKeyshareTestCred: {RevocationServerURL: "http://localhost:48683"},
+			revocationTestCred:  {RevocationServerURL: revocationServerURL, SSE: true},
+			revKeyshareTestCred: {RevocationServerURL: revocationServerURL},
 		},
 		JwtPrivateKeyFile: jwtPrivkeyPath,
 		StaticSessions: map[string]interface{}{
 			"staticsession": irma.ServiceProviderRequest{
 				RequestorBaseRequest: irma.RequestorBaseRequest{
-					CallbackURL: "http://localhost:48685",
+					CallbackURL: staticSessionServerURL,
 				},
 				Request: &irma.DisclosureRequest{
 					BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
@@ -225,11 +244,6 @@ func IrmaServerConfiguration() *server.Configuration {
 		},
 	}
 }
-
-const (
-	requestorServerPort = 48682
-	requestorServerURL  = "http://localhost:48682"
-)
 
 func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf := IrmaServerConfiguration()

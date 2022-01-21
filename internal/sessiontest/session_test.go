@@ -355,7 +355,7 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 
 	// Trigger downloading the updated irma_configuration using a disclosure request containing the
 	// new attribute, and inform the client
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = schemeServerURL + "/irma_configuration_updated/irma-demo"
 	newAttrRequest := irma.NewDisclosureRequest(attrid)
 	downloaded, err := client.Configuration.Download(newAttrRequest)
 	require.NoError(t, err)
@@ -389,7 +389,7 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		received = true
 	})
-	s := &http.Server{Addr: "localhost:48685", Handler: mux}
+	s := &http.Server{Addr: fmt.Sprintf("localhost:%d", staticSessionServerPort), Handler: mux}
 	go func() { _ = s.ListenAndServe() }()
 
 	// setup static QR and other variables
@@ -517,7 +517,7 @@ func testChainedSessions(t *testing.T, conf interface{}, opts ...option) {
 	}()
 
 	var request irma.ServiceProviderRequest
-	require.NoError(t, irma.NewHTTPTransport("http://localhost:48686", false).Get("1", &request))
+	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
 	doSession(t, &request, client, irmaServer, nil, nil, nil)
 
 	// check that our credential instance is new
@@ -583,7 +583,7 @@ func testSigningSession(t *testing.T, conf interface{}, opts ...option) {
 
 	// Load the updated scheme in which an attribute was added to the studentCard credential type
 	scheme := client.Configuration.SchemeManagers[irma.NewSchemeManagerIdentifier("irma-demo")]
-	scheme.URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	scheme.URL = schemeServerURL + "/irma_configuration_updated/irma-demo"
 	require.NoError(t, client.Configuration.UpdateScheme(scheme, nil))
 	require.NoError(t, client.Configuration.ParseFolder())
 	require.Contains(t, client.Configuration.AttributeTypes, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute"))
@@ -789,7 +789,7 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.newAttribute")
 	require.False(t, client.Configuration.CredentialTypes[credid].ContainsAttribute(attrid))
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = schemeServerURL + "/irma_configuration_updated/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	issuanceRequest.Credentials[0].Attributes["newAttribute"] = "foobar"
 	_, err := client.Configuration.Download(issuanceRequest)
@@ -818,7 +818,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
-	irmaConf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	irmaConf.SchemeManagers[credid.IssuerIdentifier().SchemeManagerIdentifier()].URL = schemeServerURL + "/irma_configuration_updated/irma-demo"
 	downloaded, err := irmaConf.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.Equal(t, &irma.IrmaIdentifierSet{
@@ -846,7 +846,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
 	require.False(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = schemeServerURL + "/irma_configuration_updated/irma-demo"
 	issuanceRequest := getIssuanceRequest(true)
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
@@ -889,7 +889,7 @@ func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
 	delete(client.Configuration.CredentialTypes, credid)
 	require.NotContains(t, client.Configuration.CredentialTypes, credid)
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = schemeServerURL + "/irma_configuration_updated/irma-demo"
 	request := getIssuanceRequest(true)
 	_, err := client.Configuration.Download(request)
 	require.NoError(t, err)
@@ -907,7 +907,7 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 	delete(client.Configuration.CredentialTypes, credid)
 	require.NotContains(t, client.Configuration.CredentialTypes, credid)
 
-	client.Configuration.SchemeManagers[schemeid].URL = "http://localhost:48681/irma_configuration_updated/irma-demo"
+	client.Configuration.SchemeManagers[schemeid].URL = schemeServerURL + "/irma_configuration_updated/irma-demo"
 	request := irma.NewDisclosureRequest(attrid)
 	_, err := client.Configuration.Download(request)
 	require.NoError(t, err)
