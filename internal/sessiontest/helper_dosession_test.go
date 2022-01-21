@@ -11,7 +11,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -154,13 +153,7 @@ func startSessionAtClient(t *testing.T, sesPkg *server.SessionPackage, client *i
 
 // getSessionResult retrieves the session result from the IRMA server or library.
 func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper, opts option) *server.SessionResult {
-	if opts.enabled(optionWait) {
-		require.IsType(t, &IrmaServer{}, serv)
-		waitSessionFinished(t, serv.(*IrmaServer).irma, sesPkg.Token)
-	} else {
-		// wait for server to finish processing the session
-		time.Sleep(100 * time.Millisecond)
-	}
+	waitSessionFinished(t, serv, sesPkg.Token, opts.enabled(optionWait))
 
 	switch s := serv.(type) {
 	case *IrmaServer:
@@ -219,12 +212,20 @@ func createSessionHandler(
 	return &handler, clientChan
 }
 
-func waitSessionFinished(t *testing.T, irmaServer *irmaserver.Server, token irma.RequestorToken) *server.SessionResult {
+func waitSessionFinished(t *testing.T, serv interface{}, token irma.RequestorToken, longRunning bool) {
+	if !longRunning {
+		// wait a bit so that server can finish processing the session
+		time.Sleep(100 * time.Millisecond)
+		return
+	}
+
+	require.IsType(t, &IrmaServer{}, serv)
+	irmaServer := serv.(*IrmaServer).irma
 	for {
 		res, err := irmaServer.GetSessionResult(token)
 		require.NoError(t, err)
 		if res.Status.Finished() {
-			return res
+			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
