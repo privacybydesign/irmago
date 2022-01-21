@@ -37,54 +37,54 @@ import (
 //   session options, start and stop a server of the appropriate type (server or library), as
 //   determined by the type of the configuration function.
 // - Each function may be converted to one suitable for Go testing, i.e. having signature
-//   *testing.T, using the curry() function.
+//   *testing.T, using the apply() function.
 
 func TestRequestorServer(t *testing.T) {
-	t.Run("DisclosureSession", curry(testDisclosureSession, RequestorServerConfiguration))
-	t.Run("NoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, RequestorServerConfiguration))
-	t.Run("EmptyDisclosure", curry(testEmptyDisclosure, RequestorServerConfiguration))
-	t.Run("SigningSession", curry(testSigningSession, RequestorServerConfiguration))
-	t.Run("IssuanceSession", curry(testIssuanceSession, RequestorServerConfiguration))
-	t.Run("MultipleIssuanceSession", curry(testMultipleIssuanceSession, RequestorServerConfiguration))
-	t.Run("DefaultCredentialValidity", curry(testDefaultCredentialValidity, RequestorServerConfiguration))
-	t.Run("IssuanceDisclosureEmptyAttributes", curry(testIssuanceDisclosureEmptyAttributes, RequestorServerConfiguration))
-	t.Run("IssuanceOptionalZeroLengthAttributes", curry(testIssuanceOptionalZeroLengthAttributes, RequestorServerConfiguration))
-	t.Run("IssuanceOptionalSetAttributes", curry(testIssuanceOptionalSetAttributes, RequestorServerConfiguration))
-	t.Run("IssuanceSameAttributesNotSingleton", curry(testIssuanceSameAttributesNotSingleton, RequestorServerConfiguration))
-	t.Run("IssuancePairing", curry(testIssuancePairing, RequestorServerConfiguration))
-	t.Run("LargeAttribute", curry(testLargeAttribute, RequestorServerConfiguration))
-	t.Run("IssuanceSingletonCredential", curry(testIssuanceSingletonCredential, RequestorServerConfiguration))
-	t.Run("UnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, RequestorServerConfiguration))
-	t.Run("AttributeByteEncoding", curry(testAttributeByteEncoding, RequestorServerConfiguration))
-	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, RequestorServerConfiguration))
-	t.Run("BlindIssuanceSession", curry(testBlindIssuanceSession, RequestorServerConfiguration))
-	t.Run("DisablePairing", curry(testDisablePairing, RequestorServerConfiguration))
-	t.Run("DisclosureMultipleAttrs", curry(testDisclosureMultipleAttrs, RequestorServerConfiguration))
-	t.Run("CombinedSessionMultipleAttributes", curry(testCombinedSessionMultipleAttributes, RequestorServerConfiguration))
-	t.Run("ConDisCon", curry(testConDisCon, RequestorServerConfiguration))
-	t.Run("OptionalDisclosure", curry(testOptionalDisclosure, RequestorServerConfiguration))
+	t.Run("DisclosureSession", apply(testDisclosureSession, RequestorServerConfiguration))
+	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, RequestorServerConfiguration))
+	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, RequestorServerConfiguration))
+	t.Run("SigningSession", apply(testSigningSession, RequestorServerConfiguration))
+	t.Run("IssuanceSession", apply(testIssuanceSession, RequestorServerConfiguration))
+	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, RequestorServerConfiguration))
+	t.Run("DefaultCredentialValidity", apply(testDefaultCredentialValidity, RequestorServerConfiguration))
+	t.Run("IssuanceDisclosureEmptyAttributes", apply(testIssuanceDisclosureEmptyAttributes, RequestorServerConfiguration))
+	t.Run("IssuanceOptionalZeroLengthAttributes", apply(testIssuanceOptionalZeroLengthAttributes, RequestorServerConfiguration))
+	t.Run("IssuanceOptionalSetAttributes", apply(testIssuanceOptionalSetAttributes, RequestorServerConfiguration))
+	t.Run("IssuanceSameAttributesNotSingleton", apply(testIssuanceSameAttributesNotSingleton, RequestorServerConfiguration))
+	t.Run("IssuancePairing", apply(testIssuancePairing, RequestorServerConfiguration))
+	t.Run("LargeAttribute", apply(testLargeAttribute, RequestorServerConfiguration))
+	t.Run("IssuanceSingletonCredential", apply(testIssuanceSingletonCredential, RequestorServerConfiguration))
+	t.Run("UnsatisfiableDisclosureSession", apply(testUnsatisfiableDisclosureSession, RequestorServerConfiguration))
+	t.Run("AttributeByteEncoding", apply(testAttributeByteEncoding, RequestorServerConfiguration))
+	t.Run("IssuedCredentialIsStored", apply(testIssuedCredentialIsStored, RequestorServerConfiguration))
+	t.Run("BlindIssuanceSession", apply(testBlindIssuanceSession, RequestorServerConfiguration))
+	t.Run("DisablePairing", apply(testDisablePairing, RequestorServerConfiguration))
+	t.Run("DisclosureMultipleAttrs", apply(testDisclosureMultipleAttrs, RequestorServerConfiguration))
+	t.Run("CombinedSessionMultipleAttributes", apply(testCombinedSessionMultipleAttributes, RequestorServerConfiguration))
+	t.Run("ConDisCon", apply(testConDisCon, RequestorServerConfiguration))
+	t.Run("OptionalDisclosure", apply(testOptionalDisclosure, RequestorServerConfiguration))
 }
 
 func TestIrmaServer(t *testing.T) {
 	// Tests supporting only the IRMA server (library)
-	t.Run("ChainedSessions", curry(testChainedSessions, IrmaServerConfiguration))
-	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, IrmaServerConfiguration))
-	t.Run("DisclosureNewAttributeUpdateSchemeManager", curry(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration))
-	t.Run("BlindIssuanceSessionDifferentAmountOfRandomBlinds", curry(testBlindIssuanceSessionDifferentAmountOfRandomBlinds, IrmaServerConfiguration))
-	t.Run("OutdatedClientIrmaConfiguration", curry(testOutdatedClientIrmaConfiguration, IrmaServerConfiguration))
+	t.Run("ChainedSessions", apply(testChainedSessions, IrmaServerConfiguration))
+	t.Run("UnknownRequestorToken", apply(testUnknownRequestorToken, IrmaServerConfiguration))
+	t.Run("DisclosureNewAttributeUpdateSchemeManager", apply(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration))
+	t.Run("BlindIssuanceSessionDifferentAmountOfRandomBlinds", apply(testBlindIssuanceSessionDifferentAmountOfRandomBlinds, IrmaServerConfiguration))
+	t.Run("OutdatedClientIrmaConfiguration", apply(testOutdatedClientIrmaConfiguration, IrmaServerConfiguration))
 
 	// Tests also run against the requestor server
-	t.Run("DisclosureSession", curry(testDisclosureSession, IrmaServerConfiguration))
-	t.Run("NoAttributeDisclosureSession", curry(testNoAttributeDisclosureSession, IrmaServerConfiguration))
-	t.Run("EmptyDisclosure", curry(testEmptyDisclosure, IrmaServerConfiguration))
-	t.Run("SigningSession", curry(testSigningSession, IrmaServerConfiguration))
-	t.Run("IssuanceSession", curry(testIssuanceSession, IrmaServerConfiguration))
-	t.Run("MultipleIssuanceSession", curry(testMultipleIssuanceSession, IrmaServerConfiguration))
-	t.Run("IssuancePairing", curry(testIssuancePairing, IrmaServerConfiguration))
-	t.Run("DisablePairing", curry(testDisablePairing, IrmaServerConfiguration))
-	t.Run("UnsatisfiableDisclosureSession", curry(testUnsatisfiableDisclosureSession, IrmaServerConfiguration))
+	t.Run("DisclosureSession", apply(testDisclosureSession, IrmaServerConfiguration))
+	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, IrmaServerConfiguration))
+	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, IrmaServerConfiguration))
+	t.Run("SigningSession", apply(testSigningSession, IrmaServerConfiguration))
+	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
+	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
+	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
+	t.Run("DisablePairing", apply(testDisablePairing, IrmaServerConfiguration))
+	t.Run("UnsatisfiableDisclosureSession", apply(testUnsatisfiableDisclosureSession, IrmaServerConfiguration))
 
-	t.Run("StaticQRSession", curry(testStaticQRSession, nil)) // has its own configuration
+	t.Run("StaticQRSession", apply(testStaticQRSession, nil)) // has its own configuration
 }
 
 func testNoAttributeDisclosureSession(t *testing.T, conf interface{}, opts ...option) {

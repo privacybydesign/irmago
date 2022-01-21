@@ -130,13 +130,13 @@ func TestRedis(t *testing.T) {
 	mr, cert := startRedis(t, true)
 	defer mr.Close()
 
-	t.Run("SigningSession", curry(testSigningSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
-	t.Run("DisclosureSession", curry(testDisclosureSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
-	t.Run("IssuanceSession", curry(testIssuanceSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
-	t.Run("IssuedCredentialIsStored", curry(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
+	t.Run("SigningSession", apply(testSigningSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
+	t.Run("DisclosureSession", apply(testDisclosureSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
+	t.Run("IssuanceSession", apply(testIssuanceSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
+	t.Run("IssuedCredentialIsStored", apply(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
 
-	t.Run("ChainedSessions", curry(testChainedSessions, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
-	t.Run("UnknownRequestorToken", curry(testUnknownRequestorToken, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("ChainedSessions", apply(testChainedSessions, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("UnknownRequestorToken", apply(testUnknownRequestorToken, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
 }
 
 func TestRedisTLSConfig(t *testing.T) {
@@ -180,14 +180,14 @@ func TestRedisWithTLSCertFile(t *testing.T) {
 		require.NoError(t, os.Remove(certfile))
 	}()
 
-	t.Run("DisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", certfile, IrmaServerConfiguration)))
+	t.Run("DisclosureSession", apply(testDisclosureSession, redisConfigDecorator(mr, "", certfile, IrmaServerConfiguration)))
 }
 
 func TestRedisWithoutTLS(t *testing.T) {
 	mr, _ := startRedis(t, false)
 	defer mr.Close()
 
-	t.Run("DisclosureSession", curry(testDisclosureSession, redisConfigDecorator(mr, "", "", IrmaServerConfiguration)))
+	t.Run("DisclosureSession", apply(testDisclosureSession, redisConfigDecorator(mr, "", "", IrmaServerConfiguration)))
 }
 
 func checkErrorInternal(t *testing.T, err error) {

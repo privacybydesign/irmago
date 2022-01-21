@@ -54,11 +54,12 @@ func init() {
 	}
 }
 
-// curry takes (1) a test function which apart from *testing.T additionally accepting a
-// configuration function and session options, and (2) a configuration function and session objects,
-// and returns a function suitable for unit testing by applying the configuration function and
-// session options in the rightmost two parameter slots of the specified function.
-func curry(
+// apply performs partial function application: it takes (1) a test function which apart from
+// *testing.T additionally accepting a configuration function and session options, and (2) a
+// configuration function and session objects, and returns a function suitable for unit testing by
+// applying the configuration function and session options in the rightmost two parameter slots of
+// the specified function.
+func apply(
 	test func(t *testing.T, conf interface{}, opts ...option),
 	conf interface{}, opts ...option,
 ) func(*testing.T) {
