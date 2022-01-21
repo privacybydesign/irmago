@@ -47,8 +47,16 @@ func startRedis(t *testing.T, enableTLS bool) (*miniredis.Miniredis, string) {
 	return mr, cert
 }
 
-func redisConfigDecorator(mr *miniredis.Miniredis, cert string, certfile string, fn func() *requestorserver.Configuration) func() *requestorserver.Configuration {
+func redisRequestorConfigDecorator(mr *miniredis.Miniredis, cert string, certfile string, fn func() *requestorserver.Configuration) func() *requestorserver.Configuration {
 	return func() *requestorserver.Configuration {
+		c := fn()
+		redisConfigDecorator(mr, cert, certfile, func() *server.Configuration { return c.Configuration })()
+		return c
+	}
+}
+
+func redisConfigDecorator(mr *miniredis.Miniredis, cert string, certfile string, fn func() *server.Configuration) func() *server.Configuration {
+	return func() *server.Configuration {
 		mr.FlushAll() // Flush Redis memory between different runs of the IRMA server to prevent side effects.
 		c := fn()
 		c.StoreType = "redis"
@@ -107,7 +115,7 @@ func (lb *DummyLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func startLoadBalancer(t *testing.T, irmaServers []int) *http.Server {
 	lb := &http.Server{
-		Addr:    "localhost:48682",
+		Addr:    fmt.Sprintf("localhost:%d", requestorServerPort),
 		Handler: &DummyLoadBalancer{t: t, irmaServers: irmaServers, index: 0},
 	}
 	go func() {
@@ -117,27 +125,18 @@ func startLoadBalancer(t *testing.T, irmaServers []int) *http.Server {
 }
 
 func TestRedis(t *testing.T) {
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	defaultJwtServerConfiguration := JwtServerConfiguration
-
 	// Here and elsewhere when generically testing Redis, we populate the RedisSettings.TLSCertificate field
 	// with a generated self-signed certificate.
 	mr, cert := startRedis(t, true)
-	IrmaServerConfiguration = redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)
-	JwtServerConfiguration = redisConfigDecorator(mr, cert, "", JwtServerConfiguration)
+	defer mr.Close()
 
-	defer func() {
-		mr.Close()
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-		JwtServerConfiguration = defaultJwtServerConfiguration
-	}()
+	t.Run("SigningSession", apply(testSigningSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
+	t.Run("DisclosureSession", apply(testDisclosureSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
+	t.Run("IssuanceSession", apply(testIssuanceSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
+	t.Run("IssuedCredentialIsStored", apply(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
 
-	t.Run("TestSigningSession", TestSigningSession)
-	t.Run("TestDisclosureSession", TestDisclosureSession)
-	t.Run("TestIssuanceSession", TestIssuanceSession)
-	t.Run("TestIssuedCredentialIsStored", TestIssuedCredentialIsStored)
-	t.Run("TestChainedSessions", TestChainedSessions)
-	t.Run("TestUnknownRequestorToken", TestUnknownRequestorToken)
+	t.Run("ChainedSessions", apply(testChainedSessions, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("UnknownRequestorToken", apply(testUnknownRequestorToken, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
 }
 
 func TestRedisTLSConfig(t *testing.T) {
@@ -145,7 +144,7 @@ func TestRedisTLSConfig(t *testing.T) {
 	defer mr.Close()
 
 	// Check that specifying a certificate for Redis is not allowed when Redis TLS is disabled
-	configFunc := redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)
+	configFunc := redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)
 	config := configFunc()
 	config.RedisSettings.DisableTLS = true
 	_, err := requestorserver.New(config)
@@ -167,10 +166,8 @@ func TestRedisTLSConfig(t *testing.T) {
 }
 
 func TestRedisWithTLSCertFile(t *testing.T) {
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	defaultJwtServerConfiguration := JwtServerConfiguration
-
 	mr, cert := startRedis(t, true)
+	defer mr.Close()
 
 	// Write the generated certificate to a temp file so RedisSettings.TLSCertificateFile in the Redis
 	// config decorator can be populated with the certfile.
@@ -183,33 +180,14 @@ func TestRedisWithTLSCertFile(t *testing.T) {
 		require.NoError(t, os.Remove(certfile))
 	}()
 
-	IrmaServerConfiguration = redisConfigDecorator(mr, "", certfile, IrmaServerConfiguration)
-	JwtServerConfiguration = redisConfigDecorator(mr, "", certfile, JwtServerConfiguration)
-
-	defer func() {
-		mr.Close()
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-		JwtServerConfiguration = defaultJwtServerConfiguration
-	}()
-
-	t.Run("TestDisclosureSession", TestDisclosureSession)
+	t.Run("DisclosureSession", apply(testDisclosureSession, redisConfigDecorator(mr, "", certfile, IrmaServerConfiguration)))
 }
 
 func TestRedisWithoutTLS(t *testing.T) {
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	defaultJwtServerConfiguration := JwtServerConfiguration
-
 	mr, _ := startRedis(t, false)
-	IrmaServerConfiguration = redisConfigDecorator(mr, "", "", IrmaServerConfiguration)
-	JwtServerConfiguration = redisConfigDecorator(mr, "", "", JwtServerConfiguration)
+	defer mr.Close()
 
-	defer func() {
-		mr.Close()
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-		JwtServerConfiguration = defaultJwtServerConfiguration
-	}()
-
-	t.Run("TestDisclosureSession", TestDisclosureSession)
+	t.Run("DisclosureSession", apply(testDisclosureSession, redisConfigDecorator(mr, "", "", IrmaServerConfiguration)))
 }
 
 func checkErrorInternal(t *testing.T, err error) {
@@ -220,26 +198,13 @@ func checkErrorInternal(t *testing.T, err error) {
 	require.Equal(t, string(server.ErrorInternal.Type), serr.RemoteError.ErrorName)
 }
 
-func checkErrorSessionUnknown(t *testing.T, err error) {
-	serr, ok := err.(*irma.SessionError)
-	require.True(t, ok)
-	require.NotNil(t, serr.RemoteError)
-	require.Equal(t, server.ErrorSessionUnknown.Status, serr.RemoteError.Status)
-	require.Equal(t, string(server.ErrorSessionUnknown.Type), serr.RemoteError.ErrorName)
-}
-
 func TestRedisUpdates(t *testing.T) {
 	mr, cert := startRedis(t, true)
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	IrmaServerConfiguration = redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)
-	defer func() {
-		mr.Close()
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-	}()
+	defer mr.Close()
 
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
-	qr, token, _, err := irmaServer.StartSession(irma.NewDisclosureRequest(
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
+	defer irmaServer.Stop()
+	qr, token, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
 	), nil)
 	require.NoError(t, err)
@@ -279,7 +244,7 @@ func TestRedisRedundancy(t *testing.T) {
 	servers := make([]*requestorserver.Server, len(ports))
 
 	for i, port := range ports {
-		c := redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)()
+		c := redisRequestorConfigDecorator(mr, cert, "", RequestorServerAuthConfiguration)()
 		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", port)
 		c.Port = port
 		rs := StartRequestorServer(t, c)
@@ -297,7 +262,7 @@ func TestRedisRedundancy(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	sessionHelperWithFrontendOptionsAndConfig(t, request, "verification", nil, nil, nil, nil)
+	doSession(t, request, nil, nil, nil, nil, nil, optionReuseServer)
 }
 
 // Tests whether the right error is returned by the client's Failure handler
@@ -307,19 +272,12 @@ func TestRedisSessionFailure(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	// Make sure Redis is used in the IrmaServerConfiguration
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	IrmaServerConfiguration = redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)
-	defer func() {
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-	}()
-
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
+	defer irmaServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	qr, _, _, err := irmaServer.StartSession(request, nil)
+	qr, _, _, err := irmaServer.irma.StartSession(request, nil)
 	require.NoError(t, err)
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
@@ -345,35 +303,28 @@ func TestRedisLibraryErrors(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	// Make sure Redis is used in the IrmaServerConfiguration
-	defaultIrmaServerConfiguration := IrmaServerConfiguration
-	IrmaServerConfiguration = redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)
-	defer func() {
-		IrmaServerConfiguration = defaultIrmaServerConfiguration
-	}()
-
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
+	defer irmaServer.Stop()
 
 	// Stop the Redis server early to check whether the IRMA server fails correctly
 	mr.Close()
 
 	token := irma.RequestorToken("Sxqcpng37mAdBKgoAJXl")
 
-	_, _, _, err := irmaServer.StartSession(request, nil)
+	_, _, _, err := irmaServer.irma.StartSession(request, nil)
 	require.Error(t, err)
-	_, err = irmaServer.GetSessionResult(token)
+	_, err = irmaServer.irma.GetSessionResult(token)
 	require.Error(t, err)
-	err = irmaServer.CancelSession(token)
+	err = irmaServer.irma.CancelSession(token)
 	require.Error(t, err)
-	_, err = irmaServer.GetRequest(token)
+	_, err = irmaServer.irma.GetRequest(token)
 	require.Error(t, err)
 }
 
 func TestRedisHTTPErrors(t *testing.T) {
 	mr, cert := startRedis(t, true)
 
-	config := redisConfigDecorator(mr, cert, "", JwtServerConfiguration)()
+	config := redisRequestorConfigDecorator(mr, cert, "", RequestorServerAuthConfiguration)()
 	rs := StartRequestorServer(t, config)
 	defer rs.Stop()
 

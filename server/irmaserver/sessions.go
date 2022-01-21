@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-errors/errors"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-errors/errors"
 
 	"github.com/bsm/redislock"
 

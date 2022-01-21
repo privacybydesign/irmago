@@ -83,7 +83,7 @@ type TestHandler struct {
 	wait               time.Duration
 	result             string
 	pairingCodeChan    chan string
-	dismisser          irmaclient.SessionDismisser
+	clientTransport    *irma.HTTPTransport
 	frontendTransport  *irma.HTTPTransport
 }
 
@@ -161,6 +161,10 @@ func (th TestHandler) PairingRequired(pairingCode string) {
 		return
 	}
 	th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("Pairing required")})
+}
+
+func (th *TestHandler) SetClientTransport(transport *irma.HTTPTransport) {
+	th.clientTransport = transport
 }
 
 type SessionResult struct {

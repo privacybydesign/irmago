@@ -3,7 +3,7 @@ package sessiontest
 import (
 	"testing"
 
-	"github.com/privacybydesign/irmago"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ func TestLogging(t *testing.T) {
 
 	// Do issuance session
 	request = getCombinedIssuanceRequest(attrid)
-	sessionHelper(t, request, "issue", client)
+	doSession(t, request, client, nil, nil, nil, nil)
 
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestLogging(t *testing.T) {
 
 	// Do disclosure session
 	request = getDisclosureRequest(attrid)
-	sessionHelper(t, request, "verification", client)
+	doSession(t, request, client, nil, nil, nil, nil)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
@@ -77,7 +77,7 @@ func TestLogging(t *testing.T) {
 
 	// Do signature session
 	request = getSigningRequest(attrid)
-	sessionHelper(t, request, "signature", client)
+	doSession(t, request, client, nil, nil, nil, nil)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)

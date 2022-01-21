@@ -22,10 +22,10 @@ func TestManualKeyshareSession(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 }
 
-func TestRequestorIssuanceKeyshareSession(t *testing.T) {
+func TestIssuanceKeyshareSession(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
-	testRequestorIssuance(t, true, nil)
+	doIssuanceSession(t, true, nil, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {
@@ -43,11 +43,11 @@ func TestKeyshareRegister(t *testing.T) {
 
 	require.Len(t, client.CredentialInfoList(), 1)
 
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
 
-	requestorSessionHelper(t, getIssuanceRequest(true), client, sessionOptionReuseServer)
-	keyshareSessions(t, client)
+	doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil)
+	keyshareSessions(t, client, irmaServer)
 }
 
 // Use the existing keyshare enrollment and credentials
@@ -57,12 +57,12 @@ func TestKeyshareSessions(t *testing.T) {
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
-	keyshareSessions(t, client)
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	keyshareSessions(t, client, irmaServer)
 }
 
-func keyshareSessions(t *testing.T, client *irmaclient.Client) {
+func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	issuanceRequest := getCombinedIssuanceRequest(id)
@@ -73,26 +73,26 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client) {
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
-	requestorSessionHelper(t, issuanceRequest, client, sessionOptionReuseServer)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
 
 	disclosureRequest := getDisclosureRequest(id)
 	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	requestorSessionHelper(t, disclosureRequest, client, sessionOptionReuseServer)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
 
 	sigRequest := getSigningRequest(id)
 	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	requestorSessionHelper(t, sigRequest, client, sessionOptionReuseServer)
+	doSession(t, sigRequest, client, irmaServer, nil, nil, nil)
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
-	StartIrmaServer(t, false, "")
-	defer StopIrmaServer()
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
-	requestorSessionHelper(t, request, nil, sessionOptionReuseServer)
+	doSession(t, request, nil, irmaServer, nil, nil, nil)
 
 	id = irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request = irma.NewIssuanceRequest([]*irma.CredentialRequest{
@@ -103,5 +103,5 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 			},
 		},
 	}, id)
-	requestorSessionHelper(t, request, nil, sessionOptionReuseServer)
+	doSession(t, request, nil, irmaServer, nil, nil, nil)
 }

@@ -24,20 +24,16 @@ import (
 )
 
 var (
-	revocationHttpServer    *http.Server
-	revocationServer        *irmaserver.Server
-	revocationConfiguration *server.Configuration
-
 	revocationDbType, revocationDbStr = "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
 	//revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
 
 	revocationPkCounter uint = 2
 )
 
-func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler) {
+func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler, server *irmaserver.Server) {
 	// issue first credential
 	credid := attr.CredentialTypeIdentifier()
-	result := requestorSessionHelper(t, revocationIssuanceRequest(t, credid), client)
+	result := doSession(t, revocationIssuanceRequest(t, credid), client, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	// Issue second credential, which may overwrite the first one in case of singleton credtypes.
@@ -46,13 +42,13 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	issrequest := revocationIssuanceRequest(t, credid)
 	key := issrequest.Credentials[0].RevocationKey
 	issrequest.Credentials[0].RevocationKey = key + "2"
-	result = requestorSessionHelper(t, issrequest, client)
+	result = doSession(t, issrequest, client, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	// perform disclosure session (of key2) with nonrevocation proof
 	logger.Info("step 1")
 	request := revocationRequest(attr)
-	result = revocationSession(t, client, request)
+	result = revocationSession(t, client, request, nil)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 	require.NotEmpty(t, result.Disclosed[0])
@@ -63,23 +59,23 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 
 	// revoke key
 	logger.Info("step 2")
-	require.NoError(t, revocationServer.Revoke(credid, key, time.Time{}))
+	require.NoError(t, server.Revoke(credid, key, time.Time{}))
 
 	// perform another disclosure session with nonrevocation proof to see that key2 still works
 	// client updates its witness to the new accumulator first
 	logger.Info("step 3")
-	result = revocationSession(t, client, request)
+	result = revocationSession(t, client, request, nil)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
 	// revoke key2
 	logger.Info("step 4")
-	require.NoError(t, revocationServer.Revoke(credid, key+"2", time.Time{}))
+	require.NoError(t, server.Revoke(credid, key+"2", time.Time{}))
 
 	// try to perform session with revoked credential
 	// client notices that his credential is revoked and aborts
 	logger.Info("step 5")
-	result = revocationSession(t, client, request, sessionOptionUnsatisfiableRequest)
+	result = revocationSession(t, client, request, nil, optionUnsatisfiableRequest)
 	require.NotEmpty(t, result.Missing)
 	require.NotNil(t, result.Dismisser)
 	result.Dismisser.Dismiss()
@@ -94,75 +90,71 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 
 func TestRevocationAll(t *testing.T) {
 	t.Run("Revocation", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
-		testRevocation(t, revocationTestAttr, client, handler)
+		testRevocation(t, revocationTestAttr, client, handler, revServer.irma)
 	})
 
 	t.Run("RevocationServerSessions", func(t *testing.T) {
-		revocationConfiguration = revocationConf(t)
-		startRevocationServer(t, true)
-		defer func() {
-			stopRevocationServer()
-			revocationConfiguration = nil
-		}()
-
-		// Make the session functions use our revocation server
-		irmaServer = revocationServer
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
 
 		// issue a MijnOverheid.root instance with revocation enabled
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
 		request := revocationIssuanceRequest(t, revocationTestCred)
-		result := requestorSessionHelper(t, request, client, sessionOptionReuseServer)
+		result := doSession(t, request, client, revServer, nil, nil, nil)
 		require.Nil(t, result.Err)
 
 		// do disclosure and signature sessions
-		result = revocationSession(t, client, nil, sessionOptionReuseServer)
+		result = revocationSession(t, client, nil, revServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
-		result = revocationSession(t, client, revocationSigRequest(), sessionOptionReuseServer)
+		result = revocationSession(t, client, revocationSigRequest(), revServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 
 		// revoke
-		require.NoError(t, revocationServer.Revoke(
+		require.NoError(t, revServer.irma.Revoke(
 			revocationTestCred,
 			request.Credentials[0].RevocationKey,
 			time.Time{}),
 		)
 
 		// try another disclosure
-		result = revocationSession(t, client, nil, sessionOptionUnsatisfiableRequest, sessionOptionReuseServer)
+		result = revocationSession(t, client, nil, revServer, optionUnsatisfiableRequest)
 		require.NotEmpty(t, result.Missing)
 	})
 
 	t.Run("MixRevocationNonRevocation", func(t *testing.T) {
-		client, handler := revocationSetup(t)
+		revServer, client, handler := revocationSetup(t, nil)
 		defer test.ClearTestStorage(t, handler.storage)
-		defer stopRevocationServer()
+		defer revServer.Stop()
 
 		request := revocationRequest(revocationTestAttr)
 		request.Disclose[0][0] = append(request.Disclose[0][0], irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID"))
-		result := revocationSession(t, client, request)
+		result := revocationSession(t, client, request, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 
 		request = revocationRequest(revocationTestAttr)
 		request.Disclose = append(request.Disclose, irma.AttributeDisCon{{irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID")}})
-		result = revocationSession(t, client, request)
+		result = revocationSession(t, client, request, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
 
 	t.Run("AttributeBasedSignature", func(t *testing.T) {
-		client, handler := revocationSetup(t)
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
+
+		revServer, client, handler := revocationSetup(t, nil)
 		defer test.ClearTestStorage(t, handler.storage)
-		defer stopRevocationServer()
+		defer revServer.Stop()
 
 		request := revocationSigRequest()
-		result := revocationSession(t, client, request)
+		result := revocationSession(t, client, request, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 		require.NotNil(t, result.Signature)
@@ -190,65 +182,65 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("POSTUpdates", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
-		StartIrmaServer(t, false, "")
-		defer StopIrmaServer()
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
 
-		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SyncDB(revocationTestCred))
+		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.SyncDB(revocationTestCred))
 
-		sacc1, err := revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
+		sacc1, err := revServer.conf.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		acctime := sacc1.Accumulator.Time
 		accindex := sacc1.Accumulator.Index
 		time.Sleep(time.Second)
 
 		// run scheduled update of accumulator, triggering a POST to our IRMA server
-		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
+		revServer.conf.IrmaConfiguration.Scheduler.RunAll()
 		// give request time to be processed
 		time.Sleep(100 * time.Millisecond)
 
 		// check that both the revocation server's and our IRMA server's configuration
 		// agree on the same accumulator which has the same index but updated time
-		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
+		sacc1, err = revServer.conf.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.True(t, sacc1.Accumulator.Time > acctime)
 		require.Equal(t, accindex, sacc1.Accumulator.Index)
-		sacc2, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
+		sacc2, err := revServer.conf.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.Equal(t, sacc1, sacc2)
 
 		// do a bogus revocation and see that the updated accumulator appears in both configurations
-		fakeRevocation(t, "1", revocationConfiguration.IrmaConfiguration.Revocation, sacc2.Accumulator)
+		fakeRevocation(t, "1", revServer.conf.IrmaConfiguration.Revocation, sacc2.Accumulator)
 		time.Sleep(100 * time.Millisecond)
-		sacc1, err = revocationConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
+		sacc1, err = revServer.conf.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
-		sacc2, err = irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
+		sacc2, err = revServer.conf.IrmaConfiguration.Revocation.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.Equal(t, sacc1, sacc2)
 		require.Equal(t, accindex+1, sacc1.Accumulator.Index)
 	})
 
 	t.Run("NoKnownAccumulator", func(t *testing.T) {
-		client, handler := revocationSetup(t)
+		revServer, client, handler := revocationSetup(t, nil)
 		defer test.ClearTestStorage(t, handler.storage)
 
 		// stop revocation server so the verifier cannot fetch revocation state
-		stopRevocationServer()
+		revServer.Stop()
 
-		result := revocationSession(t, client, nil, sessionOptionIgnoreError)
+		result := revocationSession(t, client, nil, nil, optionIgnoreError)
 		require.Equal(t, irma.ServerStatusCancelled, result.Status)
 		require.NotNil(t, result.Err)
 		require.Equal(t, result.Err.ErrorName, string(server.ErrorRevocation.Type))
 	})
 
 	t.Run("OtherAccumulator", func(t *testing.T) {
-		client, handler := revocationSetup(t)
+		revServer, client, handler := revocationSetup(t, nil)
 		defer test.ClearTestStorage(t, handler.storage)
-		defer stopRevocationServer()
+		defer revServer.Stop()
 
 		// Prepare key material
-		conf := revocationConfiguration.IrmaConfiguration.Revocation
+		conf := revServer.conf.IrmaConfiguration.Revocation
 		sk, err := conf.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
 		pk, err := conf.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
@@ -325,11 +317,11 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("ClientSessionServerUpdate", func(t *testing.T) {
-		client, handler := revocationSetup(t)
+		revServer, client, handler := revocationSetup(t, nil)
 		defer test.ClearTestStorage(t, handler.storage)
-		defer stopRevocationServer()
+		defer revServer.Stop()
 
-		conf := revocationConfiguration.IrmaConfiguration.Revocation
+		conf := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 
@@ -337,31 +329,31 @@ func TestRevocationAll(t *testing.T) {
 		// to contact the RA to update its witness, concurrently fetching a number of event intervals
 		fakeMultipleRevocations(t, 116, conf, sacc.Accumulator)
 
-		result := revocationSession(t, client, nil)
+		result := revocationSession(t, client, nil, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
 
 	t.Run("UpdateSameIndex", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
-		StartIrmaServer(t, false, "")
-		defer StopIrmaServer()
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
 
 		// get current accumulator
-		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SyncDB(revKeyshareTestCred))
-		sacc, err := irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revKeyshareTestCred, 3)
+		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.SyncDB(revKeyshareTestCred))
+		sacc, err := revServer.conf.IrmaConfiguration.Revocation.Accumulator(revKeyshareTestCred, 3)
 		require.NoError(t, err)
 		accindex := sacc.Accumulator.Index
 		sacctime := sacc.Accumulator.Time
 
 		// trigger time update and update accumulator
 		time.Sleep(time.Second)
-		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
-		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SyncDB(revKeyshareTestCred))
+		revServer.conf.IrmaConfiguration.Scheduler.RunAll()
+		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.SyncDB(revKeyshareTestCred))
 
 		// check that accumulator is newer
-		sacc, err = irmaServerConfiguration.IrmaConfiguration.Revocation.Accumulator(revKeyshareTestCred, 3)
+		sacc, err = revServer.conf.IrmaConfiguration.Revocation.Accumulator(revKeyshareTestCred, 3)
 		require.NoError(t, err)
 		require.Equal(t, accindex, sacc.Accumulator.Index)
 		require.NotEqual(t, sacctime, sacc.Accumulator.Time)
@@ -369,18 +361,18 @@ func TestRevocationAll(t *testing.T) {
 		// populate revocation data in session request and check it received the newest accumulator
 		req := getDisclosureRequest(revKeyshareTestAttr)
 		req.Revocation = irma.NonRevocationParameters{revKeyshareTestCred: {}}
-		require.NoError(t, irmaServerConfiguration.IrmaConfiguration.Revocation.SetRevocationUpdates(req.Base()))
+		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.SetRevocationUpdates(req.Base()))
 		acc := req.Revocation[revKeyshareTestCred].Updates[3].SignedAccumulator.Accumulator
 		require.Equal(t, accindex, acc.Index)
 		require.NotEqual(t, sacctime, acc.Time)
 	})
 
 	t.Run("ClientAutoServerUpdate", func(t *testing.T) {
-		client, handler := revocationSetup(t) // revocation server is stopped manually below
+		revServer, client, handler := revocationSetup(t, nil) // revocation server is stopped manually below
 		defer test.ClearTestStorage(t, handler.storage)
 
 		// Advance the accumulator by performing a few revocations
-		conf := revocationConfiguration.IrmaConfiguration.Revocation
+		conf := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		fakeMultipleRevocations(t, irma.RevocationParameters.DefaultUpdateEventCount+3, conf, sacc.Accumulator)
@@ -389,9 +381,9 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, client.NonrevUpdateFromServer(revocationTestCred))
 
 		// Start an IRMA server and let it update at revocation server
-		StartIrmaServer(t, false, "")
-		defer StopIrmaServer()
-		conf = irmaServerConfiguration.IrmaConfiguration.Revocation
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
+		conf = irmaServer.conf.IrmaConfiguration.Revocation
 		require.NoError(t, conf.SyncDB(revocationTestCred))
 
 		// IRMA server's accumulator is now at the same index as that of the revocation server
@@ -405,34 +397,33 @@ func TestRevocationAll(t *testing.T) {
 
 		// Stop revocation server and do session
 		// IRMA server is at index 3, so if the client would not be it would need to update, which would fail
-		stopRevocationServer()
-		result := revocationSession(t, client, nil, sessionOptionReuseServer)
+		revServer.Stop()
+		result := revocationSession(t, client, nil, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
 
 	t.Run("SameIrmaServer", func(t *testing.T) {
-		StartIrmaServer(t, false, "")
-		defer StopIrmaServer()
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
 
 		// issue a credential, populating irmaServer's revocation memdb
-		client, handler := revocationSetup(t, sessionOptionReuseServer)
+		revServer, client, handler := revocationSetup(t, irmaServer)
 		defer test.ClearTestStorage(t, handler.storage)
-		defer stopRevocationServer()
+		defer revServer.Stop()
 
 		// disable serving revocation updates in revocation server
-		require.NoError(t, revocationConfiguration.IrmaConfiguration.Revocation.Close())
+		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.Close())
 
 		// do disclosure session, using irmaServer's memdb
-		result := revocationSession(t, client, nil, sessionOptionReuseServer)
+		result := revocationSession(t, client, nil, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
 
 	t.Run("RestartRevocationServer", func(t *testing.T) {
-		revocationConfiguration = nil
-		startRevocationServer(t, true)
-		rev := revocationConfiguration.IrmaConfiguration.Revocation
+		revServer := startRevocationServer(t, true)
+		rev := revServer.conf.IrmaConfiguration.Revocation
 		sacc1, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.NotNil(t, sacc1)
@@ -446,12 +437,11 @@ func TestRevocationAll(t *testing.T) {
 		require.NotNil(t, sacc2.Accumulator)
 		require.Equal(t, uint64(1), sacc2.Accumulator.Index)
 
-		stopRevocationServer()
-		revocationConfiguration = nil
+		revServer.Stop()
 
-		startRevocationServer(t, false)
-		defer stopRevocationServer()
-		rev = revocationConfiguration.IrmaConfiguration.Revocation
+		revServer = startRevocationServer(t, false)
+		defer revServer.Stop()
+		rev = revServer.conf.IrmaConfiguration.Revocation
 		sacc3, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.Equal(t, sacc2, sacc3)
@@ -467,11 +457,11 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("DeleteExpiredIssuanceRecords", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
 
 		// Insert expired issuance record
-		rev := revocationConfiguration.IrmaConfiguration.Revocation
+		rev := revServer.conf.IrmaConfiguration.Revocation
 		require.NoError(t, rev.AddIssuanceRecord(&irma.IssuanceRecord{
 			Key:        "1",
 			CredType:   revocationTestCred,
@@ -486,7 +476,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, rec)
 
 		// Run jobs, triggering DELETE
-		revocationConfiguration.IrmaConfiguration.Scheduler.RunAll()
+		revServer.conf.IrmaConfiguration.Scheduler.RunAll()
 
 		// Check that issuance record is gone
 		_, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
@@ -494,9 +484,9 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("RevokeMany", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
-		rev := revocationConfiguration.IrmaConfiguration.Revocation
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
+		rev := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 		require.NotNil(t, sacc)
@@ -539,12 +529,12 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("RevocationTolerance", func(t *testing.T) {
-		client, handler := revocationSetup(t)
+		revServer, client, handler := revocationSetup(t, nil)
 		defer test.ClearTestStorage(t, handler.storage)
-		defer stopRevocationServer()
+		defer revServer.Stop()
 		start := time.Now()
 
-		result := revocationSession(t, client, nil)
+		result := revocationSession(t, client, nil, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 		require.NotEmpty(t, result.Disclosed[0])
@@ -554,7 +544,7 @@ func TestRevocationAll(t *testing.T) {
 
 		request := revocationRequest(revocationTestAttr)
 		request.Revocation[revocationTestCred].Tolerance = 1
-		result = revocationSession(t, client, request, sessionOptionClientWait)
+		result = revocationSession(t, client, request, nil, optionClientWait)
 
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
@@ -562,13 +552,17 @@ func TestRevocationAll(t *testing.T) {
 		require.NotNil(t, result.Disclosed[0][0])
 		require.True(t, result.Disclosed[0][0].NotRevoked)
 		require.NotNil(t, result.Disclosed[0][0].NotRevokedBefore)
-		require.True(t, result.Disclosed[0][0].NotRevokedBefore.After(irma.Timestamp(start)))
+
+		// notRevokedBefore is truncated, so also truncate the start time to get a sensible comparison
+		start = start.Truncate(time.Second)
+		notRevokedBefore := (*time.Time)(result.Disclosed[0][0].NotRevokedBefore)
+		require.True(t, notRevokedBefore.Equal(start) || notRevokedBefore.After(start))
 	})
 
 	t.Run("Cache", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
-		rev := revocationConfiguration.IrmaConfiguration.Revocation
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
+		rev := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
 
@@ -576,7 +570,7 @@ func TestRevocationAll(t *testing.T) {
 		fakeMultipleRevocations(t, 17, rev, sacc.Accumulator)
 
 		// check /events endpoint
-		url := revocationConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationServers[0] +
+		url := revServer.conf.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationServers[0] +
 			"/revocation/irma-demo.MijnOverheid.root/events/2/0/16"
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		require.NoError(t, err)
@@ -588,7 +582,7 @@ func TestRevocationAll(t *testing.T) {
 		)
 
 		// check /update endpoint
-		url = revocationConfiguration.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationServers[0] +
+		url = revServer.conf.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationServers[0] +
 			"/revocation/irma-demo.MijnOverheid.root/update/16"
 		req, err = http.NewRequest(http.MethodGet, url, nil)
 		require.NoError(t, err)
@@ -606,9 +600,9 @@ func TestRevocationAll(t *testing.T) {
 
 		// Start irma server and hackily temporarily disable revocation for our credtype
 		// by editing its irma.Configuration instance
-		StartIrmaServer(t, false, "")
-		defer StopIrmaServer()
-		conf := irmaServerConfiguration.IrmaConfiguration
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
+		conf := irmaServer.conf.IrmaConfiguration
 		credtyp := conf.CredentialTypes[revocationTestCred]
 		servers := credtyp.RevocationServers // save it for re-enabling revocation below
 		credtyp.RevocationServers = nil
@@ -616,49 +610,49 @@ func TestRevocationAll(t *testing.T) {
 		credtyp.AttributeTypes = credtyp.AttributeTypes[:len(credtyp.AttributeTypes)-1]
 
 		// Issue non-revocation-aware credential instance
-		result := requestorSessionHelper(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+		result := doSession(t, irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 			CredentialTypeID: revocationTestCred,
 			Attributes: map[string]string{
 				"BSN": "299792458",
 			},
-		}}), client, sessionOptionReuseServer)
+		}}), client, irmaServer, nil, nil, nil)
 		require.Nil(t, result.Err)
 
 		// Restore revocation setup
 		credtyp.RevocationServers = servers
 		credtyp.AttributeTypes = append(credtyp.AttributeTypes, revAttr)
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
 
 		// Try disclosure session requiring nonrevocation proof
 		// client notices it has no revocation-aware credential instance and aborts
-		result = revocationSession(t, client, nil, sessionOptionReuseServer, sessionOptionUnsatisfiableRequest)
+		result = revocationSession(t, client, nil, irmaServer, optionUnsatisfiableRequest)
 		require.NotEmpty(t, result.Missing)
 	})
 }
 
 func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Keyshare", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
 		testkeyshare.StartKeyshareServer(t, logger)
 		defer testkeyshare.StopKeyshareServer(t)
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
 
-		testRevocation(t, revKeyshareTestAttr, client, handler)
+		testRevocation(t, revKeyshareTestAttr, client, handler, revServer.irma)
 	})
 
 	t.Run("Both", func(t *testing.T) {
-		startRevocationServer(t, true)
-		defer stopRevocationServer()
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
 		testkeyshare.StartKeyshareServer(t, logger)
 		defer testkeyshare.StopKeyshareServer(t)
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, handler.storage)
 
-		testRevocation(t, revKeyshareTestAttr, client, handler)
-		testRevocation(t, revocationTestAttr, client, handler)
+		testRevocation(t, revKeyshareTestAttr, client, handler, revServer.irma)
+		testRevocation(t, revocationTestAttr, client, handler, revServer.irma)
 	})
 }
 
@@ -702,27 +696,27 @@ func revocationRequest(attr irma.AttributeTypeIdentifier) *irma.DisclosureReques
 	return req
 }
 
-func revocationSession(t *testing.T, client *irmaclient.Client, request irma.SessionRequest, options ...sessionOption) *requestorSessionResult {
+func revocationSession(t *testing.T, client *irmaclient.Client, request irma.SessionRequest, irmaServer *IrmaServer, options ...option) *requestorSessionResult {
 	if request == nil {
 		request = revocationRequest(revocationTestAttr)
 	}
-	result := requestorSessionHelper(t, request, client, options...)
-	if processOptions(options...)&sessionOptionIgnoreError == 0 && result.SessionResult != nil {
+	result := doSession(t, request, client, irmaServer, nil, nil, nil, options...)
+	if processOptions(options...)&optionIgnoreError == 0 && result.SessionResult != nil {
 		require.Nil(t, result.Err)
 	}
 	return result
 }
 
 // revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
-func revocationSetup(t *testing.T, options ...sessionOption) (*irmaclient.Client, *TestClientHandler) {
-	startRevocationServer(t, true)
+func revocationSetup(t *testing.T, irmaServer *IrmaServer) (*IrmaServer, *irmaclient.Client, *TestClientHandler) {
+	revServer := startRevocationServer(t, true)
 
 	// issue a MijnOverheid.root instance with revocation enabled
 	client, handler := parseStorage(t)
-	result := requestorSessionHelper(t, revocationIssuanceRequest(t, revocationTestCred), client, options...)
+	result := doSession(t, revocationIssuanceRequest(t, revocationTestCred), client, irmaServer, nil, nil, nil)
 	require.Nil(t, result.Err)
 
-	return client, handler
+	return revServer, client, handler
 }
 
 func insertIssuanceRecord(t *testing.T, key string, conf *irma.RevocationStorage, acc *revocation.Accumulator) {
@@ -773,7 +767,7 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 
 func revocationConf(_ *testing.T) *server.Configuration {
 	return &server.Configuration{
-		URL:                   "http://localhost:48683",
+		URL:                   revocationServerURL,
 		Logger:                logger,
 		EnableSSE:             true,
 		DisableSchemesUpdate:  true,
@@ -788,7 +782,7 @@ func revocationConf(_ *testing.T) *server.Configuration {
 	}
 }
 
-func startRevocationServer(t *testing.T, droptables bool) {
+func startRevocationServer(t *testing.T, droptables bool) *IrmaServer {
 	var err error
 
 	// Connect to database and clear records from previous test runs
@@ -805,21 +799,18 @@ func startRevocationServer(t *testing.T, droptables bool) {
 	}
 
 	// Start revocation server
-	if revocationConfiguration == nil {
-		revocationConfiguration = revocationConf(t)
-	}
-	revocationServer, err = irmaserver.New(revocationConfiguration)
+	conf := revocationConf(t)
+	revocationServer, err := irmaserver.New(conf)
 	require.NoError(t, err)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", revocationServer.HandlerFunc())
-	revocationHttpServer = &http.Server{Addr: "localhost:48683", Handler: mux}
+	revocationHttpServer := &http.Server{Addr: fmt.Sprintf("localhost:%d", revocationServerPort), Handler: mux}
 	go func() {
 		_ = revocationHttpServer.ListenAndServe()
 	}()
-}
-
-func stopRevocationServer() {
-	revocationServer.Stop()
-	_ = revocationHttpServer.Close()
-	revocationConfiguration = nil
+	return &IrmaServer{
+		irma: revocationServer,
+		conf: conf,
+		http: revocationHttpServer,
+	}
 }
