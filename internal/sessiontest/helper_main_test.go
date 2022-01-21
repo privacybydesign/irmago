@@ -15,9 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Defines the maximum protocol version of an irmaclient in tests
-var prePairingClientVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
-
 func TestMain(m *testing.M) {
 	// Create HTTP server for scheme managers
 	test.StartSchemeManagerHttpServer()
@@ -49,7 +46,8 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 	opts := processOptions(options...)
 	if opts.enabled(optionPrePairingClient) {
 		version := extractClientMaxVersion(client)
-		*version = *prePairingClientVersion
+		// set to largest protocol version that dos not support pairing
+		*version = irma.ProtocolVersion{Major: 2, Minor: 7}
 	}
 
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
