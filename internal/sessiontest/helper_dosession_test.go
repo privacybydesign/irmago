@@ -172,7 +172,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 
 		// Validate JWT
 		claims := struct {
-			jwt.StandardClaims
+			jwt.RegisteredClaims
 			*server.SessionResult
 		}{}
 		_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (interface{}, error) {
@@ -181,7 +181,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 		require.NoError(t, err)
 
 		// Check default expiration time
-		require.True(t, claims.IssuedAt+irma.DefaultJwtValidity == claims.ExpiresAt)
+		require.True(t, claims.IssuedAt.Add(irma.DefaultJwtValidity*time.Second).Equal(claims.ExpiresAt.Time))
 		return claims.SessionResult
 	}
 }

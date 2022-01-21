@@ -133,7 +133,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 		require.NoError(t, r.Body.Close())
 
 		claims := &struct {
-			jwt.StandardClaims
+			jwt.RegisteredClaims
 			server.SessionResult
 		}{}
 		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (interface{}, error) {
