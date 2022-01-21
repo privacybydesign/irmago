@@ -44,7 +44,7 @@ const (
 	optionUnsatisfiableRequest option = 1 << iota
 	optionRetryPost
 	optionIgnoreError
-	optionReuseServer
+	optionReuseServer // makes doSession assume a requestor server with authentication is used
 	optionClientWait
 	optionWait
 	optionPrePairingClient
@@ -79,6 +79,10 @@ func startServer(t *testing.T, opts option, irmaServer *IrmaServer, conf interfa
 		return irmaServer, nil, false
 	}
 	if opts.enabled(optionReuseServer) {
+		if conf != nil {
+			require.FailNow(t, "either specify optionReuseServer or conf, not both")
+			return nil, nil, false
+		}
 		return nil, nil, false
 	}
 
