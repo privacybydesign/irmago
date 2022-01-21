@@ -69,11 +69,11 @@ func (o option) enabled(opt option) bool {
 func startServer(t *testing.T, opts option, irmaServer *IrmaServer, conf interface{}) (stopper, interface{}, bool) {
 	if irmaServer != nil {
 		if opts.enabled(optionReuseServer) {
-			require.FailNow(t, "either specify irmaServer or optionReuseServer")
+			require.FailNow(t, "either specify irmaServer or optionReuseServer, not both")
 			return nil, nil, false
 		}
 		if conf != nil {
-			require.FailNow(t, "either specify irmaServer or conf")
+			require.FailNow(t, "either specify irmaServer or conf, not both")
 			return nil, nil, false
 		}
 		return irmaServer, nil, false
