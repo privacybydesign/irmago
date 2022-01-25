@@ -42,42 +42,64 @@ with --message flags, or it can be specified as JSON to the --request flag.`,
 irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
 irma session --request '{"type":"disclosing","content":[{"label":"BSN","attributes":["irma-demo.MijnOverheid.root.BSN"]}]}'
-irma session --server http://localhost:8088 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN`,
+irma session --server http://localhost:8088 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN
+irma session --server http://localhost:8088 --static mystaticsession`,
 	Run: func(cmd *cobra.Command, args []string) {
-		request, irmaconfig, err := configureSession(cmd)
-		if err != nil {
-			die("", err)
-		}
+		var (
+			request    irma.RequestorRequest
+			irmaconfig *irma.Configuration
+			pkg        *server.SessionPackage
+			result     *server.SessionResult
+			err        error
 
-		// Make sure we always run with latest configuration
-		flags := cmd.Flags()
-		disableUpdate, _ := flags.GetBool("disable-schemes-update")
-		if !disableUpdate {
-			if err = irmaconfig.UpdateSchemes(); err != nil {
-				die("failed updating schemes", err)
-			}
-		}
-
-		var result *server.SessionResult
-		url, _ := cmd.Flags().GetString("url")
-		serverurl, _ := cmd.Flags().GetString("server")
-		noqr, _ := cmd.Flags().GetBool("noqr")
-		pairing, _ := cmd.Flags().GetBool("pairing")
-
+			flags         = cmd.Flags()
+			url, _        = flags.GetString("url")
+			serverurl, _  = flags.GetString("server")
+			noqr, _       = flags.GetBool("noqr")
+			pairing, _    = flags.GetBool("pairing")
+			authmethod, _ = flags.GetString("authmethod")
+			key, _        = flags.GetString("key")
+		)
 		if url != defaulturl && serverurl != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
 		}
 
-		if serverurl == "" {
+		if staticFlag := flags.Lookup("static"); staticFlag.Changed {
+			if serverurl == "" {
+				die("Failed to read configuration", errors.New("--static must be combined with --server"))
+			}
+			pkg, err = staticRequest(serverurl, staticFlag.Value.String(), authmethod, key)
+			if err != nil {
+				die("Static session could not be started", err)
+			}
+		} else {
+			request, irmaconfig, err = configureSession(cmd)
+			if err != nil {
+				die("", err)
+			}
+			if serverurl != "" {
+				name, _ := flags.GetString("name")
+				pkg, err = postRequest(serverurl, request, name, authmethod, key)
+				if err != nil {
+					die("Session could not be started", err)
+				}
+			}
+		}
+
+		if pkg == nil {
 			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
 			verbosity, _ := cmd.Flags().GetCount("verbose")
 			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity, pairing)
 		} else {
-			authmethod, _ := flags.GetString("authmethod")
-			key, _ := flags.GetString("key")
-			name, _ := flags.GetString("name")
-			result, err = serverRequest(request, serverurl, authmethod, key, name, noqr, pairing)
+			err = serverRequest(pkg, noqr, pairing)
+			if pkg.Token != "" {
+				result := &server.SessionResult{}
+				err = irma.NewHTTPTransport(serverurl, false).Get("result", result)
+				if err != nil {
+					die("Result could not be retrieved", err)
+				}
+			}
 		}
 		if err != nil {
 			die("Session failed", err)
@@ -151,37 +173,33 @@ func libraryRequest(
 }
 
 func serverRequest(
-	request irma.RequestorRequest,
-	serverurl, authmethod, key, name string,
+	pkg *server.SessionPackage,
 	noqr bool,
 	pairing bool,
-) (*server.SessionResult, error) {
-	logger.Debug("Server URL: ", serverurl)
-
-	// Start session at server
-	qr, frontendRequest, transport, err := postRequest(serverurl, request, name, authmethod, key)
-	if err != nil {
-		return nil, err
-	}
-
+) error {
 	// Enable pairing if necessary
-	var frontendTransport *irma.HTTPTransport
+	var (
+		qr              = pkg.SessionPtr
+		frontendRequest = pkg.FrontendRequest
+		transport       = irma.NewHTTPTransport(qr.URL, false)
+		err             error
+	)
 	sessionOptions := &irma.SessionOptions{}
 	if pairing {
-		frontendTransport = irma.NewHTTPTransport(qr.URL, false)
-		frontendTransport.SetHeader(irma.AuthorizationHeader, string(frontendRequest.Authorization))
+		transport = irma.NewHTTPTransport(qr.URL, false)
+		transport.SetHeader(irma.AuthorizationHeader, string(frontendRequest.Authorization))
 		optionsRequest := irma.NewFrontendOptionsRequest()
 		optionsRequest.PairingMethod = irma.PairingMethodPin
-		err = frontendTransport.Post("frontend/options", sessionOptions, optionsRequest)
+		err = transport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to enable pairing", 0)
+			return errors.WrapPrefix(err, "Failed to enable pairing", 0)
 		}
 	}
 
 	// Print session QR
 	logger.Debug("QR: ", prettyprint(qr))
 	if err := printQr(qr, noqr); err != nil {
-		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
+		return errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
 	statuschan := make(chan irma.ServerStatus)
@@ -202,7 +220,7 @@ func serverRequest(
 
 		if pairing {
 			err = handlePairing(sessionOptions, statuschan, func() error {
-				err = frontendTransport.Post("frontend/pairingcompleted", nil, nil)
+				err = transport.Post("frontend/pairingcompleted", nil, nil)
 				if err != nil {
 					return errors.WrapPrefix(err, "Failed to complete pairing", 0)
 				}
@@ -230,20 +248,41 @@ func serverRequest(
 	}()
 
 	wg.Wait()
+	return err
+}
+
+func staticRequest(serverurl string, name, authmethod, key string) (
+	*server.SessionPackage, error) {
+	var (
+		err       error
+		pkg       = &server.SessionPackage{}
+		transport = irma.NewHTTPTransport(serverurl, false)
+		url       = "session"
+	)
+
+	if name != "" {
+		url += fmt.Sprintf("/%s", name)
+	}
+
+	switch authmethod {
+	case "token":
+		transport.SetHeader("Authorization", key)
+		fallthrough
+	case "none":
+		err = transport.Post(url, pkg, "")
+	default:
+		return nil, errors.New("Invalid authentication method (must be none or token)")
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	// Retrieve session result
-	result := &server.SessionResult{}
-	if err := transport.Get("result", result); err != nil {
-		return nil, errors.WrapPrefix(err, "Failed to get session result", 0)
-	}
-	return result, nil
+	return pkg, err
 }
 
 func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (
-	*irma.Qr, *irma.FrontendSessionRequest, *irma.HTTPTransport, error) {
+	*server.SessionPackage, error) {
 	var (
 		err       error
 		pkg       = &server.SessionPackage{}
@@ -260,20 +299,18 @@ func postRequest(serverurl string, request irma.RequestorRequest, name, authmeth
 		var jwtstr string
 		jwtstr, err = signRequest(request, name, authmethod, key)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
 		err = transport.Post("session", pkg, jwtstr)
 	default:
-		return nil, nil, nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
+		return nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
 
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
-
-	transport.Server += fmt.Sprintf("session/%s/", pkg.Token)
-	return pkg.SessionPtr, pkg.FrontendRequest, transport, err
+	return pkg, err
 }
 
 func handlePairing(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completePairing func() error) error {
@@ -350,7 +387,20 @@ func configureSession(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configur
 		logger.Warn("Could not determine local IP address: ", localIPErr.Error())
 	}
 
-	return configureRequest(cmd)
+	request, irmaconfig, err := configureRequest(cmd)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Make sure we always run with latest configuration
+	disableUpdate, _ := cmd.Flags().GetBool("disable-schemes-update")
+	if !disableUpdate {
+		if err = irmaconfig.UpdateSchemes(); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return request, irmaconfig, nil
 }
 
 func init() {
@@ -374,6 +424,8 @@ func init() {
 	flags.Bool("disable-schemes-update", false, "disable scheme updates")
 
 	addRequestFlags(flags)
+
+	flags.String("static", "", "Start a static IRMA session with the given name")
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 }

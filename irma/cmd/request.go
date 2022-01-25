@@ -289,6 +289,10 @@ func printQr(qr *irma.Qr, noqr bool) error {
 }
 
 func printSessionResult(result *server.SessionResult) {
+	if result == nil {
+		fmt.Println("No session result available.")
+		return
+	}
 	fmt.Println("Session result:")
 	fmt.Println(prettyprint(result))
 }
