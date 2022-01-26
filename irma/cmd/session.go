@@ -54,21 +54,21 @@ irma session --server http://localhost:8088 --static mystaticsession`,
 
 			flags         = cmd.Flags()
 			url, _        = flags.GetString("url")
-			serverurl, _  = flags.GetString("server")
+			serverURL, _  = flags.GetString("server")
 			noqr, _       = flags.GetBool("noqr")
 			pairing, _    = flags.GetBool("pairing")
-			authmethod, _ = flags.GetString("authmethod")
+			authMethod, _ = flags.GetString("authmethod")
 			key, _        = flags.GetString("key")
 		)
-		if url != defaulturl && serverurl != "" {
+		if url != defaulturl && serverURL != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
 		}
 
 		if staticFlag := flags.Lookup("static"); staticFlag.Changed {
-			if serverurl == "" {
+			if serverURL == "" {
 				die("Failed to read configuration", errors.New("--static must be combined with --server"))
 			}
-			pkg, err = staticRequest(serverurl, staticFlag.Value.String(), authmethod, key)
+			pkg, err = staticRequest(serverURL, staticFlag.Value.String(), authMethod, key)
 			if err != nil {
 				die("Static session could not be started", err)
 			}
@@ -77,9 +77,9 @@ irma session --server http://localhost:8088 --static mystaticsession`,
 			if err != nil {
 				die("", err)
 			}
-			if serverurl != "" {
+			if serverURL != "" {
 				name, _ := flags.GetString("name")
-				pkg, err = postRequest(serverurl, request, name, authmethod, key)
+				pkg, err = postRequest(serverURL, "session", request, name, authMethod, key)
 				if err != nil {
 					die("Session could not be started", err)
 				}
@@ -95,7 +95,7 @@ irma session --server http://localhost:8088 --static mystaticsession`,
 			err = serverRequest(pkg, noqr, pairing)
 			if pkg.Token != "" {
 				result := &server.SessionResult{}
-				err = irma.NewHTTPTransport(serverurl, false).Get("result", result)
+				err = irma.NewHTTPTransport(serverURL, false).Get("result", result)
 				if err != nil {
 					die("Result could not be retrieved", err)
 				}
@@ -251,58 +251,41 @@ func serverRequest(
 	return err
 }
 
-func staticRequest(serverurl string, name, authmethod, key string) (
+func staticRequest(serverURL string, name, authMethod, key string) (
+	*server.SessionPackage, error) {
+	path := "session"
+	if name != "" {
+		path += fmt.Sprintf("/%s", name)
+	}
+	return postRequest(serverURL, path, "", name, authMethod, key)
+}
+
+func postRequest(serverURL, path string, request interface{}, name, authMethod, key string) (
 	*server.SessionPackage, error) {
 	var (
 		err       error
 		pkg       = &server.SessionPackage{}
-		transport = irma.NewHTTPTransport(serverurl, false)
-		url       = "session"
+		transport = irma.NewHTTPTransport(serverURL, false)
 	)
 
-	if name != "" {
-		url += fmt.Sprintf("/%s", name)
-	}
-
-	switch authmethod {
+	switch authMethod {
 	case "token":
 		transport.SetHeader("Authorization", key)
 		fallthrough
 	case "none":
-		err = transport.Post(url, pkg, "")
-	default:
-		return nil, errors.New("Invalid authentication method (must be none or token)")
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return pkg, err
-}
-
-func postRequest(serverurl string, request irma.RequestorRequest, name, authmethod, key string) (
-	*server.SessionPackage, error) {
-	var (
-		err       error
-		pkg       = &server.SessionPackage{}
-		transport = irma.NewHTTPTransport(serverurl, false)
-	)
-
-	switch authmethod {
-	case "none":
-		err = transport.Post("session", pkg, request)
-	case "token":
-		transport.SetHeader("Authorization", key)
-		err = transport.Post("session", pkg, request)
+		err = transport.Post(path, pkg, request)
 	case "hmac", "rsa":
+		rr, ok := request.(irma.RequestorRequest)
+		if !ok {
+			return nil, errors.New("Authentication methods hmac and rsa cannot be used for static sessions")
+		}
 		var jwtstr string
-		jwtstr, err = signRequest(request, name, authmethod, key)
+		jwtstr, err = signRequest(rr, name, authMethod, key)
 		if err != nil {
 			return nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
-		err = transport.Post("session", pkg, jwtstr)
+		err = transport.Post(path, pkg, jwtstr)
 	default:
 		return nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
