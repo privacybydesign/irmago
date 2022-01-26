@@ -94,8 +94,9 @@ irma session --server http://localhost:8088 --static mystaticsession`,
 		} else {
 			err = serverRequest(pkg, noqr, pairing)
 			if pkg.Token != "" {
-				result := &server.SessionResult{}
-				err = irma.NewHTTPTransport(serverURL, false).Get("result", result)
+				result = &server.SessionResult{}
+				path := fmt.Sprintf("session/%s/result", pkg.Token)
+				err = irma.NewHTTPTransport(serverURL, false).Get(path, result)
 				if err != nil {
 					die("Result could not be retrieved", err)
 				}
