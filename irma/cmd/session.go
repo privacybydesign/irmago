@@ -182,11 +182,10 @@ func serverRequest(
 		qr              = pkg.SessionPtr
 		frontendRequest = pkg.FrontendRequest
 		transport       = irma.NewHTTPTransport(qr.URL, false)
+		sessionOptions  = &irma.SessionOptions{}
 		err             error
 	)
-	sessionOptions := &irma.SessionOptions{}
 	if pairing {
-		transport = irma.NewHTTPTransport(qr.URL, false)
 		transport.SetHeader(irma.AuthorizationHeader, string(frontendRequest.Authorization))
 		optionsRequest := irma.NewFrontendOptionsRequest()
 		optionsRequest.PairingMethod = irma.PairingMethodPin
