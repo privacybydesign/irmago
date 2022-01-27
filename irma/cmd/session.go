@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -43,7 +44,8 @@ irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
 irma session --request '{"type":"disclosing","content":[{"label":"BSN","attributes":["irma-demo.MijnOverheid.root.BSN"]}]}'
 irma session --server http://localhost:8088 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN
-irma session --server http://localhost:8088 --static mystaticsession`,
+irma session --server http://localhost:8088 --static mystaticsession
+irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var (
 			request    irma.RequestorRequest
@@ -59,20 +61,22 @@ irma session --server http://localhost:8088 --static mystaticsession`,
 			pairing, _    = flags.GetBool("pairing")
 			authMethod, _ = flags.GetString("authmethod")
 			key, _        = flags.GetString("key")
+			jsonPkg, _    = flags.GetString("from-package")
+			static, _     = flags.GetString("static")
 		)
 		if url != defaulturl && serverURL != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
 		}
 
-		if staticFlag := flags.Lookup("static"); staticFlag.Changed {
-			if serverURL == "" {
-				die("Failed to read configuration", errors.New("--static must be combined with --server"))
+		if static != "" {
+			if err = staticRequest(serverURL, static, noqr); err != nil {
+				die("Failed to handle static session", err)
 			}
-			pkg, err = staticRequest(serverURL, staticFlag.Value.String(), authMethod, key)
-			if err != nil {
-				die("Static session could not be started", err)
-			}
-		} else {
+			// Static sessions are fully handled on the phone.
+			return
+		}
+
+		if jsonPkg == "" {
 			request, irmaconfig, err = configureSession(cmd)
 			if err != nil {
 				die("", err)
@@ -83,6 +87,12 @@ irma session --server http://localhost:8088 --static mystaticsession`,
 				if err != nil {
 					die("Session could not be started", err)
 				}
+			}
+		} else {
+			pkg = &server.SessionPackage{}
+			err = json.Unmarshal([]byte(jsonPkg), pkg)
+			if err != nil {
+				die("Failed to parse session package", err)
 			}
 		}
 
@@ -251,13 +261,15 @@ func serverRequest(
 	return err
 }
 
-func staticRequest(serverURL string, name, authMethod, key string) (
-	*server.SessionPackage, error) {
-	path := "session"
-	if name != "" {
-		path += fmt.Sprintf("/%s", name)
+func staticRequest(serverURL, name string, noqr bool) error {
+	if serverURL == "" {
+		return errors.New("--static must be combined with --server")
 	}
-	return postRequest(serverURL, path, "", name, authMethod, key)
+	qr := &irma.Qr{
+		Type: irma.ActionRedirect,
+		URL:  fmt.Sprintf("%s/irma/session/%s", serverURL, name),
+	}
+	return printQr(qr, noqr)
 }
 
 func postRequest(serverURL, path string, request interface{}, name, authMethod, key string) (
@@ -409,6 +421,7 @@ func init() {
 	addRequestFlags(flags)
 
 	flags.String("static", "", "Start a static IRMA session with the given name")
+	flags.String("from-package", "", "Start the IRMA session from the given session package")
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 }
