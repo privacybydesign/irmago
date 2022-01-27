@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/go-errors/errors"
@@ -102,15 +103,7 @@ irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 			verbosity, _ := cmd.Flags().GetCount("verbose")
 			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity, pairing)
 		} else {
-			err = serverRequest(pkg, noqr, pairing)
-			if pkg.Token != "" {
-				result = &server.SessionResult{}
-				path := fmt.Sprintf("session/%s/result", pkg.Token)
-				err = irma.NewHTTPTransport(serverURL, false).Get(path, result)
-				if err != nil {
-					die("Result could not be retrieved", err)
-				}
-			}
+			result, err = serverRequest(pkg, noqr, pairing)
 		}
 		if err != nil {
 			die("Session failed", err)
@@ -187,7 +180,7 @@ func serverRequest(
 	pkg *server.SessionPackage,
 	noqr bool,
 	pairing bool,
-) error {
+) (*server.SessionResult, error) {
 	// Enable pairing if necessary
 	var (
 		qr              = pkg.SessionPtr
@@ -202,14 +195,14 @@ func serverRequest(
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		err = transport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
-			return errors.WrapPrefix(err, "Failed to enable pairing", 0)
+			return nil, errors.WrapPrefix(err, "Failed to enable pairing", 0)
 		}
 	}
 
 	// Print session QR
 	logger.Debug("QR: ", prettyprint(qr))
 	if err := printQr(qr, noqr); err != nil {
-		return errors.WrapPrefix(err, "Failed to print QR", 0)
+		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
 	}
 
 	statuschan := make(chan irma.ServerStatus)
@@ -258,7 +251,20 @@ func serverRequest(
 	}()
 
 	wg.Wait()
-	return err
+
+	if err == nil && pkg.Token != "" {
+		result := &server.SessionResult{}
+		urlParts := strings.Split(pkg.SessionPtr.URL, "/irma/session/")
+		if len(urlParts) <= 1 {
+			// Custom URL structure is used, so we cannot determine result endpoint location.
+			return nil, nil
+		}
+		path := fmt.Sprintf("session/%s/result", pkg.Token)
+		if err = irma.NewHTTPTransport(urlParts[0], false).Get(path, result); err == nil {
+			return result, err
+		}
+	}
+	return nil, err
 }
 
 func staticRequest(serverURL, name string, noqr bool) error {
