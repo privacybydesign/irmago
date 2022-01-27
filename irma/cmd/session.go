@@ -272,7 +272,7 @@ func staticRequest(serverURL, name string, noqr bool) error {
 	return printQr(qr, noqr)
 }
 
-func postRequest(serverURL, path string, request interface{}, name, authMethod, key string) (
+func postRequest(serverURL, path string, request irma.RequestorRequest, name, authMethod, key string) (
 	*server.SessionPackage, error) {
 	var (
 		err       error
@@ -287,12 +287,8 @@ func postRequest(serverURL, path string, request interface{}, name, authMethod, 
 	case "none":
 		err = transport.Post(path, pkg, request)
 	case "hmac", "rsa":
-		rr, ok := request.(irma.RequestorRequest)
-		if !ok {
-			return nil, errors.New("Authentication methods hmac and rsa cannot be used for static sessions")
-		}
 		var jwtstr string
-		jwtstr, err = signRequest(rr, name, authMethod, key)
+		jwtstr, err = signRequest(request, name, authMethod, key)
 		if err != nil {
 			return nil, err
 		}
