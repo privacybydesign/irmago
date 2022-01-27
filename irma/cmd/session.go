@@ -88,7 +88,7 @@ irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 				authMethod, _ := flags.GetString("authmethod")
 				key, _ := flags.GetString("key")
 				name, _ := flags.GetString("name")
-				pkg, err = postRequest(serverURL, "session", request, name, authMethod, key)
+				pkg, err = postRequest(serverURL, request, name, authMethod, key)
 				if err != nil {
 					die("Session could not be started", err)
 				}
@@ -280,7 +280,7 @@ func staticRequest(url string, port int, name string, noqr bool) error {
 	return printQr(qr, noqr)
 }
 
-func postRequest(serverURL, path string, request irma.RequestorRequest, name, authMethod, key string) (
+func postRequest(serverURL string, request irma.RequestorRequest, name, authMethod, key string) (
 	*server.SessionPackage, error) {
 	var (
 		err       error
@@ -293,7 +293,7 @@ func postRequest(serverURL, path string, request irma.RequestorRequest, name, au
 		transport.SetHeader("Authorization", key)
 		fallthrough
 	case "none":
-		err = transport.Post(path, pkg, request)
+		err = transport.Post("session", pkg, request)
 	case "hmac", "rsa":
 		var jwtstr string
 		jwtstr, err = signRequest(request, name, authMethod, key)
@@ -301,7 +301,7 @@ func postRequest(serverURL, path string, request irma.RequestorRequest, name, au
 			return nil, err
 		}
 		logger.Debug("Session request JWT: ", jwtstr)
-		err = transport.Post(path, pkg, jwtstr)
+		err = transport.Post("session", pkg, jwtstr)
 	default:
 		return nil, errors.New("Invalid authentication method (must be none, token, hmac or rsa)")
 	}
