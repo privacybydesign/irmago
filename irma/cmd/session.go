@@ -45,7 +45,7 @@ irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
 irma session --request '{"type":"disclosing","content":[{"label":"BSN","attributes":["irma-demo.MijnOverheid.root.BSN"]}]}'
 irma session --server http://localhost:8088 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN
-irma session --server http://localhost:8088 --static mystaticsession
+irma session --url http://localhost:8088 --static mystaticsession
 irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var (
@@ -262,8 +262,9 @@ func serverRequest(
 			// Custom URL structure is used, so we cannot determine result endpoint location.
 			return nil, nil
 		}
+		baseURL := strings.Join(urlParts[:len(urlParts)-1], "")
 		path := fmt.Sprintf("session/%s/result", pkg.Token)
-		if err = irma.NewHTTPTransport(urlParts[0], false).Get(path, result); err == nil {
+		if err = irma.NewHTTPTransport(baseURL, false).Get(path, result); err == nil {
 			return result, nil
 		}
 	}
