@@ -315,21 +315,35 @@ func postRequest(serverURL, path string, request irma.RequestorRequest, name, au
 func handlePairing(options *irma.SessionOptions, statusChan chan irma.ServerStatus, completePairing func() error) error {
 	errorChan := make(chan error)
 	pairingStarted := false
+	pairingCompleted := false
 	for {
 		select {
 		case status := <-statusChan:
-			if status == irma.ServerStatusInitialized {
+			switch status {
+			case irma.ServerStatusInitialized:
 				continue
-			} else if status == irma.ServerStatusPairing {
+			case irma.ServerStatusPairing:
 				pairingStarted = true
 				go requestPairingPermission(options, completePairing, errorChan)
-				continue
-			} else if status == irma.ServerStatusConnected && !pairingStarted {
-				fmt.Println("Pairing is not supported by the connected device.")
+			case irma.ServerStatusConnected:
+				if !pairingStarted {
+					fmt.Println("Pairing is not supported by the connected device.")
+					return nil
+				} else if !pairingCompleted {
+					// We have to wait for errorChan to return.
+					pairingCompleted = true
+				} else {
+					return nil
+				}
+			default:
+				// Session has been cancelled.
+				return nil
 			}
-			return nil
 		case err := <-errorChan:
-			return err
+			if err != nil || pairingCompleted {
+				return err
+			}
+			pairingCompleted = true
 		}
 	}
 }
