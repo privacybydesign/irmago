@@ -29,17 +29,12 @@ func subscribeSSE(transport *HTTPTransport, statuschan chan ServerStatus, errorc
 	events := make(chan *sseclient.Event)
 	cancelled := false
 	go func() {
-		var status ServerStatus
 		for {
 			e := <-events
 			if e == nil || e.Type == "open" {
 				continue
 			}
-			newStatus := ServerStatus(strings.Trim(string(e.Data), `"`))
-			if newStatus == status {
-				continue
-			}
-			status = newStatus
+			status := ServerStatus(strings.Trim(string(e.Data), `"`))
 			statuschan <- status
 			if untilNextOnly || status.Finished() {
 				errorchan <- nil
