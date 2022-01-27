@@ -264,7 +264,7 @@ func serverRequest(
 		}
 		path := fmt.Sprintf("session/%s/result", pkg.Token)
 		if err = irma.NewHTTPTransport(urlParts[0], false).Get(path, result); err == nil {
-			return result, err
+			return result, nil
 		}
 	}
 	return nil, err
