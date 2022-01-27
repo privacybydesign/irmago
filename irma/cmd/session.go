@@ -55,22 +55,24 @@ irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 			result     *server.SessionResult
 			err        error
 
-			flags         = cmd.Flags()
-			url, _        = flags.GetString("url")
-			serverURL, _  = flags.GetString("server")
-			noqr, _       = flags.GetBool("noqr")
-			pairing, _    = flags.GetBool("pairing")
-			authMethod, _ = flags.GetString("authmethod")
-			key, _        = flags.GetString("key")
-			jsonPkg, _    = flags.GetString("from-package")
-			static, _     = flags.GetString("static")
+			flags        = cmd.Flags()
+			url, _       = flags.GetString("url")
+			port, _      = flags.GetInt("port")
+			serverURL, _ = flags.GetString("server")
+			noqr, _      = flags.GetBool("noqr")
+			pairing, _   = flags.GetBool("pairing")
+			jsonPkg, _   = flags.GetString("from-package")
+			static, _    = flags.GetString("static")
 		)
 		if url != defaulturl && serverURL != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
 		}
 
 		if static != "" {
-			if err = staticRequest(serverURL, static, noqr); err != nil {
+			if pairing {
+				die("Failed to read configuration", errors.New("--static can't be combined with --pairing"))
+			}
+			if err = staticRequest(url, port, static, noqr); err != nil {
 				die("Failed to handle static session", err)
 			}
 			// Static sessions are fully handled on the phone.
@@ -83,6 +85,8 @@ irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 				die("", err)
 			}
 			if serverURL != "" {
+				authMethod, _ := flags.GetString("authmethod")
+				key, _ := flags.GetString("key")
 				name, _ := flags.GetString("name")
 				pkg, err = postRequest(serverURL, "session", request, name, authMethod, key)
 				if err != nil {
@@ -98,7 +102,6 @@ irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 		}
 
 		if pkg == nil {
-			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
 			verbosity, _ := cmd.Flags().GetCount("verbose")
 			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity, pairing)
@@ -267,13 +270,12 @@ func serverRequest(
 	return nil, err
 }
 
-func staticRequest(serverURL, name string, noqr bool) error {
-	if serverURL == "" {
-		return errors.New("--static must be combined with --server")
-	}
+func staticRequest(url string, port int, name string, noqr bool) error {
+	url = configureURL(url, port)
+	fmt.Println("Server URL:", url)
 	qr := &irma.Qr{
 		Type: irma.ActionRedirect,
-		URL:  fmt.Sprintf("%s/irma/session/%s", serverURL, name),
+		URL:  fmt.Sprintf("%s/irma/session/%s", url, name),
 	}
 	return printQr(qr, noqr)
 }
@@ -354,11 +356,14 @@ func requestPairingPermission(options *irma.SessionOptions, completePairing func
 
 // Configuration functions
 
-func configureSessionServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration, verbosity int) error {
+func configureURL(url string, port int) string {
 	// Replace "port" in url with actual port
 	replace := "$1:" + strconv.Itoa(port)
-	url = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(url), []byte(replace)))
+	return string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(url), []byte(replace)))
+}
 
+func configureSessionServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration, verbosity int) error {
+	url = configureURL(url, port)
 	config := &server.Configuration{
 		IrmaConfiguration:    irmaconfig,
 		Logger:               logger,
