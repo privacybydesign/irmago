@@ -51,7 +51,7 @@ type BadServer struct {
 }
 
 func (s *BadServer) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	if s.count > 0 {
+	if s.count <= 0 {
 		_, _ = fmt.Fprintln(w, s.success)
 		return
 	} else {
