@@ -255,20 +255,23 @@ func serverRequest(
 
 	wg.Wait()
 
-	if err == nil && pkg.Token != "" {
-		result := &server.SessionResult{}
-		prefixIndex := strings.LastIndex(pkg.SessionPtr.URL, "/irma/session/")
-		if prefixIndex < 0 {
-			// Custom URL structure is used, so we cannot determine result endpoint location.
-			return nil, nil
-		}
-		baseURL := pkg.SessionPtr.URL[:prefixIndex]
-		path := fmt.Sprintf("session/%s/result", pkg.Token)
-		if err = irma.NewHTTPTransport(baseURL, false).Get(path, result); err == nil {
-			return result, nil
-		}
+	// Result can only be retrieved if a requestor token was given. Otherwise, we can return early.
+	if err != nil || pkg.Token == "" {
+		return nil, err
 	}
-	return nil, err
+
+	result := &server.SessionResult{}
+	prefixIndex := strings.LastIndex(pkg.SessionPtr.URL, "/irma/session/")
+	if prefixIndex < 0 {
+		// Custom URL structure is used, so we cannot determine result endpoint location.
+		return nil, nil
+	}
+	baseURL := pkg.SessionPtr.URL[:prefixIndex]
+	path := fmt.Sprintf("session/%s/result", pkg.Token)
+	if err = irma.NewHTTPTransport(baseURL, false).Get(path, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func staticRequest(url string, port int, name string, noqr bool) error {
