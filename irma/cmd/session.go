@@ -257,12 +257,12 @@ func serverRequest(
 
 	if err == nil && pkg.Token != "" {
 		result := &server.SessionResult{}
-		urlParts := strings.Split(pkg.SessionPtr.URL, "/irma/session/")
-		if len(urlParts) <= 1 {
+		prefixIndex := strings.LastIndex(pkg.SessionPtr.URL, "/irma/session/")
+		if prefixIndex < 0 {
 			// Custom URL structure is used, so we cannot determine result endpoint location.
 			return nil, nil
 		}
-		baseURL := strings.Join(urlParts[:len(urlParts)-1], "")
+		baseURL := pkg.SessionPtr.URL[:prefixIndex]
 		path := fmt.Sprintf("session/%s/result", pkg.Token)
 		if err = irma.NewHTTPTransport(baseURL, false).Get(path, result); err == nil {
 			return result, nil
