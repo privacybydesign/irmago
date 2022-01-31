@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,8 +29,6 @@ func checkError(t *testing.T, err error) {
 }
 
 var schemeServer *http.Server
-var badServer *http.Server
-var badServerCount int
 var testStorageDir = "client"
 
 func StartSchemeManagerHttpServer() {
@@ -45,26 +44,30 @@ func StopSchemeManagerHttpServer() {
 	_ = schemeServer.Close()
 }
 
-// StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.
-func StartBadHttpServer(count int, timeout time.Duration, success string) {
-	badServer = &http.Server{Addr: "localhost:48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if badServerCount >= count {
-			_, _ = fmt.Fprintln(w, success)
-			return
-		} else {
-			badServerCount++
-			time.Sleep(timeout)
-		}
-	})}
-
-	go func() {
-		_ = badServer.ListenAndServe()
-	}()
-	time.Sleep(100 * time.Millisecond) // Give server time to start
+type BadServer struct {
+	count   int
+	success string
+	timeout time.Duration
 }
 
-func StopBadHttpServer() {
-	_ = badServer.Close()
+func (s *BadServer) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	if s.count > 0 {
+		_, _ = fmt.Fprintln(w, s.success)
+		return
+	} else {
+		s.count--
+		time.Sleep(s.timeout)
+	}
+}
+
+// StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.
+func StartBadHttpServer(count int, timeout time.Duration, success string) *httptest.Server {
+	s := &BadServer{
+		count:   count,
+		timeout: timeout,
+		success: success,
+	}
+	return httptest.NewServer(s)
 }
 
 // FindTestdataFolder finds the "testdata" folder which is in . or ..

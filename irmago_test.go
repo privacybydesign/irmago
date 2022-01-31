@@ -117,10 +117,10 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 }
 
 func TestRetryHTTPRequest(t *testing.T) {
-	test.StartBadHttpServer(2, 1*time.Second, "42")
-	defer test.StopBadHttpServer()
+	badServer := test.StartBadHttpServer(2, 1*time.Second, "42")
+	defer badServer.Close()
 
-	transport := NewHTTPTransport("http://localhost:48682", false)
+	transport := NewHTTPTransport(badServer.URL, false)
 	transport.client.HTTPClient.Timeout = 500 * time.Millisecond
 	bts, err := transport.GetBytes("")
 	require.NoError(t, err)

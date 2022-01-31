@@ -240,14 +240,16 @@ func TestRedisRedundancy(t *testing.T) {
 	mr, cert := startRedis(t, true)
 	defer mr.Close()
 
-	ports := []int{48690, 48691, 48692}
+	ports := make([]int, 3)
 	servers := make([]*requestorserver.Server, len(ports))
-
-	for i, port := range ports {
+	for i := range ports {
+		port := findFreePort()
 		c := redisRequestorConfigDecorator(mr, cert, "", RequestorServerAuthConfiguration)()
-		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", port)
+		// Make sure URL of load balancer is being used in QRs.
+		c.URL = requestorServerURL
 		c.Port = port
 		rs := StartRequestorServer(t, c)
+		ports[i] = port
 		servers[i] = rs
 	}
 	lb := startLoadBalancer(t, ports)
