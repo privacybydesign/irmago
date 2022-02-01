@@ -3,7 +3,7 @@ module github.com/privacybydesign/irmago
 go 1.15
 
 require (
-	github.com/alexandrevicenzi/go-sse v1.3.1-0.20200117161408-7b23d5ff7420
+	github.com/alexandrevicenzi/go-sse v1.6.0
 	github.com/alicebob/miniredis/v2 v2.17.0
 	github.com/bsm/redislock v0.7.1
 	github.com/bwesterb/go-atum v1.0.0
