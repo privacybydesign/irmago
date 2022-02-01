@@ -5,6 +5,8 @@ on:
   schedule:
     # Run every monday on 9:00 in the morning (UTC).
     - cron: "0 9 * * 1"
+  # Make it possible to trigger the checks manually.
+  workflow_dispatch:
 
 jobs:
 
