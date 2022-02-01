@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/pflag"
 	"net/http"
 	"os"
 	"regexp"
@@ -45,9 +46,18 @@ irma session --sign irma-demo.MijnOverheid.root.BSN --message message
 irma session --issue irma-demo.MijnOverheid.ageLower=yes,yes,yes,no --disclose irma-demo.MijnOverheid.root.BSN
 irma session --request '{"type":"disclosing","content":[{"label":"BSN","attributes":["irma-demo.MijnOverheid.root.BSN"]}]}'
 irma session --server http://localhost:8088 --authmethod token --key mytoken --disclose irma-demo.MijnOverheid.root.BSN
-irma session --url http://localhost:8088 --static mystaticsession
+irma session --static-server http://192.168.1.2:8088 --static-name mystaticsession
 irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 	Run: func(cmd *cobra.Command, args []string) {
+		flags := cmd.Flags()
+		if flags.Changed("static-server") {
+			if err := staticRequest(flags); err != nil {
+				die("Failed to handle static session", err)
+			}
+			// Static sessions are fully handled on the phone.
+			return
+		}
+
 		var (
 			request    irma.RequestorRequest
 			irmaconfig *irma.Configuration
@@ -55,28 +65,15 @@ irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 			result     *server.SessionResult
 			err        error
 
-			flags        = cmd.Flags()
 			url, _       = flags.GetString("url")
-			port, _      = flags.GetInt("port")
 			serverURL, _ = flags.GetString("server")
 			noqr, _      = flags.GetBool("noqr")
 			pairing, _   = flags.GetBool("pairing")
 			jsonPkg, _   = flags.GetString("from-package")
-			static, _    = flags.GetString("static")
 		)
+
 		if url != defaulturl && serverURL != "" {
 			die("Failed to read configuration", errors.New("--url can't be combined with --server"))
-		}
-
-		if static != "" {
-			if pairing {
-				die("Failed to read configuration", errors.New("--static can't be combined with --pairing"))
-			}
-			if err = staticRequest(url, port, static, noqr); err != nil {
-				die("Failed to handle static session", err)
-			}
-			// Static sessions are fully handled on the phone.
-			return
 		}
 
 		if jsonPkg == "" {
@@ -102,6 +99,7 @@ irma session --from-package '{"sessionPtr": ... , "frontendRequest": ...}'`,
 		}
 
 		if pkg == nil {
+			port, _ := flags.GetInt("port")
 			privatekeysPath, _ := flags.GetString("privkeys")
 			verbosity, _ := cmd.Flags().GetCount("verbose")
 			result, err = libraryRequest(request, irmaconfig, url, port, privatekeysPath, noqr, verbosity, pairing)
@@ -274,12 +272,30 @@ func serverRequest(
 	return result, nil
 }
 
-func staticRequest(url string, port int, name string, noqr bool) error {
-	url = configureURL(url, port)
-	fmt.Println("Server URL:", url)
+func staticRequest(flags *pflag.FlagSet) error {
+	var serverURL, name string
+	noqr := false
+	flags.Visit(func(f *pflag.Flag) {
+		switch f.Name {
+		case "static-server":
+			serverURL = f.Value.String()
+		case "static-name":
+			name = f.Value.String()
+		case "noqr":
+			noqr, _ = flags.GetBool(f.Name)
+		default:
+			die("Invalid configuration", errors.New("When using --static-server, only --static-name and --noqr can be used"))
+		}
+	})
+
+	if name == "" {
+		die("Failed to read configuration", errors.New("--static-server must be combined with --static-name"))
+	}
+
+	fmt.Println("Server URL:", serverURL)
 	qr := &irma.Qr{
 		Type: irma.ActionRedirect,
-		URL:  fmt.Sprintf("%s/irma/session/%s", url, name),
+		URL:  fmt.Sprintf("%s/irma/session/%s", serverURL, name),
 	}
 	return printQr(qr, noqr)
 }
@@ -374,14 +390,10 @@ func requestPairingPermission(options *irma.SessionOptions, completePairing func
 
 // Configuration functions
 
-func configureURL(url string, port int) string {
+func configureSessionServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration, verbosity int) error {
 	// Replace "port" in url with actual port
 	replace := "$1:" + strconv.Itoa(port)
-	return string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(url), []byte(replace)))
-}
-
-func configureSessionServer(url string, port int, privatekeysPath string, irmaconfig *irma.Configuration, verbosity int) error {
-	url = configureURL(url, port)
+	url = string(regexp.MustCompile("(https?://[^/]*):port").ReplaceAll([]byte(url), []byte(replace)))
 	config := &server.Configuration{
 		IrmaConfiguration:    irmaconfig,
 		Logger:               logger,
@@ -445,7 +457,9 @@ func init() {
 
 	addRequestFlags(flags)
 
-	flags.String("static", "", "Start a static IRMA session with the given name")
+	flags.String("static-server", "", "External IRMA server to which IRMA app connects for a static session")
+	flags.String("static-name", "", "Start a static IRMA session with the given name (when using --static-server)")
+
 	flags.String("from-package", "", "Start the IRMA session from the given session package")
 
 	flags.CountP("verbose", "v", "verbose (repeatable)")
