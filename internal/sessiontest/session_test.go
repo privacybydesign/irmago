@@ -392,14 +392,16 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 	defer staticSessionServer.Close()
 
 	config := RequestorServerAuthConfiguration()
-	config.StaticSessions["staticsession"] = irma.ServiceProviderRequest{
-		RequestorBaseRequest: irma.RequestorBaseRequest{
-			CallbackURL: staticSessionServer.URL,
-		},
-		Request: &irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
-			Disclose: irma.AttributeConDisCon{
-				{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
+	config.StaticSessions = map[string]interface{}{
+		"staticsession": irma.ServiceProviderRequest{
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				CallbackURL: staticSessionServer.URL,
+			},
+			Request: &irma.DisclosureRequest{
+				BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
+				Disclose: irma.AttributeConDisCon{
+					{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
+				},
 			},
 		},
 	}

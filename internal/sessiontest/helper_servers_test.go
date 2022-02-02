@@ -222,7 +222,6 @@ func IrmaServerConfiguration() *server.Configuration {
 			revKeyshareTestCred: {RevocationServerURL: revocationServerURL},
 		},
 		JwtPrivateKeyFile: jwtPrivkeyPath,
-		StaticSessions:    map[string]interface{}{},
 	}
 }
 
