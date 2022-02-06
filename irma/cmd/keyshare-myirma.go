@@ -54,7 +54,7 @@ func init() {
 
 	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(myirmaserver.DBTypePostgres), "Type of database to connect keyshare server to")
-	flags.String("db", "", "Database server connection string")
+	flags.String("db-str", "", "Database server connection string")
 
 	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")

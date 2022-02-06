@@ -51,7 +51,7 @@ func init() {
 
 	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
-	flags.String("db", "", "Database server connection string")
+	flags.String("db-str", "", "Database server connection string")
 
 	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
