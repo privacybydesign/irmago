@@ -750,10 +750,6 @@ func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 // validateTranslations checks for each member of the interface o that is of type TranslatedString
 // that it contains all necessary translations.
 func (conf *Configuration) validateTranslations(file string, o interface{}, langs []string) {
-	if len(langs) == 0 {
-		return
-	}
-
 	v := reflect.ValueOf(o)
 
 	// Dereference in case of pointer or interface
@@ -777,6 +773,10 @@ func (conf *Configuration) validateTranslations(file string, o interface{}, lang
 			val = *tmp
 		} else {
 			val = field.Interface().(TranslatedString)
+		}
+
+		if val != nil && len(val) == 0 {
+			conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s has empty <%s> tag", file, name))
 		}
 
 		// assuming that translations also never should be empty
