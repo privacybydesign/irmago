@@ -775,7 +775,7 @@ func (conf *Configuration) validateTranslations(file string, o interface{}, lang
 			val = field.Interface().(TranslatedString)
 		}
 
-		if val != nil && len(val) == 0 {
+		if len(val) == 0 {
 			conf.Warnings = append(conf.Warnings, fmt.Sprintf("%s has empty <%s> tag", file, name))
 		}
 
