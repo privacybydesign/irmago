@@ -10,7 +10,6 @@
 		<en>Your full name, as it is known to the government</en>
 		<nl>Uw volledige naam, zoals bekend bij de overheid</nl>
 	</Description>
-	<IssueURL><en></en><nl></nl></IssueURL>
 
 	<Dependencies>
 		<Or>

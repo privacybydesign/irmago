@@ -3,6 +3,10 @@
 		<en>Demo Student Card</en>
 		<nl>Demo Studentenkaart</nl>
 	</Name>
+	<IssueURL>
+		<en>https://example.com</en>
+		<nl>https://example.com</nl>
+	</IssueURL>
 	<SchemeManager>irma-demo</SchemeManager>
 	<IssuerID>RU</IssuerID>
 	<CredentialID>studentCard</CredentialID>
@@ -10,7 +14,6 @@
 		<en>Student Card issued by the Radboud University Nijmegen</en>
 		<nl>Studentenkaart uitgegeven door de Radboud Universiteit Nijmegen</nl>
 	</Description>
-	<IssueURL><en></en><nl></nl></IssueURL>
 
 	<Attributes>
 		<Attribute id="university">

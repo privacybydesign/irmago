@@ -1237,7 +1237,11 @@ func TestIssueWizardFAQSummariesValidation(t *testing.T) {
 	credTypeID2 := credid("a.b.a")
 	conf.CredentialTypes[credTypeID] = credtype(credTypeID.String())
 	conf.CredentialTypes[credTypeID2] = credtype(credTypeID2.String())
-	tester := IssueWizardItem{Type: IssueWizardItemTypeCredential, Credential: &credTypeID}
+	tester := IssueWizardItem{
+		Type:       IssueWizardItemTypeCredential,
+		Credential: &credTypeID,
+		languages:  []string{"en", "nl"},
+	}
 	schemeMan := SchemeManager{}
 	conf.SchemeManagers = map[SchemeManagerIdentifier]*SchemeManager{credTypeID.SchemeManagerIdentifier(): &schemeMan}
 
@@ -1420,4 +1424,29 @@ func TestCredentialDependencies_UnmarshalXML(t *testing.T) {
 		},
 		deps,
 	)
+}
+
+func TestSchemeLanguageValidation(t *testing.T) {
+	conf := parseConfiguration(t)
+	langs := []string{"en", "nl"}
+	testScheme := conf.SchemeManagers[NewSchemeManagerIdentifier("test")]
+
+	// - The test scheme misses some translations but has no languages defined
+	// - The irma-demo and test-requestors schemes have en, nl defined and everything is translated
+	// So there should be no translation warnings.
+	require.Empty(t, conf.Warnings)
+
+	// Override test scheme language and parse again
+	testScheme.Languages = langs
+	require.NoError(t, testScheme.parseContents(conf))
+	require.Equal(t, []string{
+		"Credential type test.test.email misses en translation in <IssueURL> tag",
+		"Credential type test.test.email misses nl translation in <IssueURL> tag",
+		"Credential type test.test.mijnirma misses en translation in <IssueURL> tag",
+		"Credential type test.test.mijnirma misses nl translation in <IssueURL> tag",
+	}, conf.Warnings)
+
+	// Validate some individual translated strings
+	require.Empty(t, testScheme.Description.validate(langs))
+	require.Equal(t, langs, conf.CredentialTypes[NewCredentialTypeIdentifier("test.test.email")].IssueURL.validate(langs))
 }

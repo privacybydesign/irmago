@@ -28,6 +28,7 @@ type SchemeManager struct {
 	KeyshareWebsite   string
 	KeyshareAttribute string
 	TimestampServer   string
+	Languages         []string `xml:"Languages>Language"`
 	XMLVersion        int      `xml:"version,attr"`
 	XMLName           xml.Name `xml:"SchemeManager"`
 
@@ -51,7 +52,8 @@ type Issuer struct {
 	ContactAddress  string
 	ContactEMail    string
 	DeprecatedSince Timestamp
-	XMLVersion      int `xml:"version,attr"`
+	Languages       []string `xml:"Languages>Language"`
+	XMLVersion      int      `xml:"version,attr"`
 }
 
 // CredentialType is a description of a credential type, specifying (a.o.) its name, issuer, and attributes.
@@ -68,11 +70,12 @@ type CredentialType struct {
 	RevocationUpdateCount uint64
 	RevocationUpdateSpeed uint64
 	RevocationIndex       int      `xml:"-"`
+	Languages             []string `xml:"Languages>Language"`
 	XMLVersion            int      `xml:"version,attr"`
 	XMLName               xml.Name `xml:"IssueSpecification"`
 
-	IssueURL     TranslatedString `xml:"IssueURL"`
-	IsULIssueURL bool             `xml:"IsULIssueURL"`
+	IssueURL     *TranslatedString `xml:"IssueURL"`
+	IsULIssueURL bool              `xml:"IsULIssueURL"`
 
 	DeprecatedSince Timestamp
 
@@ -83,11 +86,11 @@ type CredentialType struct {
 	BackgroundGradientEnd   string
 
 	IsInCredentialStore bool
-	Category            TranslatedString
-	FAQIntro            TranslatedString
-	FAQPurpose          TranslatedString
-	FAQContent          TranslatedString
-	FAQHowto            TranslatedString
+	Category            *TranslatedString
+	FAQIntro            *TranslatedString
+	FAQPurpose          *TranslatedString
+	FAQContent          *TranslatedString
+	FAQHowto            *TranslatedString
 	FAQSummary          *TranslatedString
 }
 
@@ -121,6 +124,7 @@ type RequestorScheme struct {
 	ID        RequestorSchemeIdentifier `json:"id"`
 	URL       string                    `json:"url"`
 	Demo      bool                      `json:"demo"`
+	Languages []string                  `json:"languages"`
 	Status    SchemeManagerStatus       `json:"-"`
 	Timestamp Timestamp                 `json:"-"`
 
@@ -140,6 +144,7 @@ type RequestorInfo struct {
 	LogoPath   *string                                `json:"logoPath,omitempty"`
 	ValidUntil *Timestamp                             `json:"valid_until"`
 	Unverified bool                                   `json:"unverified"`
+	Languages  []string                               `json:"languages"`
 	Wizards    map[IssueWizardIdentifier]*IssueWizard `json:"wizards"`
 }
 
@@ -156,6 +161,7 @@ type (
 		TextColor            *string                   `json:"textColor,omitempty"`
 		Issues               *CredentialTypeIdentifier `json:"issues,omitempty"`
 		AllowOtherRequestors bool                      `json:"allowOtherRequestors"`
+		Languages            []string                  `json:"languages"`
 
 		Info *TranslatedString `json:"info,omitempty"`
 		FAQ  []IssueWizardQA   `json:"faq,omitempty"`
@@ -186,6 +192,8 @@ type (
 		SessionURL *string                   `json:"sessionUrl,omitempty"`
 		URL        *TranslatedString         `json:"url,omitempty"`
 		InApp      *bool                     `json:"inapp,omitempty"`
+
+		languages []string
 	}
 
 	IssueWizardItemType string
@@ -363,7 +371,7 @@ func (contents IssueWizardContents) ChoosePath(conf *Configuration, creds map[Cr
 }
 
 func (wizard *IssueWizard) Validate(conf *Configuration) error {
-	conf.validateTranslations(fmt.Sprintf("issue wizard %s", wizard.ID), wizard)
+	conf.validateTranslations(fmt.Sprintf("issue wizard %s", wizard.ID), wizard, wizard.Languages)
 
 	if (wizard.SuccessHeader == nil) != (wizard.SuccessText == nil) {
 		return errors.New("wizard contents must have success header and text either both specified, or both empty")
@@ -408,16 +416,17 @@ func (wizard *IssueWizard) Validate(conf *Configuration) error {
 					return errors.New("items having no credential type should come last")
 				}
 
+				item.languages = wizard.Languages
 				if err := item.validate(conf); err != nil {
 					return errors.Errorf("item %d.%d.%d: %w", i, j, k, err)
 				}
-				conf.validateTranslations(fmt.Sprintf("item %d.%d.%d", i, j, k), item)
+				conf.validateTranslations(fmt.Sprintf("item %d.%d.%d", i, j, k), item, wizard.Languages)
 			}
 		}
 	}
-	conf.validateTranslations("issue wizard", wizard)
+	conf.validateTranslations("issue wizard", wizard, wizard.Languages)
 	for i, qa := range wizard.FAQ {
-		conf.validateTranslations(fmt.Sprintf("QA %d", i), qa)
+		conf.validateTranslations(fmt.Sprintf("QA %d", i), qa, wizard.Languages)
 	}
 
 	return nil
@@ -546,7 +555,7 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 
 	// The wizard item itself must either contain a text field or their its credential type must have a FAQSummary
 	if item.Text != nil {
-		if l := item.Text.validate(); len(l) > 0 {
+		if l := item.Text.validate(item.languages); len(l) > 0 {
 			return errors.New("Wizard item text field incomplete for item with credential type: " + item.Credential.String())
 		}
 	} else {
@@ -554,7 +563,7 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 		if faqSummary == nil {
 			return errors.New("FAQSummary missing for wizard item with credential type: " + item.Credential.String())
 		}
-		if l := faqSummary.validate(); len(l) > 0 {
+		if l := faqSummary.validate(item.languages); len(l) > 0 {
 			return errors.New("FAQSummary missing for: " + item.Credential.String())
 		}
 	}
@@ -562,7 +571,7 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 	// All dependencies of the the item and their dependencies must contain FAQSummaries
 	if conf.CredentialTypes[*item.Credential].Dependencies != nil {
 		depChain := DependencyChain{*item.Credential}
-		if err := validateFAQSummary(*item.Credential, conf, depChain); err != nil {
+		if err := validateFAQSummary(*item.Credential, conf, depChain, item.languages); err != nil {
 			return err
 		}
 	}
@@ -570,7 +579,7 @@ func (item *IssueWizardItem) validate(conf *Configuration) error {
 	return nil
 }
 
-func validateFAQSummary(cred CredentialTypeIdentifier, conf *Configuration, validatedDeps DependencyChain) error {
+func validateFAQSummary(cred CredentialTypeIdentifier, conf *Configuration, validatedDeps DependencyChain, languages []string) error {
 	for _, outer := range conf.CredentialTypes[cred].Dependencies {
 		for _, middle := range outer {
 			for _, item := range middle {
@@ -581,12 +590,12 @@ func validateFAQSummary(cred CredentialTypeIdentifier, conf *Configuration, vali
 					return errors.New("FAQSummary missing for last item in chain: " + updatedDeps.String())
 				}
 
-				if l := faqSummary.validate(); len(l) > 0 {
+				if l := faqSummary.validate(languages); len(l) > 0 {
 					return errors.New("FAQSummary incomplete for last item in chain: " + updatedDeps.String())
 				}
 
 				if conf.CredentialTypes[item].Dependencies != nil {
-					return validateFAQSummary(item, conf, updatedDeps)
+					return validateFAQSummary(item, conf, updatedDeps, languages)
 				}
 			}
 		}
@@ -719,12 +728,13 @@ func (ts *TranslatedString) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	return nil
 }
 
-func (ts *TranslatedString) validate() []string {
+// validate checks that all specified languages are present in the TranslatedString, and returns
+// those that are not or are empty.
+func (ts *TranslatedString) validate(langs []string) []string {
 	var invalidLangs []string
-	for _, lang := range validLangs {
+	for _, lang := range langs {
 		if text, exists := (*ts)[lang]; !exists || text == "" {
 			invalidLangs = append(invalidLangs, lang)
-
 		}
 	}
 	return invalidLangs

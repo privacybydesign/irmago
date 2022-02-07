@@ -12,4 +12,8 @@
 	</Description>
 	<TimestampServer>https://keyshare.privacybydesign.foundation/atumd/</TimestampServer>
 	<Contact>https://privacybydesign.foundation/</Contact>
+	<Languages>
+		<Language>en</Language>
+		<Language>nl</Language>
+	</Languages>
 </SchemeManager>

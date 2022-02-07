@@ -10,10 +10,6 @@
     <en>Your voting card</en>
     <nl>Uw stempas</nl>
   </Description>
-  <IssueURL>
-    <en></en>
-    <nl></nl>
-  </IssueURL>
   <ShouldBeSingleton>true</ShouldBeSingleton>
 
   <Attributes>
