@@ -117,11 +117,18 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 }
 
 func TestRetryHTTPRequest(t *testing.T) {
-	test.StartBadHttpServer(2, 1*time.Second, "42")
-	defer test.StopBadHttpServer()
+	// Make sure that first 5 requests fail.
+	badServer := test.StartBadHttpServer(5, 1*time.Second, "42")
+	defer badServer.Close()
 
-	transport := NewHTTPTransport("http://localhost:48682", false)
+	transport := NewHTTPTransport(badServer.URL, false)
 	transport.client.HTTPClient.Timeout = 500 * time.Millisecond
+
+	// Retryable HTTP tries 3 times, so this attempt should fail.
+	_, err := transport.GetBytes("")
+	require.Error(t, err)
+
+	// The 6th request should succeed.
 	bts, err := transport.GetBytes("")
 	require.NoError(t, err)
 	require.Equal(t, "42\n", string(bts))

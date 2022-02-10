@@ -1,12 +1,12 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -130,12 +130,12 @@ func TestServerTimeouts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// start server
-			s := startServer(t, test.handler, test.readTimeout)
-			defer stopServer(t, s)
+			s := startServer(test.handler, test.readTimeout)
+			defer s.Close()
 
 			// do request
 			called = false
-			req, err := http.NewRequest(http.MethodPost, "http://localhost:34534", test.body)
+			req, err := http.NewRequest(http.MethodPost, s.URL, test.body)
 			require.NoError(t, err)
 			start := time.Now()
 			res, err := http.DefaultClient.Do(req)
@@ -149,22 +149,9 @@ func TestServerTimeouts(t *testing.T) {
 	}
 }
 
-func startServer(t *testing.T, handler http.Handler, timeout time.Duration) *http.Server {
-	s := &http.Server{
-		Addr:        "localhost:34534",
-		Handler:     handler,
-		ReadTimeout: timeout,
-	}
-	go func() {
-		err := s.ListenAndServe()
-		require.Equal(t, http.ErrServerClosed, err)
-	}()
-	time.Sleep(50 * time.Millisecond) // give server time to start
+func startServer(handler http.Handler, timeout time.Duration) *httptest.Server {
+	s := httptest.NewUnstartedServer(handler)
+	s.Config.ReadTimeout = timeout
+	s.Start()
 	return s
-}
-
-func stopServer(t *testing.T, server *http.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	require.NoError(t, server.Shutdown(ctx))
-	cancel()
 }

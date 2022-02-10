@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -380,8 +381,6 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, handler.storage)
-	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
-	defer rs.Stop()
 
 	// start server to receive session result callback after the session
 	var received bool
@@ -389,8 +388,26 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		received = true
 	})
-	s := &http.Server{Addr: fmt.Sprintf("localhost:%d", staticSessionServerPort), Handler: mux}
-	go func() { _ = s.ListenAndServe() }()
+	staticSessionServer := httptest.NewServer(mux)
+	defer staticSessionServer.Close()
+
+	config := RequestorServerAuthConfiguration()
+	config.StaticSessions = map[string]interface{}{
+		"staticsession": irma.ServiceProviderRequest{
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				CallbackURL: staticSessionServer.URL,
+			},
+			Request: &irma.DisclosureRequest{
+				BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
+				Disclose: irma.AttributeConDisCon{
+					{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
+				},
+			},
+		},
+	}
+
+	rs := StartRequestorServer(t, config)
+	defer rs.Stop()
 
 	// setup static QR and other variables
 	qr := &irma.Qr{
@@ -410,7 +427,6 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 
 	// give irma server time to post session result to the server started above, and check the call was received
 	time.Sleep(200 * time.Millisecond)
-	require.NoError(t, s.Shutdown(context.Background()))
 	require.True(t, received)
 }
 
@@ -511,13 +527,11 @@ func testChainedSessions(t *testing.T, conf interface{}, opts ...option) {
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
 	defer irmaServer.Stop()
-	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey)
-	defer func() {
-		_ = nextServer.Close()
-	}()
+	nextServer := httptest.NewServer(chainedServerHandler(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey))
+	defer nextServer.Close()
 
 	var request irma.ServiceProviderRequest
-	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
+	require.NoError(t, irma.NewHTTPTransport(nextServer.URL, false).Get("1", &request))
 	doSession(t, &request, client, irmaServer, nil, nil, nil)
 
 	// check that our credential instance is new
@@ -947,7 +961,8 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestPOSTSizeLimit(t *testing.T) {
-	rs := StartRequestorServer(t, RequestorServerConfiguration())
+	config := RequestorServerConfiguration()
+	rs := StartRequestorServer(t, config)
 	defer rs.Stop()
 
 	server.PostSizeLimit = 1 << 10
@@ -957,7 +972,7 @@ func TestPOSTSizeLimit(t *testing.T) {
 
 	req, err := http.NewRequest(
 		http.MethodPost,
-		requestorServerURL+"/session/",
+		fmt.Sprintf("http://localhost:%d/session/", config.Port),
 		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
 	)
 	require.NoError(t, err)

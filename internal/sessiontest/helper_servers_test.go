@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,22 +40,18 @@ var (
 	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
 )
 
+// Some urls are hardcoded in the test configuration, so we have to hardcode them here too.
 const (
-	irmaServerPort = 48680
-
 	schemeServerURL = "http://localhost:48681"
-
-	requestorServerPort = 48682
-	requestorServerURL  = "http://localhost:48682"
 
 	revocationServerPort = 48683
 	revocationServerURL  = "http://localhost:48683"
+)
 
-	staticSessionServerPort = 48685
-	staticSessionServerURL  = "http://localhost:48685"
-
-	nextSessionServerPort = 48686
-	nextSessionServerURL  = "http://localhost:48686"
+// The doSession helper expects the requestor server URL to be globally defined, to support the optionReuseServer.
+var (
+	requestorServerPort = findFreePort()
+	requestorServerURL  = fmt.Sprintf("http://localhost:%d", requestorServerPort)
 )
 
 type IrmaServer struct {
@@ -87,6 +86,12 @@ func apply(
 	}
 }
 
+func findFreePort() int {
+	s := httptest.NewUnstartedServer(http.NotFoundHandler())
+	defer s.Close()
+	return s.Listener.Addr().(*net.TCPAddr).Port
+}
+
 func StartRequestorServer(t *testing.T, configuration *requestorserver.Configuration) *requestorserver.Server {
 	requestorServer, err := requestorserver.New(configuration)
 	require.NoError(t, err)
@@ -103,19 +108,19 @@ func StartIrmaServer(t *testing.T, conf *server.Configuration) *IrmaServer {
 		conf = IrmaServerConfiguration()
 	}
 
+	mux := http.NewServeMux()
+	httpServer := httptest.NewServer(mux)
+
+	// Make sure domain is used instead of IP address.
+	conf.URL = strings.Replace(httpServer.URL, "127.0.0.1", "localhost", 1)
 	irmaServer, err := irmaserver.New(conf)
 	require.NoError(t, err)
 
-	mux := http.NewServeMux()
 	mux.HandleFunc("/", irmaServer.HandlerFunc())
-	httpServer := &http.Server{Addr: fmt.Sprintf("localhost:%d", irmaServerPort), Handler: mux}
-	go func() {
-		_ = httpServer.ListenAndServe()
-	}()
 	return &IrmaServer{
 		irma: irmaServer,
 		conf: conf,
-		http: httpServer,
+		http: httpServer.Config,
 	}
 }
 
@@ -137,7 +142,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 		request := &irma.ServiceProviderRequest{
 			Request: getDisclosureRequest(id),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/2"},
+				NextSession: &irma.NextSessionData{URL: fmt.Sprintf("http://%s/2", r.Host)},
 			},
 		}
 		bts, err := json.Marshal(request)
@@ -180,7 +185,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 		bts, err = json.Marshal(irma.IdentityProviderRequest{
 			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{cred}),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/3"},
+				NextSession: &irma.NextSessionData{URL: fmt.Sprintf("http://%s/3", r.Host)},
 			},
 		})
 		require.NoError(t, err)
@@ -206,20 +211,8 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 	return mux
 }
 
-func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey) *http.Server {
-	s := &http.Server{
-		Addr:    fmt.Sprintf("localhost:%d", nextSessionServerPort),
-		Handler: chainedServerHandler(t, jwtPubKey),
-	}
-	go func() {
-		_ = s.ListenAndServe()
-	}()
-	return s
-}
-
 func IrmaServerConfiguration() *server.Configuration {
 	return &server.Configuration{
-		URL:                   fmt.Sprintf("http://localhost:%d", irmaServerPort),
 		Logger:                logger,
 		DisableSchemesUpdate:  true,
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
@@ -229,19 +222,6 @@ func IrmaServerConfiguration() *server.Configuration {
 			revKeyshareTestCred: {RevocationServerURL: revocationServerURL},
 		},
 		JwtPrivateKeyFile: jwtPrivkeyPath,
-		StaticSessions: map[string]interface{}{
-			"staticsession": irma.ServiceProviderRequest{
-				RequestorBaseRequest: irma.RequestorBaseRequest{
-					CallbackURL: staticSessionServerURL,
-				},
-				Request: &irma.DisclosureRequest{
-					BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
-					Disclose: irma.AttributeConDisCon{
-						{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
-					},
-				},
-			},
-		},
 	}
 }
 
