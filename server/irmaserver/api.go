@@ -164,10 +164,9 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 
 	r := chi.NewRouter()
 	s.router = r
-	if s.conf.Verbose >= 2 {
-		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
-		r.Use(server.LogMiddleware("client", opts))
-	}
+
+	opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
+	r.Use(server.LogMiddleware("client", opts))
 
 	r.Use(server.SizeLimitMiddleware)
 	r.Use(server.TimeoutMiddleware([]string{"/statusevents", "/updateevents"}, server.WriteTimeout))

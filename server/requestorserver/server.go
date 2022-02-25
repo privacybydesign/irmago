@@ -195,9 +195,7 @@ func (s *Server) Handler() http.Handler {
 		r.Use(server.SizeLimitMiddleware)
 		r.Use(server.TimeoutMiddleware([]string{"/statusevents"}, server.WriteTimeout))
 		r.Use(cors.New(corsOptions).Handler)
-		if s.conf.Verbose >= 2 {
-			r.Use(server.LogMiddleware("requestor", log))
-		}
+		r.Use(server.LogMiddleware("requestor", log))
 
 		// Server routes
 		r.Route("/session", func(r chi.Router) {
@@ -221,9 +219,7 @@ func (s *Server) Handler() http.Handler {
 		r.Use(server.SizeLimitMiddleware)
 		r.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 		r.Use(cors.New(corsOptions).Handler)
-		if s.conf.Verbose >= 2 {
-			r.Use(server.LogMiddleware("revocation", log))
-		}
+		r.Use(server.LogMiddleware("revocation", log))
 		r.Post("/revocation", s.handleRevocation)
 	})
 

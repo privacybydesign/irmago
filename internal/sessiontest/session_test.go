@@ -518,7 +518,12 @@ func testChainedSessions(t *testing.T, conf interface{}, opts ...option) {
 
 	var request irma.ServiceProviderRequest
 	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
-	doSession(t, &request, client, irmaServer, nil, nil, nil)
+
+	// In case of chained sessions, the server's session store is queried twice in a single
+	// HTTP handler (when processing the irmaclient's response). The mutexes involved have caused
+	// deadlocks in the past when the frontend polls the session status, so we simulate polling in
+	// this test.
+	doSession(t, &request, client, irmaServer, nil, nil, nil, append(opts, optionPolling)...)
 
 	// check that our credential instance is new
 	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
