@@ -84,10 +84,8 @@ func (s *Server) Handler() http.Handler {
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
-		if s.conf.Verbose >= 2 {
-			opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: false}
-			router.Use(server.LogMiddleware("keyshare-myirma", opts))
-		}
+		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: false}
+		router.Use(server.LogMiddleware("keyshare-myirma", opts))
 
 		// Login/logout
 		router.Post("/login/irma", s.handleIrmaLogin)

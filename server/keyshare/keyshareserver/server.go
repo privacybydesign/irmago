@@ -104,10 +104,8 @@ func (s *Server) Handler() http.Handler {
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
-		if s.conf.Verbose >= 2 {
-			opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
-			router.Use(server.LogMiddleware("keyshareserver", opts))
-		}
+		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
+		router.Use(server.LogMiddleware("keyshareserver", opts))
 
 		// Registration
 		router.Post("/client/register", s.handleRegister)

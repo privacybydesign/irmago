@@ -497,25 +497,27 @@ func TimeoutMiddleware(except []string, timeout time.Duration) func(http.Handler
 func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var message []byte
-			var err error
+			if Logger.IsLevelEnabled(logrus.TraceLevel) {
+				var message []byte
+				var err error
 
-			// Read r.Body, and then replace with a fresh ReadCloser for the next handler
-			if message, err = ioutil.ReadAll(r.Body); err != nil {
-				message = []byte("<failed to read body: " + err.Error() + ">")
-			}
-			_ = r.Body.Close()
-			r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+				// Read r.Body, and then replace with a fresh ReadCloser for the next handler
+				if message, err = ioutil.ReadAll(r.Body); err != nil {
+					message = []byte("<failed to read body: " + err.Error() + ">")
+				}
+				_ = r.Body.Close()
+				r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
 
-			var headers http.Header
-			var from string
-			if opts.Headers {
-				headers = r.Header
+				var headers http.Header
+				var from string
+				if opts.Headers {
+					headers = r.Header
+				}
+				if opts.From {
+					from = r.RemoteAddr
+				}
+				LogRequest(typ, r.Proto, r.Method, r.URL.String(), from, headers, message)
 			}
-			if opts.From {
-				from = r.RemoteAddr
-			}
-			LogRequest(typ, r.Proto, r.Method, r.URL.String(), from, headers, message)
 
 			// copy output of HTTP handler to our buffer for later logging
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
