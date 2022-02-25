@@ -47,6 +47,7 @@ const (
 	optionClientWait
 	optionWait
 	optionPrePairingClient
+	optionPolling
 )
 
 func processOptions(options ...option) option {
@@ -265,6 +266,10 @@ func doSession(
 
 	if frontendOptionsHandler != nil {
 		frontendOptionsHandler(sessionHandler.(*TestHandler))
+	}
+
+	if opts.enabled(optionPolling) {
+		go func() { waitSessionFinished(t, serv, sesPkg.Token, true) }()
 	}
 
 	clientTransport, dismisser := startSessionAtClient(t, sesPkg, client, sessionHandler)

@@ -518,7 +518,7 @@ func testChainedSessions(t *testing.T, conf interface{}, opts ...option) {
 
 	var request irma.ServiceProviderRequest
 	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
-	doSession(t, &request, client, irmaServer, nil, nil, nil)
+	doSession(t, &request, client, irmaServer, nil, nil, nil, append(opts, optionPolling)...)
 
 	// check that our credential instance is new
 	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()

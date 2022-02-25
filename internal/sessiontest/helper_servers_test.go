@@ -185,6 +185,9 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 		})
 		require.NoError(t, err)
 
+		// give polling time to land in between
+		time.Sleep(200 * time.Millisecond)
+
 		logger.Trace("2nd request: ", string(bts))
 		_, err = w.Write(bts)
 		require.NoError(t, err)
