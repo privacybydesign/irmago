@@ -130,8 +130,9 @@ var (
 
 func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
 	s.RLock()
-	defer s.RUnlock()
 	ses := s.requestor[t]
+	s.RUnlock()
+
 	if ses != nil {
 		ses.Lock()
 		ses.locked = true
@@ -144,9 +145,9 @@ func (s *memorySessionStore) get(t irma.RequestorToken) (*session, error) {
 
 func (s *memorySessionStore) clientGet(t irma.ClientToken) (*session, error) {
 	s.RLock()
-	defer s.RUnlock()
-
 	ses := s.client[t]
+	s.RUnlock()
+
 	if ses != nil {
 		ses.Lock()
 		ses.locked = true
