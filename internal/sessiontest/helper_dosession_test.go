@@ -269,6 +269,8 @@ func doSession(
 	}
 
 	if opts.enabled(optionPolling) {
+		// Some tests may want to enable polling. We reuse the waitSessionFinished() function for
+		// this, which does its job by polling the GetSessionResult() function.
 		go func() { waitSessionFinished(t, serv, sesPkg.Token, true) }()
 	}
 
