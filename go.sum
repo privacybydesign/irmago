@@ -412,8 +412,10 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/posener/complete v1.1.1/go.mod h1:em0nMJCgc9GFtwrmVmEMR/ZL6WyhyjMBndrE9hABlRI=
 github.com/posener/complete v1.2.3/go.mod h1:WZIdtGGp+qx0sLrYKtIRAruyNpv6hFCicSgv7Sy7s/s=
-github.com/privacybydesign/gabi v0.0.0-20210714094051-ba80a6a8c5d8 h1:vqFxqLGTYN2hknHUlL/pbQxRDkvp9CbaYyKO208+evs=
-github.com/privacybydesign/gabi v0.0.0-20210714094051-ba80a6a8c5d8/go.mod h1:HQ6L5rKBY7qaqcheK6zpaVf7fhGWD0PvUAXJTDws+0M=
+github.com/privacybydesign/gabi v0.0.0-20220322151635-2706533ea3f3 h1:6BmH0ctV28dXh+nQN/E9i70hmLlsZbWiluuEbImt/EA=
+github.com/privacybydesign/gabi v0.0.0-20220322151635-2706533ea3f3/go.mod h1:HQ6L5rKBY7qaqcheK6zpaVf7fhGWD0PvUAXJTDws+0M=
+github.com/privacybydesign/gabi v0.0.0-20220412064428-d1eff7721dca h1:dT51jTkbGzk9vDXHRZZsL8mlhCnSBQEiQe4yvJBjJ3g=
+github.com/privacybydesign/gabi v0.0.0-20220412064428-d1eff7721dca/go.mod h1:HQ6L5rKBY7qaqcheK6zpaVf7fhGWD0PvUAXJTDws+0M=
 github.com/prometheus/client_golang v0.9.1/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
 github.com/prometheus/client_golang v1.0.0/go.mod h1:db9x61etRT2tGnBNRi70OPL5FsnadC4Ky3P0J6CfImo=
 github.com/prometheus/client_golang v1.4.0/go.mod h1:e9GMxYsXl05ICDXkRhurwBS4Q3OK1iX/F2sw+iXX5zU=

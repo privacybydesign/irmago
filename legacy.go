@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -341,4 +342,19 @@ func (s *ServerSessionResponse) UnmarshalJSON(bts []byte) error {
 	}
 	s.ProofStatus = ProofStatusValid
 	return nil
+}
+
+type KeysharePublicKeyRegistry struct {
+	PublicKeyRegistryJWT string `json:"jwt"`
+}
+
+type KeysharePublicKeyRegistryData struct {
+	Username       string `json:"id"`
+	Pin            string `json:"pin"`
+	ECDSAPublicKey []byte `json:"ecdsa_publickey,omitempty"`
+}
+
+type KeysharePublicKeyRegistryClaims struct {
+	jwt.RegisteredClaims
+	KeysharePublicKeyRegistryData
 }

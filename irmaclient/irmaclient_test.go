@@ -46,6 +46,7 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
+		test.NewSigner(t),
 	)
 	require.NoError(t, err)
 	client.SetPreferences(Preferences{DeveloperMode: true})

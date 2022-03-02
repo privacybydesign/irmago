@@ -500,6 +500,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 			session.issuerProofNonce,
 			session.timestamp,
 			session.client.Configuration,
+			session.client.signer,
 			session.client.keyshareServers,
 			session.client.Preferences,
 		)

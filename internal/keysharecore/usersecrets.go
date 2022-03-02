@@ -3,12 +3,16 @@ package keysharecore
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/binary"
+	"encoding/json"
 
 	"github.com/fxamacker/cbor"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/signed"
+	irma "github.com/privacybydesign/irmago"
 
 	"github.com/go-errors/errors"
 )
@@ -18,6 +22,7 @@ type (
 		Pin            []byte
 		KeyshareSecret *big.Int
 		ID             []byte
+		PublicKey      *ecdsa.PublicKey
 	}
 
 	// UserSecrets contains the encrypted data of a keyshare user.
@@ -67,22 +72,50 @@ func (s *unencryptedUserSecrets) setID(id []byte) error {
 	return nil
 }
 
+type marshaledUserSecrets struct {
+	Pin            []byte
+	KeyshareSecret []byte
+	ID             []byte
+	PublicKey      []byte
+}
+
 // MarshalCBOR implements cbor.Marshaler to ensure that all fields have a constant size, to minimize
 // differences in the size of the encrypted blobs.
-// (Note that no unmarshaler is necessary: the only field that gets special attention is the secret
-// bigint, which is marshaled in such a way that the default unmarshaler works fine.)
 func (s *unencryptedUserSecrets) MarshalCBOR() ([]byte, error) {
 	secretBts, err := padBytes(s.KeyshareSecret.Bytes(), 64)
 	if err != nil {
 		return nil, err
 	}
-	return cbor.Marshal(struct {
-		Pin            []byte
-		KeyshareSecret []byte
-		ID             []byte
-	}{
-		s.Pin, secretBts, s.ID,
+	var pkBts []byte
+	if s.PublicKey != nil {
+		pkBts, err = signed.MarshalPublicKey(s.PublicKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return cbor.Marshal(marshaledUserSecrets{
+		s.Pin, secretBts, s.ID, pkBts,
 	}, cbor.EncOptions{})
+}
+
+func (s *unencryptedUserSecrets) UnmarshalCBOR(bytes []byte) error {
+	raw := marshaledUserSecrets{}
+	err := cbor.Unmarshal(bytes, &raw)
+	if err != nil {
+		return err
+	}
+	*s = unencryptedUserSecrets{
+		Pin:            raw.Pin,
+		KeyshareSecret: new(big.Int).SetBytes(raw.KeyshareSecret),
+		ID:             raw.ID,
+	}
+	if len(raw.PublicKey) > 0 {
+		s.PublicKey, err = signed.UnmarshalPublicKey(raw.PublicKey)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, error) {
@@ -138,6 +171,23 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 	}
 
 	return unencSecrets, nil
+}
+
+func (c *Core) decryptUserSecretsIfResponseOK(secrets UserSecrets, challenge, response []byte, pin string) (unencryptedUserSecrets, error) {
+	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
+	if err != nil {
+		return unencryptedUserSecrets{}, err
+	}
+
+	encoded := irma.KeyshareChallengeResponseMessage{
+		Challenge: challenge,
+		PIN:       pin,
+	}
+	bts, _ := json.Marshal(encoded)
+	if err = signed.Verify(s.PublicKey, bts, response); err != nil {
+		return unencryptedUserSecrets{}, err
+	}
+	return s, nil
 }
 
 func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unencryptedUserSecrets, error) {

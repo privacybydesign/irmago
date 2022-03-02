@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -50,13 +51,17 @@ type keyshareSession struct {
 	timestamp        *atum.Timestamp
 	pinCheck         bool
 	preferences      Preferences
+	signer           Signer
 }
 
 type keyshareServer struct {
 	Username                string `json:"username"`
 	Nonce                   []byte `json:"nonce"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
+	PublicKey               []byte
 	token                   string
+
+	client *Client
 }
 
 const (
@@ -70,13 +75,18 @@ const (
 	kssPinError       = "error"
 )
 
-func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (ks *keyshareServer, err error) {
-	ks = &keyshareServer{
+func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier, client *Client, pk []byte) (*keyshareServer, error) {
+	ks := &keyshareServer{
 		Nonce:                   make([]byte, 32),
 		SchemeManagerIdentifier: schemeManagerIdentifier,
+		PublicKey:               pk,
+		client:                  client,
 	}
-	_, err = rand.Read(ks.Nonce)
-	return
+	_, err := rand.Read(ks.Nonce)
+	if err != nil {
+		return nil, err
+	}
+	return ks, nil
 }
 
 func (ks *keyshareServer) HashedPin(pin string) string {
@@ -100,6 +110,7 @@ func startKeyshareSession(
 	issuerProofNonce *big.Int,
 	timestamp *atum.Timestamp,
 	conf *irma.Configuration,
+	signer Signer,
 	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
 	preferences Preferences,
 ) {
@@ -131,6 +142,7 @@ func startKeyshareSession(
 		issuerProofNonce: issuerProofNonce,
 		timestamp:        timestamp,
 		pinCheck:         false,
+		signer:           signer,
 		preferences:      preferences,
 	}
 
@@ -226,11 +238,53 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 	}))
 }
 
+func signChallenge(pin string, kss *keyshareServer, transport *irma.HTTPTransport) ([]byte, error) {
+	auth := &irma.KeyshareAuthorization{}
+	err := transport.Post("users/start_auth", auth, irma.KeyshareAuthMessage{
+		Username:      kss.Username,
+		Authorization: kss.token,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var ok bool
+	for _, method := range auth.Candidates {
+		if method == "ecdsa" {
+			ok = true
+		}
+	}
+	if !ok {
+		return nil, errors.New("ecdsa authentication method not supported")
+	}
+	msg, _ := json.Marshal(irma.KeyshareChallengeResponseMessage{
+		Challenge: auth.Challenge,
+		PIN:       kss.HashedPin(pin),
+	})
+	return kss.client.signer.Sign(msg)
+}
+
 func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
-	success bool, tries int, blocked int, err error) {
-	pinmsg := irma.KeysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
+	success bool, tries int, blocked int, err error,
+) {
+	var response []byte
+	var endpoint string
+	if len(kss.PublicKey) != 0 {
+		endpoint = "ecdsa"
+		response, err = signChallenge(pin, kss, transport)
+		if err != nil {
+			return false, 0, 0, err
+		}
+	} else {
+		endpoint = "pin"
+	}
+
+	pinmsg := irma.KeysharePinMessage{
+		Username: kss.Username,
+		Pin:      kss.HashedPin(pin),
+		Response: response,
+	}
 	pinresult := &irma.KeysharePinStatus{}
-	err = transport.Post("users/verify/pin", pinresult, pinmsg)
+	err = transport.Post("users/verify/"+endpoint, pinresult, pinmsg)
 	if err != nil {
 		return
 	}
@@ -239,6 +293,7 @@ func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransp
 	case kssPinSuccess:
 		success = true
 		kss.token = pinresult.Message
+		kss.ensurePublicKeyRegistered(transport, pin)
 		transport.SetHeader(kssAuthHeader, kss.token)
 		return
 	case kssPinFailure:

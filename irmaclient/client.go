@@ -65,6 +65,7 @@ type Client struct {
 	Configuration         *irma.Configuration
 	irmaConfigurationPath string
 	handler               ClientHandler
+	signer                Signer
 	sessions              sessions
 
 	jobs       chan func()   // queue of jobs to run
@@ -147,6 +148,7 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
+	signer Signer,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
@@ -162,6 +164,7 @@ func New(
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		handler:               handler,
+		signer:                signer,
 		minVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
 		maxVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
@@ -209,6 +212,10 @@ func New(
 	}
 	if client.keyshareServers, err = client.storage.LoadKeyshareServers(); err != nil {
 		return nil, err
+	}
+
+	for _, kss := range client.keyshareServers {
+		kss.client = client
 	}
 
 	if len(client.UnenrolledSchemeManagers()) > 1 {
@@ -1092,19 +1099,30 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
-	transport := irma.NewHTTPTransport(manager.KeyshareServer, !client.Preferences.DeveloperMode)
-	kss, err := newKeyshareServer(managerID)
+	pk, err := client.signer.PublicKey()
 	if err != nil {
 		return err
 	}
-	message := irma.KeyshareEnrollment{
-		Email:    email,
-		Pin:      kss.HashedPin(pin),
-		Language: lang,
+	kss, err := newKeyshareServer(managerID, client, pk)
+	if err != nil {
+		return err
 	}
 
+	jwtt, err := SignerCreateJWT(client.signer, irma.KeyshareEnrollmentClaims{
+		KeyshareEnrollmentData: irma.KeyshareEnrollmentData{
+			Email:          email,
+			Pin:            kss.HashedPin(pin),
+			Language:       lang,
+			ECDSAPublicKey: pk,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	transport := irma.NewHTTPTransport(manager.KeyshareServer, !client.Preferences.DeveloperMode)
 	qr := &irma.Qr{}
-	err = transport.Post("client/register", qr, message)
+	err = transport.Post("client/register", qr, irma.KeyshareEnrollment{EnrollmentJWT: jwtt})
 	if err != nil {
 		return err
 	}

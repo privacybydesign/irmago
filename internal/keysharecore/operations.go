@@ -1,6 +1,7 @@
 package keysharecore
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -21,12 +22,13 @@ var (
 	ErrPinTooLong       = errors.New("pin too long")
 	ErrInvalidChallenge = errors.New("challenge out of bounds")
 	ErrInvalidJWT       = errors.New("invalid jwt token")
+	ErrExpiredJWT       = errors.New("jwt expired")
 	ErrKeyNotFound      = errors.New("public key not found")
 	ErrUnknownCommit    = errors.New("unknown commit id")
 )
 
 // NewUserSecrets generates a new keyshare secret, secured with the given pin.
-func (c *Core) NewUserSecrets(pin string) (UserSecrets, error) {
+func (c *Core) NewUserSecrets(pin string, pk *ecdsa.PublicKey) (UserSecrets, error) {
 	secret, err := gabi.NewKeyshareSecret()
 	if err != nil {
 		return nil, err
@@ -49,9 +51,19 @@ func (c *Core) NewUserSecrets(pin string) (UserSecrets, error) {
 	if err = s.setID(id); err != nil {
 		return nil, err
 	}
+	s.PublicKey = pk
 
 	// And encrypt
 	return c.encryptUserSecrets(s)
+}
+
+func (c *Core) ValidateChallengeResponse(secrets UserSecrets, challenge, response []byte, pin string) (string, error) {
+	s, err := c.decryptUserSecretsIfResponseOK(secrets, challenge, response, pin)
+	if err != nil {
+		return "", err
+	}
+
+	return c.authJWT(&s)
 }
 
 // ValidatePin checks pin for validity and generates JWT for future access.
@@ -61,7 +73,14 @@ func (c *Core) ValidatePin(secrets UserSecrets, pin string) (string, error) {
 		return "", err
 	}
 
-	// Generate jwt token
+	if s.PublicKey != nil {
+		return "", errors.New("challenge-response authentication required")
+	}
+
+	return c.authJWT(&s)
+}
+
+func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 	t := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":      c.jwtIssuer,
@@ -87,6 +106,10 @@ func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (User
 	s, err := c.decryptUserSecretsIfPinOK(secrets, oldpinRaw)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.PublicKey != nil {
+		return UserSecrets{}, errors.New("challenge-response authentication required")
 	}
 
 	// change and reencrypt
@@ -124,7 +147,7 @@ func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUs
 		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 	if !claims.VerifyExpiresAt(time.Now().Unix(), true) {
-		return unencryptedUserSecrets{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrExpiredJWT
 	}
 	if _, present := claims["token_id"]; !present {
 		return unencryptedUserSecrets{}, ErrInvalidJWT
@@ -224,4 +247,39 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	})
 	token.Header["kid"] = c.jwtPrivateKeyID
 	return token.SignedString(c.jwtPrivateKey)
+}
+
+func (c *Core) GenerateChallenge(id string) ([]byte, error) {
+	challenge := make([]byte, 32)
+	_, err := rand.Read(challenge)
+	if err != nil {
+		return nil, err
+	}
+
+	c.authChallengesMutex.Lock()
+	defer c.authChallengesMutex.Unlock()
+	c.authChallenges[id] = challenge
+	return challenge, nil
+}
+
+func (c *Core) Challenge(id string) []byte {
+	c.authChallengesMutex.Lock()
+	defer c.authChallengesMutex.Unlock()
+	challenge := c.authChallenges[id]
+	delete(c.authChallenges, id)
+	return challenge
+}
+
+func (c *Core) SetUserPublicKey(secrets UserSecrets, pin string, pk *ecdsa.PublicKey) error {
+	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
+	if err != nil {
+		return err
+	}
+
+	if s.PublicKey != nil {
+		return errors.New("user already has public key")
+	}
+
+	s.PublicKey = pk
+	return nil
 }

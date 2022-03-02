@@ -33,7 +33,7 @@ func TestPinFunctionality(t *testing.T) {
 	pin := string(bpin)
 
 	// Generate package
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	// Test with correct pin
@@ -82,9 +82,9 @@ func TestVerifyAccess(t *testing.T) {
 	pin2 := string(bpin)
 
 	// and test keyshare secrets
-	secrets1, err := c.NewUserSecrets(pin1)
+	secrets1, err := c.NewUserSecrets(pin1, nil)
 	require.NoError(t, err)
-	secrets2, err := c.NewUserSecrets(pin2)
+	secrets2, err := c.NewUserSecrets(pin2, nil)
 	require.NoError(t, err)
 
 	// Test use jwt on wrong secrets
@@ -178,7 +178,7 @@ func TestProofFunctionality(t *testing.T) {
 	pin := string(bpin)
 
 	// generate keyshare secret
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	// Validate pin
@@ -228,7 +228,7 @@ func TestCorruptedUserSecrets(t *testing.T) {
 	pin := string(bpin)
 
 	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	jwtt, err := c.ValidatePin(secrets, pin)
@@ -272,7 +272,7 @@ func TestIncorrectPin(t *testing.T) {
 	pin := string(bpin)
 
 	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	// validate pin
@@ -309,7 +309,7 @@ func TestMissingKey(t *testing.T) {
 	pin := string(bpin)
 
 	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	// Generate jwt
@@ -342,7 +342,7 @@ func TestInvalidChallenge(t *testing.T) {
 	pin := string(bpin)
 
 	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	// Validate pin
@@ -383,7 +383,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	pin := string(bpin)
 
 	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	// validate pin
@@ -414,7 +414,7 @@ func TestNonExistingCommit(t *testing.T) {
 	pin := string(bpin)
 
 	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
+	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
 	// Generate jwt

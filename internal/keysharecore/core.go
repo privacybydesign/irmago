@@ -35,6 +35,10 @@ type (
 		commitmentData  map[uint64]*big.Int
 		commitmentMutex sync.Mutex
 
+		// authorization challenges
+		authChallenges      map[string][]byte
+		authChallengesMutex sync.Mutex
+
 		// IRMA issuer keys that are allowed to be used in keyshare
 		//  sessions
 		trustedKeys map[irma.PublicKeyIdentifier]*gabikeys.PublicKey
@@ -59,6 +63,7 @@ func NewKeyshareCore(conf *Configuration) *Core {
 		decryptionKeys: map[uint32]AESKey{},
 		commitmentData: map[uint64]*big.Int{},
 		trustedKeys:    map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{},
+		authChallenges: map[string][]byte{},
 	}
 
 	c.setDecryptionKey(conf.DecryptionKeyID, conf.DecryptionKey)

@@ -3,11 +3,12 @@ package irma
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/privacybydesign/irmago/internal/common"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/privacybydesign/irmago/internal/common"
 
 	"fmt"
 
@@ -298,9 +299,20 @@ type IssueCommitmentMessage struct {
 //
 
 type KeyshareEnrollment struct {
-	Pin      string  `json:"pin"`
-	Email    *string `json:"email"`
-	Language string  `json:"language"`
+	KeyshareEnrollmentData
+	EnrollmentJWT string `json:"enrollment_jwt,omitempty"`
+}
+
+type KeyshareEnrollmentData struct {
+	Pin            string  `json:"pin,omitempty"`
+	Email          *string `json:"email,omitempty"`
+	Language       string  `json:"language,omitempty"`
+	ECDSAPublicKey []byte  `json:"ecdsa_publickey,omitempty"`
+}
+
+type KeyshareEnrollmentClaims struct {
+	jwt.RegisteredClaims
+	KeyshareEnrollmentData
 }
 
 type KeyshareChangePin struct {
@@ -309,20 +321,40 @@ type KeyshareChangePin struct {
 	NewPin   string `json:"newpin"`
 }
 
+type KeyshareAuthMessage struct {
+	Username      string `json:"id"`
+	Authorization string `json:"jwt"`
+}
+
 type KeyshareAuthorization struct {
 	Status     string   `json:"status"`
-	Candidates []string `json:"candidates"`
+	Candidates []string `json:"candidates,omitempty"`
+	Challenge  []byte   `json:"challenge"`
 }
 
 type KeysharePinMessage struct {
 	Username string `json:"id"`
 	Pin      string `json:"pin"`
+	Response []byte `json:"response,omitempty"`
+}
+
+type KeyshareChallengeResponseMessage struct {
+	Challenge []byte
+	PIN       string
 }
 
 type KeysharePinStatus struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 }
+
+var (
+	KeyshareAuthStatusAuthorized = "authorized"
+	KeyshareAuthStatusExpired    = "expired"
+	KeyshareAuthStatusInvalid    = "invalid"
+
+	KeyshareAuthMethodECDSA = "ecdsa"
+)
 
 type ProofPCommitmentMap struct {
 	Commitments map[PublicKeyIdentifier]*gabi.ProofPCommitment `json:"c"`
