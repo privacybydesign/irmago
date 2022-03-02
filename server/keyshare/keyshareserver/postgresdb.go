@@ -75,9 +75,6 @@ func (db *postgresDB) user(username string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(secrets) != len(result.Secrets[:]) {
-		return nil, errInvalidRecord
-	}
 	copy(result.Secrets[:], secrets)
 	return &result, nil
 }
