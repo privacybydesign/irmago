@@ -1,8 +1,21 @@
+
 # Changelog
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.10.0] - 2022-03-09
+
+### Added
+- `irma session` now supports [static sessions](https://irma.app/docs/irma-server/#static-irma-qrs) and can start sessions from a [session package](https://irma.app/docs/api-irma-server/#post-session)
+- (Requestor) schemes and their contents can now [specify their languages](https://github.com/privacybydesign/irmago/pull/194/), which `irma scheme verify` takes into account
+- Add Apple Silicon builds in releases
+
+### Fixed
+- Mutex deadlock that could freeze the server when using chained sessions
+- Bug that would prevent warnings on 4xx and 5xx responses from showing when not in verbose/debug mode
+
 
 ## [0.9.0] - 2021-12-17
 
@@ -209,6 +222,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.10.0]: https://github.com/privacybydesign/irmago/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/privacybydesign/irmago/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/privacybydesign/irmago/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/privacybydesign/irmago/compare/v0.6.1...v0.7.0
