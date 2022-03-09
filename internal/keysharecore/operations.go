@@ -270,16 +270,16 @@ func (c *Core) Challenge(id string) []byte {
 	return challenge
 }
 
-func (c *Core) SetUserPublicKey(secrets UserSecrets, pin string, pk *ecdsa.PublicKey) error {
+func (c *Core) SetUserPublicKey(secrets UserSecrets, pin string, pk *ecdsa.PublicKey) (string, error) {
 	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if s.PublicKey != nil {
-		return errors.New("user already has public key")
+		return "", errors.New("user already has public key")
 	}
 
 	s.PublicKey = pk
-	return nil
+	return c.authJWT(&s)
 }

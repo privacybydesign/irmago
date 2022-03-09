@@ -61,7 +61,7 @@ func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublic
 		return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
 
-	err = s.core.SetUserPublicKey(user.Secrets, keydata.Pin, pk)
+	jwtt, err := s.core.SetUserPublicKey(user.Secrets, keydata.Pin, pk)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -87,5 +87,5 @@ func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublic
 		return irma.KeysharePinStatus{}, err
 	}
 
-	return irma.KeysharePinStatus{Status: "success"}, nil
+	return irma.KeysharePinStatus{Status: "success", Message: jwtt}, nil
 }

@@ -190,11 +190,21 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(transport *irma.HTTPTranspo
 		err = errors.WrapPrefix(err, "failed to sign public key registration JWT", 0)
 		return
 	}
-	err = transport.Post("users/register_ecdsa_publickey", nil, irma.KeysharePublicKeyRegistry{PublicKeyRegistryJWT: jwtt})
+	result := &irma.KeysharePinStatus{}
+	err = transport.Post("users/register_ecdsa_publickey", result, irma.KeysharePublicKeyRegistry{PublicKeyRegistryJWT: jwtt})
 	if err != nil {
 		err = errors.WrapPrefix(err, "failed to register public key", 0)
 		return
 	}
+
+	if result.Status != kssPinSuccess {
+		err = errors.Errorf("/users/register_ecdsa_publickey failed with message %s", result.Message)
+		return
+	}
+
+	// Upgrade our authentication token with the one we just received
+	kss.token = result.Message
+	transport.SetHeader(kssAuthHeader, result.Message)
 
 	err = kss.client.storage.StoreKeyshareServers(kss.client.keyshareServers)
 	if err != nil {

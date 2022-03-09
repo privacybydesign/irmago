@@ -251,6 +251,7 @@ func signChallenge(pin string, kss *keyshareServer, transport *irma.HTTPTranspor
 	for _, method := range auth.Candidates {
 		if method == "ecdsa" {
 			ok = true
+			break
 		}
 	}
 	if !ok {
@@ -293,8 +294,8 @@ func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransp
 	case kssPinSuccess:
 		success = true
 		kss.token = pinresult.Message
-		kss.ensurePublicKeyRegistered(transport, pin)
 		transport.SetHeader(kssAuthHeader, kss.token)
+		kss.ensurePublicKeyRegistered(transport, pin)
 		return
 	case kssPinFailure:
 		tries, err = strconv.Atoi(pinresult.Message)
