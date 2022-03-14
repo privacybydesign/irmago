@@ -147,6 +147,7 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
+	aesKey []byte,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {

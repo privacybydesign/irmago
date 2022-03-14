@@ -42,10 +42,14 @@ func parseStorage(t *testing.T) (*Client, *TestClientHandler) {
 func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHandler) {
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
+
+	aesKey := []byte("asdfasdfasdfasdfasdfasdfasdfasdf")
+
 	client, err := New(
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
+		aesKey,
 	)
 	require.NoError(t, err)
 	client.SetPreferences(Preferences{DeveloperMode: true})
