@@ -128,9 +128,9 @@ The performance tests can be started in the following way:
 
 ```
 go install go.k6.io/k6@latest
-k6 run ./testdata/performance/keyshare-server.js --env URL=http://docker.local:8080 --env ISSUER_ID=test.test
+k6 run ./testdata/performance/keyshare-server.js --env URL=http://localhost:8080 --env ISSUER_ID=test.test
 ```
 
-By default, k6 runs a single test iteration for 1 user. These defaults can be adjusted by specifying test stages using the [`-s` CLI parameter](https://k6.io/docs/using-k6/options/#stages).
+By default, k6 runs a single test iteration using 1 virtual user. These defaults can be adjusted by specifying test stages using the [`-s` CLI parameter](https://k6.io/docs/using-k6/options/#stages).
 
 <!-- vim: set ts=4 sw=4: -->
