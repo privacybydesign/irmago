@@ -125,8 +125,7 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 		return unencryptedUserSecrets{}, err
 	}
 
-	var bts []byte
-	bts, err = gcm.Open(bts, secrets[4:16], secrets[16:], nil)
+	bts, err := gcm.Open(nil, secrets[4:16], secrets[16:], nil)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
