@@ -48,7 +48,8 @@ func (s *unencryptedUserSecrets) setKeyshareSecret(val *big.Int) error {
 		return ErrKeyshareSecretNegative
 	}
 
-	if val.BitLen()/8 > 64 {
+	// We want the result to fit into 64 bytes, so we need to round upward; hence +7
+	if (val.BitLen()+7)/8 > 64 {
 		return ErrKeyshareSecretTooBig
 	}
 
