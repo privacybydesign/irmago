@@ -7,22 +7,21 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 
+	"github.com/fxamacker/cbor"
 	"github.com/privacybydesign/gabi/big"
 
 	"github.com/go-errors/errors"
 )
 
 type (
-	// Contains pin (bytes 0-63), secret (bytes 64-127), and identifier (bytes 128-159)
-	//  The binary structure of this data structure can have security implications through its interaction
-	//  with the encryption layer applied before storing it. As such, we keep it here more explicit than
-	//  is standard in go. When modifying this structure, analyse whether such changes can have a
-	//  security impact through error side channels.
-	unencryptedUserSecrets [64 + 64 + 32]byte
+	unencryptedUserSecrets struct {
+		Pin            []byte
+		KeyshareSecret *big.Int
+		ID             []byte
+	}
 
 	// UserSecrets contains the encrypted data of a keyshare user.
-	// The size is that of unencryptedUserSecrets + 12 bytes for nonce + 16 bytes for tag + 4 bytes for key ID.
-	UserSecrets [64 + 64 + 32 + 12 + 16 + 4]byte
+	UserSecrets []byte
 )
 
 var (
@@ -31,19 +30,17 @@ var (
 	ErrNoSuchKey              = errors.New("Key identifier unknown")
 )
 
-func (s *unencryptedUserSecrets) pin() [64]byte {
-	var result [64]byte
-	copy(result[:], s[0:64])
-	return result
-}
-
-func (s *unencryptedUserSecrets) setPin(pw [64]byte) {
-	copy(s[0:64], pw[:])
-}
-
-func (s *unencryptedUserSecrets) keyshareSecret() *big.Int {
-	result := new(big.Int)
-	return result.SetBytes(s[64:128])
+func (s *unencryptedUserSecrets) setPin(pin string) error {
+	if len(pin) > 64 {
+		// padBytes also checks the length, but we want to return a specific error in this case
+		return ErrPinTooLong
+	}
+	paddedPin, err := padBytes([]byte(pin), 64)
+	if err != nil {
+		return err
+	}
+	s.Pin = paddedPin
+	return nil
 }
 
 func (s *unencryptedUserSecrets) setKeyshareSecret(val *big.Int) error {
@@ -51,49 +48,66 @@ func (s *unencryptedUserSecrets) setKeyshareSecret(val *big.Int) error {
 		return ErrKeyshareSecretNegative
 	}
 
-	data := val.Bytes()
-	if len(data) > 64 {
+	// We want the result to fit into 64 bytes
+	if val.BitLen() > 64*8 {
 		return ErrKeyshareSecretTooBig
 	}
-	zerolen := 64 - len(data)
-	for i := 0; i < zerolen; i++ {
-		s[64+i] = 0
-	}
-	copy(s[64+zerolen:], data)
+
+	s.KeyshareSecret = new(big.Int).Set(val)
 
 	return nil
 }
 
-func (s *unencryptedUserSecrets) id() [32]byte {
-	var result [32]byte
-	copy(result[:], s[128:160])
-	return result
+func (s *unencryptedUserSecrets) setID(id []byte) error {
+	paddedID, err := padBytes(id, 32)
+	if err != nil {
+		return err
+	}
+	s.ID = paddedID
+	return nil
 }
 
-func (s *unencryptedUserSecrets) setID(id [32]byte) {
-	copy(s[128:160], id[:])
+// MarshalCBOR implements cbor.Marshaler to ensure that all fields have a constant size, to minimize
+// differences in the size of the encrypted blobs.
+// (Note that no unmarshaler is necessary: the only field that gets special attention is the secret
+// bigint, which is marshaled in such a way that the default unmarshaler works fine.)
+func (s *unencryptedUserSecrets) MarshalCBOR() ([]byte, error) {
+	secretBts, err := padBytes(s.KeyshareSecret.Bytes(), 64)
+	if err != nil {
+		return nil, err
+	}
+	return cbor.Marshal(struct {
+		Pin            []byte
+		KeyshareSecret []byte
+		ID             []byte
+	}{
+		s.Pin, secretBts, s.ID,
+	}, cbor.EncOptions{})
 }
 
 func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, error) {
-	var encSecrets UserSecrets
+	encSecrets := make(UserSecrets, 16, 256)
+
+	bts, err := cbor.Marshal(secrets, cbor.EncOptions{})
+	if err != nil {
+		return nil, err
+	}
 
 	// Store key id
 	binary.LittleEndian.PutUint32(encSecrets[0:], c.decryptionKeyID)
 
 	// Generate and store nonce
-	_, err := rand.Read(encSecrets[4:16])
+	_, err = rand.Read(encSecrets[4:16])
 	if err != nil {
-		return UserSecrets{}, err
+		return nil, err
 	}
 
 	// Encrypt secrets
 	gcm, err := newGCM(c.decryptionKey)
 	if err != nil {
-		return UserSecrets{}, err
+		return nil, err
 	}
-	gcm.Seal(encSecrets[:16], encSecrets[4:16], secrets[:], nil)
-
-	return encSecrets, nil
+	return gcm.Seal(encSecrets[:16], encSecrets[4:16], bts, nil), nil
 }
 
 func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, error) {
@@ -111,16 +125,23 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
-	var unencSecrets unencryptedUserSecrets
-	_, err = gcm.Open(unencSecrets[:0], secrets[4:16], secrets[16:], nil)
+
+	bts, err := gcm.Open(nil, secrets[4:16], secrets[16:], nil)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
+
+	var unencSecrets unencryptedUserSecrets
+	err = cbor.Unmarshal(bts, &unencSecrets)
+	if err != nil {
+		return unencryptedUserSecrets{}, err
+	}
+
 	return unencSecrets, nil
 }
 
 func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unencryptedUserSecrets, error) {
-	paddedPin, err := padPin(pin)
+	paddedPin, err := padBytes([]byte(pin), 64)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
@@ -130,8 +151,7 @@ func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unenc
 		return unencryptedUserSecrets{}, err
 	}
 
-	refPin := s.pin()
-	if subtle.ConstantTimeCompare(refPin[:], paddedPin[:]) != 1 {
+	if subtle.ConstantTimeCompare(s.Pin, paddedPin) != 1 {
 		return unencryptedUserSecrets{}, ErrInvalidPin
 	}
 	return s, nil
@@ -147,4 +167,18 @@ func newGCM(key AESKey) (cipher.AEAD, error) {
 		return nil, err
 	}
 	return gcm, nil
+}
+
+// padBytes pads the given byte slice with zeros on the left such that the resulting byte slice
+// has the specified length.
+func padBytes(src []byte, length int) ([]byte, error) {
+	if len(src) > length {
+		return nil, errors.New("padBytes: source slice too long")
+	}
+	if len(src) == length {
+		return src, nil
+	}
+	result := make([]byte, length)
+	copy(result[length-len(src):], src)
+	return result, nil
 }
