@@ -7,14 +7,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/binary"
-	"encoding/json"
 
 	"github.com/fxamacker/cbor"
+	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
-	irma "github.com/privacybydesign/irmago"
-
-	"github.com/go-errors/errors"
 )
 
 type (
@@ -171,23 +168,6 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 	}
 
 	return unencSecrets, nil
-}
-
-func (c *Core) decryptUserSecretsIfResponseOK(secrets UserSecrets, challenge, response []byte, pin string) (unencryptedUserSecrets, error) {
-	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
-	if err != nil {
-		return unencryptedUserSecrets{}, err
-	}
-
-	encoded := irma.KeyshareChallengeResponseMessage{
-		Challenge: challenge,
-		PIN:       pin,
-	}
-	bts, _ := json.Marshal(encoded)
-	if err = signed.Verify(s.PublicKey, bts, response); err != nil {
-		return unencryptedUserSecrets{}, err
-	}
-	return s, nil
 }
 
 func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unencryptedUserSecrets, error) {

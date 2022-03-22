@@ -321,7 +321,7 @@ func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthorization,
 		}, nil
 	}
 
-	challenge, err := s.core.GenerateChallenge(user.Username)
+	challenge, err := s.core.GenerateChallenge(user.Secrets)
 	if err != nil {
 		return irma.KeyshareAuthorization{}, err
 	}
@@ -379,12 +379,7 @@ func (s *Server) verifyAuth(user *User, msg irma.KeysharePinMessage) (irma.Keysh
 	}
 
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
-	var jwtt string
-	if challenge := s.core.Challenge(user.Username); challenge != nil {
-		jwtt, err = s.core.ValidateChallengeResponse(user.Secrets, challenge, msg.Response, msg.Pin)
-	} else {
-		jwtt, err = s.core.ValidatePin(user.Secrets, msg.Pin)
-	}
+	jwtt, err := s.core.ValidateAuth(user.Secrets, msg.Response, msg.Pin)
 
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors

@@ -6,11 +6,13 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"time"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
+	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 
 	"github.com/go-errors/errors"
@@ -18,13 +20,14 @@ import (
 )
 
 var (
-	ErrInvalidPin       = errors.New("invalid pin")
-	ErrPinTooLong       = errors.New("pin too long")
-	ErrInvalidChallenge = errors.New("challenge out of bounds")
-	ErrInvalidJWT       = errors.New("invalid jwt token")
-	ErrExpiredJWT       = errors.New("jwt expired")
-	ErrKeyNotFound      = errors.New("public key not found")
-	ErrUnknownCommit    = errors.New("unknown commit id")
+	ErrInvalidPin                = errors.New("invalid pin")
+	ErrPinTooLong                = errors.New("pin too long")
+	ErrInvalidChallenge          = errors.New("challenge out of bounds")
+	ErrInvalidJWT                = errors.New("invalid jwt token")
+	ErrExpiredJWT                = errors.New("jwt expired")
+	ErrKeyNotFound               = errors.New("public key not found")
+	ErrUnknownCommit             = errors.New("unknown commit id")
+	ErrChallengeResponseRequired = errors.New("challenge-response authentication required")
 )
 
 // NewUserSecrets generates a new keyshare secret, secured with the given pin.
@@ -57,24 +60,16 @@ func (c *Core) NewUserSecrets(pin string, pk *ecdsa.PublicKey) (UserSecrets, err
 	return c.encryptUserSecrets(s)
 }
 
-func (c *Core) ValidateChallengeResponse(secrets UserSecrets, challenge, response []byte, pin string) (string, error) {
-	s, err := c.decryptUserSecretsIfResponseOK(secrets, challenge, response, pin)
-	if err != nil {
-		return "", err
-	}
-
-	return c.authJWT(&s)
-}
-
-// ValidatePin checks pin for validity and generates JWT for future access.
-func (c *Core) ValidatePin(secrets UserSecrets, pin string) (string, error) {
+// ValidateAuth checks pin for validity and generates JWT for future access.
+func (c *Core) ValidateAuth(secrets UserSecrets, response []byte, pin string) (string, error) {
 	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
 	if err != nil {
 		return "", err
 	}
 
-	if s.PublicKey != nil {
-		return "", errors.New("challenge-response authentication required")
+	err = c.verifyChallengeResponse(s, response, pin)
+	if err != nil {
+		return "", err
 	}
 
 	return c.authJWT(&s)
@@ -91,6 +86,24 @@ func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 	})
 	token.Header["kid"] = c.jwtPrivateKeyID
 	return token.SignedString(c.jwtPrivateKey)
+}
+
+func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, response []byte, pin string) error {
+	challenge := c.challenge(s.ID)
+	if challenge == nil {
+		if s.PublicKey != nil {
+			return ErrChallengeResponseRequired
+		} else {
+			return nil
+		}
+	}
+
+	encoded := irma.KeyshareChallengeResponseMessage{
+		Challenge: challenge,
+		PIN:       pin,
+	}
+	bts, _ := json.Marshal(encoded)
+	return signed.Verify(s.PublicKey, bts, response)
 }
 
 // ValidateJWT checks whether the given JWT is currently valid as an access token for operations
@@ -249,24 +262,30 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	return token.SignedString(c.jwtPrivateKey)
 }
 
-func (c *Core) GenerateChallenge(id string) ([]byte, error) {
+func (c *Core) GenerateChallenge(secrets UserSecrets) ([]byte, error) {
+	s, err := c.decryptUserSecrets(secrets)
+	if err != nil {
+		return nil, err
+	}
+
 	challenge := make([]byte, 32)
-	_, err := rand.Read(challenge)
+	_, err = rand.Read(challenge)
 	if err != nil {
 		return nil, err
 	}
 
 	c.authChallengesMutex.Lock()
 	defer c.authChallengesMutex.Unlock()
-	c.authChallenges[id] = challenge
+	c.authChallenges[string(s.ID)] = challenge
 	return challenge, nil
 }
 
-func (c *Core) Challenge(id string) []byte {
+func (c *Core) challenge(id []byte) []byte {
 	c.authChallengesMutex.Lock()
 	defer c.authChallengesMutex.Unlock()
-	challenge := c.authChallenges[id]
-	delete(c.authChallenges, id)
+	stringID := string(id)
+	challenge := c.authChallenges[stringID]
+	delete(c.authChallenges, stringID)
 	return challenge
 }
 

@@ -37,7 +37,7 @@ func TestPinFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test with correct pin
-	j, err := c.ValidatePin(secrets, pin)
+	j, err := c.ValidateAuth(secrets, nil, pin)
 	assert.NoError(t, err)
 	var claims jwt.StandardClaims
 	_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
@@ -57,11 +57,11 @@ func TestPinFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// test correct pin
-	_, err = c.ValidatePin(secrets, newpin)
+	_, err = c.ValidateAuth(secrets, nil, newpin)
 	assert.NoError(t, err)
 
 	// Test incorrect pin
-	_, err = c.ValidatePin(secrets, pin)
+	_, err = c.ValidateAuth(secrets, nil, pin)
 	assert.Error(t, err)
 }
 
@@ -88,7 +88,7 @@ func TestVerifyAccess(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test use jwt on wrong secrets
-	jwtt, err := c.ValidatePin(secrets1, pin1)
+	jwtt, err := c.ValidateAuth(secrets1, nil, pin1)
 	require.NoError(t, err)
 	_, err = c.verifyAccess(secrets2, jwtt)
 	assert.Error(t, err)
@@ -182,7 +182,7 @@ func TestProofFunctionality(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
+	jwtt, err := c.ValidateAuth(secrets, nil, pin)
 	require.NoError(t, err)
 
 	// Get keyshare commitment
@@ -231,7 +231,7 @@ func TestCorruptedUserSecrets(t *testing.T) {
 	secrets, err := c.NewUserSecrets(pin, nil)
 	require.NoError(t, err)
 
-	jwtt, err := c.ValidatePin(secrets, pin)
+	jwtt, err := c.ValidateAuth(secrets, nil, pin)
 	require.NoError(t, err)
 
 	_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
@@ -241,8 +241,8 @@ func TestCorruptedUserSecrets(t *testing.T) {
 	secrets[12] = secrets[12] + 1
 
 	// Verify pin
-	_, err = c.ValidatePin(secrets, pin)
-	assert.Error(t, err, "ValidatePin accepts corrupted keyshare user secrets")
+	_, err = c.ValidateAuth(secrets, nil, pin)
+	assert.Error(t, err, "ValidateAuth accepts corrupted keyshare user secrets")
 
 	// Change pin
 	_, err = c.ChangePin(secrets, pin, pin)
@@ -276,7 +276,7 @@ func TestIncorrectPin(t *testing.T) {
 	require.NoError(t, err)
 
 	// validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
+	jwtt, err := c.ValidateAuth(secrets, nil, pin)
 	require.NoError(t, err)
 
 	// Corrupt pin
@@ -313,7 +313,7 @@ func TestMissingKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate jwt
-	jwtt, err := c.ValidatePin(secrets, pin)
+	jwtt, err := c.ValidateAuth(secrets, nil, pin)
 	require.NoError(t, err)
 
 	// GenerateCommitments
@@ -346,7 +346,7 @@ func TestInvalidChallenge(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
+	jwtt, err := c.ValidateAuth(secrets, nil, pin)
 	require.NoError(t, err)
 
 	// Test negative challenge
@@ -387,7 +387,7 @@ func TestDoubleCommitUse(t *testing.T) {
 	require.NoError(t, err)
 
 	// validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
+	jwtt, err := c.ValidateAuth(secrets, nil, pin)
 	require.NoError(t, err)
 
 	// Use commit double
@@ -418,7 +418,7 @@ func TestNonExistingCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate jwt
-	jwtt, err := c.ValidatePin(secrets, pin)
+	jwtt, err := c.ValidateAuth(secrets, nil, pin)
 	require.NoError(t, err)
 
 	// test
