@@ -9,7 +9,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -54,7 +53,7 @@ func (s *Server) handleRegisterECDSAPublicKey(w http.ResponseWriter, r *http.Req
 
 func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublicKeyRegistryData, pk *ecdsa.PublicKey) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
-	ok, tries, wait, err := s.reservePinCheck(user)
+	ok, _, wait, err := s.reservePinCheck(user)
 	if err != nil {
 		return irma.KeysharePinStatus{}, err
 	}
@@ -63,13 +62,7 @@ func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublic
 	}
 
 	jwtt, err := s.core.SetUserPublicKey(user.Secrets, keydata.Pin, pk)
-	if err == keysharecore.ErrInvalidPin {
-		if tries == 0 {
-			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
-		} else {
-			return irma.KeysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
-		}
-	} else if err != nil {
+	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not set user public key")
 		return irma.KeysharePinStatus{}, err
 	}
