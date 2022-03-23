@@ -517,7 +517,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) parseRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.KeyshareEnrollmentData, *ecdsa.PublicKey, error) {
 	if msg.EnrollmentJWT == "" {
-		return &msg.KeyshareEnrollmentData, nil, nil
+		return parseLegacyRegistrationMessage(msg)
 	}
 
 	var (
@@ -526,6 +526,7 @@ func (s *Server) parseRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.Ke
 		claims = &irma.KeyshareEnrollmentClaims{}
 	)
 	_, err = jwt.ParseWithClaims(msg.EnrollmentJWT, claims, func(token *jwt.Token) (interface{}, error) {
+		// Similar to a CSR, the JWT contains in its body the public key with which it is signed.
 		pk, err = signed.UnmarshalPublicKey(claims.KeyshareEnrollmentData.ECDSAPublicKey)
 		return pk, err
 	})

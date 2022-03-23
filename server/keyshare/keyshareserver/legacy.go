@@ -89,3 +89,7 @@ func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublic
 
 	return irma.KeysharePinStatus{Status: "success", Message: jwtt}, nil
 }
+
+func parseLegacyRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.KeyshareEnrollmentData, *ecdsa.PublicKey, error) {
+	return &msg.KeyshareEnrollmentData, nil, nil
+}
