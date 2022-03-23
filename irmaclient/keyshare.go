@@ -237,7 +237,7 @@ func signChallenge(signer Signer, pin string, kss *keyshareServer, transport *ir
 	}
 	var ok bool
 	for _, method := range auth.Candidates {
-		if method == "ecdsa" {
+		if method == irma.KeyshareAuthMethodECDSA {
 			ok = true
 			break
 		}
