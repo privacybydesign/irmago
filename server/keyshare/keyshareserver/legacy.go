@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
@@ -91,5 +92,8 @@ func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublic
 }
 
 func parseLegacyRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.KeyshareEnrollmentData, *ecdsa.PublicKey, error) {
+	if msg.KeyshareEnrollmentData.ECDSAPublicKey != nil {
+		return nil, nil, errors.New("when public key is specified, registration message must be signed")
+	}
 	return &msg.KeyshareEnrollmentData, nil, nil
 }
