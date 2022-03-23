@@ -1106,10 +1106,10 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 
 	jwtt, err := SignerCreateJWT(client.signer, irma.KeyshareEnrollmentClaims{
 		KeyshareEnrollmentData: irma.KeyshareEnrollmentData{
-			Email:          email,
-			Pin:            kss.HashedPin(pin),
-			Language:       lang,
-			ECDSAPublicKey: pk,
+			Email:     email,
+			Pin:       kss.HashedPin(pin),
+			Language:  lang,
+			PublicKey: pk,
 		},
 	})
 	if err != nil {

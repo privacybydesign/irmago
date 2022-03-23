@@ -180,9 +180,9 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *
 	}
 	jwtt, err := SignerCreateJWT(client.signer, irma.KeysharePublicKeyRegistryClaims{
 		KeysharePublicKeyRegistryData: irma.KeysharePublicKeyRegistryData{
-			Username:       kss.Username,
-			Pin:            kss.HashedPin(pin),
-			ECDSAPublicKey: pk,
+			Username:  kss.Username,
+			Pin:       kss.HashedPin(pin),
+			PublicKey: pk,
 		},
 	})
 	if err != nil {
@@ -190,14 +190,14 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *
 		return
 	}
 	result := &irma.KeysharePinStatus{}
-	err = transport.Post("users/register_ecdsa_publickey", result, irma.KeysharePublicKeyRegistry{PublicKeyRegistryJWT: jwtt})
+	err = transport.Post("users/register_publickey", result, irma.KeysharePublicKeyRegistry{PublicKeyRegistryJWT: jwtt})
 	if err != nil {
 		err = errors.WrapPrefix(err, "failed to register public key", 0)
 		return
 	}
 
 	if result.Status != kssPinSuccess {
-		err = errors.Errorf("/users/register_ecdsa_publickey failed with message %s", result.Message)
+		err = errors.Errorf("/users/register_publickey failed with message %s", result.Message)
 		return
 	}
 

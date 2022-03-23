@@ -120,7 +120,7 @@ func (s *Server) Handler() http.Handler {
 
 		// Other
 		router.Post("/users/change/pin", s.handleChangePin)
-		router.Post("/users/register_ecdsa_publickey", s.handleRegisterECDSAPublicKey)
+		router.Post("/users/register_publickey", s.handleRegisterPublicKey)
 
 		// Keyshare sessions
 		router.Group(func(router chi.Router) {
@@ -527,7 +527,7 @@ func (s *Server) parseRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.Ke
 	)
 	_, err = jwt.ParseWithClaims(msg.EnrollmentJWT, claims, func(token *jwt.Token) (interface{}, error) {
 		// Similar to a CSR, the JWT contains in its body the public key with which it is signed.
-		pk, err = signed.UnmarshalPublicKey(claims.KeyshareEnrollmentData.ECDSAPublicKey)
+		pk, err = signed.UnmarshalPublicKey(claims.KeyshareEnrollmentData.PublicKey)
 		return pk, err
 	})
 	if err != nil {

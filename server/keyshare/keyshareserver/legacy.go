@@ -13,7 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (s *Server) handleRegisterECDSAPublicKey(w http.ResponseWriter, r *http.Request) {
+// /users/register_publickey
+func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request) {
 	var msg irma.KeysharePublicKeyRegistry
 	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -26,7 +27,7 @@ func (s *Server) handleRegisterECDSAPublicKey(w http.ResponseWriter, r *http.Req
 		err    error
 	)
 	_, err = jwt.ParseWithClaims(msg.PublicKeyRegistryJWT, claims, func(token *jwt.Token) (interface{}, error) {
-		pk, err = signed.UnmarshalPublicKey(claims.ECDSAPublicKey)
+		pk, err = signed.UnmarshalPublicKey(claims.PublicKey)
 		return pk, err
 	})
 	if err != nil {
@@ -42,7 +43,7 @@ func (s *Server) handleRegisterECDSAPublicKey(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	result, err := s.registerECDSAPublicKey(user, &claims.KeysharePublicKeyRegistryData, pk)
+	result, err := s.registerPublicKey(user, &claims.KeysharePublicKeyRegistryData, pk)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -51,7 +52,7 @@ func (s *Server) handleRegisterECDSAPublicKey(w http.ResponseWriter, r *http.Req
 	server.WriteJson(w, result)
 }
 
-func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublicKeyRegistryData, pk *ecdsa.PublicKey) (irma.KeysharePinStatus, error) {
+func (s *Server) registerPublicKey(user *User, keydata *irma.KeysharePublicKeyRegistryData, pk *ecdsa.PublicKey) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, _, wait, err := s.reservePinCheck(user)
 	if err != nil {
@@ -85,7 +86,7 @@ func (s *Server) registerECDSAPublicKey(user *User, keydata *irma.KeysharePublic
 }
 
 func parseLegacyRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.KeyshareEnrollmentData, *ecdsa.PublicKey, error) {
-	if msg.KeyshareEnrollmentData.ECDSAPublicKey != nil {
+	if msg.KeyshareEnrollmentData.PublicKey != nil {
 		return nil, nil, errors.New("when public key is specified, registration message must be signed")
 	}
 	return &msg.KeyshareEnrollmentData, nil, nil

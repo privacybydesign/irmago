@@ -304,10 +304,10 @@ type KeyshareEnrollment struct {
 }
 
 type KeyshareEnrollmentData struct {
-	Pin            string  `json:"pin,omitempty"`
-	Email          *string `json:"email,omitempty"`
-	Language       string  `json:"language,omitempty"`
-	ECDSAPublicKey []byte  `json:"ecdsa_publickey,omitempty"`
+	Pin       string  `json:"pin,omitempty"`
+	Email     *string `json:"email,omitempty"`
+	Language  string  `json:"language,omitempty"`
+	PublicKey []byte  `json:"publickey,omitempty"`
 }
 
 type KeyshareEnrollmentClaims struct {

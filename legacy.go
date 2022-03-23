@@ -349,9 +349,9 @@ type KeysharePublicKeyRegistry struct {
 }
 
 type KeysharePublicKeyRegistryData struct {
-	Username       string `json:"id"`
-	Pin            string `json:"pin"`
-	ECDSAPublicKey []byte `json:"ecdsa_publickey,omitempty"`
+	Username  string `json:"id"`
+	Pin       string `json:"pin"`
+	PublicKey []byte `json:"publickey,omitempty"`
 }
 
 type KeysharePublicKeyRegistryClaims struct {

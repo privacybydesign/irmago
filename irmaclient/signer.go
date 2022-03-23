@@ -11,7 +11,6 @@ import (
 
 type Signer interface {
 	// PublicKey fetches the public key.
-	// If no keypair exists in the TEE, then it is first created.
 	PublicKey() ([]byte, error)
 
 	// Sign the specified message using the private key.
