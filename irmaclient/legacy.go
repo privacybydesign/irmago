@@ -159,7 +159,7 @@ func (f *fileStorage) DeleteAll() error {
 // ensurePublicKeyRegistered registers our public key used in the ECDSA challenge-response
 // sub-protocol part of the keyshare protocol at the keyshare server, if it has not already been
 // registered.
-func (kss *keyshareServer) ensurePublicKeyRegistered(transport *irma.HTTPTransport, pin string) {
+func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *irma.HTTPTransport, pin string) {
 	if len(kss.PublicKey) > 0 {
 		// already done, nothing to do
 		return
@@ -170,16 +170,16 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(transport *irma.HTTPTranspo
 	var err error
 	defer func() {
 		if err != nil {
-			kss.client.reportError(err)
+			client.reportError(err)
 		}
 	}()
 
-	pk, err := kss.client.signer.PublicKey()
+	pk, err := client.signer.PublicKey()
 	if err != nil {
 		return
 	}
 	kss.PublicKey = pk
-	jwtt, err := SignerCreateJWT(kss.client.signer, irma.KeysharePublicKeyRegistryClaims{
+	jwtt, err := SignerCreateJWT(client.signer, irma.KeysharePublicKeyRegistryClaims{
 		KeysharePublicKeyRegistryData: irma.KeysharePublicKeyRegistryData{
 			Username:       kss.Username,
 			Pin:            kss.HashedPin(pin),
@@ -206,7 +206,7 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(transport *irma.HTTPTranspo
 	kss.token = result.Message
 	transport.SetHeader(kssAuthHeader, result.Message)
 
-	err = kss.client.storage.StoreKeyshareServers(kss.client.keyshareServers)
+	err = client.storage.StoreKeyshareServers(client.keyshareServers)
 	if err != nil {
 		err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)
 	}

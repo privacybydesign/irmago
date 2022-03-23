@@ -214,10 +214,6 @@ func New(
 		return nil, err
 	}
 
-	for _, kss := range client.keyshareServers {
-		kss.client = client
-	}
-
 	if len(client.UnenrolledSchemeManagers()) > 1 {
 		return nil, errors.New("Too many keyshare servers")
 	}
@@ -1103,7 +1099,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	if err != nil {
 		return err
 	}
-	kss, err := newKeyshareServer(managerID, client, pk)
+	kss, err := newKeyshareServer(managerID, pk)
 	if err != nil {
 		return err
 	}
@@ -1155,7 +1151,7 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 		}
 	}
 	kss := client.keyshareServers[schemeid]
-	return verifyPinWorker(pin, kss,
+	return client.verifyPinWorker(pin, kss,
 		irma.NewHTTPTransport(scheme.KeyshareServer, !client.Preferences.DeveloperMode),
 	)
 }
