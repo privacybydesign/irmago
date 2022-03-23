@@ -160,7 +160,7 @@ func (f *fileStorage) DeleteAll() error {
 // sub-protocol part of the keyshare protocol at the keyshare server, if it has not already been
 // registered.
 func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *irma.HTTPTransport, pin string) {
-	if len(kss.PublicKey) > 0 {
+	if kss.ChallengeResponse {
 		// already done, nothing to do
 		return
 	}
@@ -178,7 +178,6 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *
 	if err != nil {
 		return
 	}
-	kss.PublicKey = pk
 	jwtt, err := SignerCreateJWT(client.signer, irma.KeysharePublicKeyRegistryClaims{
 		KeysharePublicKeyRegistryData: irma.KeysharePublicKeyRegistryData{
 			Username:       kss.Username,
@@ -206,6 +205,7 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *
 	kss.token = result.Message
 	transport.SetHeader(kssAuthHeader, result.Message)
 
+	kss.ChallengeResponse = true
 	err = client.storage.StoreKeyshareServers(client.keyshareServers)
 	if err != nil {
 		err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)

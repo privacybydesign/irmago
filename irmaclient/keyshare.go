@@ -55,7 +55,7 @@ type keyshareServer struct {
 	Username                string `json:"username"`
 	Nonce                   []byte `json:"nonce"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
-	PublicKey               []byte
+	ChallengeResponse       bool
 	token                   string
 }
 
@@ -74,7 +74,7 @@ func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier, pk 
 	ks := &keyshareServer{
 		Nonce:                   make([]byte, 32),
 		SchemeManagerIdentifier: schemeManagerIdentifier,
-		PublicKey:               pk,
+		ChallengeResponse:       true,
 	}
 	_, err := rand.Read(ks.Nonce)
 	if err != nil {
@@ -257,7 +257,7 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 ) {
 	var response []byte
 	var endpoint string
-	if len(kss.PublicKey) != 0 {
+	if kss.ChallengeResponse {
 		endpoint = "ecdsa"
 		response, err = signChallenge(client.signer, pin, kss, transport)
 		if err != nil {
