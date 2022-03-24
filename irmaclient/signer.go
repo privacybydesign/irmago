@@ -17,10 +17,10 @@ type Signer interface {
 	Sign(msg []byte) ([]byte, error)
 }
 
-// jwtEncoding is a helper function converting an ASN.1 encoded signature as returned by Sign to the
+// signatureJwtEncoding is a helper function converting an ASN.1 encoded signature as returned by Sign to the
 // encoding used for JWTs (in which the bytes of r and s are concatenated after each other in one
 // byte slice).
-func jwtEncoding(signature []byte) ([]byte, error) {
+func signatureJwtEncoding(signature []byte) ([]byte, error) {
 	ints := make([]*gobig.Int, 2, 2)
 	_, err := asn1.Unmarshal(signature, &ints)
 	if err != nil {
@@ -46,7 +46,7 @@ func SignerCreateJWT(signer Signer, claims jwt.Claims) (string, error) {
 	}
 
 	// JWTs use a different encoding for ECDSA signatures than our Signer does, so convert
-	sig, err = jwtEncoding(sig)
+	sig, err = signatureJwtEncoding(sig)
 	if err != nil {
 		return "", err
 	}

@@ -226,9 +226,9 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 	}))
 }
 
-func signChallenge(signer Signer, pin string, kss *keyshareServer, transport *irma.HTTPTransport) ([]byte, error) {
-	auth := &irma.KeyshareAuthorization{}
-	err := transport.Post("users/start_auth", auth, irma.KeyshareAuthMessage{
+func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transport *irma.HTTPTransport) ([]byte, error) {
+	auth := &irma.KeyshareAuthChallenge{}
+	err := transport.Post("users/start_auth", auth, irma.KeyshareAuthRequest{
 		Username:      kss.Username,
 		Authorization: kss.token,
 	})
@@ -245,7 +245,7 @@ func signChallenge(signer Signer, pin string, kss *keyshareServer, transport *ir
 	if !ok {
 		return nil, errors.New("ecdsa authentication method not supported")
 	}
-	msg, _ := json.Marshal(irma.KeyshareChallengeResponseMessage{
+	msg, _ := json.Marshal(irma.KeyshareChallengeData{
 		Challenge: auth.Challenge,
 		PIN:       kss.HashedPin(pin),
 	})
@@ -259,7 +259,7 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 	var endpoint string
 	if kss.ChallengeResponse {
 		endpoint = "ecdsa"
-		response, err = signChallenge(client.signer, pin, kss, transport)
+		response, err = doChallengeResponse(client.signer, pin, kss, transport)
 		if err != nil {
 			return false, 0, 0, err
 		}
@@ -267,7 +267,7 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 		endpoint = "pin"
 	}
 
-	pinmsg := irma.KeysharePinMessage{
+	pinmsg := irma.KeyshareAuthResponse{
 		Username: kss.Username,
 		Pin:      kss.HashedPin(pin),
 		Response: response,

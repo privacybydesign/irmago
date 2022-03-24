@@ -289,7 +289,7 @@ func (s *Server) generateResponse(user *User, authorization string, challenge *b
 // /users/start_auth
 func (s *Server) handleStartAuth(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	var msg irma.KeyshareAuthMessage
+	var msg irma.KeyshareAuthRequest
 	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -313,27 +313,27 @@ func (s *Server) handleStartAuth(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthorization, error) {
+func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthChallenge, error) {
 	err := s.core.ValidateJWT(user.Secrets, auth)
 	if err == nil {
-		return irma.KeyshareAuthorization{
+		return irma.KeyshareAuthChallenge{
 			Status: irma.KeyshareAuthStatusAuthorized,
 		}, nil
 	}
 
 	challenge, err := s.core.GenerateChallenge(user.Secrets)
 	if err != nil {
-		return irma.KeyshareAuthorization{}, err
+		return irma.KeyshareAuthChallenge{}, err
 	}
 
 	if err == keysharecore.ErrExpiredJWT {
-		return irma.KeyshareAuthorization{
+		return irma.KeyshareAuthChallenge{
 			Status:     irma.KeyshareAuthStatusExpired,
 			Candidates: []string{irma.KeyshareAuthMethodECDSA},
 			Challenge:  challenge,
 		}, nil
 	}
-	return irma.KeyshareAuthorization{
+	return irma.KeyshareAuthChallenge{
 		Status:     irma.KeyshareAuthStatusInvalid,
 		Candidates: []string{irma.KeyshareAuthMethodECDSA},
 		Challenge:  challenge,
@@ -343,7 +343,7 @@ func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthorization,
 // /users/verify/pin or /users/verify/ecdsa
 func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	var msg irma.KeysharePinMessage
+	var msg irma.KeyshareAuthResponse
 	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -368,7 +368,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) verifyAuth(user *User, msg irma.KeysharePinMessage) (irma.KeysharePinStatus, error) {
+func (s *Server) verifyAuth(user *User, msg irma.KeyshareAuthResponse) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(user)
 	if err != nil {

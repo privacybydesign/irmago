@@ -98,7 +98,7 @@ func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, response []byte
 		}
 	}
 
-	encoded := irma.KeyshareChallengeResponseMessage{
+	encoded := irma.KeyshareChallengeData{
 		Challenge: challenge,
 		PIN:       pin,
 	}

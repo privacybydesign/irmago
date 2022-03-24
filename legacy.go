@@ -344,17 +344,17 @@ func (s *ServerSessionResponse) UnmarshalJSON(bts []byte) error {
 	return nil
 }
 
-type KeysharePublicKeyRegistry struct {
-	PublicKeyRegistryJWT string `json:"jwt"`
+type KeysharePublicKeyRegistration struct {
+	PublicKeyRegistrationJWT string `json:"jwt"`
 }
 
-type KeysharePublicKeyRegistryData struct {
+type KeysharePublicKeyRegistrationData struct {
 	Username  string `json:"id"`
 	Pin       string `json:"pin"`
 	PublicKey []byte `json:"publickey,omitempty"`
 }
 
-type KeysharePublicKeyRegistryClaims struct {
+type KeysharePublicKeyRegistrationClaims struct {
 	jwt.RegisteredClaims
-	KeysharePublicKeyRegistryData
+	KeysharePublicKeyRegistrationData
 }

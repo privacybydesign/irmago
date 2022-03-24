@@ -321,24 +321,24 @@ type KeyshareChangePin struct {
 	NewPin   string `json:"newpin"`
 }
 
-type KeyshareAuthMessage struct {
+type KeyshareAuthRequest struct {
 	Username      string `json:"id"`
 	Authorization string `json:"jwt"`
 }
 
-type KeyshareAuthorization struct {
+type KeyshareAuthChallenge struct {
 	Status     string   `json:"status"`
 	Candidates []string `json:"candidates,omitempty"`
 	Challenge  []byte   `json:"challenge"`
 }
 
-type KeysharePinMessage struct {
+type KeyshareAuthResponse struct {
 	Username string `json:"id"`
 	Pin      string `json:"pin"`
 	Response []byte `json:"response,omitempty"`
 }
 
-type KeyshareChallengeResponseMessage struct {
+type KeyshareChallengeData struct {
 	Challenge []byte
 	PIN       string
 }

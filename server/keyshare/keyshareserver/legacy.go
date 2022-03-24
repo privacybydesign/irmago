@@ -15,7 +15,7 @@ import (
 
 // /users/register_publickey
 func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request) {
-	var msg irma.KeysharePublicKeyRegistry
+	var msg irma.KeysharePublicKeyRegistration
 	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -23,10 +23,10 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 
 	var (
 		pk     *ecdsa.PublicKey
-		claims = &irma.KeysharePublicKeyRegistryClaims{}
+		claims = &irma.KeysharePublicKeyRegistrationClaims{}
 		err    error
 	)
-	_, err = jwt.ParseWithClaims(msg.PublicKeyRegistryJWT, claims, func(token *jwt.Token) (interface{}, error) {
+	_, err = jwt.ParseWithClaims(msg.PublicKeyRegistrationJWT, claims, func(token *jwt.Token) (interface{}, error) {
 		pk, err = signed.UnmarshalPublicKey(claims.PublicKey)
 		return pk, err
 	})
@@ -43,7 +43,7 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	result, err := s.registerPublicKey(user, &claims.KeysharePublicKeyRegistryData, pk)
+	result, err := s.registerPublicKey(user, &claims.KeysharePublicKeyRegistrationData, pk)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -52,7 +52,7 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 	server.WriteJson(w, result)
 }
 
-func (s *Server) registerPublicKey(user *User, keydata *irma.KeysharePublicKeyRegistryData, pk *ecdsa.PublicKey) (irma.KeysharePinStatus, error) {
+func (s *Server) registerPublicKey(user *User, keydata *irma.KeysharePublicKeyRegistrationData, pk *ecdsa.PublicKey) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, _, wait, err := s.reservePinCheck(user)
 	if err != nil {
