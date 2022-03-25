@@ -25,7 +25,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 
 	nuser, err := db.user("testuser")
 	require.NoError(t, err)
-	assert.Equal(t, "testuser", nuser.Username)
+	assert.Equal(t, user, nuser)
 
 	_, err = db.user("notexist")
 	assert.Error(t, err)
