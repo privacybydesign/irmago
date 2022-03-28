@@ -28,7 +28,7 @@ var (
 
 	revocationTestAttr  = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	revocationTestCred  = revocationTestAttr.CredentialTypeIdentifier()
-	revKeyshareTestAttr = irma.NewAttributeTypeIdentifier("test.test.email.email")
+	revKeyshareTestAttr = irma.NewAttributeTypeIdentifier("test.test.revocable.email")
 	revKeyshareTestCred = revKeyshareTestAttr.CredentialTypeIdentifier()
 
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"

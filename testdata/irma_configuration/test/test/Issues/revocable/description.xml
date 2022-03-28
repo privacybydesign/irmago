@@ -5,13 +5,15 @@
 	</Name>
 	<SchemeManager>test</SchemeManager>
 	<IssuerID>test</IssuerID>
-	<CredentialID>email</CredentialID>
+	<CredentialID>revocable</CredentialID>
 	<Description>
 		<en>Your verified email address</en>
 		<nl>Uw geverifiëerde e-mailadres</nl>
 	</Description>
-	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>false</ShouldBeSingleton>
+	<RevocationServers>
+		<RevocationServer>http://localhost:48683</RevocationServer>
+	</RevocationServers>
 
 	<Attributes>
 		<Attribute id="email">
@@ -24,5 +26,6 @@
 				<nl>Uw geverifiëerde e-mailadres</nl>
 			</Description>
 		</Attribute>
+		<Attribute revocation="true" />
 	</Attributes>
 </IssueSpecification>
