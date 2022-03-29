@@ -116,7 +116,7 @@ func (s *Server) Handler() http.Handler {
 		// authentication
 		router.Post("/users/start_auth", s.handleStartAuth)
 		router.Post("/users/verify/pin", s.handleVerify)
-		router.Post("/users/verify/ecdsa", s.handleVerify)
+		router.Post("/users/verify/pin_challengeresponse", s.handleVerify)
 
 		// Other
 		router.Post("/users/change/pin", s.handleChangePin)
@@ -340,7 +340,7 @@ func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthChallenge,
 	}, nil
 }
 
-// /users/verify/pin or /users/verify/ecdsa
+// /users/verify/pin or /users/verify/pin_challengeresponse
 func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeyshareAuthResponse

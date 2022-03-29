@@ -258,7 +258,7 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 	var response []byte
 	var endpoint string
 	if kss.ChallengeResponse {
-		endpoint = "ecdsa"
+		endpoint = "pin_challengeresponse"
 		response, err = doChallengeResponse(client.signer, pin, kss, transport)
 		if err != nil {
 			return false, 0, 0, err
