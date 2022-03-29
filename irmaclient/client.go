@@ -1095,7 +1095,9 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
-	pk, err := client.signer.PublicKey()
+	keyname := challengeResponseKeyName(managerID)
+
+	pk, err := client.signer.PublicKey(keyname)
 	if err != nil {
 		return err
 	}
@@ -1104,7 +1106,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return err
 	}
 
-	jwtt, err := SignerCreateJWT(client.signer, irma.KeyshareEnrollmentClaims{
+	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeyshareEnrollmentClaims{
 		KeyshareEnrollmentData: irma.KeyshareEnrollmentData{
 			Email:     email,
 			Pin:       kss.HashedPin(pin),
@@ -1136,6 +1138,11 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	})
 
 	return nil
+}
+
+func challengeResponseKeyName(scheme irma.SchemeManagerIdentifier) string {
+	// Use a dot as separator because those never occur in scheme names
+	return scheme.Name() + ".challengeResponseKey"
 }
 
 // KeyshareVerifyPin verifies the specified PIN at the keyshare server, returning if it succeeded;

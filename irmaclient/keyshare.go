@@ -249,7 +249,7 @@ func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transpo
 		Challenge: auth.Challenge,
 		PIN:       kss.HashedPin(pin),
 	})
-	return signer.Sign(msg)
+	return signer.Sign(challengeResponseKeyName(kss.SchemeManagerIdentifier), msg)
 }
 
 func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (

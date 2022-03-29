@@ -11,10 +11,10 @@ import (
 
 type Signer interface {
 	// PublicKey fetches the public key.
-	PublicKey() ([]byte, error)
+	PublicKey(keyname string) ([]byte, error)
 
 	// Sign the specified message using the private key.
-	Sign(msg []byte) ([]byte, error)
+	Sign(keyname string, msg []byte) ([]byte, error)
 }
 
 // signatureJwtEncoding is a helper function converting an ASN.1 encoded signature as returned by Sign to the
@@ -35,12 +35,12 @@ func signatureJwtEncoding(signature []byte) ([]byte, error) {
 	return out, nil
 }
 
-func SignerCreateJWT(signer Signer, claims jwt.Claims) (string, error) {
+func SignerCreateJWT(signer Signer, keyname string, claims jwt.Claims) (string, error) {
 	unsigned, err := jwt.NewWithClaims(jwt.SigningMethodES256, claims).SigningString()
 	if err != nil {
 		return "", err
 	}
-	sig, err := signer.Sign([]byte(unsigned))
+	sig, err := signer.Sign(keyname, []byte(unsigned))
 	if err != nil {
 		return "", err
 	}

@@ -18,11 +18,11 @@ func NewSigner(t *testing.T) *Signer {
 	return &Signer{privateKey: privateKey}
 }
 
-func (s *Signer) PublicKey() ([]byte, error) {
+func (s *Signer) PublicKey(_ string) ([]byte, error) {
 	return signed.MarshalPublicKey(&s.privateKey.PublicKey)
 
 }
 
-func (s *Signer) Sign(msg []byte) ([]byte, error) {
+func (s *Signer) Sign(_ string, msg []byte) ([]byte, error) {
 	return signed.Sign(s.privateKey, msg)
 }

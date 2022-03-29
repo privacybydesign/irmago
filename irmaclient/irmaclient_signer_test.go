@@ -12,11 +12,11 @@ import (
 func TestSignerJWT(t *testing.T) {
 	signer := test.NewSigner(t)
 
-	jwtt, err := SignerCreateJWT(signer, jwt.MapClaims{"foo": "bar"})
+	jwtt, err := SignerCreateJWT(signer, "keyname", jwt.MapClaims{"foo": "bar"})
 	require.NoError(t, err)
 
 	token, err := jwt.Parse(jwtt, func(*jwt.Token) (interface{}, error) {
-		pk, err := signer.PublicKey()
+		pk, err := signer.PublicKey("keyname")
 		if err != nil {
 			return nil, err
 		}

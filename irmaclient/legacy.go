@@ -174,11 +174,13 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *
 		}
 	}()
 
-	pk, err := client.signer.PublicKey()
+	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
+
+	pk, err := client.signer.PublicKey(keyname)
 	if err != nil {
 		return
 	}
-	jwtt, err := SignerCreateJWT(client.signer, irma.KeysharePublicKeyRegistrationClaims{
+	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeysharePublicKeyRegistrationClaims{
 		KeysharePublicKeyRegistrationData: irma.KeysharePublicKeyRegistrationData{
 			Username:  kss.Username,
 			Pin:       kss.HashedPin(pin),
