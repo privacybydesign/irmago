@@ -9,6 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -91,4 +92,44 @@ func parseLegacyRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.Keyshare
 		return nil, nil, errors.New("when public key is specified, registration message must be signed")
 	}
 	return &msg.KeyshareEnrollmentData, nil, nil
+}
+
+func (s *Server) updatePinLegacy(user *User, oldPin, newPin string) (irma.KeysharePinStatus, error) {
+	// Check whether pin check is currently allowed
+	ok, tries, wait, err := s.reservePinCheck(user)
+	if err != nil {
+		return irma.KeysharePinStatus{}, err
+	}
+	if !ok {
+		return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
+	}
+
+	// Try to do the update
+	user.Secrets, err = s.core.ChangePinLegacy(user.Secrets, oldPin, newPin)
+	if err == keysharecore.ErrInvalidPin {
+		if tries == 0 {
+			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
+		} else {
+			return irma.KeysharePinStatus{Status: "failure", Message: fmt.Sprintf("%v", tries)}, nil
+		}
+	} else if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not change pin")
+		return irma.KeysharePinStatus{}, err
+	}
+
+	// Mark pincheck as success, resetting users wait and count
+	err = s.db.resetPinTries(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
+		// Do not send to user
+	}
+
+	// Write user back
+	err = s.db.updateUser(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
+		return irma.KeysharePinStatus{}, err
+	}
+
+	return irma.KeysharePinStatus{Status: "success"}, nil
 }

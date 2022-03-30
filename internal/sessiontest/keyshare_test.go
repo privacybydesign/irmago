@@ -13,12 +13,15 @@ import (
 func TestManualKeyshareSession(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
 
-	_, status := manualSessionHelper(t, nil, ms, request, request, false)
+	_, status := manualSessionHelper(t, client, ms, request, request, false)
 	require.Equal(t, irma.ProofStatusValid, status)
-	_, status = manualSessionHelper(t, nil, ms, request, nil, false)
+	_, status = manualSessionHelper(t, client, ms, request, nil, false)
 	require.Equal(t, irma.ProofStatusValid, status)
 }
 
@@ -89,10 +92,12 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 	defer irmaServer.Stop()
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
 
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
-	doSession(t, request, nil, irmaServer, nil, nil, nil)
+	doSession(t, request, client, irmaServer, nil, nil, nil)
 
 	id = irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request = irma.NewIssuanceRequest([]*irma.CredentialRequest{
@@ -103,5 +108,5 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 			},
 		},
 	}, id)
-	doSession(t, request, nil, irmaServer, nil, nil, nil)
+	doSession(t, request, client, irmaServer, nil, nil, nil)
 }

@@ -16,6 +16,11 @@ func TestKeyshareChangePin(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
+	// Verify PIN once to trigger challenge-response upgrade
+	succeeded, _, _, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
+	require.True(t, succeeded)
+	require.NoError(t, err)
+
 	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
 	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
 }

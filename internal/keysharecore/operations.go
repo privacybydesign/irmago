@@ -114,15 +114,26 @@ func (c *Core) ValidateJWT(secrets UserSecrets, jwt string) error {
 }
 
 // ChangePin changes the pin in an encrypted keyshare user secret to a new value, after validating that
-// the old value is known by the caller.
-func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (UserSecrets, error) {
-	s, err := c.decryptUserSecretsIfPinOK(secrets, oldpinRaw)
+// the request was validly signed and that the old value is known by the caller.
+func (c *Core) ChangePin(secrets UserSecrets, jwtt string) (UserSecrets, error) {
+	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
 		return nil, err
 	}
 
-	if s.PublicKey != nil {
-		return UserSecrets{}, errors.New("challenge-response authentication required")
+	claims := &irma.KeyshareChangePinClaims{}
+	_, err = jwt.ParseWithClaims(jwtt, claims, func(token *jwt.Token) (interface{}, error) {
+		if s.PublicKey == nil {
+			return nil, ErrKeyNotFound
+		}
+		return s.PublicKey, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err = s.verifyPin(claims.OldPin); err != nil {
+		return nil, err
 	}
 
 	// change and reencrypt
@@ -131,7 +142,7 @@ func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (User
 	if err != nil {
 		return nil, err
 	}
-	if err = s.setPin(newpinRaw); err != nil {
+	if err = s.setPin(claims.NewPin); err != nil {
 		return nil, err
 	}
 	if err = s.setID(id); err != nil {

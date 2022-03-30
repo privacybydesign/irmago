@@ -429,21 +429,38 @@ func (s *Server) verifyAuth(user *User, msg irma.KeyshareAuthResponse) (irma.Key
 // /users/change/pin
 func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	var msg irma.KeyshareChangePin
-	if err := server.ParseBody(r, &msg); err != nil {
+	var (
+		msg      irma.KeyshareChangePin
+		err      error
+		username string
+		result   irma.KeysharePinStatus
+	)
+	if err = server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
-	// Fetch user
-	user, err := s.db.user(msg.Username)
+	if msg.ChangePinJWT != "" {
+		claims := &irma.KeyshareChangePinClaims{}
+		// We need the username inside the JWT here. The JWT is verified later within updatePin().
+		_, _, err = jwt.NewParser().ParseUnverified(msg.ChangePinJWT, claims)
+		username = claims.Username
+	} else {
+		username = msg.Username
+	}
+	user, err := s.db.user(username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": msg.Username, "error": err}).Warn("Could not find user in db")
+		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
 
-	result, err := s.updatePin(user, msg.OldPin, msg.NewPin)
+	if msg.ChangePinJWT != "" {
+		result, err = s.updatePin(user, msg.ChangePinJWT)
+	} else {
+		result, err = s.updatePinLegacy(user, msg.OldPin, msg.NewPin)
+	}
+
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -452,7 +469,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinStatus, error) {
+func (s *Server) updatePin(user *User, jwtt string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(user)
 	if err != nil {
@@ -463,7 +480,7 @@ func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinS
 	}
 
 	// Try to do the update
-	user.Secrets, err = s.core.ChangePin(user.Secrets, oldPin, newPin)
+	user.Secrets, err = s.core.ChangePin(user.Secrets, jwtt)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil

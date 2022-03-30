@@ -316,9 +316,19 @@ type KeyshareEnrollmentClaims struct {
 }
 
 type KeyshareChangePin struct {
+	KeyshareChangePinData
+	ChangePinJWT string `json:"change_pin_jwt""`
+}
+
+type KeyshareChangePinData struct {
 	Username string `json:"id"`
 	OldPin   string `json:"oldpin"`
 	NewPin   string `json:"newpin"`
+}
+
+type KeyshareChangePinClaims struct {
+	jwt.RegisteredClaims
+	KeyshareChangePinData
 }
 
 type KeyshareAuthRequest struct {

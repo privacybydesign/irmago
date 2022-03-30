@@ -53,7 +53,7 @@ func TestPinFunctionality(t *testing.T) {
 	_, err = rand.Read(bnewpin)
 	require.NoError(t, err)
 	newpin := string(bnewpin)
-	secrets, err = c.ChangePin(secrets, pin, newpin)
+	secrets, err = c.ChangePinLegacy(secrets, pin, newpin)
 	require.NoError(t, err)
 
 	// test correct pin
@@ -245,7 +245,7 @@ func TestCorruptedUserSecrets(t *testing.T) {
 	assert.Error(t, err, "ValidateAuth accepts corrupted keyshare user secrets")
 
 	// Change pin
-	_, err = c.ChangePin(secrets, pin, pin)
+	_, err = c.ChangePinLegacy(secrets, pin, pin)
 	assert.Error(t, err, "ChangePin accepts corrupted keyshare user secrets")
 
 	// GenerateCommitments
@@ -284,7 +284,7 @@ func TestIncorrectPin(t *testing.T) {
 	pin = string(bpin)
 
 	// Change pin
-	_, err = c.ChangePin(secrets, pin, pin)
+	_, err = c.ChangePinLegacy(secrets, pin, pin)
 	assert.Error(t, err, "ChangePin accepts incorrect pin")
 
 	// GetResponse

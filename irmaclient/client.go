@@ -1179,14 +1179,20 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 	}
 
 	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer, !client.Preferences.DeveloperMode)
-	message := irma.KeyshareChangePin{
-		Username: kss.Username,
-		OldPin:   kss.HashedPin(oldPin),
-		NewPin:   kss.HashedPin(newPin),
+
+	claims := irma.KeyshareChangePinClaims{
+		KeyshareChangePinData: irma.KeyshareChangePinData{
+			Username: kss.Username,
+			OldPin:   kss.HashedPin(oldPin),
+			NewPin:   kss.HashedPin(newPin),
+		},
 	}
+	jwtt, err := SignerCreateJWT(client.signer, challengeResponseKeyName(managerID), claims)
 
 	res := &irma.KeysharePinStatus{}
-	err := transport.Post("users/change/pin", res, message)
+	err = transport.Post("users/change/pin", res, irma.KeyshareChangePin{
+		ChangePinJWT: jwtt,
+	})
 	if err != nil {
 		return err
 	}

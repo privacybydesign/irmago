@@ -69,6 +69,17 @@ func (s *unencryptedUserSecrets) setID(id []byte) error {
 	return nil
 }
 
+func (user *unencryptedUserSecrets) verifyPin(pin string) error {
+	paddedPin, err := padBytes([]byte(pin), 64)
+	if err != nil {
+		return err
+	}
+	if subtle.ConstantTimeCompare(user.Pin, paddedPin) != 1 {
+		return ErrInvalidPin
+	}
+	return nil
+}
+
 type marshaledUserSecrets struct {
 	Pin            []byte
 	KeyshareSecret []byte
@@ -171,19 +182,15 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 }
 
 func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unencryptedUserSecrets, error) {
-	paddedPin, err := padBytes([]byte(pin), 64)
-	if err != nil {
-		return unencryptedUserSecrets{}, err
-	}
-
 	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
 
-	if subtle.ConstantTimeCompare(s.Pin, paddedPin) != 1 {
-		return unencryptedUserSecrets{}, ErrInvalidPin
+	if err = s.verifyPin(pin); err != nil {
+		return unencryptedUserSecrets{}, err
 	}
+
 	return s, nil
 }
 
