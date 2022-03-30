@@ -62,7 +62,8 @@ func (s *Server) registerPublicKey(user *User, keydata *irma.KeysharePublicKeyRe
 		return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
 	}
 
-	jwtt, err := s.core.SetUserPublicKey(user.Secrets, keydata.Pin, pk)
+	var jwtt string
+	jwtt, user.Secrets, err = s.core.SetUserPublicKey(user.Secrets, keydata.Pin, pk)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not set user public key")
 		return irma.KeysharePinStatus{}, err
