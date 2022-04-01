@@ -47,7 +47,7 @@ services:
   webclient:
     image: privacybydesign/irma_keyshare_webclient
     build:
-      context: https://github.com/privacybydesign/irma_keyshare_webclient.git#dockerfile
+      context: https://github.com/privacybydesign/irma_keyshare_webclient.git
     profiles:
       - webclient
     networks:
