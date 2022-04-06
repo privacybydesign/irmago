@@ -18,6 +18,10 @@ func NewSigner(t *testing.T) *Signer {
 	return &Signer{privateKey: privateKey}
 }
 
+func LoadSigner(t *testing.T, privateKey *ecdsa.PrivateKey) *Signer {
+	return &Signer{privateKey: privateKey}
+}
+
 func (s *Signer) PublicKey(_ string) ([]byte, error) {
 	return signed.MarshalPublicKey(&s.privateKey.PublicKey)
 

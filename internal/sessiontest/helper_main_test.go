@@ -8,6 +8,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -35,11 +36,23 @@ func parseStorage(t *testing.T, opts ...option) (*irmaclient.Client, *TestClient
 func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.Client, *TestClientHandler) {
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
+
+	var signer irmaclient.Signer
+	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	if os.IsNotExist(err) {
+		signer = test.NewSigner(t)
+	} else {
+		require.NoError(t, err)
+		sk, err := signed.UnmarshalPemPrivateKey(bts)
+		require.NoError(t, err)
+		signer = test.LoadSigner(t, sk)
+	}
+
 	client, err := irmaclient.New(
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
-		test.NewSigner(t),
+		signer,
 	)
 	require.NoError(t, err)
 
