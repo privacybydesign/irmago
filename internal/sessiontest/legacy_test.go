@@ -9,7 +9,15 @@ import (
 )
 
 func TestSessionUsingLegacyStorage(t *testing.T) {
-	test.SetTestStorageDir("client_legacy")
+	testStorage(t, "client_legacy")
+}
+
+func TestSessionUsingLegacyPlaintextStorage(t *testing.T) {
+	testStorage(t, "client_plaintext")
+}
+
+func testStorage(t *testing.T, dir string) {
+	test.SetTestStorageDir(dir)
 	defer test.SetTestStorageDir("client")
 
 	client, handler := parseStorage(t)

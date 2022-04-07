@@ -1,6 +1,9 @@
 package irmaclient
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"path/filepath"
@@ -23,6 +26,7 @@ type storage struct {
 	storagePath   string
 	db            *bbolt.DB
 	Configuration *irma.Configuration
+	aesKey        []byte
 }
 
 type transaction struct {
@@ -30,7 +34,7 @@ type transaction struct {
 }
 
 // Filenames
-const databaseFile = "db"
+const databaseFile = "db2"
 
 // Bucketnames bbolt
 const (
@@ -85,7 +89,12 @@ func (s *storage) txStore(tx *transaction, bucketName string, key string, value 
 		return err
 	}
 
-	return b.Put([]byte(key), btsValue)
+	ciphertext, err := s.encrypt(btsValue)
+	if err != nil {
+		return err
+	}
+
+	return b.Put([]byte(key), ciphertext)
 }
 
 func (s *storage) txDelete(tx *transaction, bucketName string, key string) error {
@@ -107,7 +116,13 @@ func (s *storage) txLoad(tx *transaction, bucketName string, key string, dest in
 	if bts == nil {
 		return false, nil
 	}
-	return true, json.Unmarshal(bts, dest)
+
+	plaintext, err := s.decrypt(bts)
+	if err != nil {
+		return false, err
+	}
+
+	return true, json.Unmarshal(plaintext, dest)
 }
 
 func (s *storage) load(bucketName string, key string, dest interface{}) (found bool, err error) {
@@ -221,7 +236,12 @@ func (s *storage) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 		return err
 	}
 
-	return b.Put(k, v)
+	ciphertext, err := s.encrypt(v)
+	if err != nil {
+		return err
+	}
+
+	return b.Put(k, ciphertext)
 }
 
 func (s *storage) logEntryKeyToBytes(id uint64) []byte {
@@ -305,7 +325,13 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
 
 			var attrlistlist []*irma.AttributeList
-			err = json.Unmarshal(value, &attrlistlist)
+
+			plaintext, err := s.decrypt(value)
+			if err != nil {
+				return err
+			}
+
+			err = json.Unmarshal(plaintext, &attrlistlist)
 			if err != nil {
 				return err
 			}
@@ -356,8 +382,13 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 		c := bucket.Cursor()
 
 		for k, v := startAt(c); k != nil && len(logs) < max; k, v = c.Prev() {
+			plaintext, err := s.decrypt(v)
+			if err != nil {
+				return err
+			}
+
 			var log LogEntry
-			if err := json.Unmarshal(v, &log); err != nil {
+			if err = json.Unmarshal(plaintext, &log); err != nil {
 				return err
 			}
 
@@ -407,4 +438,43 @@ func (s *storage) DeleteAll() error {
 	return s.Transaction(func(tx *transaction) error {
 		return s.TxDeleteAll(tx)
 	})
+}
+
+func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(s.aesKey)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext, err := gcm.Open(nil, ciphertext[:12], ciphertext[12:], nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return plaintext, nil
+}
+
+func (s *storage) encrypt(plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(s.aesKey)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, 12)
+	_, err = rand.Read(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }

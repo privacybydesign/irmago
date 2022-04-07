@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"github.com/privacybydesign/gabi"
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
@@ -49,7 +50,7 @@ var clientUpdates = []func(client *Client) error{
 		}
 
 		// Open one bolt transaction to process all our log entries in
-		err = client.storage.Transaction(func(tx *transaction) error {
+		err = client.storageOld.Transaction(func(tx *transaction) error {
 			for _, log := range logs {
 				// As log.Request is a json.RawMessage it would not get updated to the new session request
 				// format by re-marshaling the containing struct, as normal struct members would,
@@ -62,7 +63,7 @@ var clientUpdates = []func(client *Client) error{
 				if err != nil {
 					return err
 				}
-				if err = client.storage.TxAddLogEntry(tx, log); err != nil {
+				if err = client.storageOld.TxAddLogEntry(tx, log); err != nil {
 					return err
 				}
 			}
@@ -121,29 +122,104 @@ var clientUpdates = []func(client *Client) error{
 			return err
 		}
 
-		return client.storage.Transaction(func(tx *transaction) error {
-			if err = client.storage.TxStoreSecretKey(tx, sk); err != nil {
+		return client.storageOld.Transaction(func(tx *transaction) error {
+			if err = client.storageOld.TxStoreSecretKey(tx, sk); err != nil {
 				return err
 			}
 			for credTypeID, attrslistlist := range attrs {
-				if err = client.storage.TxStoreAttributes(tx, credTypeID, attrslistlist); err != nil {
+				if err = client.storageOld.TxStoreAttributes(tx, credTypeID, attrslistlist); err != nil {
 					return err
 				}
 			}
 			for hash, sig := range sigs {
-				err = client.storage.TxStoreCLSignature(tx, hash, sig)
+				err = client.storageOld.TxStoreCLSignature(tx, hash, sig)
 				if err != nil {
 					return err
 				}
 			}
-			if err = client.storage.TxStoreKeyshareServers(tx, ksses); err != nil {
+			if err = client.storageOld.TxStoreKeyshareServers(tx, ksses); err != nil {
 				return err
 			}
-			if err = client.storage.TxStorePreferences(tx, prefs); err != nil {
+			if err = client.storageOld.TxStorePreferences(tx, prefs); err != nil {
 				return err
 			}
-			return client.storage.TxStoreUpdates(tx, updates)
+			return client.storageOld.TxStoreUpdates(tx, updates)
 		})
+	},
+
+	// 9: Encrypt storage
+	func(client *Client) error {
+		sk, err := client.storageOld.LoadSecretKey()
+		if err != nil {
+			return err
+		}
+
+		// When no secret key is found, it means the storage is fresh. No update is needed.
+		if sk == nil {
+			return nil
+		}
+
+		updates, err := client.storageOld.LoadUpdates()
+		if err != nil {
+			return err
+		}
+		preferences, err := client.storageOld.LoadPreferences()
+		if err != nil {
+			return err
+		}
+		kss, err := client.storageOld.LoadKeyshareServers()
+		if err != nil {
+			return err
+		}
+		attrList, err := client.storageOld.LoadAttributes()
+		if err != nil {
+			return err
+		}
+
+		err = client.storage.Transaction(func(tx *transaction) error {
+			err = client.storage.TxStoreSecretKey(tx, sk)
+			if err != nil {
+				return err
+			}
+			err = client.storage.TxStoreUpdates(tx, updates)
+			if err != nil {
+				return err
+			}
+			err = client.storage.TxStorePreferences(tx, preferences)
+			if err != nil {
+				return err
+			}
+			err = client.storage.TxStoreKeyshareServers(tx, kss)
+			if err != nil {
+				return err
+			}
+
+			for i := range attrList {
+				err = client.storage.TxStoreAttributes(tx, i, attrList[i])
+				if err != nil {
+					return err
+				}
+
+				for attr := range attrList[i] {
+					e, h, err := client.storageOld.LoadSignature(attrList[i][attr])
+					if err != nil {
+						return err
+					}
+
+					cred := &credential{attrs: attrList[i][attr], Credential: &gabi.Credential{Signature: e, NonRevocationWitness: h}}
+					err = client.storage.TxStoreSignature(tx, cred)
+					if err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		return client.storageOld.DeleteAll()
 	},
 
 	// TODO: Maybe delete preferences file to start afresh
@@ -161,8 +237,13 @@ func (client *Client) update() error {
 	// When no updates are found, it can either be a fresh storage or the storage has not been updated
 	// to bbolt yet. Therefore also check the updates file.
 	if len(client.updates) == 0 {
-		if client.updates, err = client.fileStorage.LoadUpdates(); err != nil {
+		if client.updates, err = client.storageOld.LoadUpdates(); err != nil {
 			return err
+		}
+		if len(client.updates) == 0 {
+			if client.updates, err = client.fileStorage.LoadUpdates(); err != nil {
+				return err
+			}
 		}
 	}
 
