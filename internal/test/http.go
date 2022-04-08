@@ -9,7 +9,6 @@ import (
 	"net/http/cookiejar"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +35,7 @@ func httpDo(t *testing.T, client *http.Client, url, method, body string, headers
 		buf = bytes.NewBufferString(body)
 	}
 	req, err := http.NewRequest(method, url, buf)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	if headers != nil {
 		req.Header = headers
@@ -49,19 +48,19 @@ func httpDo(t *testing.T, client *http.Client, url, method, body string, headers
 		client = NewHTTPClient()
 	}
 	res, err := client.Do(req)
-	assert.NoError(t, err)
-	assert.Equal(t, expectedStatus, res.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, expectedStatus, res.StatusCode)
 
 	if result != nil {
 		bts, err := ioutil.ReadAll(res.Body)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		if res.Header.Get("Content-Type") == "application/json" {
-			assert.NoError(t, json.Unmarshal(bts, result))
+			require.NoError(t, json.Unmarshal(bts, result))
 		} else {
 			require.IsType(t, &bts, result)
 			*result.(*[]byte) = bts
 		}
 	}
 
-	assert.NoError(t, res.Body.Close())
+	require.NoError(t, res.Body.Close())
 }
