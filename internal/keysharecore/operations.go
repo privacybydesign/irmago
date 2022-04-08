@@ -279,6 +279,10 @@ func (c *Core) GenerateChallenge(secrets UserSecrets) ([]byte, error) {
 		return nil, err
 	}
 
+	if s.PublicKey == nil {
+		return nil, errors.New("can't do challenge-response: no public key associated to account")
+	}
+
 	challenge := make([]byte, 32)
 	_, err = rand.Read(challenge)
 	if err != nil {
