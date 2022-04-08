@@ -314,19 +314,20 @@ func (s *Server) handleStartAuth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthChallenge, error) {
-	err := s.core.ValidateJWT(user.Secrets, auth)
-	if err == nil {
+	jwtErr := s.core.ValidateJWT(user.Secrets, auth)
+	if jwtErr == nil {
 		return irma.KeyshareAuthChallenge{
 			Status: irma.KeyshareAuthStatusAuthorized,
 		}, nil
 	}
 
+	// If jwtErr != nil, first compute a challenge to include in our response
 	challenge, err := s.core.GenerateChallenge(user.Secrets)
 	if err != nil {
 		return irma.KeyshareAuthChallenge{}, err
 	}
 
-	if err == keysharecore.ErrExpiredJWT {
+	if jwtErr == keysharecore.ErrExpiredJWT {
 		return irma.KeyshareAuthChallenge{
 			Status:     irma.KeyshareAuthStatusExpired,
 			Candidates: []string{irma.KeyshareAuthMethodECDSA},
