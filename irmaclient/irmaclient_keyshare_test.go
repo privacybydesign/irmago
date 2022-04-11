@@ -36,16 +36,47 @@ func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 	kss.ChallengeResponse = false
 
 	// Checking the PIN triggers the public key registration mechanism
-	succeeded, _, _, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
-	require.True(t, succeeded)
-	require.NoError(t, err)
+	verifyPin(t, client)
 
-	// Manually send a PIN auth message without challenge-response to check that the server
-	// now enforces challenge-response for this account
+	// challenge-response is now enforced for this account
+	checkChallengeResponseEnforced(t, kss)
+
+	// check PIN again using challenge-response
+	kss.token = "" // clear auth token we got from upgrading to challenge-response
+	verifyPin(t, client)
+}
+
+func TestKeyshareAuthentication(t *testing.T) {
+	testkeyshare.StartKeyshareServer(t, irma.Logger)
+	defer testkeyshare.StopKeyshareServer(t)
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, handler.storage)
+
+	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
+
+	// This client has a public key registered at the keyshare server
+	require.True(t, kss.ChallengeResponse)
+	checkChallengeResponseEnforced(t, kss)
+
+	verifyPin(t, client)
+}
+
+// checkChallengeResponseEnforced manually sends a PIN auth message without challenge-response
+// to check that the server enforces challenge-response for this account.
+func checkChallengeResponseEnforced(t *testing.T, kss *keyshareServer) {
 	msg := irma.KeyshareAuthResponse{Username: kss.Username, Pin: kss.HashedPin("12345")}
-	err = irma.NewHTTPTransport("http://localhost:8080", false).Post("users/verify/pin", nil, msg)
+	err := irma.NewHTTPTransport("http://localhost:8080", false).Post("users/verify/pin", nil, msg)
 	require.IsType(t, &irma.SessionError{}, err)
 	sessErr := err.(*irma.SessionError)
+	require.NotNil(t, sessErr)
 	require.NotNil(t, sessErr.RemoteError)
 	require.Equal(t, keysharecore.ErrChallengeResponseRequired.Error(), sessErr.RemoteError.Message)
+}
+
+func verifyPin(t *testing.T, client *Client) {
+	succeeded, tries, blocked, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
+	require.NoError(t, err)
+	require.True(t, succeeded)
+	require.Zero(t, blocked)
+	require.Equal(t, tries, 0)
 }
