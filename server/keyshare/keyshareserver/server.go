@@ -330,13 +330,13 @@ func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthChallenge,
 	if jwtErr == keysharecore.ErrExpiredJWT {
 		return irma.KeyshareAuthChallenge{
 			Status:     irma.KeyshareAuthStatusExpired,
-			Candidates: []string{irma.KeyshareAuthMethodECDSA},
+			Candidates: []string{irma.KeyshareAuthMethodChallengeResponse},
 			Challenge:  challenge,
 		}, nil
 	}
 	return irma.KeyshareAuthChallenge{
 		Status:     irma.KeyshareAuthStatusInvalid,
-		Candidates: []string{irma.KeyshareAuthMethodECDSA},
+		Candidates: []string{irma.KeyshareAuthMethodChallengeResponse},
 		Challenge:  challenge,
 	}, nil
 }

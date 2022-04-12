@@ -363,7 +363,7 @@ var (
 	KeyshareAuthStatusExpired    = "expired"
 	KeyshareAuthStatusInvalid    = "invalid"
 
-	KeyshareAuthMethodECDSA = "ecdsa"
+	KeyshareAuthMethodChallengeResponse = "pin_challengeresponse"
 )
 
 type ProofPCommitmentMap struct {

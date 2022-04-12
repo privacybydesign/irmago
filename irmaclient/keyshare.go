@@ -237,13 +237,13 @@ func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transpo
 	}
 	var ok bool
 	for _, method := range auth.Candidates {
-		if method == irma.KeyshareAuthMethodECDSA {
+		if method == irma.KeyshareAuthMethodChallengeResponse {
 			ok = true
 			break
 		}
 	}
 	if !ok {
-		return nil, errors.New("ecdsa authentication method not supported")
+		return nil, errors.New("challenge-response authentication method not supported")
 	}
 	msg, _ := json.Marshal(irma.KeyshareChallengeData{
 		Challenge: auth.Challenge,

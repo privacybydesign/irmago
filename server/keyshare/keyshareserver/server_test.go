@@ -573,7 +573,7 @@ func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey) []byte {
 		200, auth,
 	)
 	require.Equal(t, auth.Status, "invalid")
-	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodECDSA)
+	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
 	require.NotEmpty(t, auth.Challenge)
 
 	// sign the challenge
