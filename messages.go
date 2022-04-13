@@ -332,12 +332,10 @@ type KeyshareChangePinClaims struct {
 }
 
 type KeyshareAuthRequest struct {
-	Username      string `json:"id"`
-	Authorization string `json:"jwt"`
+	Username string `json:"id"`
 }
 
 type KeyshareAuthChallenge struct {
-	Status     string   `json:"status"`
 	Candidates []string `json:"candidates,omitempty"`
 	Challenge  []byte   `json:"challenge"`
 }
@@ -358,11 +356,7 @@ type KeysharePinStatus struct {
 	Message string `json:"message"`
 }
 
-var (
-	KeyshareAuthStatusAuthorized = "authorized"
-	KeyshareAuthStatusExpired    = "expired"
-	KeyshareAuthStatusInvalid    = "invalid"
-
+const (
 	KeyshareAuthMethodChallengeResponse = "pin_challengeresponse"
 )
 

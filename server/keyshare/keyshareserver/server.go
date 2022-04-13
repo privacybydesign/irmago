@@ -303,7 +303,7 @@ func (s *Server) handleStartAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.startAuth(user, msg.Authorization)
+	result, err := s.startAuth(user)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -313,29 +313,12 @@ func (s *Server) handleStartAuth(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) startAuth(user *User, auth string) (irma.KeyshareAuthChallenge, error) {
-	jwtErr := s.core.ValidateJWT(user.Secrets, auth)
-	if jwtErr == nil {
-		return irma.KeyshareAuthChallenge{
-			Status: irma.KeyshareAuthStatusAuthorized,
-		}, nil
-	}
-
-	// If jwtErr != nil, first compute a challenge to include in our response
+func (s *Server) startAuth(user *User) (irma.KeyshareAuthChallenge, error) {
 	challenge, err := s.core.GenerateChallenge(user.Secrets)
 	if err != nil {
 		return irma.KeyshareAuthChallenge{}, err
 	}
-
-	if jwtErr == keysharecore.ErrExpiredJWT {
-		return irma.KeyshareAuthChallenge{
-			Status:     irma.KeyshareAuthStatusExpired,
-			Candidates: []string{irma.KeyshareAuthMethodChallengeResponse},
-			Challenge:  challenge,
-		}, nil
-	}
 	return irma.KeyshareAuthChallenge{
-		Status:     irma.KeyshareAuthStatusInvalid,
 		Candidates: []string{irma.KeyshareAuthMethodChallengeResponse},
 		Challenge:  challenge,
 	}, nil

@@ -190,34 +190,20 @@ func TestStartAuth(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
-	sk := loadClientPrivateKey(t)
-
 	// can't do it for users that don't yet have a public key registered
 	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
 		`{"id":"legacyuser"}`, nil,
 		500, nil,
 	)
 
-	// do a full flow to get a JWT
-	res, err := json.Marshal(irma.KeyshareAuthResponse{
-		Username: "testusername",
-		Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
-		Response: doChallengeResponse(t, sk),
-	})
-	require.NoError(t, err)
-	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse", string(res), nil, 200, &jwtMsg)
-	require.Equal(t, "success", jwtMsg.Status)
-	require.Equal(t, "ey", jwtMsg.Message[:2]) // JWT's always start with ey
-
-	// the JWT we just got authorizes us
+	// normal flow
 	auth := &irma.KeyshareAuthChallenge{}
 	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
-		fmt.Sprintf(`{"id":"testusername","jwt":"%s"}`, jwtMsg.Message), nil,
+		`{"id":"testusername"}`, nil,
 		200, auth,
 	)
-	require.Equal(t, auth.Status, "authorized")
-	require.Empty(t, auth.Candidates)
+	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
+	require.NotEmpty(t, auth.Challenge)
 
 	// nonexisting user
 	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
@@ -572,7 +558,6 @@ func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey) []byte {
 		`{"id":"testusername"}`, nil,
 		200, auth,
 	)
-	require.Equal(t, auth.Status, "invalid")
 	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
 	require.NotEmpty(t, auth.Challenge)
 

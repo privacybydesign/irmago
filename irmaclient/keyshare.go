@@ -63,8 +63,6 @@ const (
 	kssUsernameHeader = "X-IRMA-Keyshare-Username"
 	kssVersionHeader  = "X-IRMA-Keyshare-ProtocolVersion"
 	kssAuthHeader     = "Authorization"
-	kssAuthorized     = "authorized"
-	kssTokenExpired   = "expired"
 	kssPinSuccess     = "success"
 	kssPinFailure     = "failure"
 	kssPinError       = "error"
@@ -229,8 +227,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transport *irma.HTTPTransport) ([]byte, error) {
 	auth := &irma.KeyshareAuthChallenge{}
 	err := transport.Post("users/start_auth", auth, irma.KeyshareAuthRequest{
-		Username:      kss.Username,
-		Authorization: kss.token,
+		Username: kss.Username,
 	})
 	if err != nil {
 		return nil, err
