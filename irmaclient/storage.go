@@ -40,6 +40,7 @@ const databaseFile = "db2"
 const (
 	userdataBucket = "userdata"    // Key/value: specified below
 	skKey          = "sk"          // Value: *secretKey
+	attrListKey    = "attrList"    // Value: map[irma.CredentialIdentifier][]byte
 	preferencesKey = "preferences" // Value: Preferences
 	updatesKey     = "updates"     // Value: []update
 	kssKey         = "kss"         // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
@@ -195,13 +196,78 @@ func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialT
 
 	// If no credentials are left of a certain type, the full entry can be deleted.
 	if len(attrlistlist) == 0 {
-		return s.txDelete(tx, attributesBucket, credTypeID.String())
+		randomId, err := s.removeFromAttrList(tx, credTypeID)
+		if err != nil {
+			return err
+		}
+
+		return s.txDelete(tx, attributesBucket, randomId)
 	}
-	return s.txStore(tx, attributesBucket, credTypeID.String(), attrlistlist)
+
+	randomId, err := s.appendAttrList(tx, credTypeID)
+	if err != nil {
+		return err
+	}
+
+	return s.txStore(tx, attributesBucket, randomId, attrlistlist)
+}
+
+func (s *storage) removeFromAttrList(tx *transaction, credTypeID irma.CredentialTypeIdentifier) (string, error) {
+	credTypeIDs := map[irma.CredentialTypeIdentifier][]byte{}
+	_, err := s.txLoad(tx, userdataBucket, attrListKey, &credTypeIDs)
+	if err != nil {
+		return "", err
+	}
+
+	res := string(credTypeIDs[credTypeID])
+
+	delete(credTypeIDs, credTypeID)
+	if len(credTypeIDs) == 0 {
+		err = s.txDelete(tx, userdataBucket, attrListKey)
+		if err != nil {
+			return "", err
+		}
+	}
+	err = s.txStore(tx, userdataBucket, attrListKey, credTypeIDs)
+	if err != nil {
+		return "", err
+	}
+
+	return res, nil
+}
+
+func (s *storage) appendAttrList(tx *transaction, credTypeID irma.CredentialTypeIdentifier) (string, error) {
+	credTypeIDs := map[irma.CredentialTypeIdentifier][]byte{}
+	ok, err := s.txLoad(tx, userdataBucket, attrListKey, &credTypeIDs)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		credTypeIDs = map[irma.CredentialTypeIdentifier][]byte{}
+	}
+
+	if val, ok := credTypeIDs[credTypeID]; ok {
+		return string(val), nil
+	}
+
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+
+	credTypeIDs[credTypeID] = b
+	err = s.txStore(tx, userdataBucket, attrListKey, credTypeIDs)
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
 }
 
 func (s *storage) TxDeleteAllAttributes(tx *transaction) error {
-	return tx.DeleteBucket([]byte(attributesBucket))
+	err := tx.DeleteBucket([]byte(attributesBucket))
+	if err != nil {
+		return err
+	}
+	return s.txDelete(tx, userdataBucket, attrListKey)
 }
 
 func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
@@ -322,8 +388,6 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			return nil
 		}
 		return b.ForEach(func(key, value []byte) error {
-			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
-
 			var attrlistlist []*irma.AttributeList
 
 			plaintext, err := s.decrypt(value)
@@ -341,7 +405,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 				attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.Configuration)
 			}
 
-			list[credTypeID] = attrlistlist
+			list[attrlistlist[0].Info().Identifier()] = attrlistlist
 			return nil
 		})
 	})
