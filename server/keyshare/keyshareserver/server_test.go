@@ -36,7 +36,7 @@ func TestServerInvalidMessage(t *testing.T) {
 		"gval;kefsajsdkl;", nil,
 		400, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		400, nil,
 	)
@@ -191,14 +191,14 @@ func TestStartAuth(t *testing.T) {
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	// can't do it for users that don't yet have a public key registered
-	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
 		`{"id":"legacyuser"}`, nil,
 		500, nil,
 	)
 
 	// normal flow
 	auth := &irma.KeyshareAuthChallenge{}
-	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
 		`{"id":"testusername"}`, nil,
 		200, auth,
 	)
@@ -206,7 +206,7 @@ func TestStartAuth(t *testing.T) {
 	require.NotEmpty(t, auth.Challenge)
 
 	// nonexisting user
-	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
 		`{"id":"doesnotexist"}`, nil,
 		403, nil,
 	)
@@ -554,7 +554,7 @@ func createDB(t *testing.T) DB {
 func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey) []byte {
 	// retrieve a challenge
 	auth := &irma.KeyshareAuthChallenge{}
-	test.HTTPPost(t, nil, "http://localhost:8080/users/start_auth",
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
 		`{"id":"testusername"}`, nil,
 		200, auth,
 	)

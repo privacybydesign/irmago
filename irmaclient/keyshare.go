@@ -226,7 +226,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 
 func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transport *irma.HTTPTransport) ([]byte, error) {
 	auth := &irma.KeyshareAuthChallenge{}
-	err := transport.Post("users/start_auth", auth, irma.KeyshareAuthRequest{
+	err := transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{
 		Username: kss.Username,
 	})
 	if err != nil {

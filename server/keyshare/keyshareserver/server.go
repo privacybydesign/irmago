@@ -114,7 +114,7 @@ func (s *Server) Handler() http.Handler {
 		router.Post("/client/register", s.handleRegister)
 
 		// authentication
-		router.Post("/users/start_auth", s.handleStartAuth)
+		router.Post("/users/verify_start", s.handleStartAuth)
 		router.Post("/users/verify/pin", s.handleVerify)
 		router.Post("/users/verify/pin_challengeresponse", s.handleVerify)
 
@@ -286,7 +286,7 @@ func (s *Server) generateResponse(user *User, authorization string, challenge *b
 	return proofResponse, nil
 }
 
-// /users/start_auth
+// /users/verify_start
 func (s *Server) handleStartAuth(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var msg irma.KeyshareAuthRequest
