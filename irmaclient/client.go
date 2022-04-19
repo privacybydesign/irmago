@@ -1202,11 +1202,7 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 	}
 	delete(client.keyshareServers, manager)
 
-	err := client.storage.StoreKeyshareServers(client.keyshareServers)
-	if err != nil {
-		return err
-	}
-	return client.storageOld.StoreKeyshareServers(client.keyshareServers)
+	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 
 // KeyshareRemoveAll removes all keyshare server registrations.
