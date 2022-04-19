@@ -274,7 +274,7 @@ func TestCredentialRemoval(t *testing.T) {
 	require.Nil(t, cred)
 
 	// Also check whether credential is removed after reloading the storage
-	err = client.Close()
+	err = client.storage.db.Close()
 	require.NoError(t, err)
 	client, handler = parseExistingStorage(t, handler.storage)
 	cred, err = client.credential(id2, 0)
@@ -341,7 +341,7 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 
-	err = client.Close()
+	err = client.storage.db.Close()
 	require.NoError(t, err)
 	client, handler = parseExistingStorage(t, handler.storage)
 

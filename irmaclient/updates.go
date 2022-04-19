@@ -219,7 +219,13 @@ var clientUpdates = []func(client *Client) error{
 			return err
 		}
 
-		return client.storageOld.DeleteAll()
+		err = client.storageOld.DeleteAll()
+		if err != nil {
+			return err
+		}
+
+		return client.storageOld.Close()
+
 	},
 
 	// TODO: Maybe delete preferences file to start afresh
@@ -237,6 +243,13 @@ func (client *Client) update() error {
 	// When no updates are found, it can either be a fresh storage or the storage has not been updated
 	// to bbolt yet. Therefore also check the updates file.
 	if len(client.updates) == 0 {
+		// Setup legacy storages
+		client.storageOld = storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
+		if err = client.storageOld.Open(); err != nil {
+			return err
+		}
+		client.fileStorage = fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
+
 		if client.updates, err = client.storageOld.LoadUpdates(); err != nil {
 			return err
 		}

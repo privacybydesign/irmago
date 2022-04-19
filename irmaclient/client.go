@@ -193,13 +193,6 @@ func New(
 	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}
-	// Legacy storage which does not yet encrypt data
-	client.storageOld = storageOld{storageOldPath: storagePath, Configuration: client.Configuration}
-	if err = client.storageOld.Open(); err != nil {
-		return nil, err
-	}
-	// Legacy storage does not need ensuring existence
-	client.fileStorage = fileStorage{storagePath: storagePath, Configuration: client.Configuration}
 
 	// Perform new update functions from clientUpdates, if any
 	if err = client.update(); err != nil {
@@ -242,11 +235,7 @@ func New(
 }
 
 func (client *Client) Close() error {
-	err := client.storage.Close()
-	if err != nil {
-		return err
-	}
-	return client.storageOld.Close()
+	return client.storage.Close()
 }
 
 func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
