@@ -209,7 +209,7 @@ func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialT
 		return err
 	}
 
-	return s.txStore(tx, attributesBucket, randomId, attrlistlist)
+	return s.txStore(tx, attributesBucket, string(randomId), attrlistlist)
 }
 
 func (s *storage) removeFromAttrList(tx *transaction, credTypeID irma.CredentialTypeIdentifier) (string, error) {
@@ -236,30 +236,27 @@ func (s *storage) removeFromAttrList(tx *transaction, credTypeID irma.Credential
 	return res, nil
 }
 
-func (s *storage) appendAttrList(tx *transaction, credTypeID irma.CredentialTypeIdentifier) (string, error) {
+func (s *storage) appendAttrList(tx *transaction, credTypeID irma.CredentialTypeIdentifier) ([]byte, error) {
 	credTypeIDs := map[irma.CredentialTypeIdentifier][]byte{}
-	ok, err := s.txLoad(tx, userdataBucket, attrListKey, &credTypeIDs)
+	_, err := s.txLoad(tx, userdataBucket, attrListKey, &credTypeIDs)
 	if err != nil {
-		return "", err
-	}
-	if !ok {
-		credTypeIDs = map[irma.CredentialTypeIdentifier][]byte{}
+		return nil, err
 	}
 
 	if val, ok := credTypeIDs[credTypeID]; ok {
-		return string(val), nil
+		return val, nil
 	}
 
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
+	randomId := make([]byte, 32)
+	_, _ = rand.Read(randomId)
 
-	credTypeIDs[credTypeID] = b
+	credTypeIDs[credTypeID] = randomId
 	err = s.txStore(tx, userdataBucket, attrListKey, credTypeIDs)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return string(b), nil
+	return randomId, nil
 }
 
 func (s *storage) TxDeleteAllAttributes(tx *transaction) error {
