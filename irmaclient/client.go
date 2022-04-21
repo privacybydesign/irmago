@@ -1188,6 +1188,9 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 		},
 	}
 	jwtt, err := SignerCreateJWT(client.signer, challengeResponseKeyName(managerID), claims)
+	if err != nil {
+		return err
+	}
 
 	res := &irma.KeysharePinStatus{}
 	err = transport.Post("users/change/pin", res, irma.KeyshareChangePin{
