@@ -3,13 +3,13 @@ package keyshareserver
 import (
 	"context"
 	"fmt"
+	"github.com/go-co-op/gocron"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
-	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
@@ -34,7 +34,6 @@ type Server struct {
 
 	// Scheduler used to clean sessions
 	scheduler     *gocron.Scheduler
-	stopScheduler chan<- bool
 
 	// Session data, keeping track of current keyshare protocol session state for each user
 	store sessionStore
@@ -47,7 +46,7 @@ func New(conf *Configuration) (*Server, error) {
 	s := &Server{
 		conf:      conf,
 		store:     newMemorySessionStore(10 * time.Second),
-		scheduler: gocron.NewScheduler(),
+		scheduler: gocron.NewScheduler(time.UTC),
 	}
 
 	// Setup IRMA session server
@@ -87,13 +86,13 @@ func New(conf *Configuration) (*Server, error) {
 
 	// Setup session cache clearing
 	s.scheduler.Every(10).Seconds().Do(s.store.flush)
-	s.stopScheduler = s.scheduler.Start()
+	s.scheduler.StartAsync()
 
 	return s, nil
 }
 
 func (s *Server) Stop() {
-	s.stopScheduler <- true
+	s.scheduler.Stop()
 	s.irmaserv.Stop()
 }
 
