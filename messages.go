@@ -317,7 +317,7 @@ type KeyshareEnrollmentClaims struct {
 
 type KeyshareChangePin struct {
 	KeyshareChangePinData
-	ChangePinJWT string `json:"change_pin_jwt""`
+	ChangePinJWT string `json:"change_pin_jwt"`
 }
 
 type KeyshareChangePinData struct {
