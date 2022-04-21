@@ -3,7 +3,6 @@ package keysharecore
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -56,8 +55,8 @@ func TestEncryptTestUser(t *testing.T) {
 
 	// Normally we don't want to print stuff in our tests, so this is commented out.
 	// Uncomment when necessary.
-	fmt.Println("Without public key:", without)
-	fmt.Println("With public key:", with)
+	//fmt.Println("Without public key:", without)
+	//fmt.Println("With public key:", with)
 
 	// Dummy references to prevent the compiler from thinking the variables are unused
 	_ = without
