@@ -171,7 +171,7 @@ var clientUpdates = []func(client *Client) error{
 		if err != nil {
 			return err
 		}
-		attrList, err := client.storageOld.LoadAttributes()
+		attrs, err := client.storageOld.LoadAttributes()
 		if err != nil {
 			return err
 		}
@@ -194,19 +194,19 @@ var clientUpdates = []func(client *Client) error{
 				return err
 			}
 
-			for i := range attrList {
-				err = client.storage.TxStoreAttributes(tx, i, attrList[i])
+			for credid, attrlistlist := range attrs {
+				err = client.storage.TxStoreAttributes(tx, credid, attrlistlist)
 				if err != nil {
 					return err
 				}
 
-				for attr := range attrList[i] {
-					e, h, err := client.storageOld.LoadSignature(attrList[i][attr])
+				for _, attrlist := range attrlistlist {
+					e, h, err := client.storageOld.LoadSignature(attrlist)
 					if err != nil {
 						return err
 					}
 
-					cred := &credential{attrs: attrList[i][attr], Credential: &gabi.Credential{Signature: e, NonRevocationWitness: h}}
+					cred := &credential{attrs: attrlist, Credential: &gabi.Credential{Signature: e, NonRevocationWitness: h}}
 					err = client.storage.TxStoreSignature(tx, cred)
 					if err != nil {
 						return err
