@@ -38,14 +38,14 @@ const databaseFile = "db2"
 
 // Bucketnames bbolt
 const (
-	userdataBucket = "userdata"    // Key/value: specified below
-	skKey          = "sk"          // Value: *secretKey
-	attrListKey    = "attrList"    // Value: map[irma.CredentialIdentifier][]byte
-	preferencesKey = "preferences" // Value: Preferences
-	updatesKey     = "updates"     // Value: []update
-	kssKey         = "kss"         // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
+	userdataBucket  = "userdata"     // Key/value: specified below
+	skKey           = "sk"           // Value: *secretKey
+	credTypeKeysKey = "credTypeKeys" // Value: map[irma.CredentialTypeIdentifier][]byte
+	preferencesKey  = "preferences"  // Value: Preferences
+	updatesKey      = "updates"      // Value: []update
+	kssKey          = "kss"          // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
 
-	attributesBucket = "attrs" // Key: irma.CredentialIdentifier, value: []*irma.AttributeList
+	attributesBucket = "attrs" // Key: []byte, value: []*irma.AttributeList
 	logsBucket       = "logs"  // Key: (auto-increment index), value: *LogEntry
 	signaturesBucket = "sigs"  // Key: credential.attrs.Hash, value: *gabi.CLSignature
 )
@@ -196,7 +196,7 @@ func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialT
 
 	// If no credentials are left of a certain type, the full entry can be deleted.
 	if len(attrlistlist) == 0 {
-		randomId, err := s.removeFromAttrList(tx, credTypeID)
+		randomId, err := s.removeCredTypeKey(tx, credTypeID)
 		if err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialT
 		return s.txDelete(tx, attributesBucket, randomId)
 	}
 
-	randomId, err := s.appendAttrList(tx, credTypeID)
+	randomId, err := s.credTypeKey(tx, credTypeID)
 	if err != nil {
 		return err
 	}
@@ -212,9 +212,9 @@ func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialT
 	return s.txStore(tx, attributesBucket, string(randomId), attrlistlist)
 }
 
-func (s *storage) removeFromAttrList(tx *transaction, credTypeID irma.CredentialTypeIdentifier) (string, error) {
+func (s *storage) removeCredTypeKey(tx *transaction, credTypeID irma.CredentialTypeIdentifier) (string, error) {
 	credTypeIDs := map[irma.CredentialTypeIdentifier][]byte{}
-	_, err := s.txLoad(tx, userdataBucket, attrListKey, &credTypeIDs)
+	_, err := s.txLoad(tx, userdataBucket, credTypeKeysKey, &credTypeIDs)
 	if err != nil {
 		return "", err
 	}
@@ -223,12 +223,12 @@ func (s *storage) removeFromAttrList(tx *transaction, credTypeID irma.Credential
 
 	delete(credTypeIDs, credTypeID)
 	if len(credTypeIDs) == 0 {
-		err = s.txDelete(tx, userdataBucket, attrListKey)
+		err = s.txDelete(tx, userdataBucket, credTypeKeysKey)
 		if err != nil {
 			return "", err
 		}
 	}
-	err = s.txStore(tx, userdataBucket, attrListKey, credTypeIDs)
+	err = s.txStore(tx, userdataBucket, credTypeKeysKey, credTypeIDs)
 	if err != nil {
 		return "", err
 	}
@@ -236,9 +236,9 @@ func (s *storage) removeFromAttrList(tx *transaction, credTypeID irma.Credential
 	return res, nil
 }
 
-func (s *storage) appendAttrList(tx *transaction, credTypeID irma.CredentialTypeIdentifier) ([]byte, error) {
+func (s *storage) credTypeKey(tx *transaction, credTypeID irma.CredentialTypeIdentifier) ([]byte, error) {
 	credTypeIDs := map[irma.CredentialTypeIdentifier][]byte{}
-	_, err := s.txLoad(tx, userdataBucket, attrListKey, &credTypeIDs)
+	_, err := s.txLoad(tx, userdataBucket, credTypeKeysKey, &credTypeIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func (s *storage) appendAttrList(tx *transaction, credTypeID irma.CredentialType
 	_, _ = rand.Read(randomId)
 
 	credTypeIDs[credTypeID] = randomId
-	err = s.txStore(tx, userdataBucket, attrListKey, credTypeIDs)
+	err = s.txStore(tx, userdataBucket, credTypeKeysKey, credTypeIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (s *storage) TxDeleteAllAttributes(tx *transaction) error {
 	if err != nil {
 		return err
 	}
-	return s.txDelete(tx, userdataBucket, attrListKey)
+	return s.txDelete(tx, userdataBucket, credTypeKeysKey)
 }
 
 func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
