@@ -219,11 +219,6 @@ var clientUpdates = []func(client *Client) error{
 			return err
 		}
 
-		err = client.storageOld.DeleteAll()
-		if err != nil {
-			return err
-		}
-
 		return client.storageOld.Close()
 
 	},
