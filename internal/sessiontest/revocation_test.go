@@ -1,3 +1,4 @@
+//go:build !local_tests
 // +build !local_tests
 
 package sessiontest
@@ -5,8 +6,10 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/go-co-op/gocron"
 	"net/http"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -196,9 +199,7 @@ func TestRevocationAll(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// run scheduled update of accumulator, triggering a POST to our IRMA server
-		revServer.conf.IrmaConfiguration.Scheduler.RunAll()
-		// give request time to be processed
-		time.Sleep(100 * time.Millisecond)
+		runAllSchedulerJobs(revServer.conf.IrmaConfiguration.Scheduler)
 
 		// check that both the revocation server's and our IRMA server's configuration
 		// agree on the same accumulator which has the same index but updated time
@@ -348,8 +349,8 @@ func TestRevocationAll(t *testing.T) {
 		sacctime := sacc.Accumulator.Time
 
 		// trigger time update and update accumulator
-		time.Sleep(time.Second)
-		revServer.conf.IrmaConfiguration.Scheduler.RunAll()
+		runAllSchedulerJobs(revServer.conf.IrmaConfiguration.Scheduler)
+
 		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.SyncDB(revKeyshareTestCred))
 
 		// check that accumulator is newer
@@ -476,7 +477,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NotEmpty(t, rec)
 
 		// Run jobs, triggering DELETE
-		revServer.conf.IrmaConfiguration.Scheduler.RunAll()
+		runAllSchedulerJobs(revServer.conf.IrmaConfiguration.Scheduler)
 
 		// Check that issuance record is gone
 		_, err = rev.IssuanceRecords(revocationTestCred, "1", time.Time{})
@@ -814,5 +815,40 @@ func startRevocationServer(t *testing.T, droptables bool) *IrmaServer {
 		irma: revocationServer,
 		conf: conf,
 		http: revocationHttpServer,
+	}
+}
+
+// runAllSchedulerJobs calls RunAll() on the scheduler, and blocks until the jobs have finished.
+// The scheduler has no wait to run all jobs and wait for them to finish, so this function
+// https://github.com/go-co-op/gocron/issues/326
+func runAllSchedulerJobs(scheduler *gocron.Scheduler) {
+	// The scheduler library has no
+	// Limit max concurrent jobs so that the job below doesn't run concurrently with others
+	scheduler.SetMaxConcurrentJobs(1, gocron.WaitMode)
+
+	// Register a job that we can monitor when it has been executed
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	job, _ := scheduler.Every(1).Hour().WaitForSchedule().Do(func() {
+		wg.Done()
+	})
+
+	// Now run all jobs
+	scheduler.RunAll()
+
+	// Wait until the last job has been executed
+	wg.Wait()
+	scheduler.Remove(job)
+
+	// Assert all jobs have finished
+outer:
+	for {
+		time.Sleep(10 * time.Millisecond)
+		for _, job := range scheduler.Jobs() {
+			if job.IsRunning() {
+				continue outer
+			}
+		}
+		break outer
 	}
 }

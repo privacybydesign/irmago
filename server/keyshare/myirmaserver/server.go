@@ -51,7 +51,9 @@ func New(conf *Configuration) (*Server, error) {
 		scheduler: gocron.NewScheduler(time.UTC),
 	}
 
-	s.scheduler.Every(10).Seconds().Do(s.store.flush)
+	if _, err := s.scheduler.Every(10 * time.Second).Do(s.store.flush); err != nil {
+		return nil, err
+	}
 	s.scheduler.StartAsync()
 
 	if s.conf.LogJSON {

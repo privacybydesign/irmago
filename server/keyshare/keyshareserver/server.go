@@ -85,7 +85,9 @@ func New(conf *Configuration) (*Server, error) {
 	})
 
 	// Setup session cache clearing
-	s.scheduler.Every(10).Seconds().Do(s.store.flush)
+	if _, err := s.scheduler.Every(10).Second().Do(s.store.flush); err != nil {
+		return nil, err
+	}
 	s.scheduler.StartAsync()
 
 	return s, nil

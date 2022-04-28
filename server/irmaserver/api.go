@@ -67,9 +67,11 @@ func New(conf *server.Configuration) (*Server, error) {
 			conf:      conf,
 		}
 
-		s.scheduler.Every(10).Seconds().Do(func() {
+		if _, err := s.scheduler.Every(10).Seconds().Do(func() {
 			s.sessions.(*memorySessionStore).deleteExpired()
-		})
+		}); err != nil {
+			return nil, err
+		}
 	case "redis":
 		// Configure Redis TLS. If Redis TLS is disabled, tlsConfig becomes nil and the redis client will not use TLS.
 		tlsConfig, err := redisTLSConfig(conf)
@@ -97,7 +99,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		return nil, errors.New("storeType not known")
 	}
 
-	s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
+	if _, err := s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Do(func() {
 		for credid, settings := range s.conf.RevocationSettings {
 			if settings.Authority {
 				continue
@@ -107,7 +109,9 @@ func New(conf *server.Configuration) (*Server, error) {
 				_ = server.LogError(err)
 			}
 		}
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	s.scheduler.StartAsync()
 
