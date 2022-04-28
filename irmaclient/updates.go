@@ -44,13 +44,20 @@ var clientUpdates = []func(client *Client) error{
 
 	// 7: Convert log entries to bbolt database
 	func(client *Client) error {
-		logs, err := client.fileStorage.LoadLogs()
+		fileStorage := fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
+		logs, err := fileStorage.LoadLogs()
 		if err != nil {
 			return nil
 		}
 
+		storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
+		if err = storageOld.Open(); err != nil {
+			return err
+		}
+		defer storageOld.Close()
+
 		// Open one bolt transaction to process all our log entries in
-		err = client.storageOld.Transaction(func(tx *transaction) error {
+		return storageOld.Transaction(func(tx *transaction) error {
 			for _, log := range logs {
 				// As log.Request is a json.RawMessage it would not get updated to the new session request
 				// format by re-marshaling the containing struct, as normal struct members would,
@@ -63,18 +70,19 @@ var clientUpdates = []func(client *Client) error{
 				if err != nil {
 					return err
 				}
-				if err = client.storageOld.TxAddLogEntry(tx, log); err != nil {
+				if err = storageOld.TxAddLogEntry(tx, log); err != nil {
 					return err
 				}
 			}
 			return nil
 		})
-		return err
 	},
 
 	// 8: Move other user storage to bbolt database
 	func(client *Client) error {
-		sk, err := client.fileStorage.LoadSecretKey()
+		fileStorage := fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
+
+		sk, err := fileStorage.LoadSecretKey()
 		if err != nil {
 			return err
 		}
@@ -84,7 +92,7 @@ var clientUpdates = []func(client *Client) error{
 			return nil
 		}
 
-		attrs, err := client.fileStorage.LoadAttributes()
+		attrs, err := fileStorage.LoadAttributes()
 		if err != nil {
 			return err
 		}
@@ -92,7 +100,7 @@ var clientUpdates = []func(client *Client) error{
 		sigs := make(map[string]*clSignatureWitness)
 		for _, attrlistlist := range attrs {
 			for _, attrlist := range attrlistlist {
-				sig, witness, err := client.fileStorage.LoadSignature(attrlist)
+				sig, witness, err := fileStorage.LoadSignature(attrlist)
 				if err != nil {
 					return err
 				}
@@ -103,12 +111,12 @@ var clientUpdates = []func(client *Client) error{
 			}
 		}
 
-		ksses, err := client.fileStorage.LoadKeyshareServers()
+		ksses, err := fileStorage.LoadKeyshareServers()
 		if err != nil {
 			return err
 		}
 
-		prefs, err := client.fileStorage.LoadPreferences()
+		prefs, err := fileStorage.LoadPreferences()
 		if err != nil {
 			return err
 		}
@@ -117,39 +125,51 @@ var clientUpdates = []func(client *Client) error{
 		client.Preferences = prefs
 		client.applyPreferences()
 
-		updates, err := client.fileStorage.LoadUpdates()
+		updates, err := fileStorage.LoadUpdates()
 		if err != nil {
 			return err
 		}
 
-		return client.storageOld.Transaction(func(tx *transaction) error {
-			if err = client.storageOld.TxStoreSecretKey(tx, sk); err != nil {
+		storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
+		if err = storageOld.Open(); err != nil {
+			return err
+		}
+		defer storageOld.Close()
+
+		return storageOld.Transaction(func(tx *transaction) error {
+			if err = storageOld.TxStoreSecretKey(tx, sk); err != nil {
 				return err
 			}
 			for credTypeID, attrslistlist := range attrs {
-				if err = client.storageOld.TxStoreAttributes(tx, credTypeID, attrslistlist); err != nil {
+				if err = storageOld.TxStoreAttributes(tx, credTypeID, attrslistlist); err != nil {
 					return err
 				}
 			}
 			for hash, sig := range sigs {
-				err = client.storageOld.TxStoreCLSignature(tx, hash, sig)
+				err = storageOld.TxStoreCLSignature(tx, hash, sig)
 				if err != nil {
 					return err
 				}
 			}
-			if err = client.storageOld.TxStoreKeyshareServers(tx, ksses); err != nil {
+			if err = storageOld.TxStoreKeyshareServers(tx, ksses); err != nil {
 				return err
 			}
-			if err = client.storageOld.TxStorePreferences(tx, prefs); err != nil {
+			if err = storageOld.TxStorePreferences(tx, prefs); err != nil {
 				return err
 			}
-			return client.storageOld.TxStoreUpdates(tx, updates)
+			return storageOld.TxStoreUpdates(tx, updates)
 		})
 	},
 
 	// 9: Encrypt storage
 	func(client *Client) error {
-		sk, err := client.storageOld.LoadSecretKey()
+		storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
+		if err := storageOld.Open(); err != nil {
+			return err
+		}
+		defer storageOld.Close()
+
+		sk, err := storageOld.LoadSecretKey()
 		if err != nil {
 			return err
 		}
@@ -159,24 +179,24 @@ var clientUpdates = []func(client *Client) error{
 			return nil
 		}
 
-		updates, err := client.storageOld.LoadUpdates()
+		updates, err := storageOld.LoadUpdates()
 		if err != nil {
 			return err
 		}
-		preferences, err := client.storageOld.LoadPreferences()
+		preferences, err := storageOld.LoadPreferences()
 		if err != nil {
 			return err
 		}
-		kss, err := client.storageOld.LoadKeyshareServers()
+		kss, err := storageOld.LoadKeyshareServers()
 		if err != nil {
 			return err
 		}
-		attrs, err := client.storageOld.LoadAttributes()
+		attrs, err := storageOld.LoadAttributes()
 		if err != nil {
 			return err
 		}
 
-		err = client.storage.Transaction(func(tx *transaction) error {
+		return client.storage.Transaction(func(tx *transaction) error {
 			err = client.storage.TxStoreSecretKey(tx, sk)
 			if err != nil {
 				return err
@@ -201,7 +221,7 @@ var clientUpdates = []func(client *Client) error{
 				}
 
 				for _, attrlist := range attrlistlist {
-					e, h, err := client.storageOld.LoadSignature(attrlist)
+					e, h, err := storageOld.LoadSignature(attrlist)
 					if err != nil {
 						return err
 					}
@@ -215,12 +235,6 @@ var clientUpdates = []func(client *Client) error{
 			}
 			return nil
 		})
-		if err != nil {
-			return err
-		}
-
-		return client.storageOld.Close()
-
 	},
 
 	// TODO: Maybe delete preferences file to start afresh
@@ -236,20 +250,25 @@ func (client *Client) update() error {
 		return err
 	}
 	// When no updates are found, it can either be a fresh storage or the storage has not been updated
-	// to bbolt yet. Therefore also check the updates file.
+	// to encrypted bbolt storage yet. Therefore also check the plaintext storage `storageOld` and the
+	// updates file.
 	if len(client.updates) == 0 {
-		// Setup legacy storages
-		client.storageOld = storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
-		if err = client.storageOld.Open(); err != nil {
+		storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
+		if err = storageOld.Open(); err != nil {
 			return err
 		}
-		client.fileStorage = fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
 
-		if client.updates, err = client.storageOld.LoadUpdates(); err != nil {
+		if client.updates, err = storageOld.LoadUpdates(); err != nil {
 			return err
 		}
+
+		if err = storageOld.Close(); err != nil {
+			return err
+		}
+
 		if len(client.updates) == 0 {
-			if client.updates, err = client.fileStorage.LoadUpdates(); err != nil {
+			fileStorage := fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
+			if client.updates, err = fileStorage.LoadUpdates(); err != nil {
 				return err
 			}
 		}

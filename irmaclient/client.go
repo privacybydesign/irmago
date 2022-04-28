@@ -54,10 +54,6 @@ type Client struct {
 	// Where we store/load it to/from
 	storage storage
 
-	// Legacy storages needed when client has not updated to the new storage yet
-	storageOld  storageOld
-	fileStorage fileStorage
-
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion
 	maxVersion *irma.ProtocolVersion
@@ -458,9 +454,6 @@ func (client *Client) RemoveStorage() error {
 	client.lookup = make(map[string]*credLookup)
 
 	if err = client.storage.DeleteAll(); err != nil {
-		return err
-	}
-	if err = client.fileStorage.DeleteAll(); err != nil {
 		return err
 	}
 
