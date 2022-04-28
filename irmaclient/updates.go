@@ -237,6 +237,12 @@ var clientUpdates = []func(client *Client) error{
 		})
 	},
 
+	// 10: Delete fileStorage
+	func(client *Client) error {
+		fileStorage := fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
+		return fileStorage.DeleteAll()
+	},
+
 	// TODO: Maybe delete preferences file to start afresh
 }
 
