@@ -211,10 +211,6 @@ func New(
 		return nil, err
 	}
 
-	if len(client.UnenrolledSchemeManagers()) > 1 {
-		return nil, errors.New("Too many keyshare servers")
-	}
-
 	client.lookup = map[string]*credLookup{}
 	for _, attrlistlist := range client.attributes {
 		for i, attrlist := range attrlistlist {
