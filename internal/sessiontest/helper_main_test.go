@@ -48,11 +48,14 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 		signer = test.LoadSigner(t, sk)
 	}
 
+	aesKey := []byte("asdfasdfasdfasdfasdfasdfasdfasdf")
+
 	client, err := irmaclient.New(
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
 		signer,
+		aesKey,
 	)
 	require.NoError(t, err)
 

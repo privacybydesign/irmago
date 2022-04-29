@@ -53,8 +53,6 @@ type Client struct {
 
 	// Where we store/load it to/from
 	storage storage
-	// Legacy storage needed when client has not updated to the new storage yet
-	fileStorage fileStorage
 
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion
@@ -149,6 +147,7 @@ func New(
 	irmaConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
+	aesKey []byte,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
@@ -156,6 +155,9 @@ func New(
 	}
 	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
+	}
+	if len(aesKey) != 32 {
+		return nil, errors.New("AES key must contain 32 bytes")
 	}
 
 	client := &Client{
@@ -186,17 +188,10 @@ func New(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration}
+	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration, aesKey: aesKey}
 	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}
-	// Legacy storage does not need ensuring existence
-	client.fileStorage = fileStorage{storagePath: storagePath, Configuration: client.Configuration}
-
-	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
-		return nil, err
-	}
-	client.applyPreferences()
 
 	// Perform new update functions from clientUpdates, if any
 	if err = client.update(); err != nil {
@@ -204,6 +199,10 @@ func New(
 	}
 
 	// Load our stuff
+	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
+		return nil, err
+	}
+	client.applyPreferences()
 	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
 		return nil, err
 	}
@@ -458,9 +457,6 @@ func (client *Client) RemoveStorage() error {
 	client.lookup = make(map[string]*credLookup)
 
 	if err = client.storage.DeleteAll(); err != nil {
-		return err
-	}
-	if err = client.fileStorage.DeleteAll(); err != nil {
 		return err
 	}
 
@@ -1228,6 +1224,7 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 		return errors.New("Can't uninstall unknown keyshare server")
 	}
 	delete(client.keyshareServers, manager)
+
 	return client.storage.StoreKeyshareServers(client.keyshareServers)
 }
 

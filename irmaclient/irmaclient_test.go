@@ -55,11 +55,14 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 		signer = test.LoadSigner(t, sk)
 	}
 
+	aesKey := []byte("asdfasdfasdfasdfasdfasdfasdfasdf")
+
 	client, err := New(
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
 		signer,
+		aesKey,
 	)
 	require.NoError(t, err)
 
