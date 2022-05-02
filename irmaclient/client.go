@@ -1266,9 +1266,10 @@ func (client *Client) keyshareRemoveWorker(managers []irma.SchemeManagerIdentifi
 	defer func() {
 		err := client.loadCredentialStorage()
 		if err != nil {
-			// Cached storage is out-of-sync with real storage, so we can't do anything but forcing a client restart.
-			// This should never happen.
-			panic(err)
+			// Cached storage is out-of-sync with real storage, so we can't do anything but reporting the error and
+			// closing the client to prevent unexpected changes.
+			client.reportError(err)
+			_ = client.Close()
 		}
 	}()
 
