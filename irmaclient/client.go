@@ -1098,7 +1098,8 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
-	// Check whether PIN is consistent across all keyshare servers by validating PIN at one existing keyshare server (if any).
+	// We expect that the PIN is equal across all keyshare servers. Therefore, we verify the PIN at one other
+	// keyshare server. We don't check all servers to prevent issues when custom keyshare servers are not available.
 	var err error
 	pinCorrect := true
 	for kssManagerID := range client.keyshareServers {
