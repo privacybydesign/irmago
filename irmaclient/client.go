@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -93,7 +92,7 @@ type KeyshareHandler interface {
 
 type ChangePinHandler interface {
 	ChangePinFailure(manager irma.SchemeManagerIdentifier, err error)
-	ChangePinSuccess(manager irma.SchemeManagerIdentifier)
+	ChangePinSuccess()
 	ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int)
 	ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int)
 }
@@ -1088,6 +1087,22 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
+	// Check whether PIN is consistent across all keyshare servers by validating PIN at one existing keyshare server (if any).
+	var err error
+	pinCorrect := true
+	for kssManagerID := range client.keyshareServers {
+		pinCorrect, _, _, err = client.KeyshareVerifyPin(pin, kssManagerID)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to validate pin", 0)
+	}
+	if !pinCorrect {
+		return errors.New("incorrect pin")
+	}
+
 	transport := irma.NewHTTPTransport(manager.KeyshareServer, !client.Preferences.DeveloperMode)
 	kss, err := newKeyshareServer(managerID)
 	if err != nil {
@@ -1138,12 +1153,44 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 	)
 }
 
-func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
+func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 	go func() {
-		err := client.keyshareChangePinWorker(manager, oldPin, newPin)
-		if err != nil {
-			client.handler.ChangePinFailure(manager, err)
+		// Check whether all keyshare servers are available.
+		for schemeID := range client.keyshareServers {
+			success, attempts, blocked, err := client.KeyshareVerifyPin(oldPin, schemeID)
+			if err != nil {
+				client.handler.ChangePinFailure(schemeID, err)
+				return
+			}
+			if !success {
+				if attempts > 0 {
+					client.handler.ChangePinIncorrect(schemeID, attempts)
+				} else {
+					client.handler.ChangePinBlocked(schemeID, blocked)
+				}
+				return
+			}
 		}
+
+		// Change the PIN across all keyshare servers.
+		var updatedSchemes []irma.SchemeManagerIdentifier
+		for manager := range client.keyshareServers {
+			err := client.keyshareChangePinWorker(manager, oldPin, newPin)
+			// If an error occurs, try to undo all changes we already made. In case this fails, we delete the
+			// irrecoverable keyshare server enrollments to prevent PIN inconsistencies.
+			if err != nil {
+				for _, updatedManager := range updatedSchemes {
+					err2 := client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
+					if err2 != nil {
+						_ = client.KeyshareRemove(updatedManager)
+					}
+				}
+				client.handler.ChangePinFailure(manager, err)
+				return
+			}
+			updatedSchemes = append(updatedSchemes, manager)
+		}
+		client.handler.ChangePinSuccess()
 	}()
 }
 
@@ -1168,24 +1215,14 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 
 	switch res.Status {
 	case kssPinSuccess:
-		client.handler.ChangePinSuccess(managerID)
+		return nil
 	case kssPinFailure:
-		attempts, err := strconv.Atoi(res.Message)
-		if err != nil {
-			return err
-		}
-		client.handler.ChangePinIncorrect(managerID, attempts)
+		return errors.Errorf("incorrect PIN for scheme %s", managerID)
 	case kssPinError:
-		timeout, err := strconv.Atoi(res.Message)
-		if err != nil {
-			return err
-		}
-		client.handler.ChangePinBlocked(managerID, timeout)
+		return errors.Errorf("user account is blocked for scheme %s", managerID)
 	default:
-		return errors.New("Unknown keyshare response")
+		return errors.Errorf("unknown keyshare response for scheme %s", managerID)
 	}
-
-	return nil
 }
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
