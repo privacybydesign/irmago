@@ -124,8 +124,8 @@ func (s *storage) Transaction(f func(*transaction) error) error {
 	})
 }
 
-func (s *storage) TxDeleteSignature(tx *transaction, attrs *irma.AttributeList) error {
-	return s.txDelete(tx, signaturesBucket, attrs.Hash())
+func (s *storage) TxDeleteSignature(tx *transaction, hash string) error {
+	return s.txDelete(tx, signaturesBucket, hash)
 }
 
 func (s *storage) TxDeleteAllSignatures(tx *transaction) error {

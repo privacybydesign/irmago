@@ -200,21 +200,9 @@ func New(
 	}
 
 	// Load our stuff
-	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
+	err = client.loadCredentialStorage()
+	if err != nil {
 		return nil, err
-	}
-	if client.attributes, err = client.storage.LoadAttributes(); err != nil {
-		return nil, err
-	}
-	if client.keyshareServers, err = client.storage.LoadKeyshareServers(); err != nil {
-		return nil, err
-	}
-
-	client.lookup = map[string]*credLookup{}
-	for _, attrlistlist := range client.attributes {
-		for i, attrlist := range attrlistlist {
-			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
-		}
 	}
 
 	client.sessions = sessions{client: client, sessions: map[string]*session{}}
@@ -228,6 +216,29 @@ func New(
 
 func (client *Client) Close() error {
 	return client.storage.Close()
+}
+
+func (client *Client) loadCredentialStorage() (err error) {
+	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
+		return
+	}
+	if client.attributes, err = client.storage.LoadAttributes(); err != nil {
+		return
+	}
+	if client.keyshareServers, err = client.storage.LoadKeyshareServers(); err != nil {
+		return
+	}
+
+	client.lookup = map[string]*credLookup{}
+	for _, attrlistlist := range client.attributes {
+		for i, attrlist := range attrlistlist {
+			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
+		}
+	}
+	if len(client.credentialsCache) > 0 {
+		client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
+	}
+	return
 }
 
 func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
@@ -387,7 +398,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeL
 	removed[id] = attrs.Strings()
 
 	err := client.storage.Transaction(func(tx *transaction) error {
-		if err := client.storage.TxDeleteSignature(tx, attrs); err != nil {
+		if err := client.storage.TxDeleteSignature(tx, attrs.Hash()); err != nil {
 			return err
 		}
 		if err := client.storage.TxStoreAttributes(tx, id, client.attributes[id]); err != nil {
@@ -1225,19 +1236,59 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 	}
 }
 
-// KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
+// KeyshareRemove unenrolls the keyshare server of the specified scheme manager and removes all associated credentials.
 func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
-	if _, contains := client.keyshareServers[manager]; !contains {
-		return errors.New("Can't uninstall unknown keyshare server")
-	}
-	delete(client.keyshareServers, manager)
-	return client.storage.StoreKeyshareServers(client.keyshareServers)
+	return client.keyshareRemoveWorker([]irma.SchemeManagerIdentifier{manager})
 }
 
-// KeyshareRemoveAll removes all keyshare server registrations.
+// KeyshareRemoveAll removes all keyshare server registrations and associated credentials.
 func (client *Client) KeyshareRemoveAll() error {
-	client.keyshareServers = map[irma.SchemeManagerIdentifier]*keyshareServer{}
-	return client.storage.StoreKeyshareServers(client.keyshareServers)
+	var managers []irma.SchemeManagerIdentifier
+	for schemeID := range client.keyshareServers {
+		managers = append(managers, schemeID)
+	}
+	return client.keyshareRemoveWorker(managers)
+}
+
+func (client *Client) keyshareRemoveWorker(managers []irma.SchemeManagerIdentifier) error {
+	for _, manager := range managers {
+		if _, contains := client.keyshareServers[manager]; !contains {
+			return errors.New("Can't uninstall unknown keyshare server")
+		}
+	}
+
+	client.credMutex.Lock()
+	defer client.credMutex.Unlock()
+
+	for _, manager := range managers {
+		delete(client.keyshareServers, manager)
+	}
+	defer func() {
+		err := client.loadCredentialStorage()
+		if err != nil {
+			// Cached storage is out-of-sync with real storage, so we can't do anything but forcing a client restart.
+			// This should never happen.
+			panic(err)
+		}
+	}()
+
+	return client.storage.Transaction(func(tx *transaction) error {
+		for _, cred := range client.CredentialInfoList() {
+			for _, manager := range managers {
+				if cred.SchemeManagerID == manager.String() {
+					err := client.storage.TxStoreAttributes(tx, cred.Identifier(), []*irma.AttributeList{})
+					if err != nil {
+						return err
+					}
+					err = client.storage.TxDeleteSignature(tx, cred.Hash)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return client.storage.TxStoreKeyshareServers(tx, client.keyshareServers)
+	})
 }
 
 // Add, load and store log entries
