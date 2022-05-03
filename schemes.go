@@ -502,6 +502,22 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 	return conf.UpdateScheme(scheme, nil)
 }
 
+func (conf *Configuration) RemoveScheme(schemeID SchemeManagerIdentifier) error {
+	if conf.readOnly {
+		return errors.New("cannot remove scheme from a read-only configuration")
+	}
+	scheme, ok := conf.SchemeManagers[schemeID]
+	if !ok {
+		return errors.New("unknown scheme manager")
+	}
+	err := os.RemoveAll(scheme.path())
+	if err != nil {
+		return err
+	}
+	scheme.purge(conf)
+	return nil
+}
+
 func (conf *Configuration) checkRemoteScheme(scheme Scheme) (bool, *Timestamp, SchemeManagerIndex, error) {
 	timestamp, indexbts, sigbts, index, err := conf.checkRemoteTimestamp(scheme)
 	if err != nil {

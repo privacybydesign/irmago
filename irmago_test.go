@@ -1450,3 +1450,32 @@ func TestSchemeLanguageValidation(t *testing.T) {
 	require.Empty(t, testScheme.Description.validate(langs))
 	require.Equal(t, langs, conf.CredentialTypes[NewCredentialTypeIdentifier("test.test.email")].IssueURL.validate(langs))
 }
+
+func TestRemoveScheme(t *testing.T) {
+	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
+
+	conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{Assets: "testdata/irma_configuration"})
+	require.NoError(t, err)
+
+	demoSchemeID := NewSchemeManagerIdentifier("irma-demo")
+	testSchemeID := NewSchemeManagerIdentifier("test")
+
+	err = conf.ParseFolder()
+	require.NoError(t, err)
+	require.Contains(t, conf.SchemeManagers, testSchemeID)
+	require.Contains(t, conf.SchemeManagers, demoSchemeID)
+
+	pkBytes, err := ioutil.ReadFile(filepath.Join(conf.SchemeManagers[demoSchemeID].path(), "pk.pem"))
+	require.NoError(t, err)
+
+	err = conf.RemoveScheme(demoSchemeID)
+	require.NoError(t, err)
+	require.Contains(t, conf.SchemeManagers, testSchemeID)
+	require.NotContains(t, conf.SchemeManagers, demoSchemeID)
+
+	err = conf.InstallScheme("http://localhost:48681/irma_configuration/irma-demo", pkBytes)
+	require.NoError(t, err)
+	require.Contains(t, conf.SchemeManagers, testSchemeID)
+	require.Contains(t, conf.SchemeManagers, demoSchemeID)
+}
