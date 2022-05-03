@@ -1194,7 +1194,12 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 				for _, updatedManager := range updatedSchemes {
 					err2 := client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
 					if err2 != nil {
-						_ = client.KeyshareRemove(updatedManager)
+						client.handler.ReportError(err2)
+						err2 = client.KeyshareRemove(updatedManager)
+						if err2 != nil {
+							client.handler.ReportError(err2)
+							break
+						}
 					}
 				}
 				client.handler.ChangePinFailure(manager, err)
