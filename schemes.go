@@ -502,6 +502,7 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 	return conf.UpdateScheme(scheme, nil)
 }
 
+// TODO: move this to irmaclient such that we don't export a dangerous function.
 func (conf *Configuration) RemoveScheme(schemeID SchemeManagerIdentifier) error {
 	if conf.readOnly {
 		return errors.New("cannot remove scheme from a read-only configuration")
