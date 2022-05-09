@@ -1168,7 +1168,10 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 	go func() {
 		// Check whether all keyshare servers are available.
-		for schemeID := range client.keyshareServers {
+		for schemeID, kss := range client.keyshareServers {
+			if kss.PinOutOfSync {
+				continue
+			}
 			success, attempts, blocked, err := client.KeyshareVerifyPin(oldPin, schemeID)
 			if err != nil {
 				client.handler.ChangePinFailure(schemeID, err)
@@ -1191,18 +1194,22 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 			// If an error occurs, try to undo all changes we already made. In case this fails, we delete the
 			// irrecoverable keyshare server enrollments to prevent PIN inconsistencies.
 			if err != nil {
+				client.handler.ChangePinFailure(manager, err)
+				pinOutOfSync := false
 				for _, updatedManager := range updatedSchemes {
-					err2 := client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
-					if err2 != nil {
-						client.handler.ReportError(err2)
-						err2 = client.KeyshareRemove(updatedManager)
-						if err2 != nil {
-							client.handler.ReportError(err2)
-							break
-						}
+					err = client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
+					if err != nil {
+						client.handler.ReportError(err)
+						client.keyshareServers[updatedManager].PinOutOfSync = true
+						pinOutOfSync = true
 					}
 				}
-				client.handler.ChangePinFailure(manager, err)
+				if pinOutOfSync {
+					err = client.storage.StoreKeyshareServers(client.keyshareServers)
+					if err != nil {
+						client.handler.ReportError(err)
+					}
+				}
 				return
 			}
 			updatedSchemes = append(updatedSchemes, manager)
