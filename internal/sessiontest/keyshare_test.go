@@ -118,7 +118,12 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
+	logs, err := client.LoadNewestLogs(10)
+	require.NoError(t, err)
+	logsAmount := len(logs)
+
+	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
+	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
 	require.NoError(t, <-handler.c)
 
 	request := irma.NewDisclosureRequest(
@@ -126,4 +131,20 @@ func TestMultipleKeyshareServers(t *testing.T) {
 		irma.NewAttributeTypeIdentifier("test2.test.mijnirma.email"),
 	)
 	doSession(t, request, client, irmaServer, nil, nil, nil)
+
+	logs, err = client.LoadNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, logsAmount+2)
+
+	err = client.DeleteScheme(test2SchemeID)
+	require.NoError(t, err)
+	require.NotContains(t, client.Configuration.SchemeManagers, "test2")
+
+	logs, err = client.LoadNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, logsAmount)
+	creds := client.CredentialInfoList()
+	for _, cred := range creds {
+		require.NotEqual(t, cred.SchemeManagerID, "test2")
+	}
 }

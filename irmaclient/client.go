@@ -1,6 +1,8 @@
 package irmaclient
 
 import (
+	"os"
+	"path"
 	"path/filepath"
 	"sync"
 	"time"
@@ -1273,36 +1275,7 @@ func (client *Client) keyshareRemoveWorker(managers []irma.SchemeManagerIdentifi
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
-	for _, manager := range managers {
-		delete(client.keyshareServers, manager)
-	}
-	defer func() {
-		err := client.loadCredentialStorage()
-		if err != nil {
-			// Cached storage is out-of-sync with real storage, so we can't do anything but reporting the error and
-			// closing the client to prevent unexpected changes.
-			client.reportError(err)
-			_ = client.Close()
-		}
-	}()
-
-	return client.storage.Transaction(func(tx *transaction) error {
-		for _, cred := range client.CredentialInfoList() {
-			for _, manager := range managers {
-				if cred.SchemeManagerID == manager.String() {
-					err := client.storage.TxStoreAttributes(tx, cred.Identifier(), []*irma.AttributeList{})
-					if err != nil {
-						return err
-					}
-					err = client.storage.TxDeleteSignature(tx, cred.Hash)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-		return client.storage.TxStoreKeyshareServers(tx, client.keyshareServers)
-	})
+	return client.removeSchemeUsages(managers, false)
 }
 
 // Add, load and store log entries
@@ -1375,6 +1348,92 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 	}
 
 	return nil
+}
+
+// DeleteScheme deletes a scheme and all credentials that belong to it from storage
+// and reloads the Configuration instance.
+func (client *Client) DeleteScheme(schemeID irma.SchemeManagerIdentifier) error {
+	_, ok := client.Configuration.SchemeManagers[schemeID]
+	if !ok {
+		return errors.New("unknown scheme manager")
+	}
+	err := client.removeSchemeUsages([]irma.SchemeManagerIdentifier{schemeID}, true)
+	if err != nil {
+		return err
+	}
+	err = os.RemoveAll(path.Join(client.Configuration.Path, schemeID.String()))
+	if err != nil {
+		return err
+	}
+	return client.Configuration.ParseFolder()
+}
+
+func (client *Client) removeSchemeUsages(schemeIDs []irma.SchemeManagerIdentifier, deleteLogs bool) error {
+	defer func() {
+		err := client.loadCredentialStorage()
+		if err != nil {
+			// Cached storage is out-of-sync with real storage, so we can't do anything but reporting the error and
+			// closing the client to prevent unexpected changes.
+			client.reportError(err)
+			_ = client.Close()
+		}
+	}()
+
+	remainingSchemes := make(map[irma.SchemeManagerIdentifier]struct{})
+	for schemeID := range client.Configuration.SchemeManagers {
+		remainingSchemes[schemeID] = struct{}{}
+	}
+	for _, schemeID := range schemeIDs {
+		delete(client.keyshareServers, schemeID)
+		delete(remainingSchemes, schemeID)
+	}
+
+	return client.storage.Transaction(func(tx *transaction) error {
+		// Delete all credentials being part schemes that will be deleted.
+		for _, cred := range client.CredentialInfoList() {
+			if _, ok := remainingSchemes[irma.NewSchemeManagerIdentifier(cred.SchemeManagerID)]; !ok {
+				err := client.storage.TxStoreAttributes(tx, cred.Identifier(), []*irma.AttributeList{})
+				if err != nil {
+					return err
+				}
+				err = client.storage.TxDeleteSignature(tx, cred.Hash)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		// Delete all logs depending on schemes that will be deleted.
+		if deleteLogs {
+			err := client.storage.TxIterateLogs(tx, func(log *LogEntry) error {
+				shouldDelete := false
+				for credID := range log.Removed {
+					if _, ok := remainingSchemes[credID.SchemeManagerIdentifier()]; !ok {
+						shouldDelete = true
+					}
+				}
+
+				request, err := log.SessionRequest()
+				if err == nil && request != nil {
+					for schemeID := range request.Identifiers().SchemeManagers {
+						if _, ok := remainingSchemes[schemeID]; !ok {
+							shouldDelete = true
+						}
+					}
+				}
+
+				if shouldDelete {
+					err = client.storage.TxDeleteLogEntry(tx, log)
+				}
+				return err
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return client.storage.TxStoreKeyshareServers(tx, client.keyshareServers)
+	})
 }
 
 func (cc *credCandidate) Present() bool {

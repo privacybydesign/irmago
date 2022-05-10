@@ -367,6 +367,35 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 	})
 }
 
+// IterateLogs iterates over all logs sorted by time, starting with the newest one.
+func (s *storage) IterateLogs(handler func(log *LogEntry) error) error {
+	return s.db.View(func(tx *bbolt.Tx) error {
+		return s.TxIterateLogs(&transaction{tx}, handler)
+	})
+}
+
+// TxIterateLogs iterates over all logs sorted by time, starting with the newest one.
+func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) error) error {
+	bucket := tx.Bucket([]byte(logsBucket))
+	if bucket == nil {
+		return nil
+	}
+	c := bucket.Cursor()
+
+	for k, v := c.Last(); k != nil; k, v = c.Prev() {
+		var log LogEntry
+		if err := json.Unmarshal(v, &log); err != nil {
+			return err
+		}
+
+		err := handler(&log)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *storage) LoadUpdates() (updates []update, err error) {
 	updates = []update{}
 	_, err = s.load(userdataBucket, updatesKey, &updates)
@@ -381,6 +410,20 @@ func (s *storage) LoadPreferences() (Preferences, error) {
 
 func (s *storage) TxDeleteUserdata(tx *transaction) error {
 	return tx.DeleteBucket([]byte(userdataBucket))
+}
+
+func (s *storage) DeleteLogEntry(entry *LogEntry) error {
+	return s.Transaction(func(tx *transaction) error {
+		return s.TxDeleteLogEntry(tx, entry)
+	})
+}
+
+func (s *storage) TxDeleteLogEntry(tx *transaction, entry *LogEntry) error {
+	b := tx.Bucket([]byte(logsBucket))
+	if b == nil {
+		return nil
+	}
+	return b.Delete(s.logEntryKeyToBytes(entry.ID))
 }
 
 func (s *storage) TxDeleteLogs(tx *transaction) error {
