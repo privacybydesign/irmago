@@ -1194,8 +1194,8 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 		var updatedSchemes []irma.SchemeManagerIdentifier
 		for manager := range client.keyshareServers {
 			err := client.keyshareChangePinWorker(manager, oldPin, newPin)
-			// If an error occurs, try to undo all changes we already made. In case this fails, we delete the
-			// irrecoverable keyshare server enrollments to prevent PIN inconsistencies.
+			// If an error occurs, try to undo all changes we already made. In case this fails,
+			// we set the PinOutOfSync flag for that particular enrollment.
 			if err != nil {
 				client.handler.ChangePinFailure(manager, err)
 				pinOutOfSync := false
