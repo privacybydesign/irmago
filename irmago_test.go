@@ -1460,22 +1460,32 @@ func TestRemoveScheme(t *testing.T) {
 
 	demoSchemeID := NewSchemeManagerIdentifier("irma-demo")
 	testSchemeID := NewSchemeManagerIdentifier("test")
+	test2SchemeID := NewSchemeManagerIdentifier("test2")
 
 	err = conf.ParseFolder()
 	require.NoError(t, err)
 	require.Contains(t, conf.SchemeManagers, testSchemeID)
 	require.Contains(t, conf.SchemeManagers, demoSchemeID)
 
-	pkBytes, err := ioutil.ReadFile(filepath.Join(conf.SchemeManagers[demoSchemeID].path(), "pk.pem"))
+	pkBytes, err := ioutil.ReadFile("testdata/irma_configuration_keyshare/test2/pk.pem")
 	require.NoError(t, err)
 
-	err = conf.RemoveScheme(demoSchemeID)
+	err = conf.InstallScheme("http://localhost:48681/irma_configuration_keyshare/test2", pkBytes)
 	require.NoError(t, err)
 	require.Contains(t, conf.SchemeManagers, testSchemeID)
-	require.NotContains(t, conf.SchemeManagers, demoSchemeID)
+	require.Contains(t, conf.SchemeManagers, test2SchemeID)
+	require.Contains(t, conf.SchemeManagers, demoSchemeID)
 
-	err = conf.InstallScheme("http://localhost:48681/irma_configuration/irma-demo", pkBytes)
+	// Check that we cannot delete a read-only asset scheme.
+	err = conf.DangerousDeleteScheme(conf.SchemeManagers[demoSchemeID])
+	require.Error(t, err)
+	require.Contains(t, conf.SchemeManagers, testSchemeID)
+	require.Contains(t, conf.SchemeManagers, test2SchemeID)
+	require.Contains(t, conf.SchemeManagers, demoSchemeID)
+
+	err = conf.DangerousDeleteScheme(conf.SchemeManagers[test2SchemeID])
 	require.NoError(t, err)
 	require.Contains(t, conf.SchemeManagers, testSchemeID)
+	require.NotContains(t, conf.SchemeManagers, test2SchemeID)
 	require.Contains(t, conf.SchemeManagers, demoSchemeID)
 }

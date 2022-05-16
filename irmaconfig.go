@@ -144,16 +144,6 @@ func (conf *Configuration) ParseFolder() (err error) {
 		if err != nil {
 			return err
 		}
-		if err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
-			basedir := filepath.Base(dir)
-			if _, presentInAssets := assetsFolders[basedir]; !presentInAssets {
-				Logger.Warnf(`Found dir "%s" in irma_configuration that is not in assets; removing`, basedir)
-				return os.RemoveAll(dir)
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
 	}
 
 	// Since requestor schemes may contain information defined in issuer schemes, first check

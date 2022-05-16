@@ -107,8 +107,12 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 }
 
 func TestMultipleKeyshareServers(t *testing.T) {
-	irmaServer := StartIrmaServer(t, nil)
+	serverConfig := IrmaServerConfiguration()
+	serverConfig.SchemesAssetsPath = serverConfig.SchemesPath
+	serverConfig.SchemesPath = t.TempDir()
+	irmaServer := StartIrmaServer(t, serverConfig)
 	defer irmaServer.Stop()
+
 	keyshareServerTest := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
 	defer keyshareServerTest.Stop()
 	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"))
@@ -117,6 +121,14 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	var handler *TestClientHandler
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
+
+	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
+	schemeURL := "http://localhost:48681/irma_configuration_keyshare/test2"
+	err := client.Configuration.DangerousTOFUInstallScheme(schemeURL)
+	require.NoError(t, err)
+	err = serverConfig.IrmaConfiguration.DangerousTOFUInstallScheme(schemeURL)
+	require.NoError(t, err)
 
 	logs, err := client.LoadNewestLogs(10)
 	require.NoError(t, err)
@@ -136,10 +148,11 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, logs, logsAmount+2)
 
-	err = client.DeleteScheme(test2SchemeID)
+	err = client.RemoveScheme(test2SchemeID)
 	require.NoError(t, err)
 	require.NotContains(t, client.Configuration.SchemeManagers, "test2")
 
+	// Check whether all credentials and log entries being related to test2 are removed.
 	logs, err = client.LoadNewestLogs(10)
 	require.NoError(t, err)
 	require.Len(t, logs, logsAmount)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -238,6 +239,19 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	scheme.purge(conf)
 	conf.join(newconf)
 	return nil
+}
+
+// DangerousDeleteScheme deletes the given scheme from the configuration.
+// Be aware: this action is dangerous when the scheme is still in use.
+func (conf *Configuration) DangerousDeleteScheme(scheme Scheme) error {
+	_, exists, err := common.Stat(path.Join(conf.assets, scheme.id()))
+	if err != nil {
+		return err
+	}
+	if exists {
+		return errors.New("cannot delete scheme that is included in assets")
+	}
+	return scheme.delete(conf)
 }
 
 func (conf *Configuration) ParseSchemeFolder(dir string) (scheme Scheme, serr error) {

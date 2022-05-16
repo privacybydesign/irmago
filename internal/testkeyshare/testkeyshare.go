@@ -40,7 +40,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeMan
 	require.NoError(t, err)
 
 	testdataPath := test.FindTestdataFolder(t)
-	schemesPath := filepath.Join(testdataPath, "irma_configuration")
+	schemesPath := filepath.Join(testdataPath, "irma_configuration_keyshare")
 	conf, err := irma.NewConfiguration(schemesPath, irma.ConfigurationOptions{})
 	require.NoError(t, err)
 	err = conf.ParseFolder()
@@ -52,7 +52,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeMan
 	s, err := keyshareserver.New(&keyshareserver.Configuration{
 		Configuration: &server.Configuration{
 			SchemesPath:           schemesPath,
-			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
+			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys_keyshare"),
 			Logger:                l,
 			URL:                   parsedURL.String(),
 		},

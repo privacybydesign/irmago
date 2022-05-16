@@ -19,6 +19,12 @@ func TestKeyshareChangePin(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
 
+	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
+	schemeURL := "http://localhost:48681/irma_configuration_keyshare/test2"
+	err := client.Configuration.DangerousTOFUInstallScheme(schemeURL)
+	require.NoError(t, err)
+
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
 
@@ -41,6 +47,12 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, handler.storage)
+
+	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
+	schemeURL := "http://localhost:48681/irma_configuration_keyshare/test2"
+	err := client.Configuration.DangerousTOFUInstallScheme(schemeURL)
+	require.NoError(t, err)
 
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)

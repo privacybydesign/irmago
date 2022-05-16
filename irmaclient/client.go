@@ -1,8 +1,6 @@
 package irmaclient
 
 import (
-	"os"
-	"path"
 	"path/filepath"
 	"sync"
 	"time"
@@ -1275,7 +1273,7 @@ func (client *Client) keyshareRemoveWorker(managers []irma.SchemeManagerIdentifi
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
-	return client.removeSchemeUsages(managers, false)
+	return client.removeCredentialsFromSchemes(managers, false)
 }
 
 // Add, load and store log entries
@@ -1350,25 +1348,25 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 	return nil
 }
 
-// DeleteScheme deletes a scheme and all credentials that belong to it from storage
-// and reloads the Configuration instance.
-func (client *Client) DeleteScheme(schemeID irma.SchemeManagerIdentifier) error {
-	_, ok := client.Configuration.SchemeManagers[schemeID]
+// RemoveScheme removes a scheme and deletes all credentials and log entries related to it from storage.
+func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error {
+	scheme, ok := client.Configuration.SchemeManagers[schemeID]
 	if !ok {
 		return errors.New("unknown scheme manager")
 	}
-	err := client.removeSchemeUsages([]irma.SchemeManagerIdentifier{schemeID}, true)
+
+	err := client.removeCredentialsFromSchemes([]irma.SchemeManagerIdentifier{schemeID}, true)
 	if err != nil {
 		return err
 	}
-	err = os.RemoveAll(path.Join(client.Configuration.Path, schemeID.String()))
+	err = client.Configuration.DangerousDeleteScheme(scheme)
 	if err != nil {
 		return err
 	}
 	return client.Configuration.ParseFolder()
 }
 
-func (client *Client) removeSchemeUsages(schemeIDs []irma.SchemeManagerIdentifier, deleteLogs bool) error {
+func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManagerIdentifier, deleteLogs bool) error {
 	defer func() {
 		err := client.loadCredentialStorage()
 		if err != nil {
