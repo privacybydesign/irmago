@@ -118,7 +118,6 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"))
 	defer keyshareServerTest2.Stop()
 
-	var handler *TestClientHandler
 	client, handler := parseStorage(t, optionNoSchemeAssets)
 	defer test.ClearTestStorage(t, handler.storage)
 
