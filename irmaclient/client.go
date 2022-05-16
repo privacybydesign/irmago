@@ -1102,7 +1102,10 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	// keyshare server. We don't check all servers to prevent issues when custom keyshare servers are not available.
 	var err error
 	pinCorrect := true
-	for kssManagerID := range client.keyshareServers {
+	for kssManagerID, kss := range client.keyshareServers {
+		if kss.PinOutOfSync {
+			continue
+		}
 		pinCorrect, _, _, err = client.KeyshareVerifyPin(pin, kssManagerID)
 		if err == nil {
 			break
