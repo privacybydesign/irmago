@@ -48,6 +48,7 @@ const (
 	optionWait
 	optionPrePairingClient
 	optionPolling
+	optionNoSchemeAssets
 )
 
 func processOptions(options ...option) option {

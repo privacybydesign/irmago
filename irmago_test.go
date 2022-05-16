@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -1451,41 +1453,57 @@ func TestSchemeLanguageValidation(t *testing.T) {
 	require.Equal(t, langs, conf.CredentialTypes[NewCredentialTypeIdentifier("test.test.email")].IssueURL.validate(langs))
 }
 
-func TestRemoveScheme(t *testing.T) {
+func TestDeleteScheme(t *testing.T) {
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
 
-	conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{Assets: "testdata/irma_configuration"})
+	// Select a subset of schemes such that we can add additional schemes later.
+	assetsDir := t.TempDir()
+	readOnlySchemes := []SchemeManagerIdentifier{
+		NewSchemeManagerIdentifier("irma-demo"),
+		NewSchemeManagerIdentifier("test"),
+	}
+	for _, scheme := range readOnlySchemes {
+		err := common.CopyDirectory(
+			path.Join("testdata/irma_configuration/", scheme.String()),
+			path.Join(assetsDir, scheme.String()),
+		)
+		require.NoError(t, err)
+	}
+
+	conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{Assets: assetsDir})
 	require.NoError(t, err)
 
-	demoSchemeID := NewSchemeManagerIdentifier("irma-demo")
-	testSchemeID := NewSchemeManagerIdentifier("test")
-	test2SchemeID := NewSchemeManagerIdentifier("test2")
+	schemeToInstall := NewSchemeManagerIdentifier("test2")
 
 	err = conf.ParseFolder()
 	require.NoError(t, err)
-	require.Contains(t, conf.SchemeManagers, testSchemeID)
-	require.Contains(t, conf.SchemeManagers, demoSchemeID)
+	for _, scheme := range readOnlySchemes {
+		require.Contains(t, conf.SchemeManagers, scheme)
+	}
 
-	pkBytes, err := ioutil.ReadFile("testdata/irma_configuration_keyshare/test2/pk.pem")
+	pkBytes, err := ioutil.ReadFile(fmt.Sprintf("testdata/irma_configuration/%s/pk.pem", schemeToInstall))
 	require.NoError(t, err)
 
-	err = conf.InstallScheme("http://localhost:48681/irma_configuration_keyshare/test2", pkBytes)
+	err = conf.InstallScheme("http://localhost:48681/irma_configuration/"+schemeToInstall.String(), pkBytes)
 	require.NoError(t, err)
-	require.Contains(t, conf.SchemeManagers, testSchemeID)
-	require.Contains(t, conf.SchemeManagers, test2SchemeID)
-	require.Contains(t, conf.SchemeManagers, demoSchemeID)
+	require.Contains(t, conf.SchemeManagers, schemeToInstall)
+	for _, scheme := range readOnlySchemes {
+		require.Contains(t, conf.SchemeManagers, scheme)
+	}
 
 	// Check that we cannot delete a read-only asset scheme.
-	err = conf.DangerousDeleteScheme(conf.SchemeManagers[demoSchemeID])
+	err = conf.DangerousDeleteScheme(conf.SchemeManagers[readOnlySchemes[0]])
 	require.Error(t, err)
-	require.Contains(t, conf.SchemeManagers, testSchemeID)
-	require.Contains(t, conf.SchemeManagers, test2SchemeID)
-	require.Contains(t, conf.SchemeManagers, demoSchemeID)
+	require.Contains(t, conf.SchemeManagers, schemeToInstall)
+	for _, scheme := range readOnlySchemes {
+		require.Contains(t, conf.SchemeManagers, scheme)
+	}
 
-	err = conf.DangerousDeleteScheme(conf.SchemeManagers[test2SchemeID])
+	err = conf.DangerousDeleteScheme(conf.SchemeManagers[schemeToInstall])
 	require.NoError(t, err)
-	require.Contains(t, conf.SchemeManagers, testSchemeID)
-	require.NotContains(t, conf.SchemeManagers, test2SchemeID)
-	require.Contains(t, conf.SchemeManagers, demoSchemeID)
+	require.NotContains(t, conf.SchemeManagers, schemeToInstall)
+	for _, scheme := range readOnlySchemes {
+		require.Contains(t, conf.SchemeManagers, scheme)
+	}
 }

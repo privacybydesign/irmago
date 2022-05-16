@@ -119,16 +119,8 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	defer keyshareServerTest2.Stop()
 
 	var handler *TestClientHandler
-	client, handler := parseStorage(t)
+	client, handler := parseStorage(t, optionNoSchemeAssets)
 	defer test.ClearTestStorage(t, handler.storage)
-
-	test.StartSchemeManagerHttpServer()
-	defer test.StopSchemeManagerHttpServer()
-	schemeURL := "http://localhost:48681/irma_configuration_keyshare/test2"
-	err := client.Configuration.DangerousTOFUInstallScheme(schemeURL)
-	require.NoError(t, err)
-	err = serverConfig.IrmaConfiguration.DangerousTOFUInstallScheme(schemeURL)
-	require.NoError(t, err)
 
 	logs, err := client.LoadNewestLogs(10)
 	require.NoError(t, err)
