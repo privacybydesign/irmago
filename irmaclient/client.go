@@ -1351,7 +1351,7 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 	return nil
 }
 
-// RemoveScheme removes a scheme and deletes all credentials and log entries related to it from storage.
+// RemoveScheme removes the given scheme and all credentials and log entries related to it.
 func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error {
 	scheme, ok := client.Configuration.SchemeManagers[schemeID]
 	if !ok {
