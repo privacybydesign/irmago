@@ -128,10 +128,8 @@ func (conf *Configuration) ParseFolder() (err error) {
 	conf.clear()
 
 	// Copy any new or updated schemes out of the assets into storage
-	assetsFolders := make(map[string]struct{})
 	if conf.assets != "" {
 		err = common.IterateSubfolders(conf.assets, func(dir string, _ os.FileInfo) error {
-			assetsFolders[filepath.Base(dir)] = struct{}{}
 			uptodate, err := conf.isUpToDate(filepath.Base(dir))
 			if err != nil {
 				return err
