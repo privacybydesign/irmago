@@ -1369,7 +1369,7 @@ func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error 
 	return client.Configuration.ParseFolder()
 }
 
-func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManagerIdentifier, deleteLogs bool) error {
+func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
 	defer func() {
 		err := client.loadCredentialStorage()
 		if err != nil {
@@ -1390,7 +1390,7 @@ func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManage
 	}
 
 	return client.storage.Transaction(func(tx *transaction) error {
-		// Delete all credentials being part schemes that will be deleted.
+		// Delete all credentials of given schemes.
 		for _, cred := range client.CredentialInfoList() {
 			if _, ok := remainingSchemes[irma.NewSchemeManagerIdentifier(cred.SchemeManagerID)]; !ok {
 				err := client.storage.TxStoreAttributes(tx, cred.Identifier(), []*irma.AttributeList{})
@@ -1404,8 +1404,8 @@ func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManage
 			}
 		}
 
-		// Delete all logs depending on schemes that will be deleted.
-		if deleteLogs {
+		// Delete all logs of given schemes, if necessary.
+		if removeLogs {
 			err := client.storage.TxIterateLogs(tx, func(log *LogEntry) error {
 				shouldDelete := false
 				for credID := range log.Removed {
