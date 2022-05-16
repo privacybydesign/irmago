@@ -1474,14 +1474,13 @@ func TestDeleteScheme(t *testing.T) {
 	conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{Assets: assetsDir})
 	require.NoError(t, err)
 
-	schemeToInstall := NewSchemeManagerIdentifier("test2")
-
 	err = conf.ParseFolder()
 	require.NoError(t, err)
 	for _, scheme := range readOnlySchemes {
 		require.Contains(t, conf.SchemeManagers, scheme)
 	}
 
+	schemeToInstall := NewSchemeManagerIdentifier("test2")
 	pkBytes, err := ioutil.ReadFile(fmt.Sprintf("testdata/irma_configuration/%s/pk.pem", schemeToInstall))
 	require.NoError(t, err)
 
