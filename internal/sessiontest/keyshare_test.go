@@ -137,7 +137,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 
 	err = client.RemoveScheme(test2SchemeID)
 	require.NoError(t, err)
-	require.NotContains(t, client.Configuration.SchemeManagers, "test2")
+	require.NotContains(t, client.Configuration.SchemeManagers, test2SchemeID)
 
 	// Check whether all credentials and log entries being related to test2 are removed.
 	logs, err = client.LoadNewestLogs(10)
