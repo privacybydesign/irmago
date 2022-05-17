@@ -1254,7 +1254,7 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager and removes all associated credentials.
 func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
-	return client.keyshareRemoveWorker([]irma.SchemeManagerIdentifier{manager})
+	return client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{manager})
 }
 
 // KeyshareRemoveAll removes all keyshare server registrations and associated credentials.
@@ -1263,10 +1263,10 @@ func (client *Client) KeyshareRemoveAll() error {
 	for schemeID := range client.keyshareServers {
 		managers = append(managers, schemeID)
 	}
-	return client.keyshareRemoveWorker(managers)
+	return client.keyshareRemoveMultiple(managers)
 }
 
-func (client *Client) keyshareRemoveWorker(managers []irma.SchemeManagerIdentifier) error {
+func (client *Client) keyshareRemoveMultiple(managers []irma.SchemeManagerIdentifier) error {
 	for _, manager := range managers {
 		if _, contains := client.keyshareServers[manager]; !contains {
 			return errors.New("Can't uninstall unknown keyshare server")
@@ -1373,8 +1373,8 @@ func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManage
 	defer func() {
 		err := client.loadCredentialStorage()
 		if err != nil {
-			// Cached storage is out-of-sync with real storage, so we can't do anything but reporting the error and
-			// closing the client to prevent unexpected changes.
+			// Cached storage is out-of-sync with real storage, so we can't do anything but report the error and
+			// close the client to prevent unexpected changes.
 			client.reportError(err)
 			_ = client.Close()
 		}
@@ -1404,7 +1404,7 @@ func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManage
 			}
 		}
 
-		// Delete all logs of given schemes, if necessary.
+		// Remove all logs of given schemes, if necessary.
 		if removeLogs {
 			err := client.storage.TxIterateLogs(tx, func(log *LogEntry) error {
 				shouldDelete := false
