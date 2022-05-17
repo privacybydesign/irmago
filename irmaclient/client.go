@@ -1415,7 +1415,10 @@ func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManage
 				}
 
 				request, err := log.SessionRequest()
-				if err == nil && request != nil {
+				if err != nil {
+					return err
+				}
+				if request != nil {
 					for schemeID := range request.Identifiers().SchemeManagers {
 						if _, ok := remainingSchemes[schemeID]; !ok {
 							shouldDelete = true
@@ -1424,9 +1427,9 @@ func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManage
 				}
 
 				if shouldDelete {
-					err = client.storage.TxDeleteLogEntry(tx, log)
+					return client.storage.TxDeleteLogEntry(tx, log)
 				}
-				return err
+				return nil
 			})
 			if err != nil {
 				return err
