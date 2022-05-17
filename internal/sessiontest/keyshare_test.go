@@ -107,12 +107,8 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 }
 
 func TestMultipleKeyshareServers(t *testing.T) {
-	serverConfig := IrmaServerConfiguration()
-	serverConfig.SchemesAssetsPath = serverConfig.SchemesPath
-	serverConfig.SchemesPath = t.TempDir()
-	irmaServer := StartIrmaServer(t, serverConfig)
+	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
-
 	keyshareServerTest := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
 	defer keyshareServerTest.Stop()
 	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"))
