@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"github.com/privacybydesign/gabi"
+	"go.etcd.io/bbolt"
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
@@ -161,7 +162,96 @@ var clientUpdates = []func(client *Client) error{
 		})
 	},
 
-	// 9: Encrypt storage
+	// 9: Migrate old log entries to current format and delete malformatted log entries
+	func(client *Client) error {
+		storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
+		if err := storageOld.Open(); err != nil {
+			return err
+		}
+		defer storageOld.Close()
+
+		var toBeMigratedLogs []*LogEntry
+		var toBeDeletedLogs [][]byte
+
+		return storageOld.db.Update(func(tx *bbolt.Tx) error {
+			bucket := tx.Bucket([]byte(logsBucket))
+			if bucket == nil {
+				return nil
+			}
+
+			// The inner function only returns nil. Thus, the error can be ignored.
+			_ = bucket.ForEach(func(k []byte, v []byte) error {
+				type rawLogEntry LogEntry
+				var temp struct {
+					ServerName *json.RawMessage `json:",omitempty"`
+					rawLogEntry
+				}
+
+				if err := json.Unmarshal(v, &temp); err != nil {
+					toBeDeletedLogs = append(toBeDeletedLogs, k)
+					return nil
+				}
+
+				// Copy standard fields
+				log := LogEntry(temp.rawLogEntry)
+
+				// If there's no servername in the old log entry, delete the log entry.
+				if temp.ServerName == nil {
+					toBeDeletedLogs = append(toBeDeletedLogs, k)
+					return nil
+				}
+
+				// Try to decode servername as RequestorInfo. If unmarshaling returns an error, the
+				// log entry cannot be used and should be deleted.
+				if err := json.Unmarshal(*temp.ServerName, &(log.ServerName)); err != nil {
+					toBeDeletedLogs = append(toBeDeletedLogs, k)
+					return nil
+				}
+
+				// If successful, we should have at least one translation for a name, so check that.
+				// Then log entry is up-to-date and no action is needed
+				if len(log.ServerName.Name) != 0 {
+					return nil
+				}
+
+				// The Rawmessage is not of type RequestorInfo and may still be of the old format.
+				// Try to parse the Rawmessage as TranslatedString into the log entry's ServerName.Name.
+				// Again, if unmarshaling returns an error, the log entry cannot be used and should be deleted.
+				log.ServerName = &irma.RequestorInfo{}
+				if err := json.Unmarshal(*temp.ServerName, &(log.ServerName.Name)); err != nil {
+					toBeDeletedLogs = append(toBeDeletedLogs, k)
+					return nil
+				}
+
+				// If the log entry's name was filled correctly, log entry migration is feasible.
+				// Otherwise, delete the old log.
+				if len(log.ServerName.Name) != 0 {
+					toBeMigratedLogs = append(toBeMigratedLogs, &log)
+				} else {
+					toBeDeletedLogs = append(toBeDeletedLogs, k)
+				}
+				return nil
+			})
+
+			for _, id := range toBeDeletedLogs {
+				err := bucket.Delete(id)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Overwrite old with newly formatted log entry.
+			for _, log := range toBeMigratedLogs {
+				if err := storageOld.TxAddLogEntry(&transaction{tx}, log); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
+	},
+
+	// 10: Encrypt storage
 	func(client *Client) error {
 		storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
 		if err := storageOld.Open(); err != nil {
