@@ -285,8 +285,18 @@ var clientUpdates = []func(client *Client) error{
 		if err != nil {
 			return err
 		}
+		logs, err := storageOld.loadLogs()
+		if err != nil {
+			return err
+		}
 
 		return client.storage.Transaction(func(tx *transaction) error {
+			for _, log := range logs {
+				if err = client.storage.TxAddLogEntry(tx, log); err != nil {
+					return err
+				}
+			}
+
 			err = client.storage.TxStoreSecretKey(tx, sk)
 			if err != nil {
 				return err
@@ -327,7 +337,7 @@ var clientUpdates = []func(client *Client) error{
 		})
 	},
 
-	// 10: Delete fileStorage
+	// 11: Delete fileStorage
 	func(client *Client) error {
 		fileStorage := fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
 		return fileStorage.DeleteAll()

@@ -260,6 +260,26 @@ func (s *storageOld) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifi
 	return
 }
 
+func (s *storageOld) loadLogs() ([]*LogEntry, error) {
+	var logs []*LogEntry
+	return logs, s.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(logsBucket))
+		if bucket == nil {
+			return nil
+		}
+
+		return bucket.ForEach(func(_ []byte, v []byte) error {
+			var log LogEntry
+			if err := json.Unmarshal(v, &log); err != nil {
+				return err
+			}
+
+			logs = append(logs, &log)
+			return nil
+		})
+	})
+}
+
 func (s *storageOld) LoadUpdates() (updates []update, err error) {
 	updates = []update{}
 	_, err = s.load(userdataBucket, updatesKey, &updates)
