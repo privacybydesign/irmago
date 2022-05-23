@@ -183,7 +183,7 @@ var clientUpdates = []func(client *Client) error{
 			_ = bucket.ForEach(func(k []byte, v []byte) error {
 				type rawLogEntry LogEntry
 				var temp struct {
-					ServerName *json.RawMessage `json:",omitempty"`
+					ServerName json.RawMessage `json:",omitempty"`
 					rawLogEntry
 				}
 
@@ -196,14 +196,14 @@ var clientUpdates = []func(client *Client) error{
 				log := LogEntry(temp.rawLogEntry)
 
 				// If there's no servername in the old log entry, delete the log entry.
-				if temp.ServerName == nil {
+				if len(temp.ServerName) == 0 {
 					toBeDeletedLogs = append(toBeDeletedLogs, k)
 					return nil
 				}
 
 				// Try to decode servername as RequestorInfo. If unmarshaling returns an error, the
 				// log entry cannot be used and should be deleted.
-				if err := json.Unmarshal(*temp.ServerName, &(log.ServerName)); err != nil {
+				if err := json.Unmarshal(temp.ServerName, &(log.ServerName)); err != nil {
 					toBeDeletedLogs = append(toBeDeletedLogs, k)
 					return nil
 				}
@@ -218,7 +218,7 @@ var clientUpdates = []func(client *Client) error{
 				// Try to parse the Rawmessage as TranslatedString into the log entry's ServerName.Name.
 				// Again, if unmarshaling returns an error, the log entry cannot be used and should be deleted.
 				log.ServerName = &irma.RequestorInfo{}
-				if err := json.Unmarshal(*temp.ServerName, &(log.ServerName.Name)); err != nil {
+				if err := json.Unmarshal(temp.ServerName, &(log.ServerName.Name)); err != nil {
 					toBeDeletedLogs = append(toBeDeletedLogs, k)
 					return nil
 				}
