@@ -55,7 +55,7 @@ var clientUpdates = []func(client *Client) error{
 		if err = storageOld.Open(); err != nil {
 			return err
 		}
-		defer storageOld.Close()
+		defer func() { _ = storageOld.Close() }()
 
 		// Open one bolt transaction to process all our log entries in
 		return storageOld.Transaction(func(tx *transaction) error {
@@ -135,7 +135,7 @@ var clientUpdates = []func(client *Client) error{
 		if err = storageOld.Open(); err != nil {
 			return err
 		}
-		defer storageOld.Close()
+		defer func() { _ = storageOld.Close() }()
 
 		return storageOld.Transaction(func(tx *transaction) error {
 			if err = storageOld.TxStoreSecretKey(tx, sk); err != nil {
@@ -168,7 +168,7 @@ var clientUpdates = []func(client *Client) error{
 		if err := storageOld.Open(); err != nil {
 			return err
 		}
-		defer storageOld.Close()
+		defer func() { _ = storageOld.Close() }()
 
 		var toBeMigratedLogs []*LogEntry
 		var toBeDeletedLogs [][]byte
@@ -257,7 +257,7 @@ var clientUpdates = []func(client *Client) error{
 		if err := storageOld.Open(); err != nil {
 			return err
 		}
-		defer storageOld.Close()
+		defer func() { _ = storageOld.Close() }()
 
 		sk, err := storageOld.LoadSecretKey()
 		if err != nil {
