@@ -169,6 +169,19 @@ func (s *storageOld) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 	return b.Put(k, v)
 }
 
+func (s *storageOld) TxUpdateLogEntry(tx *transaction, k []byte, entry *LogEntry) error {
+	b, err := tx.CreateBucketIfNotExists([]byte(logsBucket))
+	if err != nil {
+		return err
+	}
+	v, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	return b.Put(k, v)
+}
+
 func (s *storageOld) logEntryKeyToBytes(id uint64) []byte {
 	k := make([]byte, 8)
 	binary.BigEndian.PutUint64(k, id)

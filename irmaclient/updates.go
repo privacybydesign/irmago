@@ -170,7 +170,7 @@ var clientUpdates = []func(client *Client) error{
 		}
 		defer func() { _ = storageOld.Close() }()
 
-		var toBeMigratedLogs []*LogEntry
+		toBeMigratedLogs := make(map[*LogEntry][]byte)
 		var toBeDeletedLogs [][]byte
 
 		return storageOld.db.Update(func(tx *bbolt.Tx) error {
@@ -226,7 +226,7 @@ var clientUpdates = []func(client *Client) error{
 				// If the log entry's name was filled correctly, log entry migration is feasible.
 				// Otherwise, delete the old log.
 				if len(log.ServerName.Name) != 0 {
-					toBeMigratedLogs = append(toBeMigratedLogs, &log)
+					toBeMigratedLogs[&log] = k
 				} else {
 					toBeDeletedLogs = append(toBeDeletedLogs, k)
 				}
@@ -241,8 +241,8 @@ var clientUpdates = []func(client *Client) error{
 			}
 
 			// Overwrite old with newly formatted log entry.
-			for _, log := range toBeMigratedLogs {
-				if err := storageOld.TxAddLogEntry(&transaction{tx}, log); err != nil {
+			for log, k := range toBeMigratedLogs {
+				if err := storageOld.TxUpdateLogEntry(&transaction{tx}, k, log); err != nil {
 					return err
 				}
 			}
