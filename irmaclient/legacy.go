@@ -160,20 +160,12 @@ func (s *storageOld) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 	if err != nil {
 		return err
 	}
-	k := s.logEntryKeyToBytes(entry.ID)
-	v, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
 
-	return b.Put(k, v)
+	return s.WriteLogEntry(b, entry)
 }
 
-func (s *storageOld) TxUpdateLogEntry(tx *transaction, k []byte, entry *LogEntry) error {
-	b, err := tx.CreateBucketIfNotExists([]byte(logsBucket))
-	if err != nil {
-		return err
-	}
+func (s *storageOld) WriteLogEntry(b *bbolt.Bucket, entry *LogEntry) error {
+	k := s.logEntryKeyToBytes(entry.ID)
 	v, err := json.Marshal(entry)
 	if err != nil {
 		return err
