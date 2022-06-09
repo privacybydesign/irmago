@@ -147,6 +147,11 @@ func New(
 	handler ClientHandler,
 	aesKey []byte,
 ) (*Client, error) {
+	// Copy the incoming byte slice since the incoming byte slice lives in C memory and may be freed
+	// by C when still in use in Go. This caused storage corruption.
+	aesKeyCopy := make([]byte, len(aesKey))
+	copy(aesKeyCopy, aesKey)
+
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
 		return nil, err
@@ -154,7 +159,7 @@ func New(
 	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
-	if len(aesKey) != 32 {
+	if len(aesKeyCopy) != 32 {
 		return nil, errors.New("AES key must contain 32 bytes")
 	}
 
@@ -185,7 +190,7 @@ func New(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration, aesKey: aesKey}
+	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration, aesKey: aesKeyCopy}
 	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}
