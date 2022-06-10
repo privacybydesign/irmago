@@ -200,6 +200,8 @@ func TestRevocationAll(t *testing.T) {
 
 		// run scheduled update of accumulator, triggering a POST to our IRMA server
 		runAllSchedulerJobs(revServer.conf.IrmaConfiguration.Scheduler)
+		// give HTTP request time to be processed
+		time.Sleep(100 * time.Millisecond)
 
 		// check that both the revocation server's and our IRMA server's configuration
 		// agree on the same accumulator which has the same index but updated time
@@ -348,6 +350,8 @@ func TestRevocationAll(t *testing.T) {
 		accindex := sacc.Accumulator.Index
 		sacctime := sacc.Accumulator.Time
 
+		// wait for a moment to assure the accumulator's timestamp will actually differ
+		time.Sleep(time.Second)
 		// trigger time update and update accumulator
 		runAllSchedulerJobs(revServer.conf.IrmaConfiguration.Scheduler)
 
