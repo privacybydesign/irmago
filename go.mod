@@ -14,6 +14,7 @@ require (
 	github.com/getsentry/raven-go v0.0.0-20180121060056-563b81fc02b7
 	github.com/go-chi/chi v3.3.3+incompatible
 	github.com/go-chi/cors v1.0.0
+	github.com/go-co-op/gocron v1.13.0 // indirect
 	github.com/go-errors/errors v1.0.1
 	github.com/go-redis/redis/v8 v8.8.0
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
@@ -23,7 +24,6 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.6.2
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/jasonlvhit/gocron v0.0.0-20180312192515-54194c9749d4
 	github.com/jinzhu/gorm v1.9.12
 	github.com/lib/pq v1.3.0 // indirect
 	github.com/mdp/qrterminal v1.0.1

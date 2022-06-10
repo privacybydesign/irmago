@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"github.com/go-co-op/gocron"
 	"net/http"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/go-chi/chi"
 	"github.com/go-errors/errors"
-	"github.com/jasonlvhit/gocron"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -29,7 +29,6 @@ type Server struct {
 	router           *chi.Mux
 	sessions         sessionStore
 	scheduler        *gocron.Scheduler
-	stopScheduler    chan bool
 	serverSentEvents *sse.Server
 }
 
@@ -54,7 +53,7 @@ func New(conf *server.Configuration) (*Server, error) {
 
 	s := &Server{
 		conf:             conf,
-		scheduler:        gocron.NewScheduler(),
+		scheduler:        gocron.NewScheduler(time.UTC),
 		serverSentEvents: e,
 	}
 
@@ -68,9 +67,11 @@ func New(conf *server.Configuration) (*Server, error) {
 			conf:      conf,
 		}
 
-		s.scheduler.Every(10).Seconds().Do(func() {
+		if _, err := s.scheduler.Every(10).Seconds().Do(func() {
 			s.sessions.(*memorySessionStore).deleteExpired()
-		})
+		}); err != nil {
+			return nil, err
+		}
 	case "redis":
 		// Configure Redis TLS. If Redis TLS is disabled, tlsConfig becomes nil and the redis client will not use TLS.
 		tlsConfig, err := redisTLSConfig(conf)
@@ -98,7 +99,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		return nil, errors.New("storeType not known")
 	}
 
-	s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
+	if _, err := s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Do(func() {
 		for credid, settings := range s.conf.RevocationSettings {
 			if settings.Authority {
 				continue
@@ -108,9 +109,11 @@ func New(conf *server.Configuration) (*Server, error) {
 				_ = server.LogError(err)
 			}
 		}
-	})
+	}); err != nil {
+		return nil, err
+	}
 
-	s.stopScheduler = s.scheduler.Start()
+	s.scheduler.StartAsync()
 
 	return s, nil
 }
@@ -222,7 +225,7 @@ func (s *Server) Stop() {
 	if err := s.conf.IrmaConfiguration.Revocation.Close(); err != nil {
 		_ = server.LogWarning(err)
 	}
-	s.stopScheduler <- true
+	s.scheduler.Stop()
 	s.sessions.stop()
 }
 

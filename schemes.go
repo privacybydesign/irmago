@@ -135,7 +135,7 @@ func (conf *Configuration) DangerousTOFUInstallScheme(url string) error {
 	return conf.installScheme(url, nil, "")
 }
 
-func (conf *Configuration) AutoUpdateSchemes(interval uint) {
+func (conf *Configuration) AutoUpdateSchemes(interval int) error {
 	Logger.Infof("Updating schemes every %d minutes", interval)
 	update := func() {
 		if err := conf.UpdateSchemes(); err != nil {
@@ -147,12 +147,16 @@ func (conf *Configuration) AutoUpdateSchemes(interval uint) {
 			}
 		}
 	}
-	conf.Scheduler.Every(uint64(interval)).Minutes().Do(update)
+	_, err := conf.Scheduler.Every(interval).Minutes().Do(update)
+	if err != nil {
+		return err
+	}
 	// Run first update after a small delay
 	go func() {
 		<-time.NewTimer(200 * time.Millisecond).C
 		update()
 	}()
+	return nil
 }
 
 func (conf *Configuration) UpdateSchemes() error {
