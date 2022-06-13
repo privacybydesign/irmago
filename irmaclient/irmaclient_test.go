@@ -43,7 +43,8 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
 
-	aesKey := []byte("asdfasdfasdfasdfasdfasdfasdfasdf")
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
 	client, err := New(
 		filepath.Join(storage, "client"),

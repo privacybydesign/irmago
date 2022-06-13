@@ -145,7 +145,7 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
-	aesKey []byte,
+	aesKey [32]byte,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
@@ -153,9 +153,6 @@ func New(
 	}
 	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
-	}
-	if len(aesKey) != 32 {
-		return nil, errors.New("AES key must contain 32 bytes")
 	}
 
 	client := &Client{
