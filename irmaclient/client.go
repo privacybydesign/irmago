@@ -145,8 +145,6 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
-	// A byte array instead of a byte slice must be used for the aesKey. Using a byte slice would be a reference to
-	// C memory and may be freed by C when still in use in Go. This caused storage corruption.
 	aesKey [32]byte,
 ) (*Client, error) {
 	var err error
