@@ -215,11 +215,14 @@ func (s *storageOld) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature
 // was found in storageOld, it generates, saves, and returns a new secret key.
 func (s *storageOld) LoadSecretKey() (*secretKey, error) {
 	sk := &secretKey{}
-	_, err := s.load(userdataBucket, skKey, sk)
+	found, err := s.load(userdataBucket, skKey, sk)
 	if err != nil {
 		return nil, err
 	}
-	return sk, nil
+	if found {
+		return sk, nil
+	}
+	return nil, nil
 }
 
 func (s *storageOld) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*irma.AttributeList, err error) {
