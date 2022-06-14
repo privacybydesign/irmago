@@ -3,10 +3,11 @@ package myirmaserver
 import (
 	"context"
 	"encoding/json"
-	"github.com/go-co-op/gocron"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/go-co-op/gocron"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
@@ -23,10 +24,10 @@ import (
 type Server struct {
 	conf *Configuration
 
-	irmaserv      *irmaserver.Server
-	store         sessionStore
-	db            db
-	scheduler     *gocron.Scheduler
+	irmaserv  *irmaserver.Server
+	store     sessionStore
+	db        db
+	scheduler *gocron.Scheduler
 }
 
 var (
@@ -51,7 +52,7 @@ func New(conf *Configuration) (*Server, error) {
 		scheduler: gocron.NewScheduler(time.UTC),
 	}
 
-	if _, err := s.scheduler.Every(10 * time.Second).Do(s.store.flush); err != nil {
+	if _, err := s.scheduler.Every(10).Seconds().Do(s.store.flush); err != nil {
 		return nil, err
 	}
 	s.scheduler.StartAsync()

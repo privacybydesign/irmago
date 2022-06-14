@@ -3,10 +3,11 @@ package keyshareserver
 import (
 	"context"
 	"fmt"
-	"github.com/go-co-op/gocron"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/go-co-op/gocron"
 
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
@@ -33,7 +34,7 @@ type Server struct {
 	db       DB
 
 	// Scheduler used to clean sessions
-	scheduler     *gocron.Scheduler
+	scheduler *gocron.Scheduler
 
 	// Session data, keeping track of current keyshare protocol session state for each user
 	store sessionStore
@@ -85,7 +86,7 @@ func New(conf *Configuration) (*Server, error) {
 	})
 
 	// Setup session cache clearing
-	if _, err := s.scheduler.Every(10).Second().Do(s.store.flush); err != nil {
+	if _, err := s.scheduler.Every(10).Seconds().Do(s.store.flush); err != nil {
 		return nil, err
 	}
 	s.scheduler.StartAsync()
