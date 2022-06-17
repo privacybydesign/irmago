@@ -8,9 +8,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"github.com/go-co-op/gocron"
 	"net/http"
 	"time"
+
+	"github.com/go-co-op/gocron"
 
 	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
@@ -99,7 +100,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		return nil, errors.New("storeType not known")
 	}
 
-	if _, err := s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Do(func() {
+	if _, err := s.scheduler.Every(irma.RevocationParameters.RequestorUpdateInterval).Seconds().Do(func() {
 		for credid, settings := range s.conf.RevocationSettings {
 			if settings.Authority {
 				continue
