@@ -80,7 +80,7 @@ func (client *Client) initRevocation() {
 		}
 	})
 	if err != nil {
-		panic(err) // Indicates wrong usage of gocron, panic so we see it during unit tests
+		client.reportError(err)
 	}
 }
 
