@@ -18,7 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/alexandrevicenzi/go-sse"
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"

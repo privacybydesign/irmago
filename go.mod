@@ -11,7 +11,7 @@ require (
 	github.com/eknkc/basex v1.0.1
 	github.com/fxamacker/cbor v1.5.1
 	github.com/getsentry/sentry-go v0.13.0
-	github.com/go-chi/chi v4.1.2+incompatible
+	github.com/go-chi/chi/v5 v5.0.7
 	github.com/go-chi/cors v1.2.1
 	github.com/go-co-op/gocron v1.14.0
 	github.com/go-errors/errors v1.4.2
