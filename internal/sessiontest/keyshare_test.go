@@ -32,7 +32,7 @@ func TestKeyshareRegister(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	require.NoError(t, client.KeyshareRemoveAll())
 	require.NoError(t, client.RemoveStorage())
@@ -56,7 +56,7 @@ func TestKeyshareSessions(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	keyshareSessions(t, client, irmaServer)

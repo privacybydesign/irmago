@@ -275,7 +275,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
 	defer irmaServer.Stop()
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	qr, _, _, err := irmaServer.irma.StartSession(request, nil)
 	require.NoError(t, err)

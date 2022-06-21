@@ -27,7 +27,7 @@ func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestH
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)
-		defer test.ClearTestStorage(t, handler.storage)
+		defer test.ClearTestStorage(t, client, handler.storage)
 	}
 
 	bts, err := json.Marshal(request)
@@ -112,7 +112,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 
 func TestManualSessionMultiProof(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	// First, we need to issue an extra credential (BSN)
 	doSession(t, getMultipleIssuanceRequest(), client, nil, nil, nil, nil)
