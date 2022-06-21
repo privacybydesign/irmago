@@ -7,11 +7,10 @@ require (
 	github.com/alicebob/miniredis/v2 v2.17.0
 	github.com/bsm/redislock v0.7.2
 	github.com/bwesterb/go-atum v1.1.4
-	github.com/certifi/gocertifi v0.0.0-20210507211836-431795d63e8d // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/eknkc/basex v1.0.1
 	github.com/fxamacker/cbor v1.5.1
-	github.com/getsentry/raven-go v0.2.0
+	github.com/getsentry/sentry-go v0.13.0
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/go-chi/cors v1.2.1
 	github.com/go-co-op/gocron v1.14.0
@@ -26,13 +25,11 @@ require (
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/jinzhu/gorm v1.9.16
-	github.com/klauspost/cpuid/v2 v2.0.13 // indirect
 	github.com/lib/pq v1.10.6 // indirect
 	github.com/mattn/go-sqlite3 v2.0.1+incompatible // indirect
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/multiformats/go-multihash v0.0.11
 	github.com/pelletier/go-toml/v2 v2.0.2 // indirect
 	github.com/privacybydesign/gabi v0.0.0-20220412064428-d1eff7721dca
 	github.com/shopspring/decimal v1.2.0 // indirect
@@ -51,5 +48,4 @@ require (
 	golang.org/x/sys v0.0.0-20220615213510-4f61da869c0c // indirect
 	golang.org/x/term v0.0.0-20220526004731-065cf7ba2467 // indirect
 	gopkg.in/ini.v1 v1.66.6 // indirect
-	lukechampine.com/blake3 v1.1.7 // indirect
 )
