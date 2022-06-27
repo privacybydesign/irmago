@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-co-op/gocron"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"

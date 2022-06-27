@@ -4,6 +4,7 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -86,7 +87,10 @@ func FindTestdataFolder(t *testing.T) string {
 }
 
 // ClearTestStorage removes any output from previously run tests.
-func ClearTestStorage(t *testing.T, storage string) {
+func ClearTestStorage(t *testing.T, client io.Closer, storage string) {
+	if client != nil {
+		checkError(t, client.Close())
+	}
 	checkError(t, os.RemoveAll(storage))
 }
 

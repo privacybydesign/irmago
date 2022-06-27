@@ -13,7 +13,7 @@ func TestSessionUsingLegacyStorage(t *testing.T) {
 	defer test.SetTestStorageDir("client")
 
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	// Test whether credential from legacy storage is still usable
 	idStudentCard := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
