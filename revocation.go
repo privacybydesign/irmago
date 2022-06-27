@@ -13,7 +13,6 @@ import (
 
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/fxamacker/cbor"
-	"github.com/getsentry/sentry-go"
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
@@ -753,8 +752,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 
 	if _, err := rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().Do(func() {
 		if err := rs.updateAccumulatorTimes(); err != nil {
-			err = errors.WrapPrefix(err, "failed to write updated accumulator record", 0)
-			sentry.CaptureException(err)
+			Logger.WithField("error", err).Error("failed to write updated accumulator record")
 		}
 	}); err != nil {
 		return err
@@ -765,8 +763,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 			return
 		}
 		if err := rs.sqldb.Delete(IssuanceRecord{}, "valid_until < ?", time.Now().UnixNano()); err != nil {
-			err = errors.WrapPrefix(err, "failed to delete expired issuance records", 0)
-			sentry.CaptureException(err)
+			Logger.WithField("error", err).Error("failed to delete expired issuance records")
 		}
 	}); err != nil {
 		return err
