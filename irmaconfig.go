@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"github.com/go-co-op/gocron"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -22,7 +23,6 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/jasonlvhit/gocron"
 	"github.com/sirupsen/logrus"
 )
 
@@ -183,8 +183,8 @@ func (conf *Configuration) ParseFolder() (err error) {
 	}
 
 	if conf.Revocation == nil {
-		conf.Scheduler = gocron.NewScheduler()
-		conf.Scheduler.Start()
+		conf.Scheduler = gocron.NewScheduler(time.UTC)
+		conf.Scheduler.StartAsync()
 		conf.Revocation = &RevocationStorage{conf: conf}
 		if err = conf.Revocation.Load(
 			Logger.IsLevelEnabled(logrus.DebugLevel),
