@@ -11,16 +11,16 @@ import (
 
 func TestUserSecretsAccess(t *testing.T) {
 	var testSecret = big.NewInt(51232)
-	var testPassword [64]byte
-	_, err := rand.Read(testPassword[:])
+	testPassword := make([]byte, 64)
+	_, err := rand.Read(testPassword)
 	require.NoError(t, err)
 
 	var p unencryptedUserSecrets
-	p.setPin(testPassword)
+	require.NoError(t, p.setPin(string(testPassword)))
 	err = p.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
-	assert.Equal(t, testPassword, p.pin(), "password doesn't match")
-	assert.Equal(t, 0, p.keyshareSecret().Cmp(testSecret), "keyshare secret doesn't match")
+	assert.Equal(t, testPassword, p.Pin, "password doesn't match")
+	assert.Equal(t, 0, p.KeyshareSecret.Cmp(testSecret), "keyshare secret doesn't match")
 }
 
 func TestUserSecretsEncryptDecrypt(t *testing.T) {
@@ -32,13 +32,13 @@ func TestUserSecretsEncryptDecrypt(t *testing.T) {
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
-	var testPassword [64]byte
-	_, err = rand.Read(testPassword[:])
+	testPassword := make([]byte, 64)
+	_, err = rand.Read(testPassword)
 	require.NoError(t, err)
 
 	// Create and encrypt user secrets
 	var p_before unencryptedUserSecrets
-	p_before.setPin(testPassword)
+	require.NoError(t, p_before.setPin(string(testPassword)))
 	err = p_before.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
 	p_encypted, err := c.encryptUserSecrets(p_before)
@@ -47,8 +47,8 @@ func TestUserSecretsEncryptDecrypt(t *testing.T) {
 	// Decrypt and test values
 	p_after, err := c.decryptUserSecrets(p_encypted)
 	require.NoError(t, err)
-	assert.Equal(t, testPassword, p_after.pin(), "passwords don't match")
-	assert.Equal(t, 0, p_after.keyshareSecret().Cmp(testSecret), "keyshare secrets don't match")
+	assert.Equal(t, testPassword, p_after.Pin, "passwords don't match")
+	assert.Equal(t, 0, p_after.KeyshareSecret.Cmp(testSecret), "keyshare secrets don't match")
 }
 
 func TestUserSecretsAuthentication(t *testing.T) {
@@ -60,13 +60,13 @@ func TestUserSecretsAuthentication(t *testing.T) {
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
-	var testPassword [64]byte
-	_, err = rand.Read(testPassword[:])
+	testPassword := make([]byte, 64)
+	_, err = rand.Read(testPassword)
 	require.NoError(t, err)
 
 	// Create and encrypt user secrets
 	var p_before unencryptedUserSecrets
-	p_before.setPin(testPassword)
+	require.NoError(t, p_before.setPin(string(testPassword)))
 	err = p_before.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
 	p_encrypted, err := c.encryptUserSecrets(p_before)
@@ -76,7 +76,7 @@ func TestUserSecretsAuthentication(t *testing.T) {
 	p_encrypted[33] = 0
 	p_encrypted[34] = 15
 	_, err = c.decryptUserSecrets(p_encrypted)
-	assert.Error(t, err, "Tampering not detected")
+	assert.EqualError(t, err, "cipher: message authentication failed", "Tampering not detected")
 }
 
 func TestMultiKey(t *testing.T) {
@@ -91,13 +91,13 @@ func TestMultiKey(t *testing.T) {
 
 	// Test parameters
 	var testSecret = big.NewInt(5)
-	var testPassword [64]byte
-	_, err = rand.Read(testPassword[:])
+	testPassword := make([]byte, 64)
+	_, err = rand.Read(testPassword)
 	require.NoError(t, err)
 
 	// Create user secrets
 	var p_before unencryptedUserSecrets
-	p_before.setPin(testPassword)
+	require.NoError(t, p_before.setPin(string(testPassword)))
 	err = p_before.setKeyshareSecret(testSecret)
 	require.NoError(t, err)
 

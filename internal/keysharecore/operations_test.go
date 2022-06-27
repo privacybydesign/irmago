@@ -27,10 +27,10 @@ func TestPinFunctionality(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 
 	// generate test pin
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// Generate package
 	secrets, err := c.NewUserSecrets(pin)
@@ -49,10 +49,10 @@ func TestPinFunctionality(t *testing.T) {
 	assert.Equal(t, JWTIssuerDefault, claims.Issuer)
 
 	// test change pin
-	var bnewpin [64]byte
-	_, err = rand.Read(bnewpin[:])
+	bnewpin := make([]byte, 64)
+	_, err = rand.Read(bnewpin)
 	require.NoError(t, err)
-	newpin := string(bnewpin[:])
+	newpin := string(bnewpin)
 	secrets, err = c.ChangePin(secrets, pin, newpin)
 	require.NoError(t, err)
 
@@ -73,13 +73,13 @@ func TestVerifyAccess(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 
 	// Generate test pins
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin1 := string(bpin[:])
-	_, err = rand.Read(bpin[:])
+	pin1 := string(bpin)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin2 := string(bpin[:])
+	pin2 := string(bpin)
 
 	// and test keyshare secrets
 	secrets1, err := c.NewUserSecrets(pin1)
@@ -96,8 +96,7 @@ func TestVerifyAccess(t *testing.T) {
 	// Test incorrectly constructed jwts
 	s, err := c.verifyAccess(secrets1, jwtt)
 	require.NoError(t, err)
-	id := s.id()
-	tokenID := base64.StdEncoding.EncodeToString(id[:])
+	tokenID := base64.StdEncoding.EncodeToString(s.ID)
 
 	// incorrect exp
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
@@ -173,10 +172,10 @@ func TestProofFunctionality(t *testing.T) {
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// generate test pin
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// generate keyshare secret
 	secrets, err := c.NewUserSecrets(pin)
@@ -223,10 +222,10 @@ func TestCorruptedUserSecrets(t *testing.T) {
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
@@ -267,10 +266,10 @@ func TestIncorrectPin(t *testing.T) {
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
@@ -282,7 +281,7 @@ func TestIncorrectPin(t *testing.T) {
 
 	// Corrupt pin
 	bpin[12] = bpin[12] + 1
-	pin = string(bpin[:])
+	pin = string(bpin)
 
 	// Change pin
 	_, err = c.ChangePin(secrets, pin, pin)
@@ -304,10 +303,10 @@ func TestMissingKey(t *testing.T) {
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
@@ -337,10 +336,10 @@ func TestInvalidChallenge(t *testing.T) {
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
@@ -378,10 +377,10 @@ func TestDoubleCommitUse(t *testing.T) {
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)
@@ -409,10 +408,10 @@ func TestNonExistingCommit(t *testing.T) {
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	// Test parameters
-	var bpin [64]byte
-	_, err = rand.Read(bpin[:])
+	bpin := make([]byte, 64)
+	_, err = rand.Read(bpin)
 	require.NoError(t, err)
-	pin := string(bpin[:])
+	pin := string(bpin)
 
 	// Generate user secrets
 	secrets, err := c.NewUserSecrets(pin)

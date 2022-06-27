@@ -43,6 +43,20 @@ services:
       - 1025:1025
       - 8025:8025 # Port of the web interface
 
+  # Frontend of 'irma keyshare myirmaserver'
+  webclient:
+    image: privacybydesign/irma_keyshare_webclient
+    build:
+      context: https://github.com/privacybydesign/irma_keyshare_webclient.git
+    profiles:
+      - webclient
+    networks:
+      irma-net:
+        aliases:
+          - webclient.localhost
+    ports:
+      - 3000:3000
+
   # Service to run unit tests
   test:
     image: golang:1.16

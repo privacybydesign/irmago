@@ -70,6 +70,13 @@ Arguments:   none
 Description: emailaddress to remove as request body
 Returns:     204 on success, errors otherwise
 
+POST /verify
+Arguments:   token as request body
+Description: Verifies the user's email address entered during registration of the IRMA app. A link
+             containing a token is sent to this email address. The frontend invokes this endpoint to
+             verify the token.
+Returns:     204 on success, errors otherwise
+
 -- ACCOUNT REMOVAL --
 POST /user/delete
 Arguments:   none

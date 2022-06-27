@@ -39,7 +39,7 @@ func (client *Client) initRevocation() {
 	// - Updating happens regularly even if the app is rarely used.
 	// We do this by every 10 seconds updating the credential with a low probability, which
 	// increases over time since the last update.
-	client.Configuration.Scheduler.Every(irma.RevocationParameters.ClientUpdateInterval).Seconds().Do(func() {
+	_, err := client.Configuration.Scheduler.Every(irma.RevocationParameters.ClientUpdateInterval).Seconds().Do(func() {
 		for id, attrsets := range client.attributes {
 			for i, attrs := range attrsets {
 				if attrs.CredentialType() == nil || !attrs.CredentialType().RevocationSupported() {
@@ -79,6 +79,9 @@ func (client *Client) initRevocation() {
 			}
 		}
 	})
+	if err != nil {
+		client.reportError(err)
+	}
 }
 
 // NonrevPrepare updates the revocation state for each credential in the request

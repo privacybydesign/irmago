@@ -18,14 +18,14 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	db, err := newPostgresDB(test.PostgresTestUrl)
 	require.NoError(t, err)
 
-	user := &User{Username: "testuser"}
+	user := &User{Username: "testuser", Secrets: []byte{123}}
 	err = db.AddUser(user)
 	require.NoError(t, err)
 	assert.Equal(t, "testuser", user.Username)
 
 	nuser, err := db.user("testuser")
 	require.NoError(t, err)
-	assert.Equal(t, "testuser", nuser.Username)
+	assert.Equal(t, user, nuser)
 
 	_, err = db.user("notexist")
 	assert.Error(t, err)
@@ -33,7 +33,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	err = db.updateUser(nuser)
 	assert.NoError(t, err)
 
-	user = &User{Username: "testuser"}
+	user = &User{Username: "testuser", Secrets: []byte{123}}
 	err = db.AddUser(user)
 	assert.Error(t, err)
 
@@ -56,7 +56,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	db, err := newPostgresDB(test.PostgresTestUrl)
 	require.NoError(t, err)
 
-	user := &User{Username: "testuser"}
+	user := &User{Username: "testuser", Secrets: []byte{123}}
 	err = db.AddUser(user)
 	require.NoError(t, err)
 

@@ -26,31 +26,29 @@ var (
 )
 
 // NewUserSecrets generates a new keyshare secret, secured with the given pin.
-func (c *Core) NewUserSecrets(pinRaw string) (UserSecrets, error) {
+func (c *Core) NewUserSecrets(pin string) (UserSecrets, error) {
 	secret, err := gabi.NewKeyshareSecret()
 	if err != nil {
-		return UserSecrets{}, err
+		return nil, err
 	}
 
-	pin, err := padPin(pinRaw)
+	id := make([]byte, 32)
+	_, err = rand.Read(id)
 	if err != nil {
-		return UserSecrets{}, err
-	}
-
-	var id [32]byte
-	_, err = rand.Read(id[:])
-	if err != nil {
-		return UserSecrets{}, err
+		return nil, err
 	}
 
 	// Build unencrypted secrets
 	var s unencryptedUserSecrets
-	s.setPin(pin)
-	err = s.setKeyshareSecret(secret)
-	if err != nil {
-		return UserSecrets{}, err
+	if err = s.setPin(pin); err != nil {
+		return nil, err
 	}
-	s.setID(id)
+	if err = s.setKeyshareSecret(secret); err != nil {
+		return nil, err
+	}
+	if err = s.setID(id); err != nil {
+		return nil, err
+	}
 
 	// And encrypt
 	return c.encryptUserSecrets(s)
@@ -64,14 +62,13 @@ func (c *Core) ValidatePin(secrets UserSecrets, pin string) (string, error) {
 	}
 
 	// Generate jwt token
-	id := s.id()
 	t := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":      c.jwtIssuer,
 		"sub":      "auth_tok",
 		"iat":      t.Unix(),
 		"exp":      t.Add(time.Duration(c.jwtPinExpiry) * time.Second).Unix(),
-		"token_id": base64.StdEncoding.EncodeToString(id[:]),
+		"token_id": base64.StdEncoding.EncodeToString(s.ID),
 	})
 	token.Header["kid"] = c.jwtPrivateKeyID
 	return token.SignedString(c.jwtPrivateKey)
@@ -89,22 +86,21 @@ func (c *Core) ValidateJWT(secrets UserSecrets, jwt string) error {
 func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (UserSecrets, error) {
 	s, err := c.decryptUserSecretsIfPinOK(secrets, oldpinRaw)
 	if err != nil {
-		return UserSecrets{}, err
-	}
-
-	newpin, err := padPin(newpinRaw)
-	if err != nil {
-		return UserSecrets{}, err
+		return nil, err
 	}
 
 	// change and reencrypt
-	var id [32]byte
-	_, err = rand.Read(id[:])
+	id := make([]byte, 32)
+	_, err = rand.Read(id)
 	if err != nil {
-		return UserSecrets{}, err
+		return nil, err
 	}
-	s.setPin(newpin)
-	s.setID(id)
+	if err = s.setPin(newpinRaw); err != nil {
+		return nil, err
+	}
+	if err = s.setID(id); err != nil {
+		return nil, err
+	}
 	return c.encryptUserSecrets(s)
 }
 
@@ -146,9 +142,8 @@ func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUs
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
-	refId := s.id()
 
-	if subtle.ConstantTimeCompare(refId[:], tokenID) != 1 {
+	if subtle.ConstantTimeCompare(s.ID, tokenID) != 1 {
 		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 
@@ -174,7 +169,7 @@ func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyI
 	}
 
 	// Generate commitment
-	commitSecret, commitments, err := gabi.NewKeyshareCommitments(s.keyshareSecret(), keyList)
+	commitSecret, commitments, err := gabi.NewKeyshareCommitments(s.KeyshareSecret, keyList)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -222,22 +217,11 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 
 	// Generate response
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": gabi.KeyshareResponse(s.keyshareSecret(), commit, challenge, key),
+		"ProofP": gabi.KeyshareResponse(s.KeyshareSecret, commit, challenge, key),
 		"iat":    time.Now().Unix(),
 		"sub":    "ProofP",
 		"iss":    c.jwtIssuer,
 	})
 	token.Header["kid"] = c.jwtPrivateKeyID
 	return token.SignedString(c.jwtPrivateKey)
-}
-
-// Pad pin string into 64 bytes, extending it with 0s if necessary
-func padPin(pin string) ([64]byte, error) {
-	data := []byte(pin)
-	if len(data) > 64 {
-		return [64]byte{}, ErrPinTooLong
-	}
-	res := [64]byte{}
-	copy(res[:], data)
-	return res, nil
 }

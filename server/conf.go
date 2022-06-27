@@ -228,7 +228,9 @@ func (conf *Configuration) verifyIrmaConf() error {
 		conf.SchemesUpdateInterval = 60
 	}
 	if !conf.DisableSchemesUpdate {
-		conf.IrmaConfiguration.AutoUpdateSchemes(uint(conf.SchemesUpdateInterval))
+		if err := conf.IrmaConfiguration.AutoUpdateSchemes(conf.SchemesUpdateInterval); err != nil {
+			return err
+		}
 	}
 
 	return nil

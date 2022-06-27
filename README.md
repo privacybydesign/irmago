@@ -121,4 +121,16 @@ You can then start `irma` with the store-type flag set to Redis and the [default
 irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password --redis-no-tls
 ```
 
+## Performance tests
+This project only includes performance tests for the `irma keyshare server`. These tests can be run using the [k6 load testing tool](https://k6.io/docs/) and need a running keyshare server instance to test against. Instructions on how to run a keyshare server locally can be found [above](#running).
+
+The performance tests can be started in the following way:
+
+```
+go install go.k6.io/k6@latest
+k6 run ./testdata/performance/keyshare-server.js --env URL=http://localhost:8080 --env ISSUER_ID=test.test
+```
+
+By default, k6 runs a single test iteration using 1 virtual user. These defaults can be adjusted by specifying test stages using the [`-s` CLI parameter](https://k6.io/docs/using-k6/options/#stages).
+
 <!-- vim: set ts=4 sw=4: -->
