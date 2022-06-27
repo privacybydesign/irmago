@@ -1266,7 +1266,7 @@ func (client *Client) KeyshareRemoveAll() error {
 func (client *Client) keyshareRemoveMultiple(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
 	for _, schemeID := range schemeIDs {
 		if _, contains := client.keyshareServers[schemeID]; !contains {
-			return errors.New("Can't uninstall unknown keyshare server")
+			return errors.New("can't uninstall unknown keyshare server")
 		}
 	}
 
