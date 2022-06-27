@@ -1199,7 +1199,7 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 				for _, updatedManager := range updatedSchemes {
 					err = client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
 					if err != nil {
-						client.handler.ReportError(err)
+						client.reportError(err)
 						client.keyshareServers[updatedManager].PinOutOfSync = true
 						pinOutOfSync = true
 					}
@@ -1207,7 +1207,7 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 				if pinOutOfSync {
 					err = client.storage.StoreKeyshareServers(client.keyshareServers)
 					if err != nil {
-						client.handler.ReportError(err)
+						client.reportError(err)
 					}
 				}
 				return
