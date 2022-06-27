@@ -7,7 +7,15 @@ import (
 )
 
 func TestConvertingLegacyStorage(t *testing.T) {
-	test.SetTestStorageDir("client_legacy")
+	testConvertingLegacyStorage(t, "client_legacy")
+}
+
+func TestConvertingLegacyPlaintextStorage(t *testing.T) {
+	testConvertingLegacyStorage(t, "client_plaintext")
+}
+
+func testConvertingLegacyStorage(t *testing.T, dir string) {
+	test.SetTestStorageDir(dir)
 	defer test.SetTestStorageDir("client")
 
 	// Test all tests in this file with legacy storage too

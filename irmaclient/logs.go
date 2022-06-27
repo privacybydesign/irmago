@@ -35,43 +35,6 @@ type LogEntry struct {
 	request    irma.SessionRequest   // cached parsed version of Request; get with LogEntry.SessionRequest()
 }
 
-// We need manual unmarshalling to deal with legacy log entries that have
-func (entry *LogEntry) UnmarshalJSON(b []byte) (err error) {
-	// Internal type needed for unmarshalling to delay requestorInfo unmarshalling
-	type rawLogEntry LogEntry
-	var temp struct {
-		ServerName json.RawMessage `json:",omitempty"`
-		rawLogEntry
-	}
-
-	if err = json.Unmarshal(b, &temp); err != nil {
-		return
-	}
-
-	// Copy standard fields
-	*entry = LogEntry(temp.rawLogEntry)
-
-	// Nil as servername is simple
-	if len(temp.ServerName) == 0 {
-		entry.ServerName = nil
-		return nil
-	}
-
-	// Try to decode servername as requestorinfo
-	if err = json.Unmarshal(temp.ServerName, &(entry.ServerName)); err != nil {
-		return
-	}
-
-	// If successful, we should have at least one translation for a name, so check that
-	if len(entry.ServerName.Name) != 0 {
-		return nil
-	}
-
-	// No success, construct a minimal requestorinfo with the old translatedstring as name
-	entry.ServerName = &irma.RequestorInfo{}
-	return json.Unmarshal(temp.ServerName, &(entry.ServerName.Name))
-}
-
 const ActionRemoval = irma.Action("removal")
 
 func (entry *LogEntry) SessionRequest() (irma.SessionRequest, error) {

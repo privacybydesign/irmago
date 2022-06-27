@@ -52,8 +52,6 @@ type Client struct {
 
 	// Where we store/load it to/from
 	storage storage
-	// Legacy storage needed when client has not updated to the new storage yet
-	fileStorage fileStorage
 
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion
@@ -146,6 +144,7 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
+	aesKey [32]byte,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
@@ -182,17 +181,10 @@ func New(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration}
+	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration, aesKey: aesKey}
 	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}
-	// Legacy storage does not need ensuring existence
-	client.fileStorage = fileStorage{storagePath: storagePath, Configuration: client.Configuration}
-
-	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
-		return nil, err
-	}
-	client.applyPreferences()
 
 	// Perform new update functions from clientUpdates, if any
 	if err = client.update(); err != nil {
@@ -200,6 +192,11 @@ func New(
 	}
 
 	// Load our stuff
+	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
+		return nil, err
+	}
+	client.applyPreferences()
+
 	err = client.loadCredentialStorage()
 	if err != nil {
 		return nil, err
@@ -461,9 +458,6 @@ func (client *Client) RemoveStorage() error {
 	client.lookup = make(map[string]*credLookup)
 
 	if err = client.storage.DeleteAll(); err != nil {
-		return err
-	}
-	if err = client.fileStorage.DeleteAll(); err != nil {
 		return err
 	}
 
@@ -1257,7 +1251,7 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager and removes all associated credentials.
 func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
-	return client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{manager})
+	return client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{manager}, false)
 }
 
 // KeyshareRemoveAll removes all keyshare server registrations and associated credentials.
@@ -1266,12 +1260,12 @@ func (client *Client) KeyshareRemoveAll() error {
 	for schemeID := range client.keyshareServers {
 		managers = append(managers, schemeID)
 	}
-	return client.keyshareRemoveMultiple(managers)
+	return client.keyshareRemoveMultiple(managers, false)
 }
 
-func (client *Client) keyshareRemoveMultiple(managers []irma.SchemeManagerIdentifier) error {
-	for _, manager := range managers {
-		if _, contains := client.keyshareServers[manager]; !contains {
+func (client *Client) keyshareRemoveMultiple(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
+	for _, schemeID := range schemeIDs {
+		if _, contains := client.keyshareServers[schemeID]; !contains {
 			return errors.New("Can't uninstall unknown keyshare server")
 		}
 	}
@@ -1279,7 +1273,74 @@ func (client *Client) keyshareRemoveMultiple(managers []irma.SchemeManagerIdenti
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
-	return client.removeCredentialsFromSchemes(managers, false)
+	defer func() {
+		err := client.loadCredentialStorage()
+		if err != nil {
+			// Cached storage is out-of-sync with real storage, so we can't do anything but report the error and
+			// close the client to prevent unexpected changes.
+			client.reportError(err)
+			_ = client.Close()
+		}
+	}()
+
+	remainingSchemes := make(map[irma.SchemeManagerIdentifier]struct{})
+	for schemeID := range client.Configuration.SchemeManagers {
+		remainingSchemes[schemeID] = struct{}{}
+	}
+	for _, schemeID := range schemeIDs {
+		delete(client.keyshareServers, schemeID)
+		delete(remainingSchemes, schemeID)
+	}
+
+	return client.storage.Transaction(func(tx *transaction) error {
+		// Delete all credentials of given schemes.
+		for _, cred := range client.CredentialInfoList() {
+			if _, ok := remainingSchemes[irma.NewSchemeManagerIdentifier(cred.SchemeManagerID)]; !ok {
+				err := client.storage.TxStoreAttributes(tx, cred.Identifier(), []*irma.AttributeList{})
+				if err != nil {
+					return err
+				}
+				err = client.storage.TxDeleteSignature(tx, cred.Hash)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		// Remove all logs of given schemes, if necessary.
+		if removeLogs {
+			err := client.storage.TxIterateLogs(tx, func(log *LogEntry) error {
+				shouldDelete := false
+				for credID := range log.Removed {
+					if _, ok := remainingSchemes[credID.SchemeManagerIdentifier()]; !ok {
+						shouldDelete = true
+					}
+				}
+
+				request, err := log.SessionRequest()
+				if err != nil {
+					return err
+				}
+				if request != nil {
+					for schemeID := range request.Identifiers().SchemeManagers {
+						if _, ok := remainingSchemes[schemeID]; !ok {
+							shouldDelete = true
+						}
+					}
+				}
+
+				if shouldDelete {
+					return client.storage.TxDeleteLogEntry(tx, log)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return client.storage.TxStoreKeyshareServers(tx, client.keyshareServers)
+	})
 }
 
 // Add, load and store log entries
@@ -1361,7 +1422,7 @@ func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error 
 		return errors.New("unknown scheme manager")
 	}
 
-	err := client.removeCredentialsFromSchemes([]irma.SchemeManagerIdentifier{schemeID}, true)
+	err := client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{schemeID}, true)
 	if err != nil {
 		return err
 	}
@@ -1370,77 +1431,6 @@ func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error 
 		return err
 	}
 	return client.Configuration.ParseFolder()
-}
-
-func (client *Client) removeCredentialsFromSchemes(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
-	defer func() {
-		err := client.loadCredentialStorage()
-		if err != nil {
-			// Cached storage is out-of-sync with real storage, so we can't do anything but report the error and
-			// close the client to prevent unexpected changes.
-			client.reportError(err)
-			_ = client.Close()
-		}
-	}()
-
-	remainingSchemes := make(map[irma.SchemeManagerIdentifier]struct{})
-	for schemeID := range client.Configuration.SchemeManagers {
-		remainingSchemes[schemeID] = struct{}{}
-	}
-	for _, schemeID := range schemeIDs {
-		delete(client.keyshareServers, schemeID)
-		delete(remainingSchemes, schemeID)
-	}
-
-	return client.storage.Transaction(func(tx *transaction) error {
-		// Delete all credentials of given schemes.
-		for _, cred := range client.CredentialInfoList() {
-			if _, ok := remainingSchemes[irma.NewSchemeManagerIdentifier(cred.SchemeManagerID)]; !ok {
-				err := client.storage.TxStoreAttributes(tx, cred.Identifier(), []*irma.AttributeList{})
-				if err != nil {
-					return err
-				}
-				err = client.storage.TxDeleteSignature(tx, cred.Hash)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		// Remove all logs of given schemes, if necessary.
-		if removeLogs {
-			err := client.storage.TxIterateLogs(tx, func(log *LogEntry) error {
-				shouldDelete := false
-				for credID := range log.Removed {
-					if _, ok := remainingSchemes[credID.SchemeManagerIdentifier()]; !ok {
-						shouldDelete = true
-					}
-				}
-
-				request, err := log.SessionRequest()
-				if err != nil {
-					return err
-				}
-				if request != nil {
-					for schemeID := range request.Identifiers().SchemeManagers {
-						if _, ok := remainingSchemes[schemeID]; !ok {
-							shouldDelete = true
-						}
-					}
-				}
-
-				if shouldDelete {
-					return client.storage.TxDeleteLogEntry(tx, log)
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-
-		return client.storage.TxStoreKeyshareServers(tx, client.keyshareServers)
-	})
 }
 
 func (cc *credCandidate) Present() bool {

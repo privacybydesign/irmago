@@ -1,6 +1,9 @@
 package irmaclient
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"path/filepath"
@@ -23,6 +26,7 @@ type storage struct {
 	storagePath   string
 	db            *bbolt.DB
 	Configuration *irma.Configuration
+	aesKey        [32]byte
 }
 
 type transaction struct {
@@ -30,17 +34,18 @@ type transaction struct {
 }
 
 // Filenames
-const databaseFile = "db"
+const databaseFile = "db2"
 
 // Bucketnames bbolt
 const (
-	userdataBucket = "userdata"    // Key/value: specified below
-	skKey          = "sk"          // Value: *secretKey
-	preferencesKey = "preferences" // Value: Preferences
-	updatesKey     = "updates"     // Value: []update
-	kssKey         = "kss"         // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
+	userdataBucket  = "userdata"     // Key/value: specified below
+	skKey           = "sk"           // Value: *secretKey
+	credTypeKeysKey = "credTypeKeys" // Value: map[irma.CredentialTypeIdentifier][]byte
+	preferencesKey  = "preferences"  // Value: Preferences
+	updatesKey      = "updates"      // Value: []update
+	kssKey          = "kss"          // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
 
-	attributesBucket = "attrs" // Key: irma.CredentialIdentifier, value: []*irma.AttributeList
+	attributesBucket = "attrs" // Key: []byte, value: []*irma.AttributeList
 	logsBucket       = "logs"  // Key: (auto-increment index), value: *LogEntry
 	signaturesBucket = "sigs"  // Key: credential.attrs.Hash, value: *gabi.CLSignature
 )
@@ -85,7 +90,12 @@ func (s *storage) txStore(tx *transaction, bucketName string, key string, value 
 		return err
 	}
 
-	return b.Put([]byte(key), btsValue)
+	ciphertext, err := s.encrypt(btsValue)
+	if err != nil {
+		return err
+	}
+
+	return b.Put([]byte(key), ciphertext)
 }
 
 func (s *storage) txDelete(tx *transaction, bucketName string, key string) error {
@@ -107,7 +117,13 @@ func (s *storage) txLoad(tx *transaction, bucketName string, key string, dest in
 	if bts == nil {
 		return false, nil
 	}
-	return true, json.Unmarshal(bts, dest)
+
+	plaintext, err := s.decrypt(bts)
+	if err != nil {
+		return false, err
+	}
+
+	return true, json.Unmarshal(plaintext, dest)
 }
 
 func (s *storage) load(bucketName string, key string, dest interface{}) (found bool, err error) {
@@ -180,13 +196,75 @@ func (s *storage) TxStoreAttributes(tx *transaction, credTypeID irma.CredentialT
 
 	// If no credentials are left of a certain type, the full entry can be deleted.
 	if len(attrlistlist) == 0 {
-		return s.txDelete(tx, attributesBucket, credTypeID.String())
+		randomId, err := s.removeCredTypeKey(tx, credTypeID)
+		if err != nil {
+			return err
+		}
+
+		return s.txDelete(tx, attributesBucket, randomId)
 	}
-	return s.txStore(tx, attributesBucket, credTypeID.String(), attrlistlist)
+
+	randomId, err := s.credTypeKey(tx, credTypeID)
+	if err != nil {
+		return err
+	}
+
+	return s.txStore(tx, attributesBucket, string(randomId), attrlistlist)
+}
+
+func (s *storage) removeCredTypeKey(tx *transaction, credTypeID irma.CredentialTypeIdentifier) (string, error) {
+	credTypeIDs := map[irma.CredentialTypeIdentifier][]byte{}
+	_, err := s.txLoad(tx, userdataBucket, credTypeKeysKey, &credTypeIDs)
+	if err != nil {
+		return "", err
+	}
+
+	res := string(credTypeIDs[credTypeID])
+
+	delete(credTypeIDs, credTypeID)
+	if len(credTypeIDs) == 0 {
+		err = s.txDelete(tx, userdataBucket, credTypeKeysKey)
+		if err != nil {
+			return "", err
+		}
+	}
+	err = s.txStore(tx, userdataBucket, credTypeKeysKey, credTypeIDs)
+	if err != nil {
+		return "", err
+	}
+
+	return res, nil
+}
+
+func (s *storage) credTypeKey(tx *transaction, credTypeID irma.CredentialTypeIdentifier) ([]byte, error) {
+	credTypeIDs := map[irma.CredentialTypeIdentifier][]byte{}
+	_, err := s.txLoad(tx, userdataBucket, credTypeKeysKey, &credTypeIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	if val, ok := credTypeIDs[credTypeID]; ok {
+		return val, nil
+	}
+
+	randomId := make([]byte, 32)
+	_, _ = rand.Read(randomId)
+
+	credTypeIDs[credTypeID] = randomId
+	err = s.txStore(tx, userdataBucket, credTypeKeysKey, credTypeIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return randomId, nil
 }
 
 func (s *storage) TxDeleteAllAttributes(tx *transaction) error {
-	return tx.DeleteBucket([]byte(attributesBucket))
+	err := tx.DeleteBucket([]byte(attributesBucket))
+	if err != nil {
+		return err
+	}
+	return s.txDelete(tx, userdataBucket, credTypeKeysKey)
 }
 
 func (s *storage) StoreKeyshareServers(keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer) error {
@@ -221,7 +299,12 @@ func (s *storage) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 		return err
 	}
 
-	return b.Put(k, v)
+	ciphertext, err := s.encrypt(v)
+	if err != nil {
+		return err
+	}
+
+	return b.Put(k, ciphertext)
 }
 
 func (s *storage) logEntryKeyToBytes(id uint64) []byte {
@@ -302,10 +385,14 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			return nil
 		}
 		return b.ForEach(func(key, value []byte) error {
-			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
-
 			var attrlistlist []*irma.AttributeList
-			err = json.Unmarshal(value, &attrlistlist)
+
+			plaintext, err := s.decrypt(value)
+			if err != nil {
+				return err
+			}
+
+			err = json.Unmarshal(plaintext, &attrlistlist)
 			if err != nil {
 				return err
 			}
@@ -315,7 +402,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 				attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.Configuration)
 			}
 
-			list[credTypeID] = attrlistlist
+			list[attrlistlist[0].Info().Identifier()] = attrlistlist
 			return nil
 		})
 	})
@@ -356,8 +443,13 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 		c := bucket.Cursor()
 
 		for k, v := startAt(c); k != nil && len(logs) < max; k, v = c.Prev() {
+			plaintext, err := s.decrypt(v)
+			if err != nil {
+				return err
+			}
+
 			var log LogEntry
-			if err := json.Unmarshal(v, &log); err != nil {
+			if err = json.Unmarshal(plaintext, &log); err != nil {
 				return err
 			}
 
@@ -383,13 +475,17 @@ func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) err
 	c := bucket.Cursor()
 
 	for k, v := c.Last(); k != nil; k, v = c.Prev() {
-		var log LogEntry
-		if err := json.Unmarshal(v, &log); err != nil {
+		plaintext, err := s.decrypt(v)
+		if err != nil {
 			return err
 		}
 
-		err := handler(&log)
-		if err != nil {
+		var log LogEntry
+		if err = json.Unmarshal(plaintext, &log); err != nil {
+			return err
+		}
+
+		if err = handler(&log); err != nil {
 			return err
 		}
 	}
@@ -450,4 +546,43 @@ func (s *storage) DeleteAll() error {
 	return s.Transaction(func(tx *transaction) error {
 		return s.TxDeleteAll(tx)
 	})
+}
+
+func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(s.aesKey[:])
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext, err := gcm.Open(nil, ciphertext[:12], ciphertext[12:], nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return plaintext, nil
+}
+
+func (s *storage) encrypt(plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(s.aesKey[:])
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, 12)
+	_, err = rand.Read(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }

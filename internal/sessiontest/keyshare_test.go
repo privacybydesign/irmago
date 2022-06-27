@@ -117,7 +117,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	client, handler := parseStorage(t, optionNoSchemeAssets)
 	defer test.ClearTestStorage(t, handler.storage)
 
-	logs, err := client.LoadNewestLogs(10)
+	logs, err := client.LoadNewestLogs(20)
 	require.NoError(t, err)
 	logsAmount := len(logs)
 
@@ -131,7 +131,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	)
 	doSession(t, request, client, irmaServer, nil, nil, nil)
 
-	logs, err = client.LoadNewestLogs(10)
+	logs, err = client.LoadNewestLogs(20)
 	require.NoError(t, err)
 	require.Len(t, logs, logsAmount+2)
 
@@ -140,7 +140,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	require.NotContains(t, client.Configuration.SchemeManagers, test2SchemeID)
 
 	// Check whether all credentials and log entries being related to test2 are removed.
-	logs, err = client.LoadNewestLogs(10)
+	logs, err = client.LoadNewestLogs(20)
 	require.NoError(t, err)
 	require.Len(t, logs, logsAmount)
 	creds := client.CredentialInfoList()

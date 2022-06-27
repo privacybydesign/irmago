@@ -35,10 +35,15 @@ func parseStorage(t *testing.T, opts ...option) (*irmaclient.Client, *TestClient
 func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.Client, *TestClientHandler) {
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
+
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
 	client, err := irmaclient.New(
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
+		aesKey,
 	)
 	require.NoError(t, err)
 
