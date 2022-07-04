@@ -92,29 +92,41 @@ func TestServerHandleRegisterLegacy(t *testing.T) {
 	)
 }
 
+func stringPtr(s string) *string {
+	return &s
+}
+
 func TestServerHandleRegister(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
-	sk, err := signed.GenerateKey()
-	require.NoError(t, err)
-	pkbts, err := signed.MarshalPublicKey(&sk.PublicKey)
-	require.NoError(t, err)
+	var j string
 
-	j, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareEnrollmentClaims{
-		KeyshareEnrollmentData: irma.KeyshareEnrollmentData{
-			Pin: "testpin", Language: "en", PublicKey: pkbts,
-		},
-	}).SignedString(sk)
-	require.NoError(t, err)
+	for _, data := range []irma.KeyshareEnrollmentData{
+		{Pin: "testpin", Email: stringPtr("test@test.com"), Language: "en"},
+		{Pin: "testpin", Email: stringPtr("test@test.com"), Language: "nonexistinglanguage"},
+		{Pin: "testpin", Language: "en"},
+		{Pin: "testpin", Language: "nonexistinglanguage"},
+	} {
+		sk, err := signed.GenerateKey()
+		require.NoError(t, err)
+		pkbts, err := signed.MarshalPublicKey(&sk.PublicKey)
+		require.NoError(t, err)
+		data.PublicKey = pkbts
 
-	msg, err := json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
-	require.NoError(t, err)
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register", string(msg), nil, 200, nil)
+		j, err = jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareEnrollmentClaims{
+			KeyshareEnrollmentData: data,
+		}).SignedString(sk)
+		require.NoError(t, err)
+
+		msg, err := json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
+		require.NoError(t, err)
+		test.HTTPPost(t, nil, "http://localhost:8080/client/register", string(msg), nil, 200, nil)
+	}
 
 	// Strip off a character to invalidate the JWT signature
 	j = j[:len(j)-1]
-	msg, err = json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
+	msg, err := json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
 	require.NoError(t, err)
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register", string(msg), nil, 500, nil)
 }
