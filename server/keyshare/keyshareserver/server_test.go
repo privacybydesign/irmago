@@ -90,10 +90,6 @@ func TestServerHandleRegisterLegacy(t *testing.T) {
 		`{"pin":"testpin","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","language":"nonexistinglanguage"}`, nil,
-		200, nil,
-	)
 }
 
 func TestServerHandleRegister(t *testing.T) {
