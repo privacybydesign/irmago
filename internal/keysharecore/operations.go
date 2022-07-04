@@ -100,7 +100,7 @@ func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, response []byte
 
 	encoded := irma.KeyshareChallengeData{
 		Challenge: challenge,
-		PIN:       pin,
+		Pin:       pin,
 	}
 	bts, _ := json.Marshal(encoded)
 	return signed.Verify(s.PublicKey, bts, response)

@@ -244,7 +244,7 @@ func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transpo
 	}
 	msg, _ := json.Marshal(irma.KeyshareChallengeData{
 		Challenge: auth.Challenge,
-		PIN:       kss.HashedPin(pin),
+		Pin:       kss.HashedPin(pin),
 	})
 	return signer.Sign(challengeResponseKeyName(kss.SchemeManagerIdentifier), msg)
 }

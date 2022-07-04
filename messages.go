@@ -348,7 +348,7 @@ type KeyshareAuthResponse struct {
 
 type KeyshareChallengeData struct {
 	Challenge []byte
-	PIN       string
+	Pin       string
 }
 
 type KeysharePinStatus struct {

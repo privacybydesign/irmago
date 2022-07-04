@@ -572,7 +572,7 @@ func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey) []byte {
 	// sign the challenge
 	msg, err := json.Marshal(irma.KeyshareChallengeData{
 		Challenge: auth.Challenge,
-		PIN:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
+		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 	})
 	require.NoError(t, err)
 	response, err := signed.Sign(sk, msg)
