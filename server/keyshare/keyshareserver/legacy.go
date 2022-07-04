@@ -133,3 +133,22 @@ func (s *Server) updatePinLegacy(user *User, oldPin, newPin string) (irma.Keysha
 
 	return irma.KeysharePinStatus{Status: "success"}, nil
 }
+
+func (s *Server) handleChangePinLegacy(w http.ResponseWriter, msg irma.KeyshareChangePinData) {
+	username := msg.Username
+	user, err := s.db.user(username)
+	if err != nil {
+		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		return
+	}
+
+	result, err := s.updatePinLegacy(user, msg.OldPin, msg.NewPin)
+
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+	server.WriteJson(w, result)
+}

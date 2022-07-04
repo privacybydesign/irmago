@@ -414,36 +414,31 @@ func (s *Server) verifyAuth(user *User, msg irma.KeyshareAuthResponse) (irma.Key
 func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
 	var (
-		msg      irma.KeyshareChangePin
-		err      error
-		username string
-		result   irma.KeysharePinStatus
+		msg irma.KeyshareChangePin
+		err error
 	)
 	if err = server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
-	if msg.ChangePinJWT != "" {
-		claims := &irma.KeyshareChangePinClaims{}
-		// We need the username inside the JWT here. The JWT is verified later within updatePin().
-		_, _, err = jwt.NewParser().ParseUnverified(msg.ChangePinJWT, claims)
-		username = claims.Username
-	} else {
-		username = msg.Username
+	if msg.ChangePinJWT == "" {
+		s.handleChangePinLegacy(w, msg.KeyshareChangePinData)
+		return
 	}
-	user, err := s.db.user(username)
+
+	claims := &irma.KeyshareChangePinClaims{}
+	// We need the username inside the JWT here. The JWT is verified later within updatePin().
+	_, _, err = jwt.NewParser().ParseUnverified(msg.ChangePinJWT, claims)
+
+	user, err := s.db.user(claims.Username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
 
-	if msg.ChangePinJWT != "" {
-		result, err = s.updatePin(user, msg.ChangePinJWT)
-	} else {
-		result, err = s.updatePinLegacy(user, msg.OldPin, msg.NewPin)
-	}
+	result, err := s.updatePin(user, msg.ChangePinJWT)
 
 	if err != nil {
 		// already logged
