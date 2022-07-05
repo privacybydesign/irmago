@@ -67,9 +67,11 @@ func (c *Core) ValidateAuth(secrets UserSecrets, response []byte, pin string) (s
 		return "", err
 	}
 
-	err = c.verifyChallengeResponse(s, response, pin)
-	if err != nil {
-		return "", err
+	if s.PublicKey != nil {
+		err = c.verifyChallengeResponse(s, response, pin)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	return c.authJWT(&s)
@@ -91,11 +93,7 @@ func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, response []byte, pin string) error {
 	challenge := c.challenge(s.ID)
 	if challenge == nil {
-		if s.PublicKey != nil {
-			return ErrChallengeResponseRequired
-		} else {
-			return nil
-		}
+		return ErrChallengeResponseRequired
 	}
 
 	encoded := irma.KeyshareChallengeData{
