@@ -40,7 +40,7 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
