@@ -16,7 +16,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/golang-jwt/jwt/v4"
 	irma "github.com/privacybydesign/irmago"

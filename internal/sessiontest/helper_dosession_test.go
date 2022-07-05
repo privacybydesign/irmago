@@ -253,7 +253,7 @@ func doSession(
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t, options...)
-		defer test.ClearTestStorage(t, handler.storage)
+		defer test.ClearTestStorage(t, client, handler.storage)
 	}
 
 	opts := processOptions(options...)

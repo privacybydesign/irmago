@@ -108,7 +108,7 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 
 func TestStorageDeserialization(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
@@ -120,7 +120,7 @@ func TestStorageDeserialization(t *testing.T) {
 // satisfy the attribute disjunction.
 func TestCandidates(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	// client contains one instance of the studentCard credential, whose studentID attribute is 456.
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -218,7 +218,7 @@ func TestCandidates(t *testing.T) {
 
 func TestCandidateConjunctionOrder(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	j := `[
 	  [
@@ -251,7 +251,7 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 
 func TestCredentialRemoval(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -285,7 +285,7 @@ func TestCredentialRemoval(t *testing.T) {
 
 func TestWrongSchemeManager(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
@@ -305,7 +305,7 @@ func TestWrongSchemeManager(t *testing.T) {
 
 func TestCredentialInfoListNewAttribute(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -331,13 +331,13 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 func TestFreshStorage(t *testing.T) {
 	storage := test.CreateTestStorage(t)
 	client, handler := parseExistingStorage(t, storage)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 	require.NotNil(t, client)
 }
 
 func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
@@ -351,7 +351,7 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 
 func TestUpdatingStorage(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 	require.NotNil(t, client)
 
 	// Check whether all update functions succeeded
@@ -362,7 +362,7 @@ func TestUpdatingStorage(t *testing.T) {
 
 func TestRemoveStorage(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	// Check whether we have logs in storage to know whether the logs bucket is there
 	logs, err := client.LoadNewestLogs(1)

@@ -10,7 +10,7 @@ import (
 
 func TestLogging(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	logs, err := client.LoadNewestLogs(100)
 	oldLogLength := len(logs)
