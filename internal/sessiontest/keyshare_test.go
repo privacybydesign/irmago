@@ -115,7 +115,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	defer keyshareServerTest2.Stop()
 
 	client, handler := parseStorage(t, optionNoSchemeAssets)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	logs, err := client.LoadNewestLogs(20)
 	require.NoError(t, err)
