@@ -1097,7 +1097,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	if err != nil {
 		return err
 	}
-	kss, err := newKeyshareServer(managerID, pk)
+	kss, err := newKeyshareServer(managerID)
 	if err != nil {
 		return err
 	}

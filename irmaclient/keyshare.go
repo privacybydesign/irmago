@@ -68,7 +68,7 @@ const (
 	kssPinError       = "error"
 )
 
-func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier, pk []byte) (*keyshareServer, error) {
+func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (*keyshareServer, error) {
 	ks := &keyshareServer{
 		Nonce:                   make([]byte, 32),
 		SchemeManagerIdentifier: schemeManagerIdentifier,
