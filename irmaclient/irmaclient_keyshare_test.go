@@ -35,8 +35,13 @@ func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 	// Convince ourselves that we still need to register our public key at the keyshare server
 	kss.ChallengeResponse = false
 
-	// Checking the PIN triggers the public key registration mechanism
+	// Checking a PIN triggers the public key registration mechanism.
+	// Just as in normal authentication, we are allowed attempts with a wrong PIN.
+	verifyWrongPin(t, client)
+
+	// Actually trigger the public key registration mechanism using the correct PIN
 	verifyPin(t, client)
+	require.NotEmpty(t, kss.token)
 
 	// challenge-response is now enforced for this account
 	checkChallengeResponseEnforced(t, kss)
@@ -79,4 +84,12 @@ func verifyPin(t *testing.T, client *Client) {
 	require.True(t, succeeded)
 	require.Zero(t, blocked)
 	require.Equal(t, tries, 0)
+}
+
+func verifyWrongPin(t *testing.T, client *Client) {
+	succeeded, tries, blocked, err := client.KeyshareVerifyPin("00000", irma.NewSchemeManagerIdentifier("test"))
+	require.NoError(t, err)
+	require.False(t, succeeded)
+	require.Zero(t, blocked)
+	require.Equal(t, 1, tries)
 }

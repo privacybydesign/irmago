@@ -257,10 +257,12 @@ func TestRegisterPublicKey(t *testing.T) {
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87Zh",
 		PublicKey: pk,
 	})
+	res := &irma.KeysharePinStatus{}
 	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
 		fmt.Sprintf(`{"jwt":"%s"}`, jwtt), nil,
-		500, nil,
+		200, res,
 	)
+	require.Equal(t, res.Message, "1") // one try left
 
 	// normal flow
 	jwtt = registrationJWT(t, sk, irma.KeysharePublicKeyRegistrationData{

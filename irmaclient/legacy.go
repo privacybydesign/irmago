@@ -445,29 +445,14 @@ func (f *fileStorage) DeleteAll() error {
 	return nil
 }
 
-// ensurePublicKeyRegistered registers our public key used in the ECDSA challenge-response
-// sub-protocol part of the keyshare protocol at the keyshare server, if it has not already been
-// registered.
-func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *irma.HTTPTransport, pin string) {
-	if kss.ChallengeResponse {
-		// already done, nothing to do
-		return
-	}
-
-	// If this fails, there is no reason for the caller to stop what it's doing (e.g. abort the
-	// session). So we don't return any errors; we just report it.
-	var err error
-	defer func() {
-		if err != nil {
-			client.reportError(err)
-		}
-	}()
-
+// registerPublicKey registers our public key used in the ECDSA challenge-response
+// sub-protocol part of the keyshare protocol at the keyshare server.
+func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
 	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
 
 	pk, err := client.signer.PublicKey(keyname)
 	if err != nil {
-		return
+		return nil, err
 	}
 	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeysharePublicKeyRegistrationClaims{
 		KeysharePublicKeyRegistrationData: irma.KeysharePublicKeyRegistrationData{
@@ -478,27 +463,24 @@ func (kss *keyshareServer) ensurePublicKeyRegistered(client *Client, transport *
 	})
 	if err != nil {
 		err = errors.WrapPrefix(err, "failed to sign public key registration JWT", 0)
-		return
+		return nil, err
 	}
+
 	result := &irma.KeysharePinStatus{}
 	err = transport.Post("users/register_publickey", result, irma.KeysharePublicKeyRegistration{PublicKeyRegistrationJWT: jwtt})
 	if err != nil {
 		err = errors.WrapPrefix(err, "failed to register public key", 0)
-		return
+		return nil, err
 	}
 
-	if result.Status != kssPinSuccess {
-		err = errors.Errorf("/users/register_publickey failed with message %s", result.Message)
-		return
+	if result.Status == kssPinSuccess {
+		// We leave dealing with any other case up to the calling code
+		kss.ChallengeResponse = true
+		err = client.storage.StoreKeyshareServers(client.keyshareServers)
+		if err != nil {
+			err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)
+		}
 	}
 
-	// Upgrade our authentication token with the one we just received
-	kss.token = result.Message
-	transport.SetHeader(kssAuthHeader, result.Message)
-
-	kss.ChallengeResponse = true
-	err = client.storage.StoreKeyshareServers(client.keyshareServers)
-	if err != nil {
-		err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)
-	}
+	return result, nil
 }

@@ -253,26 +253,26 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 	success bool, tries int, blocked int, err error,
 ) {
 	var response []byte
-	var endpoint string
-	if kss.ChallengeResponse {
-		endpoint = "pin_challengeresponse"
-		response, err = doChallengeResponse(client.signer, pin, kss, transport)
+	pinresult := &irma.KeysharePinStatus{}
+	if !kss.ChallengeResponse {
+		pinresult, err = kss.registerPublicKey(client, transport, pin)
 		if err != nil {
 			return false, 0, 0, err
 		}
 	} else {
-		endpoint = "pin"
-	}
-
-	pinmsg := irma.KeyshareAuthResponse{
-		Username: kss.Username,
-		Pin:      kss.HashedPin(pin),
-		Response: response,
-	}
-	pinresult := &irma.KeysharePinStatus{}
-	err = transport.Post("users/verify/"+endpoint, pinresult, pinmsg)
-	if err != nil {
-		return
+		response, err = doChallengeResponse(client.signer, pin, kss, transport)
+		if err != nil {
+			return false, 0, 0, err
+		}
+		pinmsg := irma.KeyshareAuthResponse{
+			Username: kss.Username,
+			Pin:      kss.HashedPin(pin),
+			Response: response,
+		}
+		err = transport.Post("users/verify/pin_challengeresponse", pinresult, pinmsg)
+		if err != nil {
+			return
+		}
 	}
 
 	switch pinresult.Status {
@@ -280,7 +280,6 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 		success = true
 		kss.token = pinresult.Message
 		transport.SetHeader(kssAuthHeader, kss.token)
-		kss.ensurePublicKeyRegistered(client, transport, pin)
 		return
 	case kssPinFailure:
 		tries, err = strconv.Atoi(pinresult.Message)
