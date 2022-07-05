@@ -6,7 +6,7 @@ require (
 	github.com/alexandrevicenzi/go-sse v1.6.0
 	github.com/alicebob/miniredis/v2 v2.17.0
 	github.com/bsm/redislock v0.7.2
-	github.com/bwesterb/go-atum v1.1.4
+	github.com/bwesterb/go-atum v1.1.5
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/eknkc/basex v1.0.1
 	github.com/fxamacker/cbor v1.5.1
@@ -42,9 +42,7 @@ require (
 	github.com/subosito/gotenv v1.4.0 // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 	go.etcd.io/bbolt v1.3.6
-	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect
-	golang.org/x/sys v0.0.0-20220615213510-4f61da869c0c // indirect
 	golang.org/x/term v0.0.0-20220526004731-065cf7ba2467 // indirect
 	gopkg.in/ini.v1 v1.66.6 // indirect
 )
