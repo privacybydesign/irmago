@@ -91,7 +91,7 @@ func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 }
 
 func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, response []byte, pin string) error {
-	challenge := c.challenge(s.ID)
+	challenge := c.consumeChallenge(s.ID)
 	if challenge == nil {
 		return ErrChallengeResponseRequired
 	}
@@ -293,7 +293,7 @@ func (c *Core) GenerateChallenge(secrets UserSecrets) ([]byte, error) {
 	return challenge, nil
 }
 
-func (c *Core) challenge(id []byte) []byte {
+func (c *Core) consumeChallenge(id []byte) []byte {
 	c.authChallengesMutex.Lock()
 	defer c.authChallengesMutex.Unlock()
 	stringID := string(id)
