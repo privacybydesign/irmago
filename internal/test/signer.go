@@ -24,7 +24,10 @@ func LoadSigner(t *testing.T, privateKey *ecdsa.PrivateKey) *Signer {
 
 func (s *Signer) PublicKey(_ string) ([]byte, error) {
 	return signed.MarshalPublicKey(&s.privateKey.PublicKey)
+}
 
+func (s *Signer) ECDSAPublicKey() *ecdsa.PublicKey {
+	return &s.privateKey.PublicKey
 }
 
 func (s *Signer) Sign(_ string, msg []byte) ([]byte, error) {
