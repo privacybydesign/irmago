@@ -26,10 +26,6 @@ func (s *Signer) PublicKey(_ string) ([]byte, error) {
 	return signed.MarshalPublicKey(&s.privateKey.PublicKey)
 }
 
-func (s *Signer) ECDSAPublicKey() *ecdsa.PublicKey {
-	return &s.privateKey.PublicKey
-}
-
 func (s *Signer) Sign(_ string, msg []byte) ([]byte, error) {
 	return signed.Sign(s.privateKey, msg)
 }
