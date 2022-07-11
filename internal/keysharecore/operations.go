@@ -6,13 +6,11 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"time"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 
 	"github.com/go-errors/errors"
@@ -28,6 +26,7 @@ var (
 	ErrKeyNotFound               = errors.New("public key not found")
 	ErrUnknownCommit             = errors.New("unknown commit id")
 	ErrChallengeResponseRequired = errors.New("challenge-response authentication required")
+	ErrWrongChallenge            = errors.New("wrong challenge")
 )
 
 // NewUserSecrets generates a new keyshare secret, secured with the given pin.
@@ -61,17 +60,19 @@ func (c *Core) NewUserSecrets(pin string, pk *ecdsa.PublicKey) (UserSecrets, err
 }
 
 // ValidateAuth checks pin for validity and generates JWT for future access.
-func (c *Core) ValidateAuth(secrets UserSecrets, response []byte, pin string) (string, error) {
-	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
+func (c *Core) ValidateAuth(secrets UserSecrets, jwtt string) (string, error) {
+	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
 		return "", err
 	}
 
-	if s.PublicKey != nil {
-		err = c.verifyChallengeResponse(s, response, pin)
-		if err != nil {
-			return "", err
-		}
+	pin, err := c.verifyChallengeResponse(s, jwtt)
+	if err != nil {
+		return "", err
+	}
+
+	if err = s.verifyPin(pin); err != nil {
+		return "", err
 	}
 
 	return c.authJWT(&s)
@@ -90,18 +91,21 @@ func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 	return token.SignedString(c.jwtPrivateKey)
 }
 
-func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, response []byte, pin string) error {
+func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, jwtt string) (string, error) {
 	challenge := c.consumeChallenge(s.ID)
 	if challenge == nil {
-		return ErrChallengeResponseRequired
+		return "", ErrChallengeResponseRequired
 	}
 
-	encoded := irma.KeyshareChallengeData{
-		Challenge: challenge,
-		Pin:       pin,
+	claims := &irma.KeyshareAuthResponseClaims{}
+	if _, err := jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+		return "", err
 	}
-	bts, _ := json.Marshal(encoded)
-	return signed.Verify(s.PublicKey, bts, response)
+	if subtle.ConstantTimeCompare(challenge, claims.Challenge) != 1 {
+		return "", ErrWrongChallenge
+	}
+
+	return claims.Pin, nil
 }
 
 // ValidateJWT checks whether the given JWT is currently valid as an access token for operations
@@ -120,13 +124,7 @@ func (c *Core) ChangePin(secrets UserSecrets, jwtt string) (UserSecrets, error) 
 	}
 
 	claims := &irma.KeyshareChangePinClaims{}
-	_, err = jwt.ParseWithClaims(jwtt, claims, func(token *jwt.Token) (interface{}, error) {
-		if s.PublicKey == nil {
-			return nil, ErrKeyNotFound
-		}
-		return s.PublicKey, nil
-	})
-	if err != nil {
+	if _, err = jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
 		return nil, err
 	}
 

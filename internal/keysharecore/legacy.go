@@ -31,3 +31,17 @@ func (c *Core) ChangePinLegacy(secrets UserSecrets, oldpinRaw, newpinRaw string)
 	}
 	return c.encryptUserSecrets(s)
 }
+
+// ValidateAuthLegacy checks pin for validity and generates JWT for future access.
+func (c *Core) ValidateAuthLegacy(secrets UserSecrets, pin string) (string, error) {
+	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
+	if err != nil {
+		return "", err
+	}
+
+	if s.PublicKey != nil {
+		return "", ErrChallengeResponseRequired
+	}
+
+	return c.authJWT(&s)
+}

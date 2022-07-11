@@ -69,7 +69,7 @@ func TestKeyshareAuthentication(t *testing.T) {
 // checkChallengeResponseEnforced manually sends a PIN auth message without challenge-response
 // to check that the server enforces challenge-response for this account.
 func checkChallengeResponseEnforced(t *testing.T, kss *keyshareServer) {
-	msg := irma.KeyshareAuthResponse{Username: kss.Username, Pin: kss.HashedPin("12345")}
+	msg := irma.KeyshareAuthResponseData{Username: kss.Username, Pin: kss.HashedPin("12345")}
 	err := irma.NewHTTPTransport("http://localhost:8080", false).Post("users/verify/pin", nil, msg)
 	require.IsType(t, &irma.SessionError{}, err)
 	sessErr := err.(*irma.SessionError)

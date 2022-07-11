@@ -333,10 +333,25 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var username string
+	if msg.AuthResponseJWT == "" {
+		username = msg.Username
+	} else {
+		claims := &irma.KeyshareAuthResponseClaims{}
+		// We need the username inside the JWT here. The JWT is verified later within verifyAuth().
+		_, _, err := jwt.NewParser().ParseUnverified(msg.AuthResponseJWT, claims)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+		username = claims.Username
+	}
+
 	// Fetch user
-	user, err := s.db.user(msg.Username)
+	user, err := s.db.user(username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": msg.Username, "error": err}).Warn("Could not find user in db")
+		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
@@ -363,7 +378,12 @@ func (s *Server) verifyAuth(user *User, msg irma.KeyshareAuthResponse) (irma.Key
 	}
 
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
-	jwtt, err := s.core.ValidateAuth(user.Secrets, msg.Response, msg.Pin)
+	var jwtt string
+	if msg.AuthResponseJWT == "" {
+		jwtt, err = s.core.ValidateAuthLegacy(user.Secrets, msg.Pin)
+	} else {
+		jwtt, err = s.core.ValidateAuth(user.Secrets, msg.AuthResponseJWT)
+	}
 
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors

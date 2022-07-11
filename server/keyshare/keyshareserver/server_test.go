@@ -171,26 +171,27 @@ func TestPinTryChallengeResponse(t *testing.T) {
 
 	sk := loadClientPrivateKey(t)
 
-	res, err := json.Marshal(irma.KeyshareAuthResponse{
-		Username: "testusername",
-		Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
-		Response: doChallengeResponse(t, sk),
-	})
-	require.NoError(t, err)
+	jwtt := doChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse", string(res), nil, 200, &jwtMsg)
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
+		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
+		200, &jwtMsg,
+	)
 	require.Equal(t, "success", jwtMsg.Status)
 
 	// try with an invalid response
-	response := doChallengeResponse(t, sk)
-	response[0] = ^response[0]
-	res, err = json.Marshal(irma.KeyshareAuthResponse{
-		Username: "testusername",
-		Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
-		Response: response,
-	})
+	jwtt = doChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
+	jwtt = jwtt[:len(jwtt)-4]
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
+		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
+		500, nil,
+	)
+}
+
+func marshalJSON(t *testing.T, v interface{}) string {
+	j, err := json.Marshal(v)
 	require.NoError(t, err)
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse", string(res), nil, 500, nil)
+	return string(j)
 }
 
 func TestStartAuth(t *testing.T) {
@@ -276,7 +277,7 @@ func TestRegisterPublicKey(t *testing.T) {
 	)
 
 	// challenge-response should work now
-	_ = doChallengeResponse(t, loadClientPrivateKey(t))
+	_ = doChallengeResponse(t, loadClientPrivateKey(t), "legacyuser", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 
 	// can't do it a second time
 	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
@@ -377,14 +378,12 @@ func TestKeyshareSessions(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, db, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
-	res, err := json.Marshal(irma.KeyshareAuthResponse{
-		Username: "testusername",
-		Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
-		Response: doChallengeResponse(t, loadClientPrivateKey(t)),
-	})
-	require.NoError(t, err)
+	jwtt := doChallengeResponse(t, loadClientPrivateKey(t), "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse", string(res), nil, 200, &jwtMsg)
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
+		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
+		200, &jwtMsg,
+	)
 	require.Equal(t, "success", jwtMsg.Status)
 
 	// no active session, can't retrieve result
@@ -561,26 +560,26 @@ func createDB(t *testing.T) DB {
 	return db
 }
 
-func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey) []byte {
+func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username, pin string) string {
 	// retrieve a challenge
 	auth := &irma.KeyshareAuthChallenge{}
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
-		`{"id":"testusername"}`, nil,
+		`{"id":"`+username+`"}`, nil,
 		200, auth,
 	)
 	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
 	require.NotEmpty(t, auth.Challenge)
 
-	// sign the challenge
-	msg, err := json.Marshal(irma.KeyshareChallengeData{
-		Challenge: auth.Challenge,
-		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
-	})
-	require.NoError(t, err)
-	response, err := signed.Sign(sk, msg)
+	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthResponseClaims{
+		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+			Username:  username,
+			Pin:       pin,
+			Challenge: auth.Challenge,
+		},
+	}).SignedString(sk)
 	require.NoError(t, err)
 
-	return response
+	return jwtt
 }
 
 func loadClientPrivateKey(t *testing.T) *ecdsa.PrivateKey {

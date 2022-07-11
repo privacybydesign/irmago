@@ -341,14 +341,19 @@ type KeyshareAuthChallenge struct {
 }
 
 type KeyshareAuthResponse struct {
-	Username string `json:"id"`
-	Pin      string `json:"pin"`
-	Response []byte `json:"response,omitempty"`
+	KeyshareAuthResponseData
+	AuthResponseJWT string `json:"auth_response_jwt"`
 }
 
-type KeyshareChallengeData struct {
-	Challenge []byte
-	Pin       string
+type KeyshareAuthResponseData struct {
+	Username  string `json:"id"`
+	Pin       string `json:"pin"`
+	Challenge []byte `json:"challenge,omitempty"`
+}
+
+type KeyshareAuthResponseClaims struct {
+	jwt.RegisteredClaims
+	KeyshareAuthResponseData
 }
 
 type KeysharePinStatus struct {

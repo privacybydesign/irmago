@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -41,8 +40,8 @@ func TestPinFunctionality(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with correct pin
-		j, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
-		assert.NoError(t, err)
+		j, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 		var claims jwt.StandardClaims
 		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
 			return &jwtTestKey.PublicKey, nil
@@ -58,11 +57,11 @@ func TestPinFunctionality(t *testing.T) {
 		assert.NoError(t, err)
 
 		// test correct pin
-		_, err = c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, newpin), newpin)
+		_, err = validateAuth(t, c, signer, secrets, newpin)
 		assert.NoError(t, err)
 
 		// Test incorrect pin
-		_, err = c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		_, err = validateAuth(t, c, signer, secrets, pin)
 		assert.Error(t, err)
 	}
 }
@@ -86,7 +85,7 @@ func TestVerifyAccess(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test use jwt on wrong secrets
-		jwtt, err := c.ValidateAuth(secrets1, doChallengeResponse(t, c, signer, secrets1, pin1), pin1)
+		jwtt, err := validateAuth(t, c, signer, secrets1, pin1)
 		require.NoError(t, err)
 		_, err = c.verifyAccess(secrets2, jwtt)
 		assert.Error(t, err)
@@ -180,7 +179,7 @@ func TestProofFunctionality(t *testing.T) {
 		require.NoError(t, err)
 
 		// Validate pin
-		jwtt, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
 		// Get keyshare commitment
@@ -228,7 +227,7 @@ func TestCorruptedUserSecrets(t *testing.T) {
 		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
 		require.NoError(t, err)
 
-		jwtt, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
 		_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
@@ -237,10 +236,10 @@ func TestCorruptedUserSecrets(t *testing.T) {
 		// Corrupt user secrets
 		secrets[12] = secrets[12] + 1
 
-		// Try to verify pin. Skip doChallengeResponse() here because otherwise it will fail on our
-		// corrupted user secrets. ValidateAuth should fail on the corrupted user anyway before it
-		// notices that challenge-response is required
-		_, err = c.ValidateAuth(secrets, nil, pin)
+		// Try to verify pin. Skip challenge-response here because that would fail on our
+		// corrupted user secrets. ValidateAuthLegacy should fail on the corrupted user anyway
+		// before it notices that challenge-response is required
+		_, err = c.ValidateAuthLegacy(secrets, pin)
 		assert.Error(t, err, "ValidateAuth accepts corrupted keyshare user secrets")
 
 		// Change pin
@@ -274,7 +273,7 @@ func TestIncorrectPin(t *testing.T) {
 		require.NoError(t, err)
 
 		// validate pin
-		jwtt, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
 		// Corrupt pin
@@ -311,7 +310,7 @@ func TestMissingKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// Generate jwt
-		jwtt, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
 		// GenerateCommitments
@@ -343,7 +342,7 @@ func TestInvalidChallenge(t *testing.T) {
 		require.NoError(t, err)
 
 		// Validate pin
-		jwtt, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
 		// Test negative challenge
@@ -383,7 +382,7 @@ func TestDoubleCommitUse(t *testing.T) {
 		require.NoError(t, err)
 
 		// validate pin
-		jwtt, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
 		// Use commit double
@@ -413,7 +412,7 @@ func TestNonExistingCommit(t *testing.T) {
 		require.NoError(t, err)
 
 		// Generate jwt
-		jwtt, err := c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin), pin)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
 		// test
@@ -488,20 +487,31 @@ func setupParameters() error {
 	return nil
 }
 
-func doChallengeResponse(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecrets, pin string) []byte {
+func validateAuth(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecrets, pin string) (string, error) {
 	if signer == nil {
-		return nil
+		return c.ValidateAuthLegacy(secrets, pin)
+	} else {
+		return c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin))
+	}
+}
+
+func doChallengeResponse(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecrets, pin string) string {
+	if signer == nil {
+		return ""
 	}
 
 	challenge, err := c.GenerateChallenge(secrets)
 	require.NoError(t, err)
-	bts, _ := json.Marshal(irma.KeyshareChallengeData{
-		Challenge: challenge,
-		Pin:       pin,
+
+	jwtt, err := irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthResponseClaims{
+		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+			Pin:       pin,
+			Challenge: challenge,
+		},
 	})
-	response, err := signer.Sign("", bts)
 	require.NoError(t, err)
-	return response
+
+	return jwtt
 }
 
 func changePin(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecrets, old, new string) (UserSecrets, error) {

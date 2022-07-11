@@ -10,6 +10,7 @@ import (
 
 	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
 )
@@ -124,6 +125,14 @@ func (s *unencryptedUserSecrets) UnmarshalCBOR(bytes []byte) error {
 		}
 	}
 	return nil
+}
+
+// publicKey returns the user's public key. For use in jwt.ParseWithClaims().
+func (s *unencryptedUserSecrets) publicKey(_ *jwt.Token) (interface{}, error) {
+	if s.PublicKey == nil {
+		return nil, ErrKeyNotFound
+	}
+	return s.PublicKey, nil
 }
 
 func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, error) {
