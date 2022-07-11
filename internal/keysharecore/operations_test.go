@@ -500,10 +500,13 @@ func doChallengeResponse(t *testing.T, c *Core, signer irmaclient.Signer, secret
 		return ""
 	}
 
-	challenge, err := c.GenerateChallenge(secrets)
+	jwtt, err := irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthRequestClaims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute))},
+	})
+	challenge, err := c.GenerateChallenge(secrets, jwtt)
 	require.NoError(t, err)
 
-	jwtt, err := irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthResponseClaims{
+	jwtt, err = irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthResponseClaims{
 		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
 			Pin:       pin,
 			Challenge: challenge,

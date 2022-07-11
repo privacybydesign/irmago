@@ -29,6 +29,10 @@ var (
 	ErrWrongChallenge            = errors.New("wrong challenge")
 )
 
+// ChallengeJWTMaxExpiry is the maximum exp (expiry) that we allow JWTs to have with which calls to
+// GenerateChallenge() (i.e. /users/verify_start) are authenticated.
+const ChallengeJWTMaxExpiry = 6 * time.Minute
+
 // NewUserSecrets generates a new keyshare secret, secured with the given pin.
 func (c *Core) NewUserSecrets(pin string, pk *ecdsa.PublicKey) (UserSecrets, error) {
 	secret, err := gabi.NewKeyshareSecret()
@@ -269,7 +273,7 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	return token.SignedString(c.jwtPrivateKey)
 }
 
-func (c *Core) GenerateChallenge(secrets UserSecrets) ([]byte, error) {
+func (c *Core) GenerateChallenge(secrets UserSecrets, jwtt string) ([]byte, error) {
 	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
 		return nil, err
@@ -277,6 +281,15 @@ func (c *Core) GenerateChallenge(secrets UserSecrets) ([]byte, error) {
 
 	if s.PublicKey == nil {
 		return nil, errors.New("can't do challenge-response: no public key associated to account")
+	}
+
+	claims := &irma.KeyshareAuthRequestClaims{}
+	if _, err = jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+		return nil, err
+	}
+	// Impose explicit maximum on JWT expiry; we don't want eternally valid JWTs.
+	if claims.ExpiresAt == nil || claims.ExpiresAt.After(time.Now().Add(ChallengeJWTMaxExpiry)) {
+		return nil, errors.Errorf("JWT expiry may not be more than %s from now", ChallengeJWTMaxExpiry)
 	}
 
 	challenge := make([]byte, 32)

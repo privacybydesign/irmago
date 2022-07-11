@@ -223,11 +223,20 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 	}))
 }
 
+// challengeRequestJWTExpiry is the expiry of the JWT sent to the keyshareserver at
+// /users/verify_start. It is half the maximum that the keyshare server allows to allow for
+// clockdrift.
+const challengeRequestJWTExpiry = 3 * time.Minute
+
 func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transport *irma.HTTPTransport) (string, error) {
-	auth := &irma.KeyshareAuthChallenge{}
-	err := transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{
-		Username: kss.Username,
+	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
+	jwtt, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry))},
+		Username:         kss.Username,
 	})
+
+	auth := &irma.KeyshareAuthChallenge{}
+	err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
 	if err != nil {
 		return "", err
 	}
@@ -242,7 +251,7 @@ func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transpo
 		return "", errors.New("challenge-response authentication method not supported")
 	}
 
-	jwtt, err := SignerCreateJWT(signer, challengeResponseKeyName(kss.SchemeManagerIdentifier), irma.KeyshareAuthResponseClaims{
+	jwtt, err = SignerCreateJWT(signer, keyname, irma.KeyshareAuthResponseClaims{
 		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
 			Username:  kss.Username,
 			Pin:       kss.HashedPin(pin),

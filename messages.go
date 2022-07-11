@@ -332,6 +332,11 @@ type KeyshareChangePinClaims struct {
 }
 
 type KeyshareAuthRequest struct {
+	AuthRequestJWT string `json:"auth_request_jwt"`
+}
+
+type KeyshareAuthRequestClaims struct {
+	jwt.RegisteredClaims
 	Username string `json:"id"`
 }
 

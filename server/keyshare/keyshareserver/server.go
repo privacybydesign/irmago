@@ -295,15 +295,24 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch user
-	user, err := s.db.user(msg.Username)
+	claims := &irma.KeyshareAuthRequestClaims{}
+	// We need the username inside the JWT here. The JWT is verified later within startAuth().
+	_, _, err := jwt.NewParser().ParseUnverified(msg.AuthRequestJWT, claims)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": msg.Username, "error": err}).Warn("Could not find user in db")
+		s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	// Fetch user
+	user, err := s.db.user(claims.Username)
+	if err != nil {
+		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
 
-	result, err := s.startAuth(user)
+	result, err := s.startAuth(user, msg.AuthRequestJWT)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -313,8 +322,8 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) startAuth(user *User) (irma.KeyshareAuthChallenge, error) {
-	challenge, err := s.core.GenerateChallenge(user.Secrets)
+func (s *Server) startAuth(user *User, jwtt string) (irma.KeyshareAuthChallenge, error) {
+	challenge, err := s.core.GenerateChallenge(user.Secrets, jwtt)
 	if err != nil {
 		return irma.KeyshareAuthChallenge{}, err
 	}

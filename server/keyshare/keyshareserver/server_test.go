@@ -194,21 +194,33 @@ func marshalJSON(t *testing.T, v interface{}) string {
 	return string(j)
 }
 
+func authJWT(t *testing.T, sk *ecdsa.PrivateKey, username string) string {
+	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthRequestClaims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute))},
+		Username:         username,
+	}).SignedString(sk)
+	require.NoError(t, err)
+	x := marshalJSON(t, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
+	return x
+}
+
 func TestStartAuth(t *testing.T) {
 	db := createDB(t)
 	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
+	sk := loadClientPrivateKey(t)
+
 	// can't do it for users that don't yet have a public key registered
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
-		`{"id":"legacyuser"}`, nil,
+		authJWT(t, sk, "legacyuser"), nil,
 		500, nil,
 	)
 
 	// normal flow
 	auth := &irma.KeyshareAuthChallenge{}
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
-		`{"id":"testusername"}`, nil,
+		authJWT(t, sk, "testusername"), nil,
 		200, auth,
 	)
 	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
@@ -216,7 +228,7 @@ func TestStartAuth(t *testing.T) {
 
 	// nonexisting user
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
-		`{"id":"doesnotexist"}`, nil,
+		authJWT(t, sk, "doesnotexist"), nil,
 		403, nil,
 	)
 }
@@ -578,7 +590,7 @@ func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username, pin strin
 	// retrieve a challenge
 	auth := &irma.KeyshareAuthChallenge{}
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
-		`{"id":"`+username+`"}`, nil,
+		authJWT(t, sk, username), nil,
 		200, auth,
 	)
 	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
