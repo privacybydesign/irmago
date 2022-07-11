@@ -385,60 +385,74 @@ func TestKeyshareSessions(t *testing.T) {
 		200, &jwtMsg,
 	)
 	require.Equal(t, "success", jwtMsg.Status)
+	auth1 := jwtMsg.Message
 
-	// no active session, can't retrieve result
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
-		"12345678", http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{jwtMsg.Message},
-		},
-		400, nil,
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+		marshalJSON(t, irma.KeyshareAuthResponse{KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+			Username: "legacyuser",
+			Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
+		}}), nil,
+		200, &jwtMsg,
 	)
+	auth2 := jwtMsg.Message
 
-	// can't retrieve commitments with fake authorization
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
-		`["test.test-3"]`, http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{"fakeauthorization"},
-		},
-		400, nil,
-	)
+	for _, user := range []struct {
+		username, auth string
+	}{{"testusername", auth1}, {"legacyuser", auth2}} {
+		// no active session, can't retrieve result
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+			"12345678", http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{user.auth},
+			},
+			400, nil,
+		)
 
-	// retrieve commitments normally
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
-		`["test.test-3"]`, http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{jwtMsg.Message},
-		},
-		200, nil,
-	)
+		// can't retrieve commitments with fake authorization
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+			`["test.test-3"]`, http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{"fakeauthorization"},
+			},
+			400, nil,
+		)
 
-	// can't retrieve resukt with fake authorization
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
-		"12345678", http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{"fakeauthorization"},
-		},
-		400, nil,
-	)
+		// retrieve commitments normally
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+			`["test.test-3"]`, http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{user.auth},
+			},
+			200, nil,
+		)
 
-	// can start session while another is already active
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
-		`["test.test-3"]`, http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{jwtMsg.Message},
-		},
-		200, nil,
-	)
+		// can't retrieve resukt with fake authorization
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+			"12345678", http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{"fakeauthorization"},
+			},
+			400, nil,
+		)
 
-	// finish session
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
-		"12345678", http.Header{
-			"X-IRMA-Keyshare-Username": []string{"testusername"},
-			"Authorization":            []string{jwtMsg.Message},
-		},
-		200, nil,
-	)
+		// can start session while another is already active
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+			`["test.test-3"]`, http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{user.auth},
+			},
+			200, nil,
+		)
+
+		// finish session
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+			"12345678", http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{user.auth},
+			},
+			200, nil,
+		)
+	}
 }
 
 func StartKeyshareServer(t *testing.T, db DB, emailserver string) (*Server, *http.Server) {
