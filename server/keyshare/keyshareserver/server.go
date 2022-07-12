@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
+	"github.com/privacybydesign/irmago/server/keyshare"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -441,8 +442,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionptr, err := s.register(msg)
-	if err == keysharecore.ErrPinTooLong {
-		// Too long pin is not an internal error
+	if err == keysharecore.ErrPinTooLong || err == keyshare.ErrInvalidEmail {
+		// Too long pin or invalid email address is not an internal error
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
