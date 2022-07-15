@@ -35,8 +35,10 @@ type Configuration struct {
 	StaticPrefix string `json:"static_prefix" mapstructure:"static_prefix"`
 
 	// Database configuration (ignored when database is provided)
-	DBType    DBType `json:"db_type" mapstructure:"db_type"`
-	DBConnStr string `json:"db_str" mapstructure:"db_str"`
+	DBType         DBType `json:"db_type" mapstructure:"db_type"`
+	DBConnStr      string `json:"db_str" mapstructure:"db_str"`
+	DBMaxIdleConns int    `json:"db_max_idle" mapstructure:"db_max_idle"`
+	DBMaxOpenConns int    `json:"db_max_open" mapstructure:"db_max_open"`
 	// DeleteDelay is the delay in days before a user or email address deletion becomes effective.
 	DeleteDelay int `json:"delete_delay" mapstructure:"delete_delay"`
 	// Provide a prepared database (useful for testing)
@@ -124,7 +126,7 @@ func processConfiguration(conf *Configuration) error {
 	if conf.DB == nil {
 		switch conf.DBType {
 		case DBTypePostgres:
-			conf.DB, err = newPostgresDB(conf.DBConnStr)
+			conf.DB, err = newPostgresDB(conf.DBConnStr, conf.DBMaxIdleConns, conf.DBMaxOpenConns)
 			if err != nil {
 				return err
 			}

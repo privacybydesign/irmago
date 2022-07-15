@@ -21,11 +21,15 @@ var (
 	errTokenNotFound = errors.New("Token not found")
 )
 
-func newPostgresDB(connstring string) (db, error) {
+// newPostgresDB opens a new database connection using the given maximum connection bounds.
+// If maxOpenConns is set to 0, then an unlimited number of connections is allowed.
+func newPostgresDB(connstring string, maxIdleConns int, maxOpenConns int) (db, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetMaxOpenConns(maxOpenConns)
 	if err = db.Ping(); err != nil {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}

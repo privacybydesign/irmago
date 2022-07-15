@@ -55,6 +55,8 @@ func init() {
 	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(myirmaserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db-str", "", "Database server connection string")
+	flags.Int("db-max-idle", 2, "Sets the maximum number of connections in the idle database connection pool")
+	flags.Int("db-max-open", 0, "Sets the maximum number of open connections to the database (0 means unlimited)")
 
 	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
@@ -104,8 +106,10 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 		StaticPath:   viper.GetString("static_path"),
 		StaticPrefix: viper.GetString("static_prefix"),
 
-		DBType:    myirmaserver.DBType(viper.GetString("db_type")),
-		DBConnStr: viper.GetString("db_str"),
+		DBType:         myirmaserver.DBType(viper.GetString("db_type")),
+		DBConnStr:      viper.GetString("db_str"),
+		DBMaxIdleConns: viper.GetInt("db_max_idle"),
+		DBMaxOpenConns: viper.GetInt("db_max_open"),
 
 		LoginEmailSubjects:    viper.GetStringMapString("login_email_subjects"),
 		LoginEmailFiles:       viper.GetStringMapString("login_email_files"),
