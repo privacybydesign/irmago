@@ -56,7 +56,7 @@ func init() {
 	flags.String("db-type", string(myirmaserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db-str", "", "Database server connection string")
 	flags.Int("db-max-idle", 2, "Sets the maximum number of connections in the idle database connection pool")
-	flags.Int("db-max-open", 0, "Sets the maximum number of open connections to the database (0 means unlimited)")
+	flags.Int("db-max-open", 0, "Sets the maximum number of open connections to the database (default unlimited)")
 
 	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
