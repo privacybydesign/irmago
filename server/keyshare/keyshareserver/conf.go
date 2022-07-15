@@ -31,8 +31,10 @@ type Configuration struct {
 	*server.Configuration `mapstructure:",squash"`
 
 	// Database configuration (ignored when database is provided)
-	DBType    DBType `json:"db_type" mapstructure:"db_type"`
-	DBConnStr string `json:"db_str" mapstructure:"db_str"`
+	DBType         DBType `json:"db_type" mapstructure:"db_type"`
+	DBConnStr      string `json:"db_str" mapstructure:"db_str"`
+	DBMaxIdleConns int    `json:"db_max_idle" mapstructure:"db_max_idle"`
+	DBMaxOpenConns int    `json:"db_max_open" mapstructure:"db_max_open"`
 	// Provide a prepared database (useful for testing)
 	DB DB `json:"-"`
 
@@ -120,7 +122,7 @@ func setupDatabase(conf *Configuration) (DB, error) {
 		db = NewMemoryDB()
 	case DBTypePostgres:
 		var err error
-		db, err = newPostgresDB(conf.DBConnStr)
+		db, err = newPostgresDB(conf.DBConnStr, conf.DBMaxIdleConns, conf.DBMaxOpenConns)
 		if err != nil {
 			return nil, server.LogError(err)
 		}

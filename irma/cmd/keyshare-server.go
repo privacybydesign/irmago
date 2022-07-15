@@ -52,6 +52,8 @@ func init() {
 	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db-str", "", "Database server connection string")
+	flags.Int("db-max-idle", 2, "Sets the maximum number of connections in the idle database connection pool")
+	flags.Int("db-max-open", 0, "Sets the maximum number of open connections to the database (0 means unlimited)")
 
 	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
@@ -98,8 +100,10 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
-		DBType:    keyshareserver.DBType(viper.GetString("db_type")),
-		DBConnStr: viper.GetString("db_str"),
+		DBType:         keyshareserver.DBType(viper.GetString("db_type")),
+		DBConnStr:      viper.GetString("db_str"),
+		DBMaxIdleConns: viper.GetInt("db_max_idle"),
+		DBMaxOpenConns: viper.GetInt("db_max_open"),
 
 		JwtKeyID:                viper.GetUint32("jwt_privkey_id"),
 		JwtPrivateKey:           viper.GetString("jwt_privkey"),
