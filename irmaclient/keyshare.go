@@ -228,7 +228,7 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 // clockdrift.
 const challengeRequestJWTExpiry = 3 * time.Minute
 
-func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transport *irma.HTTPTransport) (string, error) {
+func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
 	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
 	jwtt, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
 		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry))},
@@ -238,7 +238,7 @@ func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transpo
 	auth := &irma.KeyshareAuthChallenge{}
 	err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var ok bool
 	for _, method := range auth.Candidates {
@@ -248,7 +248,7 @@ func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transpo
 		}
 	}
 	if !ok {
-		return "", errors.New("challenge-response authentication method not supported")
+		return nil, errors.New("challenge-response authentication method not supported")
 	}
 
 	jwtt, err = SignerCreateJWT(signer, keyname, irma.KeyshareAuthResponseClaims{
@@ -259,10 +259,16 @@ func doChallengeResponse(signer Signer, pin string, kss *keyshareServer, transpo
 		},
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return jwtt, nil
+	pinresult := &irma.KeysharePinStatus{}
+	err = transport.Post("users/verify/pin_challengeresponse", pinresult, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt})
+	if err != nil {
+		return nil, err
+	}
+
+	return pinresult, nil
 }
 
 func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
@@ -271,19 +277,11 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 	pinresult := &irma.KeysharePinStatus{}
 	if !kss.ChallengeResponse {
 		pinresult, err = kss.registerPublicKey(client, transport, pin)
-		if err != nil {
-			return false, 0, 0, err
-		}
 	} else {
-		var jwtt string
-		jwtt, err = doChallengeResponse(client.signer, pin, kss, transport)
-		if err != nil {
-			return false, 0, 0, err
-		}
-		err = transport.Post("users/verify/pin_challengeresponse", pinresult, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt})
-		if err != nil {
-			return
-		}
+		pinresult, err = kss.doChallengeResponse(client.signer, transport, pin)
+	}
+	if err != nil {
+		return false, 0, 0, err
 	}
 
 	switch pinresult.Status {
