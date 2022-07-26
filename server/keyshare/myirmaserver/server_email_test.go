@@ -1,4 +1,5 @@
-//+build !local_tests
+//go:build !local_tests
+// +build !local_tests
 
 package myirmaserver
 
@@ -32,7 +33,7 @@ func TestServerLoginEmail(t *testing.T) {
 	myirmaServer, httpServer := StartMyIrmaServer(t, db, "localhost:1025")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
-	test.HTTPPost(t, nil, "http://localhost:8081/login/email", `{"email": "nonexistinglanguage", "language": "en"}`, nil, 403, nil)
+	test.HTTPPost(t, nil, "http://localhost:8081/login/email", `{"email": "nonexistinglanguage", "language": "en"}`, nil, 400, nil)
 
 	test.HTTPPost(t, nil, "http://localhost:8081/login/email", `{"email": "test@test.com", "language":"en"}`, nil, 204, nil)
 

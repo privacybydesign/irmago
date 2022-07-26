@@ -1,4 +1,5 @@
-//+build !local_tests
+//go:build !local_tests
+// +build !local_tests
 
 package myirmaserver
 
@@ -79,10 +80,13 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	require.NoError(t, err)
 
 	err = db.addLoginToken("test2@test.com", "test2token")
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, errEmailNotFound)
 
 	err = db.addLoginToken("test@test.com", "testtoken")
 	require.NoError(t, err)
+
+	err = db.addLoginToken("test@test.com", "testtoken")
+	require.ErrorIs(t, err, errTooManyRequests)
 
 	cand, err := db.loginUserCandidates("testtoken")
 	assert.NoError(t, err)
