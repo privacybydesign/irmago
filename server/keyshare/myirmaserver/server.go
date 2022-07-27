@@ -227,7 +227,7 @@ func (s *Server) sendLoginEmail(request emailLoginRequest) error {
 
 	token := common.NewSessionToken()
 	err = s.db.addLoginToken(request.Email, token)
-	if err == errEmailNotFound || err == errTooManyRequests {
+	if err == errEmailNotFound || err == errTooManyTokens {
 		return err
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error adding login token to database")
@@ -263,7 +263,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	// In case of errEmailNotFound or errTooManyRequests, we should not write an error.
 	// Otherwise, we would leak information about our user base.
-	if err != nil && err != errEmailNotFound && err != errTooManyRequests {
+	if err != nil && err != errEmailNotFound && err != errTooManyTokens {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return

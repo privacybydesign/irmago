@@ -441,9 +441,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionptr, err := s.register(msg)
-	if err != nil && err == keysharecore.ErrPinTooLong {
+	if err == keysharecore.ErrPinTooLong {
 		// Too long pin is not an internal error
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err == errTooManyTokens {
+		server.WriteError(w, server.ErrorTooManyRequests, err.Error())
 		return
 	}
 	if err != nil {
@@ -502,7 +506,10 @@ func (s *Server) sendRegistrationEmail(user *User, language, email string) error
 	// Add it to the database
 	err := s.db.addEmailVerification(user, email, token)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not generate email verification mail record")
+		// Rate limiting errors do not need logging.
+		if err != errTooManyTokens {
+			s.conf.Logger.WithField("error", err).Error("Could not generate email verification mail record")
+		}
 		return err
 	}
 

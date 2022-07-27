@@ -86,7 +86,7 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	require.NoError(t, err)
 
 	err = db.addLoginToken("test@test.com", "testtoken")
-	require.ErrorIs(t, err, errTooManyRequests)
+	require.ErrorIs(t, err, errTooManyTokens)
 
 	cand, err := db.loginUserCandidates("testtoken")
 	assert.NoError(t, err)
