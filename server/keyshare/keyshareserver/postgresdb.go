@@ -211,7 +211,7 @@ func (db *postgresDB) addEmailVerification(user *User, emailAddress, token strin
 	if err != nil {
 		return err
 	}
-	if amount > emailTokenRateLimit {
+	if amount >= emailTokenRateLimit {
 		return errTooManyTokens
 	}
 
