@@ -21,7 +21,7 @@ type postgresDB struct {
 
 const maxPinTries = 3                  // number of tries allowed on pin before we start with exponential backoff
 const emailTokenValidity = 24          // amount of time user's email validation token is valid (in hours)
-const emailTokenRateLimit = 3          // max number of active tokens per email address within the emailTokenRateLimitDuration.
+const emailTokenRateLimit = 3          // max number of active tokens per email address within the emailTokenRateLimitDuration
 const emailTokenRateLimitDuration = 60 // amount of time after which tokens become irrelevant for rate limiting (in minutes)
 
 var errTooManyTokens = errors.New("Too many unhandled email tokens for given email address")
