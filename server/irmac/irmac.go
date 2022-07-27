@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -220,7 +221,7 @@ func HandleProtocolMessage(path *C.char, method *C.char, headers *C.char, messag
 		return
 	}
 
-	if returnheaders.Get("Content-Type") != "application/json" {
+	if !strings.HasPrefix(returnheaders.Get("Content-Type"), "application/json") {
 		body = []byte(base64.StdEncoding.EncodeToString(body))
 	}
 

@@ -156,7 +156,7 @@ func WriteBinaryResponse(w http.ResponseWriter, object interface{}, rerr *irma.R
 // WriteResponse writes the specified object or error as JSON to the http.ResponseWriter.
 func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError) {
 	status, bts := JsonResponse(object, rerr)
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(status)
 	_, err := w.Write(bts)
 	if err != nil {
@@ -541,7 +541,7 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 					resp = nil // avoid printing stacktraces and SSE in response
 				}
 				var hexencode bool
-				if opts.EncodeBinary && ww.Header().Get("Content-Type") != "application/json" {
+				if opts.EncodeBinary && !strings.HasPrefix(ww.Header().Get("Content-Type"), "application/json") {
 					hexencode = true
 				}
 				LogResponse(r.URL.String(), ww.Status(), time.Since(start), hexencode, resp)

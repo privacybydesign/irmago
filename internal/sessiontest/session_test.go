@@ -966,7 +966,7 @@ func TestPOSTSizeLimit(t *testing.T) {
 		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
 	)
 	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	http.DefaultClient.Timeout = 30 * time.Second
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
