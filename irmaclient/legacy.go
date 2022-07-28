@@ -497,6 +497,7 @@ func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTT
 		err = client.storage.StoreKeyshareServers(client.keyshareServers)
 		if err != nil {
 			err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)
+			return nil, err
 		}
 	}
 

@@ -234,6 +234,9 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry))},
 		Username:         kss.Username,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	auth := &irma.KeyshareAuthChallenge{}
 	err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})

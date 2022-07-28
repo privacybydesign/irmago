@@ -503,6 +503,7 @@ func doChallengeResponse(t *testing.T, c *Core, signer irmaclient.Signer, secret
 	jwtt, err := irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthRequestClaims{
 		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute))},
 	})
+	require.NoError(t, err)
 	challenge, err := c.GenerateChallenge(secrets, jwtt)
 	require.NoError(t, err)
 
