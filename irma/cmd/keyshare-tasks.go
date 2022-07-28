@@ -29,8 +29,8 @@ func init() {
 
 	flags.StringP("config", "c", "", "path to configuration file")
 
-	headers["db"] = "Database configuration"
-	flags.String("db", "", "Database server connection string")
+	headers["db-str"] = "Database configuration"
+	flags.String("db-str", "", "Database server connection string")
 
 	headers["expiry-delay"] = "Time period configuration"
 	flags.Int("expiry-delay", 365, "Number of days of inactivity until account expires")

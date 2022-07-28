@@ -1,4 +1,5 @@
-//+build !local_tests
+//go:build !local_tests
+// +build !local_tests
 
 package myirmaserver
 
@@ -15,7 +16,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*postgresDB)
@@ -67,7 +68,7 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*postgresDB)
@@ -124,7 +125,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*postgresDB)

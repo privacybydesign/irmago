@@ -54,7 +54,11 @@ func init() {
 
 	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(myirmaserver.DBTypePostgres), "Type of database to connect keyshare server to")
-	flags.String("db", "", "Database server connection string")
+	flags.String("db-str", "", "Database server connection string")
+	flags.Int("db-max-idle", 2, "Maximum number of database connections in the idle connection pool")
+	flags.Int("db-max-open", 0, "Maximum number of open database connections (default unlimited)")
+	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
+	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
 	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
@@ -104,8 +108,12 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 		StaticPath:   viper.GetString("static_path"),
 		StaticPrefix: viper.GetString("static_prefix"),
 
-		DBType:    myirmaserver.DBType(viper.GetString("db_type")),
-		DBConnStr: viper.GetString("db_str"),
+		DBType:            myirmaserver.DBType(viper.GetString("db_type")),
+		DBConnStr:         viper.GetString("db_str"),
+		DBConnMaxIdle:     viper.GetInt("db_max_idle"),
+		DBMConnMaxOpen:    viper.GetInt("db_max_open"),
+		DBConnMaxIdleTime: viper.GetInt("db_max_idle_time"),
+		DBConnMaxOpenTime: viper.GetInt("db_max_open_time"),
 
 		LoginEmailSubjects:    viper.GetStringMapString("login_email_subjects"),
 		LoginEmailFiles:       viper.GetStringMapString("login_email_files"),

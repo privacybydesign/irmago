@@ -26,11 +26,17 @@ const emailTokenValidity = 24 // amount of time user's email validation token is
 // var so that tests may change it.
 var backoffStart int64 = 60
 
-func newPostgresDB(connstring string) (DB, error) {
+// newPostgresDB opens a new database connection using the given maximum connection bounds.
+// For the maxOpenConns, maxIdleTime and maxOpenTime parameters, the value 0 means unlimited.
+func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration) (DB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetConnMaxIdleTime(maxIdleTime)
+	db.SetConnMaxLifetime(maxOpenTime)
 	if err = db.Ping(); err != nil {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
