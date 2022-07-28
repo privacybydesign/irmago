@@ -52,10 +52,10 @@ func init() {
 	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
 	flags.String("db-str", "", "Database server connection string")
-	flags.Int("db-max-idle", 2, "Sets the maximum number of connections in the idle database connection pool")
-	flags.Int("db-max-open", 0, "Sets the maximum number of open connections to the database (default unlimited)")
-	flags.Int("db-max-idle-time", 0, "Sets the time in seconds after which idle database connections are closed (default unlimited)")
-	flags.Int("db-max-open-time", 0, "Sets the maximum lifetime in seconds of open database connections (default unlimited)")
+	flags.Int("db-max-idle", 2, "Maximum number of database connections in the idle connection pool")
+	flags.Int("db-max-open", 0, "Maximum number of open database connections (default unlimited)")
+	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
+	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
 	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
