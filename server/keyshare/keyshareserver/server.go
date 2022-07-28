@@ -344,8 +344,16 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 
 	var username string
 	if msg.AuthResponseJWT == "" {
+		if r.URL.Path != "/users/verify/pin" {
+			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
+			return
+		}
 		username = msg.Username
 	} else {
+		if r.URL.Path != "/users/verify/pin_challengeresponse" {
+			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
+			return
+		}
 		claims := &irma.KeyshareAuthResponseClaims{}
 		// We need the username inside the JWT here. The JWT is verified later within verifyAuth().
 		_, _, err := jwt.NewParser().ParseUnverified(msg.AuthResponseJWT, claims)
