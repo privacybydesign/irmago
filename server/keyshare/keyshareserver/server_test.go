@@ -243,7 +243,7 @@ func TestRegisterPublicKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// first try with nonexisting user
-	jwtt := registrationJWT(t, sk, irma.KeysharePublicKeyRegistrationData{
+	jwtt := registrationJWT(t, sk, irma.KeyshareKeyRegistrationData{
 		Username:  "doesnotexist",
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
@@ -254,7 +254,7 @@ func TestRegisterPublicKey(t *testing.T) {
 	)
 
 	// then try with invalid jwt
-	jwtt = registrationJWT(t, sk, irma.KeysharePublicKeyRegistrationData{
+	jwtt = registrationJWT(t, sk, irma.KeyshareKeyRegistrationData{
 		Username:  "legacyuser",
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
@@ -265,7 +265,7 @@ func TestRegisterPublicKey(t *testing.T) {
 	)
 
 	// then try with wrong pin
-	jwtt = registrationJWT(t, sk, irma.KeysharePublicKeyRegistrationData{
+	jwtt = registrationJWT(t, sk, irma.KeyshareKeyRegistrationData{
 		Username:  "legacyuser",
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87Zh",
 		PublicKey: pk,
@@ -278,7 +278,7 @@ func TestRegisterPublicKey(t *testing.T) {
 	require.Equal(t, res.Message, "1") // one try left
 
 	// normal flow
-	jwtt = registrationJWT(t, sk, irma.KeysharePublicKeyRegistrationData{
+	jwtt = registrationJWT(t, sk, irma.KeyshareKeyRegistrationData{
 		Username:  "legacyuser",
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
@@ -317,7 +317,7 @@ func TestRegisterPublicKeyBlockedUser(t *testing.T) {
 	require.Equal(t, "5", jwtMsg.Message)
 
 	// try to register public key
-	jwtt := registrationJWT(t, sk, irma.KeysharePublicKeyRegistrationData{
+	jwtt := registrationJWT(t, sk, irma.KeyshareKeyRegistrationData{
 		Username:  "legacyuser",
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
@@ -617,9 +617,9 @@ func loadClientPrivateKey(t *testing.T) *ecdsa.PrivateKey {
 	return sk
 }
 
-func registrationJWT(t *testing.T, sk *ecdsa.PrivateKey, data irma.KeysharePublicKeyRegistrationData) string {
-	j, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeysharePublicKeyRegistrationClaims{
-		KeysharePublicKeyRegistrationData: data,
+func registrationJWT(t *testing.T, sk *ecdsa.PrivateKey, data irma.KeyshareKeyRegistrationData) string {
+	j, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareKeyRegistrationClaims{
+		KeyshareKeyRegistrationData: data,
 	}).SignedString(sk)
 	require.NoError(t, err)
 	return j

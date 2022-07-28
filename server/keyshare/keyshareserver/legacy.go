@@ -16,7 +16,7 @@ import (
 
 // /users/register_publickey
 func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request) {
-	var msg irma.KeysharePublicKeyRegistration
+	var msg irma.KeyshareKeyRegistration
 	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -24,7 +24,7 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 
 	var (
 		pk     *ecdsa.PublicKey
-		claims = &irma.KeysharePublicKeyRegistrationClaims{}
+		claims = &irma.KeyshareKeyRegistrationClaims{}
 		err    error
 	)
 	_, err = jwt.ParseWithClaims(msg.PublicKeyRegistrationJWT, claims, func(token *jwt.Token) (interface{}, error) {
