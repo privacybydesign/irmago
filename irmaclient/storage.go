@@ -26,7 +26,7 @@ type storage struct {
 	storagePath   string
 	db            *bbolt.DB
 	Configuration *irma.Configuration
-	aesKey        []byte
+	aesKey        [32]byte
 }
 
 type transaction struct {
@@ -502,7 +502,7 @@ func (s *storage) DeleteAll() error {
 }
 
 func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.aesKey)
+	block, err := aes.NewCipher(s.aesKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +521,7 @@ func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
 }
 
 func (s *storage) encrypt(plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.aesKey)
+	block, err := aes.NewCipher(s.aesKey[:])
 	if err != nil {
 		return nil, err
 	}

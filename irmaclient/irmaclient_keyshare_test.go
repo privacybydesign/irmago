@@ -15,7 +15,7 @@ func TestKeyshareChangePin(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, irma.Logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "12345", "54321"))
 	require.NoError(t, client.keyshareChangePinWorker(irma.NewSchemeManagerIdentifier("test"), "54321", "12345"))
@@ -25,7 +25,7 @@ func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, irma.Logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 
@@ -55,7 +55,7 @@ func TestKeyshareAuthentication(t *testing.T) {
 	testkeyshare.StartKeyshareServer(t, irma.Logger)
 	defer testkeyshare.StopKeyshareServer(t)
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, handler.storage)
+	defer test.ClearTestStorage(t, client, handler.storage)
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 

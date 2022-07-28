@@ -7,10 +7,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi"
+	"github.com/go-co-op/gocron"
+
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/go-errors/errors"
-	"github.com/jasonlvhit/gocron"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
@@ -23,11 +24,10 @@ import (
 type Server struct {
 	conf *Configuration
 
-	irmaserv      *irmaserver.Server
-	store         sessionStore
-	db            db
-	scheduler     *gocron.Scheduler
-	schedulerStop chan<- bool
+	irmaserv  *irmaserver.Server
+	store     sessionStore
+	db        db
+	scheduler *gocron.Scheduler
 }
 
 var (
@@ -49,11 +49,13 @@ func New(conf *Configuration) (*Server, error) {
 		irmaserv:  irmaserv,
 		store:     newMemorySessionStore(time.Duration(conf.SessionLifetime) * time.Second),
 		db:        conf.DB,
-		scheduler: gocron.NewScheduler(),
+		scheduler: gocron.NewScheduler(time.UTC),
 	}
 
-	s.scheduler.Every(10).Seconds().Do(s.store.flush)
-	s.schedulerStop = s.scheduler.Start()
+	if _, err := s.scheduler.Every(10).Seconds().Do(s.store.flush); err != nil {
+		return nil, err
+	}
+	s.scheduler.StartAsync()
 
 	if s.conf.LogJSON {
 		s.conf.Logger.WithField("configuration", s.conf).Debug("Configuration")
@@ -67,7 +69,7 @@ func New(conf *Configuration) (*Server, error) {
 
 func (s *Server) Stop() {
 	s.irmaserv.Stop()
-	s.schedulerStop <- true
+	s.scheduler.Stop()
 }
 
 func (s *Server) Handler() http.Handler {

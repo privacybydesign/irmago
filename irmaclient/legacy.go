@@ -161,6 +161,11 @@ func (s *storageOld) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 	if err != nil {
 		return err
 	}
+
+	return s.WriteLogEntry(b, entry)
+}
+
+func (s *storageOld) WriteLogEntry(b *bbolt.Bucket, entry *LogEntry) error {
 	k := s.logEntryKeyToBytes(entry.ID)
 	v, err := json.Marshal(entry)
 	if err != nil {
@@ -218,14 +223,7 @@ func (s *storageOld) LoadSecretKey() (*secretKey, error) {
 	if found {
 		return sk, nil
 	}
-
-	if sk, err = generateSecretKey(); err != nil {
-		return nil, err
-	}
-	if err = s.StoreSecretKey(sk); err != nil {
-		return nil, err
-	}
-	return sk, nil
+	return nil, nil
 }
 
 func (s *storageOld) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*irma.AttributeList, err error) {
@@ -259,6 +257,26 @@ func (s *storageOld) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifi
 	ksses = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	_, err = s.load(userdataBucket, kssKey, &ksses)
 	return
+}
+
+func (s *storageOld) loadLogs() ([]*LogEntry, error) {
+	var logs []*LogEntry
+	return logs, s.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(logsBucket))
+		if bucket == nil {
+			return nil
+		}
+
+		return bucket.ForEach(func(_ []byte, v []byte) error {
+			var log LogEntry
+			if err := json.Unmarshal(v, &log); err != nil {
+				return err
+			}
+
+			logs = append(logs, &log)
+			return nil
+		})
+	})
 }
 
 func (s *storageOld) LoadUpdates() (updates []update, err error) {

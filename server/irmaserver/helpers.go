@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi"

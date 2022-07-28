@@ -13,7 +13,6 @@ import (
 
 	"github.com/alexandrevicenzi/go-sse"
 	"github.com/fxamacker/cbor"
-	"github.com/getsentry/raven-go"
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jinzhu/gorm"
@@ -126,7 +125,7 @@ var RevocationParameters = struct {
 
 	// RequestorUpdateInterval is the time period in minutes for requestor servers
 	// updating their revocation state at th RA.
-	RequestorUpdateInterval uint64
+	RequestorUpdateInterval int
 
 	// DefaultTolerance is the default tolerance in seconds: nonrevocation should be proved
 	// by clients up to maximally this amount of seconds ago at verification time. If not, the
@@ -135,15 +134,15 @@ var RevocationParameters = struct {
 
 	// If server mode is enabled for a credential type, then once every so many seconds
 	// the timestamp in each accumulator is updated to now.
-	AccumulatorUpdateInterval uint64
+	AccumulatorUpdateInterval int
 
 	// DELETE issuance records of expired credential every so many minutes
-	DeleteIssuanceRecordsInterval uint64
+	DeleteIssuanceRecordsInterval int
 
 	// ClientUpdateInterval is the time interval with which the irmaclient periodically
 	// retrieves a revocation update from the RA and updates its revocation state with a small but
 	// increasing probability.
-	ClientUpdateInterval uint64
+	ClientUpdateInterval int
 
 	// ClientDefaultUpdateSpeed is the amount of time in hours after which it becomes very likely
 	// that the app will update its witness, quickly after it has been opened.
@@ -751,22 +750,24 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 		return errors.Errorf("revocation mode for %s requires SQL database but no connection string given", *t)
 	}
 
-	rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().Do(func() {
+	if _, err := rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().Do(func() {
 		if err := rs.updateAccumulatorTimes(); err != nil {
-			err = errors.WrapPrefix(err, "failed to write updated accumulator record", 0)
-			raven.CaptureError(err, nil)
+			Logger.WithField("error", err).Error("failed to write updated accumulator record")
 		}
-	})
+	}); err != nil {
+		return err
+	}
 
-	rs.conf.Scheduler.Every(RevocationParameters.DeleteIssuanceRecordsInterval).Minutes().Do(func() {
+	if _, err := rs.conf.Scheduler.Every(RevocationParameters.DeleteIssuanceRecordsInterval).Minutes().Do(func() {
 		if !rs.sqlMode {
 			return
 		}
 		if err := rs.sqldb.Delete(IssuanceRecord{}, "valid_until < ?", time.Now().UnixNano()); err != nil {
-			err = errors.WrapPrefix(err, "failed to delete expired issuance records", 0)
-			raven.CaptureError(err, nil)
+			Logger.WithField("error", err).Error("failed to delete expired issuance records")
 		}
-	})
+	}); err != nil {
+		return err
+	}
 
 	if connstr == "" {
 		Logger.Trace("Using memory revocation database")

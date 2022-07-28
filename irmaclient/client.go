@@ -147,7 +147,7 @@ func New(
 	irmaConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
-	aesKey []byte,
+	aesKey [32]byte,
 ) (*Client, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
@@ -155,9 +155,6 @@ func New(
 	}
 	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
-	}
-	if len(aesKey) != 32 {
-		return nil, errors.New("AES key must contain 32 bytes")
 	}
 
 	client := &Client{
@@ -457,6 +454,20 @@ func (client *Client) RemoveStorage() error {
 	client.lookup = make(map[string]*credLookup)
 
 	if err = client.storage.DeleteAll(); err != nil {
+		return err
+	}
+	fileStorage := fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
+	if err = fileStorage.DeleteAll(); err != nil {
+		return err
+	}
+	storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
+	if err = storageOld.Open(); err != nil {
+		return err
+	}
+	if err = storageOld.DeleteAll(); err != nil {
+		return err
+	}
+	if err = storageOld.Close(); err != nil {
 		return err
 	}
 

@@ -15,7 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-errors/errors"
 	"github.com/sirupsen/logrus"
 )
