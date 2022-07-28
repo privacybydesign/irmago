@@ -16,7 +16,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	user := &User{Username: "testuser", Secrets: []byte{123}}
@@ -54,7 +54,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 
 	backoffStart = 2
 
-	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	user := &User{Username: "testuser", Secrets: []byte{123}}

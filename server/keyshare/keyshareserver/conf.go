@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"io/ioutil"
 	"strings"
+	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -31,10 +32,12 @@ type Configuration struct {
 	*server.Configuration `mapstructure:",squash"`
 
 	// Database configuration (ignored when database is provided)
-	DBType         DBType `json:"db_type" mapstructure:"db_type"`
-	DBConnStr      string `json:"db_str" mapstructure:"db_str"`
-	DBMaxIdleConns int    `json:"db_max_idle" mapstructure:"db_max_idle"`
-	DBMaxOpenConns int    `json:"db_max_open" mapstructure:"db_max_open"`
+	DBType            DBType `json:"db_type" mapstructure:"db_type"`
+	DBConnStr         string `json:"db_str" mapstructure:"db_str"`
+	DBMaxIdleConns    int    `json:"db_max_idle" mapstructure:"db_max_idle"`
+	DBMaxOpenConns    int    `json:"db_max_open" mapstructure:"db_max_open"`
+	DBConnMaxIdleTime int    `json:"db_max_idle_time" mapstructure:"db_max_idle_time"`
+	DBConnMaxOpenTime int    `json:"db_max_open_time" mapstructure:"db_max_open_time"`
 	// Provide a prepared database (useful for testing)
 	DB DB `json:"-"`
 
@@ -122,7 +125,12 @@ func setupDatabase(conf *Configuration) (DB, error) {
 		db = NewMemoryDB()
 	case DBTypePostgres:
 		var err error
-		db, err = newPostgresDB(conf.DBConnStr, conf.DBMaxIdleConns, conf.DBMaxOpenConns)
+		db, err = newPostgresDB(conf.DBConnStr,
+			conf.DBMaxIdleConns,
+			conf.DBMaxOpenConns,
+			time.Duration(conf.DBConnMaxIdleTime)*time.Second,
+			time.Duration(conf.DBConnMaxOpenTime)*time.Second,
+		)
 		if err != nil {
 			return nil, server.LogError(err)
 		}

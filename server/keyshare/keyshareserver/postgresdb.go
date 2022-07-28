@@ -28,13 +28,15 @@ var backoffStart int64 = 60
 
 // newPostgresDB opens a new database connection using the given maximum connection bounds.
 // If maxOpenConns is set to 0, then an unlimited number of connections is allowed.
-func newPostgresDB(connstring string, maxIdleConns int, maxOpenConns int) (DB, error) {
+func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration) (DB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxIdleConns(maxIdleConns)
 	db.SetMaxOpenConns(maxOpenConns)
+	db.SetConnMaxIdleTime(maxIdleTime)
+	db.SetConnMaxLifetime(maxOpenTime)
 	if err = db.Ping(); err != nil {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
