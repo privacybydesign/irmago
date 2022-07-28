@@ -57,8 +57,8 @@ func init() {
 	flags.String("db-str", "", "Database server connection string")
 	flags.Int("db-max-idle", 2, "Sets the maximum number of connections in the idle database connection pool")
 	flags.Int("db-max-open", 0, "Sets the maximum number of open connections to the database (default unlimited)")
-	flags.Int("db-max-idle-time", 0, "Sets the time in seconds after which idle connections to the database are closed (default unlimited)")
-	flags.Int("db-max-open-time", 0, "Sets the maximum lifetime in seconds of open connections to the database (default unlimited)")
+	flags.Int("db-max-idle-time", 0, "Sets the time in seconds after which idle database connections are closed (default unlimited)")
+	flags.Int("db-max-open-time", 0, "Sets the maximum lifetime in seconds of open database connections (default unlimited)")
 
 	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
