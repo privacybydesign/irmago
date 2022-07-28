@@ -22,7 +22,7 @@ var (
 )
 
 // newPostgresDB opens a new database connection using the given maximum connection bounds.
-// If maxOpenConns is set to 0, then an unlimited number of connections is allowed.
+// For the maxOpenConns, maxIdleTime and maxOpenTime parameters, the value 0 means unlimited.
 func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration) (db, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
