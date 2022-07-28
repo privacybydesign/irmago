@@ -34,8 +34,8 @@ type Configuration struct {
 	// Database configuration (ignored when database is provided)
 	DBType            DBType `json:"db_type" mapstructure:"db_type"`
 	DBConnStr         string `json:"db_str" mapstructure:"db_str"`
-	DBMaxIdleConns    int    `json:"db_max_idle" mapstructure:"db_max_idle"`
-	DBMaxOpenConns    int    `json:"db_max_open" mapstructure:"db_max_open"`
+	DBConnMaxIdle     int    `json:"db_max_idle" mapstructure:"db_max_idle"`
+	DBConnMaxOpen     int    `json:"db_max_open" mapstructure:"db_max_open"`
 	DBConnMaxIdleTime int    `json:"db_max_idle_time" mapstructure:"db_max_idle_time"`
 	DBConnMaxOpenTime int    `json:"db_max_open_time" mapstructure:"db_max_open_time"`
 	// Provide a prepared database (useful for testing)
@@ -126,8 +126,8 @@ func setupDatabase(conf *Configuration) (DB, error) {
 	case DBTypePostgres:
 		var err error
 		db, err = newPostgresDB(conf.DBConnStr,
-			conf.DBMaxIdleConns,
-			conf.DBMaxOpenConns,
+			conf.DBConnMaxIdle,
+			conf.DBConnMaxOpen,
 			time.Duration(conf.DBConnMaxIdleTime)*time.Second,
 			time.Duration(conf.DBConnMaxOpenTime)*time.Second,
 		)

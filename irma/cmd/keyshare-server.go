@@ -104,8 +104,8 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 
 		DBType:            keyshareserver.DBType(viper.GetString("db_type")),
 		DBConnStr:         viper.GetString("db_str"),
-		DBMaxIdleConns:    viper.GetInt("db_max_idle"),
-		DBMaxOpenConns:    viper.GetInt("db_max_open"),
+		DBConnMaxIdle:     viper.GetInt("db_max_idle"),
+		DBConnMaxOpen:     viper.GetInt("db_max_open"),
 		DBConnMaxIdleTime: viper.GetInt("db_max_idle_time"),
 		DBConnMaxOpenTime: viper.GetInt("db_max_open_time"),
 
