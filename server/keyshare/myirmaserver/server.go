@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"time"
 
@@ -31,7 +32,8 @@ type Server struct {
 }
 
 var (
-	errInvalidEmail = errors.New("Email not associated with account")
+	errUnknownEmail = errors.New("Email not associated with account")
+	errInvalidEmail = errors.New("Invalid email address")
 )
 
 func New(conf *Configuration) (*Server, error) {
@@ -218,9 +220,14 @@ type emailLoginRequest struct {
 }
 
 func (s *Server) sendLoginEmail(request emailLoginRequest) error {
+	_, err := mail.ParseAddress(request.Email)
+	if err != nil {
+		return errInvalidEmail
+	}
+
 	token := common.NewSessionToken()
-	err := s.db.addLoginToken(request.Email, token)
-	if err == errEmailNotFound {
+	err = s.db.addLoginToken(request.Email, token)
+	if err == errEmailNotFound || err == errTooManyTokens {
 		return err
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error adding login token to database")
@@ -250,11 +257,13 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.sendLoginEmail(request)
-	if err == errEmailNotFound {
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+	if err == errInvalidEmail {
+		server.WriteError(w, server.ErrorInvalidEmail, "")
 		return
 	}
-	if err != nil {
+	// In case of errEmailNotFound or errTooManyRequests, we should not write an error.
+	// Otherwise, we would leak information about our user base.
+	if err != nil && err != errEmailNotFound && err != errTooManyTokens {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
@@ -508,7 +517,7 @@ func (s *Server) processRemoveEmail(session *session, email string) error {
 	}
 	if !validEmail {
 		s.conf.Logger.Info("Malformed request: invalid email address to delete")
-		return errInvalidEmail
+		return errUnknownEmail
 	}
 
 	if s.conf.EmailServer != "" {
@@ -543,7 +552,7 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 
 	session := r.Context().Value("session").(*session)
 	err := s.processRemoveEmail(session, email)
-	if err == errInvalidEmail {
+	if err == errUnknownEmail {
 		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
 		return
 	}

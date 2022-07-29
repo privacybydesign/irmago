@@ -4,6 +4,7 @@
 package keyshareserver
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -41,8 +42,13 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	err = db.addLog(nuser, eventTypePinCheckFailed, 15)
 	assert.NoError(t, err)
 
-	err = db.addEmailVerification(nuser, "test@example.com", "testtoken")
-	assert.NoError(t, err)
+	for i := 0; i < emailTokenRateLimit; i++ {
+		err = db.addEmailVerification(nuser, "test@example.com", fmt.Sprintf("testtoken-%d", i))
+		assert.NoError(t, err)
+	}
+
+	err = db.addEmailVerification(nuser, "test@example.com", "testtoken-rate-limited")
+	assert.ErrorIs(t, err, errTooManyTokens)
 
 	err = db.setSeen(nuser)
 	assert.NoError(t, err)
