@@ -583,7 +583,7 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.Re
 			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
 			return false
 		}
-		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
+		s.conf.Logger.Warnf("Session request uses unknown authentication method")
 		server.WriteError(w, server.ErrorInvalidRequest, "request could not be authenticated")
 		return false
 	}
