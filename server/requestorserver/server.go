@@ -561,7 +561,7 @@ func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.R
 	}
 	if err := s.irmaserv.Revoke(request.CredentialType, request.Key, issued); err != nil {
 		if err == irma.ErrUnknownRevocationKey {
-			server.WriteError(w, server.ErrorUnknownRevocationKey, request.Key)
+			server.WriteError(w, server.ErrorUnknownRevocationKey, "")
 		} else {
 			server.WriteError(w, server.ErrorRevocation, err.Error())
 		}
