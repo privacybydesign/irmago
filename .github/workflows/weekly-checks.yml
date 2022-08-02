@@ -34,5 +34,5 @@ jobs:
       - name: Test Docker image
         run: docker run privacybydesign/irma:edge version
 
-  analyse:
+  analyze:
     uses: ./.github/workflows/codeql-analysis.yml

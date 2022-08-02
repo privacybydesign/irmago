@@ -78,7 +78,7 @@ jobs:
       - name: Run all unit tests
         run: docker-compose run test -v ./...
 
-  analyse:
+  analyze:
     # Require successful build to make sure analysis does not fail on syntax errors.
     needs: build
     uses: ./.github/workflows/codeql-analysis.yml
