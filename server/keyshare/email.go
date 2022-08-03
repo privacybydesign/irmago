@@ -3,6 +3,7 @@ package keyshare
 import (
 	"bytes"
 	"html/template"
+	"net/mail"
 	"net/smtp"
 
 	"github.com/go-errors/errors"
@@ -15,6 +16,8 @@ type EmailConfiguration struct {
 	DefaultLanguage string `json:"default_language" mapstructure:"default_language"`
 	EmailAuth       smtp.Auth
 }
+
+var ErrInvalidEmail = errors.New("Invalid email address")
 
 func ParseEmailTemplates(files, subjects map[string]string, defaultLanguage string) (map[string]*template.Template, error) {
 	if _, ok := files[defaultLanguage]; !ok {
@@ -70,11 +73,22 @@ func (conf EmailConfiguration) SendEmail(
 		return err
 	}
 
+	// Do input validation on email address fields.
+	toAddr, err := mail.ParseAddress(email)
+	if err != nil {
+		return ErrInvalidEmail
+	}
+	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
+	if err != nil {
+		// Email address comes from configuration, so this is a server error.
+		return err
+	}
+
 	err = sendHTMLEmail(
 		conf.EmailServer,
 		conf.EmailAuth,
-		conf.EmailFrom,
-		email,
+		fromAddr,
+		toAddr,
 		conf.TranslateString(subjects, lang),
 		msg.Bytes(),
 	)
@@ -106,12 +120,12 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 	return nil
 }
 
-func sendHTMLEmail(addr string, a smtp.Auth, from, to, subject string, msg []byte) error {
-	headers := []byte("To: " + to + "\r\n" +
-		"From: " + from + "\r\n" +
+func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject string, msg []byte) error {
+	headers := []byte("To: " + to.Address + "\r\n" +
+		"From: " + from.Address + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"Content-Type: text/html; charset=UTF-8\r\n" +
 		"Content-Transfer-Encoding: binary\r\n" +
 		"\r\n")
-	return smtp.SendMail(addr, a, from, []string{to}, append(headers, msg...))
+	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
 }

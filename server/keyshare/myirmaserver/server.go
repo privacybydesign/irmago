@@ -31,10 +31,7 @@ type Server struct {
 	scheduler *gocron.Scheduler
 }
 
-var (
-	errUnknownEmail = errors.New("Email not associated with account")
-	errInvalidEmail = errors.New("Invalid email address")
-)
+var errUnknownEmail = errors.New("Email not associated with account")
 
 func New(conf *Configuration) (*Server, error) {
 	irmaserv, err := irmaserver.New(conf.Configuration)
@@ -220,9 +217,10 @@ type emailLoginRequest struct {
 }
 
 func (s *Server) sendLoginEmail(request emailLoginRequest) error {
+	// Early detect input error of s.conf.SendEmail to prevent a database lookup with unvalidated user input.
 	_, err := mail.ParseAddress(request.Email)
 	if err != nil {
-		return errInvalidEmail
+		return keyshare.ErrInvalidEmail
 	}
 
 	token := common.NewSessionToken()
@@ -257,7 +255,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.sendLoginEmail(request)
-	if err == errInvalidEmail {
+	if err == keyshare.ErrInvalidEmail {
 		server.WriteError(w, server.ErrorInvalidEmail, "")
 		return
 	}
@@ -552,7 +550,7 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 
 	session := r.Context().Value("session").(*session)
 	err := s.processRemoveEmail(session, email)
-	if err == errUnknownEmail {
+	if err == errUnknownEmail || err == keyshare.ErrInvalidEmail {
 		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
 		return
 	}

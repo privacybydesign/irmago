@@ -561,7 +561,7 @@ func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.R
 	}
 	if err := s.irmaserv.Revoke(request.CredentialType, request.Key, issued); err != nil {
 		if err == irma.ErrUnknownRevocationKey {
-			server.WriteError(w, server.ErrorUnknownRevocationKey, request.Key)
+			server.WriteError(w, server.ErrorUnknownRevocationKey, "")
 		} else {
 			server.WriteError(w, server.ErrorRevocation, err.Error())
 		}
@@ -583,7 +583,7 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.Re
 			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
 			return false
 		}
-		s.conf.Logger.Warnf("Session request uses unknown authentication method, HTTP headers: %s, HTTP POST body: %s", server.ToJson(r.Header), string(body))
+		s.conf.Logger.Warnf("Session request uses unknown authentication method")
 		server.WriteError(w, server.ErrorInvalidRequest, "request could not be authenticated")
 		return false
 	}
