@@ -51,7 +51,11 @@ func init() {
 
 	headers["db-type"] = "Database configuration"
 	flags.String("db-type", string(keyshareserver.DBTypePostgres), "Type of database to connect keyshare server to")
-	flags.String("db", "", "Database server connection string")
+	flags.String("db-str", "", "Database server connection string")
+	flags.Int("db-max-idle", 2, "Maximum number of database connections in the idle connection pool")
+	flags.Int("db-max-open", 0, "Maximum number of open database connections (default unlimited)")
+	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
+	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
 	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
@@ -98,8 +102,12 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		Configuration:      configureIRMAServer(),
 		EmailConfiguration: configureEmail(),
 
-		DBType:    keyshareserver.DBType(viper.GetString("db_type")),
-		DBConnStr: viper.GetString("db_str"),
+		DBType:            keyshareserver.DBType(viper.GetString("db_type")),
+		DBConnStr:         viper.GetString("db_str"),
+		DBConnMaxIdle:     viper.GetInt("db_max_idle"),
+		DBConnMaxOpen:     viper.GetInt("db_max_open"),
+		DBConnMaxIdleTime: viper.GetInt("db_max_idle_time"),
+		DBConnMaxOpenTime: viper.GetInt("db_max_open_time"),
 
 		JwtKeyID:                viper.GetUint32("jwt_privkey_id"),
 		JwtPrivateKey:           viper.GetString("jwt_privkey"),

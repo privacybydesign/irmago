@@ -19,18 +19,28 @@ type postgresDB struct {
 	db keyshare.DB
 }
 
-const maxPinTries = 3         // Number of tries allowed on pin before we start with exponential backoff
-const emailTokenValidity = 24 // amount of time user's email validation token is valid (in hours)
+const maxPinTries = 3                  // number of tries allowed on pin before we start with exponential backoff
+const emailTokenValidity = 24          // amount of time user's email validation token is valid (in hours)
+const emailTokenRateLimit = 3          // max number of active tokens per email address within the emailTokenRateLimitDuration
+const emailTokenRateLimitDuration = 60 // amount of time after which tokens become irrelevant for rate limiting (in minutes)
+
+var errTooManyTokens = errors.New("Too many unhandled email tokens for given email address")
 
 // Initial amount of time user is forced to back off when having multiple pin failures (in seconds).
 // var so that tests may change it.
 var backoffStart int64 = 60
 
-func newPostgresDB(connstring string) (DB, error) {
+// newPostgresDB opens a new database connection using the given maximum connection bounds.
+// For the maxOpenConns, maxIdleTime and maxOpenTime parameters, the value 0 means unlimited.
+func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration) (DB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetConnMaxIdleTime(maxIdleTime)
+	db.SetConnMaxLifetime(maxOpenTime)
 	if err = db.Ping(); err != nil {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
@@ -197,10 +207,24 @@ func (db *postgresDB) addLog(user *User, eventType eventType, param interface{})
 }
 
 func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string) error {
-	_, err := db.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, user_id, expiry) VALUES ($1, $2, $3, $4)",
+	expiry := time.Now().Add(emailTokenValidity * time.Hour)
+	maxPrevExpiry := expiry.Add(-1 * emailTokenRateLimitDuration * time.Minute)
+
+	// Check whether rate limiting is necessary
+	amount, err := db.db.ExecCount("SELECT 1 FROM irma.email_verification_tokens WHERE email = $1 AND expiry > $2",
+		emailAddress,
+		maxPrevExpiry.Unix())
+	if err != nil {
+		return err
+	}
+	if amount >= emailTokenRateLimit {
+		return errTooManyTokens
+	}
+
+	_, err = db.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, user_id, expiry) VALUES ($1, $2, $3, $4)",
 		token,
 		emailAddress,
 		user.id,
-		time.Now().Add(emailTokenValidity*time.Hour).Unix())
+		expiry.Unix())
 	return err
 }

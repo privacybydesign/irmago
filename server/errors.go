@@ -46,4 +46,6 @@ var (
 var (
 	ErrorUserNotRegistered = Error{Type: "USER_NOT_REGISTERED", Status: 403, Description: "User is not yet fully registered"}
 	ErrorInvalidJWT        = Error{Type: "UNAUTHORIZED", Status: 403, Description: "Invalid or expired jwt provided"}
+	ErrorInvalidEmail      = Error{Type: "INVALID_EMAIL", Status: 400, Description: "Invalid email address"}
+	ErrorTooManyRequests   = Error{Type: "TOO_MANY_REQUESTS", Status: 429, Description: "Too many requests"}
 )

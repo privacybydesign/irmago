@@ -1,4 +1,5 @@
-//+build !local_tests
+//go:build !local_tests
+// +build !local_tests
 
 package myirmaserver
 
@@ -15,7 +16,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*postgresDB)
@@ -67,7 +68,7 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*postgresDB)
@@ -79,10 +80,13 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	require.NoError(t, err)
 
 	err = db.addLoginToken("test2@test.com", "test2token")
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, errEmailNotFound)
 
 	err = db.addLoginToken("test@test.com", "testtoken")
 	require.NoError(t, err)
+
+	err = db.addLoginToken("test@test.com", "testtoken")
+	require.ErrorIs(t, err, errTooManyTokens)
 
 	cand, err := db.loginUserCandidates("testtoken")
 	assert.NoError(t, err)
@@ -124,7 +128,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	pdb := db.(*postgresDB)

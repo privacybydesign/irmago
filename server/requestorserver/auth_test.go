@@ -22,7 +22,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		requestHeaders := map[string][]string{
 			"Authorization": {"token"},
-			"Content-Type":  {"application/json"},
+			"Content-Type":  {"application/json; charset=UTF-8"},
 		}
 
 		applies, parsedRequest, requestor, err := authenticator.AuthenticateSession(requestHeaders, validRequestBody)
@@ -39,7 +39,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 	t.Run("invalid content", func(t *testing.T) {
 		requestHeaders := map[string][]string{
 			"Authorization": {"token"},
-			"Content-Type":  {"application/json"},
+			"Content-Type":  {"application/json; charset=UTF-8"},
 		}
 		invalidRequestBody := []byte(`{}`)
 
@@ -51,7 +51,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 	t.Run("invalid token", func(t *testing.T) {
 		requestHeaders := map[string][]string{
 			"Authorization": {"invalid"},
-			"Content-Type":  {"application/json"},
+			"Content-Type":  {"application/json; charset=UTF-8"},
 		}
 		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, validRequestBody)
 		require.True(t, applies)
@@ -61,7 +61,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 	t.Run("no authorization header", func(t *testing.T) {
 		requestHeaders := map[string][]string{
 			"UnusedHeader": {"token"},
-			"Content-Type": {"application/json"},
+			"Content-Type": {"application/json; charset=UTF-8"},
 		}
 		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, validRequestBody)
 		require.False(t, applies)

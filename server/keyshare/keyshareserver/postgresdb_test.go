@@ -1,8 +1,10 @@
-//+build !local_tests
+//go:build !local_tests
+// +build !local_tests
 
 package keyshareserver
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,7 +17,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	user := &User{Username: "testuser", Secrets: []byte{123}}
@@ -40,8 +42,13 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	err = db.addLog(nuser, eventTypePinCheckFailed, 15)
 	assert.NoError(t, err)
 
-	err = db.addEmailVerification(nuser, "test@example.com", "testtoken")
-	assert.NoError(t, err)
+	for i := 0; i < emailTokenRateLimit; i++ {
+		err = db.addEmailVerification(nuser, "test@example.com", fmt.Sprintf("testtoken-%d", i))
+		assert.NoError(t, err)
+	}
+
+	err = db.addEmailVerification(nuser, "test@example.com", "testtoken-rate-limited")
+	assert.ErrorIs(t, err, errTooManyTokens)
 
 	err = db.setSeen(nuser)
 	assert.NoError(t, err)
@@ -53,7 +60,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 
 	backoffStart = 2
 
-	db, err := newPostgresDB(test.PostgresTestUrl)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	user := &User{Username: "testuser", Secrets: []byte{123}}
