@@ -473,6 +473,10 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	claims := &irma.KeyshareChangePinClaims{}
 	// We need the username inside the JWT here. The JWT is verified later within updatePin().
 	_, _, err = jwt.NewParser().ParseUnverified(msg.ChangePinJWT, claims)
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
 
 	user, err := s.db.user(claims.Username)
 	if err != nil {
