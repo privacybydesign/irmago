@@ -1,4 +1,5 @@
-//+build !local_tests
+//go:build !local_tests
+// +build !local_tests
 
 package tasks
 

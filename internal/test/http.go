@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,7 +42,7 @@ func httpDo(t *testing.T, client *http.Client, url, method, body string, headers
 		req.Header = headers
 	}
 	if body != "" && req.Header.Get("Content-Type") == "" {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	}
 
 	if client == nil {
@@ -54,7 +55,7 @@ func httpDo(t *testing.T, client *http.Client, url, method, body string, headers
 	if result != nil {
 		bts, err := ioutil.ReadAll(res.Body)
 		require.NoError(t, err)
-		if res.Header.Get("Content-Type") == "application/json" {
+		if strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
 			require.NoError(t, json.Unmarshal(bts, result))
 		} else {
 			require.IsType(t, &bts, result)

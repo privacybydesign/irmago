@@ -14,11 +14,13 @@ type postgresDB struct {
 	db keyshare.DB
 }
 
-const emailTokenValidity = 60 // amount of time an email login token is valid (in minutes)
+const emailTokenValidity = 60         // amount of time an email login token is valid (in minutes)
+const emailTokenRateLimitDuration = 2 // amount of time before a new email can be requested (in minutes)
 
 var (
 	errEmailNotFound = errors.New("Email address not found")
 	errTokenNotFound = errors.New("Token not found")
+	errTooManyTokens = errors.New("Too many unhandled email tokens for given email address")
 )
 
 // newPostgresDB opens a new database connection using the given maximum connection bounds.
@@ -94,11 +96,25 @@ func (db *postgresDB) addLoginToken(email, token string) error {
 		return err
 	}
 
-	// insert and verify
+	expiry := time.Now().Add(emailTokenValidity * time.Minute)
+	maxPrevExpiry := expiry.Add(-1 * emailTokenRateLimitDuration * time.Minute)
+
+	// Check whether rate limiting is necessary
+	amount, err := db.db.ExecCount("SELECT 1 FROM irma.email_login_tokens WHERE email = $1 AND expiry > $2",
+		email,
+		maxPrevExpiry.Unix())
+	if err != nil {
+		return err
+	}
+	if amount > 0 {
+		return errTooManyTokens
+	}
+
+	// Insert and verify
 	aff, err := db.db.ExecCount("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ($1, $2, $3)",
 		token,
 		email,
-		time.Now().Add(emailTokenValidity*time.Minute).Unix())
+		expiry.Unix())
 	if err != nil {
 		return err
 	}
