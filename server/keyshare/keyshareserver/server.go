@@ -117,6 +117,9 @@ func (s *Server) Handler() http.Handler {
 
 		// authentication
 		router.Post("/users/verify_start", s.handleVerifyStart)
+		// The following two are so similar that they are both handled by handleVerify().
+		// NB: handleVerify() contains the strings "/users/verify/pin" and "/users/verify/pin_challengeresponse"
+		// to check, using its input, that the user has invoked the correct endpoint.
 		router.Post("/users/verify/pin", s.handleVerify)
 		router.Post("/users/verify/pin_challengeresponse", s.handleVerify)
 
