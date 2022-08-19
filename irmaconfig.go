@@ -839,10 +839,11 @@ func (e *RequiredAttributeMissingError) Error() string {
 
 // DefaultDataPath returns the default storage path for IRMA, using XDG Base Directory Specification
 // https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html:
-//  - %LOCALAPPDATA% (i.e. C:\Users\$user\AppData\Local) if on Windows,
-//  - $XDG_DATA_HOME if set, otherwise $HOME/.local/share
-//  - $XDG_DATA_DIRS if set, otherwise /usr/local/share/ and /usr/share/
-//  - then the OSes temp dir (os.TempDir()),
+//   - %LOCALAPPDATA% (i.e. C:\Users\$user\AppData\Local) if on Windows,
+//   - $XDG_DATA_HOME if set, otherwise $HOME/.local/share
+//   - $XDG_DATA_DIRS if set, otherwise /usr/local/share/ and /usr/share/
+//   - then the OSes temp dir (os.TempDir()),
+//
 // returning the first of these that exists or can be created.
 func DefaultDataPath() string {
 	candidates := make([]string, 0, 8)
