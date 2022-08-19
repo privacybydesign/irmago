@@ -277,7 +277,7 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
 	success bool, tries int, blocked int, err error,
 ) {
-	pinresult := &irma.KeysharePinStatus{}
+	var pinresult *irma.KeysharePinStatus
 	if !kss.ChallengeResponse {
 		pinresult, err = kss.registerPublicKey(client, transport, pin)
 	} else {
