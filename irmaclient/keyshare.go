@@ -42,14 +42,12 @@ type keyshareSession struct {
 	pinRequestor     KeysharePinRequestor
 	builders         gabi.ProofBuilderList
 	session          irma.SessionRequest
-	conf             *irma.Configuration
-	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
+	client           *Client
 	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
 	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
 	issuerProofNonce *big.Int
 	timestamp        *atum.Timestamp
 	pinCheck         bool
-	preferences      Preferences
 }
 
 type keyshareServer struct {
@@ -57,6 +55,7 @@ type keyshareServer struct {
 	Nonce                   []byte `json:"nonce"`
 	PinOutOfSync            bool   `json:"pin_out_of_sync,omitempty"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
+	ChallengeResponse       bool
 	token                   string
 }
 
@@ -64,20 +63,22 @@ const (
 	kssUsernameHeader = "X-IRMA-Keyshare-Username"
 	kssVersionHeader  = "X-IRMA-Keyshare-ProtocolVersion"
 	kssAuthHeader     = "Authorization"
-	kssAuthorized     = "authorized"
-	kssTokenExpired   = "expired"
 	kssPinSuccess     = "success"
 	kssPinFailure     = "failure"
 	kssPinError       = "error"
 )
 
-func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (ks *keyshareServer, err error) {
-	ks = &keyshareServer{
+func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (*keyshareServer, error) {
+	ks := &keyshareServer{
 		Nonce:                   make([]byte, 32),
 		SchemeManagerIdentifier: schemeManagerIdentifier,
+		ChallengeResponse:       true,
 	}
-	_, err = rand.Read(ks.Nonce)
-	return
+	_, err := rand.Read(ks.Nonce)
+	if err != nil {
+		return nil, err
+	}
+	return ks, nil
 }
 
 func (ks *keyshareServer) HashedPin(pin string) string {
@@ -95,20 +96,18 @@ func (ks *keyshareServer) HashedPin(pin string) string {
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
 func startKeyshareSession(
 	sessionHandler keyshareSessionHandler,
+	client *Client,
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
 	session irma.SessionRequest,
 	issuerProofNonce *big.Int,
 	timestamp *atum.Timestamp,
-	conf *irma.Configuration,
-	keyshareServers map[irma.SchemeManagerIdentifier]*keyshareServer,
-	preferences Preferences,
 ) {
 	ksscount := 0
 	for managerID := range session.Identifiers().SchemeManagers {
-		if conf.SchemeManagers[managerID].Distributed() {
+		if client.Configuration.SchemeManagers[managerID].Distributed() {
 			ksscount++
-			if _, enrolled := keyshareServers[managerID]; !enrolled {
+			if _, enrolled := client.keyshareServers[managerID]; !enrolled {
 				err := errors.New("Not enrolled to keyshare server of scheme manager " + managerID.String())
 				sessionHandler.KeyshareError(&managerID, err)
 				return
@@ -123,26 +122,24 @@ func startKeyshareSession(
 
 	ks := &keyshareSession{
 		session:          session,
+		client:           client,
 		builders:         builders,
 		sessionHandler:   sessionHandler,
 		transports:       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
 		pinRequestor:     pin,
-		conf:             conf,
-		keyshareServers:  keyshareServers,
 		issuerProofNonce: issuerProofNonce,
 		timestamp:        timestamp,
 		pinCheck:         false,
-		preferences:      preferences,
 	}
 
 	for managerID := range session.Identifiers().SchemeManagers {
-		scheme := ks.conf.SchemeManagers[managerID]
+		scheme := ks.client.Configuration.SchemeManagers[managerID]
 		if !scheme.Distributed() {
 			continue
 		}
 
-		ks.keyshareServer = ks.keyshareServers[managerID]
-		transport := irma.NewHTTPTransport(scheme.KeyshareServer, !ks.preferences.DeveloperMode)
+		ks.keyshareServer = ks.client.keyshareServers[managerID]
+		transport := irma.NewHTTPTransport(scheme.KeyshareServer, !ks.client.Preferences.DeveloperMode)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
 		transport.SetHeader(kssVersionHeader, "2")
@@ -152,7 +149,7 @@ func startKeyshareSession(
 		parser := new(jwt.Parser)
 		parser.SkipClaimsValidation = true // We want to verify expiry on our own below so we can add leeway
 		claims := jwt.StandardClaims{}
-		_, err := parser.ParseWithClaims(ks.keyshareServer.token, &claims, ks.conf.KeyshareServerKeyFunc(managerID))
+		_, err := parser.ParseWithClaims(ks.keyshareServer.token, &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID))
 		if err != nil {
 			irma.Logger.Info("Keyshare server token invalid, asking for PIN")
 			irma.Logger.Debug("Token: ", ks.keyshareServer.token)
@@ -227,13 +224,68 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 	}))
 }
 
-func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
-	success bool, tries int, blocked int, err error) {
-	pinmsg := irma.KeysharePinMessage{Username: kss.Username, Pin: kss.HashedPin(pin)}
-	pinresult := &irma.KeysharePinStatus{}
-	err = transport.Post("users/verify/pin", pinresult, pinmsg)
+// challengeRequestJWTExpiry is the expiry of the JWT sent to the keyshareserver at
+// /users/verify_start. It is half the maximum that the keyshare server allows to allow for
+// clockdrift.
+const challengeRequestJWTExpiry = 3 * time.Minute
+
+func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
+	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
+	jwtt, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry))},
+		Username:         kss.Username,
+	})
 	if err != nil {
-		return
+		return nil, err
+	}
+
+	auth := &irma.KeyshareAuthChallenge{}
+	err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
+	if err != nil {
+		return nil, err
+	}
+	var ok bool
+	for _, method := range auth.Candidates {
+		if method == irma.KeyshareAuthMethodChallengeResponse {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return nil, errors.New("challenge-response authentication method not supported")
+	}
+
+	jwtt, err = SignerCreateJWT(signer, keyname, irma.KeyshareAuthResponseClaims{
+		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+			Username:  kss.Username,
+			Pin:       kss.HashedPin(pin),
+			Challenge: auth.Challenge,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	pinresult := &irma.KeysharePinStatus{}
+	err = transport.Post("users/verify/pin_challengeresponse", pinresult, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt})
+	if err != nil {
+		return nil, err
+	}
+
+	return pinresult, nil
+}
+
+func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
+	success bool, tries int, blocked int, err error,
+) {
+	var pinresult *irma.KeysharePinStatus
+	if !kss.ChallengeResponse {
+		pinresult, err = kss.registerPublicKey(client, transport, pin)
+	} else {
+		pinresult, err = kss.doChallengeResponse(client.signer, transport, pin)
+	}
+	if err != nil {
+		return false, 0, 0, err
 	}
 
 	switch pinresult.Status {
@@ -269,17 +321,17 @@ func verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransp
 func (ks *keyshareSession) verifyPinAttempt(pin string) (
 	success bool, tries int, blocked int, manager irma.SchemeManagerIdentifier, err error) {
 	for manager = range ks.session.Identifiers().SchemeManagers {
-		if !ks.conf.SchemeManagers[manager].Distributed() {
+		if !ks.client.Configuration.SchemeManagers[manager].Distributed() {
 			continue
 		}
 
-		kss := ks.keyshareServers[manager]
+		kss := ks.client.keyshareServers[manager]
 		if kss.PinOutOfSync {
 			return false, 0, 0, manager, errors.Errorf("pin is out of sync")
 		}
 
 		transport := ks.transports[manager]
-		success, tries, blocked, err = verifyPinWorker(pin, kss, transport)
+		success, tries, blocked, err = ks.client.verifyPinWorker(pin, kss, transport)
 		if !success {
 			return
 		}
@@ -299,7 +351,7 @@ func (ks *keyshareSession) GetCommitments() {
 	for _, builder := range ks.builders {
 		pk := builder.PublicKey()
 		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
-		if !ks.conf.SchemeManagers[managerID].Distributed() {
+		if !ks.client.Configuration.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		if _, contains := pkids[managerID]; !contains {
@@ -311,7 +363,7 @@ func (ks *keyshareSession) GetCommitments() {
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
 	for managerID := range ks.session.Identifiers().SchemeManagers {
-		if !ks.conf.SchemeManagers[managerID].Distributed() {
+		if !ks.client.Configuration.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 
@@ -412,7 +464,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 	for i, builder := range ks.builders {
 		// Parse each received JWT
 		managerID := irma.NewIssuerIdentifier(builder.PublicKey().Issuer).SchemeManagerIdentifier()
-		if !ks.conf.SchemeManagers[managerID].Distributed() {
+		if !ks.client.Configuration.SchemeManagers[managerID].Distributed() {
 			continue
 		}
 		claims := struct {
@@ -421,7 +473,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		}{}
 		parser := new(jwt.Parser)
 		parser.SkipClaimsValidation = true // no need to abort due to clock drift issues
-		if _, err := parser.ParseWithClaims(responses[managerID], &claims, ks.conf.KeyshareServerKeyFunc(managerID)); err != nil {
+		if _, err := parser.ParseWithClaims(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID)); err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}

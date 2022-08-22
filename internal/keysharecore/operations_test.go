@@ -1,6 +1,7 @@
 package keysharecore
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -9,14 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
+	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/irmaclient"
+
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPinFunctionality(t *testing.T) {
@@ -26,43 +31,39 @@ func TestPinFunctionality(t *testing.T) {
 	require.NoError(t, err)
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 
-	// generate test pin
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// generate test pin
+		pin := generatePin()
 
-	// Generate package
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// Generate package
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	// Test with correct pin
-	j, err := c.ValidatePin(secrets, pin)
-	assert.NoError(t, err)
-	var claims jwt.StandardClaims
-	_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
-		return &jwtTestKey.PublicKey, nil
-	})
-	assert.NoError(t, err)
-	assert.Equal(t, "auth_tok", claims.Subject)
-	assert.Equal(t, time.Now().Unix()+JWTPinExpiryDefault, claims.ExpiresAt)
-	assert.Equal(t, JWTIssuerDefault, claims.Issuer)
+		// Test with correct pin
+		j, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
+		var claims jwt.StandardClaims
+		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
+			return &jwtTestKey.PublicKey, nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, "auth_tok", claims.Subject)
+		assert.Equal(t, time.Now().Unix()+JWTPinExpiryDefault, claims.ExpiresAt)
+		assert.Equal(t, JWTIssuerDefault, claims.Issuer)
 
-	// test change pin
-	bnewpin := make([]byte, 64)
-	_, err = rand.Read(bnewpin)
-	require.NoError(t, err)
-	newpin := string(bnewpin)
-	secrets, err = c.ChangePin(secrets, pin, newpin)
-	require.NoError(t, err)
+		// test change pin
+		newpin := generatePin()
+		secrets, err = changePin(t, c, signer, secrets, pin, newpin)
+		assert.NoError(t, err)
 
-	// test correct pin
-	_, err = c.ValidatePin(secrets, newpin)
-	assert.NoError(t, err)
+		// test correct pin
+		_, err = validateAuth(t, c, signer, secrets, newpin)
+		assert.NoError(t, err)
 
-	// Test incorrect pin
-	_, err = c.ValidatePin(secrets, pin)
-	assert.Error(t, err)
+		// Test incorrect pin
+		_, err = validateAuth(t, c, signer, secrets, pin)
+		assert.Error(t, err)
+	}
 }
 
 func TestVerifyAccess(t *testing.T) {
@@ -72,95 +73,92 @@ func TestVerifyAccess(t *testing.T) {
 	require.NoError(t, err)
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 
-	// Generate test pins
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin1 := string(bpin)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin2 := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// Generate test pins
+		pin1 := generatePin()
+		pin2 := generatePin()
 
-	// and test keyshare secrets
-	secrets1, err := c.NewUserSecrets(pin1)
-	require.NoError(t, err)
-	secrets2, err := c.NewUserSecrets(pin2)
-	require.NoError(t, err)
+		// and test keyshare secrets
+		secrets1, err := c.NewUserSecrets(pin1, signerPublicKey(t, signer))
+		require.NoError(t, err)
+		secrets2, err := c.NewUserSecrets(pin2, signerPublicKey(t, nil))
+		require.NoError(t, err)
 
-	// Test use jwt on wrong secrets
-	jwtt, err := c.ValidatePin(secrets1, pin1)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(secrets2, jwtt)
-	assert.Error(t, err)
+		// Test use jwt on wrong secrets
+		jwtt, err := validateAuth(t, c, signer, secrets1, pin1)
+		require.NoError(t, err)
+		_, err = c.verifyAccess(secrets2, jwtt)
+		assert.Error(t, err)
 
-	// Test incorrectly constructed jwts
-	s, err := c.verifyAccess(secrets1, jwtt)
-	require.NoError(t, err)
-	tokenID := base64.StdEncoding.EncodeToString(s.ID)
+		// Test incorrectly constructed jwts
+		s, err := c.verifyAccess(secrets1, jwtt)
+		require.NoError(t, err)
+		tokenID := base64.StdEncoding.EncodeToString(s.ID)
 
-	// incorrect exp
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":      time.Now().Add(-6 * time.Minute).Unix(),
-		"exp":      time.Now().Add(-3 * time.Minute).Unix(),
-		"token_id": tokenID,
-	})
-	jwtt, err = token.SignedString(c.jwtPrivateKey)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(secrets1, jwtt)
-	assert.Error(t, err)
+		// incorrect exp
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iat":      time.Now().Add(-6 * time.Minute).Unix(),
+			"exp":      time.Now().Add(-3 * time.Minute).Unix(),
+			"token_id": tokenID,
+		})
+		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		require.NoError(t, err)
+		_, err = c.verifyAccess(secrets1, jwtt)
+		assert.Error(t, err)
 
-	// missing exp
-	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":      time.Now().Unix(),
-		"token_id": tokenID,
-	})
-	jwtt, err = token.SignedString(c.jwtPrivateKey)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(secrets1, jwtt)
-	assert.Error(t, err)
+		// missing exp
+		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iat":      time.Now().Unix(),
+			"token_id": tokenID,
+		})
+		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		require.NoError(t, err)
+		_, err = c.verifyAccess(secrets1, jwtt)
+		assert.Error(t, err)
 
-	// Incorrectly typed exp
-	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":      time.Now().Unix(),
-		"exp":      "test",
-		"token_id": tokenID,
-	})
-	jwtt, err = token.SignedString(c.jwtPrivateKey)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(secrets1, jwtt)
-	assert.Error(t, err)
+		// Incorrectly typed exp
+		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iat":      time.Now().Unix(),
+			"exp":      "test",
+			"token_id": tokenID,
+		})
+		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		require.NoError(t, err)
+		_, err = c.verifyAccess(secrets1, jwtt)
+		assert.Error(t, err)
 
-	// missing token_id
-	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(3 * time.Minute).Unix(),
-	})
-	jwtt, err = token.SignedString(c.jwtPrivateKey)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(secrets1, jwtt)
-	assert.Error(t, err)
+		// missing token_id
+		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iat": time.Now().Unix(),
+			"exp": time.Now().Add(3 * time.Minute).Unix(),
+		})
+		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		require.NoError(t, err)
+		_, err = c.verifyAccess(secrets1, jwtt)
+		assert.Error(t, err)
 
-	// mistyped token_id
-	token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(3 * time.Minute).Unix(),
-		"token_id": 7,
-	})
-	jwtt, err = token.SignedString(c.jwtPrivateKey)
-	require.NoError(t, err)
-	_, err = c.verifyAccess(secrets1, jwtt)
-	assert.Error(t, err)
+		// mistyped token_id
+		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iat":      time.Now().Unix(),
+			"exp":      time.Now().Add(3 * time.Minute).Unix(),
+			"token_id": 7,
+		})
+		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		require.NoError(t, err)
+		_, err = c.verifyAccess(secrets1, jwtt)
+		assert.Error(t, err)
 
-	// Incorrect signing method
-	token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(3 * time.Minute).Unix(),
-		"token_id": tokenID,
-	})
-	jwtt, err = token.SignedString([]byte("bla"))
-	require.NoError(t, err)
-	_, err = c.verifyAccess(secrets1, jwtt)
-	assert.Error(t, err)
+		// Incorrect signing method
+		token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"iat":      time.Now().Unix(),
+			"exp":      time.Now().Add(3 * time.Minute).Unix(),
+			"token_id": tokenID,
+		})
+		jwtt, err = token.SignedString([]byte("bla"))
+		require.NoError(t, err)
+		_, err = c.verifyAccess(secrets1, jwtt)
+		assert.Error(t, err)
+	}
 }
 
 func TestProofFunctionality(t *testing.T) {
@@ -171,46 +169,46 @@ func TestProofFunctionality(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
-	// generate test pin
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
 
-	// generate keyshare secret
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// generate test pin
+		pin := generatePin()
 
-	// Validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
-	require.NoError(t, err)
+		// generate keyshare secret
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	// Get keyshare commitment
-	W, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
+		// Validate pin
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 
-	// Get keyshare response
-	Rjwt, err := c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	require.NoError(t, err)
+		// Get keyshare commitment
+		W, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
 
-	// Decode jwt
-	claims := &struct {
-		jwt.StandardClaims
-		ProofP *gabi.ProofP
-	}{}
-	fmt.Println(Rjwt)
-	_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (interface{}, error) {
-		return &c.jwtPrivateKey.PublicKey, nil
-	})
-	require.NoError(t, err)
+		// Get keyshare response
+		Rjwt, err := c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		require.NoError(t, err)
 
-	// Validate protocol execution
-	assert.Equal(t, 0, new(big.Int).Exp(testPubK1.R[0], claims.ProofP.SResponse, testPubK1.N).Cmp(
-		new(big.Int).Mod(
-			new(big.Int).Mul(
-				W[0].Pcommit,
-				new(big.Int).Exp(W[0].P, big.NewInt(12345), testPubK1.N)),
-			testPubK1.N)), "Crypto result off")
+		// Decode jwt
+		claims := &struct {
+			jwt.StandardClaims
+			ProofP *gabi.ProofP
+		}{}
+		fmt.Println(Rjwt)
+		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (interface{}, error) {
+			return &c.jwtPrivateKey.PublicKey, nil
+		})
+		require.NoError(t, err)
+
+		// Validate protocol execution
+		assert.Equal(t, 0, new(big.Int).Exp(testPubK1.R[0], claims.ProofP.SResponse, testPubK1.N).Cmp(
+			new(big.Int).Mod(
+				new(big.Int).Mul(
+					W[0].Pcommit,
+					new(big.Int).Exp(W[0].P, big.NewInt(12345), testPubK1.N)),
+				testPubK1.N)), "Crypto result off")
+	}
 }
 
 func TestCorruptedUserSecrets(t *testing.T) {
@@ -221,40 +219,41 @@ func TestCorruptedUserSecrets(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
-	// Test parameters
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// Test parameters
+		pin := generatePin()
 
-	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// Generate user secrets
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	jwtt, err := c.ValidatePin(secrets, pin)
-	require.NoError(t, err)
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 
-	_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
+		_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
 
-	// Corrupt user secrets
-	secrets[12] = secrets[12] + 1
+		// Corrupt user secrets
+		secrets[12] = secrets[12] + 1
 
-	// Verify pin
-	_, err = c.ValidatePin(secrets, pin)
-	assert.Error(t, err, "ValidatePin accepts corrupted keyshare user secrets")
+		// Try to verify pin. Skip challenge-response here because that would fail on our
+		// corrupted user secrets. ValidateAuthLegacy should fail on the corrupted user anyway
+		// before it notices that challenge-response is required
+		_, err = c.ValidateAuthLegacy(secrets, pin)
+		assert.Error(t, err, "ValidateAuth accepts corrupted keyshare user secrets")
 
-	// Change pin
-	_, err = c.ChangePin(secrets, pin, pin)
-	assert.Error(t, err, "ChangePin accepts corrupted keyshare user secrets")
+		// Change pin
+		_, err = changePin(t, c, signer, secrets, pin, pin)
+		assert.Error(t, err, "ChangePin accepts corrupted keyshare user secrets")
 
-	// GenerateCommitments
-	_, _, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	assert.Error(t, err, "GenerateCommitments accepts corrupted keyshare user secrets")
+		// GenerateCommitments
+		_, _, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		assert.Error(t, err, "GenerateCommitments accepts corrupted keyshare user secrets")
 
-	// GetResponse
-	_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.Error(t, err, "GenerateResponse accepts corrupted keyshare user secrets")
+		// GetResponse
+		_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		assert.Error(t, err, "GenerateResponse accepts corrupted keyshare user secrets")
+	}
 }
 
 func TestIncorrectPin(t *testing.T) {
@@ -265,33 +264,33 @@ func TestIncorrectPin(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
-	// Test parameters
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// Test parameters
+		pin := generatePin()
 
-	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// Generate user secrets
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	// validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
-	require.NoError(t, err)
+		// validate pin
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 
-	// Corrupt pin
-	bpin[12] = bpin[12] + 1
-	pin = string(bpin)
+		// Corrupt pin
+		bpin := []byte(pin)
+		bpin[12] = bpin[12] + 1
+		pin = string(bpin)
 
-	// Change pin
-	_, err = c.ChangePin(secrets, pin, pin)
-	assert.Error(t, err, "ChangePin accepts incorrect pin")
+		// Change pin
+		_, err = changePin(t, c, signer, secrets, pin, pin)
+		assert.Error(t, err, "ChangePin accepts incorrect pin")
 
-	// GetResponse
-	_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
-	_, err = c.GenerateResponse(secrets, "pin", commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.Error(t, err, "GenerateResponse accepts incorrect pin")
+		// GetResponse
+		_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
+		_, err = c.GenerateResponse(secrets, "pin", commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		assert.Error(t, err, "GenerateResponse accepts incorrect pin")
+	}
 }
 
 func TestMissingKey(t *testing.T) {
@@ -302,29 +301,28 @@ func TestMissingKey(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
-	// Test parameters
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// Test parameters
+		pin := generatePin()
 
-	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// Generate user secrets
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	// Generate jwt
-	jwtt, err := c.ValidatePin(secrets, pin)
-	require.NoError(t, err)
+		// Generate jwt
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 
-	// GenerateCommitments
-	_, _, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})
-	assert.Error(t, err, "Missing key not detected by generateCommitments")
+		// GenerateCommitments
+		_, _, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})
+		assert.Error(t, err, "Missing key not detected by generateCommitments")
 
-	// GenerateResponse
-	_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
-	_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1})
-	assert.Error(t, err, "Missing key not detected by generateresponse")
+		// GenerateResponse
+		_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
+		_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1})
+		assert.Error(t, err, "Missing key not detected by generateresponse")
+	}
 }
 
 func TestInvalidChallenge(t *testing.T) {
@@ -335,37 +333,36 @@ func TestInvalidChallenge(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
-	// Test parameters
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// Test parameters
+		pin := generatePin()
 
-	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// Generate user secrets
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	// Validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
-	require.NoError(t, err)
+		// Validate pin
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 
-	// Test negative challenge
-	_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
-	_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(-1), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.Error(t, err, "GenerateResponse incorrectly accepts negative challenge")
+		// Test negative challenge
+		_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
+		_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(-1), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		assert.Error(t, err, "GenerateResponse incorrectly accepts negative challenge")
 
-	// Test too large challenge
-	_, commitID, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
-	_, err = c.GenerateResponse(secrets, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 256), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.Error(t, err, "GenerateResponse accepts challenge that is too small")
+		// Test too large challenge
+		_, commitID, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
+		_, err = c.GenerateResponse(secrets, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 256), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		assert.Error(t, err, "GenerateResponse accepts challenge that is too small")
 
-	// Test just-right challenge
-	_, commitID, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
-	_, err = c.GenerateResponse(secrets, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 255), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.NoError(t, err, "GenerateResponse does not accept challenge of 256 bits")
+		// Test just-right challenge
+		_, commitID, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
+		_, err = c.GenerateResponse(secrets, jwtt, commitID, new(big.Int).Lsh(big.NewInt(1), 255), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		assert.NoError(t, err, "GenerateResponse does not accept challenge of 256 bits")
+	}
 }
 
 func TestDoubleCommitUse(t *testing.T) {
@@ -376,27 +373,26 @@ func TestDoubleCommitUse(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
-	// Test parameters
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// Test parameters
+		pin := generatePin()
 
-	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// Generate user secrets
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	// validate pin
-	jwtt, err := c.ValidatePin(secrets, pin)
-	require.NoError(t, err)
+		// validate pin
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 
-	// Use commit double
-	_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
-	require.NoError(t, err)
-	_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	require.NoError(t, err)
-	_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12346), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.Error(t, err, "GenerateResponse incorrectly allows double use of commit")
+		// Use commit double
+		_, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
+		_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		require.NoError(t, err)
+		_, err = c.GenerateResponse(secrets, jwtt, commitID, big.NewInt(12346), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		assert.Error(t, err, "GenerateResponse incorrectly allows double use of commit")
+	}
 }
 
 func TestNonExistingCommit(t *testing.T) {
@@ -407,23 +403,22 @@ func TestNonExistingCommit(t *testing.T) {
 	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
-	// Test parameters
-	bpin := make([]byte, 64)
-	_, err = rand.Read(bpin)
-	require.NoError(t, err)
-	pin := string(bpin)
+	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
+		// Test parameters
+		pin := generatePin()
 
-	// Generate user secrets
-	secrets, err := c.NewUserSecrets(pin)
-	require.NoError(t, err)
+		// Generate user secrets
+		secrets, err := c.NewUserSecrets(pin, signerPublicKey(t, signer))
+		require.NoError(t, err)
 
-	// Generate jwt
-	jwtt, err := c.ValidatePin(secrets, pin)
-	require.NoError(t, err)
+		// Generate jwt
+		jwtt, err := validateAuth(t, c, signer, secrets, pin)
+		require.NoError(t, err)
 
-	// test
-	_, err = c.GenerateResponse(secrets, jwtt, 2364, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
-	assert.Error(t, err, "GenerateResponse failed to detect non-existing commit")
+		// test
+		_, err = c.GenerateResponse(secrets, jwtt, 2364, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
+		assert.Error(t, err, "GenerateResponse failed to detect non-existing commit")
+	}
 }
 
 // Test data
@@ -490,6 +485,73 @@ func setupParameters() error {
 		return err
 	}
 	return nil
+}
+
+func validateAuth(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecrets, pin string) (string, error) {
+	if signer == nil {
+		return c.ValidateAuthLegacy(secrets, pin)
+	} else {
+		return c.ValidateAuth(secrets, doChallengeResponse(t, c, signer, secrets, pin))
+	}
+}
+
+func doChallengeResponse(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecrets, pin string) string {
+	if signer == nil {
+		return ""
+	}
+
+	jwtt, err := irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthRequestClaims{
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute))},
+	})
+	require.NoError(t, err)
+	challenge, err := c.GenerateChallenge(secrets, jwtt)
+	require.NoError(t, err)
+
+	jwtt, err = irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthResponseClaims{
+		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+			Pin:       pin,
+			Challenge: challenge,
+		},
+	})
+	require.NoError(t, err)
+
+	return jwtt
+}
+
+func changePin(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecrets, old, new string) (UserSecrets, error) {
+	var err error
+
+	if signer == nil {
+		secrets, err = c.ChangePinLegacy(secrets, old, new)
+	} else {
+		var jwtt string
+		jwtt, err = irmaclient.SignerCreateJWT(signer, "", irma.KeyshareChangePinClaims{
+			KeyshareChangePinData: irma.KeyshareChangePinData{
+				OldPin: old,
+				NewPin: new,
+			},
+		})
+		require.NoError(t, err)
+		secrets, err = c.ChangePin(secrets, jwtt)
+	}
+
+	return secrets, err
+}
+
+func signerPublicKey(t *testing.T, signer irmaclient.Signer) *ecdsa.PublicKey {
+	if signer == nil {
+		return nil
+	}
+
+	pkbts, err := signer.PublicKey("keyname")
+	require.NoError(t, err)
+	pk, err := signed.UnmarshalPublicKey(pkbts)
+	require.NoError(t, err)
+	return pk
+}
+
+func generatePin() string {
+	return common.NewRandomString(64, common.AlphanumericChars)
 }
 
 func TestMain(m *testing.M) {

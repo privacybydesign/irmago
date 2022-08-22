@@ -175,9 +175,9 @@ func WriteString(w http.ResponseWriter, str string) {
 }
 
 // ParseSessionRequest attempts to parse the input as an irma.RequestorRequest instance, accepting (skipping "irma.")
-//  - RequestorRequest instances directly (ServiceProviderRequest, SignatureRequestorRequest, IdentityProviderRequest)
-//  - SessionRequest instances (DisclosureRequest, SignatureRequest, IssuanceRequest)
-//  - JSON representations ([]byte or string) of any of the above.
+//   - RequestorRequest instances directly (ServiceProviderRequest, SignatureRequestorRequest, IdentityProviderRequest)
+//   - SessionRequest instances (DisclosureRequest, SignatureRequest, IssuanceRequest)
+//   - JSON representations ([]byte or string) of any of the above.
 func ParseSessionRequest(request interface{}) (irma.RequestorRequest, error) {
 	rr, e := parseInput(request)
 	if e != nil {

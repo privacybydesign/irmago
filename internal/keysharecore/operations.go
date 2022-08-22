@@ -1,6 +1,7 @@
 package keysharecore
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -17,16 +18,23 @@ import (
 )
 
 var (
-	ErrInvalidPin       = errors.New("invalid pin")
-	ErrPinTooLong       = errors.New("pin too long")
-	ErrInvalidChallenge = errors.New("challenge out of bounds")
-	ErrInvalidJWT       = errors.New("invalid jwt token")
-	ErrKeyNotFound      = errors.New("public key not found")
-	ErrUnknownCommit    = errors.New("unknown commit id")
+	ErrInvalidPin                = errors.New("invalid pin")
+	ErrPinTooLong                = errors.New("pin too long")
+	ErrInvalidChallenge          = errors.New("challenge out of bounds")
+	ErrInvalidJWT                = errors.New("invalid jwt token")
+	ErrExpiredJWT                = errors.New("jwt expired")
+	ErrKeyNotFound               = errors.New("public key not found")
+	ErrUnknownCommit             = errors.New("unknown commit id")
+	ErrChallengeResponseRequired = errors.New("challenge-response authentication required")
+	ErrWrongChallenge            = errors.New("wrong challenge")
 )
 
+// ChallengeJWTMaxExpiry is the maximum exp (expiry) that we allow JWTs to have with which calls to
+// GenerateChallenge() (i.e. /users/verify_start) are authenticated.
+const ChallengeJWTMaxExpiry = 6 * time.Minute
+
 // NewUserSecrets generates a new keyshare secret, secured with the given pin.
-func (c *Core) NewUserSecrets(pin string) (UserSecrets, error) {
+func (c *Core) NewUserSecrets(pin string, pk *ecdsa.PublicKey) (UserSecrets, error) {
 	secret, err := gabi.NewKeyshareSecret()
 	if err != nil {
 		return nil, err
@@ -49,19 +57,32 @@ func (c *Core) NewUserSecrets(pin string) (UserSecrets, error) {
 	if err = s.setID(id); err != nil {
 		return nil, err
 	}
+	s.PublicKey = pk
 
 	// And encrypt
 	return c.encryptUserSecrets(s)
 }
 
-// ValidatePin checks pin for validity and generates JWT for future access.
-func (c *Core) ValidatePin(secrets UserSecrets, pin string) (string, error) {
-	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
+// ValidateAuth checks pin for validity and generates JWT for future access.
+func (c *Core) ValidateAuth(secrets UserSecrets, jwtt string) (string, error) {
+	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
 		return "", err
 	}
 
-	// Generate jwt token
+	pin, err := c.verifyChallengeResponse(s, jwtt)
+	if err != nil {
+		return "", err
+	}
+
+	if err = s.verifyPin(pin); err != nil {
+		return "", err
+	}
+
+	return c.authJWT(&s)
+}
+
+func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 	t := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":      c.jwtIssuer,
@@ -74,6 +95,23 @@ func (c *Core) ValidatePin(secrets UserSecrets, pin string) (string, error) {
 	return token.SignedString(c.jwtPrivateKey)
 }
 
+func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, jwtt string) (string, error) {
+	challenge := c.consumeChallenge(s.ID)
+	if challenge == nil {
+		return "", ErrChallengeResponseRequired
+	}
+
+	claims := &irma.KeyshareAuthResponseClaims{}
+	if _, err := jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+		return "", err
+	}
+	if subtle.ConstantTimeCompare(challenge, claims.Challenge) != 1 {
+		return "", ErrWrongChallenge
+	}
+
+	return claims.Pin, nil
+}
+
 // ValidateJWT checks whether the given JWT is currently valid as an access token for operations
 // on the provided encrypted keyshare user secrets.
 func (c *Core) ValidateJWT(secrets UserSecrets, jwt string) error {
@@ -82,10 +120,19 @@ func (c *Core) ValidateJWT(secrets UserSecrets, jwt string) error {
 }
 
 // ChangePin changes the pin in an encrypted keyshare user secret to a new value, after validating that
-// the old value is known by the caller.
-func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (UserSecrets, error) {
-	s, err := c.decryptUserSecretsIfPinOK(secrets, oldpinRaw)
+// the request was validly signed and that the old value is known by the caller.
+func (c *Core) ChangePin(secrets UserSecrets, jwtt string) (UserSecrets, error) {
+	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
+		return nil, err
+	}
+
+	claims := &irma.KeyshareChangePinClaims{}
+	if _, err = jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+		return nil, err
+	}
+
+	if err = s.verifyPin(claims.OldPin); err != nil {
 		return nil, err
 	}
 
@@ -95,7 +142,7 @@ func (c *Core) ChangePin(secrets UserSecrets, oldpinRaw, newpinRaw string) (User
 	if err != nil {
 		return nil, err
 	}
-	if err = s.setPin(newpinRaw); err != nil {
+	if err = s.setPin(claims.NewPin); err != nil {
 		return nil, err
 	}
 	if err = s.setID(id); err != nil {
@@ -124,7 +171,7 @@ func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUs
 		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 	if !claims.VerifyExpiresAt(time.Now().Unix(), true) {
-		return unencryptedUserSecrets{}, ErrInvalidJWT
+		return unencryptedUserSecrets{}, ErrExpiredJWT
 	}
 	if _, present := claims["token_id"]; !present {
 		return unencryptedUserSecrets{}, ErrInvalidJWT
@@ -224,4 +271,66 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	})
 	token.Header["kid"] = c.jwtPrivateKeyID
 	return token.SignedString(c.jwtPrivateKey)
+}
+
+func (c *Core) GenerateChallenge(secrets UserSecrets, jwtt string) ([]byte, error) {
+	s, err := c.decryptUserSecrets(secrets)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.PublicKey == nil {
+		return nil, errors.New("can't do challenge-response: no public key associated to account")
+	}
+
+	claims := &irma.KeyshareAuthRequestClaims{}
+	if _, err = jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+		return nil, err
+	}
+	// Impose explicit maximum on JWT expiry; we don't want eternally valid JWTs.
+	if claims.ExpiresAt == nil || claims.ExpiresAt.After(time.Now().Add(ChallengeJWTMaxExpiry)) {
+		return nil, errors.Errorf("JWT expiry may not be more than %s from now", ChallengeJWTMaxExpiry)
+	}
+
+	challenge := make([]byte, 32)
+	_, err = rand.Read(challenge)
+	if err != nil {
+		return nil, err
+	}
+
+	c.authChallengesMutex.Lock()
+	defer c.authChallengesMutex.Unlock()
+	c.authChallenges[string(s.ID)] = challenge
+	return challenge, nil
+}
+
+func (c *Core) consumeChallenge(id []byte) []byte {
+	c.authChallengesMutex.Lock()
+	defer c.authChallengesMutex.Unlock()
+	stringID := string(id)
+	challenge := c.authChallenges[stringID]
+	delete(c.authChallenges, stringID)
+	return challenge
+}
+
+func (c *Core) SetUserPublicKey(secrets UserSecrets, pin string, pk *ecdsa.PublicKey) (string, UserSecrets, error) {
+	s, err := c.decryptUserSecretsIfPinOK(secrets, pin)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if s.PublicKey != nil {
+		return "", nil, errors.New("user already has public key")
+	}
+
+	s.PublicKey = pk
+	secrets, err = c.encryptUserSecrets(s)
+	if err != nil {
+		return "", nil, err
+	}
+	jwtt, err := c.authJWT(&s)
+	if err != nil {
+		return "", nil, err
+	}
+	return jwtt, secrets, nil
 }
