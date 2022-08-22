@@ -3,14 +3,16 @@ package keysharecore
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/binary"
 
 	"github.com/fxamacker/cbor"
-	"github.com/privacybydesign/gabi/big"
-
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/signed"
 )
 
 type (
@@ -18,6 +20,7 @@ type (
 		Pin            []byte
 		KeyshareSecret *big.Int
 		ID             []byte
+		PublicKey      *ecdsa.PublicKey
 	}
 
 	// UserSecrets contains the encrypted data of a keyshare user.
@@ -67,22 +70,69 @@ func (s *unencryptedUserSecrets) setID(id []byte) error {
 	return nil
 }
 
+func (user *unencryptedUserSecrets) verifyPin(pin string) error {
+	paddedPin, err := padBytes([]byte(pin), 64)
+	if err != nil {
+		return err
+	}
+	if subtle.ConstantTimeCompare(user.Pin, paddedPin) != 1 {
+		return ErrInvalidPin
+	}
+	return nil
+}
+
+type marshaledUserSecrets struct {
+	Pin            []byte
+	KeyshareSecret []byte
+	ID             []byte
+	PublicKey      []byte
+}
+
 // MarshalCBOR implements cbor.Marshaler to ensure that all fields have a constant size, to minimize
 // differences in the size of the encrypted blobs.
-// (Note that no unmarshaler is necessary: the only field that gets special attention is the secret
-// bigint, which is marshaled in such a way that the default unmarshaler works fine.)
 func (s *unencryptedUserSecrets) MarshalCBOR() ([]byte, error) {
 	secretBts, err := padBytes(s.KeyshareSecret.Bytes(), 64)
 	if err != nil {
 		return nil, err
 	}
-	return cbor.Marshal(struct {
-		Pin            []byte
-		KeyshareSecret []byte
-		ID             []byte
-	}{
-		s.Pin, secretBts, s.ID,
+	var pkBts []byte
+	if s.PublicKey != nil {
+		pkBts, err = signed.MarshalPublicKey(s.PublicKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return cbor.Marshal(marshaledUserSecrets{
+		s.Pin, secretBts, s.ID, pkBts,
 	}, cbor.EncOptions{})
+}
+
+func (s *unencryptedUserSecrets) UnmarshalCBOR(bytes []byte) error {
+	raw := marshaledUserSecrets{}
+	err := cbor.Unmarshal(bytes, &raw)
+	if err != nil {
+		return err
+	}
+	*s = unencryptedUserSecrets{
+		Pin:            raw.Pin,
+		KeyshareSecret: new(big.Int).SetBytes(raw.KeyshareSecret),
+		ID:             raw.ID,
+	}
+	if len(raw.PublicKey) > 0 {
+		s.PublicKey, err = signed.UnmarshalPublicKey(raw.PublicKey)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// publicKey returns the user's public key. For use in jwt.ParseWithClaims().
+func (s *unencryptedUserSecrets) publicKey(_ *jwt.Token) (interface{}, error) {
+	if s.PublicKey == nil {
+		return nil, ErrKeyNotFound
+	}
+	return s.PublicKey, nil
 }
 
 func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, error) {
@@ -141,19 +191,15 @@ func (c *Core) decryptUserSecrets(secrets UserSecrets) (unencryptedUserSecrets, 
 }
 
 func (c *Core) decryptUserSecretsIfPinOK(secrets UserSecrets, pin string) (unencryptedUserSecrets, error) {
-	paddedPin, err := padBytes([]byte(pin), 64)
-	if err != nil {
-		return unencryptedUserSecrets{}, err
-	}
-
 	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
 		return unencryptedUserSecrets{}, err
 	}
 
-	if subtle.ConstantTimeCompare(s.Pin, paddedPin) != 1 {
-		return unencryptedUserSecrets{}, ErrInvalidPin
+	if err = s.verifyPin(pin); err != nil {
+		return unencryptedUserSecrets{}, err
 	}
+
 	return s, nil
 }
 

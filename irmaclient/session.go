@@ -494,14 +494,12 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		}
 		startKeyshareSession(
 			session,
+			session.client,
 			session.Handler,
 			session.builders,
 			session.request,
 			session.issuerProofNonce,
 			session.timestamp,
-			session.client.Configuration,
-			session.client.keyshareServers,
-			session.client.Preferences,
 		)
 	}
 }

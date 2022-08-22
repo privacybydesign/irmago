@@ -23,8 +23,8 @@ const (
 
 // DB is an interface used by server to manage data storage.
 // There are multiple implementations of this, currently:
-//  - memorydb (memorydb.go) storing all data in memory (forgets everything after reboot)
-//  - postgresdb (postgresdb.go) storing all data in a postgres database
+//   - memorydb (memorydb.go) storing all data in memory (forgets everything after reboot)
+//   - postgresdb (postgresdb.go) storing all data in a postgres database
 type DB interface {
 	AddUser(user *User) error
 	user(username string) (*User, error)

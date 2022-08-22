@@ -29,6 +29,14 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 	secrets, err := base64.StdEncoding.DecodeString("YWJjZBdd6z/4lW/JBgEjVxcAnhK16iimfeyi1AAtWPzkfbWYyXHAad8A+Xzc6mE8bMj6dMQ5CgT0xcppEWYN9RFtO5+Wv4Carfq3TEIX9IWEDuU+lQG0noeHzKZ6k1J22iNAiL7fEXNWNy2H7igzJbj6svbH2LTRKxEW2Cj9Qkqzip5UapHmGZf6G6E7VkMvmJsbrW5uoZAVq2vP+ocuKmzBPaBlqko9F0YKglwXyhfaQQQ0Y3x4secMwC12")
 	require.NoError(t, err)
 	err = db.AddUser(&keyshareserver.User{
+		Username: "legacyuser",
+		Secrets:  secrets,
+	})
+	require.NoError(t, err)
+
+	secrets, err = base64.StdEncoding.DecodeString("YWJjZHpSayGYcjcKbUNfJJjNOXxgxV+GWTVYinpeKqTSfUjUuT4+Hs2uZY68+KvnXkPkoV1eo4HvpVzxy683DHi8Ih+P4Nuqz4FhhLddFnZlzPn1sHuvSjs8S2qGP/jO5+3075I/TWiT2CxO8B83ezMX7tmlwvTbWdYbmV1saEyCVFssuzTARcfvee0f6YvFe9eX1iHfAwXvPsdrt0eTqbTcUzDzv5pQb/t18MtJsK6cB2vh3XJO0psbBWsshGNJYIkMaiGmhi457zejvIt1xcC+dsZZUJVpvoGrZvHd25gH9PLQ/VSU0atrhXS93nsdW8+Y4M4tDFZ8R9pZsseZKt4Zuj1FbxD/qZcdm2w8KaCQgVjzzJJu6//Z5/qF0Neycmm6uiAs4zQWVkibtR9BLEmwHsLd2u4n1EhPAzp14kyzI72/")
+	require.NoError(t, err)
+	err = db.AddUser(&keyshareserver.User{
 		Username: "testusername",
 		Secrets:  secrets,
 	})

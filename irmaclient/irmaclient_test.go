@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/gabi/gabikeys"
+	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -43,6 +44,17 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
 
+	var signer Signer
+	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	if os.IsNotExist(err) {
+		signer = test.NewSigner(t)
+	} else {
+		require.NoError(t, err)
+		sk, err := signed.UnmarshalPemPrivateKey(bts)
+		require.NoError(t, err)
+		signer = test.LoadSigner(t, sk)
+	}
+
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -50,9 +62,11 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
+		signer,
 		aesKey,
 	)
 	require.NoError(t, err)
+
 	client.SetPreferences(Preferences{DeveloperMode: true})
 	return client, handler
 }

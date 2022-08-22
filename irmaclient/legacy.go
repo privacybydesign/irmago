@@ -3,11 +3,12 @@ package irmaclient
 import (
 	"encoding/binary"
 	"encoding/json"
-	"go.etcd.io/bbolt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
+
+	"go.etcd.io/bbolt"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
@@ -460,4 +461,45 @@ func (f *fileStorage) DeleteAll() error {
 	}
 
 	return nil
+}
+
+// registerPublicKey registers our public key used in the ECDSA challenge-response
+// sub-protocol part of the keyshare protocol at the keyshare server.
+func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
+	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
+
+	pk, err := client.signer.PublicKey(keyname)
+	if err != nil {
+		return nil, err
+	}
+	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeyshareKeyRegistrationClaims{
+		KeyshareKeyRegistrationData: irma.KeyshareKeyRegistrationData{
+			Username:  kss.Username,
+			Pin:       kss.HashedPin(pin),
+			PublicKey: pk,
+		},
+	})
+	if err != nil {
+		err = errors.WrapPrefix(err, "failed to sign public key registration JWT", 0)
+		return nil, err
+	}
+
+	result := &irma.KeysharePinStatus{}
+	err = transport.Post("users/register_publickey", result, irma.KeyshareKeyRegistration{PublicKeyRegistrationJWT: jwtt})
+	if err != nil {
+		err = errors.WrapPrefix(err, "failed to register public key", 0)
+		return nil, err
+	}
+
+	if result.Status == kssPinSuccess {
+		// We leave dealing with any other case up to the calling code
+		kss.ChallengeResponse = true
+		err = client.storage.StoreKeyshareServers(client.keyshareServers)
+		if err != nil {
+			err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)
+			return nil, err
+		}
+	}
+
+	return result, nil
 }

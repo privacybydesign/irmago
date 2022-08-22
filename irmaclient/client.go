@@ -63,6 +63,7 @@ type Client struct {
 	Configuration         *irma.Configuration
 	irmaConfigurationPath string
 	handler               ClientHandler
+	signer                Signer
 	sessions              sessions
 
 	jobs       chan func()   // queue of jobs to run
@@ -145,6 +146,7 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
+	signer Signer,
 	aesKey [32]byte,
 ) (*Client, error) {
 	var err error
@@ -161,6 +163,7 @@ func New(
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
 		handler:               handler,
+		signer:                signer,
 		minVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
 		maxVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
@@ -664,9 +667,9 @@ func (client *Client) addCredSuggestion(
 }
 
 // satsifiesCon returns:
-//  - if the attrs can satisfy the conjunction (as long as it is usable),
-//  - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
-//    a nonrevocation proof is required).
+//   - if the attrs can satisfy the conjunction (as long as it is usable),
+//   - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
+//     a nonrevocation proof is required).
 func (client *Client) satisfiesCon(base *irma.BaseRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {
 	var credfound bool
 	credtype := attrs.CredentialType().Identifier()
@@ -1099,19 +1102,32 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
-	transport := irma.NewHTTPTransport(manager.KeyshareServer, !client.Preferences.DeveloperMode)
+	keyname := challengeResponseKeyName(managerID)
+
+	pk, err := client.signer.PublicKey(keyname)
+	if err != nil {
+		return err
+	}
 	kss, err := newKeyshareServer(managerID)
 	if err != nil {
 		return err
 	}
-	message := irma.KeyshareEnrollment{
-		Email:    email,
-		Pin:      kss.HashedPin(pin),
-		Language: lang,
+
+	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeyshareEnrollmentClaims{
+		KeyshareEnrollmentData: irma.KeyshareEnrollmentData{
+			Email:     email,
+			Pin:       kss.HashedPin(pin),
+			Language:  lang,
+			PublicKey: pk,
+		},
+	})
+	if err != nil {
+		return err
 	}
 
+	transport := irma.NewHTTPTransport(manager.KeyshareServer, !client.Preferences.DeveloperMode)
 	qr := &irma.Qr{}
-	err = transport.Post("client/register", qr, message)
+	err = transport.Post("client/register", qr, irma.KeyshareEnrollment{EnrollmentJWT: jwtt})
 	if err != nil {
 		return err
 	}
@@ -1131,6 +1147,11 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	return nil
 }
 
+func challengeResponseKeyName(scheme irma.SchemeManagerIdentifier) string {
+	// Use a dot as separator because those never occur in scheme names
+	return scheme.Name() + ".challengeResponseKey"
+}
+
 // KeyshareVerifyPin verifies the specified PIN at the keyshare server, returning if it succeeded;
 // if not, how many tries are left, or for how long the user is blocked. If an error is returned
 // it is of type *irma.SessionError.
@@ -1144,7 +1165,7 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 		}
 	}
 	kss := client.keyshareServers[schemeid]
-	return verifyPinWorker(pin, kss,
+	return client.verifyPinWorker(pin, kss,
 		irma.NewHTTPTransport(scheme.KeyshareServer, !client.Preferences.DeveloperMode),
 	)
 }
@@ -1165,14 +1186,23 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 	}
 
 	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer, !client.Preferences.DeveloperMode)
-	message := irma.KeyshareChangePin{
-		Username: kss.Username,
-		OldPin:   kss.HashedPin(oldPin),
-		NewPin:   kss.HashedPin(newPin),
+
+	claims := irma.KeyshareChangePinClaims{
+		KeyshareChangePinData: irma.KeyshareChangePinData{
+			Username: kss.Username,
+			OldPin:   kss.HashedPin(oldPin),
+			NewPin:   kss.HashedPin(newPin),
+		},
+	}
+	jwtt, err := SignerCreateJWT(client.signer, challengeResponseKeyName(managerID), claims)
+	if err != nil {
+		return err
 	}
 
 	res := &irma.KeysharePinStatus{}
-	err := transport.Post("users/change/pin", res, message)
+	err = transport.Post("users/change/pin", res, irma.KeyshareChangePin{
+		ChangePinJWT: jwtt,
+	})
 	if err != nil {
 		return err
 	}

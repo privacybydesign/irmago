@@ -2,6 +2,7 @@ package keyshareserver
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,9 +11,11 @@ import (
 	"github.com/go-co-op/gocron"
 
 	"github.com/go-errors/errors"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/hashicorp/go-multierror"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/sirupsen/logrus"
 
@@ -113,9 +116,17 @@ func (s *Server) Handler() http.Handler {
 		// Registration
 		router.Post("/client/register", s.handleRegister)
 
-		// Pin logic
-		router.Post("/users/verify/pin", s.handleVerifyPin)
+		// authentication
+		router.Post("/users/verify_start", s.handleVerifyStart)
+		// The following two are so similar that they are both handled by handleVerify().
+		// NB: handleVerify() contains the strings "/users/verify/pin" and "/users/verify/pin_challengeresponse"
+		// to check, using its input, that the user has invoked the correct endpoint.
+		router.Post("/users/verify/pin", s.handleVerify)
+		router.Post("/users/verify/pin_challengeresponse", s.handleVerify)
+
+		// Other
 		router.Post("/users/change/pin", s.handleChangePin)
+		router.Post("/users/register_publickey", s.handleRegisterPublicKey)
 
 		// Keyshare sessions
 		router.Group(func(router chi.Router) {
@@ -281,25 +292,33 @@ func (s *Server) generateResponse(user *User, authorization string, challenge *b
 	return proofResponse, nil
 }
 
-// /users/verify/pin
-func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
+// /users/verify_start
+func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	var msg irma.KeysharePinMessage
+	var msg irma.KeyshareAuthRequest
 	if err := server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
-	// Fetch user
-	user, err := s.db.user(msg.Username)
+	claims := &irma.KeyshareAuthRequestClaims{}
+	// We need the username inside the JWT here. The JWT is verified later within startAuth().
+	_, _, err := jwt.NewParser().ParseUnverified(msg.AuthRequestJWT, claims)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": msg.Username, "error": err}).Warn("Could not find user in db")
+		s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	// Fetch user
+	user, err := s.db.user(claims.Username)
+	if err != nil {
+		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
 
-	// and verify pin
-	result, err := s.verifyPin(user, msg.Pin)
+	result, err := s.startAuth(user, msg.AuthRequestJWT)
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -309,7 +328,69 @@ func (s *Server) handleVerifyPin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) verifyPin(user *User, pin string) (irma.KeysharePinStatus, error) {
+func (s *Server) startAuth(user *User, jwtt string) (irma.KeyshareAuthChallenge, error) {
+	challenge, err := s.core.GenerateChallenge(user.Secrets, jwtt)
+	if err != nil {
+		return irma.KeyshareAuthChallenge{}, err
+	}
+	return irma.KeyshareAuthChallenge{
+		Candidates: []string{irma.KeyshareAuthMethodChallengeResponse},
+		Challenge:  challenge,
+	}, nil
+}
+
+// /users/verify/pin or /users/verify/pin_challengeresponse
+func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
+	// Extract request
+	var msg irma.KeyshareAuthResponse
+	if err := server.ParseBody(r, &msg); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	var username string
+	if msg.AuthResponseJWT == "" {
+		if r.URL.Path != "/users/verify/pin" {
+			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
+			return
+		}
+		username = msg.Username
+	} else {
+		if r.URL.Path != "/users/verify/pin_challengeresponse" {
+			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
+			return
+		}
+		claims := &irma.KeyshareAuthResponseClaims{}
+		// We need the username inside the JWT here. The JWT is verified later within verifyAuth().
+		_, _, err := jwt.NewParser().ParseUnverified(msg.AuthResponseJWT, claims)
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
+			server.WriteError(w, server.ErrorInternal, err.Error())
+			return
+		}
+		username = claims.Username
+	}
+
+	// Fetch user
+	user, err := s.db.user(username)
+	if err != nil {
+		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		return
+	}
+
+	// and verify pin
+	result, err := s.verifyAuth(user, msg)
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, result)
+}
+
+func (s *Server) verifyAuth(user *User, msg irma.KeyshareAuthResponse) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(user)
 	if err != nil {
@@ -320,7 +401,13 @@ func (s *Server) verifyPin(user *User, pin string) (irma.KeysharePinStatus, erro
 	}
 
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
-	jwtt, err := s.core.ValidatePin(user.Secrets, pin)
+	var jwtt string
+	if msg.AuthResponseJWT == "" {
+		jwtt, err = s.core.ValidateAuthLegacy(user.Secrets, msg.Pin)
+	} else {
+		jwtt, err = s.core.ValidateAuth(user.Secrets, msg.AuthResponseJWT)
+	}
+
 	if err != nil && err != keysharecore.ErrInvalidPin {
 		// Errors other than invalid pin are real errors
 		s.conf.Logger.WithField("error", err).Error("Could not validate pin")
@@ -369,21 +456,37 @@ func (s *Server) verifyPin(user *User, pin string) (irma.KeysharePinStatus, erro
 // /users/change/pin
 func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	// Extract request
-	var msg irma.KeyshareChangePin
-	if err := server.ParseBody(r, &msg); err != nil {
+	var (
+		msg irma.KeyshareChangePin
+		err error
+	)
+	if err = server.ParseBody(r, &msg); err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
-	// Fetch user
-	user, err := s.db.user(msg.Username)
+	if msg.ChangePinJWT == "" {
+		s.handleChangePinLegacy(w, msg.KeyshareChangePinData)
+		return
+	}
+
+	claims := &irma.KeyshareChangePinClaims{}
+	// We need the username inside the JWT here. The JWT is verified later within updatePin().
+	_, _, err = jwt.NewParser().ParseUnverified(msg.ChangePinJWT, claims)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": msg.Username, "error": err}).Warn("Could not find user in db")
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	user, err := s.db.user(claims.Username)
+	if err != nil {
+		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
 		server.WriteError(w, server.ErrorUserNotRegistered, "")
 		return
 	}
 
-	result, err := s.updatePin(user, msg.OldPin, msg.NewPin)
+	result, err := s.updatePin(user, msg.ChangePinJWT)
+
 	if err != nil {
 		// already logged
 		server.WriteError(w, server.ErrorInternal, err.Error())
@@ -392,7 +495,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
-func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinStatus, error) {
+func (s *Server) updatePin(user *User, jwtt string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(user)
 	if err != nil {
@@ -403,7 +506,7 @@ func (s *Server) updatePin(user *User, oldPin, newPin string) (irma.KeysharePinS
 	}
 
 	// Try to do the update
-	user.Secrets, err = s.core.ChangePin(user.Secrets, oldPin, newPin)
+	user.Secrets, err = s.core.ChangePin(user.Secrets, jwtt)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -459,16 +562,42 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, sessionptr)
 }
 
+func (s *Server) parseRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.KeyshareEnrollmentData, *ecdsa.PublicKey, error) {
+	if msg.EnrollmentJWT == "" {
+		return parseLegacyRegistrationMessage(msg)
+	}
+
+	var (
+		pk     *ecdsa.PublicKey
+		err    error
+		claims = &irma.KeyshareEnrollmentClaims{}
+	)
+	_, err = jwt.ParseWithClaims(msg.EnrollmentJWT, claims, func(token *jwt.Token) (interface{}, error) {
+		// Similar to a CSR, the JWT contains in its body the public key with which it is signed.
+		pk, err = signed.UnmarshalPublicKey(claims.KeyshareEnrollmentData.PublicKey)
+		return pk, err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &claims.KeyshareEnrollmentData, pk, nil
+}
+
 func (s *Server) register(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	// Generate keyshare server account
 	username := common.NewRandomString(12, common.AlphanumericChars)
 
-	secrets, err := s.core.NewUserSecrets(msg.Pin)
+	data, pk, err := s.parseRegistrationMessage(msg)
+	if err != nil {
+		return nil, err
+	}
+	secrets, err := s.core.NewUserSecrets(data.Pin, pk)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not register user")
 		return nil, err
 	}
-	user := &User{Username: username, Language: msg.Language, Secrets: secrets}
+	user := &User{Username: username, Language: data.Language, Secrets: secrets}
 	err = s.db.AddUser(user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
@@ -476,8 +605,8 @@ func (s *Server) register(msg irma.KeyshareEnrollment) (*irma.Qr, error) {
 	}
 
 	// Send email if user specified email address
-	if msg.Email != nil && *msg.Email != "" && s.conf.EmailServer != "" {
-		err = s.sendRegistrationEmail(user, msg.Language, *msg.Email)
+	if data.Email != nil && *data.Email != "" && s.conf.EmailServer != "" {
+		err = s.sendRegistrationEmail(user, data.Language, *data.Email)
 		if err != nil {
 			// already logged in sendRegistrationEmail
 			return nil, err
