@@ -148,3 +148,20 @@ func TestMultipleKeyshareServers(t *testing.T) {
 		require.NotEqual(t, cred.SchemeManagerID, "test2")
 	}
 }
+
+func TestKeyshareEnrollIncorrectPin(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	keyshareServerTest := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServerTest.Stop()
+	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"))
+	defer keyshareServerTest2.Stop()
+
+	client, handler := parseStorage(t, optionNoSchemeAssets)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
+	client.KeyshareEnroll(test2SchemeID, nil, "54321", "en")
+	require.ErrorContains(t, <-handler.c, "incorrect pin")
+	require.NotContains(t, client.EnrolledSchemeManagers(), test2SchemeID)
+}
