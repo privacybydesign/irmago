@@ -1221,34 +1221,42 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 
 		// Change the PIN across all keyshare servers.
 		var updatedSchemes []irma.SchemeManagerIdentifier
+		var err error
 		for schemeID, kss := range client.keyshareServers {
 			if kss.PinOutOfSync {
 				continue
 			}
-			err := client.keyshareChangePinWorker(schemeID, oldPin, newPin)
-			// If an error occurs, try to undo all changes we already made. In case this fails,
-			// we set the PinOutOfSync flag for that particular enrollment.
+
+			err = client.keyshareChangePinWorker(schemeID, oldPin, newPin)
 			if err != nil {
 				client.handler.ChangePinFailure(schemeID, err)
-				pinOutOfSync := false
-				for _, updatedManager := range updatedSchemes {
-					err = client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
-					if err != nil {
-						client.reportError(err)
-						client.keyshareServers[updatedManager].PinOutOfSync = true
-						pinOutOfSync = true
-					}
-				}
-				if pinOutOfSync {
-					err = client.storage.StoreKeyshareServers(client.keyshareServers)
-					if err != nil {
-						client.reportError(err)
-					}
-				}
 				return
 			}
+
 			updatedSchemes = append(updatedSchemes, schemeID)
 		}
+
+		// If an error occurred, try to undo all changes we already made. In case this fails,
+		// we set the PinOutOfSync flag for that particular enrollment.
+		if err != nil {
+			pinOutOfSync := false
+			for _, updatedManager := range updatedSchemes {
+				err = client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
+				if err != nil {
+					client.reportError(err)
+					client.keyshareServers[updatedManager].PinOutOfSync = true
+					pinOutOfSync = true
+				}
+			}
+			if pinOutOfSync {
+				err = client.storage.StoreKeyshareServers(client.keyshareServers)
+				if err != nil {
+					client.reportError(err)
+				}
+			}
+			return
+		}
+
 		client.handler.ChangePinSuccess()
 	}()
 }
