@@ -59,7 +59,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeMan
 	keyshareAttr := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.test.mijnirma.email", schemeID))
 	s, err := keyshareserver.New(&keyshareserver.Configuration{
 		Configuration: &server.Configuration{
-			SchemesPath:           schemesPath,
+			IrmaConfiguration:     conf,
 			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 			Logger:                l,
 			URL:                   parsedURL.String(),
