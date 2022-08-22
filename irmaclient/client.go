@@ -1230,7 +1230,7 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 			err = client.keyshareChangePinWorker(schemeID, oldPin, newPin)
 			if err != nil {
 				client.handler.ChangePinFailure(schemeID, err)
-				return
+				break
 			}
 
 			updatedSchemes = append(updatedSchemes, schemeID)
