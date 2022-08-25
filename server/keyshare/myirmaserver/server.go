@@ -386,7 +386,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	sessiontoken := session.token
 
 	qr, loginToken, frontendRequest, err := s.irmaserv.StartSession(
-		irma.NewDisclosureRequest(s.conf.KeyshareAttributes...),
+		newIrmaDisclosureRequest(s.conf.KeyshareAttributes),
 		nil,
 	)
 	if err != nil {
@@ -602,7 +602,7 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
 
 	qr, emailToken, frontendRequest, err := s.irmaserv.StartSession(
-		irma.NewDisclosureRequest(s.conf.EmailAttributes...),
+		newIrmaDisclosureRequest(s.conf.EmailAttributes),
 		nil,
 	)
 	if err != nil {
@@ -646,4 +646,16 @@ func (s *Server) sessionFromCookie(r *http.Request) *session {
 		return nil
 	}
 	return s.store.get(token.Value)
+}
+
+// newIrmaDisclosureRequest composes an irma.DisclosureRequest with one attribute disjunction
+// containing every given attribute type identifier as an option in that disjunction.
+func newIrmaDisclosureRequest(attrs []irma.AttributeTypeIdentifier) *irma.DisclosureRequest {
+	discon := irma.AttributeDisCon{}
+	for _, attr := range attrs {
+		discon = append(discon, irma.AttributeCon{irma.NewAttributeRequest(attr.String())})
+	}
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{discon}
+	return request
 }
