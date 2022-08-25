@@ -5,7 +5,9 @@ package tasks
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -33,6 +35,21 @@ func countRows(t *testing.T, db *sql.DB, table, where string) int {
 	require.NoError(t, res.Scan(&count))
 	require.NoError(t, res.Close())
 	return count
+}
+
+func getDeleteDates(t *testing.T, db *sql.DB) map[string]int {
+	res, err := db.Query("SELECT delete_on FROM irma.users WHERE delete_on IS NOT NULL")
+	require.NoError(t, err)
+
+	dateMap := make(map[string]int)
+	for res.Next() {
+		var date int64
+		require.NoError(t, res.Scan(&date))
+		dateMap[strconv.FormatInt(date, 10)] += 1
+	}
+	require.NoError(t, res.Close())
+
+	return dateMap
 }
 
 func TestCleanupEmails(t *testing.T) {
@@ -93,6 +110,14 @@ func TestCleanupAccounts(t *testing.T) {
 	assert.Equal(t, 2, countRows(t, db, "users", ""))
 }
 
+func xTimesEntry(x int, template string) (result string) {
+	for i := 0; i < x; i++ {
+		nr := strconv.Itoa(i)
+		result += fmt.Sprintf(template, nr, nr)
+	}
+	return
+}
+
 func TestExpireAccounts(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 	SetupDatabase(t)
@@ -100,9 +125,13 @@ func TestExpireAccounts(t *testing.T) {
 
 	db, err := sql.Open("pgx", test.PostgresTestUrl)
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (15, 'A', '', '', 0, 0, $1-12*3600), (16, 'B', '', '', 0, 0, 0), (17, 'C', '', '', 0, 0, 0)", time.Now().Unix())
+	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (15, 'A', '', '', 0, 0, $1-12*3600), "+
+		xTimesEntry(12, "(%s, 'ExpiredUser%s', '', '', 0, 0, 0), ")+
+		"(28, 'ExpiredUserWithoutMail', '', '', 0, 0, 0)", time.Now().Unix())
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), (16, 'test@test.com', NULL)")
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), " +
+		xTimesEntry(12, "(%s, 'test%s@test.com', NULL), ") +
+		"(28, 'test@test.com', NULL)")
 	require.NoError(t, err)
 
 	th, err := newHandler(&Configuration{
@@ -125,8 +154,19 @@ func TestExpireAccounts(t *testing.T) {
 	require.NoError(t, err)
 
 	th.expireAccounts()
+	deleteOnMap := getDeleteDates(t, db)
 
-	assert.Equal(t, 1, countRows(t, db, "users", "delete_on IS NOT NULL"))
+	assert.Equal(t, 10, countRows(t, db, "users", "delete_on IS NOT NULL"))
+	assert.Equal(t, 4, countRows(t, db, "users", "delete_on IS NULL"))
+
+	time.Sleep(1 * time.Second)
+	th.expireAccounts()
+
+	for i, v := range deleteOnMap {
+		assert.Equal(t, v, countRows(t, db, "users", "delete_on = "+i))
+	}
+	assert.Equal(t, 13, countRows(t, db, "users", "delete_on IS NOT NULL"))
+	assert.Equal(t, 1, countRows(t, db, "users", "delete_on IS NULL"))
 }
 
 func TestConfiguration(t *testing.T) {
