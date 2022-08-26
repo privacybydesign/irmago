@@ -37,7 +37,7 @@ func countRows(t *testing.T, db *sql.DB, table, where string) int {
 	return count
 }
 
-func getDeleteDates(t *testing.T, db *sql.DB) map[string]int {
+func countDeleteDates(t *testing.T, db *sql.DB) map[string]int {
 	res, err := db.Query("SELECT delete_on FROM irma.users WHERE delete_on IS NOT NULL")
 	require.NoError(t, err)
 
@@ -154,7 +154,7 @@ func TestExpireAccounts(t *testing.T) {
 	require.NoError(t, err)
 
 	th.expireAccounts()
-	deleteOnMap := getDeleteDates(t, db)
+	deleteOnMap := countDeleteDates(t, db)
 
 	assert.Equal(t, 10, countRows(t, db, "users", "delete_on IS NOT NULL"))
 	assert.Equal(t, 4, countRows(t, db, "users", "delete_on IS NULL"))
@@ -162,8 +162,8 @@ func TestExpireAccounts(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	th.expireAccounts()
 
-	for i, v := range deleteOnMap {
-		assert.Equal(t, v, countRows(t, db, "users", "delete_on = "+i))
+	for date, count := range deleteOnMap {
+		assert.Equal(t, count, countRows(t, db, "users", "delete_on = "+date))
 	}
 	assert.Equal(t, 13, countRows(t, db, "users", "delete_on IS NOT NULL"))
 	assert.Equal(t, 1, countRows(t, db, "users", "delete_on IS NULL"))
