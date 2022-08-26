@@ -127,7 +127,7 @@ func (t *taskHandler) expireAccounts() {
 			SELECT count(*)
 			FROM irma.emails
 			WHERE irma.users.id = irma.emails.user_id
-		) > 0
+		) > 0 AND delete_on IS NULL
 		LIMIT 10`,
 		func(res *sql.Rows) error {
 			var id int64
