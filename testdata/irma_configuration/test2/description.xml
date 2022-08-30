@@ -12,7 +12,7 @@
 	</Description>
 	<KeyshareServer>http://localhost:8082</KeyshareServer>
 	<KeyshareWebsite>http://localhost:8083</KeyshareWebsite>
-	<KeyshareAttribute>test.test.mijnirma.email</KeyshareAttribute>
+	<KeyshareAttribute>test2.test.mijnirma.email</KeyshareAttribute>
 	<TimestampServer>https://keyshare.privacybydesign.foundation/atumd/</TimestampServer>
 	<Contact>https://privacybydesign.foundation/</Contact>
 </SchemeManager>
