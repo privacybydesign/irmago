@@ -53,6 +53,7 @@ type keyshareSession struct {
 type keyshareServer struct {
 	Username                string `json:"username"`
 	Nonce                   []byte `json:"nonce"`
+	PinOutOfSync            bool   `json:"pin_out_of_sync,omitempty"`
 	SchemeManagerIdentifier irma.SchemeManagerIdentifier
 	ChallengeResponse       bool
 	token                   string
@@ -325,6 +326,10 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 		}
 
 		kss := ks.client.keyshareServers[manager]
+		if kss.PinOutOfSync {
+			return false, 0, 0, manager, errors.Errorf("pin is out of sync")
+		}
+
 		transport := ks.transports[manager]
 		success, tries, blocked, err = ks.client.verifyPinWorker(pin, kss, transport)
 		if !success {

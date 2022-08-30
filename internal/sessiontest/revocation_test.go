@@ -643,8 +643,8 @@ func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Keyshare", func(t *testing.T) {
 		revServer := startRevocationServer(t, true)
 		defer revServer.Stop()
-		testkeyshare.StartKeyshareServer(t, logger)
-		defer testkeyshare.StopKeyshareServer(t)
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+		defer keyshareServer.Stop()
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, client, handler.storage)
 
@@ -654,8 +654,8 @@ func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Both", func(t *testing.T) {
 		revServer := startRevocationServer(t, true)
 		defer revServer.Stop()
-		testkeyshare.StartKeyshareServer(t, logger)
-		defer testkeyshare.StopKeyshareServer(t)
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+		defer keyshareServer.Stop()
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, client, handler.storage)
 

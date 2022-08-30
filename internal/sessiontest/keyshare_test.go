@@ -11,8 +11,8 @@ import (
 )
 
 func TestManualKeyshareSession(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t, logger)
-	defer testkeyshare.StopKeyshareServer(t)
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
 
@@ -23,14 +23,14 @@ func TestManualKeyshareSession(t *testing.T) {
 }
 
 func TestIssuanceKeyshareSession(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t, logger)
-	defer testkeyshare.StopKeyshareServer(t)
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
 	doIssuanceSession(t, true, nil, nil)
 }
 
 func TestKeyshareRegister(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t, logger)
-	defer testkeyshare.StopKeyshareServer(t)
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
 
@@ -53,8 +53,8 @@ func TestKeyshareRegister(t *testing.T) {
 // Use the existing keyshare enrollment and credentials
 // in a keyshare session of each session type.
 func TestKeyshareSessions(t *testing.T) {
-	testkeyshare.StartKeyshareServer(t, logger)
-	defer testkeyshare.StopKeyshareServer(t)
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
 	irmaServer := StartIrmaServer(t, nil)
@@ -87,8 +87,8 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaS
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
-	testkeyshare.StartKeyshareServer(t, logger)
-	defer testkeyshare.StopKeyshareServer(t)
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
 
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
@@ -104,4 +104,64 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 		},
 	}, id)
 	doSession(t, request, nil, irmaServer, nil, nil, nil)
+}
+
+func TestMultipleKeyshareServers(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	keyshareServerTest := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServerTest.Stop()
+	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"))
+	defer keyshareServerTest2.Stop()
+
+	client, handler := parseStorage(t, optionNoSchemeAssets)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	logs, err := client.LoadNewestLogs(20)
+	require.NoError(t, err)
+	logsAmount := len(logs)
+
+	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
+	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
+	require.NoError(t, <-handler.c)
+
+	request := irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
+		irma.NewAttributeTypeIdentifier("test2.test.mijnirma.email"),
+	)
+	doSession(t, request, client, irmaServer, nil, nil, nil)
+
+	logs, err = client.LoadNewestLogs(20)
+	require.NoError(t, err)
+	require.Len(t, logs, logsAmount+2)
+
+	err = client.RemoveScheme(test2SchemeID)
+	require.NoError(t, err)
+	require.NotContains(t, client.Configuration.SchemeManagers, test2SchemeID)
+
+	// Check whether all credentials and log entries being related to test2 are removed.
+	logs, err = client.LoadNewestLogs(20)
+	require.NoError(t, err)
+	require.Len(t, logs, logsAmount)
+	creds := client.CredentialInfoList()
+	for _, cred := range creds {
+		require.NotEqual(t, cred.SchemeManagerID, "test2")
+	}
+}
+
+func TestKeyshareEnrollIncorrectPin(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	keyshareServerTest := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServerTest.Stop()
+	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"))
+	defer keyshareServerTest2.Stop()
+
+	client, handler := parseStorage(t, optionNoSchemeAssets)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
+	client.KeyshareEnroll(test2SchemeID, nil, "54321", "en")
+	require.ErrorContains(t, <-handler.c, "incorrect pin")
+	require.NotContains(t, client.EnrolledSchemeManagers(), test2SchemeID)
 }

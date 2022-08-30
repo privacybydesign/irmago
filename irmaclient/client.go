@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -92,7 +91,7 @@ type KeyshareHandler interface {
 
 type ChangePinHandler interface {
 	ChangePinFailure(manager irma.SchemeManagerIdentifier, err error)
-	ChangePinSuccess(manager irma.SchemeManagerIdentifier)
+	ChangePinSuccess()
 	ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int)
 	ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int)
 }
@@ -200,25 +199,10 @@ func New(
 		return nil, err
 	}
 	client.applyPreferences()
-	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
-		return nil, err
-	}
-	if client.attributes, err = client.storage.LoadAttributes(); err != nil {
-		return nil, err
-	}
-	if client.keyshareServers, err = client.storage.LoadKeyshareServers(); err != nil {
-		return nil, err
-	}
 
-	if len(client.UnenrolledSchemeManagers()) > 1 {
-		return nil, errors.New("Too many keyshare servers")
-	}
-
-	client.lookup = map[string]*credLookup{}
-	for _, attrlistlist := range client.attributes {
-		for i, attrlist := range attrlistlist {
-			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
-		}
+	err = client.loadCredentialStorage()
+	if err != nil {
+		return nil, err
 	}
 
 	client.sessions = sessions{client: client, sessions: map[string]*session{}}
@@ -232,6 +216,29 @@ func New(
 
 func (client *Client) Close() error {
 	return client.storage.Close()
+}
+
+func (client *Client) loadCredentialStorage() (err error) {
+	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
+		return
+	}
+	if client.attributes, err = client.storage.LoadAttributes(); err != nil {
+		return
+	}
+	if client.keyshareServers, err = client.storage.LoadKeyshareServers(); err != nil {
+		return
+	}
+
+	client.lookup = map[string]*credLookup{}
+	for _, attrlistlist := range client.attributes {
+		for i, attrlist := range attrlistlist {
+			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
+		}
+	}
+	if len(client.credentialsCache) > 0 {
+		client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
+	}
+	return
 }
 
 func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
@@ -391,7 +398,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeL
 	removed[id] = attrs.Strings()
 
 	err := client.storage.Transaction(func(tx *transaction) error {
-		if err := client.storage.TxDeleteSignature(tx, attrs); err != nil {
+		if err := client.storage.TxDeleteSignature(tx, attrs.Hash()); err != nil {
 			return err
 		}
 		if err := client.storage.TxStoreAttributes(tx, id, client.attributes[id]); err != nil {
@@ -1102,12 +1109,32 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		return errors.New("PIN too short, must be at least 5 characters")
 	}
 
-	keyname := challengeResponseKeyName(managerID)
+	// We expect that the PIN is equal across all keyshare servers. Therefore, we verify the PIN at one other
+	// keyshare server. We don't check all servers to prevent issues when custom keyshare servers are not available.
+	var err error
+	pinCorrect := true
+	for kssManagerID, kss := range client.keyshareServers {
+		if kss.PinOutOfSync {
+			continue
+		}
+		pinCorrect, _, _, err = client.KeyshareVerifyPin(pin, kssManagerID)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to validate pin", 0)
+	}
+	if !pinCorrect {
+		return errors.New("incorrect pin")
+	}
 
+	keyname := challengeResponseKeyName(managerID)
 	pk, err := client.signer.PublicKey(keyname)
 	if err != nil {
 		return err
 	}
+
 	kss, err := newKeyshareServer(managerID)
 	if err != nil {
 		return err
@@ -1170,12 +1197,67 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 	)
 }
 
-func (client *Client) KeyshareChangePin(manager irma.SchemeManagerIdentifier, oldPin string, newPin string) {
+func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 	go func() {
-		err := client.keyshareChangePinWorker(manager, oldPin, newPin)
-		if err != nil {
-			client.handler.ChangePinFailure(manager, err)
+		// Check whether all keyshare servers are available.
+		for schemeID, kss := range client.keyshareServers {
+			if kss.PinOutOfSync {
+				continue
+			}
+			success, attempts, blocked, err := client.KeyshareVerifyPin(oldPin, schemeID)
+			if err != nil {
+				client.handler.ChangePinFailure(schemeID, err)
+				return
+			}
+			if !success {
+				if attempts > 0 {
+					client.handler.ChangePinIncorrect(schemeID, attempts)
+				} else {
+					client.handler.ChangePinBlocked(schemeID, blocked)
+				}
+				return
+			}
 		}
+
+		// Change the PIN across all keyshare servers.
+		var updatedSchemes []irma.SchemeManagerIdentifier
+		var err error
+		for schemeID, kss := range client.keyshareServers {
+			if kss.PinOutOfSync {
+				continue
+			}
+
+			err = client.keyshareChangePinWorker(schemeID, oldPin, newPin)
+			if err != nil {
+				client.handler.ChangePinFailure(schemeID, err)
+				break
+			}
+
+			updatedSchemes = append(updatedSchemes, schemeID)
+		}
+
+		// If an error occurred, try to undo all changes we already made. In case this fails,
+		// we set the PinOutOfSync flag for that particular enrollment.
+		if err != nil {
+			pinOutOfSync := false
+			for _, updatedManager := range updatedSchemes {
+				err = client.keyshareChangePinWorker(updatedManager, newPin, oldPin)
+				if err != nil {
+					client.reportError(err)
+					client.keyshareServers[updatedManager].PinOutOfSync = true
+					pinOutOfSync = true
+				}
+			}
+			if pinOutOfSync {
+				err = client.storage.StoreKeyshareServers(client.keyshareServers)
+				if err != nil {
+					client.reportError(err)
+				}
+			}
+			return
+		}
+
+		client.handler.ChangePinSuccess()
 	}()
 }
 
@@ -1209,40 +1291,108 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 
 	switch res.Status {
 	case kssPinSuccess:
-		client.handler.ChangePinSuccess(managerID)
+		return nil
 	case kssPinFailure:
-		attempts, err := strconv.Atoi(res.Message)
-		if err != nil {
-			return err
-		}
-		client.handler.ChangePinIncorrect(managerID, attempts)
+		return errors.Errorf("incorrect PIN for scheme %s", managerID)
 	case kssPinError:
-		timeout, err := strconv.Atoi(res.Message)
-		if err != nil {
-			return err
-		}
-		client.handler.ChangePinBlocked(managerID, timeout)
+		return errors.Errorf("user account is blocked for scheme %s", managerID)
 	default:
-		return errors.New("Unknown keyshare response")
+		return errors.Errorf("unknown keyshare response for scheme %s", managerID)
 	}
-
-	return nil
 }
 
-// KeyshareRemove unenrolls the keyshare server of the specified scheme manager.
+// KeyshareRemove unenrolls the keyshare server of the specified scheme manager and removes all associated credentials.
 func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
-	if _, contains := client.keyshareServers[manager]; !contains {
-		return errors.New("Can't uninstall unknown keyshare server")
-	}
-	delete(client.keyshareServers, manager)
-
-	return client.storage.StoreKeyshareServers(client.keyshareServers)
+	return client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{manager}, false)
 }
 
-// KeyshareRemoveAll removes all keyshare server registrations.
+// KeyshareRemoveAll removes all keyshare server registrations and associated credentials.
 func (client *Client) KeyshareRemoveAll() error {
-	client.keyshareServers = map[irma.SchemeManagerIdentifier]*keyshareServer{}
-	return client.storage.StoreKeyshareServers(client.keyshareServers)
+	var managers []irma.SchemeManagerIdentifier
+	for schemeID := range client.keyshareServers {
+		managers = append(managers, schemeID)
+	}
+	return client.keyshareRemoveMultiple(managers, false)
+}
+
+func (client *Client) keyshareRemoveMultiple(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
+	for _, schemeID := range schemeIDs {
+		if _, contains := client.keyshareServers[schemeID]; !contains {
+			return errors.New("can't uninstall unknown keyshare server")
+		}
+	}
+
+	client.credMutex.Lock()
+	defer client.credMutex.Unlock()
+
+	defer func() {
+		err := client.loadCredentialStorage()
+		if err != nil {
+			// Cached storage is out-of-sync with real storage, so we can't do anything but report the error and
+			// close the client to prevent unexpected changes.
+			client.reportError(err)
+			_ = client.Close()
+		}
+	}()
+
+	remainingSchemes := make(map[irma.SchemeManagerIdentifier]struct{})
+	for schemeID := range client.Configuration.SchemeManagers {
+		remainingSchemes[schemeID] = struct{}{}
+	}
+	for _, schemeID := range schemeIDs {
+		delete(client.keyshareServers, schemeID)
+		delete(remainingSchemes, schemeID)
+	}
+
+	return client.storage.Transaction(func(tx *transaction) error {
+		// Delete all credentials of given schemes.
+		for _, cred := range client.CredentialInfoList() {
+			if _, ok := remainingSchemes[irma.NewSchemeManagerIdentifier(cred.SchemeManagerID)]; !ok {
+				err := client.storage.TxStoreAttributes(tx, cred.Identifier(), []*irma.AttributeList{})
+				if err != nil {
+					return err
+				}
+				err = client.storage.TxDeleteSignature(tx, cred.Hash)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		// Remove all logs of given schemes, if necessary.
+		if removeLogs {
+			err := client.storage.TxIterateLogs(tx, func(log *LogEntry) error {
+				shouldDelete := false
+				for credID := range log.Removed {
+					if _, ok := remainingSchemes[credID.SchemeManagerIdentifier()]; !ok {
+						shouldDelete = true
+					}
+				}
+
+				request, err := log.SessionRequest()
+				if err != nil {
+					return err
+				}
+				if request != nil {
+					for schemeID := range request.Identifiers().SchemeManagers {
+						if _, ok := remainingSchemes[schemeID]; !ok {
+							shouldDelete = true
+						}
+					}
+				}
+
+				if shouldDelete {
+					return client.storage.TxDeleteLogEntry(tx, log)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return client.storage.TxStoreKeyshareServers(tx, client.keyshareServers)
+	})
 }
 
 // Add, load and store log entries
@@ -1315,6 +1465,24 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 	}
 
 	return nil
+}
+
+// RemoveScheme removes the given scheme and all credentials and log entries related to it.
+func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error {
+	scheme, ok := client.Configuration.SchemeManagers[schemeID]
+	if !ok {
+		return errors.New("unknown scheme manager")
+	}
+
+	err := client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{schemeID}, true)
+	if err != nil {
+		return err
+	}
+	err = client.Configuration.DangerousDeleteScheme(scheme)
+	if err != nil {
+		return err
+	}
+	return client.Configuration.ParseFolder()
 }
 
 func (cc *credCandidate) Present() bool {

@@ -62,6 +62,15 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 
 	// Set max version we want to test on
 	opts := processOptions(options...)
+	if opts.enabled(optionNoSchemeAssets) {
+		client.Configuration, err = irma.NewConfiguration(
+			client.Configuration.Path,
+			irma.ConfigurationOptions{IgnorePrivateKeys: true},
+		)
+		require.NoError(t, err)
+		err = client.Configuration.ParseFolder()
+		require.NoError(t, err)
+	}
 	if opts.enabled(optionPrePairingClient) {
 		version := extractClientMaxVersion(client)
 		// set to largest protocol version that dos not support pairing

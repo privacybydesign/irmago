@@ -3,7 +3,9 @@ package testkeyshare
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"testing"
 
@@ -17,9 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var keyshareServ *http.Server
+type keyshareServer struct {
+	http.Server
+	t *testing.T
+}
 
-func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
+func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier) *keyshareServer {
 	db := keyshareserver.NewMemoryDB()
 	err := db.AddUser(&keyshareserver.User{
 		Username: "",
@@ -43,25 +48,34 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 	require.NoError(t, err)
 
 	testdataPath := test.FindTestdataFolder(t)
+	schemesPath := filepath.Join(testdataPath, "irma_configuration")
+	conf, err := irma.NewConfiguration(schemesPath, irma.ConfigurationOptions{})
+	require.NoError(t, err)
+	err = conf.ParseFolder()
+	require.NoError(t, err)
+	parsedURL, err := url.Parse(conf.SchemeManagers[schemeID].KeyshareServer)
+	require.NoError(t, err)
+
+	keyshareAttr := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.test.mijnirma.email", schemeID))
 	s, err := keyshareserver.New(&keyshareserver.Configuration{
 		Configuration: &server.Configuration{
-			SchemesPath:           filepath.Join(testdataPath, "irma_configuration"),
+			IrmaConfiguration:     conf,
 			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 			Logger:                l,
-			URL:                   "http://localhost:8080/",
+			URL:                   parsedURL.String(),
 		},
 		DB:                    db,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
-		KeyshareAttribute:     irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
+		KeyshareAttribute:     keyshareAttr,
 	})
 	require.NoError(t, err)
 
-	keyshareServ = &http.Server{
-		Addr:    "localhost:8080",
+	keyshareServ := &keyshareServer{http.Server{
+		Addr:    parsedURL.Host,
 		Handler: s.Handler(),
-	}
+	}, t}
 
 	go func() {
 		err := keyshareServ.ListenAndServe()
@@ -70,9 +84,10 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger) {
 		}
 		assert.NoError(t, err)
 	}()
+	return keyshareServ
 }
 
-func StopKeyshareServer(t *testing.T) {
-	err := keyshareServ.Shutdown(context.Background())
-	assert.NoError(t, err)
+func (ks *keyshareServer) Stop() {
+	err := ks.Shutdown(context.Background())
+	assert.NoError(ks.t, err)
 }

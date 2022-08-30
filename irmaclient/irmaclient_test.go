@@ -427,7 +427,7 @@ func (i *TestClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifi
 		i.t.Fatal(err)
 	}
 }
-func (i *TestClientHandler) ChangePinSuccess(manager irma.SchemeManagerIdentifier) {
+func (i *TestClientHandler) ChangePinSuccess() {
 	select {
 	case i.c <- nil: // nop
 	default: // nop
