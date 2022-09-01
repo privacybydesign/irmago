@@ -1,0 +1,79 @@
+@startuml
+skinparam backgroundColor #transparent
+participant "IRMA app" as app
+participant "requestor" as requestor
+participant "keyshare server" as keyshare
+participant "database" as db
+participant "mail server" as mail
+
+title Keyshare server endpoints
+
+app -> keyshare ++: POST /client/register <font color=#1D5B2A>signed</font> jwt:{pin, email, language, <font color=#1D5B2A>publickey</font>}
+keyshare -> keyshare: validate jwt
+keyshare -> db: Generate keyshare server account, \nincl secret <font color=#1D5B2A>and store publickey</font>
+keyshare -> mail: Send registration mail \nif address is specified
+keyshare -> keyshare: Issue keyshare credential
+return Invisible issuing of keyshare credential \n(directly via session endpoints in keyshare server)
+|||
+
+'already enrolled app: similar to the one sent by the irmaclient when changing your IRMA PIN code
+'note: hier komt een nieuwe jwt terug
+app -> keyshare ++: <font color=#1D5B2A> <font color=#1D5B2A> POST /users/register_publickey signed jwt:{id, pin, publickey}
+keyshare -> keyshare: <font color=#1D5B2A>validate jwt</font>
+keyshare -> keyshare: <font color=#1D5B2A>validate PIN</font>
+keyshare -> db: <font color=#1D5B2A>store publickey</font>
+return <font color=#1D5B2A>jwt</font>
+|||
+
+'get challenge
+app -> keyshare ++: <font color=#1D5B2A>POST /users/verify_start {id}
+keyshare -> keyshare: <font color=#1D5B2A>generate challenge
+return <font color=#1D5B2A>"pin_challengeresponse", challenge
+|||
+
+app -> keyshare ++: POST /users/verify/pin<font color=#1D5B2A>_challengeresponse</font> {id, pin, <font color=#1D5B2A>reponse</font>}
+keyshare -> db: fetch user
+keyshare -> keyshare: verify pin \n(incl reservePinCheck and blocking)
+keyshare -> keyshare: <font color=#1D5B2A>verify response which correponds to challenge
+return access token
+|||
+
+'reply attacks not possible, so no challenge-response needed
+app -> keyshare ++: POST /users/change/pin <font color=#1D5B2A>signed jwt</font>:{id, oldpin, newpin}
+keyshare -> db: fetch user
+keyshare -> keyshare: reserve pin check
+keyshare -> keyshare: <font color=#1D5B2A>validate jwt signature
+keyshare -> db: check old pin and update with new pin
+return OK
+|||
+
+app -> requestor: start session / get nonce
+return nonce
+|||
+
+' initial P_t from kss, new endpoint, do once before issuance
+app -> keyshare ++: POST /prove/getP \n["irma-demo.IRMATube-1"] + access token
+return P_t
+|||
+
+app -> app: hw=hash(P,W_uu)
+|||
+
+app -> keyshare ++: POST /prove/getCommitments \n["irma-demo.IRMATube-1"] + h_w + access token
+keyshare -> keyshare: verify token
+keyshare -> keyshare: generate commitments
+keyshare -> keyshare: store commitID for later requests
+return commitments W_t
+|||
+
+app -> app: generate c = hash(nonce,P,W), s_u
+app -> keyshare ++: POST /prove/getResponse + \nnonce + s_u + W_u + P + access token
+keyshare -> keyshare: verify h_w
+keyshare -> keyshare: re-calculate c
+keyshare -> keyshare: log for MyIRMA
+keyshare -> keyshare: get commitment data from \nmemory store and build \nresponse with challenge
+return <font color=#1D5B2A>+signed jwt over challenge which is in ProofP
+
+app -> requestor: challenge/response, signed jwt, P=A*P_t || P=U*P_t
+
+@enduml
