@@ -124,9 +124,8 @@ func (s *IrmaServer) Stop() {
 	_ = s.http.Close()
 }
 
-func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
+func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.AttributeTypeIdentifier) http.Handler {
 	mux := http.NewServeMux()
-	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	// Note: these chained session requests just serve to test the full functionality of this
 	// feature, and don't necessarily represent a chain of sessions that would be sensible or
@@ -168,7 +167,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 		require.NotNil(t, attr)
 
 		cred := &irma.CredentialRequest{
-			CredentialTypeID: id.CredentialTypeIdentifier(),
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
 			Attributes: map[string]string{
 				"level":             *attr,
 				"studentCardNumber": *attr,
@@ -209,10 +208,10 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey) http.Handler {
 	return mux
 }
 
-func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey) *http.Server {
+func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.AttributeTypeIdentifier) *http.Server {
 	s := &http.Server{
 		Addr:    fmt.Sprintf("localhost:%d", nextSessionServerPort),
-		Handler: chainedServerHandler(t, jwtPubKey),
+		Handler: chainedServerHandler(t, jwtPubKey, id),
 	}
 	go func() {
 		_ = s.ListenAndServe()
