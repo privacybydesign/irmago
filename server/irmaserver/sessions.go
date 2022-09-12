@@ -421,10 +421,15 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, d
 		request:     request.SessionRequest(),
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
-	nonce, _ := gabi.GenerateNonce()
-	base.Nonce = nonce
+	if base.Nonce == nil {
+		nonce, _ := gabi.GenerateNonce()
+		base.Nonce = nonce
+	}
 	base.Context = one
+
+	// Debug
+	myNonce, _ := base.Nonce.MarshalText()
+	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken, "nonce": string(myNonce)}).Debug("New session started")
 
 	err := s.sessions.add(ses)
 	if err != nil {

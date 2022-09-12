@@ -1,10 +1,12 @@
 package irmaserver
 
 import (
-	"github.com/privacybydesign/irmago/internal/test"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/irmago/internal/test"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -107,4 +109,35 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	require.True(t, addingCompleted)
 	require.False(t, deletingCompleted)
+}
+
+func TestSessionWithoutCustomNonce(t *testing.T) {
+	s, err := New(sessionsConf(t))
+	require.NoError(t, err)
+	defer s.Stop()
+
+	// Create request without a nonce
+	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	require.True(t, request.Nonce == nil)
+	_, _, _, err = s.StartSession(request, func(result *server.SessionResult) {})
+	require.NoError(t, err)
+	require.True(t, request.Nonce != nil)
+}
+
+func TestSessionWithCustomNonce(t *testing.T) {
+	s, err := New(sessionsConf(t))
+	require.NoError(t, err)
+	defer s.Stop()
+
+	// Create request with custom nonce
+	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+	request.Nonce = big.NewInt(1337)
+
+	require.True(t, request.Nonce != nil)
+	_, _, _, err = s.StartSession(request, func(result *server.SessionResult) {})
+	require.NoError(t, err)
+	require.True(t, request.Nonce != nil)
+
+	// Ensure nonce equals custom nonce
+	require.True(t, request.Nonce.Cmp(big.NewInt(1337)) == 0)
 }
