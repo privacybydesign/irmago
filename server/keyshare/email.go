@@ -3,8 +3,10 @@ package keyshare
 import (
 	"bytes"
 	"html/template"
+	"net"
 	"net/mail"
 	"net/smtp"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
@@ -78,6 +80,10 @@ func (conf EmailConfiguration) SendEmail(
 	if err != nil {
 		return ErrInvalidEmail
 	}
+	err = verifyMXRecord(email)
+	if err != nil {
+		return ErrInvalidEmail
+	}
 	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
@@ -128,4 +134,13 @@ func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject str
 		"Content-Transfer-Encoding: binary\r\n" +
 		"\r\n")
 	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
+}
+
+func verifyMXRecord(email string) error {
+	at := strings.LastIndex(email, "@")
+	_, err := net.LookupMX(email[at+1:])
+	if err != nil {
+		return err
+	}
+	return nil
 }
