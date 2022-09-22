@@ -38,7 +38,7 @@ func TestServerLoginEmail(t *testing.T) {
 	test.HTTPPost(t, nil, "http://localhost:8081/login/email", `{"email": "test@example.com", "language":"en"}`, nil, 204, nil)
 
 	// Non-existing email addresses should not give an error.
-	test.HTTPPost(t, nil, "http://localhost:8081/login/email", `{"email": "nonexisting@test.com", "language":"en"}`, nil, 204, nil)
+	test.HTTPPost(t, nil, "http://localhost:8081/login/email", `{"email": "nonexisting@example.com", "language":"en"}`, nil, 204, nil)
 
 	// Rate limited requests should not give an error.
 	test.HTTPPost(t, nil, "http://localhost:8081/login/email", `{"email": "test@example.com", "language":"en"}`, nil, 204, nil)
