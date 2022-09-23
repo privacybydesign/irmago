@@ -138,15 +138,14 @@ func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject str
 
 func verifyMXRecord(email string) error {
 	at := strings.LastIndex(email, "@")
-	if at > 0 {
-		records, err := net.LookupMX(email[at+1:])
-		if len(records) == 0 {
-			return errors.Errorf("No domain part found in %v", email)
-		} else if err != nil {
-			return err
-		}
-	} else {
-		return errors.Errorf("No '@'-sign found in %v", email)
+	if at < 0 {
+		return errors.Errorf("no '@'-sign found in %v", email)
 	}
-	return nil
+	records, err := net.LookupMX(email[at+1:])
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		return errors.Errorf("no domain part found in %v", email)
+	}	return nil
 }
