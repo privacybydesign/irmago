@@ -59,7 +59,7 @@ func TestMemoryDBLoginToken(t *testing.T) {
 			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
-				email:      []string{"test@test.com"},
+				email:      []string{"test@example.com"},
 			},
 			"noemail": {
 				id:         17,
@@ -69,10 +69,10 @@ func TestMemoryDBLoginToken(t *testing.T) {
 		loginEmailTokens: map[string]string{},
 	}
 
-	err := db.addLoginToken("test2@test.com", "test2token")
+	err := db.addLoginToken("test2@example.com", "test2token")
 	assert.Error(t, err)
 
-	err = db.addLoginToken("test@test.com", "testtoken")
+	err = db.addLoginToken("test@example.com", "testtoken")
 	require.NoError(t, err)
 
 	cand, err := db.loginUserCandidates("testtoken")
@@ -104,7 +104,7 @@ func TestMemoryDBUserInfo(t *testing.T) {
 			"testuser": {
 				id:         15,
 				lastActive: time.Unix(15, 0),
-				email:      []string{"test@test.com"},
+				email:      []string{"test@example.com"},
 				logEntries: []logEntry{
 					{
 						Timestamp: 110,
@@ -128,7 +128,7 @@ func TestMemoryDBUserInfo(t *testing.T) {
 	info, err := db.user(15)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", info.Username)
-	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
+	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
 
 	info, err = db.user(17)
 	assert.NoError(t, err)
@@ -168,17 +168,17 @@ func TestMemoryDBUserInfo(t *testing.T) {
 	_, err = db.logs(20, 100, 20)
 	assert.Error(t, err)
 
-	err = db.addEmail(17, "test@test.com")
+	err = db.addEmail(17, "test@example.com")
 	assert.NoError(t, err)
 
 	info, err = db.user(17)
 	assert.NoError(t, err)
-	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
+	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
 
 	err = db.addEmail(20, "bla@bla.com")
 	assert.Error(t, err)
 
-	err = db.scheduleEmailRemoval(17, "test@test.com", 0)
+	err = db.scheduleEmailRemoval(17, "test@example.com", 0)
 	assert.NoError(t, err)
 
 	info, err = db.user(17)
