@@ -60,7 +60,7 @@ func TestCleanupEmails(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 15, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), (15, 'test2@test.com', $1), (15, 'test3@test.com', 0)", time.Now().Add(time.Hour).Unix())
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@example.com', NULL), (15, 'test2@example.com', $1), (15, 'test3@example.com', 0)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
 	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
@@ -79,9 +79,9 @@ func TestCleanupTokens(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 15, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.email_verification_tokens (token, user_id, email, expiry) VALUES ('t1', 15, 't1@test.com', 0), ('t2', 15, 't2@test.com', $1)", time.Now().Add(time.Hour).Unix())
+	_, err = db.Exec("INSERT INTO irma.email_verification_tokens (token, user_id, email, expiry) VALUES ('t1', 15, 't1@example.com', 0), ('t2', 15, 't2@example.com', $1)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ('t1', 't1@test.com', 0), ('t2', 't2@test.com', $1)", time.Now().Add(time.Hour).Unix())
+	_, err = db.Exec("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ('t1', 't1@example.com', 0), ('t2', 't2@example.com', $1)", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
 	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
@@ -129,9 +129,9 @@ func TestExpireAccounts(t *testing.T) {
 		xTimesEntry(12, "(%s, 'ExpiredUser%s', '', '', 0, 0, 0), ")+
 		"(28, 'ExpiredUserWithoutMail', '', '', 0, 0, 0)", time.Now().Unix())
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@test.com', NULL), " +
-		xTimesEntry(12, "(%s, 'test%s@test.com', NULL), ") +
-		"(28, 'test@test.com', NULL)")
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@example.com', NULL), " +
+		xTimesEntry(12, "(%s, 'test%s@example.com', NULL), ") +
+		"(28, 'test@example.com', NULL)")
 	require.NoError(t, err)
 
 	th, err := newHandler(&Configuration{
@@ -140,7 +140,7 @@ func TestExpireAccounts(t *testing.T) {
 		ExpiryDelay: 1,
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     "localhost:1025",
-			EmailFrom:       "test@test.com",
+			EmailFrom:       "test@example.com",
 			DefaultLanguage: "en",
 		},
 		DeleteExpiredAccountFiles: map[string]string{
@@ -178,7 +178,7 @@ func TestConfiguration(t *testing.T) {
 	err = processConfiguration(&Configuration{
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     "localhost:1025",
-			EmailFrom:       "test@test.com",
+			EmailFrom:       "test@example.com",
 			DefaultLanguage: "en",
 		},
 		DeleteExpiredAccountFiles: map[string]string{
@@ -194,7 +194,7 @@ func TestConfiguration(t *testing.T) {
 	err = processConfiguration(&Configuration{
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer: "localhost:1025",
-			EmailFrom:   "test@test.com",
+			EmailFrom:   "test@example.com",
 		},
 		DeleteExpiredAccountFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
@@ -209,7 +209,7 @@ func TestConfiguration(t *testing.T) {
 	err = processConfiguration(&Configuration{
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     "localhost:1025",
-			EmailFrom:       "test@test.com",
+			EmailFrom:       "test@example.com",
 			DefaultLanguage: "en",
 		},
 		DeleteExpiredAccountSubjects: map[string]string{
@@ -222,7 +222,7 @@ func TestConfiguration(t *testing.T) {
 	err = processConfiguration(&Configuration{
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     "localhost:1025",
-			EmailFrom:       "test@test.com",
+			EmailFrom:       "test@example.com",
 			DefaultLanguage: "en",
 		},
 		DeleteExpiredAccountFiles: map[string]string{

@@ -287,12 +287,15 @@ func testUnsatisfiableDisclosureSession(t *testing.T, conf interface{}, opts ...
 
 }
 
-/* There is an annoying difference between how Java and Go convert big integers to and from
+/*
+	There is an annoying difference between how Java and Go convert big integers to and from
+
 byte arrays: in Java the sign of the integer is taken into account, but not in Go. This means
 that in Java, when converting a bigint to or from a byte array, the most significant bit
 indicates the sign of the integer. In Go this is not the case. This resulted in invalid
 signatures being issued in the issuance protocol in two distinct ways, of which we test here
-that they have been fixed. */
+that they have been fixed.
+*/
 func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...option) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
