@@ -19,7 +19,7 @@ type EmailConfiguration struct {
 	EmailAuth       smtp.Auth
 }
 
-var ErrInvalidEmail = errors.New("Invalid email address")
+var ErrInvalidEmail = errors.New("invalid email address")
 
 func ParseEmailTemplates(files, subjects map[string]string, defaultLanguage string) (map[string]*template.Template, error) {
 	if _, ok := files[defaultLanguage]; !ok {
