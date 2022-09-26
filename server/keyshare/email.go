@@ -147,5 +147,6 @@ func verifyMXRecord(email string) error {
 	}
 	if len(records) == 0 {
 		return errors.Errorf("no domain part found in %v", email)
-	}	return nil
+	}
+	return nil
 }
