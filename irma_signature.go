@@ -49,7 +49,9 @@ func (sm *SignedMessage) Disclosure() *Disclosure {
 }
 
 // ASN1ConvertSignatureNonce computes the nonce that is used in the creation of the attribute-based signature:
-//    nonce = SHA256(serverNonce, SHA256(message), timestampSignature)
+//
+//	nonce = SHA256(serverNonce, SHA256(message), timestampSignature)
+//
 // where serverNonce is the nonce sent by the signature requestor.
 func ASN1ConvertSignatureNonce(message string, nonce *big.Int, timestamp *atum.Timestamp) *big.Int {
 	msgHash := sha256.Sum256([]byte(message))

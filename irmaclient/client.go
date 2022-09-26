@@ -664,9 +664,9 @@ func (client *Client) addCredSuggestion(
 }
 
 // satsifiesCon returns:
-//  - if the attrs can satisfy the conjunction (as long as it is usable),
-//  - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
-//    a nonrevocation proof is required).
+//   - if the attrs can satisfy the conjunction (as long as it is usable),
+//   - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
+//     a nonrevocation proof is required).
 func (client *Client) satisfiesCon(base *irma.BaseRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {
 	var credfound bool
 	credtype := attrs.CredentialType().Identifier()

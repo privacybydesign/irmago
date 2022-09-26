@@ -155,7 +155,8 @@ func redisTLSConfig(conf *server.Configuration) (*tls.Config, error) {
 // with IRMA apps.
 //
 // Example usage:
-//   http.HandleFunc("/irma/", irmaserver.HandlerFunc())
+//
+//	http.HandleFunc("/irma/", irmaserver.HandlerFunc())
 //
 // The IRMA app can then perform IRMA sessions at https://example.com/irma.
 func HandlerFunc() http.HandlerFunc {
