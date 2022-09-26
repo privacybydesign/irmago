@@ -75,11 +75,11 @@ func TestServerHandleRegisterLegacy(t *testing.T) {
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"en"}`, nil,
+		`{"pin":"testpin","email":"test@example.com","language":"en"}`, nil,
 		200, nil,
 	)
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"nonexistinglanguage"}`, nil,
+		`{"pin":"testpin","email":"test@example.com","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",

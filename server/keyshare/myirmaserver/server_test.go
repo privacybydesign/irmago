@@ -51,11 +51,11 @@ func TestServerIrmaSessions(t *testing.T) {
 			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
-				email:      []string{"test@test.com"},
+				email:      []string{"test@example.com"},
 			},
 		},
 		loginEmailTokens: map[string]string{
-			"testtoken": "test@test.com",
+			"testtoken": "test@example.com",
 		},
 	}
 	myirmaServer, httpServer := StartMyIrmaServer(t, db, "")
@@ -76,7 +76,7 @@ func TestServerSessionMgmnt(t *testing.T) {
 			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
-				email:      []string{"test@test.com"},
+				email:      []string{"test@example.com"},
 			},
 			"noemail": {
 				id:         17,
@@ -84,7 +84,7 @@ func TestServerSessionMgmnt(t *testing.T) {
 			},
 		},
 		loginEmailTokens: map[string]string{
-			"testtoken": "test@test.com",
+			"testtoken": "test@example.com",
 		},
 		verifyEmailTokens: map[string]int64{
 			"testemailtoken": 15,
@@ -158,7 +158,7 @@ func TestServerUserData(t *testing.T) {
 			"testuser": {
 				id:         15,
 				lastActive: time.Unix(0, 0),
-				email:      []string{"test@test.com"},
+				email:      []string{"test@example.com"},
 				logEntries: []logEntry{
 					{
 						Timestamp: 110,
@@ -174,7 +174,7 @@ func TestServerUserData(t *testing.T) {
 			},
 		},
 		loginEmailTokens: map[string]string{
-			"testtoken": "test@test.com",
+			"testtoken": "test@example.com",
 		},
 	}
 	myirmaServer, httpServer := StartMyIrmaServer(t, db, "")
@@ -186,9 +186,9 @@ func TestServerUserData(t *testing.T) {
 
 	var userdata user
 	test.HTTPGet(t, client, "http://localhost:8081/user", nil, 200, &userdata)
-	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, userdata.Emails)
+	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, userdata.Emails)
 
-	test.HTTPPost(t, client, "http://localhost:8081/email/remove", "test@test.com", textPlainHeader(), 204, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/email/remove", "test@example.com", textPlainHeader(), 204, nil)
 
 	userdata = user{}
 	test.HTTPGet(t, client, "http://localhost:8081/user", nil, 200, &userdata)
