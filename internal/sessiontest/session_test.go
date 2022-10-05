@@ -45,6 +45,7 @@ func TestRequestorServer(t *testing.T) {
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, RequestorServerConfiguration))
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, RequestorServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, RequestorServerConfiguration))
+	t.Run("SigningSessionResult", apply(testSigningSessionResult, RequestorServerConfiguration))
 	t.Run("IssuanceSession", apply(testIssuanceSession, RequestorServerConfiguration))
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, RequestorServerConfiguration))
 	t.Run("DefaultCredentialValidity", apply(testDefaultCredentialValidity, RequestorServerConfiguration))
@@ -80,6 +81,7 @@ func TestIrmaServer(t *testing.T) {
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, IrmaServerConfiguration))
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, IrmaServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, IrmaServerConfiguration))
+	t.Run("SigningSessionResult", apply(testSigningSessionResult, IrmaServerConfiguration))
 	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
@@ -603,6 +605,35 @@ func testSigningSession(t *testing.T, conf interface{}, opts ...option) {
 	require.Equal(t, irma.ProofStatusValid, status)
 }
 
+func testSigningSessionResult(t *testing.T, conf interface{}, opts ...option) {
+	client, handler := parseStorage(t, opts...)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+
+	request := getSigningRequest(id)
+	var requestorSessionResult *requestorSessionResult
+	for _, opt := range []option{0, optionRetryPost} {
+		requestorSessionResult = doSession(t, request, client, nil, nil, nil, conf, append(opts, opt, optionGetDisclosureResult)...)
+
+		require.Nil(t, requestorSessionResult.Err)
+		require.Equal(t, irma.ProofStatusValid, requestorSessionResult.ProofStatus)
+		require.NotEmpty(t, requestorSessionResult.Disclosed)
+		require.Equal(t, id, requestorSessionResult.Disclosed[0][0].Identifier)
+		require.Equal(t, "456", requestorSessionResult.Disclosed[0][0].Value["en"])
+
+		// Ensure requestor session results reflect the session result values
+		require.Equal(t, irma.ProofStatusValid, requestorSessionResult.disclosureResult.Status)
+		require.NotNil(t, requestorSessionResult.disclosureResult.Timestamp)
+		require.Len(t, requestorSessionResult.disclosureResult.Credentials, 1)
+		require.Len(t, requestorSessionResult.disclosureResult.Credentials[0].Attributes, 1)
+		require.Equal(t, id.CredentialTypeIdentifier().IssuerIdentifier(), requestorSessionResult.disclosureResult.Credentials[0].Issuer.Identifier)
+		require.Equal(t, id.CredentialTypeIdentifier().SchemeManagerIdentifier(), requestorSessionResult.disclosureResult.Credentials[0].Scheme.Identifier)
+		require.Equal(t, id, requestorSessionResult.disclosureResult.Credentials[0].Attributes[0].Identifier)
+		require.Equal(t, "456", *requestorSessionResult.disclosureResult.Credentials[0].Attributes[0].Value)
+		require.Equal(t, request.Message, *requestorSessionResult.disclosureResult.Requestor.Message)
+	}
+}
+
 func testDisclosureSession(t *testing.T, conf interface{}, opts ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
@@ -629,6 +660,7 @@ func testDisclosureSessionResult(t *testing.T, conf interface{}, opts ...option)
 
 		// Ensure requestor session results reflect the session result values
 		require.Equal(t, irma.ProofStatusValid, requestorSessionResult.disclosureResult.Status)
+		require.Nil(t, requestorSessionResult.disclosureResult.Timestamp)
 		require.Len(t, requestorSessionResult.disclosureResult.Credentials, 1)
 		require.Len(t, requestorSessionResult.disclosureResult.Credentials[0].Attributes, 1)
 		require.Equal(t, id.CredentialTypeIdentifier().IssuerIdentifier(), requestorSessionResult.disclosureResult.Credentials[0].Issuer.Identifier)

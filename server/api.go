@@ -60,14 +60,14 @@ type SessionDisclosureResult struct {
 	Requestor   SessionDisclosureResultRequestor    `json:"requestor"`
 	Nonce       *big.Int                            `json:"nonce"` // Actual nonce used in proofs
 	Status      irma.ProofStatus                    `json:"status"`
+	Timestamp   *atum.Timestamp                     `json:"timestamp,omitempty"` // If present, timestamp is included in nonce (see ASN1ConvertSignatureNonce)
 	Credentials []SessionDisclosureResultCredential `json:"credentials"`
 }
 
 // DisclosureResult input
 type SessionDisclosureResultRequestor struct {
-	Message   *string         `json:"message,omitempty"`   // If present, message is included in nonce (see ASN1ConvertSignatureNonce)
-	Nonce     *big.Int        `json:"nonce,omitempty"`     // If present, this nonce is used as base nonce
-	Timestamp *atum.Timestamp `json:"timestamp,omitempty"` // If present, timestamp is included in nonce (see ASN1ConvertSignatureNonce)
+	Message *string  `json:"message,omitempty"` // If present, message is included in nonce (see ASN1ConvertSignatureNonce)
+	Nonce   *big.Int `json:"nonce,omitempty"`   // If present, this nonce is used as base nonce
 }
 
 // DisclosureResult credential
@@ -79,7 +79,7 @@ type SessionDisclosureResultCredential struct {
 	ExpiresAt  time.Time                                    `json:"expiresAt"`
 	Attributes []SessionDisclosureResultCredentialAttribute `json:"attributes"`
 	Proof      gabi.ProofD                                  `json:"proof"`
-	NotRevoked bool                                         `json:"notrevoked,omitempty"`
+	NotRevoked bool                                         `json:"notRevoked,omitempty"`
 }
 
 // DisclosureResult scheme information

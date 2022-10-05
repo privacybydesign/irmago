@@ -128,10 +128,10 @@ func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*se
 		request := session.request.(*irma.SignatureRequest)
 		if request != nil {
 			disclosureResult.Identifier = request.Base().Identifier
+			disclosureResult.Timestamp = session.Result.Signature.Timestamp
 			disclosureResult.Requestor = server.SessionDisclosureResultRequestor{
-				Message:   &request.Message,
-				Nonce:     request.Base().Nonce,
-				Timestamp: session.Result.Signature.Timestamp,
+				Message: &request.Message,
+				Nonce:   request.Base().Nonce,
 			}
 		}
 	default:
