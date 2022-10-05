@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net"
 	"net/http"
 	"reflect"
@@ -15,9 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bwesterb/go-atum"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -45,6 +49,46 @@ type SessionResult struct {
 	NextSession irma.RequestorToken          `json:"nextSession,omitempty"`
 
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
+}
+
+// SessionDisclosureResult contains an extended array of generalized credentials with the zkp
+type SessionDisclosureResult struct {
+	Identifier  *big.Int                            `json:"identifier"` // Identifier assigned by verifier
+	Inputs      SessionDisclosureResultInputs       `json:"inputs"`
+	Nonce       *big.Int                            `json:"nonce"` // Actual nonce used in proofs
+	Status      irma.ProofStatus                    `json:"status"`
+	Credentials []SessionDisclosureResultCredential `json:"credentials"`
+}
+
+// DisclosureResult input
+type SessionDisclosureResultInputs struct {
+	Message   *string         `json:"message,omitempty"`   // If present, message is included in nonce (see ASN1ConvertSignatureNonce)
+	Challenge *big.Int        `json:"challenge,omitempty"` // If present, challenge is used as base nonce / @TODO rename to challenge
+	Timestamp *atum.Timestamp `json:"timestamp,omitempty"` // If present, timestamp is included in nonce (see ASN1ConvertSignatureNonce) / @TODO should always be included?
+}
+
+// DisclosureResult credential
+type SessionDisclosureResultCredential struct {
+	Identifier       irma.CredentialTypeIdentifier              `json:"identifier"`
+	Issuer           SessionDisclosureResultCredentialIssuer    `json:"issuer"`
+	IssuanceTime     irma.Timestamp                             `json:"issuancetime"`
+	Attributes       SessionDisclosureResultCredentialAttribute `json:"attributes"`
+	Proof            *gabi.ProofD                               `json:"proof"`
+	NotRevoked       bool                                       `json:"notrevoked,omitempty"`
+	NotRevokedBefore *irma.Timestamp                            `json:"notrevokedbefore,omitempty"`
+}
+
+// DisclosureResult issuer of credential
+type SessionDisclosureResultCredentialIssuer struct {
+	Identifier irma.IssuerIdentifier `json:"identifier"`
+	Publickey  *gabikeys.PublicKey   `json:"publickey"`
+}
+
+// DisclosureResult attribute values
+type SessionDisclosureResultCredentialAttribute struct {
+	Identifier irma.AttributeTypeIdentifier `json:"identifier"`
+	Value      *string                      `json:"value"`
+	Status     irma.AttributeProofStatus    `json:"status"`
 }
 
 // SessionHandler is a function that can handle a session result
