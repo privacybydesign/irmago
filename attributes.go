@@ -157,7 +157,7 @@ func NewTranslatedString(attr *string) TranslatedString {
 	}
 }
 
-func decodeRandomBlind(attr *big.Int) *string {
+func DecodeRandomBlind(attr *big.Int) *string {
 	if attr == nil {
 		return nil
 	}
@@ -170,14 +170,14 @@ func decodeRandomBlind(attr *big.Int) *string {
 func (al *AttributeList) decode(i int) *string {
 	attr := al.Ints[i+1]
 	if al.CredentialType().AttributeTypes[i].RandomBlind {
-		return decodeRandomBlind(attr)
+		return DecodeRandomBlind(attr)
 	}
 	metadataVersion := al.MetadataAttribute.Version()
-	return decodeAttribute(attr, metadataVersion)
+	return DecodeAttribute(attr, metadataVersion)
 }
 
 // Decode attribute value into string according to metadataVersion
-func decodeAttribute(attr *big.Int, metadataVersion byte) *string {
+func DecodeAttribute(attr *big.Int, metadataVersion byte) *string {
 	bi := new(big.Int).Set(attr)
 	if metadataVersion >= 3 {
 		if bi.Bit(0) == 0 { // attribute does not exist

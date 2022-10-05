@@ -36,6 +36,7 @@ type BaseRequest struct {
 
 	// Set by the IRMA server during the session
 	Context         *big.Int         `json:"context,omitempty"`
+	Identifier      *big.Int         `json:"identifier,omitempty"`
 	Nonce           *big.Int         `json:"nonce,omitempty"`
 	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
 

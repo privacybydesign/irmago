@@ -364,11 +364,11 @@ func TestAttributeDecoding(t *testing.T) {
 	expected := "male"
 
 	newAttribute, _ := new(big.Int).SetString("3670202571", 10)
-	newString := decodeAttribute(newAttribute, 3)
+	newString := DecodeAttribute(newAttribute, 3)
 	require.Equal(t, *newString, expected)
 
 	oldAttribute, _ := new(big.Int).SetString("1835101285", 10)
-	oldString := decodeAttribute(oldAttribute, 2)
+	oldString := DecodeAttribute(oldAttribute, 2)
 	require.Equal(t, *oldString, expected)
 }
 

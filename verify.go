@@ -328,9 +328,9 @@ func parseAttribute(index int, metadata *MetadataAttribute, attr *big.Int) (*Dis
 	} else {
 		attrid = credtype.AttributeTypes[index-2].GetAttributeTypeIdentifier()
 		if credtype.AttributeTypes[index-2].RandomBlind {
-			attrval = decodeRandomBlind(attr)
+			attrval = DecodeRandomBlind(attr)
 		} else {
-			attrval = decodeAttribute(attr, metadata.Version())
+			attrval = DecodeAttribute(attr, metadata.Version())
 		}
 	}
 	status := AttributeProofStatusPresent

@@ -48,6 +48,7 @@ type sessionData struct {
 	Status             irma.ServerStatus
 	ResponseCache      responseCache
 	LastActive         time.Time
+	DisclosureResult   *server.SessionDisclosureResult // Holds extended disclosure result
 	Result             *server.SessionResult
 	KssProofs          map[irma.SchemeManagerIdentifier]*gabi.ProofP
 	Next               *irma.Qr
@@ -426,6 +427,11 @@ func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, d
 		base.Nonce = nonce
 	}
 	base.Context = one
+
+	// Set empty identifier
+	if base.Identifier == nil {
+		base.Identifier = one
+	}
 
 	// Debug
 	myNonce, _ := base.Nonce.MarshalText()

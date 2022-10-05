@@ -8,11 +8,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	irma "github.com/privacybydesign/irmago"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+
+	irma "github.com/privacybydesign/irmago"
 
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"

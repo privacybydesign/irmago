@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/big"
+
 	"net"
 	"net/http"
 	"reflect"
@@ -15,6 +15,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/privacybydesign/gabi/big"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-chi/chi/v5/middleware"
@@ -54,41 +56,48 @@ type SessionResult struct {
 // SessionDisclosureResult contains an extended array of generalized credentials with the zkp
 type SessionDisclosureResult struct {
 	Identifier  *big.Int                            `json:"identifier"` // Identifier assigned by verifier
-	Inputs      SessionDisclosureResultInputs       `json:"inputs"`
+	Token       irma.RequestorToken                 `json:"token"`
+	Requestor   SessionDisclosureResultRequestor    `json:"requestor"`
 	Nonce       *big.Int                            `json:"nonce"` // Actual nonce used in proofs
 	Status      irma.ProofStatus                    `json:"status"`
 	Credentials []SessionDisclosureResultCredential `json:"credentials"`
 }
 
 // DisclosureResult input
-type SessionDisclosureResultInputs struct {
+type SessionDisclosureResultRequestor struct {
 	Message   *string         `json:"message,omitempty"`   // If present, message is included in nonce (see ASN1ConvertSignatureNonce)
-	Challenge *big.Int        `json:"challenge,omitempty"` // If present, challenge is used as base nonce / @TODO rename to challenge
-	Timestamp *atum.Timestamp `json:"timestamp,omitempty"` // If present, timestamp is included in nonce (see ASN1ConvertSignatureNonce) / @TODO should always be included?
+	Nonce     *big.Int        `json:"nonce,omitempty"`     // If present, this nonce is used as base nonce
+	Timestamp *atum.Timestamp `json:"timestamp,omitempty"` // If present, timestamp is included in nonce (see ASN1ConvertSignatureNonce)
 }
 
 // DisclosureResult credential
 type SessionDisclosureResultCredential struct {
-	Identifier       irma.CredentialTypeIdentifier              `json:"identifier"`
-	Issuer           SessionDisclosureResultCredentialIssuer    `json:"issuer"`
-	IssuanceTime     irma.Timestamp                             `json:"issuancetime"`
-	Attributes       SessionDisclosureResultCredentialAttribute `json:"attributes"`
-	Proof            *gabi.ProofD                               `json:"proof"`
-	NotRevoked       bool                                       `json:"notrevoked,omitempty"`
-	NotRevokedBefore *irma.Timestamp                            `json:"notrevokedbefore,omitempty"`
+	Identifier irma.CredentialTypeIdentifier                `json:"identifier"`
+	Issuer     SessionDisclosureResultCredentialIssuer      `json:"issuer"`
+	Scheme     SessionDisclosureResultCredentialScheme      `json:"scheme"`
+	IssuedAt   time.Time                                    `json:"issuedAt"`
+	ExpiresAt  time.Time                                    `json:"expiresAt"`
+	Attributes []SessionDisclosureResultCredentialAttribute `json:"attributes"`
+	Proof      gabi.ProofD                                  `json:"proof"`
+	NotRevoked bool                                         `json:"notrevoked,omitempty"`
 }
 
-// DisclosureResult issuer of credential
+// DisclosureResult scheme information
+type SessionDisclosureResultCredentialScheme struct {
+	Identifier irma.SchemeManagerIdentifier `json:"identifier"`
+}
+
+// DisclosureResult issuer information
 type SessionDisclosureResultCredentialIssuer struct {
 	Identifier irma.IssuerIdentifier `json:"identifier"`
-	Publickey  *gabikeys.PublicKey   `json:"publickey"`
+	Publickey  gabikeys.PublicKey    `json:"publickey"`
 }
 
-// DisclosureResult attribute values
+// DisclosureResult attribute information
 type SessionDisclosureResultCredentialAttribute struct {
 	Identifier irma.AttributeTypeIdentifier `json:"identifier"`
-	Value      *string                      `json:"value"`
 	Status     irma.AttributeProofStatus    `json:"status"`
+	Value      *string                      `json:"value"`
 }
 
 // SessionHandler is a function that can handle a session result

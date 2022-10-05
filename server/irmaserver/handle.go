@@ -104,6 +104,135 @@ func (session *session) handleGetStatus() (irma.ServerStatus, *irma.RemoteError)
 	return session.Status, nil
 }
 
+// Creates base DisclosureResult
+func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*server.SessionDisclosureResult, error) {
+	// Create disclosure result instance
+	disclosureResult := &server.SessionDisclosureResult{
+		Token:  session.Result.Token,
+		Status: session.Result.ProofStatus,
+	}
+
+	// Depending on action add information
+	switch session.Result.Type {
+	case irma.ActionDisclosing:
+		request := session.request.(*irma.DisclosureRequest)
+		if request != nil {
+			disclosureResult.Identifier = request.Base().Identifier
+			disclosureResult.Nonce = request.GetNonce(nil)
+			disclosureResult.Requestor = server.SessionDisclosureResultRequestor{
+				Nonce: request.Base().Nonce,
+			}
+		}
+	case irma.ActionSigning:
+		disclosureResult.Nonce = session.Result.Signature.GetNonce()
+		request := session.request.(*irma.SignatureRequest)
+		if request != nil {
+			disclosureResult.Identifier = request.Base().Identifier
+			disclosureResult.Requestor = server.SessionDisclosureResultRequestor{
+				Message:   &request.Message,
+				Nonce:     request.Base().Nonce,
+				Timestamp: session.Result.Signature.Timestamp,
+			}
+		}
+	default:
+		return nil, errors.New("Unknown result type")
+	}
+
+	// Array of credentials
+	var credentials []server.SessionDisclosureResultCredential
+
+	// Walk over proofs
+	for _, proof := range disclosure.Proofs {
+		credential := server.SessionDisclosureResultCredential{}
+		proofd, ok := proof.(*gabi.ProofD)
+
+		// Casting okay
+		if !ok {
+			return nil, errors.New("Unable to cast to proofd")
+		}
+
+		// Get meta data
+		metadata := irma.MetadataFromInt(proofd.ADisclosed[1], session.conf.IrmaConfiguration)
+		credType := metadata.CredentialType()
+
+		// Ensure the credential is valid
+		if credType == nil {
+			return nil, errors.New("Received unknown credential type")
+		}
+
+		// Ensure valid publickey
+		publickey, err := metadata.PublicKey()
+		if err != nil {
+			return nil, errors.New("Failed to parse public key")
+		}
+
+		// Set identifiers
+		credential.Identifier = credType.Identifier()
+		credential.Scheme = server.SessionDisclosureResultCredentialScheme{
+			Identifier: credType.Identifier().SchemeManagerIdentifier(),
+		}
+		credential.Issuer = server.SessionDisclosureResultCredentialIssuer{
+			Identifier: credType.Identifier().IssuerIdentifier(),
+			Publickey:  *publickey,
+		}
+
+		// Set credential information
+		credential.IssuedAt = metadata.SigningDate()
+		credential.ExpiresAt = metadata.Expiry()
+		credential.Proof = *proofd
+		credential.NotRevoked = proofd.NonRevocationProof != nil
+
+		// Do not directly compare with the original request or walk over the disclosed attributes con array, instead
+		// parse the attributes from the proof object itself, the proof status will flag if the proof
+		// was considered valid or not
+		var attributes []server.SessionDisclosureResultCredentialAttribute
+		for attrkey, attr := range proofd.ADisclosed {
+			// The first revealed attribute always holds the metadata
+			if attrkey == 1 {
+				continue
+			}
+
+			attribute := server.SessionDisclosureResultCredentialAttribute{}
+			attrType := credType.AttributeTypes[attrkey-2]
+
+			// Set identifier
+			attribute.Identifier = attrType.GetAttributeTypeIdentifier()
+
+			// Decode attribute
+			var attrDecoded *string
+			if attrType.RandomBlind {
+				attrDecoded = irma.DecodeRandomBlind(attr)
+			} else {
+				attrDecoded = irma.DecodeAttribute(attr, metadata.Version())
+			}
+
+			// Status
+			status := irma.AttributeProofStatusPresent
+			if attrDecoded == nil {
+				status = irma.AttributeProofStatusNull
+			}
+
+			// Set attribute information
+			attribute.Value = attrDecoded
+			attribute.Status = status
+
+			// Add to attributes
+			attributes = append(attributes, attribute)
+		}
+
+		// Set attributes
+		credential.Attributes = attributes
+
+		// Add to credentials
+		credentials = append(credentials, credential)
+	}
+
+	// Set credentials
+	disclosureResult.Credentials = credentials
+
+	return disclosureResult, nil
+}
+
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
 	session.markAlive()
 
@@ -119,6 +248,12 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	if err != nil && err == irma.ErrMissingPublicKey {
 		rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 	} else if err != nil {
+		rerr = session.fail(server.ErrorUnknown, err.Error())
+	}
+
+	// Create session disclosure result
+	session.DisclosureResult, err = session.createDisclosureResult(signature.Disclosure())
+	if err != nil {
 		rerr = session.fail(server.ErrorUnknown, err.Error())
 	}
 
@@ -143,6 +278,12 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 	if err != nil && err == irma.ErrMissingPublicKey {
 		rerr = session.fail(server.ErrorUnknownPublicKey, err.Error())
 	} else if err != nil {
+		rerr = session.fail(server.ErrorUnknown, err.Error())
+	}
+
+	// Create session disclosure result
+	session.DisclosureResult, err = session.createDisclosureResult(disclosure)
+	if err != nil {
 		rerr = session.fail(server.ErrorUnknown, err.Error())
 	}
 
