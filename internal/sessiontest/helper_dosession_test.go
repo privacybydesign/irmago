@@ -33,9 +33,10 @@ type (
 
 	requestorSessionResult struct {
 		*server.SessionResult
-		clientResult *SessionResult
-		Missing      [][]irmaclient.DisclosureCandidates
-		Dismisser    irmaclient.SessionDismisser
+		clientResult     *SessionResult
+		disclosureResult *server.SessionDisclosureResult
+		Missing          [][]irmaclient.DisclosureCandidates
+		Dismisser        irmaclient.SessionDismisser
 	}
 )
 
@@ -49,6 +50,7 @@ const (
 	optionPrePairingClient
 	optionPolling
 	optionNoSchemeAssets
+	optionGetDisclosureResult
 )
 
 func processOptions(options ...option) option {
@@ -185,6 +187,28 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 	}
 }
 
+// getSessionResult retrieves the session result from the IRMA server or library.
+func getSessionDisclosureResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper, opts option) *server.SessionDisclosureResult {
+	waitSessionFinished(t, serv, sesPkg.Token, opts.enabled(optionWait))
+
+	switch s := serv.(type) {
+	case *IrmaServer:
+		result, err := s.irma.GetSessionDisclosureResult(sesPkg.Token)
+		require.NoError(t, err)
+		return result
+	default:
+		var res string
+		err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-disclosure", &res)
+		require.NoError(t, err)
+
+		disclosureResult := &server.SessionDisclosureResult{}
+		err = json.Unmarshal([]byte(res), disclosureResult)
+		require.NoError(t, err)
+
+		return disclosureResult
+	}
+}
+
 func createSessionHandler(
 	t *testing.T,
 	opts option,
@@ -288,7 +312,7 @@ func doSession(
 
 	if opts.enabled(optionUnsatisfiableRequest) && !opts.enabled(optionWait) {
 		require.NotNil(t, clientResult)
-		return &requestorSessionResult{nil, nil, clientResult.Missing, dismisser}
+		return &requestorSessionResult{nil, nil, nil, clientResult.Missing, dismisser}
 	}
 
 	serverResult := getSessionResult(t, sesPkg, serv, opts)
@@ -300,5 +324,10 @@ func doSession(
 		require.NoError(t, err)
 	}
 
-	return &requestorSessionResult{serverResult, clientResult, nil, dismisser}
+	if opts.enabled(optionGetDisclosureResult) {
+		disclosureResult := getSessionDisclosureResult(t, sesPkg, serv, opts)
+		return &requestorSessionResult{serverResult, clientResult, disclosureResult, nil, dismisser}
+	}
+
+	return &requestorSessionResult{serverResult, clientResult, nil, nil, dismisser}
 }

@@ -327,6 +327,23 @@ func (s *Server) startNextSession(
 func GetSessionResult(requestorToken irma.RequestorToken) (*server.SessionResult, error) {
 	return s.GetSessionResult(requestorToken)
 }
+
+// GetSessionDisclosureResult retrieves the disclosure result of the specified IRMA session.
+func GetSessionDisclosureResult(requestorToken irma.RequestorToken) (*server.SessionDisclosureResult, error) {
+	return s.GetSessionDisclosureResult(requestorToken)
+}
+
+func (s *Server) GetSessionDisclosureResult(requestorToken irma.RequestorToken) (res *server.SessionDisclosureResult, err error) {
+	session, err := s.sessions.get(requestorToken)
+	defer func() { err = updateAndUnlock(session, err) }()
+	if err != nil {
+		return
+	}
+
+	res = session.DisclosureResult
+	return
+}
+
 func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (res *server.SessionResult, err error) {
 	session, err := s.sessions.get(requestorToken)
 	defer func() { err = updateAndUnlock(session, err) }()

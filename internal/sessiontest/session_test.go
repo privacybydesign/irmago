@@ -41,6 +41,7 @@ import (
 
 func TestRequestorServer(t *testing.T) {
 	t.Run("DisclosureSession", apply(testDisclosureSession, RequestorServerConfiguration))
+	t.Run("DisclosureSessionResult", apply(testDisclosureSessionResult, RequestorServerConfiguration))
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, RequestorServerConfiguration))
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, RequestorServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, RequestorServerConfiguration))
@@ -75,6 +76,7 @@ func TestIrmaServer(t *testing.T) {
 
 	// Tests also run against the requestor server
 	t.Run("DisclosureSession", apply(testDisclosureSession, IrmaServerConfiguration))
+	t.Run("DisclosureSessionResult", apply(testDisclosureSessionResult, IrmaServerConfiguration))
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, IrmaServerConfiguration))
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, IrmaServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, IrmaServerConfiguration))
@@ -611,6 +613,28 @@ func testDisclosureSession(t *testing.T, conf interface{}, opts ...option) {
 		require.Len(t, serverResult.Disclosed, 1)
 		require.Equal(t, id, serverResult.Disclosed[0][0].Identifier)
 		require.Equal(t, "456", serverResult.Disclosed[0][0].Value["en"])
+	}
+}
+
+func testDisclosureSessionResult(t *testing.T, conf interface{}, opts ...option) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getDisclosureRequest(id)
+	for _, opt := range []option{0, optionRetryPost} {
+		requestorSessionResult := doSession(t, request, nil, nil, nil, nil, conf, append(opts, opt, optionGetDisclosureResult)...)
+		require.Nil(t, requestorSessionResult.Err)
+		require.Equal(t, irma.ProofStatusValid, requestorSessionResult.ProofStatus)
+		require.Len(t, requestorSessionResult.Disclosed, 1)
+		require.Equal(t, id, requestorSessionResult.Disclosed[0][0].Identifier)
+		require.Equal(t, "456", requestorSessionResult.Disclosed[0][0].Value["en"])
+
+		// Ensure requestor session results reflect the session result values
+		require.Equal(t, irma.ProofStatusValid, requestorSessionResult.disclosureResult.Status)
+		require.Len(t, requestorSessionResult.disclosureResult.Credentials, 1)
+		require.Len(t, requestorSessionResult.disclosureResult.Credentials[0].Attributes, 1)
+		require.Equal(t, id.CredentialTypeIdentifier().IssuerIdentifier(), requestorSessionResult.disclosureResult.Credentials[0].Issuer.Identifier)
+		require.Equal(t, id.CredentialTypeIdentifier().SchemeManagerIdentifier(), requestorSessionResult.disclosureResult.Credentials[0].Scheme.Identifier)
+		require.Equal(t, id, requestorSessionResult.disclosureResult.Credentials[0].Attributes[0].Identifier)
+		require.Equal(t, "456", *requestorSessionResult.disclosureResult.Credentials[0].Attributes[0].Value)
 	}
 }
 

@@ -208,7 +208,10 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/result", s.handleResult)
 				// Routes for getting signed JWTs containing the session result. Only work if configuration has a private key
 				r.Get("/result-jwt", s.handleJwtResult)
-				r.Get("/getproof", s.handleJwtProofs) // irma_api_server-compatible JWT
+				// irma_api_server-compatible JWT
+				r.Get("/getproof", s.handleJwtProofs)
+				// Routes for extended information
+				r.Get("/result-disclosure", s.handleDisclosureResult)
 			})
 		})
 
@@ -362,6 +365,26 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	} else {
 		server.WriteJson(w, res)
 	}
+}
+
+func (s *Server) handleDisclosureResult(w http.ResponseWriter, r *http.Request) {
+	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
+
+	res, err := s.irmaserv.GetSessionDisclosureResult(requestorToken)
+	if err != nil {
+		mapToServerError(w, err)
+		return
+	}
+
+	// Disclosure result is not always available
+	if res == nil {
+		s.conf.Logger.Warn("Disclosure result requested but no Disclosure result is not available")
+		server.WriteError(w, server.ErrorUnknown, "Disclosure result is not available")
+		return
+	}
+
+	// Write the disclosure result
+	server.WriteJson(w, res)
 }
 
 func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
