@@ -6,3 +6,4 @@ testdata/tmp/*
 errors_*.go
 vendor/
 irma/irma
+.vscode

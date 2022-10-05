@@ -173,7 +173,16 @@ func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*se
 		}
 		credential.Issuer = server.SessionDisclosureResultCredentialIssuer{
 			Identifier: credType.Identifier().IssuerIdentifier(),
-			Publickey:  *publickey,
+			Publickey: server.SessionDisclosureResultCredentialIssuerPublickey{
+				Counter:    publickey.Counter,
+				ExpiryDate: publickey.ExpiryDate,
+				N:          publickey.N,
+				Z:          publickey.Z,
+				S:          publickey.S,
+				G:          publickey.G,
+				H:          publickey.H,
+				R:          publickey.R,
+			},
 		}
 
 		// Set credential information

@@ -89,8 +89,20 @@ type SessionDisclosureResultCredentialScheme struct {
 
 // DisclosureResult issuer information
 type SessionDisclosureResultCredentialIssuer struct {
-	Identifier irma.IssuerIdentifier `json:"identifier"`
-	Publickey  gabikeys.PublicKey    `json:"publickey"`
+	Identifier irma.IssuerIdentifier                            `json:"identifier"`
+	Publickey  SessionDisclosureResultCredentialIssuerPublickey `json:"publickey"`
+}
+
+// The publickey
+type SessionDisclosureResultCredentialIssuerPublickey struct {
+	Counter    uint           `json:"Counter"`
+	ExpiryDate int64          `json:"ExpiryDate"`
+	N          *big.Int       `json:"N"` // Modulus n
+	Z          *big.Int       `json:"Z"` // Generator Z
+	S          *big.Int       `json:"S"` // Generator S
+	G          *big.Int       `json:"G"` // Generator G for revocation
+	H          *big.Int       `json:"H"` // Generator H for revocation
+	R          gabikeys.Bases `json:"R"` // All bases R
 }
 
 // DisclosureResult attribute information
