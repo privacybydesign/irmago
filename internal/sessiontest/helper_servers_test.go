@@ -132,6 +132,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.Attrib
 	// desirable in production settings; probably a chain should not be longer than two sessions,
 	// with an issuance session at the end.
 
+	// Request disclosure of attribute specified by the id parameter
 	mux.HandleFunc("/1", func(w http.ResponseWriter, r *http.Request) {
 		request := &irma.ServiceProviderRequest{
 			Request: getDisclosureRequest(id),
@@ -146,6 +147,9 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.Attrib
 	})
 
 	var attr *string
+
+	// Read the disclosed value, and issue a new credential of type specified by the cred parameter,
+	// whose attributes all have the value that was just disclosed
 	mux.HandleFunc("/2", func(w http.ResponseWriter, r *http.Request) {
 		bts, err := ioutil.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -192,6 +196,8 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.Attrib
 		require.NoError(t, err)
 	})
 
+	// Disclose the newly issued attribute, and check that it has the correct value,
+	// i.e. the value disclosed in session 1 that was issued to the new credential in session 2
 	mux.HandleFunc("/3", func(w http.ResponseWriter, r *http.Request) {
 		request := irma.NewDisclosureRequest()
 		request.Disclose = irma.AttributeConDisCon{{{{
