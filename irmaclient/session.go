@@ -498,6 +498,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 			session.Handler,
 			session.builders,
 			session.request,
+			session.implicitDisclosure,
 			session.issuerProofNonce,
 			session.timestamp,
 		)
