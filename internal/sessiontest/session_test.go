@@ -506,7 +506,11 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf in
 }
 
 func testChainedSessions(t *testing.T, conf interface{}, opts ...option) {
-	doChainedSessions(t, conf, irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"), opts...)
+	doChainedSessions(t, conf,
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+		opts...,
+	)
 }
 
 // Test to check whether session stores (like Redis) correctly handle non-existing sessions

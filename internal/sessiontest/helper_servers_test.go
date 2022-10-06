@@ -1,7 +1,6 @@
 package sessiontest
 
 import (
-	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -124,7 +123,9 @@ func (s *IrmaServer) Stop() {
 	_ = s.http.Close()
 }
 
-func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.AttributeTypeIdentifier) http.Handler {
+func chainedServerHandler(
+	t *testing.T, conf *server.Configuration, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
+) http.Handler {
 	mux := http.NewServeMux()
 
 	// Note: these chained session requests just serve to test the full functionality of this
@@ -160,7 +161,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.Attrib
 			server.SessionResult
 		}{}
 		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (interface{}, error) {
-			return jwtPubKey, nil
+			return &conf.JwtRSAPrivateKey.PublicKey, nil
 		})
 		require.NoError(t, err)
 		result := claims.SessionResult
@@ -170,18 +171,16 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.Attrib
 		attr = result.Disclosed[0][0].RawValue
 		require.NotNil(t, attr)
 
-		cred := &irma.CredentialRequest{
-			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
-			Attributes: map[string]string{
-				"level":             *attr,
-				"studentCardNumber": *attr,
-				"studentID":         *attr,
-				"university":        *attr,
-			},
+		credreq := &irma.CredentialRequest{
+			CredentialTypeID: cred,
+			Attributes:       map[string]string{},
+		}
+		for _, attrtype := range conf.IrmaConfiguration.CredentialTypes[cred].AttributeTypes {
+			credreq.Attributes[attrtype.ID] = *attr
 		}
 
 		bts, err = json.Marshal(irma.IdentityProviderRequest{
-			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{cred}),
+			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{credreq}),
 			RequestorBaseRequest: irma.RequestorBaseRequest{
 				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/3"},
 			},
@@ -201,7 +200,7 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.Attrib
 	mux.HandleFunc("/3", func(w http.ResponseWriter, r *http.Request) {
 		request := irma.NewDisclosureRequest()
 		request.Disclose = irma.AttributeConDisCon{{{{
-			Type:  irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"),
+			Type:  conf.IrmaConfiguration.CredentialTypes[cred].AttributeTypes[0].GetAttributeTypeIdentifier(),
 			Value: attr,
 		}}}}
 		bts, err := json.Marshal(request)
@@ -214,10 +213,12 @@ func chainedServerHandler(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.Attrib
 	return mux
 }
 
-func StartNextRequestServer(t *testing.T, jwtPubKey *rsa.PublicKey, id irma.AttributeTypeIdentifier) *http.Server {
+func StartNextRequestServer(
+	t *testing.T, conf *server.Configuration, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
+) *http.Server {
 	s := &http.Server{
 		Addr:    fmt.Sprintf("localhost:%d", nextSessionServerPort),
-		Handler: chainedServerHandler(t, jwtPubKey, id),
+		Handler: chainedServerHandler(t, conf, id, cred),
 	}
 	go func() {
 		_ = s.ListenAndServe()

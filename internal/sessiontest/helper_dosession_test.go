@@ -2,12 +2,12 @@ package sessiontest
 
 import (
 	"encoding/json"
-	"fmt"
-	"github.com/go-errors/errors"
 	"io/ioutil"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/go-errors/errors"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -305,14 +305,16 @@ func doSession(
 	return &requestorSessionResult{serverResult, clientResult, nil, dismisser}
 }
 
-func doChainedSessions(t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, opts ...option) {
+func doChainedSessions(
+	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
 
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
 	defer irmaServer.Stop()
-	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey, id)
+	nextServer := StartNextRequestServer(t, irmaServer.conf, id, cred)
 	defer func() {
 		_ = nextServer.Close()
 	}()
@@ -326,12 +328,9 @@ func doChainedSessions(t *testing.T, conf interface{}, id irma.AttributeTypeIden
 	// this test.
 	doSession(t, &request, client, irmaServer, nil, nil, nil, append(opts, optionPolling)...)
 
-	// check that our credential instance is new
-	issuedCredID := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
-
+	// check that we have a new credential
 	for _, cred := range client.CredentialInfoList() {
-		if issuedCredID.String() == fmt.Sprintf("%s.%s.%s", cred.SchemeManagerID, cred.IssuerID, cred.ID) &&
-			cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1*irma.ExpiryFactor*time.Second))) {
+		if cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1 * irma.ExpiryFactor * time.Second))) {
 			return
 		}
 	}
