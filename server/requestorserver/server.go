@@ -378,7 +378,7 @@ func (s *Server) handleDisclosureResult(w http.ResponseWriter, r *http.Request) 
 
 	// Disclosure result is not always available
 	if res == nil {
-		s.conf.Logger.Warn("Disclosure result requested but no Disclosure result is not available")
+		s.conf.Logger.Warn("Disclosure result requested but is not available")
 		server.WriteError(w, server.ErrorUnknown, "Disclosure result is not available")
 		return
 	}
