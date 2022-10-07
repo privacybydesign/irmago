@@ -10,7 +10,6 @@
 		<en>Your verified email address</en>
 		<nl>Uw geverifiëerde e-mailadres</nl>
 	</Description>
-	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>false</ShouldBeSingleton>
 
 	<Attributes>
