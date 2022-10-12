@@ -745,7 +745,12 @@ func (session *session) finish(delete bool) bool {
 func (session *session) fail(err *irma.SessionError) {
 	if session.finish(true) && err.ErrorType != irma.ErrorKeyshareUnenrolled {
 		irma.Logger.Warn("client session error: ", err.Error())
-		err.Err = errors.Wrap(err.Err, 0)
+		// Don't use errors.Wrap() if err.Err == nil, otherwise we may get
+		// https://yourbasic.org/golang/gotcha-why-nil-error-not-equal-nil/.
+		// since errors.Wrap() returns an *errors.Error.
+		if err.Err != nil {
+			err.Err = errors.Wrap(err.Err, 0)
+		}
 		session.Handler.Failure(err)
 	}
 }
