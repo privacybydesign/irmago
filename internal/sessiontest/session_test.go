@@ -52,6 +52,7 @@ func TestRequestorServer(t *testing.T) {
 	t.Run("IssuanceOptionalSetAttributes", apply(testIssuanceOptionalSetAttributes, RequestorServerConfiguration))
 	t.Run("IssuanceSameAttributesNotSingleton", apply(testIssuanceSameAttributesNotSingleton, RequestorServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, RequestorServerConfiguration))
+	t.Run("PairingRejected", apply(testPairingRejected, RequestorServerConfiguration))
 	t.Run("LargeAttribute", apply(testLargeAttribute, RequestorServerConfiguration))
 	t.Run("IssuanceSingletonCredential", apply(testIssuanceSingletonCredential, RequestorServerConfiguration))
 	t.Run("UnsatisfiableDisclosureSession", apply(testUnsatisfiableDisclosureSession, RequestorServerConfiguration))
@@ -81,6 +82,7 @@ func TestIrmaServer(t *testing.T) {
 	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
+	t.Run("PairingRejected", apply(testPairingRejected, IrmaServerConfiguration))
 	t.Run("DisablePairing", apply(testDisablePairing, IrmaServerConfiguration))
 	t.Run("UnsatisfiableDisclosureSession", apply(testUnsatisfiableDisclosureSession, IrmaServerConfiguration))
 
@@ -207,6 +209,28 @@ func testIssuancePairing(t *testing.T, conf interface{}, opts ...option) {
 		require.NoError(t, err)
 	}
 	doSession(t, request, nil, nil, frontendOptionsHandler, pairingHandler, conf, opts...)
+}
+
+func testPairingRejected(t *testing.T, conf interface{}, opts ...option) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	var pairingCode string
+	frontendOptionsHandler := func(handler *TestHandler) {
+		pairingCode = setPairingMethod(irma.PairingMethodPin, handler)
+	}
+	pairingHandler := func(handler *TestHandler) {
+		require.Equal(t, pairingCode, <-handler.pairingCodeChan)
+		err := handler.frontendTransport.Delete()
+		require.NoError(t, err)
+	}
+	sessionOpts := append(opts, optionIgnoreError)
+	result := doSession(t, request, nil, nil, frontendOptionsHandler, pairingHandler, conf, sessionOpts...)
+	err, ok := result.clientResult.Err.(*irma.SessionError)
+	require.True(t, ok)
+	require.Equal(t, irma.ErrorPairingRejected, err.ErrorType)
+	// No error should be wrapped, because this is an alternative flow.
+	require.Equal(t, err.WrappedError(), "")
 }
 
 func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
