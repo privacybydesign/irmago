@@ -547,6 +547,8 @@ func (client *Client) credentialByID(id irma.CredentialIdentifier) (*credential,
 }
 
 // credential returns the requested credential, or nil if we do not have it.
+// FIXME: this function can cause concurrent map writes panics when invoked concurrently simultaneously,
+// in client.Configuration.publicKeys and client.credentialsCache.
 func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during New(). If so, there should be a corresponding signature file,
