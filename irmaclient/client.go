@@ -1,11 +1,13 @@
 package irmaclient
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/bwesterb/go-atum"
+	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -210,6 +212,17 @@ func New(
 	client.jobs = make(chan func(), 100)
 	client.initRevocation()
 	client.StartJobs()
+
+	gocron.SetPanicHandler(func(jobName string, recoverData interface{}) {
+		var details string
+		b, err := json.Marshal(recoverData)
+		if err == nil {
+			details = string(b)
+		} else {
+			details = "failed to marshal recovered data: " + err.Error()
+		}
+		client.reportError(errors.Errorf("panic during gocron job '%s': %s", jobName, details))
+	})
 
 	return client, schemeMgrErr
 }
