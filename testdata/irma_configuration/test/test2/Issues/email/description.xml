@@ -1,0 +1,27 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Email address</en>
+		<nl>Demo E-mailadres</nl>
+	</Name>
+	<SchemeManager>test</SchemeManager>
+	<IssuerID>test2</IssuerID>
+	<CredentialID>email</CredentialID>
+	<Description>
+		<en>Your verified email address</en>
+		<nl>Uw geverifiëerde e-mailadres</nl>
+	</Description>
+	<ShouldBeSingleton>false</ShouldBeSingleton>
+
+	<Attributes>
+		<Attribute id="email">
+			<Name>
+				<en>Email address</en>
+				<nl>E-mailadres</nl>
+			</Name>
+			<Description>
+				<en>Your verified email address</en>
+				<nl>Uw geverifiëerde e-mailadres</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>

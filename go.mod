@@ -24,16 +24,18 @@ require (
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/jinzhu/gorm v1.9.16
+	github.com/klauspost/cpuid/v2 v2.1.2 // indirect
 	github.com/lib/pq v1.10.6 // indirect
 	github.com/mattn/go-sqlite3 v2.0.1+incompatible // indirect
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/mapstructure v1.5.0
+	github.com/multiformats/go-multihash v0.0.11 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.2 // indirect
-	github.com/privacybydesign/gabi v0.0.0-20220412064428-d1eff7721dca
+	github.com/privacybydesign/gabi v0.0.0-20221012093643-8e978bfbb252
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cast v1.5.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5
@@ -42,7 +44,10 @@ require (
 	github.com/subosito/gotenv v1.4.0 // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 	go.etcd.io/bbolt v1.3.6
+	golang.org/x/crypto v0.0.0-20221012134737-56aed061732a // indirect
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect
+	golang.org/x/sys v0.0.0-20221010170243-090e33056c14 // indirect
 	golang.org/x/term v0.0.0-20220526004731-065cf7ba2467 // indirect
 	gopkg.in/ini.v1 v1.66.6 // indirect
+	lukechampine.com/blake3 v1.1.7 // indirect
 )

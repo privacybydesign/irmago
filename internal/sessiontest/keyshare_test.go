@@ -165,3 +165,27 @@ func TestKeyshareEnrollIncorrectPin(t *testing.T) {
 	require.ErrorContains(t, <-handler.c, "incorrect pin")
 	require.NotContains(t, client.EnrolledSchemeManagers(), test2SchemeID)
 }
+
+func TestKeyshareChainedSessions(t *testing.T) {
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
+
+	t.Run("BothKeyshare", func(t *testing.T) {
+		doChainedSessions(t, IrmaServerConfiguration,
+			irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
+			irma.NewCredentialTypeIdentifier("test.test2.email"),
+		)
+	})
+	t.Run("WithWithoutKeyshare", func(t *testing.T) {
+		doChainedSessions(t, IrmaServerConfiguration,
+			irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
+			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+		)
+	})
+	t.Run("WithoutWith", func(t *testing.T) {
+		doChainedSessions(t, IrmaServerConfiguration,
+			irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"),
+			irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
+		)
+	})
+}
