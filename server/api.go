@@ -84,7 +84,8 @@ type SessionDisclosureResultCredential struct {
 
 // DisclosureResult scheme information
 type SessionDisclosureResultCredentialScheme struct {
-	Identifier irma.SchemeManagerIdentifier `json:"identifier"`
+	Identifier     irma.SchemeManagerIdentifier `json:"identifier"`
+	DistributedKey bool                         `json:"distributedKey"` // If true, the scheme uses a keyshare server
 }
 
 // DisclosureResult issuer information

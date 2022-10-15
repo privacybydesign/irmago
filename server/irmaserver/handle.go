@@ -169,7 +169,8 @@ func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*se
 		// Set identifiers
 		credential.Identifier = credType.Identifier()
 		credential.Scheme = server.SessionDisclosureResultCredentialScheme{
-			Identifier: credType.Identifier().SchemeManagerIdentifier(),
+			Identifier:     credType.Identifier().SchemeManagerIdentifier(),
+			DistributedKey: session.conf.IrmaConfiguration.SchemeManagers[credType.Identifier().SchemeManagerIdentifier()].Distributed(),
 		}
 		credential.Issuer = server.SessionDisclosureResultCredentialIssuer{
 			Identifier: credType.Identifier().IssuerIdentifier(),
