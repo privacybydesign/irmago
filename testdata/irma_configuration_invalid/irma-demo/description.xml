@@ -10,7 +10,7 @@
 		<en>Demo credentials within the IRMA domain</en>
 		<nl>Demo IRMA-credentials</nl>
 	</Description>
-	<TimestampServer>https://keyshare.privacybydesign.foundation/atumd/</TimestampServer>
+	<TimestampServer>https://irma.sidn.nl/atumd/</TimestampServer>
 	<Contact>https://privacybydesign.foundation/</Contact>
 	<Languages>
 		<Language>en</Language>
