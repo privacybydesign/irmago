@@ -554,6 +554,20 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 	}
 }
 
+// RecoverMiddware is middleware that logs and returns a 500 error if something unhandled (panic) occurs
+func RecoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			err := recover()
+			if err != nil {
+				LogError(errors.Errorf("Internal server error: %s", err))
+				WriteError(w, ErrorInternal, "")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func ParseBody(r *http.Request, input interface{}) error {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
