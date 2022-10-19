@@ -95,6 +95,11 @@ func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 				email,
 				lang,
 			)
+			// FIXME: 'return nil' will prevent abortion of 'expireAccounts()'
+			// but will not take care of the actual problem of handling the invalid email
+			if err == keyshare.ErrInvalidEmail {
+				return nil
+			}
 			return err
 		},
 		id,
