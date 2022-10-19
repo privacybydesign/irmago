@@ -13,6 +13,7 @@ cp -r ${dir}/irma_configuration/test-requestors ${dir}/irma_configuration_update
 
 irma scheme sign ${dir}/irma_configuration/irma-demo/sk.pem ${dir}/irma_configuration/irma-demo
 irma scheme sign ${dir}/irma_configuration/test/sk.pem ${dir}/irma_configuration/test
+irma scheme sign ${dir}/irma_configuration/test2/sk.pem ${dir}/irma_configuration/test2
 irma scheme sign ${dir}/irma_configuration/test-requestors/sk.pem ${dir}/irma_configuration/test-requestors
 
 # ensure the changed schemes receive a higher timestamp
