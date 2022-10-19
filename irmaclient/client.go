@@ -209,10 +209,6 @@ func New(
 
 	client.sessions = sessions{client: client, sessions: map[string]*session{}}
 
-	client.jobs = make(chan func(), 100)
-	client.initRevocation()
-	client.StartJobs()
-
 	gocron.SetPanicHandler(func(jobName string, recoverData interface{}) {
 		var details string
 		b, err := json.Marshal(recoverData)
@@ -223,6 +219,10 @@ func New(
 		}
 		client.reportError(errors.Errorf("panic during gocron job '%s': %s", jobName, details))
 	})
+
+	client.jobs = make(chan func(), 100)
+	client.initRevocation()
+	client.StartJobs()
 
 	return client, schemeMgrErr
 }
