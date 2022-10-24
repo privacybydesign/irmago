@@ -16,10 +16,12 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
+            "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/irma/main.go",
             "args": [
                 "keyshare",
-                "server"
+                "server",
+                "-c=${workspaceFolder}/testdata/configurations/keyshareserver.yml"
             ]
         },
         {
@@ -27,10 +29,12 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
+            "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/irma/main.go",
             "args": [
                 "keyshare",
-                "myirmaserver"
+                "myirmaserver",
+                "-c=${workspaceFolder}/testdata/configurations/myirmaserver.yml"
             ]
         }
     ]

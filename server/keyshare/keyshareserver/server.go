@@ -108,6 +108,9 @@ func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 
 	router.Group(func(router chi.Router) {
+
+		router.Use(server.RecoverMiddleware)
+
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
