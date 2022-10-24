@@ -114,6 +114,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		return nil, err
 	}
 
+	gocron.SetPanicHandler(server.GocronPanicHandler(s.conf.Logger))
 	s.scheduler.StartAsync()
 
 	return s, nil

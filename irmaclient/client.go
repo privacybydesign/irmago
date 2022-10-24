@@ -1,11 +1,13 @@
 package irmaclient
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/bwesterb/go-atum"
+	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -206,6 +208,17 @@ func New(
 	}
 
 	client.sessions = sessions{client: client, sessions: map[string]*session{}}
+
+	gocron.SetPanicHandler(func(jobName string, recoverData interface{}) {
+		var details string
+		b, err := json.Marshal(recoverData)
+		if err == nil {
+			details = string(b)
+		} else {
+			details = "failed to marshal recovered data: " + err.Error()
+		}
+		client.reportError(errors.Errorf("panic during gocron job '%s': %s", jobName, details))
+	})
 
 	client.jobs = make(chan func(), 100)
 	client.initRevocation()
@@ -547,6 +560,8 @@ func (client *Client) credentialByID(id irma.CredentialIdentifier) (*credential,
 }
 
 // credential returns the requested credential, or nil if we do not have it.
+// FIXME: this function can cause concurrent map writes panics when invoked concurrently simultaneously,
+// in client.Configuration.publicKeys and client.credentialsCache.
 func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during New(). If so, there should be a corresponding signature file,
