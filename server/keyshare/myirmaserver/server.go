@@ -167,7 +167,7 @@ func (s *Server) sendDeleteEmails(session *session) error {
 		// the user account, even if one or more notification mails could not be sent.
 		_ = s.conf.SendEmail(
 			s.conf.deleteAccountTemplates,
-			s.conf.DeleteAccountFiles,
+			s.conf.DeleteAccountSubjects,
 			map[string]string{"Username": user.Username, "Email": email.Email, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
 			email.Email,
 			user.language,
