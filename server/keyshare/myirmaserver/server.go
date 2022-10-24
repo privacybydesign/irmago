@@ -85,6 +85,8 @@ func (s *Server) Handler() http.Handler {
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
+		router.Use(server.RecoverMiddleware)
+
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: false}
 		router.Use(server.LogMiddleware("keyshare-myirma", opts))
 
