@@ -558,9 +558,9 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 func RecoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			err := recover()
-			if err != nil {
-				LogError(errors.Errorf("Internal server error: %s", err))
+			res := recover()
+			if res != nil {
+				LogError(errors.Errorf("Internal server error: %v", res))
 				WriteError(w, ErrorInternal, "")
 			}
 		}()
