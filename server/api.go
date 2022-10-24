@@ -554,7 +554,7 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 	}
 }
 
-// RecoverMiddware is middleware that logs and returns a 500 error if something unhandled (panic) occurs
+// RecoverMiddleware is middleware that logs and returns a 500 error if something unhandled (panic) occurs
 func RecoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
