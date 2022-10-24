@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 
@@ -410,7 +411,7 @@ func TestCredentialsConcurrency(t *testing.T) {
 
 	for j := 0; j < 1000; j++ {
 		// Clear map for next iteration
-		client.credentialsCache = common.NewConcMap[credLookup, *credential]()
+		client.credentialsCache = concmap.New[credLookup, *credential]()
 
 		for i := 0; i < 10; i++ {
 			grp.Add(1)

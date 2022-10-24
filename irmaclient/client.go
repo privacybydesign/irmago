@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/sirupsen/logrus"
 )
 
@@ -46,7 +47,7 @@ type Client struct {
 	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
-	credentialsCache common.ConcMap[credLookup, *credential]
+	credentialsCache concmap.ConcMap[credLookup, *credential]
 	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
 	updates          []update
 
@@ -247,7 +248,7 @@ func (client *Client) loadCredentialStorage() (err error) {
 			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
 		}
 	}
-	client.credentialsCache = common.NewConcMap[credLookup, *credential]()
+	client.credentialsCache = concmap.New[credLookup, *credential]()
 	return
 }
 
@@ -460,7 +461,7 @@ func (client *Client) RemoveStorage() error {
 	// Remove data from memory
 	client.attributes = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
 	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
-	client.credentialsCache = common.NewConcMap[credLookup, *credential]()
+	client.credentialsCache = concmap.New[credLookup, *credential]()
 	client.lookup = make(map[string]*credLookup)
 
 	if err = client.storage.DeleteAll(); err != nil {

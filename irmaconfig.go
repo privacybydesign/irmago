@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron"
+	"github.com/privacybydesign/irmago/internal/concmap"
 
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -35,7 +36,7 @@ type Configuration struct {
 	CredentialTypes map[CredentialTypeIdentifier]*CredentialType
 	AttributeTypes  map[AttributeTypeIdentifier]*AttributeType
 	kssPublicKeys   map[SchemeManagerIdentifier]map[int]*rsa.PublicKey
-	publicKeys      common.ConcMap[PublicKeyIdentifier, *gabikeys.PublicKey]
+	publicKeys      concmap.ConcMap[PublicKeyIdentifier, *gabikeys.PublicKey]
 	reverseHashes   map[string]CredentialTypeIdentifier
 
 	// RequestorScheme data of the currently loaded requestorscheme
@@ -520,7 +521,7 @@ func (conf *Configuration) clear() {
 	conf.IssueWizards = make(map[IssueWizardIdentifier]*IssueWizard)
 	conf.DisabledRequestorSchemes = make(map[RequestorSchemeIdentifier]*SchemeManagerError)
 	conf.kssPublicKeys = make(map[SchemeManagerIdentifier]map[int]*rsa.PublicKey)
-	conf.publicKeys = common.NewConcMap[PublicKeyIdentifier, *gabikeys.PublicKey]()
+	conf.publicKeys = concmap.New[PublicKeyIdentifier, *gabikeys.PublicKey]()
 	conf.reverseHashes = make(map[string]CredentialTypeIdentifier)
 	if conf.PrivateKeys == nil { // keep if already populated
 		conf.PrivateKeys = &privateKeyRingMerge{}

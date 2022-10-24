@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -1514,7 +1515,7 @@ func TestParseKeysFolderConcurrency(t *testing.T) {
 
 	for j := 0; j < 1000; j++ {
 		// Clear map for next iteration
-		conf.publicKeys = common.NewConcMap[PublicKeyIdentifier, *gabikeys.PublicKey]()
+		conf.publicKeys = concmap.New[PublicKeyIdentifier, *gabikeys.PublicKey]()
 
 		for i := 0; i < 10; i++ {
 			grp.Add(1)
