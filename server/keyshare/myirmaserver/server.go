@@ -83,10 +83,10 @@ func (s *Server) Handler() http.Handler {
 	}).Handler)
 
 	router.Group(func(router chi.Router) {
+		router.Use(server.RecoverMiddleware)
+
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
-
-		router.Use(server.RecoverMiddleware)
 
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: false}
 		router.Use(server.LogMiddleware("keyshare-myirma", opts))
