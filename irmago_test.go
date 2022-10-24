@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -1504,5 +1505,25 @@ func TestDeleteScheme(t *testing.T) {
 	require.NotContains(t, conf.SchemeManagers, schemeToInstall)
 	for _, scheme := range readOnlySchemes {
 		require.Contains(t, conf.SchemeManagers, scheme)
+	}
+}
+
+func TestParseKeysFolderConcurrency(t *testing.T) {
+	conf := parseConfiguration(t)
+	grp := sync.WaitGroup{}
+
+	for j := 0; j < 1000; j++ {
+		// Clear map for next iteration
+		conf.publicKeys = common.NewConcMap[PublicKeyIdentifier, *gabikeys.PublicKey]()
+
+		for i := 0; i < 10; i++ {
+			grp.Add(1)
+			go func() {
+				require.NoError(t, conf.parseKeysFolder(NewIssuerIdentifier("irma-demo.MijnOverheid")))
+				grp.Done()
+			}()
+		}
+
+		grp.Wait()
 	}
 }

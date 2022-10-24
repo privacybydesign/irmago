@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -401,6 +402,27 @@ func TestRemoveStorage(t *testing.T) {
 	// Check that the client has a new secret key
 	new_sk := *client.secretkey
 	require.NotEqual(t, old_sk, new_sk)
+}
+
+func TestCredentialsConcurrency(t *testing.T) {
+	client, _ := parseStorage(t)
+	grp := sync.WaitGroup{}
+
+	for j := 0; j < 1000; j++ {
+		// Clear map for next iteration
+		client.credentialsCache = common.NewConcMap[credLookup, *credential]()
+
+		for i := 0; i < 10; i++ {
+			grp.Add(1)
+			go func() {
+				_, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
+				require.NoError(t, err)
+				grp.Done()
+			}()
+		}
+
+		grp.Wait()
+	}
 }
 
 // ------
