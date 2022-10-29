@@ -107,6 +107,26 @@ You can override the default command by specifying command line options for `go 
 
 We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
 
+### Testing revocation against SQL Server
+
+* Spin up a docker container:
+
+      docker run --rm -p 1433:1433 -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=Say:P4rO0L?' -d mcr.microsoft.com/azure-sql-edge
+
+* Prepare the database and user:
+
+      create database test;
+      create login testuser with password = 'test-Password';
+      use test;
+      create user testuser for login testuser;
+      exec sp_addrolemember 'db_owner', 'testuser';
+
+  This only needs to be done once. No table or rows need to be created; the unit tests do this themselves.
+
+* In the revocation_test activate the mssql datasource instead of the postgres
+
+* Run the revocation unit tests
+
 ## Using a local Redis datastore
 `irmago` can either store session states in memory (default) or in a Redis datastore. For local testing purposes you can use the standard [Redis docker container](https://hub.docker.com/_/redis):
 

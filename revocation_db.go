@@ -31,7 +31,7 @@ type (
 
 func newSqlStorage(debug bool, dbtype, connstr string) (sqlRevStorage, error) {
 	switch dbtype {
-	case "postgres", "mysql":
+	case "postgres", "mysql", "mssql":
 	default:
 		return sqlRevStorage{}, errors.New("unsupported database type")
 	}
@@ -39,6 +39,10 @@ func newSqlStorage(debug bool, dbtype, connstr string) (sqlRevStorage, error) {
 	g, err := gorm.Open(dbtype, connstr)
 	if err != nil {
 		return sqlRevStorage{}, err
+	}
+
+	if dbtype == "mssql" {
+		gorm.DefaultCallback.Create().Remove("mssql:set_identity_insert")
 	}
 
 	if debug {
