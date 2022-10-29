@@ -22,6 +22,7 @@ import (
 	"github.com/privacybydesign/gabi/signed"
 	sseclient "github.com/sietseringers/go-sse"
 
+	_ "github.com/jinzhu/gorm/dialects/mssql"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 )
@@ -88,13 +89,13 @@ type (
 	AccumulatorRecord struct {
 		CredType  CredentialTypeIdentifier `gorm:"primary_key"`
 		Data      signedMessage
-		PKCounter *uint `gorm:"primary_key;auto_increment:false"`
+		PKCounter *uint `gorm:"primary_key;AUTO_INCREMENT:FALSE"`
 	}
 
 	EventRecord struct {
-		Index      *uint64                  `gorm:"primary_key;column:eventindex;auto_increment:false"`
+		Index      *uint64                  `gorm:"primary_key;column:eventindex;AUTO_INCREMENT:FALSE"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
-		PKCounter  *uint                    `gorm:"primary_key;auto_increment:false"`
+		PKCounter  *uint                    `gorm:"primary_key;AUTO_INCREMENT:FALSE"`
 		E          *RevocationAttribute
 		ParentHash eventHash
 	}
@@ -103,7 +104,7 @@ type (
 	IssuanceRecord struct {
 		Key        string                   `gorm:"primary_key;column:revocationkey"`
 		CredType   CredentialTypeIdentifier `gorm:"primary_key"`
-		Issued     int64                    `gorm:"primary_key;auto_increment:false"`
+		Issued     int64                    `gorm:"primary_key;AUTO_INCREMENT:FALSE"`
 		PKCounter  *uint
 		Attr       *RevocationAttribute
 		ValidUntil int64
@@ -1075,6 +1076,8 @@ func (signedMessage) GormDataType(dialect gorm.Dialect) string {
 		return "bytea"
 	case "mysql":
 		return "blob"
+	case "mssql":
+		return "varbinary(max)"
 	default:
 		return ""
 	}
@@ -1101,6 +1104,8 @@ func (RevocationAttribute) GormDataType(dialect gorm.Dialect) string {
 		return "bytea"
 	case "mysql":
 		return "blob"
+	case "mssql":
+		return "varbinary(max)"
 	default:
 		return ""
 	}
@@ -1161,6 +1166,8 @@ func (eventHash) GormDataType(dialect gorm.Dialect) string {
 		return "bytea"
 	case "mysql":
 		return "blob"
+	case "mssql":
+		return "varbinary(max)"
 	default:
 		return ""
 	}
