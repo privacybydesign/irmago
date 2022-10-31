@@ -243,14 +243,18 @@ func jwtAutheticateRevocation(
 	if !jwtApplies(headers, body, signatureAlg) {
 		return false, nil, "", nil
 	}
-	s := &irma.RevocationJwt{}
-	if _, err := jwt.ParseWithClaims(string(body), s, jwtKeyExtractor(keys)); err != nil {
+	claims := &jwt.StandardClaims{}
+	revocationJwt := &irma.RevocationJwt{}
+	if _, err := jwt.ParseWithClaims(string(body), claims, jwtKeyExtractor(keys)); err != nil {
 		return false, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
-	if time.Unix(time.Time(s.IssuedAt).Unix(), 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
+	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
 	}
-	return true, s.Request, s.ServerName, nil
+	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
+		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
+	}
+	return true, revocationJwt.Request, revocationJwt.ServerName, nil
 }
 
 func jwtApplies(headers http.Header, body []byte, signatureAlg string) bool {
