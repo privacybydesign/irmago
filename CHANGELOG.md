@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Fix requestor JWT PublicKey authentication for Revocation endpoint 
+- Fix requestor JWT authentication for Revocation endpoint 
 
 
 ## [0.10.0] - 2022-03-09

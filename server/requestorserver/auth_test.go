@@ -82,7 +82,7 @@ func TestPresharedKeyAuthenticator_Authenticate(t *testing.T) {
 	})
 }
 
-func TestHmacAuthenticator_Authenticate(t *testing.T) {
+func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	key := []byte("953BCAB6F25F3622619A9A16BE895")
 	invalidKey := []byte("A5BB219FFB6199756DF8A284A3392")
 	authenticator := HmacAuthenticator{
@@ -169,4 +169,103 @@ func TestHmacAuthenticator_Authenticate(t *testing.T) {
 		require.True(t, applies)
 		require.Error(t, err)
 	})
+}
+
+func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
+	key := []byte("953BCAB6F25F3622619A9A16BE895")
+	invalidKey := []byte("A5BB219FFB6199756DF8A284A3392")
+	authenticator := HmacAuthenticator{
+		hmackeys: map[string]interface{}{
+			"my_requestor": key,
+		},
+		maxRequestAge: 500,
+	}
+	revocationRequestData := `{"@context":"https://irma.app/ld/request/revocation/v1","type":"irma-demo.MijnOverheid.root","revocationKey":"bsn-123456789"}`
+	revocationRequest := &irma.RevocationRequest{}
+	require.NoError(t, json.Unmarshal([]byte(revocationRequestData), revocationRequest))
+
+	j := NewRevocationJwt("my_requestor", revocationRequest)
+	validJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+	require.NoError(t, jErr)
+
+	requestHeaders := map[string][]string{
+		"Content-Type": {"text/plain"},
+	}
+
+	t.Run("valid", func(t *testing.T) {
+		applies, parsedRequest, requestor, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(validJwtData))
+		if err != nil {
+			require.NoError(t, err)
+		}
+		require.True(t, applies)
+		require.Equal(t, "https://irma.app/ld/request/revocation/v1", parsedRequest.LDContext)
+		require.Equal(t, "bsn-123456789", parsedRequest.Key)
+		require.Equal(t, "my_requestor", requestor)
+	})
+
+	server.Logger.SetLevel(logrus.ErrorLevel)
+	t.Run("invalid jwt requestor", func(t *testing.T) {
+		j := NewRevocationJwt("another_requestor", revocationRequest)
+		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		require.NoError(t, jErr)
+
+		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
+		require.True(t, applies)
+		require.Error(t, err)
+	})
+
+	t.Run("empty jwt data", func(t *testing.T) {
+		claims := (*jwt.MapClaims)(&map[string]interface{}{
+			"iss":        "my_requestor",
+			"iat":        time.Now().Unix(),
+			"revrequest": map[string]interface{}{},
+		})
+		emptyJwtData, jErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
+		require.NoError(t, jErr)
+		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(emptyJwtData))
+		require.True(t, applies)
+		require.Error(t, err)
+		require.Equal(t, string(server.ErrorInvalidRequest.Type), err.ErrorName)
+	})
+
+	t.Run("old jwt data", func(t *testing.T) {
+		j := NewRevocationJwt("my_requestor", revocationRequest)
+		j.IssuedAt = (irma.Timestamp)(time.Unix(0, 0))
+		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		require.NoError(t, jErr)
+		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
+		require.True(t, applies)
+		require.Error(t, err)
+		require.Equal(t, string(server.ErrorUnauthorized.Type), err.ErrorName)
+	})
+
+	t.Run("jwt data not yet valid", func(t *testing.T) {
+		j := NewRevocationJwt("my_requestor", revocationRequest)
+		j.IssuedAt = (irma.Timestamp)(time.Now().AddDate(1, 0, 0))
+		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		require.NoError(t, jErr)
+		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
+		require.True(t, applies)
+		require.Error(t, err)
+		require.Equal(t, string(server.ErrorInvalidRequest.Type), err.ErrorName)
+	})
+
+	t.Run("jwt signed using invalid key", func(t *testing.T) {
+		j := NewRevocationJwt("my_requestor", revocationRequest)
+		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, invalidKey)
+		require.NoError(t, jErr)
+		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
+		require.True(t, applies)
+		require.Error(t, err)
+	})
+}
+
+func NewRevocationJwt(servername string, rr *irma.RevocationRequest) *irma.RevocationJwt {
+	return &irma.RevocationJwt{
+		ServerJwt: irma.ServerJwt{
+			ServerName: servername,
+			IssuedAt:   irma.Timestamp(time.Now()),
+		},
+		Request: rr,
+	}
 }

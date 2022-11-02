@@ -247,7 +247,7 @@ func jwtAutheticateRevocation(
 	claims := &jwt.StandardClaims{}
 	revocationJwt := string(body)
 	if _, err := jwt.ParseWithClaims(revocationJwt, claims, jwtKeyExtractor(keys)); err != nil {
-		return false, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
+		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
 	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
 		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
@@ -259,7 +259,10 @@ func jwtAutheticateRevocation(
 	// Read JWT contents
 	s := &irma.RevocationJwt{}
 	if _, _, err := new(jwt.Parser).ParseUnverified(revocationJwt, s); err != nil {
-		return false, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
+		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
+	}
+	if err := s.Request.Validate(); err != nil {
+		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, "Invalid JWT body")
 	}
 	return true, s.Request, s.ServerName, nil
 }
