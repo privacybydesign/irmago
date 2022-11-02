@@ -184,7 +184,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	revocationRequest := &irma.RevocationRequest{}
 	require.NoError(t, json.Unmarshal([]byte(revocationRequestData), revocationRequest))
 
-	j := NewRevocationJwt("my_requestor", revocationRequest)
+	j := newRevocationJwt("my_requestor", revocationRequest)
 	validJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
 	require.NoError(t, jErr)
 
@@ -205,7 +205,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 
 	server.Logger.SetLevel(logrus.ErrorLevel)
 	t.Run("invalid jwt requestor", func(t *testing.T) {
-		j := NewRevocationJwt("another_requestor", revocationRequest)
+		j := newRevocationJwt("another_requestor", revocationRequest)
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
 		require.NoError(t, jErr)
 
@@ -229,7 +229,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	})
 
 	t.Run("old jwt data", func(t *testing.T) {
-		j := NewRevocationJwt("my_requestor", revocationRequest)
+		j := newRevocationJwt("my_requestor", revocationRequest)
 		j.IssuedAt = (irma.Timestamp)(time.Unix(0, 0))
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
 		require.NoError(t, jErr)
@@ -240,7 +240,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	})
 
 	t.Run("jwt data not yet valid", func(t *testing.T) {
-		j := NewRevocationJwt("my_requestor", revocationRequest)
+		j := newRevocationJwt("my_requestor", revocationRequest)
 		j.IssuedAt = (irma.Timestamp)(time.Now().AddDate(1, 0, 0))
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
 		require.NoError(t, jErr)
@@ -251,7 +251,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	})
 
 	t.Run("jwt signed using invalid key", func(t *testing.T) {
-		j := NewRevocationJwt("my_requestor", revocationRequest)
+		j := newRevocationJwt("my_requestor", revocationRequest)
 		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, invalidKey)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
@@ -260,7 +260,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	})
 }
 
-func NewRevocationJwt(servername string, rr *irma.RevocationRequest) *irma.RevocationJwt {
+func newRevocationJwt(servername string, rr *irma.RevocationRequest) *irma.RevocationJwt {
 	return &irma.RevocationJwt{
 		ServerJwt: irma.ServerJwt{
 			ServerName: servername,
