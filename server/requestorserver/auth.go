@@ -212,23 +212,13 @@ func jwtAuthenticate(
 		return false, nil, "", nil
 	}
 
-	// Verify JWT signature. We do not yet store the JWT contents here, because we need to know the session type first
-	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.
-	claims := &jwt.StandardClaims{}
-	requestorJwt := string(body)
-	_, err := jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
-	if err != nil {
-		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
-	}
-	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
-		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
-	}
-	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
-		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
+	validatedJwt, claims, validationErr := jwtValidateClaims(body, keys, maxRequestAge)
+	if validationErr != nil {
+		return true, nil, "", validationErr
 	}
 
 	// Read JWT contents
-	parsedJwt, err := irma.ParseRequestorJwt(claims.Subject, requestorJwt)
+	parsedJwt, err := irma.ParseRequestorJwt(claims.Subject, validatedJwt)
 	if err != nil {
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
@@ -243,14 +233,42 @@ func jwtAutheticateRevocation(
 	if !jwtApplies(headers, body, signatureAlg) {
 		return false, nil, "", nil
 	}
-	s := &irma.RevocationJwt{}
-	if _, err := jwt.ParseWithClaims(string(body), s, jwtKeyExtractor(keys)); err != nil {
-		return false, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
+
+	validatedJwt, _, validationErr := jwtValidateClaims(body, keys, maxRequestAge)
+	if validationErr != nil {
+		return true, nil, "", validationErr
 	}
-	if time.Unix(time.Time(s.IssuedAt).Unix(), 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
-		return true, nil, "", server.RemoteError(server.ErrorUnauthorized, "jwt too old")
+
+	// Read JWT contents
+	revocationJwt := &irma.RevocationJwt{}
+	if _, _, err := new(jwt.Parser).ParseUnverified(validatedJwt, revocationJwt); err != nil {
+		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
-	return true, s.Request, s.ServerName, nil
+	if err := revocationJwt.Request.Validate(); err != nil {
+		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, "Invalid JWT body")
+	}
+	return true, revocationJwt.Request, revocationJwt.ServerName, nil
+}
+
+func jwtValidateClaims(
+	body []byte, keys map[string]interface{}, maxRequestAge int,
+) (string, *jwt.StandardClaims, *irma.RemoteError) {
+	// Verify JWT signature. We do not yet store the JWT contents here, because we need to know the session type first
+	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.
+	claims := &jwt.StandardClaims{}
+	requestorJwt := string(body)
+	_, err := jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
+	if err != nil {
+		return "", nil, server.RemoteError(server.ErrorInvalidRequest, err.Error())
+	}
+	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
+		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt too old")
+	}
+	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
+		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
+	}
+
+	return requestorJwt, claims, nil
 }
 
 func jwtApplies(headers http.Header, body []byte, signatureAlg string) bool {
