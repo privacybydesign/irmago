@@ -623,7 +623,6 @@ func testSigningSessionResult(t *testing.T, conf interface{}, opts ...option) {
 
 		// Ensure requestor session results reflect the session result values
 		require.Equal(t, irma.ProofStatusValid, requestorSessionResult.disclosureResult.Status)
-		require.NotNil(t, requestorSessionResult.disclosureResult.Timestamp)
 		require.Len(t, requestorSessionResult.disclosureResult.Credentials, 1)
 		require.Len(t, requestorSessionResult.disclosureResult.Credentials[0].Attributes, 1)
 		require.Equal(t, id.CredentialTypeIdentifier().IssuerIdentifier(), requestorSessionResult.disclosureResult.Credentials[0].Issuer.Identifier)
