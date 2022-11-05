@@ -22,7 +22,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	pdb := db.(*postgresDB)
 	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (15, 'testuser', 0, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, expiry, user_id) VALUES ('testtoken', 'test@test.com', $1, 15)", time.Now().Unix())
+	_, err = pdb.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, expiry, user_id) VALUES ('testtoken', 'test@example.com', $1, 15)", time.Now().Unix())
 	require.NoError(t, err)
 
 	id, err := db.userIDByUsername("testuser")
@@ -39,7 +39,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 
 	user, err = db.user(id)
 	assert.NoError(t, err)
-	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, user.Emails)
+	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, user.Emails)
 
 	_, err = db.verifyEmailToken("testtoken")
 	assert.Error(t, err)
@@ -76,16 +76,16 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (17, 'noemail', 0, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@test.com')")
+	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@example.com')")
 	require.NoError(t, err)
 
-	err = db.addLoginToken("test2@test.com", "test2token")
+	err = db.addLoginToken("test2@example.com", "test2token")
 	assert.ErrorIs(t, err, errEmailNotFound)
 
-	err = db.addLoginToken("test@test.com", "testtoken")
+	err = db.addLoginToken("test@example.com", "testtoken")
 	require.NoError(t, err)
 
-	err = db.addLoginToken("test@test.com", "testtoken")
+	err = db.addLoginToken("test@example.com", "testtoken")
 	require.ErrorIs(t, err, errTooManyTokens)
 
 	cand, err := db.loginUserCandidates("testtoken")
@@ -114,8 +114,8 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	_, err = db.verifyLoginToken("testtoken", "testuser")
 	assert.Error(t, err)
 
-	assert.NoError(t, db.addEmail(17, "test@test.com"))
-	assert.NoError(t, db.addLoginToken("test@test.com", "testtoken"))
+	assert.NoError(t, db.addEmail(17, "test@example.com"))
+	assert.NoError(t, db.addLoginToken("test@example.com", "testtoken"))
 	cand, err = db.loginUserCandidates("testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []loginCandidate{
@@ -136,7 +136,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pdb.db.Exec("INSERT INTO irma.users (id, username, last_seen, language, coredata, pin_counter, pin_block_date) VALUES (17, 'noemail', 20, '', '', 0,0)")
 	require.NoError(t, err)
-	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@test.com')")
+	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@example.com')")
 	require.NoError(t, err)
 	_, err = pdb.db.Exec(
 		`INSERT INTO irma.log_entry_records (time, event, param, user_id)
@@ -147,7 +147,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, user{
 		Username:         "testuser",
-		Emails:           []userEmail{{Email: "test@test.com", DeleteInProgress: false}},
+		Emails:           []userEmail{{Email: "test@example.com", DeleteInProgress: false}},
 		language:         "",
 		DeleteInProgress: false,
 	}, info)
@@ -196,22 +196,22 @@ func TestPostgresDBUserInfo(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(entries))
 
-	err = db.addEmail(17, "test@test.com")
+	err = db.addEmail(17, "test@example.com")
 	assert.NoError(t, err)
 
 	info, err = db.user(17)
 	assert.NoError(t, err)
-	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: false}}, info.Emails)
+	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
 
 	err = db.addEmail(20, "bla@bla.com")
 	assert.Error(t, err)
 
-	err = db.scheduleEmailRemoval(17, "test@test.com", 0)
+	err = db.scheduleEmailRemoval(17, "test@example.com", 0)
 	assert.NoError(t, err)
 
 	info, err = db.user(17)
 	assert.NoError(t, err)
-	assert.Equal(t, []userEmail{{Email: "test@test.com", DeleteInProgress: true}}, info.Emails)
+	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: true}}, info.Emails)
 
 	// Need sleep here to ensure time has passed since delete
 	time.Sleep(1 * time.Second)

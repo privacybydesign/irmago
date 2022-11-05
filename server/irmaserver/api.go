@@ -114,6 +114,7 @@ func New(conf *server.Configuration) (*Server, error) {
 		return nil, err
 	}
 
+	gocron.SetPanicHandler(server.GocronPanicHandler(s.conf.Logger))
 	s.scheduler.StartAsync()
 
 	return s, nil
@@ -169,6 +170,8 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 
 	r := chi.NewRouter()
 	s.router = r
+
+	r.Use(server.RecoverMiddleware)
 
 	opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
 	r.Use(server.LogMiddleware("client", opts))

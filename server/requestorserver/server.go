@@ -177,6 +177,7 @@ func (s *Server) attachClientEndpoints(router *chi.Mux) {
 // and IRMA client messages.
 func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
+	router.Use(server.RecoverMiddleware)
 	router.Use(cors.New(corsOptions).Handler)
 
 	if !s.conf.separateClientServer() {

@@ -42,6 +42,7 @@ type keyshareSession struct {
 	pinRequestor     KeysharePinRequestor
 	builders         gabi.ProofBuilderList
 	session          irma.SessionRequest
+	schemeIDs        map[irma.SchemeManagerIdentifier]struct{}
 	client           *Client
 	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
 	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
@@ -100,11 +101,23 @@ func startKeyshareSession(
 	pin KeysharePinRequestor,
 	builders gabi.ProofBuilderList,
 	session irma.SessionRequest,
+	implicitDisclosure [][]*irma.AttributeIdentifier,
 	issuerProofNonce *big.Int,
 	timestamp *atum.Timestamp,
 ) {
 	ksscount := 0
-	for managerID := range session.Identifiers().SchemeManagers {
+
+	// A number of times below we need to look at all involved schemes, and then we need to take into
+	// account the schemes of implicit disclosures, i.e. disclosures of previous sessions in case
+	// of chained sessions. We compute this and cache this on the keyshareServer instance below.
+	schemeIDs := session.Identifiers().SchemeManagers
+	for _, attrlist := range implicitDisclosure {
+		for _, attr := range attrlist {
+			schemeIDs[attr.Type.CredentialTypeIdentifier().SchemeManagerIdentifier()] = struct{}{}
+		}
+	}
+
+	for managerID := range schemeIDs {
 		if client.Configuration.SchemeManagers[managerID].Distributed() {
 			ksscount++
 			if _, enrolled := client.keyshareServers[managerID]; !enrolled {
@@ -121,6 +134,7 @@ func startKeyshareSession(
 	}
 
 	ks := &keyshareSession{
+		schemeIDs:        schemeIDs,
 		session:          session,
 		client:           client,
 		builders:         builders,
@@ -132,7 +146,7 @@ func startKeyshareSession(
 		pinCheck:         false,
 	}
 
-	for managerID := range session.Identifiers().SchemeManagers {
+	for managerID := range schemeIDs {
 		scheme := ks.client.Configuration.SchemeManagers[managerID]
 		if !scheme.Distributed() {
 			continue
@@ -320,7 +334,7 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 // If all is ok, success will be true.
 func (ks *keyshareSession) verifyPinAttempt(pin string) (
 	success bool, tries int, blocked int, manager irma.SchemeManagerIdentifier, err error) {
-	for manager = range ks.session.Identifiers().SchemeManagers {
+	for manager = range ks.schemeIDs {
 		if !ks.client.Configuration.SchemeManagers[manager].Distributed() {
 			continue
 		}
@@ -362,7 +376,7 @@ func (ks *keyshareSession) GetCommitments() {
 
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
-	for managerID := range ks.session.Identifiers().SchemeManagers {
+	for managerID := range ks.schemeIDs {
 		if !ks.client.Configuration.SchemeManagers[managerID].Distributed() {
 			continue
 		}
@@ -415,7 +429,7 @@ func (ks *keyshareSession) GetProofPs() {
 
 	// Post the challenge, obtaining JWT's containing the ProofP's
 	responses := map[irma.SchemeManagerIdentifier]string{}
-	for managerID := range ks.session.Identifiers().SchemeManagers {
+	for managerID := range ks.schemeIDs {
 		transport, distributed := ks.transports[managerID]
 		if !distributed {
 			continue

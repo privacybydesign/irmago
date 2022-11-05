@@ -39,7 +39,12 @@ func (client *Client) initRevocation() {
 	// - Updating happens regularly even if the app is rarely used.
 	// We do this by every 10 seconds updating the credential with a low probability, which
 	// increases over time since the last update.
-	_, err := client.Configuration.Scheduler.Every(irma.RevocationParameters.ClientUpdateInterval).Seconds().Do(func() {
+	// We set the task from starting one second from now to avoid it from running simultaneously
+	// with the job above, because both of them invoke client.credentials() which can cause
+	// concurrent map write panics. FIXME: this should be fixed properly.
+	_, err := client.Configuration.Scheduler.
+		Every(irma.RevocationParameters.ClientUpdateInterval).Seconds().
+		StartAt(time.Now().Add(time.Second)).Do(func() {
 		for id, attrsets := range client.attributes {
 			for i, attrs := range attrsets {
 				if attrs.CredentialType() == nil || !attrs.CredentialType().RevocationSupported() {

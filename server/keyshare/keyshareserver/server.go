@@ -93,6 +93,7 @@ func New(conf *Configuration) (*Server, error) {
 	if _, err := s.scheduler.Every(10).Seconds().Do(s.store.flush); err != nil {
 		return nil, err
 	}
+	gocron.SetPanicHandler(server.GocronPanicHandler(s.conf.Logger))
 	s.scheduler.StartAsync()
 
 	return s, nil
@@ -107,6 +108,9 @@ func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 
 	router.Group(func(router chi.Router) {
+
+		router.Use(server.RecoverMiddleware)
+
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
@@ -210,12 +214,14 @@ func (s *Server) generateCommitments(user *User, authorization string, keys []ir
 	}
 
 	// Store needed data for later requests.
-	// Of all keys involved in the current session, store the ID of the first one to be used when
+	// Of all keys involved in the current session, store the ID of the last one to be used when
 	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
 	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
-	// puts the key ID of the credential(s) being issued at index 0.
+	// puts the key ID of the credential(s) being issued at the last index (indeed, the irmaclient
+	// always puts all ProofU's after the ProofD's in the list of proofs it sends to the IRMA
+	// server).
 	s.store.add(user.Username, &session{
-		KeyID:    keys[0],
+		KeyID:    keys[len(keys)-1],
 		CommitID: commitID,
 	})
 

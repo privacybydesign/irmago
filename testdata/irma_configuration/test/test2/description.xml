@@ -1,0 +1,10 @@
+<Issuer version="4">
+	<ID>test2</ID>
+	<Name>
+		<en>Demo test issuer</en>
+		<nl>Demo test issuer</nl>
+	</Name>
+	<SchemeManager>test</SchemeManager>
+	<ContactAddress></ContactAddress>
+	<ContactEMail>info@example.com</ContactEMail>
+</Issuer>

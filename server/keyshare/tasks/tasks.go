@@ -140,6 +140,11 @@ func (t *taskHandler) expireAccounts() {
 
 			// Send emails
 			err = t.sendExpiryEmails(id, username, lang)
+			// FIXME: 'return nil' will prevent abortion of 'expireAccounts()'
+			// but will not take care of the actual problem of handling the invalid email
+			if err == keyshare.ErrInvalidEmail {
+				return nil
+			}
 			if err != nil {
 				return err // already logged, just abort
 			}

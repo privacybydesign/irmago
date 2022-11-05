@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-errors/errors"
+
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -330,4 +332,37 @@ func doSession(
 	}
 
 	return &requestorSessionResult{serverResult, clientResult, nil, nil, dismisser}
+}
+
+func doChainedSessions(
+	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+) {
+	client, handler := parseStorage(t, opts...)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	require.IsType(t, IrmaServerConfiguration, conf)
+	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
+	defer irmaServer.Stop()
+	nextServer := StartNextRequestServer(t, irmaServer.conf, id, cred)
+	defer func() {
+		_ = nextServer.Close()
+	}()
+
+	var request irma.ServiceProviderRequest
+	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
+
+	// In case of chained sessions, the server's session store is queried twice in a single
+	// HTTP handler (when processing the irmaclient's response). The mutexes involved have caused
+	// deadlocks in the past when the frontend polls the session status, so we simulate polling in
+	// this test.
+	doSession(t, &request, client, irmaServer, nil, nil, nil, append(opts, optionPolling)...)
+
+	// check that we have a new credential
+	for _, cred := range client.CredentialInfoList() {
+		if cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1 * irma.ExpiryFactor * time.Second))) {
+			return
+		}
+	}
+
+	require.NoError(t, errors.New("newly issued credential not found in client"))
 }

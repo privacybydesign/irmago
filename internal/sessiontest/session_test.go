@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -54,6 +53,7 @@ func TestRequestorServer(t *testing.T) {
 	t.Run("IssuanceOptionalSetAttributes", apply(testIssuanceOptionalSetAttributes, RequestorServerConfiguration))
 	t.Run("IssuanceSameAttributesNotSingleton", apply(testIssuanceSameAttributesNotSingleton, RequestorServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, RequestorServerConfiguration))
+	t.Run("PairingRejected", apply(testPairingRejected, RequestorServerConfiguration))
 	t.Run("LargeAttribute", apply(testLargeAttribute, RequestorServerConfiguration))
 	t.Run("IssuanceSingletonCredential", apply(testIssuanceSingletonCredential, RequestorServerConfiguration))
 	t.Run("UnsatisfiableDisclosureSession", apply(testUnsatisfiableDisclosureSession, RequestorServerConfiguration))
@@ -85,6 +85,7 @@ func TestIrmaServer(t *testing.T) {
 	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
+	t.Run("PairingRejected", apply(testPairingRejected, IrmaServerConfiguration))
 	t.Run("DisablePairing", apply(testDisablePairing, IrmaServerConfiguration))
 	t.Run("UnsatisfiableDisclosureSession", apply(testUnsatisfiableDisclosureSession, IrmaServerConfiguration))
 
@@ -211,6 +212,28 @@ func testIssuancePairing(t *testing.T, conf interface{}, opts ...option) {
 		require.NoError(t, err)
 	}
 	doSession(t, request, nil, nil, frontendOptionsHandler, pairingHandler, conf, opts...)
+}
+
+func testPairingRejected(t *testing.T, conf interface{}, opts ...option) {
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	var pairingCode string
+	frontendOptionsHandler := func(handler *TestHandler) {
+		pairingCode = setPairingMethod(irma.PairingMethodPin, handler)
+	}
+	pairingHandler := func(handler *TestHandler) {
+		require.Equal(t, pairingCode, <-handler.pairingCodeChan)
+		err := handler.frontendTransport.Delete()
+		require.NoError(t, err)
+	}
+	sessionOpts := append(opts, optionIgnoreError)
+	result := doSession(t, request, nil, nil, frontendOptionsHandler, pairingHandler, conf, sessionOpts...)
+	err, ok := result.clientResult.Err.(*irma.SessionError)
+	require.True(t, ok)
+	require.Equal(t, irma.ErrorPairingRejected, err.ErrorType)
+	// No error should be wrapped, because this is an alternative flow.
+	require.Equal(t, err.WrappedError(), "")
 }
 
 func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
@@ -511,37 +534,11 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf in
 }
 
 func testChainedSessions(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
-
-	require.IsType(t, IrmaServerConfiguration, conf)
-	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
-	defer irmaServer.Stop()
-	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey)
-	defer func() {
-		_ = nextServer.Close()
-	}()
-
-	var request irma.ServiceProviderRequest
-	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
-
-	// In case of chained sessions, the server's session store is queried twice in a single
-	// HTTP handler (when processing the irmaclient's response). The mutexes involved have caused
-	// deadlocks in the past when the frontend polls the session status, so we simulate polling in
-	// this test.
-	doSession(t, &request, client, irmaServer, nil, nil, nil, append(opts, optionPolling)...)
-
-	// check that our credential instance is new
-	id := request.SessionRequest().Disclosure().Disclose[0][0][0].Type.CredentialTypeIdentifier()
-
-	for _, cred := range client.CredentialInfoList() {
-		if id.String() == fmt.Sprintf("%s.%s.%s", cred.SchemeManagerID, cred.IssuerID, cred.ID) &&
-			cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1*irma.ExpiryFactor*time.Second))) {
-			return
-		}
-	}
-
-	require.NoError(t, errors.New("newly issued credential not found in client"))
+	doChainedSessions(t, conf,
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+		opts...,
+	)
 }
 
 // Test to check whether session stores (like Redis) correctly handle non-existing sessions
