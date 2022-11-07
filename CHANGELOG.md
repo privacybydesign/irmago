@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VSCode launch configuration
 
 ### Changed
+- BREAKING: `irmaclient` requires minimum `irma keyshare server` version 0.11.0 (due to challenge response user authentication).
+  `irma keyshare server` does support older `irmaclient` versions.
 - Updated dependencies
 - Phased out unmaintained jasonlvhit/gocron library and migrated to go-co-op/gocron
 - Made gocron usage more consistent
