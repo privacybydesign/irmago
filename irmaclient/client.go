@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/sirupsen/logrus"
 )
 
@@ -46,7 +47,7 @@ type Client struct {
 	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
-	credentialsCache map[irma.CredentialTypeIdentifier]map[int]*credential
+	credentialsCache concmap.ConcMap[credLookup, *credential]
 	keyshareServers  map[irma.SchemeManagerIdentifier]*keyshareServer
 	updates          []update
 
@@ -159,7 +160,6 @@ func New(
 	}
 
 	client := &Client{
-		credentialsCache:      make(map[irma.CredentialTypeIdentifier]map[int]*credential),
 		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
@@ -248,9 +248,7 @@ func (client *Client) loadCredentialStorage() (err error) {
 			client.lookup[attrlist.Hash()] = &credLookup{id: attrlist.CredentialType().Identifier(), counter: i}
 		}
 	}
-	if len(client.credentialsCache) > 0 {
-		client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
-	}
+	client.credentialsCache = concmap.New[credLookup, *credential]()
 	return
 }
 
@@ -372,12 +370,10 @@ func (client *Client) addCredential(cred *credential) (err error) {
 	// Append the new cred to our attributes and credentials
 	client.attributes[id] = append(client.attrs(id), cred.attrs)
 	if !id.Empty() {
-		if _, exists := client.credentialsCache[id]; !exists {
-			client.credentialsCache[id] = make(map[int]*credential)
-		}
 		counter := len(client.attributes[id]) - 1
-		client.credentialsCache[id][counter] = cred
-		client.lookup[cred.attrs.Hash()] = &credLookup{id: id, counter: counter}
+		credlookup := credLookup{id: id, counter: counter}
+		client.credentialsCache.Set(credlookup, cred)
+		client.lookup[cred.attrs.Hash()] = &credlookup
 	}
 
 	return client.storage.Transaction(func(tx *transaction) error {
@@ -431,12 +427,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeL
 	}
 
 	// Remove credential from cache
-	if creds, exists := client.credentialsCache[id]; exists {
-		if _, exists := creds[index]; exists {
-			delete(creds, index)
-			client.credentialsCache[id] = creds
-		}
-	}
+	client.credentialsCache.Delete(credLookup{id: id, counter: index})
 	delete(client.lookup, attrs.Hash())
 	for i, attrs := range client.attributes[id] {
 		client.lookup[attrs.Hash()].counter = i
@@ -470,7 +461,7 @@ func (client *Client) RemoveStorage() error {
 	// Remove data from memory
 	client.attributes = make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList)
 	client.keyshareServers = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
-	client.credentialsCache = make(map[irma.CredentialTypeIdentifier]map[int]*credential)
+	client.credentialsCache = concmap.New[credLookup, *credential]()
 	client.lookup = make(map[string]*credLookup)
 
 	if err = client.storage.DeleteAll(); err != nil {
@@ -518,16 +509,6 @@ func (client *Client) attrs(id irma.CredentialTypeIdentifier) []*irma.AttributeL
 	return list
 }
 
-// creds returns cm.credentials[id], initializing it to an empty map if necessary
-func (client *Client) creds(id irma.CredentialTypeIdentifier) map[int]*credential {
-	list, exists := client.credentialsCache[id]
-	if !exists {
-		list = make(map[int]*credential)
-		client.credentialsCache[id] = list
-	}
-	return list
-}
-
 // Attributes returns the attribute list of the requested credential, or nil if we do not have it.
 func (client *Client) Attributes(id irma.CredentialTypeIdentifier, counter int) (attributes *irma.AttributeList) {
 	list := client.attrs(id)
@@ -566,39 +547,42 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during New(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
-	if _, exists := client.creds(id)[counter]; !exists {
-		attrs := client.Attributes(id, counter)
-		if attrs == nil { // We do not have the requested cred
-			return
-		}
-		sig, witness, err := client.storage.LoadSignature(attrs)
-		if err != nil {
-			return nil, err
-		}
-		if sig == nil {
-			err = errors.New("signature file not found")
-			return nil, err
-		}
-		pk, err := attrs.PublicKey()
-		if err != nil {
-			return nil, err
-		}
-		if pk == nil {
-			return nil, errors.New("unknown public key")
-		}
-		cred, err := newCredential(&gabi.Credential{
-			Attributes:           append([]*big.Int{client.secretkey.Key}, attrs.Ints...),
-			Signature:            sig,
-			NonRevocationWitness: witness,
-			Pk:                   pk,
-		}, attrs, client.Configuration)
-		if err != nil {
-			return nil, err
-		}
-		client.credentialsCache[id][counter] = cred
+	cred = client.credentialsCache.Get(credLookup{id, counter})
+	if cred != nil {
+		return
 	}
 
-	return client.credentialsCache[id][counter], nil
+	attrs := client.Attributes(id, counter)
+	if attrs == nil { // We do not have the requested cred
+		return
+	}
+
+	sig, witness, err := client.storage.LoadSignature(attrs)
+	if err != nil {
+		return nil, err
+	}
+	if sig == nil {
+		err = errors.New("signature file not found")
+		return nil, err
+	}
+	pk, err := attrs.PublicKey()
+	if err != nil {
+		return nil, err
+	}
+	if pk == nil {
+		return nil, errors.New("unknown public key")
+	}
+	cred, err = newCredential(&gabi.Credential{
+		Attributes:           append([]*big.Int{client.secretkey.Key}, attrs.Ints...),
+		Signature:            sig,
+		NonRevocationWitness: witness,
+		Pk:                   pk,
+	}, attrs, client.Configuration)
+	if err != nil {
+		return nil, err
+	}
+	client.credentialsCache.Set(credLookup{id, counter}, cred)
+	return cred, nil
 }
 
 // Methods used in the IRMA protocol
@@ -1466,16 +1450,11 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 				return err
 			}
 
-			if _, contains = client.credentialsCache[id]; !contains {
-				continue
+			cred := client.credentialsCache.Get(credLookup{id, i})
+			if cred == nil {
+				return nil
 			}
-			if _, contains = client.credentialsCache[id][i]; !contains {
-				continue
-			}
-			client.credentialsCache[id][i].Attributes = append(
-				client.credentialsCache[id][i].Attributes[:1],
-				attrs...,
-			)
+			cred.Attributes = append(cred.Attributes[:1], attrs...)
 		}
 	}
 
