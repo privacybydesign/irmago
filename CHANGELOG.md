@@ -42,10 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chained sessions did not work due to bug in `irma keyshare server`
 - Attributes from multiple issuer schemes could not be mixed in chained sessions
 - Panics occurred during error handling in `irmaclient`
-- Avoid gocron panics in revocation code during `irmaclient` startup (quick fix)
+- Avoid gocron panics in revocation code during `irmaclient` startup
 - Do not abort `irma keyshare tasks` run while looping over expired accounts and finding an invalid email address (quick fix)
 - Use subject value instead of file path value as email subject in account removed email of `irma keyshare myirmaserver`
 - Requestor JWT authentication did not work at revocation endpoint of `irma server`
+- Concurrency issues in `irmaclient.Client.credential()` and `irma.Configuration.parseKeysFolder()`
 
 ### Security
 - Prevent that a user can detect whether a certain email address is registered at `irma keyshare server` and `irma keyshare myirmaserver` (vulnerable versions have never been live in production)
