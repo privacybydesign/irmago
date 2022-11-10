@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -1094,11 +1095,9 @@ func (scheme *SchemeManager) delete(conf *Configuration) error {
 			delete(conf.Issuers, iss)
 		}
 	}
-	for iss := range conf.publicKeys {
-		if iss.Root() == name {
-			delete(conf.publicKeys, iss)
-		}
-	}
+	conf.publicKeys.DeleteIf(func(id PublicKeyIdentifier, _ *gabikeys.PublicKey) bool {
+		return id.Issuer.Root() == name
+	})
 	for cred := range conf.CredentialTypes {
 		if cred.Root() == name {
 			delete(conf.CredentialTypes, cred)
@@ -1150,7 +1149,9 @@ func (scheme *SchemeManager) purge(conf *Configuration) {
 	for issuerid, issuer := range conf.Issuers {
 		if issuer.SchemeManagerIdentifier() == id {
 			delete(conf.Issuers, issuerid)
-			delete(conf.publicKeys, issuerid)
+			conf.publicKeys.DeleteIf(func(keyid PublicKeyIdentifier, _ *gabikeys.PublicKey) bool {
+				return keyid.Issuer.SchemeManagerIdentifier() == id
+			})
 		}
 	}
 	for credid, cred := range conf.CredentialTypes {
