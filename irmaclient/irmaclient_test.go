@@ -6,12 +6,14 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 
@@ -401,6 +403,27 @@ func TestRemoveStorage(t *testing.T) {
 	// Check that the client has a new secret key
 	new_sk := *client.secretkey
 	require.NotEqual(t, old_sk, new_sk)
+}
+
+func TestCredentialsConcurrency(t *testing.T) {
+	client, _ := parseStorage(t)
+	grp := sync.WaitGroup{}
+
+	for j := 0; j < 1000; j++ {
+		// Clear map for next iteration
+		client.credentialsCache = concmap.New[credLookup, *credential]()
+
+		for i := 0; i < 10; i++ {
+			grp.Add(1)
+			go func() {
+				_, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
+				require.NoError(t, err)
+				grp.Done()
+			}()
+		}
+
+		grp.Wait()
+	}
 }
 
 // ------
