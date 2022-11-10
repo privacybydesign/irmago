@@ -11,7 +11,8 @@ jobs:
   build:
     strategy:
       matrix:
-        arch: [amd64, 386]
+        os: [linux, darwin, windows]
+        arch: [amd64, 386, arm, arm64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -22,9 +23,15 @@ jobs:
           go-version: ^1.16
 
       - name: Build
-        run: go build -v -o irma-linux-${{ matrix.arch }} ./irma
+        run: go build -v -o irma-${{ matrix.os }}-${{ matrix.arch }} ./irma
         env:
+          GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: irma-${{ matrix.os }}-${{ matrix.arch }}
+          path: ./irma-${{ matrix.os }}-${{ matrix.arch }}
 
   # We only check the build stage of the Dockerfile, because building the full Dockerfile requires
   # downloading IRMA schemes. We check the status of the full Dockerfile once every week on master
