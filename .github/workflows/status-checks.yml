@@ -13,6 +13,11 @@ jobs:
       matrix:
         os: [linux, darwin, windows]
         arch: [amd64, 386, arm, arm64]
+        exclude:
+          - os: darwin
+            arch: 386
+          - os: darwin
+            arch: arm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
