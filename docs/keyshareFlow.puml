@@ -31,7 +31,7 @@ keyshare -> keyshare: <font color=#1D5B2A>generate challenge
 return <font color=#1D5B2A>"pin_challengeresponse", challenge
 |||
 
-app -> keyshare ++: POST /users/verify/pin<font color=#1D5B2A>_challengeresponse</font> {id, pin, <font color=#1D5B2A>reponse</font>}
+app -> keyshare ++: POST /users/verify/pin<font color=#1D5B2A>_challengeresponse</font> {id, pin, <font color=#1D5B2A>response</font>}
 keyshare -> db: fetch user
 keyshare -> keyshare: verify pin \n(incl reservePinCheck and blocking)
 keyshare -> keyshare: <font color=#1D5B2A>verify response which correponds to challenge
