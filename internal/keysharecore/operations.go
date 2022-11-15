@@ -197,6 +197,34 @@ func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUs
 	return s, nil
 }
 
+// GeneratePs generates a list of keyshare server P's, i.e. a list of R_0^keyshareSecret.
+func (c *Core) GeneratePs(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*big.Int, error) {
+	// Validate input request and build key list
+	var keyList []*gabikeys.PublicKey
+	for _, keyID := range keyIDs {
+		key, ok := c.trustedKeys[keyID]
+		if !ok {
+			return nil, ErrKeyNotFound
+		}
+		keyList = append(keyList, key)
+	}
+
+	// verify access and decrypt
+	s, err := c.verifyAccess(secrets, accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	var ps []*big.Int
+
+	for _, key := range keyList {
+		ps = append(ps,
+			new(big.Int).Exp(key.R[0], s.KeyshareSecret, key.N))
+	}
+
+	return ps, nil
+}
+
 // GenerateCommitments generates keyshare commitments using the specified Idemix public key(s).
 func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list

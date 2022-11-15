@@ -132,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 		router.Group(func(router chi.Router) {
 			router.Use(s.userMiddleware)
 			router.Use(s.authorizationMiddleware)
+			router.Post("/prove/getPs", s.handlePs)
 			router.Post("/prove/getCommitments", s.handleCommitments)
 			router.Post("/prove/getResponse", s.handleResponse)
 		})
@@ -161,6 +162,56 @@ func (s *Server) loadIdemixKeys(conf *irma.Configuration) error {
 		}
 	}
 	return errs.ErrorOrNil()
+}
+
+// /prove/getPs
+func (s *Server) handlePs(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+	authorization := r.Context().Value("authorization").(string)
+
+	// Read keys
+	var keys []irma.PublicKeyIdentifier
+	if err := server.ParseBody(r, &keys); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if len(keys) == 0 {
+		s.conf.Logger.Info("Malformed request: no keys for P specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		return
+	}
+
+	ps, err := s.generatePs(user, authorization, keys)
+	if err != nil && err == keysharecore.ErrInvalidJWT {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, ps)
+}
+
+func (s *Server) generatePs(user *User, authorization string, keys []irma.PublicKeyIdentifier) (*irma.PMap, error) {
+	// Generate Ps
+	ps, err := s.core.GeneratePs(user.Secrets, authorization, keys)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Warn("Could not generate Ps for request")
+		return nil, err
+	}
+
+	// Prepare output message format
+	mappedPs := map[irma.PublicKeyIdentifier]*big.Int{}
+	for i, keyID := range keys {
+		mappedPs[keyID] = ps[i]
+	}
+
+	// And send response
+	return &irma.PMap{Ps: mappedPs}, nil
 }
 
 // /prove/getCommitments

@@ -64,6 +64,14 @@ func TestServerInvalidMessage(t *testing.T) {
 		"[]", nil,
 		403, nil,
 	)
+	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
+		403, nil,
+	)
+	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+		"[]", nil,
+		403, nil,
+	)
 	test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		403, nil,
@@ -376,6 +384,14 @@ func TestMissingUser(t *testing.T) {
 		403, nil,
 	)
 
+	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+		`["test.test-3"]`, http.Header{
+			"X-IRMA-Keyshare-Username": []string{"doesnotexist"},
+			"Authorization":            []string{"ey.ey.ey"},
+		},
+		403, nil,
+	)
+
 	test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
 		"123456789", http.Header{
 			"X-IRMA-Keyshare-Username": []string{"doesnotexist"},
@@ -431,6 +447,24 @@ func TestKeyshareSessions(t *testing.T) {
 
 		// retrieve commitments normally
 		test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+			`["test.test-3"]`, http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{user.auth},
+			},
+			200, nil,
+		)
+
+		// can't retrieve Ps with fake authorization
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+			`["test.test-3"]`, http.Header{
+				"X-IRMA-Keyshare-Username": []string{user.username},
+				"Authorization":            []string{"fakeauthorization"},
+			},
+			400, nil,
+		)
+
+		// retrieve Ps normally
+		test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
 			`["test.test-3"]`, http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},

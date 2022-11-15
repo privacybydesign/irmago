@@ -3,6 +3,7 @@ package irma
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/privacybydesign/gabi/big"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -389,6 +390,27 @@ func (ppcm *ProofPCommitmentMap) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(encPPCM)
+}
+
+type PMap struct {
+	Ps map[PublicKeyIdentifier]*big.Int `json:"p"`
+}
+
+func (pm *PMap) MarshalJSON() ([]byte, error) {
+	var encPM struct {
+		Ps map[string]*big.Int `json:"p"`
+	}
+	encPM.Ps = make(map[string]*big.Int)
+
+	for pki, v := range pm.Ps {
+		pkiBytes, err := pki.MarshalText()
+		if err != nil {
+			return nil, err
+		}
+		encPM.Ps[string(pkiBytes)] = v
+	}
+
+	return json.Marshal(encPM)
 }
 
 //
