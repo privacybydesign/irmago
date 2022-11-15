@@ -52,7 +52,7 @@ return nonce
 |||
 
 ' initial P_t from kss, new endpoint, do once before issuance
-app -> keyshare ++: <font color=#1D5B2A>POST /prove/getP \n<font color=#1D5B2A>["irma-demo.IRMATube-1"] + access token
+app -> keyshare ++: <font color=#1D5B2A>POST /prove/getPs \n<font color=#1D5B2A>["irma-demo.IRMATube-1"] + access token
 return <font color=#1D5B2A>P_t
 |||
 
