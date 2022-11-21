@@ -9,7 +9,7 @@ ENV CGO_ENABLED=0
 # Build irma CLI tool
 COPY . /irmago
 WORKDIR /irmago
-RUN go build -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./irma
+RUN go build -buildvcs=false -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./irma
 
 FROM $BASE_IMAGE
 
