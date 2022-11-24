@@ -28,6 +28,29 @@ func init() {
 	irma.Logger.SetLevel(logrus.FatalLevel)
 }
 
+// TODO: implement proper way of backwards compatible testing
+func TestServerFeatureX(t *testing.T) {
+	// tests for api v2
+	someFeatureSetToTest(t, "/api/v2")
+
+	// tests for api v1
+	someFeatureSetToTest(t, "/api/v1")
+
+	// test for api v1 with loadbalancer handling the prefix
+	someFeatureSetToTest(t, "")
+
+}
+
+func someFeatureSetToTest(t *testing.T, prefix string) {
+	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
+	defer StopKeyshareServer(t, keyshareServer, httpServer)
+
+	test.HTTPPost(t, nil, fmt.Sprintf("http://localhost:8080%s/client/register", prefix),
+		"gval;kefsajsdkl;", nil,
+		400, nil,
+	)
+}
+
 func TestServerInvalidMessage(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
