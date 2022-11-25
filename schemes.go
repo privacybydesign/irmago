@@ -823,7 +823,7 @@ func downloadScheme(url string) (Scheme, error) {
 }
 
 func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error) {
-	dir, err := ioutil.TempDir(filepath.Dir(scheme.path()), "tempscheme")
+	dir, err := ioutil.TempDir(filepath.Dir(scheme.path()), ".tempscheme")
 	if err != nil {
 		return "", "", err
 	}
@@ -844,7 +844,7 @@ func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error)
 func (conf *Configuration) updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
 	// Create a directory in the same directory as oldscheme,
 	// this is to make sure os.Rename does not fail with an "invalid cross-device link" error.
-	tmp, err := ioutil.TempDir(filepath.Dir(oldscheme), "oldscheme")
+	tmp, err := ioutil.TempDir(filepath.Dir(oldscheme), ".oldscheme")
 	if err != nil {
 		return err
 	}
