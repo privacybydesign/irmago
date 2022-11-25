@@ -120,6 +120,28 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 	require.Equal(t, SchemeManagerStatusInvalidSignature, conf.SchemeManagers[id].Status)
 }
 
+func TestParseIrmaConfigurationLeftoverTempDir(t *testing.T) {
+	storage := test.SetupTestStorage(t)
+	defer test.ClearTestStorage(t, nil, storage)
+
+	confpath := filepath.Join(storage, "client")
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, ".tempscheme")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, ".oldscheme")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, ".foobar")))
+
+	// Parse configuration, the above folders are ignored
+	conf, err := NewConfiguration(confpath, ConfigurationOptions{Assets: filepath.Join("testdata", "irma_configuration")})
+	require.NoError(t, err)
+	require.NoError(t, conf.ParseFolder())
+
+	// These are removed by ParseFolder()
+	require.NoError(t, common.AssertPathNotExists(filepath.Join(confpath, ".tempscheme")))
+	require.NoError(t, common.AssertPathNotExists(filepath.Join(confpath, ".oldscheme")))
+
+	// Other dotted dirs are left in place by ParseFolder()
+	require.NoError(t, common.AssertPathExists(filepath.Join(confpath, ".foobar")))
+}
+
 func TestRetryHTTPRequest(t *testing.T) {
 	test.StartBadHttpServer(2, 1*time.Second, "42")
 	defer test.StopBadHttpServer()
