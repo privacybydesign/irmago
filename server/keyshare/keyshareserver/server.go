@@ -117,65 +117,44 @@ func (s *Server) Handler() http.Handler {
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
 		router.Use(server.LogMiddleware("keyshareserver", opts))
 
-		router.Route("/api/v2", func(r chi.Router) {
-			// ...
-		})
+		router.Mount("/api/v1", s.apiV1Handler(router))
 
-		router.Route("/api/v1", func(r chi.Router) {
+		// TODO: Remove after loadbalancer has been updated to remove the /api/v1 prefix
+		router.Mount("/", s.apiV1Handler(router))
 
-			// Registration
-			r.Post("/client/register", s.handleRegister)
-
-			// Authentication
-			r.Post("/users/verify_start", s.handleVerifyStart)
-			// The following two are so similar that they are both handled by handleVerify().
-			// NB: handleVerify() contains the strings "/users/verify/pin" and "/users/verify/pin_challengeresponse"
-			// to check, using its input, that the user has invoked the correct endpoint.
-			r.Post("/users/verify/pin", s.handleVerify)
-			r.Post("/users/verify/pin_challengeresponse", s.handleVerify)
-
-			// Other
-			r.Post("/users/change/pin", s.handleChangePin)
-			r.Post("/users/register_publickey", s.handleRegisterPublicKey)
-
-			// Keyshare sessions
-			r.Group(func(router chi.Router) {
-				router.Use(s.userMiddleware)
-				router.Use(s.authorizationMiddleware)
-				router.Post("/prove/getCommitments", s.handleCommitments)
-				router.Post("/prove/getResponse", s.handleResponse)
-			})
-		})
-
-		//TODO: Remove routes below after loadbalancer has been updated to remove the /api/v1 prefix
-
-		// Registration
-		router.Post("/client/register", s.handleRegister)
-
-		// Authentication
-		router.Post("/users/verify_start", s.handleVerifyStart)
-		// The following two are so similar that they are both handled by handleVerify().
-		// NB: handleVerify() contains the strings "/users/verify/pin" and "/users/verify/pin_challengeresponse"
-		// to check, using its input, that the user has invoked the correct endpoint.
-		router.Post("/users/verify/pin", s.handleVerify)
-		router.Post("/users/verify/pin_challengeresponse", s.handleVerify)
-
-		// Other
-		router.Post("/users/change/pin", s.handleChangePin)
-		router.Post("/users/register_publickey", s.handleRegisterPublicKey)
-
-		// Keyshare sessions
-		router.Group(func(router chi.Router) {
-			router.Use(s.userMiddleware)
-			router.Use(s.authorizationMiddleware)
-			router.Post("/prove/getCommitments", s.handleCommitments)
-			router.Post("/prove/getResponse", s.handleResponse)
-		})
 	})
 
 	// IRMA server for issuing myirma credential during registration
 	router.Mount("/irma/", s.irmaserv.HandlerFunc())
 	return router
+}
+
+func (s *Server) apiV1Handler(r chi.Router) http.Handler {
+
+	// Registration
+	r.Post("/client/register", s.handleRegister)
+
+	// Authentication
+	r.Post("/users/verify_start", s.handleVerifyStart)
+	// The following two are so similar that they are both handled by handleVerify().
+	// NB: handleVerify() contains the strings "/users/verify/pin" and "/users/verify/pin_challengeresponse"
+	// to check, using its input, that the user has invoked the correct endpoint.
+	r.Post("/users/verify/pin", s.handleVerify)
+	r.Post("/users/verify/pin_challengeresponse", s.handleVerify)
+
+	// Other
+	r.Post("/users/change/pin", s.handleChangePin)
+	r.Post("/users/register_publickey", s.handleRegisterPublicKey)
+
+	// Keyshare sessions
+	r.Group(func(router chi.Router) {
+		router.Use(s.userMiddleware)
+		router.Use(s.authorizationMiddleware)
+		router.Post("/prove/getCommitments", s.handleCommitments)
+		router.Post("/prove/getResponse", s.handleResponse)
+	})
+
+	return r
 }
 
 // On configuration changes, update the keyshare core with all current public keys of the IRMA issuers.
@@ -388,13 +367,13 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 
 	var username string
 	if msg.AuthResponseJWT == "" {
-		if r.URL.Path != "/users/verify/pin" {
+		if !strings.HasSuffix(r.URL.Path, "/users/verify/pin") {
 			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
 			return
 		}
 		username = msg.Username
 	} else {
-		if r.URL.Path != "/users/verify/pin_challengeresponse" {
+		if !strings.HasSuffix(r.URL.Path, "/users/verify/pin_challengeresponse") {
 			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
 			return
 		}
