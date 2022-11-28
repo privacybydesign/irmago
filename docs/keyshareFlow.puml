@@ -18,7 +18,7 @@ return Invisible issuing of keyshare credential \n(directly via session endpoint
 
 'already enrolled app: similar to the one sent by the irmaclient when changing your IRMA PIN code
 'note: hier komt een nieuwe jwt terug
-app -> keyshare ++: <font color=#1D5B2A> <font color=#1D5B2A> POST /users/register_publickey signed jwt:{id, pin, publickey}
+app -> keyshare ++: <font color=#1D5B2A> POST /users/register_publickey signed jwt:{id, pin, publickey}
 keyshare -> keyshare: <font color=#1D5B2A>validate jwt</font>
 keyshare -> keyshare: <font color=#1D5B2A>validate PIN</font>
 keyshare -> db: <font color=#1D5B2A>store publickey</font>
@@ -31,7 +31,7 @@ keyshare -> keyshare: <font color=#1D5B2A>generate challenge
 return <font color=#1D5B2A>"pin_challengeresponse", challenge
 |||
 
-app -> keyshare ++: POST /users/verify/pin<font color=#1D5B2A>_challengeresponse</font> {id, pin, <font color=#1D5B2A>reponse</font>}
+app -> keyshare ++: POST /users/verify/pin<font color=#1D5B2A>_challengeresponse</font> {id, pin, <font color=#1D5B2A>response</font>}
 keyshare -> db: fetch user
 keyshare -> keyshare: verify pin \n(incl reservePinCheck and blocking)
 keyshare -> keyshare: <font color=#1D5B2A>verify response which correponds to challenge
@@ -52,28 +52,28 @@ return nonce
 |||
 
 ' initial P_t from kss, new endpoint, do once before issuance
-app -> keyshare ++: POST /prove/getP \n["irma-demo.IRMATube-1"] + access token
-return P_t
+app -> keyshare ++: <font color=#1D5B2A>POST /prove/getPs \n<font color=#1D5B2A>["irma-demo.IRMATube-1"] + access token
+return <font color=#1D5B2A>P_t
 |||
 
-app -> app: hw=hash(P,W_uu)
+app -> app: <font color=#1D5B2A>hw=hash(P,W_uu)
 |||
 
-app -> keyshare ++: POST /prove/getCommitments \n["irma-demo.IRMATube-1"] + h_w + access token
+app -> keyshare ++: POST /prove/getCommitments \n["irma-demo.IRMATube-1"] + <font color=#1D5B2A>h_w</font> + access token
 keyshare -> keyshare: verify token
 keyshare -> keyshare: generate commitments
-keyshare -> keyshare: store commitID for later requests
+keyshare -> keyshare: <font color=#1D5B2A>store commitID for later requests</font>
 return commitments W_t
 |||
 
 app -> app: generate c = hash(nonce,P,W), s_u
-app -> keyshare ++: POST /prove/getResponse + \nnonce + s_u + W_u + P + access token
-keyshare -> keyshare: verify h_w
-keyshare -> keyshare: re-calculate c
+app -> keyshare ++: POST /prove/getResponse + \n<font color=#1D5B2A>nonce + s_u + W_u + P </font>+ access token
+keyshare -> keyshare: <font color=#1D5B2A>verify h_w
+keyshare -> keyshare: <font color=#1D5B2A>re-calculate c
 keyshare -> keyshare: log for MyIRMA
 keyshare -> keyshare: get commitment data from \nmemory store and build \nresponse with challenge
 return <font color=#1D5B2A>+signed jwt over challenge which is in ProofP
 
-app -> requestor: challenge/response, signed jwt, P=A*P_t || P=U*P_t
+app -> requestor: challenge/response, signed jwt, <font color=#1D5B2A>P=A*P_t || P=U*P_t
 
 @enduml
