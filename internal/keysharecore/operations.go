@@ -209,7 +209,8 @@ func (c *Core) GeneratePs(secrets UserSecrets, accessToken string, keyIDs []irma
 		keyList = append(keyList, key)
 	}
 
-	// verify access and decrypt
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
 	s, err := c.verifyAccess(secrets, accessToken)
 	if err != nil {
 		return nil, err
@@ -237,7 +238,8 @@ func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyI
 		keyList = append(keyList, key)
 	}
 
-	// verify access and decrypt
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
 	s, err := c.verifyAccess(secrets, accessToken)
 	if err != nil {
 		return nil, 0, err
@@ -275,7 +277,8 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 		return "", ErrKeyNotFound
 	}
 
-	// verify access and decrypt
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
 	s, err := c.verifyAccess(secrets, accessToken)
 	if err != nil {
 		return "", err
