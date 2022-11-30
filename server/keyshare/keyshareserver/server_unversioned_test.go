@@ -137,7 +137,7 @@ func TestPinTries(t *testing.T) {
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/api/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
 		`{"id":"legacyuser","pin":"puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}`, nil,
 		200, &jwtMsg,
 	)
