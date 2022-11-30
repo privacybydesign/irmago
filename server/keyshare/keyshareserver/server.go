@@ -117,11 +117,11 @@ func (s *Server) Handler() http.Handler {
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
 		router.Use(server.LogMiddleware("keyshareserver", opts))
 
-		router.Mount("/api/v1", s.apiV1Handler(router))
+		s.routeHandler(router)
 
-		// TODO: Remove after loadbalancer has been updated to remove the /api/v1 prefix
-		router.Mount("/", s.apiV1Handler(router))
-
+		router.Route("/api/v1", func(r chi.Router) {
+			s.routeHandler(r)
+		})
 	})
 
 	// IRMA server for issuing myirma credential during registration
@@ -129,7 +129,7 @@ func (s *Server) Handler() http.Handler {
 	return router
 }
 
-func (s *Server) apiV1Handler(r chi.Router) http.Handler {
+func (s *Server) routeHandler(r chi.Router) http.Handler {
 
 	// Registration
 	r.Post("/client/register", s.handleRegister)
