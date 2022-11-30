@@ -19,7 +19,7 @@ func init() {
 	irma.Logger.SetLevel(logrus.FatalLevel)
 }
 
-func TestUnvServerInvalidMessage(t *testing.T) {
+func TestUnversionedServerInvalidMessage(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
@@ -61,7 +61,7 @@ func TestUnvServerInvalidMessage(t *testing.T) {
 	)
 }
 
-func TestUnvServerHandleRegisterLegacy(t *testing.T) {
+func TestUnversionedServerHandleRegisterLegacy(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
@@ -83,7 +83,7 @@ func TestUnvServerHandleRegisterLegacy(t *testing.T) {
 	)
 }
 
-func TestUnvServerHandleRegister(t *testing.T) {
+func TestUnversionedServerHandleRegister(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
@@ -118,7 +118,7 @@ func TestUnvServerHandleRegister(t *testing.T) {
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register", string(msg), nil, 500, nil)
 }
 
-func TestUnvPinTries(t *testing.T) {
+func TestUnversionedPinTries(t *testing.T) {
 	db := createDB(t)
 	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
@@ -145,7 +145,7 @@ func TestUnvPinTries(t *testing.T) {
 	require.Equal(t, "1", jwtMsg.Message)
 }
 
-func TestUnvPinTryChallengeResponse(t *testing.T) {
+func TestUnversionedPinTryChallengeResponse(t *testing.T) {
 	db := createDB(t)
 	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
@@ -158,7 +158,7 @@ func TestUnvPinTryChallengeResponse(t *testing.T) {
 
 	sk := loadClientPrivateKey(t)
 
-	jwtt := doUnvChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
+	jwtt := doUnversionedChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	var jwtMsg irma.KeysharePinStatus
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
 		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
@@ -167,7 +167,7 @@ func TestUnvPinTryChallengeResponse(t *testing.T) {
 	require.Equal(t, "success", jwtMsg.Status)
 
 	// try with an invalid response
-	jwtt = doUnvChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
+	jwtt = doUnversionedChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	jwtt = jwtt[:len(jwtt)-4]
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
 		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
@@ -175,7 +175,7 @@ func TestUnvPinTryChallengeResponse(t *testing.T) {
 	)
 }
 
-func TestUnvStartAuth(t *testing.T) {
+func TestUnversionedStartAuth(t *testing.T) {
 	db := createDB(t)
 	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
@@ -204,7 +204,7 @@ func TestUnvStartAuth(t *testing.T) {
 	)
 }
 
-func TestUnvRegisterPublicKey(t *testing.T) {
+func TestUnversionedRegisterPublicKey(t *testing.T) {
 	db := createDB(t)
 	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: true, tries: 1, wait: 0, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
@@ -260,7 +260,7 @@ func TestUnvRegisterPublicKey(t *testing.T) {
 	)
 
 	// challenge-response should work now
-	_ = doUnvChallengeResponse(t, loadClientPrivateKey(t), "legacyuser", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
+	_ = doUnversionedChallengeResponse(t, loadClientPrivateKey(t), "legacyuser", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 
 	// can't do it a second time
 	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
@@ -269,7 +269,7 @@ func TestUnvRegisterPublicKey(t *testing.T) {
 	)
 }
 
-func TestUnvRegisterPublicKeyBlockedUser(t *testing.T) {
+func TestUnversionedRegisterPublicKeyBlockedUser(t *testing.T) {
 	db := createDB(t)
 	keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: false, tries: 0, wait: 5, err: nil}, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
@@ -300,7 +300,7 @@ func TestUnvRegisterPublicKeyBlockedUser(t *testing.T) {
 	require.Equal(t, "error", jwtMsg.Status)
 }
 
-func TestUnvPinNoRemainingTries(t *testing.T) {
+func TestUnversionedPinNoRemainingTries(t *testing.T) {
 	db := createDB(t)
 
 	for _, ok := range []bool{true, false} {
@@ -325,7 +325,7 @@ func TestUnvPinNoRemainingTries(t *testing.T) {
 	}
 }
 
-func TestUnvMissingUser(t *testing.T) {
+func TestUnversionedMissingUser(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
@@ -356,12 +356,12 @@ func TestUnvMissingUser(t *testing.T) {
 	)
 }
 
-func TestUnvKeyshareSessions(t *testing.T) {
+func TestUnversionedKeyshareSessions(t *testing.T) {
 	db := createDB(t)
 	keyshareServer, httpServer := StartKeyshareServer(t, db, "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
-	jwtt := doUnvChallengeResponse(t, loadClientPrivateKey(t), "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
+	jwtt := doUnversionedChallengeResponse(t, loadClientPrivateKey(t), "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	var jwtMsg irma.KeysharePinStatus
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
 		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
@@ -438,7 +438,7 @@ func TestUnvKeyshareSessions(t *testing.T) {
 	}
 }
 
-func doUnvChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username, pin string) string {
+func doUnversionedChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username, pin string) string {
 	// retrieve a challenge
 	auth := &irma.KeyshareAuthChallenge{}
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
