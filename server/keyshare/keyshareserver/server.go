@@ -129,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 		r.Use(s.userMiddleware)
 		r.Use(s.authorizationMiddleware)
 		r.Post("/prove/getPs", s.handlePs)
+		r.Post("/prove/getCommitments", s.handleCommitmentsV2)
 	})
 
 	// IRMA server for issuing myirma credential during registration
@@ -295,6 +296,71 @@ func (s *Server) generateCommitments(user *User, authorization string, keys []ir
 
 	// And send response
 	return &irma.ProofPCommitmentMap{Commitments: mappedCommitments}, nil
+}
+
+// /api/v2/prove/getCommitments
+func (s *Server) handleCommitmentsV2(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+	authorization := r.Context().Value("authorization").(string)
+
+	// Read keys
+	var req irma.GetCommitmentsRequest
+	if err := server.ParseBody(r, &req); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if len(req.Keys) == 0 {
+		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		return
+	}
+
+	commitments, err := s.generateCommitmentsV2(user, authorization, req)
+	// TODO: can ErrInvalidChallenge be removed?
+	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, commitments)
+}
+
+func (s *Server) generateCommitmentsV2(user *User, authorization string, req irma.GetCommitmentsRequest) (*irma.ProofPCommitmentMapV2, error) {
+	// Generate commitments
+	commitments, commitID, err := s.core.GenerateCommitments(user.Secrets, authorization, req.Keys)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
+		return nil, err
+	}
+
+	// Prepare output message format
+	// TODO: move logic to gabi?
+	mappedCommitments := map[irma.PublicKeyIdentifier]*big.Int{}
+	for i, keyID := range req.Keys {
+		mappedCommitments[keyID] = commitments[i].Pcommit
+	}
+
+	// Store needed data for later requests.
+	// Of all keys involved in the current session, store the ID of the last one to be used when
+	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
+	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
+	// puts the key ID of the credential(s) being issued at the last index (indeed, the irmaclient
+	// always puts all ProofU's after the ProofD's in the list of proofs it sends to the IRMA
+	// server).
+	s.store.add(user.Username, &session{
+		KeyID:    req.Keys[len(req.Keys)-1],
+		Hw:       req.Hash,
+		CommitID: commitID,
+	})
+
+	// And send response
+	return &irma.ProofPCommitmentMapV2{Commitments: mappedCommitments}, nil
 }
 
 // /prove/getResponse
