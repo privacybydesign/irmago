@@ -969,7 +969,7 @@ func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest, choic
 		}
 		credtype := client.Configuration.CredentialTypes[futurecred.CredentialTypeID]
 		credBuilder, err := gabi.NewCredentialBuilder(pk, request.GetContext(),
-			client.secretkey.Key, issuerProofNonce, credtype.RandomBlindAttributeIndices())
+			client.secretkey.Key, issuerProofNonce, big.NewInt(2346234), credtype.RandomBlindAttributeIndices())
 		if err != nil {
 			return nil, nil, nil, err
 		}

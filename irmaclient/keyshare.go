@@ -408,7 +408,7 @@ func (ks *keyshareSession) GetCommitments() {
 		if !distributed {
 			continue
 		}
-		builder.MergeProofPCommitment(comm)
+		builder.SetProofPCommitment(comm)
 	}
 
 	ks.GetProofPs()
