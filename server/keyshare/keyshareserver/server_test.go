@@ -65,11 +65,11 @@ func TestServerInvalidMessage(t *testing.T) {
 		403, nil,
 	)
 	// TODO: move.
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getPs",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		403, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getPs",
 		"[]", nil,
 		403, nil,
 	)
@@ -386,7 +386,7 @@ func TestMissingUser(t *testing.T) {
 	)
 
 	// TODO: move
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getPs",
 		`["test.test-3"]`, http.Header{
 			"X-IRMA-Keyshare-Username": []string{"doesnotexist"},
 			"Authorization":            []string{"ey.ey.ey"},
@@ -458,7 +458,7 @@ func TestKeyshareSessions(t *testing.T) {
 
 		// TODO: move
 		// can't retrieve Ps with fake authorization
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v2prove/getPs",
 			`["test.test-3"]`, http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{"fakeauthorization"},
@@ -467,7 +467,7 @@ func TestKeyshareSessions(t *testing.T) {
 		)
 
 		// retrieve Ps normally
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getPs",
 			`["test.test-3"]`, http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},

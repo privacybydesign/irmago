@@ -124,6 +124,13 @@ func (s *Server) Handler() http.Handler {
 		})
 	})
 
+	router.Route("/api/v2", func(r chi.Router) {
+		// Keyshare sessions with provably secure keyshare protocol
+		r.Use(s.userMiddleware)
+		r.Use(s.authorizationMiddleware)
+		r.Post("/prove/getPs", s.handlePs)
+	})
+
 	// IRMA server for issuing myirma credential during registration
 	router.Mount("/irma/", s.irmaserv.HandlerFunc())
 	return router
@@ -150,7 +157,6 @@ func (s *Server) routeHandler(r chi.Router) http.Handler {
 	r.Group(func(router chi.Router) {
 		router.Use(s.userMiddleware)
 		router.Use(s.authorizationMiddleware)
-		router.Post("/prove/getPs", s.handlePs)
 		router.Post("/prove/getCommitments", s.handleCommitments)
 		router.Post("/prove/getResponse", s.handleResponse)
 	})
