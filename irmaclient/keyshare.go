@@ -49,6 +49,7 @@ type keyshareSession struct {
 	issuerProofNonce *big.Int
 	timestamp        *atum.Timestamp
 	pinCheck         bool
+	protocolVersion  *irma.ProtocolVersion
 }
 
 type keyshareServer struct {
@@ -81,29 +82,27 @@ func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (*k
 	return ks, nil
 }
 
-func (ks *keyshareServer) HashedPin(pin string) string {
-	hash := sha256.Sum256(append(ks.Nonce, []byte(pin)...))
+func (kss *keyshareServer) HashedPin(pin string) string {
+	hash := sha256.Sum256(append(kss.Nonce, []byte(pin)...))
 	// We must be compatible with the old Android app here,
 	// which uses Base64.encodeToString(hash, Base64.DEFAULT),
 	// which appends a newline.
 	return base64.StdEncoding.EncodeToString(hash[:]) + "\n"
 }
 
-// startKeyshareSession starts and completes the entire keyshare protocol with all involved keyshare servers
+// newKeyshareSession starts and completes the entire keyshare protocol with all involved keyshare servers
 // for the specified session, merging the keyshare proofs into the specified ProofBuilder's.
 // The user's pin is retrieved using the KeysharePinRequestor, repeatedly, until either it is correct; or the
 // user cancels; or one of the keyshare servers blocks us.
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
-func startKeyshareSession(
+func newKeyshareSession(
 	sessionHandler keyshareSessionHandler,
 	client *Client,
 	pin KeysharePinRequestor,
-	builders gabi.ProofBuilderList,
 	session irma.SessionRequest,
 	implicitDisclosure [][]*irma.AttributeIdentifier,
-	issuerProofNonce *big.Int,
-	timestamp *atum.Timestamp,
-) {
+	protocolVersion *irma.ProtocolVersion,
+) (*keyshareSession, bool) {
 	ksscount := 0
 
 	// A number of times below we need to look at all involved schemes, and then we need to take into
@@ -122,27 +121,25 @@ func startKeyshareSession(
 			if _, enrolled := client.keyshareServers[managerID]; !enrolled {
 				err := errors.New("Not enrolled to keyshare server of scheme manager " + managerID.String())
 				sessionHandler.KeyshareError(&managerID, err)
-				return
+				return nil, false
 			}
 		}
 	}
 	if _, issuing := session.(*irma.IssuanceRequest); issuing && ksscount > 1 {
 		err := errors.New("Issuance session involving more than one keyshare servers are not supported")
 		sessionHandler.KeyshareError(nil, err)
-		return
+		return nil, false
 	}
 
 	ks := &keyshareSession{
-		schemeIDs:        schemeIDs,
-		session:          session,
-		client:           client,
-		builders:         builders,
-		sessionHandler:   sessionHandler,
-		transports:       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
-		pinRequestor:     pin,
-		issuerProofNonce: issuerProofNonce,
-		timestamp:        timestamp,
-		pinCheck:         false,
+		schemeIDs:       schemeIDs,
+		session:         session,
+		client:          client,
+		sessionHandler:  sessionHandler,
+		transports:      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
+		pinRequestor:    pin,
+		pinCheck:        false,
+		protocolVersion: protocolVersion,
 	}
 
 	for managerID := range schemeIDs {
@@ -158,31 +155,38 @@ func startKeyshareSession(
 		ks.transports[managerID] = transport
 
 		// Try to parse token as a jwt to see if it is still valid; if so we don't need to ask for the PIN
-		parser := new(jwt.Parser)
-		parser.SkipClaimsValidation = true // We want to verify expiry on our own below so we can add leeway
-		claims := jwt.StandardClaims{}
-		_, err := parser.ParseWithClaims(ks.keyshareServer.token, &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID))
-		if err != nil {
-			irma.Logger.Info("Keyshare server token invalid, asking for PIN")
-			irma.Logger.Debug("Token: ", ks.keyshareServer.token)
-			ks.pinCheck = true
-			continue
-		}
-		// Add a minute of leeway for possible clockdrift with the server,
-		// and for the rest of the protocol to take place with this token
-		if !claims.VerifyExpiresAt(time.Now().Add(1*time.Minute).Unix(), true) {
-			irma.Logger.Info("Keyshare server token expires too soon, asking for PIN")
-			irma.Logger.Debug("Token: ", ks.keyshareServer.token)
+		if !ks.keyshareServer.tokenValid(ks.client.Configuration) {
 			ks.pinCheck = true
 		}
 	}
 
-	if ks.pinCheck {
-		ks.sessionHandler.KeysharePin()
-		ks.VerifyPin(-1)
-	} else {
-		ks.GetCommitments()
+	if !ks.pinCheck {
+		return ks, true
 	}
+
+	ks.sessionHandler.KeysharePin()
+	return ks, ks.VerifyPin(-1)
+}
+
+func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation()) // We want to verify expiry on our own below so we can add leeway
+	claims := jwt.RegisteredClaims{}
+	_, err := parser.ParseWithClaims(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier))
+	if err != nil {
+		irma.Logger.Info("Keyshare server token invalid")
+		irma.Logger.Debug("Token: ", kss.token)
+		return false
+	}
+
+	// Add a minute of leeway for possible clockdrift with the server,
+	// and for the rest of the protocol to take place with this token
+	if !claims.VerifyExpiresAt(time.Now().Add(1*time.Minute), true) {
+		irma.Logger.Info("Keyshare server token expires too soon")
+		irma.Logger.Debug("Token: ", kss.token)
+		return false
+	}
+
+	return true
 }
 
 func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error) {
@@ -209,9 +213,9 @@ func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error)
 	}
 }
 
-// Ask for a pin, repeatedly if necessary, and either continue the keyshare protocol
-// with authorization, or stop the keyshare protocol and inform of failure.
-func (ks *keyshareSession) VerifyPin(attempts int) {
+// VerifyPin asks for a pin, repeatedly if necessary, informing the handler of success or failure.
+// It returns whether or not the authentication was succesful.
+func (ks *keyshareSession) VerifyPin(attempts int) bool {
 	ks.pinRequestor.RequestPin(attempts, PinHandler(func(proceed bool, pin string) {
 		if !proceed {
 			ks.sessionHandler.KeyshareCancelled()
@@ -228,12 +232,12 @@ func (ks *keyshareSession) VerifyPin(attempts int) {
 		}
 		if success {
 			ks.sessionHandler.KeysharePinOK()
-			ks.GetCommitments()
 			return
 		}
 		// Not successful but no error and not yet blocked: try again
 		ks.VerifyPin(attemptsRemaining)
 	}))
+	return ks.keyshareServer.tokenValid(ks.client.Configuration)
 }
 
 // challengeRequestJWTExpiry is the expiry of the JWT sent to the keyshareserver at
@@ -389,7 +393,10 @@ func (ks *keyshareSession) GetCommitments() {
 				// (but only if we did not ask for a PIN earlier)
 				ks.pinCheck = false
 				ks.sessionHandler.KeysharePin()
-				ks.VerifyPin(-1)
+				authenticated := ks.VerifyPin(-1)
+				if authenticated {
+					ks.GetCommitments()
+				}
 				return
 			}
 			ks.sessionHandler.KeyshareError(&managerID, err)
@@ -462,6 +469,11 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 			ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
 			return
 		}
+
+		if ks.protocolVersion.Below(2, 9) {
+			ks.removeKeysharePsFromProofUs(list)
+		}
+
 		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.issuerProofNonce}
 		message.ProofPjwts = map[string]string{}
 		for manager, response := range responses {
@@ -499,4 +511,28 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		return
 	}
 	ks.sessionHandler.KeyshareDone(list)
+}
+
+// getKeysharePs retrieves all P values (i.e. R_0^{keyshare server secret}) from all keyshare servers,
+// for use during issuance.
+func (ks *keyshareSession) getKeysharePs(request *irma.IssuanceRequest) (map[irma.SchemeManagerIdentifier]*irma.PMap, error) {
+	// Assemble keys of which to retrieve P's, grouped per keyshare server
+	distributedKeys := map[irma.SchemeManagerIdentifier][]irma.PublicKeyIdentifier{}
+	for _, futurecred := range request.Credentials {
+		schemeID := futurecred.CredentialTypeID.IssuerIdentifier().SchemeManagerIdentifier()
+		if ks.client.Configuration.SchemeManagers[schemeID].Distributed() {
+			distributedKeys[schemeID] = append(distributedKeys[schemeID], futurecred.PublicKeyIdentifier())
+		}
+	}
+
+	keysharePs := map[irma.SchemeManagerIdentifier]*irma.PMap{}
+	for schemeID, keys := range distributedKeys {
+		Ps := irma.PMap{Ps: map[irma.PublicKeyIdentifier]*big.Int{}}
+		if err := ks.transports[schemeID].Post("api/v2/prove/getPs", &Ps, keys); err != nil {
+			return nil, err
+		}
+		keysharePs[schemeID] = &Ps
+	}
+
+	return keysharePs, nil
 }
