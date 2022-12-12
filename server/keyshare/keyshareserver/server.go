@@ -122,14 +122,14 @@ func (s *Server) Handler() http.Handler {
 		router.Route("/api/v1", func(r chi.Router) {
 			s.routeHandler(r)
 		})
-	})
 
-	router.Route("/api/v2", func(r chi.Router) {
-		// Keyshare sessions with provably secure keyshare protocol
-		r.Use(s.userMiddleware)
-		r.Use(s.authorizationMiddleware)
-		r.Post("/prove/getPs", s.handlePs)
-		r.Post("/prove/getCommitments", s.handleCommitmentsV2)
+		router.Route("/api/v2", func(r chi.Router) {
+			// Keyshare sessions with provably secure keyshare protocol
+			r.Use(s.userMiddleware)
+			r.Use(s.authorizationMiddleware)
+			r.Post("/prove/getPs", s.handlePs)
+			r.Post("/prove/getCommitments", s.handleCommitmentsV2)
+		})
 	})
 
 	// IRMA server for issuing myirma credential during registration
