@@ -214,7 +214,7 @@ func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error)
 }
 
 // VerifyPin asks for a pin, repeatedly if necessary, informing the handler of success or failure.
-// It returns whether or not the authentication was succesful.
+// It returns whether the authentication was successful or not.
 func (ks *keyshareSession) VerifyPin(attempts int) bool {
 	ks.pinRequestor.RequestPin(attempts, PinHandler(func(proceed bool, pin string) {
 		if !proceed {
