@@ -981,7 +981,7 @@ func (client *Client) IssuanceProofBuilders(
 		if distributed {
 			keyshareP, present = keysharePs[schemeID].Ps[keyID]
 			if distributed && !present {
-				return nil, nil, nil, errors.Errorf("missing keyshareP for %s", keyID)
+				return nil, nil, nil, errors.Errorf("missing keyshareP for %s-%d", keyID.Issuer, keyID.Counter)
 			}
 		}
 
