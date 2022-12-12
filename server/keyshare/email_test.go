@@ -46,3 +46,17 @@ func TestParseEmailTemplates(t *testing.T) {
 	require.NoError(t, templ[lang].Execute(&msg, map[string]string{"VerificationURL": "123"}))
 	require.Equal(t, "This is a test template 123", msg.String())
 }
+
+func TestVerifyMXRecord(t *testing.T) {
+	err := VerifyMXRecord("invalidaddress.com")
+	require.Error(t, err)
+
+	err = VerifyMXRecord("invalid@addresscom")
+	require.Error(t, err)
+
+	err = VerifyMXRecord("invalid@address123xyz.com")
+	require.Error(t, err)
+
+	err = VerifyMXRecord("info@github.com")
+	require.NoError(t, err)
+}

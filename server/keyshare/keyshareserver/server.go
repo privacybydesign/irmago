@@ -661,6 +661,14 @@ func (s *Server) sendRegistrationEmail(user *User, language, email string) error
 	}
 
 	verificationBaseURL := s.conf.TranslateString(s.conf.VerificationURL, language)
+
+	// Validate mail address and MX record
+	err = keyshare.VerifyMXRecord(email)
+
+	if err != nil {
+		return keyshare.ErrInvalidEmail
+	}
+
 	return s.conf.SendEmail(
 		s.conf.registrationEmailTemplates,
 		s.conf.RegistrationEmailSubjects,

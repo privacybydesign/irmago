@@ -80,10 +80,7 @@ func (conf EmailConfiguration) SendEmail(
 	if err != nil {
 		return ErrInvalidEmail
 	}
-	err = verifyMXRecord(email)
-	if err != nil {
-		return ErrInvalidEmail
-	}
+
 	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
@@ -136,7 +133,9 @@ func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject str
 	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
 }
 
-func verifyMXRecord(email string) error {
+// VerifyMXRecord checks for present and valid MX records on the domain name part of the supplied email address
+func VerifyMXRecord(email string) error {
+
 	at := strings.LastIndex(email, "@")
 	if at < 0 {
 		return errors.Errorf("no '@'-sign found in %v", email)

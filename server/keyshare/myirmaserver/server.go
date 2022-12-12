@@ -165,6 +165,14 @@ func (s *Server) sendDeleteEmails(session *session) error {
 	for _, email := range user.Emails {
 		// The error gets already logged in the SendEmail method. We can still proceed with deleting
 		// the user account, even if one or more notification mails could not be sent.
+
+		// Validate mail address and MX record
+		err = keyshare.VerifyMXRecord(email.Email)
+
+		if err != nil {
+			return keyshare.ErrInvalidEmail
+		}
+
 		_ = s.conf.SendEmail(
 			s.conf.deleteAccountTemplates,
 			s.conf.DeleteAccountSubjects,
@@ -232,6 +240,13 @@ func (s *Server) sendLoginEmail(request emailLoginRequest) error {
 		return err
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error adding login token to database")
+		return err
+	}
+
+	// Validate mail address and MX record
+	err = keyshare.VerifyMXRecord(request.Email)
+
+	if err != nil {
 		return err
 	}
 
@@ -522,6 +537,14 @@ func (s *Server) processRemoveEmail(session *session, email string) error {
 	}
 
 	if s.conf.EmailServer != "" {
+
+		// Validate mail address and MX record
+		err = keyshare.VerifyMXRecord(email)
+
+		if err != nil {
+			return err
+		}
+
 		err = s.conf.SendEmail(
 			s.conf.deleteEmailTemplates,
 			s.conf.DeleteEmailSubjects,

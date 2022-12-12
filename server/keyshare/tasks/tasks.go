@@ -87,6 +87,13 @@ func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 				return err
 			}
 
+			// Validate mail address and MX record
+			err = keyshare.VerifyMXRecord(email)
+
+			if err != nil {
+				return keyshare.ErrInvalidEmail
+			}
+
 			// And send
 			err = t.conf.SendEmail(
 				t.conf.deleteExpiredAccountTemplate,
