@@ -211,7 +211,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 // Any error encountered during parsing is considered recoverable only if it is of type *SchemeManagerError;
 // In this case the scheme in which it occurred is downloaded from its remote and re-parsed.
 // If any other error is encountered at any time, it is returned immediately.
-// If no error is returned, parsing and possibly restoring has been succesfull, and there should be no
+// If no error is returned, parsing and possibly restoring has been successful, and there should be no
 // disabled schemes.
 func (conf *Configuration) ParseOrRestoreFolder() (rerr error) {
 	err := conf.ParseFolder()
