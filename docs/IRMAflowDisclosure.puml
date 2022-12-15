@@ -1,0 +1,43 @@
+@startuml
+skinparam sequence {
+backgroundColor #transparent
+ActorBorderColor #7A2626
+ActorBackgroundColor #transparent
+ParticipantBorderColor #7A2626
+ParticipantBackgroundColor #004C92
+ParticipantFontColor white
+}
+
+actor "IRMA app user" as user
+participant "IRMA app" as app
+participant browser as browser
+participant requestor as requestor
+participant "IRMA server" as server
+
+title Disclosure flow with separate IRMA server
+user -> browser: checkout?
+browser -> requestor: initiate session
+requestor -> server: initiate session
+server -> server: make and store session
+server -> requestor: session pointer + requestor token (QR)
+requestor -> browser: session pointer (QR)
+browser -> server: start polling
+browser -> user: QR
+user -> app: scan QR
+app -> browser: read QR
+app -> server: get session using session pointer
+'get session using session pointer client token from session pointer
+server -> app: disclosure options (en client return url)
+app -> user: disclosure options
+user -> app: disclose choice
+app -> server: disclosure of chosen disclosure
+' browser -> server: poll result
+server -> browser: polling result: disclosure OK
+browser -> requestor: continue to checkout
+requestor -> server: verify using requestor token
+server -> requestor: verify OK
+requestor -> browser: checkout follow-up
+
+browser -> user: checkout follow-up
+
+@enduml

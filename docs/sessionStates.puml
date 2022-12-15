@@ -1,0 +1,218 @@
+@startuml
+skinparam sequence {
+backgroundColor #transparent
+ActorBorderColor #7A2626
+ActorBackgroundColor #transparent
+ParticipantBorderColor #7A2626
+ParticipantBackgroundColor #004C92
+ParticipantFontColor white
+} 
+
+actor "IRMA app user" as user
+participant "IRMA app" as app
+participant browser as browser
+participant "verifier" as verifier
+participant "server" as server
+
+title Sequence diagram with endpoint names
+browser -> verifier: initiate session
+verifier -> server: <font color=#1D5B2A>**POST** /session/ {1}</font> (create session)
+server -> server: create session and set state to INITIALIZED
+server -> verifier: session pointer + requestor token + frontendAuth {2}
+verifier -> browser: session pointer (QR) + frontendAuth
+browser -> server: <font color=#1D5B2A>**POST** /irma/session/{clientToken}/frontend/options {3}</font> (enable pairing)
+return pairingCode {4}
+browser -> server: <font color=#1D5B2A>**GET** /irma/session/{clientToken}/frontend/status </font>(start polling)
+browser -> user: QR
+user -> app: scan QR
+app -> browser: read QR
+app -> server: <font color=#1D5B2A>**GET** /irma/session/{clientToken}</font>
+' if pairing is not enabled, the session request will be returned directly
+server -> server: update state to PAIRING
+server -> app: pairing method and code {5}
+app -> server: <font color=#1D5B2A>**GET** /irma/session/{clientToken}/status</font> (start polling)
+server -> browser: polling response: state changed to PAIRING {6}
+browser -> user: pairing code ok?
+return ok
+browser -> server: <font color=#1D5B2A>**POST** /irma/session/{clientToken}/frontend/pairingcompleted {7}</font>
+server -> server: update state to CONNECTED
+server -> app: polling response: state changed to CONNECTED
+
+app -> server: <font color=#1D5B2A>**GET** /irma/session/{clientToken}/request</font>
+server -> app: session request with condiscon {8}
+app -> user: agree to disclose?
+user -> app: agree
+' in case of issuance /irma/session/{clientToken}/commitments is called here
+app -> server: <font color=#1D5B2A>**POST** /irma/session/{clientToken}/proofs {9}</font> (disclose)
+server -> server: update state to DONE
+
+server -> browser: polling response: state changed to DONE (+ possibly nextSession) {10}
+browser -> verifier: done
+verifier -> server: <font color=#1D5B2A>**GET** /session/{requestorToken}/result
+server -> verifier: result data {11}
+verifier -> browser: follow-up action
+
+browser -> user: follow-up action
+
+@enduml
+
+' states
+' TIMEOUT automatically when session times out
+' CANCELLED by app, browser or verifier
+
+' {1}
+' https://www.irma.app/docs/session-requests/#disclosure-requests
+' {
+'   "@context": "https://irma.app/ld/request/disclosure/v2",
+'   "disclose": [
+'     [
+'       [ "irma-demo.MijnOverheid.root.BSN" ]
+'     ],
+'     [
+'       [
+'         "irma-demo.nijmegen.address.street",
+'         "irma-demo.nijmegen.address.houseNumber",
+'         "irma-demo.nijmegen.address.city"
+'       ],
+'       [
+'         "irma-demo.idin.idin.address",
+'         "irma-demo.idin.idin.city"
+'       ]
+'     ]
+'   ]
+' }
+
+
+' {2}
+' https://www.irma.app/docs/api-irma-server/#post-session
+' {
+'   "token":"KzxuWKwL5KGLKr4uerws",
+'   "sessionPtr": {"u":"https://example.com/irma/session/ysDohpoySavbHAUDjmpz","irmaqr":"disclosing"},
+'   "frontendRequest": {
+'     "authorization":"qGrMmL8UZwZ88Sq8gobV",
+'     "minProtocolVersion": "1.0",
+'     "maxProtocolVersion": "1.1"
+'   }
+' }
+
+
+' {3}
+' https://www.irma.app/docs/api-irma-server/#post-irma-session-clienttoken-frontend-options
+' {
+'   "@context": "https://irma.app/ld/request/options/v1",
+'   "pairingMethod": "..."
+' }
+
+' {4}
+' https://www.irma.app/docs/api-irma-server/#post-irma-session-clienttoken-frontend-options
+' {
+'   "@context": "https://irma.app/ld/options/v1",
+'   "pairingMethod": "pin",
+'   "pairingCode":  "1234"
+' }
+
+' {5}
+' http://localhost:3000/docs/next/irma-protocol#get-irma-session-clienttoken
+' {
+'   "@context": "https://irma.app/ld/request/client/v1",
+'   "protocolVersion": "2.8",
+'   "options": {
+'     "@context": "https://irma.app/ld/options/v1",
+'     "pairingMethod": "pin",
+'     "pairingCode": "1761"
+'   }
+' }
+
+' {6}
+' https://www.irma.app/docs/api-irma-server/#get-irma-session-clienttoken-frontend-status
+' {
+'   "status" : "PAIRING",
+' }
+
+
+' {7}
+' https://www.irma.app/docs/api-irma-server/#post-irma-session-clienttoken-frontend-pairingcompleted
+' no body
+
+' {8}
+' http://localhost:3000/docs/next/irma-protocol#get-irma-session-clienttoken-request
+' {
+'   "@context": "https://irma.app/ld/request/disclosure/v2",
+'   "nonce": "Il2FiK8uCIApjzkWeRouSQ==",
+'   "context": "AQ==",
+'   "protocolVersion": "2.8",
+'   "devMode": true,
+'   "disclose": [
+'     [
+'       [
+'         "pbdf.pbdf.irmatube.type"
+'       ]
+'     ]
+'   ]
+' }
+
+
+' {9}
+' http://localhost:3000/docs/next/irma-protocol#disclosure-post-irma-session-clienttoken-proofs
+' {
+'   "proofs": [
+'     {
+'       "c": "Hg+cpDeB85nH0hZFmQ2AzLIv+CxVi6mPR2LeDZ+7XVU=",
+'       "A": "1Uf2V5PRILh6cjo64wWcwIDm39SqnXAXu+tOwq90GmceiahyG5h1zH5/HMA4vwxZfF+9pkqIX1/7twRU6dI5ct2hqAq6qWWcYrwqFV2PsMLVzIyrdU1xVeo4YOIajJ4DMX5rxrCJjjLb28VNWxWUqieXs/iz8Dn67+nYTxxdv4tQw7B3i45PtrD+sKbZPGjTQP0iBHOp5OOvlWNKDYZhKAYgkx+upjcDMHUSCDZPLUCzVBK7LZRqzsh02QrBRyFmeWKxqHpOKzyN9V1GHnUpXWPehenwGFD+N9/TB7rDfMciAV/BaC6pbPbjYCT0bWaBxe07kKT0O4PSsOHBf643jA==",
+'       "e_response": "oB02Vcm+NekUq4qA92p45jWj4L/QAIJW2SxnMOSyX6GmhV62KeU5+hQUvAv6hK/Jkw+NqdX0kiwV8DUQFc4d",
+'       "v_response": "C8NbtoNAwYX/OiYMbVBHcDExpIId2a6k5e/JC2rAbp7qATkHTfOjhvjjdSQNy6CYguW67Zn26lp817EWRNxia6ScAuQjkT+8nxBfFIOG5+qFANiRp2MhNCcbyFFPjQGL9m5fPHAoRkyvAPydwvOwomXuj2zX0LbReuYxlBviwLjikNHeWrPAxzk11NCnSxQd3jo+cHzKmJd24RbeOWoyuBRtoXBEV/cKcFbfAd0vamr9n5LYNDK7BXqazBzkP6VeTyzvKFgalW/7mzilYgLAe5htSsHnAQCe7gOP//12iPxQe7NX1aGUmOmTZfQmNv4AxU9tCb3ylPTXPPImYaUiVt8k91+ADvgF/uwf2gLPs3QtsvYqi6njozrRt1ZyIL9dHxf9AQMQiWDBGXkw2rbywx/UmfZV/TqZmU7j/NFLqlDC7u1UYfzMQFSvy/pamImQ20njTG9bZY8geAGc0mMLhwtSY8GIHaCG7Qmgz/cNWuAszX2w4bG9hZaznBCbOOA/q2UH962Majum4DbJo+12/jY=",
+'       "a_responses": {
+'         "0": "X1DnHADwaDTOQGb2SS+bJCebTCRbZserzi5wqu0K8SQI7729hH39YC2y9PK4x6m+6Ep1MTqRDF7ZT8ThSV6Fg2ngqTytVJv9t7mobp3fTnY=",
+'         "3": "vrmbFFjN2NepjEiDXSwhnb5AC7Y2ZWAluAu2gUUmLD4Re3BG/Jia9WGFWU6SEifmT269BHE8LmsT0/UkGFr+CRPddXPDJUFWaEsoQ2NtNz0=",
+'         "4": "E4BMmNXOAHNCMEVGLiA9WZ8GkqLRPlWs+3H3uEZ8G/I/6ct1O98OJI0+C7hD3zP6yD1M1qXbWE7DTWo4tt/rXDju6Zdhq+olST8OzLxwU5Q="
+'       },
+'       "a_disclosed": {
+'         "1": "AwAKhwAaAAXZZxdMn4TvQ6F/mVxWb6a7",
+'         "2": "5MrO6tjC5Q=="
+'       }
+'     }
+'   ],
+'   "indices": [
+'     [
+'       {
+'         "cred": 0,
+'         "attr": 2
+'       }
+'     ]
+'   ]
+' }
+
+
+' {10}
+' https://www.irma.app/docs/api-irma-server/#get-irma-session-clienttoken-frontend-status
+' {
+'   "status" : "DONE",
+'   "nextSession": {"u":"https://example.com/irma/ysDohpoySavbHAUDjmpz","irmaqr":"disclosing"}
+' }
+
+' {11}
+' https://www.irma.app/docs/api-irma-server/#get-session-requestortoken-result
+' {
+'   "type" : "disclosing",
+'   "status" : "DONE",
+'   "disclosed" : [
+'     [{
+'       "status" : "PRESENT",
+'       "rawvalue" : "yes",
+'       "id" : "irma-demo.MijnOverheid.ageLower.over18",
+'       "value" : {
+'         "en" : "yes",
+'         "nl" : "yes",
+'         "" : "yes"
+'       }
+'     }]
+'   ],
+'   "proofStatus" : "VALID",
+'   "token" : "ELMExi5iauWYHzbH7gwU"
+' }
+
+
+' https://www.irma.app/docs/api-irma-server/#get-irma-session-clienttoken-status
+' {
+'   "status" : "CONNECTED",
+' }

@@ -1,0 +1,43 @@
+@startuml
+actor "IRMA app user" as user
+participant "IRMA app" as app
+participant browser as browser
+participant "keyshare server" as keyshare #lightblue
+participant requestor as requestor
+participant "IRMA server" as server
+
+title Disclosure flow with separate IRMA server
+user [#green]-> app: login with PIN
+app [#green]-> app: salted hash(PIN)
+app [#green]-> keyshare: get session (salted hash(PIN))
+keyshare [#green]-> app: JWT
+
+user -> browser: checkout?
+browser -> requestor: initiate session
+requestor -> server: initiate session
+server -> server: make and store session
+server -> requestor: session pointer + requestor token (QR)
+requestor -> browser: session pointer (QR)
+browser -> server: start polling
+browser -> user: QR
+user -> app: scan QR
+app -> browser: read QR
+app -> server: get session using session pointer
+server -> app: disclosure options (en client return url)
+app -> user: disclosure options
+user -> app: disclose choice
+
+app [#green]-> keyshare: get proof for secret key
+keyshare [#green]-> keyshare: log
+keyshare [#green]-> app: proof for secret key
+
+app -> server: disclosure of chosen disclosure
+server -> browser: polling result: disclosure OK
+browser -> requestor: continue to checkout
+requestor -> server: verify using requestor token
+server -> requestor: verify OK
+requestor -> browser: checkout follow-up
+
+browser -> user: checkout follow-up
+
+@enduml

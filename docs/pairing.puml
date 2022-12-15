@@ -1,0 +1,56 @@
+@startuml
+skinparam sequence {
+backgroundColor #transparent
+ActorBorderColor #7A2626
+ActorBackgroundColor #transparent
+ParticipantBorderColor #7A2626
+ParticipantBackgroundColor #004C92
+ParticipantFontColor white
+}
+actor "IRMA app user" as user
+participant "IRMA app" as app
+participant browser as browser
+participant "issuer" as issuer
+participant "server" as server
+participant "next session URL" as nextSessionURL
+
+title Pairing flow
+browser -> issuer: initiate session
+issuer -> server: initiate session
+issuer -> server: initiate session for issuing card(s) data 
+server -> server: make session and set state to ServerStatusInitialized
+server [#green]-> issuer: session pointer + requestor token (QR) + frontendAuth
+issuer [#green]-> browser: session pointer (QR) + frontendAuth
+browser [#green]-> server: /session/{clientToken}/frontend/options enable pairing + frontendAuth
+return pairingCode
+browser [#green]-> server: start polling for /session/{clientToken}/frontend/status
+browser -> user: QR
+user -> app: scan QR
+app -> browser: read QR
+app [#green]-> server: get session /session/{clientToken}
+server [#green]-> server: switch state to ServerStatusPairing
+server [#green]-> app: pairing code
+app [#green]-> server: start polling for /session/{clientToken}/status
+server [#green]-> browser: state changed to ServerStatusPairing
+browser [#green]-> user: pairing code ok?
+return ok
+browser [#green]-> server: POST /session/{clientToken}/frontend/pairingcompleted
+server [#green]-> server: switch state to ServerStatusConnected
+server [#green]-> app: polling response: status ServerStatusConnected
+
+app -> server: get session /session/{clientToken}
+return option to add card(s) (en client return url)
+app -> user: agree to add card(s)?
+user -> app: agree
+app -> server: get corresponding signature(s)
+app -> app: add signature to card(s) data resulting in card(s)
+
+' assuming browser wants to know if issuance was successful
+server -> browser: polling result: issuance OK
+browser -> issuer: succesful
+' optional, whatever issuer wants
+issuer -> server: double check
+server -> issuer: issuance OK
+issuer -> browser: done
+
+@enduml

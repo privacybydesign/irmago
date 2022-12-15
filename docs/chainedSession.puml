@@ -1,0 +1,62 @@
+@startuml
+skinparam sequence {
+backgroundColor #transparent
+ActorBorderColor #7A2626
+ActorBackgroundColor #transparent
+ParticipantBorderColor #7A2626
+ParticipantBackgroundColor #004C92
+ParticipantFontColor white
+}
+actor "IRMA app user" as user
+participant "IRMA app" as app
+participant browser as browser
+participant "issuer" as issuer
+participant "verifier" as verifier
+participant "server" as server
+participant "next session URL" as nextSessionURL
+
+title Chained session: Issue and disclose
+browser -> issuer: initiate session
+issuer -> server: initiate session
+issuer -> server: initiate session for issuing card(s) data 
+server -> server: make and store session
+server -> issuer: session pointer + requestor token (QR)
+issuer -> browser: session pointer (QR)
+browser -> server: start polling
+browser -> user: QR
+user -> app: scan QR
+app -> browser: read QR
+app -> server: get session using session pointer
+server -> app: option to add card(s) (en client return url)
+app -> user: agree to add card(s)?
+user -> app: agree
+app -> server: get corresponding signature(s)
+app -> app: add signature to card(s) data resulting in card(s)
+
+' assuming browser wants to know if issuance was successful
+server -> browser: polling result: issuance OK
+browser -> issuer: succesful
+' optional, whatever issuer wants
+issuer -> server: double check
+server -> issuer: issuance OK
+issuer -> browser: duimpje
+
+
+' next session steps
+server -> nextSessionURL: POST
+nextSessionURL -> server: initiate session
+server -> browser: nieuwe session pointer
+
+server -> app: disclosure options (en client return url)
+app -> user: disclosure options
+user -> app: disclose choice
+app -> server: disclosure of chosen disclosure
+
+server -> browser: polling result: disclosure OK
+browser -> verifier: continue to checkout
+verifier -> server: verify using requestor token
+server -> verifier: verify OK
+verifier -> browser: checkout follow-up
+
+browser -> user: checkout follow-up
+@enduml

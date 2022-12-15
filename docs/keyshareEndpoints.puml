@@ -1,0 +1,49 @@
+@startuml
+skinparam sequence {
+backgroundColor #transparent
+ActorBorderColor #7A2626
+ActorBackgroundColor #transparent
+ParticipantBorderColor #7A2626
+ParticipantBackgroundColor #004C92
+ParticipantFontColor white
+}
+participant "IRMA app" as app
+participant "keyshare server" as keyshare
+participant "database" as db
+participant "mail server" as mail
+
+title Keyshare server endpoints
+
+app -> keyshare ++: POST /client/register {pin, email, language}
+keyshare -> db: Generate keyshare server account, \nincl secret
+keyshare -> mail: Send registration mail \nif address is specified
+keyshare -> keyshare: Issue keyshare credential
+return Invisible issueing of keyshare credential \n(directly via session endpoints in keyshare server)
+|||
+
+app -> keyshare ++: POST /users/verify/pin {id, pin}
+keyshare -> db: fetch user
+keyshare -> db: verify pin \n(incl reservePinCheck and blocking)
+return access token
+|||
+
+app -> keyshare ++: POST /users/change/pin {id, oldpoin, newpin}
+keyshare -> db: fetch user
+keyshare -> db: check old pin and update with new pin
+return OK
+|||
+
+app -> keyshare ++: POST /prove/getCommitments \n["irma-demo.IRMATube-1"] + access token
+keyshare -> keyshare: verify token
+keyshare -> keyshare: generate commitments
+keyshare -> keyshare: store commitID for later requests
+return commitments
+|||
+
+app -> app: generate challenge
+app -> keyshare ++: POST /prove/getResponse + \nchallenge + access token
+keyshare -> keyshare: log for MyIRMA
+keyshare -> keyshare: get commitment data from \nmemory store and build \nresponse with challenge
+return jwt token with ProofP response
+
+@enduml

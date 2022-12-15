@@ -1,0 +1,44 @@
+@startuml
+skinparam sequence {
+backgroundColor #transparent
+ActorBorderColor #7A2626
+ActorBackgroundColor #transparent
+ParticipantBorderColor #7A2626
+ParticipantBackgroundColor #004C92
+ParticipantFontColor white
+}
+actor "IRMA app user" as user
+participant "IRMA app" as app
+participant browser as browser
+participant requestor as requestor
+participant "IRMA server" as server
+
+title Issuance flow with separate IRMA server
+user -> browser: DigiD Authentication
+browser -> requestor: DigiD Authentication
+requestor -> browser: OK
+browser -> requestor: initiate session
+'requestor -> requestor: get BRP data using BSN via third party
+requestor -> server: initiate session for issuing card(s) data 
+server -> server: make and store session
+server -> requestor: session pointer + requestor token (QR)
+requestor -> browser: session pointer (QR)
+browser -> server: start polling
+browser -> user: QR
+user -> app: scan QR
+app -> browser: read QR
+app -> server: get session using session pointer
+server -> app: option to add card(s) (en client return url)
+app -> user: agree to add card(s)?
+user -> app: agree
+app -> server: get corresponding signature(s)
+app -> app: add signature to card(s) data resulting in card(s)
+server -> browser: polling result: issuance OK
+browser -> requestor: succesful
+requestor -> server: double check
+server -> requestor: issuance OK
+requestor -> browser: duimpje
+
+browser -> user: duimpje
+
+@enduml

@@ -1,0 +1,55 @@
+@startuml
+skinparam sequence {
+backgroundColor #transparent
+ActorBorderColor #7A2626
+ActorBackgroundColor #transparent
+ParticipantBorderColor #7A2626
+ParticipantBackgroundColor #004C92
+ParticipantFontColor white
+}
+participant "IRMA app" as app
+participant "requestor" as requestor
+participant "keyshare server" as keyshare
+participant "database" as db
+participant "mail server" as mail
+
+title Keyshare server endpoints for keyshare session
+
+app -> keyshare ++: POST /client/register <font color=#1D5B2A>signed</font> jwt:{pin, email, language, <font color=#1D5B2A>publickey</font>}
+keyshare -> keyshare: validate jwt
+keyshare -> db: Generate keyshare server account, \nincl secret <font color=#1D5B2A>and store publickey</font>
+keyshare -> mail: Send registration mail \nif address is specified
+keyshare -> keyshare: Issue keyshare credential
+return Invisible issuing of keyshare credential \n(directly via session endpoints in keyshare server)
+|||
+
+'already enrolled app: similar to the one sent by the irmaclient when changing your IRMA PIN code
+app -> keyshare ++: <font color=#1D5B2A> <font color=#1D5B2A> POST /users/register_publickey signed jwt:{id, pin, publickey}
+keyshare -> keyshare: <font color=#1D5B2A>validate jwt</font>
+keyshare -> keyshare: <font color=#1D5B2A>validate PIN</font>
+keyshare -> db: <font color=#1D5B2A>store publickey</font>
+return <font color=#1D5B2A>jwt</font>
+|||
+
+'get challenge
+app -> keyshare ++: <font color=#1D5B2A>POST /users/verify_start {id}
+keyshare -> keyshare: <font color=#1D5B2A>generate challenge
+return <font color=#1D5B2A>"pin_challengeresponse", challenge
+|||
+
+app -> keyshare ++: POST /users/verify/pin<font color=#1D5B2A>_challengeresponse</font> {id, pin, <font color=#1D5B2A>reponse</font>}
+keyshare -> db: fetch user
+keyshare -> keyshare: verify pin \n(incl reservePinCheck and blocking)
+keyshare -> keyshare: <font color=#1D5B2A>verify response which correponds to challenge
+return access token
+|||
+
+'reply attacks not possible, so no challenge-response needed
+app -> keyshare ++: POST /users/change/pin <font color=#1D5B2A>signed jwt</font>:{id, oldpin, newpin}
+keyshare -> db: fetch user
+keyshare -> keyshare: reserve pin check
+keyshare -> keyshare: <font color=#1D5B2A>validate jwt signature
+keyshare -> db: check old pin and update with new pin
+return OK
+
+@enduml
