@@ -200,7 +200,7 @@ func (s *Server) handlePs(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(keys) == 0 {
 		s.conf.Logger.Info("Malformed request: no keys for P specified")
-		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
 		return
 	}
 
@@ -250,7 +250,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(keys) == 0 {
 		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
-		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
 		return
 	}
 
@@ -312,7 +312,7 @@ func (s *Server) handleCommitmentsV2(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Keys) == 0 {
 		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
-		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
 		return
 	}
 
