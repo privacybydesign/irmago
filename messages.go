@@ -424,7 +424,7 @@ type ProofPCommitmentMapV2 struct {
 
 func (cm *ProofPCommitmentMapV2) MarshalJSON() ([]byte, error) {
 	var encCM struct {
-		Commitments map[string]*big.Int `json:"p"`
+		Commitments map[string]*big.Int `json:"c"`
 	}
 	encCM.Commitments = make(map[string]*big.Int)
 
