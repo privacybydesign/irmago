@@ -504,6 +504,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		session.builders, session.attrIndices, session.issuerProofNonce, err = session.getBuilders(keyshareSession)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
 		}
 		keyshareSession.builders = session.builders
 		keyshareSession.issuerProofNonce = session.issuerProofNonce
