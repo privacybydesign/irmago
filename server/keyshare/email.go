@@ -3,8 +3,10 @@ package keyshare
 import (
 	"bytes"
 	"html/template"
+	"net"
 	"net/mail"
 	"net/smtp"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
@@ -17,7 +19,7 @@ type EmailConfiguration struct {
 	EmailAuth       smtp.Auth
 }
 
-var ErrInvalidEmail = errors.New("Invalid email address")
+var ErrInvalidEmail = errors.New("invalid email address")
 
 func ParseEmailTemplates(files, subjects map[string]string, defaultLanguage string) (map[string]*template.Template, error) {
 	if _, ok := files[defaultLanguage]; !ok {
@@ -78,6 +80,10 @@ func (conf EmailConfiguration) SendEmail(
 	if err != nil {
 		return ErrInvalidEmail
 	}
+	err = verifyMXRecord(email)
+	if err != nil {
+		return ErrInvalidEmail
+	}
 	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
@@ -128,4 +134,19 @@ func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject str
 		"Content-Transfer-Encoding: binary\r\n" +
 		"\r\n")
 	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
+}
+
+func verifyMXRecord(email string) error {
+	at := strings.LastIndex(email, "@")
+	if at < 0 {
+		return errors.Errorf("no '@'-sign found in %v", email)
+	}
+	records, err := net.LookupMX(email[at+1:])
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		return errors.Errorf("no domain part found in %v", email)
+	}
+	return nil
 }

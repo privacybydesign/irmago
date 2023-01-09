@@ -14,15 +14,19 @@ func TestServerRegistrationWithEmail(t *testing.T) {
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"en"}`, nil,
+		`{"pin":"testpin","email":"test@example.com","language":"en"}`, nil,
 		200, nil,
+	)
+	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
+		`{"pin":"testpin","email":"test@test.com","language":"en"}`, nil,
+		400, nil, // no MX record for test.com
 	)
 
 	// If somehow the IRMA app gains support for a language earlier than the keyshare server,
 	// rejecting the registration would be too severe. So the registration is accepted and the
 	// server falls back to its default language.
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"nonexistinglanguage"}`, nil,
+		`{"pin":"testpin","email":"test@example.com","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
 

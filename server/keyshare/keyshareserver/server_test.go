@@ -32,47 +32,39 @@ func TestServerInvalidMessage(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/client/register",
 		"gval;kefsajsdkl;", nil,
 		400, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify_start",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		400, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		400, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin_challengeresponse",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		400, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/users/change/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/change/pin",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		400, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/register_publickey",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		400, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getCommitments",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		403, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getCommitments",
 		"[]", nil,
 		403, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
-		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
-		403, nil,
-	)
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
-		"[]", nil,
-		403, nil,
-	)
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getResponse",
 		"asdlkzdsf;lskajl;kasdjfvl;jzxclvyewr", nil,
 		403, nil,
 	)
@@ -82,19 +74,19 @@ func TestServerHandleRegisterLegacy(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"en"}`, nil,
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/client/register",
+		`{"pin":"testpin","email":"test@example.com","language":"en"}`, nil,
 		200, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"nonexistinglanguage"}`, nil,
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/client/register",
+		`{"pin":"testpin","email":"test@example.com","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/client/register",
 		`{"pin":"testpin","language":"en"}`, nil,
 		200, nil,
 	)
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/client/register",
 		`{"pin":"testpin","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
@@ -129,14 +121,14 @@ func TestServerHandleRegister(t *testing.T) {
 
 		msg, err := json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
 		require.NoError(t, err)
-		test.HTTPPost(t, nil, "http://localhost:8080/client/register", string(msg), nil, 200, nil)
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/client/register", string(msg), nil, 200, nil)
 	}
 
 	// Strip off a character to invalidate the JWT signature
 	j = j[:len(j)-1]
 	msg, err := json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
 	require.NoError(t, err)
-	test.HTTPPost(t, nil, "http://localhost:8080/client/register", string(msg), nil, 500, nil)
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/client/register", string(msg), nil, 500, nil)
 }
 
 func TestPinTries(t *testing.T) {
@@ -145,20 +137,20 @@ func TestPinTries(t *testing.T) {
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		`{"id":"legacyuser","pin":"puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}`, nil,
 		200, &jwtMsg,
 	)
 	require.Equal(t, "success", jwtMsg.Status)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		`{"id":"legacyuser","pin":"puZGbaLDmFywGhFDi4vW2G87Zh"}`, nil,
 		200, &jwtMsg,
 	)
 	require.Equal(t, "failure", jwtMsg.Status)
 	require.Equal(t, "1", jwtMsg.Message)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/users/change/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/change/pin",
 		`{"id":"legacyuser","oldpin":"puZGbaLDmFywGhFDi4vW2G87Zh","newpin":"ljaksdfj;alkf"}`, nil,
 		200, &jwtMsg,
 	)
@@ -172,7 +164,7 @@ func TestPinTryChallengeResponse(t *testing.T) {
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	// can't do this directly, challenge-response required
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		`{"id":"testusername","pin":"puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}`, nil,
 		500, nil,
 	)
@@ -181,7 +173,7 @@ func TestPinTryChallengeResponse(t *testing.T) {
 
 	jwtt := doChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin_challengeresponse",
 		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
 		200, &jwtMsg,
 	)
@@ -190,7 +182,7 @@ func TestPinTryChallengeResponse(t *testing.T) {
 	// try with an invalid response
 	jwtt = doChallengeResponse(t, sk, "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	jwtt = jwtt[:len(jwtt)-4]
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin_challengeresponse",
 		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
 		500, nil,
 	)
@@ -220,14 +212,14 @@ func TestStartAuth(t *testing.T) {
 	sk := loadClientPrivateKey(t)
 
 	// can't do it for users that don't yet have a public key registered
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify_start",
 		authJWT(t, sk, "legacyuser"), nil,
 		500, nil,
 	)
 
 	// normal flow
 	auth := &irma.KeyshareAuthChallenge{}
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify_start",
 		authJWT(t, sk, "testusername"), nil,
 		200, auth,
 	)
@@ -235,7 +227,7 @@ func TestStartAuth(t *testing.T) {
 	require.NotEmpty(t, auth.Challenge)
 
 	// nonexisting user
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify_start",
 		authJWT(t, sk, "doesnotexist"), nil,
 		403, nil,
 	)
@@ -256,7 +248,7 @@ func TestRegisterPublicKey(t *testing.T) {
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
 	})
-	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/register_publickey",
 		fmt.Sprintf(`{"jwt":"%s"}`, jwtt), nil,
 		403, nil,
 	)
@@ -267,7 +259,7 @@ func TestRegisterPublicKey(t *testing.T) {
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
 	})
-	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/register_publickey",
 		fmt.Sprintf(`{"jwt":"%s"}`, jwtt[:len(jwtt)-1]), nil,
 		400, nil,
 	)
@@ -279,7 +271,7 @@ func TestRegisterPublicKey(t *testing.T) {
 		PublicKey: pk,
 	})
 	res := &irma.KeysharePinStatus{}
-	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/register_publickey",
 		fmt.Sprintf(`{"jwt":"%s"}`, jwtt), nil,
 		200, res,
 	)
@@ -291,7 +283,7 @@ func TestRegisterPublicKey(t *testing.T) {
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
 	})
-	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/register_publickey",
 		fmt.Sprintf(`{"jwt":"%s"}`, jwtt), nil,
 		200, nil,
 	)
@@ -300,7 +292,7 @@ func TestRegisterPublicKey(t *testing.T) {
 	_ = doChallengeResponse(t, loadClientPrivateKey(t), "legacyuser", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 
 	// can't do it a second time
-	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/register_publickey",
 		fmt.Sprintf(`{"jwt":"%s"}`, jwtt), nil,
 		500, nil,
 	)
@@ -317,7 +309,7 @@ func TestRegisterPublicKeyBlockedUser(t *testing.T) {
 
 	// submit wrong pin, blocking user
 	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		`{"id":"legacyuser","pin":"puZGbaLDmFywGhFDi4vW2G87Zh"}`, nil,
 		200, &jwtMsg,
 	)
@@ -330,7 +322,7 @@ func TestRegisterPublicKeyBlockedUser(t *testing.T) {
 		Pin:       "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
 		PublicKey: pk,
 	})
-	test.HTTPPost(t, nil, "http://localhost:8080/users/register_publickey",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/register_publickey",
 		fmt.Sprintf(`{"jwt":"%s"}`, jwtt), nil,
 		200, &jwtMsg,
 	)
@@ -344,14 +336,14 @@ func TestPinNoRemainingTries(t *testing.T) {
 		keyshareServer, httpServer := StartKeyshareServer(t, &testDB{db: db, ok: ok, tries: 0, wait: 5, err: nil}, "")
 
 		var jwtMsg irma.KeysharePinStatus
-		test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 			`{"id":"testusername","pin":"puZGbaLDmFywGhFDi4vW2G87Zh"}`, nil,
 			200, &jwtMsg,
 		)
 		require.Equal(t, "error", jwtMsg.Status)
 		require.Equal(t, "5", jwtMsg.Message)
 
-		test.HTTPPost(t, nil, "http://localhost:8080/users/change/pin",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/change/pin",
 			`{"id":"testusername","oldpin":"puZGbaLDmFywGhFDi4vW2G87Zh","newpin":"ljaksdfj;alkf"}`, nil,
 			200, &jwtMsg,
 		)
@@ -366,17 +358,17 @@ func TestMissingUser(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		`{"id":"doesnotexist","pin":"bla"}`, nil,
 		403, nil,
 	)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/users/change/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/change/pin",
 		`{"id":"doesnotexist","oldpin":"old","newpin":"new"}`, nil,
 		403, nil,
 	)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getCommitments",
 		`["test.test-3"]`, http.Header{
 			"X-IRMA-Keyshare-Username": []string{"doesnotexist"},
 			"Authorization":            []string{"ey.ey.ey"},
@@ -384,15 +376,7 @@ func TestMissingUser(t *testing.T) {
 		403, nil,
 	)
 
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
-		`["test.test-3"]`, http.Header{
-			"X-IRMA-Keyshare-Username": []string{"doesnotexist"},
-			"Authorization":            []string{"ey.ey.ey"},
-		},
-		403, nil,
-	)
-
-	test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getResponse",
 		"123456789", http.Header{
 			"X-IRMA-Keyshare-Username": []string{"doesnotexist"},
 			"Authorization":            []string{"ey.ey.ey"},
@@ -408,14 +392,14 @@ func TestKeyshareSessions(t *testing.T) {
 
 	jwtt := doChallengeResponse(t, loadClientPrivateKey(t), "testusername", "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n")
 	var jwtMsg irma.KeysharePinStatus
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin_challengeresponse",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin_challengeresponse",
 		marshalJSON(t, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt}), nil,
 		200, &jwtMsg,
 	)
 	require.Equal(t, "success", jwtMsg.Status)
 	auth1 := jwtMsg.Message
 
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		marshalJSON(t, irma.KeyshareAuthResponse{KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
 			Username: "legacyuser",
 			Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
@@ -428,7 +412,7 @@ func TestKeyshareSessions(t *testing.T) {
 		username, auth string
 	}{{"testusername", auth1}, {"legacyuser", auth2}} {
 		// no active session, can't retrieve result
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getResponse",
 			"12345678", http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
@@ -437,7 +421,7 @@ func TestKeyshareSessions(t *testing.T) {
 		)
 
 		// can't retrieve commitments with fake authorization
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getCommitments",
 			`["test.test-3"]`, http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{"fakeauthorization"},
@@ -446,25 +430,7 @@ func TestKeyshareSessions(t *testing.T) {
 		)
 
 		// retrieve commitments normally
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
-			`["test.test-3"]`, http.Header{
-				"X-IRMA-Keyshare-Username": []string{user.username},
-				"Authorization":            []string{user.auth},
-			},
-			200, nil,
-		)
-
-		// can't retrieve Ps with fake authorization
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
-			`["test.test-3"]`, http.Header{
-				"X-IRMA-Keyshare-Username": []string{user.username},
-				"Authorization":            []string{"fakeauthorization"},
-			},
-			400, nil,
-		)
-
-		// retrieve Ps normally
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getPs",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getCommitments",
 			`["test.test-3"]`, http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
@@ -473,7 +439,7 @@ func TestKeyshareSessions(t *testing.T) {
 		)
 
 		// can't retrieve resukt with fake authorization
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getResponse",
 			"12345678", http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{"fakeauthorization"},
@@ -482,7 +448,7 @@ func TestKeyshareSessions(t *testing.T) {
 		)
 
 		// can start session while another is already active
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getCommitments",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getCommitments",
 			`["test.test-3"]`, http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
@@ -491,7 +457,7 @@ func TestKeyshareSessions(t *testing.T) {
 		)
 
 		// finish session
-		test.HTTPPost(t, nil, "http://localhost:8080/prove/getResponse",
+		test.HTTPPost(t, nil, "http://localhost:8080/api/v1/prove/getResponse",
 			"12345678", http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
@@ -623,7 +589,7 @@ func createDB(t *testing.T) DB {
 func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username, pin string) string {
 	// retrieve a challenge
 	auth := &irma.KeyshareAuthChallenge{}
-	test.HTTPPost(t, nil, "http://localhost:8080/users/verify_start",
+	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify_start",
 		authJWT(t, sk, username), nil,
 		200, auth,
 	)

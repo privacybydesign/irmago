@@ -54,6 +54,7 @@ func New(conf *Configuration) (*Server, error) {
 	if _, err := s.scheduler.Every(10).Seconds().Do(s.store.flush); err != nil {
 		return nil, err
 	}
+	gocron.SetPanicHandler(server.GocronPanicHandler(s.conf.Logger))
 	s.scheduler.StartAsync()
 
 	if s.conf.LogJSON {
@@ -82,6 +83,8 @@ func (s *Server) Handler() http.Handler {
 	}).Handler)
 
 	router.Group(func(router chi.Router) {
+		router.Use(server.RecoverMiddleware)
+
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
@@ -164,7 +167,7 @@ func (s *Server) sendDeleteEmails(session *session) error {
 		// the user account, even if one or more notification mails could not be sent.
 		_ = s.conf.SendEmail(
 			s.conf.deleteAccountTemplates,
-			s.conf.DeleteAccountFiles,
+			s.conf.DeleteAccountSubjects,
 			map[string]string{"Username": user.Username, "Email": email.Email, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
 			email.Email,
 			user.language,

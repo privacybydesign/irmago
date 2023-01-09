@@ -113,6 +113,7 @@ var supportedVersions = map[int][]int{
 		6, // introduces nonrevocation proofs
 		7, // introduces chained sessions
 		8, // introduces session binding
+		9, // new keyshare protocol version
 	},
 }
 
@@ -488,19 +489,27 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		session.finish(false)
 	} else {
 		var err error
-		session.builders, session.attrIndices, session.issuerProofNonce, err = session.getBuilders()
-		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-		}
-		startKeyshareSession(
+		keyshareSession, auth := newKeyshareSession(
 			session,
 			session.client,
 			session.Handler,
-			session.builders,
 			session.request,
-			session.issuerProofNonce,
-			session.timestamp,
+			session.implicitDisclosure,
+			session.Version,
 		)
+		if !auth {
+			// newKeyshareSession() calls session.fail() in case of failure, no need to do that here
+			return
+		}
+		session.builders, session.attrIndices, session.issuerProofNonce, err = session.getBuilders(keyshareSession)
+		if err != nil {
+			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+			return
+		}
+		keyshareSession.builders = session.builders
+		keyshareSession.issuerProofNonce = session.issuerProofNonce
+		keyshareSession.timestamp = session.timestamp
+		keyshareSession.GetCommitments()
 	}
 }
 
@@ -583,7 +592,7 @@ func (session *session) sendResponse(message interface{}) {
 
 // getBuilders computes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
 // and issuing respectively).
-func (session *session) getBuilders() (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
+func (session *session) getBuilders(keyshareSession *keyshareSession) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
 	var builders gabi.ProofBuilderList
 	var err error
 	var issuerProofNonce *big.Int
@@ -593,7 +602,7 @@ func (session *session) getBuilders() (gabi.ProofBuilderList, irma.DisclosedAttr
 	case irma.ActionSigning, irma.ActionDisclosing:
 		builders, choices, session.timestamp, err = session.client.ProofBuilders(session.choice, session.request)
 	case irma.ActionIssuing:
-		builders, choices, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest), session.choice)
+		builders, choices, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest), session.choice, keyshareSession)
 	}
 
 	return builders, choices, issuerProofNonce, err
@@ -745,7 +754,12 @@ func (session *session) finish(delete bool) bool {
 func (session *session) fail(err *irma.SessionError) {
 	if session.finish(true) && err.ErrorType != irma.ErrorKeyshareUnenrolled {
 		irma.Logger.Warn("client session error: ", err.Error())
-		err.Err = errors.Wrap(err.Err, 0)
+		// Don't use errors.Wrap() if err.Err == nil, otherwise we may get
+		// https://yourbasic.org/golang/gotcha-why-nil-error-not-equal-nil/.
+		// since errors.Wrap() returns an *errors.Error.
+		if err.Err != nil {
+			err.Err = errors.Wrap(err.Err, 0)
+		}
 		session.Handler.Failure(err)
 	}
 }

@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2022-11-10
+
+### Added
+- Storage encryption functionality in `irmaclient`
+- Challenge response user authentication using ECDSA key pair between `irma keyshare server` and `irmaclient`
+- Support for multiple keyshare servers in `irmaclient` to improve testability
+- Extra configuration options for postgres database connections in `irma keyshare server` and `irma keyshare myirmaserver`
+- Rate limiting on sending emails to the same email address in a short time period by `irma keyshare server` and `irma keyshare myirmaserver`
+- Middleware to catch panics in HTTP handlers and return a 500 error instead
+- Performance test scripts for `irma keyshare server`
+- MyIRMA webclient service in docker-compose.yml to improve development setup
+- CI status check for i386 architecture
+- CodeQL static code analysis
+- Contact details for support, discussion and responsible disclosure
+- VSCode launch configuration
+
+### Changed
+- BREAKING: `irmaclient` requires minimum `irma keyshare server` version 0.11.0 (due to challenge response user authentication).
+  `irma keyshare server` does support older `irmaclient` versions.
+- Updated dependencies
+- Phased out unmaintained jasonlvhit/gocron library and migrated to go-co-op/gocron
+- Made gocron usage more consistent
+- Phased out legacy `irmaclient` log entry formats
+- Consistently specify charset in HTTP responses when the content type is `application/json`
+- Applied the code convention changes of golang 1.19
+- Always use the latest version of golang in GitHub status checks
+- Improved input validation of email addresses
+- Improved testability of revoked credentials
+- Use new URL of timestamp server (atumd) in unit tests
+
+### Fixed
+- Broken retrieval of user from postgres database by `irma keyshare server`
+- Also remove legacy file storage when calling `RemoveStorage` in `irmaclient`
+- `irma keyshare myirmaserver` requests login and email attribute options as conjunction instead of as disjunction
+- Chained sessions did not work due to bug in `irma keyshare server`
+- Attributes from multiple issuer schemes could not be mixed in chained sessions
+- Panics occurred during error handling in `irmaclient`
+- Avoid gocron panics in revocation code during `irmaclient` startup
+- Do not abort `irma keyshare tasks` run while looping over expired accounts and finding an invalid email address (quick fix)
+- Use subject value instead of file path value as email subject in account removed email of `irma keyshare myirmaserver`
+- Requestor JWT authentication did not work at revocation endpoint of `irma server`
+- Concurrency issues in `irmaclient.Client.credential()` and `irma.Configuration.parseKeysFolder()`
+
+### Security
+- Prevent that a user can detect whether a certain email address is registered at `irma keyshare server` and `irma keyshare myirmaserver` (vulnerable versions have never been live in production)
+
+
 ## [0.10.0] - 2022-03-09
 
 ### Added
@@ -222,6 +269,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.11.0]: https://github.com/privacybydesign/irmago/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/privacybydesign/irmago/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/privacybydesign/irmago/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/privacybydesign/irmago/compare/v0.7.0...v0.8.0

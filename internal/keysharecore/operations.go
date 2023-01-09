@@ -295,7 +295,7 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 
 	// Generate response
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": gabi.KeyshareResponse(s.KeyshareSecret, commit, challenge, key),
+		"ProofP": gabi.KeyshareResponseLegacy(s.KeyshareSecret, commit, challenge, key),
 		"iat":    time.Now().Unix(),
 		"sub":    "ProofP",
 		"iss":    c.jwtIssuer,

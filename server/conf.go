@@ -5,15 +5,17 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
-	"regexp"
-	"strconv"
-	"strings"
 )
 
 // Configuration contains configuration for the irmaserver library and irmad.
@@ -186,6 +188,19 @@ func (conf *Configuration) verifyStaticSessions() error {
 		conf.StaticSessionRequests[name] = rrequest
 	}
 	return nil
+}
+
+func GocronPanicHandler(logger *logrus.Logger) gocron.PanicHandlerFunc {
+	return func(jobName string, recoverData interface{}) {
+		var details string
+		b, err := json.Marshal(recoverData)
+		if err == nil {
+			details = string(b)
+		} else {
+			details = "failed to marshal recovered data: " + err.Error()
+		}
+		logger.Error(fmt.Sprintf("panic during gocron job '%s': %s", jobName, details))
+	}
 }
 
 func (conf *Configuration) verifyIrmaConf() error {

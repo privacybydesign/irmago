@@ -413,6 +413,32 @@ func (pm *PMap) MarshalJSON() ([]byte, error) {
 	return json.Marshal(encPM)
 }
 
+type GetCommitmentsRequest struct {
+	Keys []PublicKeyIdentifier          `json:"keys"`
+	Hash gabi.KeyshareCommitmentRequest `json:"hw"`
+}
+
+type ProofPCommitmentMapV2 struct {
+	Commitments map[PublicKeyIdentifier]*big.Int `json:"c"`
+}
+
+func (cm *ProofPCommitmentMapV2) MarshalJSON() ([]byte, error) {
+	var encCM struct {
+		Commitments map[string]*big.Int `json:"c"`
+	}
+	encCM.Commitments = make(map[string]*big.Int)
+
+	for pki, c := range cm.Commitments {
+		pkiBytes, err := pki.MarshalText()
+		if err != nil {
+			return nil, err
+		}
+		encCM.Commitments[string(pkiBytes)] = c
+	}
+
+	return json.Marshal(encCM)
+}
+
 //
 // Errors
 //

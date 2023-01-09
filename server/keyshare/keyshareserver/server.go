@@ -93,6 +93,7 @@ func New(conf *Configuration) (*Server, error) {
 	if _, err := s.scheduler.Every(10).Seconds().Do(s.store.flush); err != nil {
 		return nil, err
 	}
+	gocron.SetPanicHandler(server.GocronPanicHandler(s.conf.Logger))
 	s.scheduler.StartAsync()
 
 	return s, nil
@@ -107,40 +108,61 @@ func (s *Server) Handler() http.Handler {
 	router := chi.NewRouter()
 
 	router.Group(func(router chi.Router) {
+
+		router.Use(server.RecoverMiddleware)
+
 		router.Use(server.SizeLimitMiddleware)
 		router.Use(server.TimeoutMiddleware(nil, server.WriteTimeout))
 
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
 		router.Use(server.LogMiddleware("keyshareserver", opts))
 
-		// Registration
-		router.Post("/client/register", s.handleRegister)
+		s.routeHandler(router)
 
-		// authentication
-		router.Post("/users/verify_start", s.handleVerifyStart)
-		// The following two are so similar that they are both handled by handleVerify().
-		// NB: handleVerify() contains the strings "/users/verify/pin" and "/users/verify/pin_challengeresponse"
-		// to check, using its input, that the user has invoked the correct endpoint.
-		router.Post("/users/verify/pin", s.handleVerify)
-		router.Post("/users/verify/pin_challengeresponse", s.handleVerify)
+		router.Route("/api/v1", func(r chi.Router) {
+			s.routeHandler(r)
+		})
 
-		// Other
-		router.Post("/users/change/pin", s.handleChangePin)
-		router.Post("/users/register_publickey", s.handleRegisterPublicKey)
-
-		// Keyshare sessions
-		router.Group(func(router chi.Router) {
-			router.Use(s.userMiddleware)
-			router.Use(s.authorizationMiddleware)
-			router.Post("/prove/getPs", s.handlePs)
-			router.Post("/prove/getCommitments", s.handleCommitments)
-			router.Post("/prove/getResponse", s.handleResponse)
+		router.Route("/api/v2", func(r chi.Router) {
+			// Keyshare sessions with provably secure keyshare protocol
+			r.Use(s.userMiddleware)
+			r.Use(s.authorizationMiddleware)
+			r.Post("/prove/getPs", s.handlePs)
+			r.Post("/prove/getCommitments", s.handleCommitmentsV2)
 		})
 	})
 
 	// IRMA server for issuing myirma credential during registration
 	router.Mount("/irma/", s.irmaserv.HandlerFunc())
 	return router
+}
+
+func (s *Server) routeHandler(r chi.Router) http.Handler {
+
+	// Registration
+	r.Post("/client/register", s.handleRegister)
+
+	// Authentication
+	r.Post("/users/verify_start", s.handleVerifyStart)
+	// The following two are so similar that they are both handled by handleVerify().
+	// NB: handleVerify() contains the strings "/users/verify/pin" and "/users/verify/pin_challengeresponse"
+	// to check, using its input, that the user has invoked the correct endpoint.
+	r.Post("/users/verify/pin", s.handleVerify)
+	r.Post("/users/verify/pin_challengeresponse", s.handleVerify)
+
+	// Other
+	r.Post("/users/change/pin", s.handleChangePin)
+	r.Post("/users/register_publickey", s.handleRegisterPublicKey)
+
+	// Keyshare sessions
+	r.Group(func(router chi.Router) {
+		router.Use(s.userMiddleware)
+		router.Use(s.authorizationMiddleware)
+		router.Post("/prove/getCommitments", s.handleCommitments)
+		router.Post("/prove/getResponse", s.handleResponse)
+	})
+
+	return r
 }
 
 // On configuration changes, update the keyshare core with all current public keys of the IRMA issuers.
@@ -178,7 +200,7 @@ func (s *Server) handlePs(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(keys) == 0 {
 		s.conf.Logger.Info("Malformed request: no keys for P specified")
-		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
 		return
 	}
 
@@ -228,7 +250,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(keys) == 0 {
 		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
-		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
 		return
 	}
 
@@ -261,17 +283,84 @@ func (s *Server) generateCommitments(user *User, authorization string, keys []ir
 	}
 
 	// Store needed data for later requests.
-	// Of all keys involved in the current session, store the ID of the first one to be used when
+	// Of all keys involved in the current session, store the ID of the last one to be used when
 	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
 	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
-	// puts the key ID of the credential(s) being issued at index 0.
+	// puts the key ID of the credential(s) being issued at the last index (indeed, the irmaclient
+	// always puts all ProofU's after the ProofD's in the list of proofs it sends to the IRMA
+	// server).
 	s.store.add(user.Username, &session{
-		KeyID:    keys[0],
+		KeyID:    keys[len(keys)-1],
 		CommitID: commitID,
 	})
 
 	// And send response
 	return &irma.ProofPCommitmentMap{Commitments: mappedCommitments}, nil
+}
+
+// /api/v2/prove/getCommitments
+func (s *Server) handleCommitmentsV2(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+	authorization := r.Context().Value("authorization").(string)
+
+	// Read keys
+	var req irma.GetCommitmentsRequest
+	if err := server.ParseBody(r, &req); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if len(req.Keys) == 0 {
+		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
+		return
+	}
+
+	commitments, err := s.generateCommitmentsV2(user, authorization, req)
+	// TODO: can ErrInvalidChallenge be removed?
+	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, commitments)
+}
+
+func (s *Server) generateCommitmentsV2(user *User, authorization string, req irma.GetCommitmentsRequest) (*irma.ProofPCommitmentMapV2, error) {
+	// Generate commitments
+	commitments, commitID, err := s.core.GenerateCommitments(user.Secrets, authorization, req.Keys)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
+		return nil, err
+	}
+
+	// Prepare output message format
+	// TODO: move logic to gabi?
+	mappedCommitments := map[irma.PublicKeyIdentifier]*big.Int{}
+	for i, keyID := range req.Keys {
+		mappedCommitments[keyID] = commitments[i].Pcommit
+	}
+
+	// Store needed data for later requests.
+	// Of all keys involved in the current session, store the ID of the last one to be used when
+	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
+	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
+	// puts the key ID of the credential(s) being issued at the last index (indeed, the irmaclient
+	// always puts all ProofU's after the ProofD's in the list of proofs it sends to the IRMA
+	// server).
+	s.store.add(user.Username, &session{
+		KeyID:    req.Keys[len(req.Keys)-1],
+		Hw:       req.Hash,
+		CommitID: commitID,
+	})
+
+	// And send response
+	return &irma.ProofPCommitmentMapV2{Commitments: mappedCommitments}, nil
 }
 
 // /prove/getResponse
@@ -401,13 +490,13 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 
 	var username string
 	if msg.AuthResponseJWT == "" {
-		if r.URL.Path != "/users/verify/pin" {
+		if !strings.HasSuffix(r.URL.Path, "/users/verify/pin") {
 			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
 			return
 		}
 		username = msg.Username
 	} else {
-		if r.URL.Path != "/users/verify/pin_challengeresponse" {
+		if !strings.HasSuffix(r.URL.Path, "/users/verify/pin_challengeresponse") {
 			server.WriteError(w, server.ErrorInvalidRequest, "wrong endpoint")
 			return
 		}

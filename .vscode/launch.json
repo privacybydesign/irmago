@@ -1,0 +1,41 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "IRMA Server",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/irma/main.go",
+            "args": [
+                "server"
+            ]
+        },
+        {
+            "name": "IRMA keyshare server",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/irma/main.go",
+            "args": [
+                "keyshare",
+                "server",
+                "-c=${workspaceFolder}/testdata/configurations/keyshareserver.yml"
+            ]
+        },
+        {
+            "name": "IRMA keyshare MyIRMA Server",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/irma/main.go",
+            "args": [
+                "keyshare",
+                "myirmaserver",
+                "-c=${workspaceFolder}/testdata/configurations/myirmaserver.yml"
+            ]
+        }
+    ]
+}
