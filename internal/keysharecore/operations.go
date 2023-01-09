@@ -197,6 +197,35 @@ func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUs
 	return s, nil
 }
 
+// GeneratePs generates a list of keyshare server P's, i.e. a list of R_0^keyshareSecret.
+func (c *Core) GeneratePs(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*big.Int, error) {
+	// Validate input request and build key list
+	var keyList []*gabikeys.PublicKey
+	for _, keyID := range keyIDs {
+		key, ok := c.trustedKeys[keyID]
+		if !ok {
+			return nil, ErrKeyNotFound
+		}
+		keyList = append(keyList, key)
+	}
+
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
+	s, err := c.verifyAccess(secrets, accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	var ps []*big.Int
+
+	for _, key := range keyList {
+		ps = append(ps,
+			new(big.Int).Exp(key.R[0], s.KeyshareSecret, key.N))
+	}
+
+	return ps, nil
+}
+
 // GenerateCommitments generates keyshare commitments using the specified Idemix public key(s).
 func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
@@ -209,7 +238,8 @@ func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyI
 		keyList = append(keyList, key)
 	}
 
-	// verify access and decrypt
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
 	s, err := c.verifyAccess(secrets, accessToken)
 	if err != nil {
 		return nil, 0, err
@@ -247,7 +277,8 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 		return "", ErrKeyNotFound
 	}
 
-	// verify access and decrypt
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
 	s, err := c.verifyAccess(secrets, accessToken)
 	if err != nil {
 		return "", err
@@ -264,7 +295,7 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 
 	// Generate response
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": gabi.KeyshareResponse(s.KeyshareSecret, commit, challenge, key),
+		"ProofP": gabi.KeyshareResponseLegacy(s.KeyshareSecret, commit, challenge, key),
 		"iat":    time.Now().Unix(),
 		"sub":    "ProofP",
 		"iss":    c.jwtIssuer,

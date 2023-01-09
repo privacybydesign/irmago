@@ -1,6 +1,7 @@
 package keyshareserver
 
 import (
+	"github.com/privacybydesign/gabi"
 	"sync"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 type session struct {
 	KeyID    irma.PublicKeyIdentifier // last used key, used in signing the issuance message
 	CommitID uint64
+	Hw       gabi.KeyshareCommitmentRequest
 	expiry   time.Time
 }
 
