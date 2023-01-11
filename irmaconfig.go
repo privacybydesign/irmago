@@ -152,7 +152,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 			}
 		}
 		if strings.HasPrefix(filepath.Base(dir), ".") {
-			// No scheme can have a dot in its name, so we can ignore dotted dirs.
+			// No scheme can have a dot in its name, so we can ignore dotted dirs
 			return nil
 		}
 		scheme, _, err := conf.parseSchemeDescription(dir)
