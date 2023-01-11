@@ -193,7 +193,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 		schemepath = scheme.path()
 	)
 	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("checking for updates")
-	shouldUpdate, _, index, err := conf.checkRemoteScheme(scheme)
+	shouldUpdate, remoteState, err := conf.checkRemoteScheme(scheme)
 	if err != nil {
 		return err
 	}
@@ -203,7 +203,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 
 	// As long as we can write to the scheme directory, we guarantee that either
 	// - updating succeeded, and the updated scheme on disk has been verified and parsed
-	//   without error into the corrent conf instance.
+	//   without error into the correct conf instance.
 	// - if any error occurs, then neither the scheme on disk nor its data in the current
 	//   conf instance is touched.
 	// We do this by creating a temporary copy on disk of the scheme, which we then update,
@@ -219,8 +219,12 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 		_ = os.RemoveAll(dir)
 	}()
 
+	if err = conf.writeIndex(newschemepath, remoteState.indexBytes, remoteState.signatureBytes); err != nil {
+		return err
+	}
+
 	// iterate over the index and download new and changed files into the temp dir
-	if err = conf.updateSchemeFiles(scheme, index, newschemepath, downloaded); err != nil {
+	if err = conf.updateSchemeFiles(scheme, remoteState.index, newschemepath, downloaded); err != nil {
 		return err
 	}
 
@@ -521,79 +525,86 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 	return conf.UpdateScheme(scheme, nil)
 }
 
-func (conf *Configuration) checkRemoteScheme(scheme Scheme) (bool, *Timestamp, SchemeManagerIndex, error) {
-	timestamp, indexbts, sigbts, index, err := conf.checkRemoteTimestamp(scheme)
+type remoteSchemeState struct {
+	scheme Scheme
+
+	timestamp      *Timestamp
+	timestampBytes []byte
+
+	index      SchemeManagerIndex
+	indexBytes []byte
+
+	signatureBytes []byte
+}
+
+func (conf *Configuration) checkRemoteScheme(scheme Scheme) (bool, *remoteSchemeState, error) {
+	remoteState, err := conf.checkRemoteTimestamp(scheme)
 	if err != nil {
-		return false, nil, nil, err
+		return false, nil, err
 	}
 	id := scheme.id()
 	typ := string(scheme.typ())
-	timestampdiff := int64(timestamp.Sub(scheme.timestamp()))
+	timestampdiff := int64(remoteState.timestamp.Sub(scheme.timestamp()))
 	if timestampdiff == 0 {
 		Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("scheme is up-to-date, not updating")
-		return false, nil, index, nil
+		return false, remoteState, nil
 	} else if timestampdiff < 0 {
 		Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("local scheme is newer than remote, not updating")
-		return false, nil, index, nil
+		return false, remoteState, nil
 	}
 	// timestampdiff > 0
 	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("scheme is outdated, updating")
 
-	// save the index and its signature against which we authenticated the timestamp
-	// for future use: as they are themselves not in the index, the loop below doesn't touch them
-	if err = conf.writeIndex(scheme.path(), indexbts, sigbts); err != nil {
-		return false, nil, nil, err
-	}
-
-	return true, timestamp, index, nil
+	return true, remoteState, nil
 }
 
-func (conf *Configuration) checkRemoteTimestamp(scheme Scheme) (
-	*Timestamp, []byte, []byte, SchemeManagerIndex, error,
-) {
+func (conf *Configuration) checkRemoteTimestamp(scheme Scheme) (*remoteSchemeState, error) {
 	t := NewHTTPTransport(scheme.url(), true)
 	indexbts, err := t.GetBytes("index")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	sig, err := t.GetBytes("index.sig")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	timestampbts, err := t.GetBytes("timestamp")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	pk, err := conf.schemePublicKey(scheme.path())
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	// Verify signature and the timestamp hash in the index
 	if err = signed.Verify(pk, indexbts, sig); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	index := SchemeManagerIndex(make(map[string]SchemeFileHash))
 	if err = index.FromString(string(indexbts)); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	sha := sha256.Sum256(timestampbts)
 	if !bytes.Equal(index[scheme.id()+"/timestamp"], sha[:]) {
-		return nil, nil, nil, nil, errors.Errorf("signature over timestamp is not valid")
+		return nil, errors.Errorf("signature over timestamp is not valid")
 	}
 
 	timestamp, err := parseTimestamp(timestampbts)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
-	return timestamp, indexbts, sig, index, nil
+	return &remoteSchemeState{scheme, timestamp, timestampbts, index, indexbts, sig}, nil
 }
 
 func (conf *Configuration) writeIndex(dest string, indexbts, sigbts []byte) error {
 	if err := common.EnsureDirectoryExists(dest); err != nil {
 		return err
 	}
+
+	// We need to make sure the scheme's description.xml is always valid to make restores from remote possible.
+
 	if err := common.SaveFile(filepath.Join(dest, "index"), indexbts); err != nil {
 		return err
 	}
