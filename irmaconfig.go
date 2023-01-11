@@ -143,6 +143,18 @@ func (conf *Configuration) ParseFolder() (err error) {
 	var mgrerr *SchemeManagerError
 	var issuerschemes, requestorschemes []Scheme
 	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+		dirname := filepath.Base(dir)
+		if strings.HasPrefix(dirname, ".tempscheme") || strings.HasPrefix(dirname, ".oldscheme") {
+			// Leftover dirs made by tempSchemeCopy(), from interrupted scheme updates. Remove them
+			if err := os.RemoveAll(dir); err != nil {
+				// warn the error but continue, dotted dirs are ignored below anyway
+				Logger.Warn(err)
+			}
+		}
+		if strings.HasPrefix(filepath.Base(dir), ".") {
+			// No scheme can have a dot in its name, so we can ignore dotted dirs
+			return nil
+		}
 		scheme, _, err := conf.parseSchemeDescription(dir)
 		if err != nil {
 			return err
