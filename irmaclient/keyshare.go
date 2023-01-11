@@ -62,7 +62,6 @@ type keyshareServer struct {
 
 const (
 	kssUsernameHeader = "X-IRMA-Keyshare-Username"
-	kssVersionHeader  = "X-IRMA-Keyshare-ProtocolVersion"
 	kssAuthHeader     = "Authorization"
 	kssPinSuccess     = "success"
 	kssPinFailure     = "failure"
@@ -156,7 +155,6 @@ func startKeyshareSession(
 		transport := irma.NewHTTPTransport(scheme.KeyshareServer, !ks.client.Preferences.DeveloperMode)
 		transport.SetHeader(kssUsernameHeader, ks.keyshareServer.Username)
 		transport.SetHeader(kssAuthHeader, ks.keyshareServer.token)
-		transport.SetHeader(kssVersionHeader, "2")
 		ks.transports[managerID] = transport
 
 		// Try to parse token as a jwt to see if it is still valid; if so we don't need to ask for the PIN
