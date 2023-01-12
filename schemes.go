@@ -514,23 +514,23 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 	// newSchemeDir already makes a new directory for the configuration.
 	// If an error occurs hereafter, we have to remove this directory again to prevent side effects.
 	// Due to this, this function might have side effects when being stopped unexpectedly.
-	path, err := conf.newSchemeDir(id, dir)
+	dirPath, err := conf.newSchemeDir(id, dir)
+	scheme.setPath(dirPath)
 	defer func() {
-		if err != nil && path != "" {
-			_ = os.RemoveAll(path)
+		if err != nil && dirPath != "" {
+			_ = scheme.delete(conf)
 		}
 	}()
 	if err != nil {
 		return
 	}
-	scheme.setPath(path)
 
 	if publickey != nil {
-		if err = common.SaveFile(filepath.Join(path, "pk.pem"), publickey); err != nil {
+		if err = common.SaveFile(filepath.Join(dirPath, "pk.pem"), publickey); err != nil {
 			return
 		}
 	} else {
-		if _, err = downloadFile(NewHTTPTransport(url, true), path, "pk.pem"); err != nil {
+		if _, err = downloadFile(NewHTTPTransport(url, true), dirPath, "pk.pem"); err != nil {
 			return
 		}
 	}
@@ -539,11 +539,8 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 		return errors.Errorf("scheme has id %s but expected %s", scheme.id(), id)
 	}
 
-	if err = conf.UpdateScheme(scheme, nil); err != nil {
-		return
-	}
 	scheme.add(conf)
-	return
+	return conf.UpdateScheme(scheme, nil)
 }
 
 type remoteSchemeState struct {

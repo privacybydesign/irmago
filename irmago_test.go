@@ -1553,6 +1553,9 @@ func TestParseKeysFolderConcurrency(t *testing.T) {
 }
 
 func TestInstallSchemeUnstableRemote(t *testing.T) {
+	testSchemeID := NewSchemeManagerIdentifier("test")
+	testSchemeURL := "http://localhost:48681/irma_configuration/test"
+
 	// Host test scheme with a directory missing to simulate network issues.
 	corruptTestData := t.TempDir()
 	err := common.CopyDirectory(test.FindTestdataFolder(t), corruptTestData)
@@ -1572,11 +1575,19 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check whether installing fails cleanly when using the unstable remote
+	pkPath := path.Join(corruptTestData, "irma_configuration", "test", "pk.pem")
 	pkBytes, err := os.ReadFile(path.Join(corruptTestData, "irma_configuration", "test", "pk.pem"))
 	require.NoError(t, err)
-	err = conf.InstallScheme("http://localhost:48681/irma_configuration/test", pkBytes)
+	err = conf.InstallScheme(testSchemeURL, pkBytes)
 	require.Error(t, err)
-	require.NotContains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("test"))
+	require.NotContains(t, conf.SchemeManagers, testSchemeID)
+
+	// Check whether installing fails cleanly when no public key can be found (edge case)
+	err = os.Remove(pkPath)
+	require.NoError(t, err)
+	err = conf.DangerousTOFUInstallScheme(testSchemeURL)
+	require.Error(t, err)
+	require.NotContains(t, conf.SchemeManagers, testSchemeID)
 
 	// Stop unstable scheme server
 	require.NoError(t, unstableSchemeServer.Close())
@@ -1586,7 +1597,7 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 	defer test.StopSchemeManagerHttpServer()
 
 	// Check whether we can successfully install the scheme using a stable remote
-	err = conf.InstallScheme("http://localhost:48681/irma_configuration/test", pkBytes)
+	err = conf.InstallScheme(testSchemeURL, pkBytes)
 	require.NoError(t, err)
-	require.Contains(t, conf.SchemeManagers, NewSchemeManagerIdentifier("test"))
+	require.Contains(t, conf.SchemeManagers, testSchemeID)
 }
