@@ -110,6 +110,10 @@ const (
 	maxDepComplexity = 25
 )
 
+// DownloadDefaultSchemes downloads and adds the default schemes to this Configuration.
+// When an error occurs, this function will revert its changes.
+// Limitation: when this function is stopped unexpectedly (i.e. a panic or a sigint takes place),
+// the scheme directory might get in an inconsistent state.
 func (conf *Configuration) DownloadDefaultSchemes() error {
 	Logger.Info("downloading default schemes (may take a while)")
 	for _, s := range DefaultSchemes {
@@ -122,8 +126,11 @@ func (conf *Configuration) DownloadDefaultSchemes() error {
 	return nil
 }
 
-// InstallSchemeManager downloads and adds the specified scheme to this Configuration,
+// InstallScheme downloads and adds the specified scheme to this Configuration,
 // provided its signature is valid against the specified key.
+// When an error occurs, this function will revert its changes.
+// Limitation: when this function is stopped unexpectedly (i.e. a panic or a sigint takes place),
+// the scheme directory might get in an inconsistent state.
 func (conf *Configuration) InstallScheme(url string, publickey []byte) error {
 	if len(publickey) == 0 {
 		return errors.New("no public key specified")
@@ -133,6 +140,8 @@ func (conf *Configuration) InstallScheme(url string, publickey []byte) error {
 
 // DangerousTOFUInstallScheme downloads and adds the specified scheme to this Configuration,
 // downloading and trusting its public key from the scheme's remote URL.
+// Limitation: when this function is stopped unexpectedly (i.e. a panic or a sigint takes place),
+// the scheme directory might get in an inconsistent state.
 func (conf *Configuration) DangerousTOFUInstallScheme(url string) error {
 	return conf.installScheme(url, nil, "")
 }
@@ -504,6 +513,7 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 
 	// newSchemeDir already makes a new directory for the configuration.
 	// If an error occurs hereafter, we have to remove this directory again to prevent side effects.
+	// Due to this, this function might have side effects when being stopped unexpectedly.
 	path, err := conf.newSchemeDir(id, dir)
 	defer func() {
 		if err != nil && path != "" {
