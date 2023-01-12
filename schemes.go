@@ -613,9 +613,6 @@ func (conf *Configuration) writeIndex(dest string, indexbts, sigbts []byte) erro
 	if err := common.EnsureDirectoryExists(dest); err != nil {
 		return err
 	}
-
-	// We need to make sure the scheme's description.xml is always valid to make restores from remote possible.
-
 	if err := common.SaveFile(filepath.Join(dest, "index"), indexbts); err != nil {
 		return err
 	}
