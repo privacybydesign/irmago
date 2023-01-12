@@ -754,7 +754,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 		return errors.Errorf("revocation mode for %s requires SQL database but no connection string given", *t)
 	}
 
-	if _, err := rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().Do(func() {
+	if _, err := rs.conf.Scheduler.Every(RevocationParameters.AccumulatorUpdateInterval).Seconds().WaitForSchedule().Do(func() {
 		if err := rs.updateAccumulatorTimes(); err != nil {
 			Logger.WithField("error", err).Error("failed to write updated accumulator record")
 		}
@@ -762,7 +762,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 		return err
 	}
 
-	if _, err := rs.conf.Scheduler.Every(RevocationParameters.DeleteIssuanceRecordsInterval).Minutes().Do(func() {
+	if _, err := rs.conf.Scheduler.Every(RevocationParameters.DeleteIssuanceRecordsInterval).Minutes().WaitForSchedule().Do(func() {
 		if !rs.sqlMode {
 			return
 		}
