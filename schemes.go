@@ -488,7 +488,7 @@ func (conf *Configuration) newSchemeDir(id, dir string) (string, error) {
 	}
 }
 
-func (conf *Configuration) installScheme(url string, publickey []byte, dir string) error {
+func (conf *Configuration) installScheme(url string, publickey []byte, dir string) (err error) {
 	if conf.readOnly {
 		return errors.New("cannot install scheme into a read-only configuration")
 	}
@@ -502,27 +502,38 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 		return errors.New("cannot install an already existing scheme")
 	}
 
+	// newSchemeDir already makes a new directory for the configuration.
+	// If an error occurs hereafter, we have to remove this directory again to prevent side effects.
 	path, err := conf.newSchemeDir(id, dir)
+	defer func() {
+		if err != nil && path != "" {
+			_ = os.RemoveAll(path)
+		}
+	}()
 	if err != nil {
-		return err
+		return
 	}
 	scheme.setPath(path)
 
 	if publickey != nil {
-		if err := common.SaveFile(filepath.Join(path, "pk.pem"), publickey); err != nil {
-			return err
+		if err = common.SaveFile(filepath.Join(path, "pk.pem"), publickey); err != nil {
+			return
 		}
 	} else {
-		if _, err := downloadFile(NewHTTPTransport(url, true), path, "pk.pem"); err != nil {
-			return err
+		if _, err = downloadFile(NewHTTPTransport(url, true), path, "pk.pem"); err != nil {
+			return
 		}
 	}
 
 	if scheme.id() != id {
 		return errors.Errorf("scheme has id %s but expected %s", scheme.id(), id)
 	}
+
+	if err = conf.UpdateScheme(scheme, nil); err != nil {
+		return
+	}
 	scheme.add(conf)
-	return conf.UpdateScheme(scheme, nil)
+	return
 }
 
 type remoteSchemeState struct {
