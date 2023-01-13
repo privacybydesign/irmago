@@ -108,6 +108,7 @@ jobs:
         run: docker-compose run test -v ./...
 
   analyze:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       actions: read
