@@ -25,7 +25,7 @@ jobs:
             arch: arm
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - uses: ./.github/actions/build
         with:
@@ -49,7 +49,7 @@ jobs:
           - "centos:latest"
           - "amazonlinux:latest"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Build Dockerfile
         run: docker build -t privacybydesign/irma:edge --build-arg BASE_IMAGE=${{ matrix.image }} .
@@ -61,7 +61,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Run Dockerfile build stage
         run: docker build -t privacybydesign/irma:build --target build .
@@ -73,7 +73,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set up Go
       uses: actions/setup-go@v2
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Run all unit tests
         run: docker-compose run test -v ./...
 
