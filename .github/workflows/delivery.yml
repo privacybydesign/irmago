@@ -11,6 +11,8 @@ jobs:
 
   ensure-release-present:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Check whether release is present
         id: release-present
@@ -23,6 +25,8 @@ jobs:
   build-release-artifact:
     needs: ensure-release-present
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
         os: [ linux, darwin, windows ]
