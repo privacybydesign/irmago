@@ -1,7 +1,8 @@
 name: Delivery
 
 on:
-  tags: [ v* ]
+  push:
+    tags: [ v* ]
 
 permissions:
   contents: write
