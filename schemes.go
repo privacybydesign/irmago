@@ -511,9 +511,9 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 		return errors.New("cannot install an already existing scheme")
 	}
 
-	// newSchemeDir already makes a new directory for the configuration.
-	// If an error occurs hereafter, we have to remove this directory again to prevent side effects.
-	// Due to this, this function might have side effects when being stopped unexpectedly.
+	// In the code below, newSchemeDir makes a new directory for the configuration.
+	// If an error occurs hereafter, we remove this directory again to prevent side effects.
+	// This approach is not resistant to this function being stopped unexpectedly.
 	dirPath, err := conf.newSchemeDir(id, dir)
 	scheme.setPath(dirPath)
 	defer func() {
