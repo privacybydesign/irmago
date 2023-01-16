@@ -5,49 +5,79 @@ on:
   push:
     branches: [ master ]
   pull_request:
+  schedule:
+    # Run every monday on 9:00 in the morning (UTC).
+    - cron: "0 9 * * 1"
+  # Make it possible to trigger the checks manually.
+  workflow_dispatch:
 
 jobs:
 
   build:
     strategy:
       matrix:
-        arch: [amd64, 386]
+        os: [ linux, darwin, windows ]
+        arch: [ amd64, 386, arm, arm64 ]
+        exclude:
+          - os: darwin
+            arch: 386
+          - os: darwin
+            arch: arm
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
-      - name: Set up Go
-        uses: actions/setup-go@v2
+      - name: Build artifact
+        uses: ./.github/actions/build
         with:
-          go-version: ^1.16
+          os: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
 
-      - name: Build
-        run: go build -v -o irma-linux-${{ matrix.arch }} ./irma
-        env:
-          GOARCH: ${{ matrix.arch }}
+  # Building the Dockerfile includes downloading the IRMA schemes.
+  # Therefore, we only run one check at the time, and we put a limit on the event types triggering this job.
+  # The other events are covered by the docker-build job below.
+  docker-build-all:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        # busybox is not working yet.
+        image:
+          - "debian:stable"
+          - "alpine:latest"
+          - "ubuntu:latest"
+          - "centos:latest"
+          - "amazonlinux:latest"
+    steps:
+      - uses: actions/checkout@v3
 
-  # We only check the build stage of the Dockerfile, because building the full Dockerfile requires
-  # downloading IRMA schemes. We check the status of the full Dockerfile once every week on master
-  # in the weekly-master-checks.
+      - name: Build Dockerfile
+        run: docker build -t privacybydesign/irma:edge --build-arg BASE_IMAGE=${{ matrix.image }} .
+
+      - name: Test Docker image
+        run: docker run privacybydesign/irma:edge version
+
   docker-build:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
-    - name: Run Dockerfile build stage
-      run: docker build -t privacybydesign/irma:build --target build .
+      - name: Run Dockerfile build stage
+        run: docker build -t privacybydesign/irma:build --target build .
 
-    - name: Test Docker image
-      # Because we have only run the build stage, we have to explicitly set irma as entrypoint.
-      run: docker run --entrypoint irma privacybydesign/irma:build version
-      
+      - name: Test Docker image
+        # Because we have only run the build stage, we have to explicitly set irma as entrypoint.
+        run: docker run --entrypoint irma privacybydesign/irma:build version
+
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ^1.16
 
@@ -74,11 +104,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Run all unit tests
         run: docker-compose run test -v ./...
 
   analyze:
-    # Require successful build to make sure analysis does not fail on syntax errors.
     needs: build
-    uses: ./.github/workflows/codeql-analysis.yml
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: go
+          queries: +security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
