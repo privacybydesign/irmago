@@ -1576,7 +1576,7 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 
 	// Check whether installing fails cleanly when using the unstable remote
 	pkPath := path.Join(corruptTestData, "irma_configuration", "test", "pk.pem")
-	pkBytes, err := os.ReadFile(path.Join(corruptTestData, "irma_configuration", "test", "pk.pem"))
+	pkBytes, err := os.ReadFile(pkPath)
 	require.NoError(t, err)
 	err = conf.InstallScheme(testSchemeURL, pkBytes)
 	require.Error(t, err)
@@ -1600,4 +1600,7 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 	err = conf.InstallScheme(testSchemeURL, pkBytes)
 	require.NoError(t, err)
 	require.Contains(t, conf.SchemeManagers, testSchemeID)
+
+	err = conf.ParseFolder()
+	require.NoError(t, err)
 }
