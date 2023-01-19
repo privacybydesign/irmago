@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2023-01-19
+
+### Added
+ - Missing support for keyshare server endpoint versioning
+
+### Removed
+ - Superfluous endpoint versioning in HTTP response headers of keyshare server
+
+### Fixed
+ - Race condition in revocation gocron instance due to jobs that start too soon
+ - Deal with leftover temp dirs in scheme folder if updating is aborted
+ - Scheme index updates within UpdateSchemes should be written to disk atomically
+ - InstallScheme does not undo its changes when an error occurs
+ - Test: race condition in StartBadHttpServer handler
+
 ## [0.11.0] - 2022-11-10
 
 ### Added
@@ -269,6 +284,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.11.1]: https://github.com/privacybydesign/irmago/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/privacybydesign/irmago/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/privacybydesign/irmago/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/privacybydesign/irmago/compare/v0.8.0...v0.9.0
