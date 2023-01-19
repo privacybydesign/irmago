@@ -199,7 +199,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	var (
 		typ        = string(scheme.typ())
 		id         = scheme.id()
-		schemepath = scheme.path()
+		schemePath = scheme.path()
 	)
 	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("checking for updates")
 	shouldUpdate, remoteState, err := conf.checkRemoteScheme(scheme)
@@ -220,7 +220,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	// occurred do we modify the scheme on disk and in memory.
 
 	// copy the scheme on disk to a new temporary directory
-	dir, newschemepath, err := conf.tempSchemeCopy(scheme)
+	dir, newSchemePath, err := conf.tempSchemeCopy(scheme)
 	if err != nil {
 		return err
 	}
@@ -228,12 +228,12 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 		_ = os.RemoveAll(dir)
 	}()
 
-	if err = conf.writeIndex(newschemepath, remoteState.indexBytes, remoteState.signatureBytes); err != nil {
+	if err = conf.writeSchemeIndex(newSchemePath, remoteState.indexBytes, remoteState.signatureBytes); err != nil {
 		return err
 	}
 
 	// iterate over the index and download new and changed files into the temp dir
-	if err = conf.updateSchemeFiles(scheme, remoteState.index, newschemepath, downloaded); err != nil {
+	if err = conf.updateSchemeFiles(scheme, remoteState.index, newSchemePath, downloaded); err != nil {
 		return err
 	}
 
@@ -242,7 +242,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	if newconf, err = NewConfiguration(dir, ConfigurationOptions{}); err != nil {
 		return err
 	}
-	if scheme, err = newconf.ParseSchemeFolder(newschemepath); err != nil {
+	if scheme, err = newconf.ParseSchemeFolder(newSchemePath); err != nil {
 		return err
 	}
 	if err = scheme.update(); err != nil {
@@ -250,7 +250,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	}
 
 	// replace old scheme on disk with the new one from the temp dir
-	if err = conf.updateSchemeDir(scheme, schemepath, newschemepath); err != nil {
+	if err = conf.updateSchemeDir(scheme, schemePath, newSchemePath); err != nil {
 		return err
 	}
 
@@ -616,7 +616,7 @@ func (conf *Configuration) checkRemoteTimestamp(scheme Scheme) (*remoteSchemeSta
 	return &remoteSchemeState{scheme, timestamp, timestampbts, index, indexbts, sig}, nil
 }
 
-func (conf *Configuration) writeIndex(dest string, indexbts, sigbts []byte) error {
+func (conf *Configuration) writeSchemeIndex(dest string, indexbts, sigbts []byte) error {
 	if err := common.EnsureDirectoryExists(dest); err != nil {
 		return err
 	}
