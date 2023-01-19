@@ -129,6 +129,8 @@ func (s *Server) Handler() http.Handler {
 			r.Use(s.authorizationMiddleware)
 			r.Post("/prove/getPs", s.handlePs)
 			r.Post("/prove/getCommitments", s.handleCommitmentsV2)
+			r.Post("/prove/getResponse", s.handleResponseV2)
+			r.Post("/prove/getResponseLinkable", s.handleResponseV2Linkable)
 		})
 	})
 
@@ -430,6 +432,83 @@ func (s *Server) generateResponse(user *User, authorization string, challenge *b
 	}
 
 	return proofResponse, nil
+}
+
+// /api/v2/prove/getResponse
+func (s *Server) handleResponseV2(w http.ResponseWriter, r *http.Request) {
+	s.keyshareResponse(w, r, false)
+}
+
+func (s *Server) keyshareResponse(w http.ResponseWriter, r *http.Request, linkable bool) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+	authorization := r.Context().Value("authorization").(string)
+
+	var req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier]
+	if err := server.ParseBody(r, &req); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	// verify access (avoids leaking whether there is a session ongoing to unauthorized callers)
+	if !r.Context().Value("hasValidAuthorization").(bool) {
+		s.conf.Logger.Warn("Could not generate keyshare response due to invalid authorization")
+		server.WriteError(w, server.ErrorInvalidRequest, "Invalid authorization")
+		return
+	}
+
+	// And do the actual responding
+	proofResponse, err := s.generateResponseV2(user, authorization, req, linkable)
+	if err != nil &&
+		(err == keysharecore.ErrInvalidChallenge ||
+			err == keysharecore.ErrInvalidJWT ||
+			err == errMissingCommitment) {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteString(w, proofResponse)
+}
+
+func (s *Server) generateResponseV2(user *User, authorization string, req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier], linkable bool) (string, error) {
+	// Get data from session
+	sessionData := s.store.get(user.Username)
+	if sessionData == nil {
+		s.conf.Logger.Warn("Request for response without previous call to get commitments")
+		return "", errMissingCommitment
+	}
+
+	// Indicate activity on user account
+	err := s.db.setSeen(user)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not mark user as seen recently")
+		// Do not send to user
+	}
+
+	// Make log entry
+	err = s.db.addLog(user, eventTypeIRMASession, nil)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+		return "", err
+	}
+
+	proofResponse, err := s.core.GenerateResponseV2(user.Secrets, authorization, sessionData.CommitID, sessionData.Hw, req, sessionData.KeyID, linkable)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
+		return "", err
+	}
+
+	return proofResponse, nil
+}
+
+// /prove/getLinkableResponse
+func (s *Server) handleResponseV2Linkable(w http.ResponseWriter, r *http.Request) {
+	s.keyshareResponse(w, r, true)
 }
 
 // /users/verify_start

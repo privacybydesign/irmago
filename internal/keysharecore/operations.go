@@ -304,6 +304,62 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	return token.SignedString(c.jwtPrivateKey)
 }
 
+// GenerateResponseV2 generates the response of a zero-knowledge proof of the keyshare secret, for a given previous commit and response request.
+func (c *Core) GenerateResponseV2(
+	secrets UserSecrets,
+	accessToken string,
+	commitID uint64,
+	hash gabi.KeyshareCommitmentRequest,
+	req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier],
+	keyID irma.PublicKeyIdentifier,
+	linkable bool) (string, error) {
+	// Validate request
+	key, ok := c.trustedKeys[keyID]
+	if !ok {
+		return "", ErrKeyNotFound
+	}
+
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
+	s, err := c.verifyAccess(secrets, accessToken)
+	if err != nil {
+		return "", err
+	}
+
+	// Fetch commit
+	c.commitmentMutex.Lock()
+	commit, ok := c.commitmentData[commitID]
+	delete(c.commitmentData, commitID)
+	c.commitmentMutex.Unlock()
+	if !ok {
+		return "", ErrUnknownCommit
+	}
+
+	proofP, err := gabi.KeyshareResponse(s.KeyshareSecret, commit, hash, req, c.trustedKeys)
+	if err != nil {
+		return "", err
+	}
+
+	if uint(proofP.C.BitLen()) > gabikeys.DefaultSystemParameters[1024].Lh || proofP.C.Cmp(big.NewInt(0)) < 0 {
+		return "", ErrInvalidChallenge
+	}
+
+	// Linkable response for legacy purposes
+	if linkable {
+		proofP.P = new(big.Int).Exp(key.R[0], s.KeyshareSecret, key.N)
+	}
+
+	// Generate response
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"ProofP": proofP,
+		"iat":    time.Now().Unix(),
+		"sub":    "ProofP",
+		"iss":    c.jwtIssuer,
+	})
+	token.Header["kid"] = c.jwtPrivateKeyID
+	return token.SignedString(c.jwtPrivateKey)
+}
+
 func (c *Core) GenerateChallenge(secrets UserSecrets, jwtt string) ([]byte, error) {
 	s, err := c.decryptUserSecrets(secrets)
 	if err != nil {
