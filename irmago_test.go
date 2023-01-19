@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -1505,7 +1506,7 @@ func TestDeleteScheme(t *testing.T) {
 	}
 
 	schemeToInstall := NewSchemeManagerIdentifier("test2")
-	pkBytes, err := ioutil.ReadFile(fmt.Sprintf("testdata/irma_configuration/%s/pk.pem", schemeToInstall))
+	pkBytes, err := os.ReadFile(fmt.Sprintf("testdata/irma_configuration/%s/pk.pem", schemeToInstall))
 	require.NoError(t, err)
 
 	err = conf.InstallScheme("http://localhost:48681/irma_configuration/"+schemeToInstall.String(), pkBytes)
@@ -1549,4 +1550,57 @@ func TestParseKeysFolderConcurrency(t *testing.T) {
 
 		grp.Wait()
 	}
+}
+
+func TestInstallSchemeUnstableRemote(t *testing.T) {
+	testSchemeID := NewSchemeManagerIdentifier("test")
+	testSchemeURL := "http://localhost:48681/irma_configuration/test"
+
+	// Host test scheme with a directory missing to simulate network issues.
+	corruptTestData := t.TempDir()
+	err := common.CopyDirectory(test.FindTestdataFolder(t), corruptTestData)
+	require.NoError(t, err)
+	err = os.RemoveAll(path.Join(corruptTestData, "irma_configuration", "test", "test2"))
+	require.NoError(t, err)
+	unstableSchemeServer := &http.Server{Addr: "localhost:48681", Handler: http.FileServer(http.Dir(corruptTestData))}
+	go func() {
+		_ = unstableSchemeServer.ListenAndServe()
+	}()
+	defer func() {
+		require.NoError(t, unstableSchemeServer.Close())
+	}()
+
+	// Initialize empty configuration
+	conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{})
+	require.NoError(t, err)
+
+	// Check whether installing fails cleanly when using the unstable remote
+	pkPath := path.Join(corruptTestData, "irma_configuration", "test", "pk.pem")
+	pkBytes, err := os.ReadFile(pkPath)
+	require.NoError(t, err)
+	err = conf.InstallScheme(testSchemeURL, pkBytes)
+	require.Error(t, err)
+	require.NotContains(t, conf.SchemeManagers, testSchemeID)
+
+	// Check whether installing fails cleanly when no public key can be found (edge case)
+	err = os.Remove(pkPath)
+	require.NoError(t, err)
+	err = conf.DangerousTOFUInstallScheme(testSchemeURL)
+	require.Error(t, err)
+	require.NotContains(t, conf.SchemeManagers, testSchemeID)
+
+	// Stop unstable scheme server
+	require.NoError(t, unstableSchemeServer.Close())
+
+	// Start stable scheme server
+	test.StartSchemeManagerHttpServer()
+	defer test.StopSchemeManagerHttpServer()
+
+	// Check whether we can successfully install the scheme using a stable remote
+	err = conf.InstallScheme(testSchemeURL, pkBytes)
+	require.NoError(t, err)
+	require.Contains(t, conf.SchemeManagers, testSchemeID)
+
+	err = conf.ParseFolder()
+	require.NoError(t, err)
 }
