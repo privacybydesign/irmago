@@ -27,7 +27,7 @@ runs:
       shell: bash
 
     - name: Build
-      run: go build -v -o ${{ steps.artifact-name-generator.outputs.artifact-name }} ./irma
+      run: go build -v -a -ldflags '-extldflags "-static"' -o ${{ steps.artifact-name-generator.outputs.artifact-name }} ./irma
       shell: bash
       env:
         GOOS: ${{ matrix.os }}
