@@ -19,10 +19,7 @@ type postgresDB struct {
 	db keyshare.DB
 }
 
-const maxPinTries = 3                  // number of tries allowed on pin before we start with exponential backoff
-const emailTokenValidity = 24          // amount of time user's email validation token is valid (in hours)
-const emailTokenRateLimit = 3          // max number of active tokens per email address within the emailTokenRateLimitDuration
-const emailTokenRateLimitDuration = 60 // amount of time after which tokens become irrelevant for rate limiting (in minutes)
+var conf *Configuration
 
 var errTooManyTokens = errors.New("Too many unhandled email tokens for given email address")
 
@@ -110,7 +107,7 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 		RETURNING pin_counter, pin_block_date`,
 		time.Now().Unix(),
 		backoffStart,
-		maxPinTries-1,
+		conf.MaxPinTries-1,
 		user.id)
 	if err != nil {
 		return false, 0, 0, err
@@ -151,7 +148,7 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 		if err != nil {
 			return false, 0, 0, err
 		}
-		tries = maxPinTries - tries
+		tries = conf.MaxPinTries - tries
 		if tries < 0 {
 			tries = 0
 		}
@@ -207,8 +204,8 @@ func (db *postgresDB) addLog(user *User, eventType eventType, param interface{})
 }
 
 func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string) error {
-	expiry := time.Now().Add(emailTokenValidity * time.Hour)
-	maxPrevExpiry := expiry.Add(-1 * emailTokenRateLimitDuration * time.Minute)
+	expiry := time.Now().Add(time.Duration(conf.EmailTokenValidity) * time.Hour)
+	maxPrevExpiry := expiry.Add(-1 * time.Duration(conf.EmailTokenRateLimitDuration) * time.Minute)
 
 	// Check whether rate limiting is necessary
 	amount, err := db.db.ExecCount("SELECT 1 FROM irma.email_verification_tokens WHERE email = $1 AND expiry > $2",
@@ -217,7 +214,7 @@ func (db *postgresDB) addEmailVerification(user *User, emailAddress, token strin
 	if err != nil {
 		return err
 	}
-	if amount >= emailTokenRateLimit {
+	if int(amount) >= conf.EmailTokenRateLimit {
 		return errTooManyTokens
 	}
 
