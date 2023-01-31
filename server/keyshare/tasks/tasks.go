@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-errors/errors"
 	_ "github.com/jackc/pgx/stdlib"
+	"github.com/lib/pq"
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
@@ -42,6 +43,7 @@ func Do(conf *Configuration) error {
 	task.cleanupTokens()
 	task.cleanupAccounts()
 	task.expireAccounts()
+	task.warnForUpcomingAccountDeletion()
 
 	return nil
 }
@@ -77,97 +79,135 @@ func (t *taskHandler) cleanupAccounts() {
 	}
 }
 
-func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
-	// Fetch user's email addresses
-	err := t.db.QueryIterate("SELECT email FROM irma.emails WHERE user_id = $1",
-		func(emailRes *sql.Rows) error {
-			var email string
-			err := emailRes.Scan(&email)
-			if err != nil {
-				return err
-			}
-
-			// Validate mail address and MX record
-			err = keyshare.VerifyMXRecord(email)
-
-			if err != nil {
-				return keyshare.ErrInvalidEmail
-			}
-
-			// And send
-			err = t.conf.SendEmail(
-				t.conf.deleteExpiredAccountTemplate,
-				t.conf.DeleteExpiredAccountSubjects,
-				map[string]string{"Username": username, "Email": email, "Delay": strconv.Itoa(t.conf.DeleteDelay)},
-				[]string{email},
-				lang,
-			)
-			return err
-		},
-		id,
-	)
-	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
-		return err
-	}
-	return nil
-}
-
-// Mark old unused accounts for deletion, and inform their owners.
+// expireAccounts marks inactive accounts having one or more registered email addresses for deletion.
 func (t *taskHandler) expireAccounts() {
+
 	// Disable this task when email server is not given
 	if t.conf.EmailServer == "" {
 		t.conf.Logger.Warning("Expiring accounts is disabled, as no email server is configured")
 		return
 	}
 
-	// Iterate over users we havent seen in ExpiryDelay days, and which have a registered email.
-	// We ignore (and thus keep alive) accounts without email addresses, as we can't inform their owners.
-	// (Note that for such accounts we store no email addresses, i.e. no personal data whatsoever.)
-	// We do this for only 10 users at a time to prevent us from sending out lots of emails
-	// simultaneously, which could lead to our email server being flagged as sending spam.
-	// The users excluded by this limit will get their email next time this task is executed.
-	err := t.db.QueryIterate(`
-		SELECT id, username, language
-		FROM irma.users
-		WHERE last_seen < $1 AND (
+	_, err := t.db.Exec(`UPDATE irma.users 
+		SET delete_on = $1
+		WHERE last_seen < $2 AND (
 			SELECT count(*)
 			FROM irma.emails
 			WHERE irma.users.id = irma.emails.user_id
-		) > 0 AND delete_on IS NULL
-		LIMIT 10`,
-		func(res *sql.Rows) error {
-			var id int64
-			var username string
-			var lang string
-			err := res.Scan(&id, &username, &lang)
-			if err != nil {
-				return err
-			}
+		) > 0`,
+		time.Now().Add(time.Duration(24*t.conf.DeleteDelay)*time.Hour).Unix(),
+		time.Now().Add(time.Duration(-24*t.conf.ExpiryDelay)*time.Hour).Unix())
 
-			// Send emails
-			err = t.sendExpiryEmails(id, username, lang)
-			// FIXME: 'return nil' will prevent abortion of 'expireAccounts()'
-			// but will not take care of the actual problem of handling the invalid email
-			if err == keyshare.ErrInvalidEmail {
-				return nil
-			}
-			if err != nil {
-				return err // already logged, just abort
-			}
-
-			// Finally, do marking for deletion
-			err = t.db.ExecUser("UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
-				time.Now().Add(time.Duration(24*t.conf.DeleteDelay)*time.Hour).Unix())
-			if err != nil {
-				return err
-			}
-			return nil
-		},
-		time.Now().Add(time.Duration(-24*t.conf.ExpiryDelay)*time.Hour).Unix(),
-	)
 	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("Could not query for accounts that have expired")
+		t.conf.Logger.WithField("error", err).Error("Could not update accounts set to expire")
 		return
+	}
+}
+
+// warnForUpcomingAccountDeletion processes marked inactive accounts, handling the sending of expiry mails
+func (t *taskHandler) warnForUpcomingAccountDeletion() {
+
+	// Disable this task when email server is not given
+	if t.conf.EmailServer == "" {
+		t.conf.Logger.Warning("Warning accounts for upcoming deletion is disabled, as no email server is configured")
+		return
+	}
+
+	// Retry delay is set hardcoded to 15 days. Make sure
+	retryUntil := time.Now().Add(time.Duration(24*15) * time.Hour).Unix()
+	deleteAfter := time.Now().Add(time.Duration(24*t.conf.DeleteDelay) * time.Hour).Unix()
+	expiredAfter := time.Now().Add(time.Duration(-24*t.conf.ExpiryDelay) * time.Hour).Unix()
+
+	// Get all users within the boundary having one or more e-mail addresses.
+	// Max 10 per run to prevent flooding of the mailserver.
+	rows, err := t.db.Query(`
+		SELECT u.id, u.username, u.language, u.delete_on, array_agg(e.email) AS emails
+		FROM irma.users AS u
+		LEFT JOIN irma.emails AS e ON e.user_id = u.id 
+		WHERE u.delete_on < $1 
+		AND u.last_seen < $2 AND (
+			SELECT count(*)
+			FROM irma.emails 
+			WHERE irma.emails.user_id = u.id 
+		) > 0
+		GROUP BY u.id
+		LIMIT 10`,
+		deleteAfter,
+		expiredAfter)
+
+	if err != nil {
+		t.conf.Logger.WithField("error", err).Error("Could not query accounts to warn for upcoming deletion")
+		return
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			id        int64
+			username  string
+			lang      string
+			delete_on int64
+			emails    []string
+		)
+
+		mailAndUpdate := func(addr []string) bool {
+			err = t.conf.SendEmail(
+				t.conf.deleteExpiredAccountTemplate,
+				t.conf.DeleteExpiredAccountSubjects,
+				map[string]string{"Username": username, "Email": addr[0], "Delay": strconv.Itoa(t.conf.DeleteDelay)},
+				addr,
+				lang,
+			)
+
+			if err != nil {
+				t.conf.Logger.WithField("error", err).Error("Could not send account expiry warning email")
+				return false
+			}
+
+			_, err = t.db.Exec(`UPDATE irma.users 
+				SET last_seen = $1, delete_on = $2
+				WHERE irma.users.id = $3`,
+				time.Now().Unix(),
+				deleteAfter,
+				id)
+
+			if err != nil {
+				t.conf.Logger.WithField("error", err).Error("Could not update last_seen and delete_on for user")
+				return false
+			}
+
+			return true
+		}
+
+		if err := rows.Scan(&id, &username, &lang, &delete_on, (*pq.StringArray)(&emails)); err != nil {
+			t.conf.Logger.WithField("error", err).Error("Could not scan row")
+			continue
+		}
+
+		if delete_on > retryUntil && delete_on < deleteAfter {
+			// Normal try: only send an e-mail if within the boundary and all users' e-mail addresses work
+
+			if len(keyshare.GetValidEmails(emails)) != len(emails) {
+				continue
+			}
+
+			if !mailAndUpdate(emails) {
+				continue
+			}
+
+		} else if delete_on < retryUntil && delete_on > time.Now().Unix() {
+			// Forced try: send an e-mail to the user if at least one e-mail address works
+
+			validEmails := keyshare.GetValidEmails(emails)
+
+			if len(validEmails) == 0 {
+				continue
+			}
+
+			if !mailAndUpdate(validEmails) {
+				continue
+			}
+		}
 	}
 }

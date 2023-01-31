@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -37,19 +36,21 @@ func countRows(t *testing.T, db *sql.DB, table, where string) int {
 	return count
 }
 
-func countDeleteDates(t *testing.T, db *sql.DB) map[string]int {
-	res, err := db.Query("SELECT delete_on FROM irma.users WHERE delete_on IS NOT NULL")
+func createUser(t *testing.T, db *sql.DB, id int, username string, last_seen int64, delete_on int64, mails []string) {
+	_, err := db.Exec("INSERT INTO irma.users (id, username, language, coredata, last_seen, pin_counter, pin_block_date, delete_on) VALUES ($1,$2, '', '', $3, 0, 0, $4)",
+		id,
+		username,
+		last_seen,
+		delete_on)
 	require.NoError(t, err)
 
-	dateMap := make(map[string]int)
-	for res.Next() {
-		var date int64
-		require.NoError(t, res.Scan(&date))
-		dateMap[strconv.FormatInt(date, 10)] += 1
+	if len(mails) > 0 {
+		for _, m := range mails {
+			_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES ($1, $2, NULL)",
+				id, m)
+			require.NoError(t, err)
+		}
 	}
-	require.NoError(t, res.Close())
-
-	return dateMap
 }
 
 func TestCleanupEmails(t *testing.T) {
@@ -110,14 +111,6 @@ func TestCleanupAccounts(t *testing.T) {
 	assert.Equal(t, 2, countRows(t, db, "users", ""))
 }
 
-func xTimesEntry(x int, template string) (result string) {
-	for i := 0; i < x; i++ {
-		nr := strconv.Itoa(i)
-		result += fmt.Sprintf(template, nr, nr)
-	}
-	return
-}
-
 func TestExpireAccounts(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 	SetupDatabase(t)
@@ -125,19 +118,37 @@ func TestExpireAccounts(t *testing.T) {
 
 	db, err := sql.Open("pgx", test.PostgresTestUrl)
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (15, 'A', '', '', 0, 0, $1-12*3600), "+
-		xTimesEntry(12, "(%s, 'ExpiredUser%s', '', '', 0, 0, 0), ")+
-		"(28, 'ExpiredUserWithoutMail', '', '', 0, 0, 0)", time.Now().Unix())
+
+	// TODO: implement createUser here too?
+	// 1 expired user without email address
+	//createUser(t, db, 10, "ExpiredUserWithoutMail", time.Now().AddDate(-1, -1, 0).Unix(), time.Now().AddDate(1, 0, 0).Unix(), []string{})
+	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (10, 'ExpiredUserWithoutMail', '', '', 0, 0, $1)",
+		time.Now().AddDate(-1, -1, 0).Unix())
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@example.com', NULL), " +
-		xTimesEntry(12, "(%s, 'test%s@example.com', NULL), ") +
-		"(28, 'test@example.com', NULL)")
+
+	// 1 expired user with email address
+	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (20, 'ExpiredUserWithMail', '', '', 0, 0, $1)",
+		time.Now().AddDate(-1, -1, 0).Unix())
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (20, 'test_expired@example.com', NULL)")
+	require.NoError(t, err)
+
+	// 1 active user without email address
+	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (30, 'ActiveUserWithoutMail', '', '', 0, 0, $1)",
+		time.Now().AddDate(0, 0, -100).Unix())
+	require.NoError(t, err)
+
+	// 1 active user with email address
+	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (40, 'ActiveUserWithMail', '', '', 0, 0, $1)",
+		time.Now().AddDate(0, 0, -100).Unix())
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (40, 'test_active@example.com', NULL)")
 	require.NoError(t, err)
 
 	th, err := newHandler(&Configuration{
 		DBConnStr:   test.PostgresTestUrl,
 		DeleteDelay: 30,
-		ExpiryDelay: 1,
+		ExpiryDelay: 365,
 		EmailConfiguration: keyshare.EmailConfiguration{
 			EmailServer:     "localhost:1025",
 			EmailFrom:       "test@example.com",
@@ -154,19 +165,87 @@ func TestExpireAccounts(t *testing.T) {
 	require.NoError(t, err)
 
 	th.expireAccounts()
-	deleteOnMap := countDeleteDates(t, db)
 
-	assert.Equal(t, 10, countRows(t, db, "users", "delete_on IS NOT NULL"))
-	assert.Equal(t, 4, countRows(t, db, "users", "delete_on IS NULL"))
+	assert.Equal(t, 1, countRows(t, db, "users", "delete_on IS NOT NULL"))
+	assert.Equal(t, 3, countRows(t, db, "users", "delete_on IS NULL"))
 
-	time.Sleep(1 * time.Second)
+	// 'forward' in time (setting last_seen further in the past)
+	_, err = db.Exec("UPDATE irma.users SET last_seen = $1 WHERE id = 30",
+		time.Now().AddDate(-1, -1, 0).Unix())
+	require.NoError(t, err)
+
+	_, err = db.Exec("UPDATE irma.users SET last_seen = $1 WHERE id = 40",
+		time.Now().AddDate(-1, -1, 0).Unix())
+	require.NoError(t, err)
+
 	th.expireAccounts()
 
-	for date, count := range deleteOnMap {
-		assert.Equal(t, count, countRows(t, db, "users", "delete_on = "+date))
-	}
-	assert.Equal(t, 13, countRows(t, db, "users", "delete_on IS NOT NULL"))
-	assert.Equal(t, 1, countRows(t, db, "users", "delete_on IS NULL"))
+	assert.Equal(t, 2, countRows(t, db, "users", "delete_on IS NOT NULL"))
+	assert.Equal(t, 2, countRows(t, db, "users", "delete_on IS NULL"))
+}
+
+func TestWarnForUpcomingAccountDeletion(t *testing.T) {
+	testdataPath := test.FindTestdataFolder(t)
+	SetupDatabase(t)
+	defer TeardownDatabase(t)
+
+	db, err := sql.Open("pgx", test.PostgresTestUrl)
+	require.NoError(t, err)
+
+	// #10: Expiring user with valid e-mail addresses within the 'normal' boundaries
+	createUser(t, db, 10, "ExpiringWithValidMail", time.Now().AddDate(-1, -1, -1).Unix(), time.Now().AddDate(0, 0, 20).Unix(), []string{"user_10@github.com", "alternative_addr@github.com"})
+
+	// #20: Expiring user with an invalid e-mail address within the 'normal' boundaries
+	createUser(t, db, 20, "ExpiringWithInvalidMail", time.Now().AddDate(-1, -1, -1).Unix(), time.Now().AddDate(0, 0, 20).Unix(), []string{"user_20@github.com", "invalidaddresscom"})
+
+	// #30: Expiring user with a valid e-mail address within the 'forced' boundaries
+	createUser(t, db, 30, "ExpiringSoonWithValidMail", time.Now().AddDate(-1, -1, -1).Unix(), time.Now().AddDate(0, 0, 10).Unix(), []string{"user_30@github.com"})
+
+	// #40: Active user outside the boundaries
+	createUser(t, db, 40, "AlsoActiveWithValidMail", time.Now().AddDate(0, -1, 0).Unix(), time.Now().AddDate(1, 0, 0).Unix(), []string{"user_40@github.com"})
+
+	// #50: Expired user, should be deleted already but in some magical way is still in the db
+	createUser(t, db, 50, "ShouldBeDeletedAlreadyWithValidMail", time.Now().AddDate(-1, -1, -1).Unix(), time.Now().AddDate(0, -1, 0).Unix(), []string{"user_50@github.com"})
+
+	th, err := newHandler(&Configuration{
+		DBConnStr:   test.PostgresTestUrl,
+		DeleteDelay: 30,
+		ExpiryDelay: 365,
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     "localhost:1025",
+			EmailFrom:       "test@example.com",
+			DefaultLanguage: "en",
+		},
+		DeleteExpiredAccountFiles: map[string]string{
+			"en": filepath.Join(testdataPath, "emailtemplate.html"),
+		},
+		DeleteExpiredAccountSubjects: map[string]string{
+			"en": "testsubject",
+		},
+		Logger: irma.Logger,
+	})
+	require.NoError(t, err)
+
+	th.warnForUpcomingAccountDeletion()
+
+	// Two users (#10 - normal, #30 - forced) should be processed and therefore have an updated 'last_seen'
+	assert.Equal(t, 2, countRows(t, db, "users", fmt.Sprintf("last_seen = %d", time.Now().Unix())))
+
+	time.Sleep(1 * time.Second)
+	th.warnForUpcomingAccountDeletion()
+
+	// No user should be processed twice when the task runs again at a later moment
+	assert.Equal(t, 0, countRows(t, db, "users", fmt.Sprintf("last_seen = %d", time.Now().Unix())))
+
+	// Update user #20 (forward time to set delete_on to 10 days from now) so he is now 'forced'
+	_, err = db.Exec("UPDATE irma.users SET delete_on = $1 WHERE id = 20",
+		time.Now().AddDate(0, 0, 10).Unix())
+	require.NoError(t, err)
+
+	th.warnForUpcomingAccountDeletion()
+
+	// User #20 is now processed, getting a 'forced' mail because of one of it's invalid email addresses
+	assert.Equal(t, 1, countRows(t, db, "users", fmt.Sprintf("last_seen = %d", time.Now().Unix())))
 }
 
 func TestConfiguration(t *testing.T) {
@@ -241,3 +320,19 @@ func SetupDatabase(t *testing.T) {
 func TeardownDatabase(t *testing.T) {
 	test.RunScriptOnDB(t, "../cleanup.sql", false)
 }
+
+/* TODO: what do I want to test:
+
+revisit all tests containing: expireAccounts()
+
+expireAccounts:
+- is account unused for more than 1 year set to expire (delete_on)?
+	- are these only accounts with one or more email addresses?
+- is an account unused less than 1 year not affected
+
+warnForUpcomingAccountDeletion
+- does a user not get an mail (when delete_on > 15 days && < 30 days) if one of the mail addresses is not working?
+-
+
+to check: what happens with users currently in the db where delete_on is set for example? Do they miss out something, recieve a double mail etc?? -> need to know!
+*/
