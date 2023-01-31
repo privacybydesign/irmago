@@ -91,14 +91,21 @@ func (conf EmailConfiguration) SendEmail(
 		return err
 	}
 
-	err = sendHTMLEmail(
-		conf.EmailServer,
-		conf.EmailAuth,
-		from,
-		to,
-		conf.TranslateString(subjects, lang),
-		msg.Bytes(),
-	)
+	headers := bytes.NewBuffer(nil)
+
+	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email
+	if len(to) == 1 {
+		headers.WriteString(fmt.Sprintf("To: %s\r\n", to[0]))
+	}
+
+	headers.WriteString(fmt.Sprintf("From: %s\r\n", from.Address))
+	headers.WriteString(fmt.Sprintf("Subject: %s\r\n", conf.TranslateString(subjects, lang)))
+	headers.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+	headers.WriteString("Content-Transfer-Encoding: binary\r\n")
+	headers.WriteString("\r\n")
+
+	err = smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, to, append(headers.Bytes(), msg.Bytes()...))
+
 	if err != nil {
 		server.Logger.WithField("error", err).Error("Could not send email")
 		return err
@@ -125,23 +132,6 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 		return errors.Errorf("failed to close connection to email server: %v", err)
 	}
 	return nil
-}
-
-func sendHTMLEmail(addr string, a smtp.Auth, from *mail.Address, to []string, subject string, msg []byte) error {
-	headers := bytes.NewBuffer(nil)
-
-	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email
-	if len(to) == 1 {
-		headers.WriteString(fmt.Sprintf("To: %s\r\n", to[0]))
-	}
-
-	headers.WriteString(fmt.Sprintf("From: %s\r\n", from.Address))
-	headers.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	headers.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-	headers.WriteString("Content-Transfer-Encoding: binary\r\n")
-	headers.WriteString("\r\n")
-
-	return smtp.SendMail(addr, a, from.Address, to, append(headers.Bytes(), msg...))
 }
 
 // VerifyMXRecord checks for present and valid MX records on the domain name part of the supplied email address
