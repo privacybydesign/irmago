@@ -119,9 +119,7 @@ func TestExpireAccounts(t *testing.T) {
 	db, err := sql.Open("pgx", test.PostgresTestUrl)
 	require.NoError(t, err)
 
-	// TODO: implement createUser here too?
 	// 1 expired user without email address
-	//createUser(t, db, 10, "ExpiredUserWithoutMail", time.Now().AddDate(-1, -1, 0).Unix(), time.Now().AddDate(1, 0, 0).Unix(), []string{})
 	_, err = db.Exec("INSERT INTO irma.users(id, username, language, coredata, pin_counter, pin_block_date, last_seen) VALUES (10, 'ExpiredUserWithoutMail', '', '', 0, 0, $1)",
 		time.Now().AddDate(-1, -1, 0).Unix())
 	require.NoError(t, err)
@@ -320,19 +318,3 @@ func SetupDatabase(t *testing.T) {
 func TeardownDatabase(t *testing.T) {
 	test.RunScriptOnDB(t, "../cleanup.sql", false)
 }
-
-/* TODO: what do I want to test:
-
-revisit all tests containing: expireAccounts()
-
-expireAccounts:
-- is account unused for more than 1 year set to expire (delete_on)?
-	- are these only accounts with one or more email addresses?
-- is an account unused less than 1 year not affected
-
-warnForUpcomingAccountDeletion
-- does a user not get an mail (when delete_on > 15 days && < 30 days) if one of the mail addresses is not working?
--
-
-to check: what happens with users currently in the db where delete_on is set for example? Do they miss out something, recieve a double mail etc?? -> need to know!
-*/
