@@ -1,0 +1,34 @@
+name: Build
+description: Builds the irma CLI tool for the given operating system and architecture.
+inputs:
+  os:
+    description: Operating system to build for
+    required: true
+    default: linux
+  arch:
+    description: Architecture to build for
+    required: true
+    default: amd64
+outputs:
+  artifact-name:
+    description: Name of the generated artifact
+    value: ${{ steps.artifact-name-generator.outputs.artifact-name }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ^1.16
+
+    - name: Determine artifact output filename
+      id: artifact-name-generator
+      run: echo "artifact-name=irma-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Build
+      run: go build -v -a -ldflags '-extldflags "-static"' -o ${{ steps.artifact-name-generator.outputs.artifact-name }} ./irma
+      shell: bash
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
