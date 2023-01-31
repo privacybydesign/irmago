@@ -2,6 +2,7 @@ package keyshare
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"net"
 	"net/mail"
@@ -65,23 +66,26 @@ func (conf EmailConfiguration) SendEmail(
 	templates map[string]*template.Template,
 	subjects map[string]string,
 	templateData map[string]string,
-	email string,
+	to []string,
 	lang string,
 ) error {
 	var msg bytes.Buffer
 	err := conf.translateTemplate(templates, lang).Execute(&msg, templateData)
 	if err != nil {
-		server.Logger.WithField("error", err).Error("Could not generate email from template")
+		server.Logger.WithField("error", err).Error("could not generate email from template")
 		return err
 	}
 
-	// Do input validation on email address fields.
-	toAddr, err := mail.ParseAddress(email)
-	if err != nil {
+	// Do validation on email address fields.
+	if len(to) == 0 {
+		return errors.New("no email address")
+	}
+
+	if _, err = mail.ParseAddressList(strings.Join(to, ",")); err != nil {
 		return ErrInvalidEmail
 	}
 
-	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
+	from, err := mail.ParseAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
 		return err
@@ -90,8 +94,8 @@ func (conf EmailConfiguration) SendEmail(
 	err = sendHTMLEmail(
 		conf.EmailServer,
 		conf.EmailAuth,
-		fromAddr,
-		toAddr,
+		from,
+		to,
 		conf.TranslateString(subjects, lang),
 		msg.Bytes(),
 	)
@@ -123,14 +127,21 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 	return nil
 }
 
-func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject string, msg []byte) error {
-	headers := []byte("To: " + to.Address + "\r\n" +
-		"From: " + from.Address + "\r\n" +
-		"Subject: " + subject + "\r\n" +
-		"Content-Type: text/html; charset=UTF-8\r\n" +
-		"Content-Transfer-Encoding: binary\r\n" +
-		"\r\n")
-	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
+func sendHTMLEmail(addr string, a smtp.Auth, from *mail.Address, to []string, subject string, msg []byte) error {
+	headers := bytes.NewBuffer(nil)
+
+	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email
+	if len(to) == 1 {
+		headers.WriteString(fmt.Sprintf("To: %s\r\n", to[0]))
+	}
+
+	headers.WriteString(fmt.Sprintf("From: %s\r\n", from.Address))
+	headers.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	headers.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+	headers.WriteString("Content-Transfer-Encoding: binary\r\n")
+	headers.WriteString("\r\n")
+
+	return smtp.SendMail(addr, a, from.Address, to, append(headers.Bytes(), msg...))
 }
 
 // VerifyMXRecord checks for present and valid MX records on the domain name part of the supplied email address

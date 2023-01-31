@@ -177,7 +177,7 @@ func (s *Server) sendDeleteEmails(session *session) error {
 			s.conf.deleteAccountTemplates,
 			s.conf.DeleteAccountSubjects,
 			map[string]string{"Username": user.Username, "Email": email.Email, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
-			email.Email,
+			[]string{email.Email},
 			user.language,
 		)
 	}
@@ -255,7 +255,7 @@ func (s *Server) sendLoginEmail(request emailLoginRequest) error {
 		s.conf.loginEmailTemplates,
 		s.conf.LoginEmailSubjects,
 		map[string]string{"TokenURL": baseURL + token},
-		request.Email,
+		[]string{request.Email},
 		request.Language,
 	)
 }
@@ -549,7 +549,7 @@ func (s *Server) processRemoveEmail(session *session, email string) error {
 			s.conf.deleteEmailTemplates,
 			s.conf.DeleteEmailSubjects,
 			map[string]string{"Username": user.Username, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
-			email,
+			[]string{email},
 			user.language,
 		)
 		if err != nil {
