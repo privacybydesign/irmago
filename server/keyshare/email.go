@@ -150,3 +150,15 @@ func VerifyMXRecord(email string) error {
 	}
 	return nil
 }
+
+// GetValidEmails verifies e-mail addresses and returns the valid ones
+func GetValidEmails(emails []string) []string {
+	validEmails := []string{}
+
+	for _, addr := range emails {
+		if err := VerifyMXRecord(addr); err == nil {
+			validEmails = append(validEmails, addr)
+		}
+	}
+	return validEmails
+}
