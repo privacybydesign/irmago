@@ -63,14 +63,8 @@ type Configuration struct {
 	registrationEmailTemplates map[string]*template.Template
 
 	VerificationURL map[string]string `json:"verification_url" mapstructure:"verification_url"`
-	// number of tries allowed on pin before we start with exponential backoff
-	MaxPinTries int `json:"max_pin_tries" mapstructure:"max_pin_tries"`
-	// amount of time user's email validation token is valid (in hours)
+	// Amount of time user's email validation token is valid (in hours)
 	EmailTokenValidity int `json:"email_token_validity" mapstructure:"email_token_validity"`
-	// max number of active tokens per email address within the emailTokenRateLimitDuration
-	EmailTokenRateLimit int `json:"email_token_rate_limit" mapstructure:"email_token_rate_limit"`
-	// amount of time after which tokens become irrelevant for rate limiting (in minutes)
-	EmailTokenRateLimitDuration int `json:"email_token_rate_limit_duration" mapstructure:"email_token_rate_limit_duration"`
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AESKey, error) {
@@ -123,6 +117,12 @@ func validateConf(conf *Configuration) error {
 	}
 	conf.URL += "irma/"
 
+	if EmailTokenValidity == 0 {
+		EmailTokenValidity = 168 // set default of 7 days
+	}
+	if EmailTokenValidity < 1 || EmailTokenValidity > 8760 {
+		return server.LogError(errors.Errorf("EmailTokenValidity (%s) is less than one hour or more than one year", EmailTokenValidity))
+	}
 	return nil
 }
 

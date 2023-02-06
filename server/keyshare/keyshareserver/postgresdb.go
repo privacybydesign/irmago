@@ -16,10 +16,18 @@ import (
 // pgx as database driver
 
 type postgresDB struct {
-	db keyshare.DB
+	db   keyshare.DB
+	conf Configuration
 }
 
-var conf *Configuration
+// Number of tries allowed on pin before we start with exponential backoff
+const maxPinTries = 3
+
+// Max number of active tokens per email address within the emailTokenRateLimitDuration
+const emailTokenRateLimit = 3
+
+// Amount of time after which tokens become irrelevant for rate limiting (in minutes)
+const emailTokenRateLimitDuration = 60
 
 var errTooManyTokens = errors.New("Too many unhandled email tokens for given email address")
 
@@ -29,7 +37,7 @@ var backoffStart int64 = 60
 
 // newPostgresDB opens a new database connection using the given maximum connection bounds.
 // For the maxOpenConns, maxIdleTime and maxOpenTime parameters, the value 0 means unlimited.
-func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration) (DB, error) {
+func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration, conf *Configuration) (DB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
@@ -40,6 +48,10 @@ func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTim
 	db.SetConnMaxLifetime(maxOpenTime)
 	if err = db.Ping(); err != nil {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
+	}
+	err = validateConf(conf)
+	if err != nul {
+		return nil, err
 	}
 	return &postgresDB{
 		db: keyshare.DB{DB: db},
@@ -107,7 +119,7 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 		RETURNING pin_counter, pin_block_date`,
 		time.Now().Unix(),
 		backoffStart,
-		conf.MaxPinTries-1,
+		MaxPinTries-1,
 		user.id)
 	if err != nil {
 		return false, 0, 0, err
@@ -148,7 +160,7 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 		if err != nil {
 			return false, 0, 0, err
 		}
-		tries = conf.MaxPinTries - tries
+		tries = MaxPinTries - tries
 		if tries < 0 {
 			tries = 0
 		}
@@ -205,7 +217,7 @@ func (db *postgresDB) addLog(user *User, eventType eventType, param interface{})
 
 func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string) error {
 	expiry := time.Now().Add(time.Duration(conf.EmailTokenValidity) * time.Hour)
-	maxPrevExpiry := expiry.Add(-1 * time.Duration(conf.EmailTokenRateLimitDuration) * time.Minute)
+	maxPrevExpiry := expiry.Add(-1 * time.Duration(EmailTokenRateLimitDuration) * time.Minute)
 
 	// Check whether rate limiting is necessary
 	amount, err := db.db.ExecCount("SELECT 1 FROM irma.email_verification_tokens WHERE email = $1 AND expiry > $2",
@@ -214,7 +226,7 @@ func (db *postgresDB) addEmailVerification(user *User, emailAddress, token strin
 	if err != nil {
 		return err
 	}
-	if int(amount) >= conf.EmailTokenRateLimit {
+	if int(amount) >= EmailTokenRateLimit {
 		return errTooManyTokens
 	}
 
