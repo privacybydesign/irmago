@@ -103,6 +103,9 @@ func validateConf(conf *Configuration) error {
 		return server.LogError(err)
 	}
 
+	if conf.KeyshareAttribute == nil {
+		return server.LogError(errors.Errorf("conf.KeyshareAttribute == nil"))
+	}
 	if conf.IrmaConfiguration.AttributeTypes[conf.KeyshareAttribute] == nil {
 		return server.LogError(errors.Errorf("Unknown keyshare attribute: %s", conf.KeyshareAttribute))
 	}
