@@ -18,7 +18,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	defer TeardownDatabase(t)
 
 	conf := &Configuration{
-		EmailTokenValidity: 7,
+		EmailTokenValidity: 168,
 	}
 
 	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0, conf)
@@ -63,7 +63,7 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	defer TeardownDatabase(t)
 
 	conf := &Configuration{
-		EmailTokenValidity: 7,
+		EmailTokenValidity: 168,
 	}
 
 	backoffStart = 2
