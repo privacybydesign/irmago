@@ -117,11 +117,11 @@ func validateConf(conf *Configuration) error {
 	}
 	conf.URL += "irma/"
 
-	if EmailTokenValidity == 0 {
-		EmailTokenValidity = 168 // set default of 7 days
+	if conf.EmailTokenValidity == 0 {
+		conf.EmailTokenValidity = 168 // set default of 7 days
 	}
-	if EmailTokenValidity < 1 || EmailTokenValidity > 8760 {
-		return server.LogError(errors.Errorf("EmailTokenValidity (%s) is less than one hour or more than one year", EmailTokenValidity))
+	if conf.EmailTokenValidity < 1 || conf.EmailTokenValidity > 8760 {
+		return server.LogError(errors.Errorf("EmailTokenValidity (%s) is less than one hour or more than one year", conf.EmailTokenValidity))
 	}
 	return nil
 }
@@ -138,6 +138,7 @@ func setupDatabase(conf *Configuration) (DB, error) {
 			conf.DBConnMaxOpen,
 			time.Duration(conf.DBConnMaxIdleTime)*time.Second,
 			time.Duration(conf.DBConnMaxOpenTime)*time.Second,
+			conf,
 		)
 		if err != nil {
 			return nil, server.LogError(err)

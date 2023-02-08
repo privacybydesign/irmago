@@ -50,7 +50,7 @@ func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTim
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
 	err = validateConf(conf)
-	if err != nul {
+	if err != nil {
 		return nil, err
 	}
 	return &postgresDB{
@@ -119,7 +119,7 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 		RETURNING pin_counter, pin_block_date`,
 		time.Now().Unix(),
 		backoffStart,
-		MaxPinTries-1,
+		maxPinTries-1,
 		user.id)
 	if err != nil {
 		return false, 0, 0, err
@@ -160,7 +160,7 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 		if err != nil {
 			return false, 0, 0, err
 		}
-		tries = MaxPinTries - tries
+		tries = maxPinTries - tries
 		if tries < 0 {
 			tries = 0
 		}
@@ -216,8 +216,8 @@ func (db *postgresDB) addLog(user *User, eventType eventType, param interface{})
 }
 
 func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string) error {
-	expiry := time.Now().Add(time.Duration(conf.EmailTokenValidity) * time.Hour)
-	maxPrevExpiry := expiry.Add(-1 * time.Duration(EmailTokenRateLimitDuration) * time.Minute)
+	expiry := time.Now().Add(time.Duration(db.conf.EmailTokenValidity) * time.Hour)
+	maxPrevExpiry := expiry.Add(-1 * time.Duration(emailTokenRateLimitDuration) * time.Minute)
 
 	// Check whether rate limiting is necessary
 	amount, err := db.db.ExecCount("SELECT 1 FROM irma.email_verification_tokens WHERE email = $1 AND expiry > $2",
@@ -226,7 +226,7 @@ func (db *postgresDB) addEmailVerification(user *User, emailAddress, token strin
 	if err != nil {
 		return err
 	}
-	if int(amount) >= EmailTokenRateLimit {
+	if int(amount) >= emailTokenRateLimit {
 		return errTooManyTokens
 	}
 
