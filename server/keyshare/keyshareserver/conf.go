@@ -117,9 +117,6 @@ func validateConf(conf *Configuration) error {
 	}
 	conf.URL += "irma/"
 
-	if conf.EmailTokenValidity == 0 {
-		conf.EmailTokenValidity = 168 // set default of 7 days
-	}
 	if conf.EmailTokenValidity < 1 || conf.EmailTokenValidity > 8760 {
 		return server.LogError(errors.Errorf("EmailTokenValidity (%d) is less than one hour or more than one year", conf.EmailTokenValidity))
 	}
