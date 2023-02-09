@@ -79,6 +79,7 @@ func init() {
 	flags.StringToString("registration-email-subjects", nil, "Translated subject lines for the registration email")
 	flags.StringToString("registration-email-files", nil, "Translated emails for the registration email")
 	flags.StringToString("verification-url", nil, "Base URL for the email verification link (localized)")
+	flags.Int("email-token-validity", 168, "Validity of email token in hours")
 
 	headers["tls-cert"] = "TLS configuration (leave empty to disable TLS)"
 	flags.String("tls-cert", "", "TLS certificate (chain)")
@@ -122,6 +123,7 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		RegistrationEmailSubjects: viper.GetStringMapString("registration_email_subjects"),
 		RegistrationEmailFiles:    viper.GetStringMapString("registration_email_files"),
 		VerificationURL:           viper.GetStringMapString("verification_url"),
+		EmailTokenValidity:        viper.GetInt("email_token_validity"),
 	}
 
 	if conf.Production && conf.DBType != keyshareserver.DBTypePostgres {
