@@ -17,11 +17,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	conf := &Configuration{
-		EmailTokenValidity: 168,
-	}
-
-	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0, conf)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	user := &User{Username: "testuser", Secrets: []byte{123}}
@@ -47,11 +43,11 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	assert.NoError(t, err)
 
 	for i := 0; i < emailTokenRateLimit; i++ {
-		err = db.addEmailVerification(nuser, "test@example.com", fmt.Sprintf("testtoken-%d", i))
+		err = db.addEmailVerification(nuser, "test@example.com", fmt.Sprintf("testtoken-%d", i), 168)
 		assert.NoError(t, err)
 	}
 
-	err = db.addEmailVerification(nuser, "test@example.com", "testtoken-rate-limited")
+	err = db.addEmailVerification(nuser, "test@example.com", "testtoken-rate-limited", 168)
 	assert.ErrorIs(t, err, errTooManyTokens)
 
 	err = db.setSeen(nuser)
@@ -62,13 +58,9 @@ func TestPostgresDBPinReservation(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
 
-	conf := &Configuration{
-		EmailTokenValidity: 168,
-	}
-
 	backoffStart = 2
 
-	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0, conf)
+	db, err := newPostgresDB(test.PostgresTestUrl, 2, 0, 0, 0)
 	require.NoError(t, err)
 
 	user := &User{Username: "testuser", Secrets: []byte{123}}

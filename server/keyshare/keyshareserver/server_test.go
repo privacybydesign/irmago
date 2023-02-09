@@ -557,8 +557,8 @@ func (db *testDB) addLog(user *User, entrytype eventType, params interface{}) er
 	return db.db.addLog(user, entrytype, params)
 }
 
-func (db *testDB) addEmailVerification(user *User, email, token string) error {
-	return db.db.addEmailVerification(user, email, token)
+func (db *testDB) addEmailVerification(user *User, email, token string, validity int) error {
+	return db.db.addEmailVerification(user, email, token, validity)
 }
 
 func createDB(t *testing.T) DB {

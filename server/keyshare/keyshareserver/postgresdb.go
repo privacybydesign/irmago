@@ -16,8 +16,7 @@ import (
 // pgx as database driver
 
 type postgresDB struct {
-	db   keyshare.DB
-	conf Configuration
+	db keyshare.DB
 }
 
 // Number of tries allowed on pin before we start with exponential backoff
@@ -37,7 +36,7 @@ var backoffStart int64 = 60
 
 // newPostgresDB opens a new database connection using the given maximum connection bounds.
 // For the maxOpenConns, maxIdleTime and maxOpenTime parameters, the value 0 means unlimited.
-func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration, conf *Configuration) (DB, error) {
+func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTime, maxOpenTime time.Duration) (DB, error) {
 	db, err := sql.Open("pgx", connstring)
 	if err != nil {
 		return nil, err
@@ -49,10 +48,7 @@ func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTim
 	if err = db.Ping(); err != nil {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
-	err = validateConf(conf)
-	if err != nil {
-		return nil, err
-	}
+
 	return &postgresDB{
 		db: keyshare.DB{DB: db},
 	}, nil
@@ -215,8 +211,8 @@ func (db *postgresDB) addLog(user *User, eventType eventType, param interface{})
 	return err
 }
 
-func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string) error {
-	expiry := time.Now().Add(time.Duration(db.conf.EmailTokenValidity) * time.Hour)
+func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string, validity int) error {
+	expiry := time.Now().Add(time.Duration(validity) * time.Hour)
 	maxPrevExpiry := expiry.Add(-1 * time.Duration(emailTokenRateLimitDuration) * time.Minute)
 
 	// Check whether rate limiting is necessary

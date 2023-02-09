@@ -138,7 +138,6 @@ func setupDatabase(conf *Configuration) (DB, error) {
 			conf.DBConnMaxOpen,
 			time.Duration(conf.DBConnMaxIdleTime)*time.Second,
 			time.Duration(conf.DBConnMaxOpenTime)*time.Second,
-			conf,
 		)
 		if err != nil {
 			return nil, server.LogError(err)
