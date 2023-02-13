@@ -1608,7 +1608,3 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 	err = conf.ParseFolder()
 	require.NoError(t, err)
 }
-
-func TestLeftoverTempSchemeDir(t *testing.T) {
-
-}
