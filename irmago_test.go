@@ -128,6 +128,8 @@ func TestParseIrmaConfigurationLeftoverTempDir(t *testing.T) {
 	confpath := filepath.Join(storage, "client")
 	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, ".tempscheme")))
 	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, ".oldscheme")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, "tempscheme")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, "oldscheme")))
 	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, ".foobar")))
 
 	// Parse configuration, the above folders are ignored
@@ -138,6 +140,8 @@ func TestParseIrmaConfigurationLeftoverTempDir(t *testing.T) {
 	// These are removed by ParseFolder()
 	require.NoError(t, common.AssertPathNotExists(filepath.Join(confpath, ".tempscheme")))
 	require.NoError(t, common.AssertPathNotExists(filepath.Join(confpath, ".oldscheme")))
+	require.NoError(t, common.AssertPathNotExists(filepath.Join(confpath, "tempscheme")))
+	require.NoError(t, common.AssertPathNotExists(filepath.Join(confpath, "oldscheme")))
 
 	// Other dotted dirs are left in place by ParseFolder()
 	require.NoError(t, common.AssertPathExists(filepath.Join(confpath, ".foobar")))
@@ -1603,4 +1607,8 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 
 	err = conf.ParseFolder()
 	require.NoError(t, err)
+}
+
+func TestLeftoverTempSchemeDir(t *testing.T) {
+
 }
