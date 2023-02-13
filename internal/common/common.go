@@ -422,7 +422,7 @@ func SchemeFilename(dir string) (string, error) {
 			return filename, nil
 		}
 	}
-	return "", errors.New("no scheme file found")
+	return "", errors.Errorf("no scheme file found in directory %s", dir)
 }
 
 var SchemeFilenames = []string{"description.xml", "description.json"}
