@@ -416,7 +416,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	id, err := s.db.verifyEmailToken(token)
 	if err == errTokenNotFound {
 		s.conf.Logger.Info("Unknown email verification token")
-		server.WriteError(w, server.ErrorInvalidRequest, "Unknown email verification token")
+		server.WriteError(w, server.ErrorInvalidToken, "Unknown email verification token")
 		return
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not verify email token")
