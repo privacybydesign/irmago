@@ -115,7 +115,8 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringSlice("revoke-perms", nil, "list of credentials that all requestors may revoke")
 	flags.Bool("skip-private-keys-check", false, "whether or not to skip checking whether the private keys that requestors have permission for using are present in the configuration")
 	flags.String("static-sessions", "", "preconfigured static sessions (in JSON)")
-	flags.Int("max-session-lifetime", 5, "maximum duration of a session once a client connects in minutes")
+	flags.Int("max-session-lifetime", 15, "maximum duration of a session once a client connects in minutes")
+	flags.Int("session-result-lifetime", 5, "determines how long a session result is preserved in minutes")
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
