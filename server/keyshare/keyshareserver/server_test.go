@@ -485,6 +485,7 @@ func StartKeyshareServer(t *testing.T, db DB, emailserver string) (*Server, *htt
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
+		EmailTokenValidity:    168,
 		RegistrationEmailFiles: map[string]string{
 			"en": filepath.Join(testdataPath, "emailtemplate.html"),
 		},
@@ -556,8 +557,8 @@ func (db *testDB) addLog(user *User, entrytype eventType, params interface{}) er
 	return db.db.addLog(user, entrytype, params)
 }
 
-func (db *testDB) addEmailVerification(user *User, email, token string) error {
-	return db.db.addEmailVerification(user, email, token)
+func (db *testDB) addEmailVerification(user *User, email, token string, validity int) error {
+	return db.db.addEmailVerification(user, email, token, validity)
 }
 
 func createDB(t *testing.T) DB {

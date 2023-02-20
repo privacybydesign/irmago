@@ -23,6 +23,7 @@ func validConf(t *testing.T) *Configuration {
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
+		EmailTokenValidity:    168,
 	}
 }
 

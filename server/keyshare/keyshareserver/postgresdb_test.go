@@ -43,11 +43,11 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	assert.NoError(t, err)
 
 	for i := 0; i < emailTokenRateLimit; i++ {
-		err = db.addEmailVerification(nuser, "test@example.com", fmt.Sprintf("testtoken-%d", i))
+		err = db.addEmailVerification(nuser, "test@example.com", fmt.Sprintf("testtoken-%d", i), 168)
 		assert.NoError(t, err)
 	}
 
-	err = db.addEmailVerification(nuser, "test@example.com", "testtoken-rate-limited")
+	err = db.addEmailVerification(nuser, "test@example.com", "testtoken-rate-limited", 168)
 	assert.ErrorIs(t, err, errTooManyTokens)
 
 	err = db.setSeen(nuser)

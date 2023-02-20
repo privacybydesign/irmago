@@ -29,7 +29,7 @@ func TestMemoryDBUserManagement(t *testing.T) {
 	err = db.updateUser(nuser)
 	assert.NoError(t, err)
 
-	err = db.addEmailVerification(nuser, "test@example.com", "testtoken")
+	err = db.addEmailVerification(nuser, "test@example.com", "testtoken", 168)
 	assert.NoError(t, err)
 
 	err = db.addLog(nuser, eventTypePinCheckSuccess, nil)

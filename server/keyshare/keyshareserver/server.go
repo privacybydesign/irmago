@@ -651,7 +651,7 @@ func (s *Server) sendRegistrationEmail(user *User, language, email string) error
 	token := common.NewSessionToken()
 
 	// Add it to the database
-	err := s.db.addEmailVerification(user, email, token)
+	err := s.db.addEmailVerification(user, email, token, s.conf.EmailTokenValidity)
 	if err != nil {
 		// Rate limiting errors do not need logging.
 		if err != errTooManyTokens {

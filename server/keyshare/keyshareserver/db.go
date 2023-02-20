@@ -49,7 +49,7 @@ type DB interface {
 	addLog(user *User, eventType eventType, param interface{}) error
 
 	// Store email verification tokens on registration
-	addEmailVerification(user *User, emailAddress, token string) error
+	addEmailVerification(user *User, emailAddress, token string, validity int) error
 }
 
 // User represents a user of this server.
