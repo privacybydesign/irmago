@@ -1,9 +1,18 @@
-
 # Changelog
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.11.3] - 2023-02-23
+
+### Added
+ - Add 403 invalid token error response
+ - Make it possible to increase MaxSessionLifetime without increasing the SessionResult lifetime
+ - Make email recovery link expiry configurable
+
+### Fixed
+ - Dependency version bumps
 
 ## [0.11.2] - 2023-02-13
 
@@ -130,7 +139,7 @@ This release contains several large new features. In particular, the shoulder su
     * A new return parameter (type `*irma.FrontendSessionRequest`) has been added containing the frontend pairing settings (corresponding to the `FrontendRequest` field in the `server.SessionPackage` mentioned above)
   * The `token` parameter, as used by most functions in the API of the `irmaserver` package, now has the type `irma.RequestorToken`
   * The `server.Status` type has been moved to `irma.ServerStatus`; the related constants are also moved, e.g. from `server.StatusInitialized` to `irma.ServerStatusInitialized`
-  
+
 ### Fixed
 * Bug causing IRMA server startup to fail when revocation is enabled
 * Bug causing sessions to fail when revocation is enabled and the issuer has multiple revocation-enabled keys
@@ -234,7 +243,7 @@ This release contains several large new features. In particular, the shoulder su
 ### Added
 * Revocation of previously issued credentials (see [documentation](https://irma.app/docs/revocation/))
 * Support HTTP/2 in IRMA server and app
-* Option `--skip-permission-keys-check` to IRMA server disabling checking that all required private keys are present in the server configuration 
+* Option `--skip-permission-keys-check` to IRMA server disabling checking that all required private keys are present in the server configuration
 
 ### Changed
 * Use go modules instead of `dep` for tracking and locking dependencies
@@ -289,6 +298,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.11.3]: https://github.com/privacybydesign/irmago/compare/v0.11.2...v0.11.3
 [0.11.2]: https://github.com/privacybydesign/irmago/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/privacybydesign/irmago/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/privacybydesign/irmago/compare/v0.10.0...v0.11.0
