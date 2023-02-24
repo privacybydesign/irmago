@@ -23,11 +23,11 @@ jobs:
         shell: bash
 
       - name: Check whether version.go contains the new version number
-        run: cat version.go | grep ${{ github.ref_name }}
+        run: cat version.go | grep ${GITHUB_REF_NAME:1}
         shell: bash
 
       - name: Check whether CHANGELOG.md contains the new version number
-        run: cat CHANGELOG.md | grep "\[${{ github.ref_name }}\]"
+        run: cat CHANGELOG.md | grep "\[${GITHUB_REF_NAME:1}\]"
         shell: bash
 
       - name: Check whether release is present
