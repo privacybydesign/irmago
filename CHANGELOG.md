@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.12.0] - 2023-02-28
 
 ### Added
-- Separate timeout constraints for the amount of time a client has to complete a session with `MaxSessionLifetime` and a requestor has to retrieve the session result from the server with `SessionResultLifetime`
+- Separate timeout constraints for the amount of time a client has to complete a session (`MaxSessionLifetime`) and a requestor has to retrieve the session result from the server (`SessionResultLifetime`)
 - In `keyshareserver`, `EmailTokenValidity` allows configuring how long an e-mail address validation token is valid
 
 ### Changed
