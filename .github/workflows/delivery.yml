@@ -16,11 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
+          ref: master
           fetch-depth: 0
 
       - name: Check whether the release is merged to master
         run: git branch --contains ${{ github.sha }} | grep -x "* master"
         shell: bash
+
+      - uses: actions/checkout@v3
 
       - name: Check whether version.go contains the new version number
         run: cat version.go | grep ${GITHUB_REF_NAME:1}
