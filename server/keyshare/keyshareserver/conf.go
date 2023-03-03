@@ -63,6 +63,8 @@ type Configuration struct {
 	registrationEmailTemplates map[string]*template.Template
 
 	VerificationURL map[string]string `json:"verification_url" mapstructure:"verification_url"`
+	// Amount of time user's email validation token is valid (in hours)
+	EmailTokenValidity int `json:"email_token_validity" mapstructure:"email_token_validity"`
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AESKey, error) {
@@ -115,6 +117,12 @@ func validateConf(conf *Configuration) error {
 	}
 	conf.URL += "irma/"
 
+	if conf.EmailTokenValidity == 0 {
+		conf.EmailTokenValidity = 168 // set default of 7 days
+	}
+	if conf.EmailTokenValidity < 1 || conf.EmailTokenValidity > 8760 {
+		return server.LogError(errors.Errorf("EmailTokenValidity (%d) is less than one hour or more than one year", conf.EmailTokenValidity))
+	}
 	return nil
 }
 

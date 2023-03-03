@@ -143,6 +143,19 @@ func (conf *Configuration) ParseFolder() (err error) {
 	var mgrerr *SchemeManagerError
 	var issuerschemes, requestorschemes []Scheme
 	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+		dirname := filepath.Base(dir)
+		if common.IsTempSchemeDir(dirname) {
+			Logger.Infof("Removing leftover temporary scheme directory %s", dirname)
+			if err := os.RemoveAll(dir); err != nil {
+				// warn the error but continue, dotted dirs are ignored below anyway
+				Logger.Warn(err)
+			}
+			return nil
+		}
+		if strings.HasPrefix(filepath.Base(dir), ".") {
+			// Ignore other hidden directories
+			return nil
+		}
 		scheme, _, err := conf.parseSchemeDescription(dir)
 		if err != nil {
 			return err

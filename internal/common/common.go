@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 var Logger *logrus.Logger
@@ -330,6 +331,31 @@ filenameloop:
 	return false, nil
 }
 
+func ValidateSchemeID(id string) error {
+	// We use the format 'schemeManager.issuer.credential.attribute' in full identifiers,
+	// so dots can never be in a valid scheme id.
+	if strings.Contains(id, ".") {
+		return errors.New("scheme id contains a dot")
+	}
+	if IsTempSchemeDir(id) {
+		return errors.New("scheme id uses forbidden prefix")
+	}
+	return nil
+}
+
+func IsTempSchemeDir(dirname string) bool {
+	if strings.HasPrefix(dirname, ".tempscheme") || strings.HasPrefix(dirname, ".oldscheme") {
+		return true
+	}
+	// In irmago version 0.11.0 and below, temporary directories were not marked as hidden yet. So, there
+	// might be directories starting with 'tempscheme' or 'oldscheme' that should not be considered as a scheme.
+	// To prevent directory name clashes, we forbid scheme IDs starting with these prefixes.
+	if strings.HasPrefix(dirname, "tempscheme") || strings.HasPrefix(dirname, "oldscheme") {
+		return true
+	}
+	return false
+}
+
 func containsSchemes(dir string) (bool, error) {
 	var (
 		hasSubdirs     bool
@@ -369,6 +395,9 @@ func SchemeInfo(filename string, bts []byte) (string, string, error) {
 	if temp.Type != "issuer" && temp.Type != "requestor" {
 		return "", "", errors.New("unsupported scheme type")
 	}
+	if err := ValidateSchemeID(temp.ID); err != nil {
+		return "", "", errors.WrapPrefix(err, fmt.Sprintf("invalid scheme id %s", temp.ID), 0)
+	}
 	return temp.ID, temp.Type, nil
 }
 
@@ -393,7 +422,7 @@ func SchemeFilename(dir string) (string, error) {
 			return filename, nil
 		}
 	}
-	return "", errors.New("no scheme file found")
+	return "", errors.Errorf("no scheme file found in directory %s", dir)
 }
 
 var SchemeFilenames = []string{"description.xml", "description.json"}

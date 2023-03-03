@@ -81,7 +81,7 @@ func (db *memoryDB) addLog(user *User, eventType eventType, param interface{}) e
 	return nil
 }
 
-func (db *memoryDB) addEmailVerification(user *User, emailAddress, token string) error {
+func (db *memoryDB) addEmailVerification(user *User, emailAddress, token string, validity int) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }

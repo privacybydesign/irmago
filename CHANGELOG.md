@@ -1,9 +1,47 @@
-
 # Changelog
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.12.1] - 2023-02-28
+
+### Fixed
+- Disable CGO bindings for release artifacts to natively support Alpine
+
+## [0.12.0] - 2023-02-28
+
+### Added
+- Separate timeout constraints for the amount of time a client has to complete a session (`MaxSessionLifetime`) and a requestor has to retrieve the session result from the server (`SessionResultLifetime`)
+- In `keyshareserver`, `EmailTokenValidity` allows configuring how long an e-mail address validation token is valid
+
+### Changed
+ - The maximum time a client has to complete a session is increased in `MaxSessionLifetime` to 15 minutes by default
+ - `myirmaserver` returns a more appropriate `403 Invalid token` error response during e-mail address verification at `/verify` when the provided token is expired and therefore not found in the database.
+
+### Security
+ - Update dependency `golang.org/x/net` to v0.7.0, addressing [CVE-2022-27664](https://nvd.nist.gov/vuln/detail/CVE-2022-27664)
+ - Update dependency `golang.org/x/text/language` to v0.7.0, addressing [CVE-2022-32149](https://nvd.nist.gov/vuln/detail/CVE-2022-32149)
+
+## [0.11.2] - 2023-02-13
+
+### Fixed
+ - ParseFolder cannot handle legacy oldscheme and tempscheme directories
+
+## [0.11.1] - 2023-01-19
+
+### Added
+ - Missing support for keyshare server endpoint versioning
+
+### Removed
+ - Superfluous endpoint versioning in HTTP response headers of keyshare server
+
+### Fixed
+ - Race condition in revocation gocron instance due to jobs that start too soon
+ - Deal with leftover temp dirs in scheme folder if updating is aborted
+ - Scheme index updates within UpdateSchemes should be written to disk atomically
+ - InstallScheme does not undo its changes when an error occurs
+ - Test: race condition in StartBadHttpServer handler
 
 ## [0.11.0] - 2022-11-10
 
@@ -110,7 +148,7 @@ This release contains several large new features. In particular, the shoulder su
     * A new return parameter (type `*irma.FrontendSessionRequest`) has been added containing the frontend pairing settings (corresponding to the `FrontendRequest` field in the `server.SessionPackage` mentioned above)
   * The `token` parameter, as used by most functions in the API of the `irmaserver` package, now has the type `irma.RequestorToken`
   * The `server.Status` type has been moved to `irma.ServerStatus`; the related constants are also moved, e.g. from `server.StatusInitialized` to `irma.ServerStatusInitialized`
-  
+
 ### Fixed
 * Bug causing IRMA server startup to fail when revocation is enabled
 * Bug causing sessions to fail when revocation is enabled and the issuer has multiple revocation-enabled keys
@@ -214,7 +252,7 @@ This release contains several large new features. In particular, the shoulder su
 ### Added
 * Revocation of previously issued credentials (see [documentation](https://irma.app/docs/revocation/))
 * Support HTTP/2 in IRMA server and app
-* Option `--skip-permission-keys-check` to IRMA server disabling checking that all required private keys are present in the server configuration 
+* Option `--skip-permission-keys-check` to IRMA server disabling checking that all required private keys are present in the server configuration
 
 ### Changed
 * Use go modules instead of `dep` for tracking and locking dependencies
@@ -269,6 +307,10 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.12.1]: https://github.com/privacybydesign/irmago/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/privacybydesign/irmago/compare/v0.11.2...v0.12.0
+[0.11.2]: https://github.com/privacybydesign/irmago/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/privacybydesign/irmago/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/privacybydesign/irmago/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/privacybydesign/irmago/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/privacybydesign/irmago/compare/v0.8.0...v0.9.0

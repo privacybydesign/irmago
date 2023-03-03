@@ -110,6 +110,10 @@ const (
 	maxDepComplexity = 25
 )
 
+// DownloadDefaultSchemes downloads and adds the default schemes to this Configuration.
+// When an error occurs, this function will revert its changes.
+// Limitation: when this function is stopped unexpectedly (i.e. a panic or a sigint takes place),
+// the scheme directory might get in an inconsistent state.
 func (conf *Configuration) DownloadDefaultSchemes() error {
 	Logger.Info("downloading default schemes (may take a while)")
 	for _, s := range DefaultSchemes {
@@ -122,8 +126,11 @@ func (conf *Configuration) DownloadDefaultSchemes() error {
 	return nil
 }
 
-// InstallSchemeManager downloads and adds the specified scheme to this Configuration,
+// InstallScheme downloads and adds the specified scheme to this Configuration,
 // provided its signature is valid against the specified key.
+// When an error occurs, this function will revert its changes.
+// Limitation: when this function is stopped unexpectedly (i.e. a panic or a sigint takes place),
+// the scheme directory might get in an inconsistent state.
 func (conf *Configuration) InstallScheme(url string, publickey []byte) error {
 	if len(publickey) == 0 {
 		return errors.New("no public key specified")
@@ -133,6 +140,8 @@ func (conf *Configuration) InstallScheme(url string, publickey []byte) error {
 
 // DangerousTOFUInstallScheme downloads and adds the specified scheme to this Configuration,
 // downloading and trusting its public key from the scheme's remote URL.
+// Limitation: when this function is stopped unexpectedly (i.e. a panic or a sigint takes place),
+// the scheme directory might get in an inconsistent state.
 func (conf *Configuration) DangerousTOFUInstallScheme(url string) error {
 	return conf.installScheme(url, nil, "")
 }
@@ -190,10 +199,10 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	var (
 		typ        = string(scheme.typ())
 		id         = scheme.id()
-		schemepath = scheme.path()
+		schemePath = scheme.path()
 	)
 	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("checking for updates")
-	shouldUpdate, _, index, err := conf.checkRemoteScheme(scheme)
+	shouldUpdate, remoteState, err := conf.checkRemoteScheme(scheme)
 	if err != nil {
 		return err
 	}
@@ -203,7 +212,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 
 	// As long as we can write to the scheme directory, we guarantee that either
 	// - updating succeeded, and the updated scheme on disk has been verified and parsed
-	//   without error into the corrent conf instance.
+	//   without error into the correct conf instance.
 	// - if any error occurs, then neither the scheme on disk nor its data in the current
 	//   conf instance is touched.
 	// We do this by creating a temporary copy on disk of the scheme, which we then update,
@@ -211,7 +220,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	// occurred do we modify the scheme on disk and in memory.
 
 	// copy the scheme on disk to a new temporary directory
-	dir, newschemepath, err := conf.tempSchemeCopy(scheme)
+	dir, newSchemePath, err := conf.tempSchemeCopy(scheme)
 	if err != nil {
 		return err
 	}
@@ -219,8 +228,12 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 		_ = os.RemoveAll(dir)
 	}()
 
+	if err = conf.writeSchemeIndex(newSchemePath, remoteState.indexBytes, remoteState.signatureBytes); err != nil {
+		return err
+	}
+
 	// iterate over the index and download new and changed files into the temp dir
-	if err = conf.updateSchemeFiles(scheme, index, newschemepath, downloaded); err != nil {
+	if err = conf.updateSchemeFiles(scheme, remoteState.index, newSchemePath, downloaded); err != nil {
 		return err
 	}
 
@@ -229,7 +242,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	if newconf, err = NewConfiguration(dir, ConfigurationOptions{}); err != nil {
 		return err
 	}
-	if scheme, err = newconf.ParseSchemeFolder(newschemepath); err != nil {
+	if scheme, err = newconf.ParseSchemeFolder(newSchemePath); err != nil {
 		return err
 	}
 	if err = scheme.update(); err != nil {
@@ -237,7 +250,7 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	}
 
 	// replace old scheme on disk with the new one from the temp dir
-	if err = conf.updateSchemeDir(scheme, schemepath, newschemepath); err != nil {
+	if err = conf.updateSchemeDir(scheme, schemePath, newSchemePath); err != nil {
 		return err
 	}
 
@@ -484,7 +497,7 @@ func (conf *Configuration) newSchemeDir(id, dir string) (string, error) {
 	}
 }
 
-func (conf *Configuration) installScheme(url string, publickey []byte, dir string) error {
+func (conf *Configuration) installScheme(url string, publickey []byte, dir string) (err error) {
 	if conf.readOnly {
 		return errors.New("cannot install scheme into a read-only configuration")
 	}
@@ -498,99 +511,112 @@ func (conf *Configuration) installScheme(url string, publickey []byte, dir strin
 		return errors.New("cannot install an already existing scheme")
 	}
 
-	path, err := conf.newSchemeDir(id, dir)
+	// In the code below, newSchemeDir makes a new directory for the configuration.
+	// If an error occurs hereafter, we remove this directory again to prevent side effects.
+	// This approach is not resistant to this function being stopped unexpectedly.
+	dirPath, err := conf.newSchemeDir(id, dir)
+	scheme.setPath(dirPath)
+	defer func() {
+		if err != nil && dirPath != "" {
+			_ = scheme.delete(conf)
+		}
+	}()
 	if err != nil {
-		return err
+		return
 	}
-	scheme.setPath(path)
 
 	if publickey != nil {
-		if err := common.SaveFile(filepath.Join(path, "pk.pem"), publickey); err != nil {
-			return err
+		if err = common.SaveFile(filepath.Join(dirPath, "pk.pem"), publickey); err != nil {
+			return
 		}
 	} else {
-		if _, err := downloadFile(NewHTTPTransport(url, true), path, "pk.pem"); err != nil {
-			return err
+		if _, err = downloadFile(NewHTTPTransport(url, true), dirPath, "pk.pem"); err != nil {
+			return
 		}
 	}
 
 	if scheme.id() != id {
 		return errors.Errorf("scheme has id %s but expected %s", scheme.id(), id)
 	}
+
 	scheme.add(conf)
 	return conf.UpdateScheme(scheme, nil)
 }
 
-func (conf *Configuration) checkRemoteScheme(scheme Scheme) (bool, *Timestamp, SchemeManagerIndex, error) {
-	timestamp, indexbts, sigbts, index, err := conf.checkRemoteTimestamp(scheme)
+type remoteSchemeState struct {
+	scheme Scheme
+
+	timestamp      *Timestamp
+	timestampBytes []byte
+
+	index      SchemeManagerIndex
+	indexBytes []byte
+
+	signatureBytes []byte
+}
+
+func (conf *Configuration) checkRemoteScheme(scheme Scheme) (bool, *remoteSchemeState, error) {
+	remoteState, err := conf.checkRemoteTimestamp(scheme)
 	if err != nil {
-		return false, nil, nil, err
+		return false, nil, err
 	}
 	id := scheme.id()
 	typ := string(scheme.typ())
-	timestampdiff := int64(timestamp.Sub(scheme.timestamp()))
+	timestampdiff := int64(remoteState.timestamp.Sub(scheme.timestamp()))
 	if timestampdiff == 0 {
 		Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("scheme is up-to-date, not updating")
-		return false, nil, index, nil
+		return false, remoteState, nil
 	} else if timestampdiff < 0 {
 		Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("local scheme is newer than remote, not updating")
-		return false, nil, index, nil
+		return false, remoteState, nil
 	}
 	// timestampdiff > 0
 	Logger.WithFields(logrus.Fields{"scheme": id, "type": typ}).Info("scheme is outdated, updating")
 
-	// save the index and its signature against which we authenticated the timestamp
-	// for future use: as they are themselves not in the index, the loop below doesn't touch them
-	if err = conf.writeIndex(scheme.path(), indexbts, sigbts); err != nil {
-		return false, nil, nil, err
-	}
-
-	return true, timestamp, index, nil
+	return true, remoteState, nil
 }
 
-func (conf *Configuration) checkRemoteTimestamp(scheme Scheme) (
-	*Timestamp, []byte, []byte, SchemeManagerIndex, error,
-) {
+func (conf *Configuration) checkRemoteTimestamp(scheme Scheme) (*remoteSchemeState, error) {
 	t := NewHTTPTransport(scheme.url(), true)
 	indexbts, err := t.GetBytes("index")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	sig, err := t.GetBytes("index.sig")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	timestampbts, err := t.GetBytes("timestamp")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	pk, err := conf.schemePublicKey(scheme.path())
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	// Verify signature and the timestamp hash in the index
 	if err = signed.Verify(pk, indexbts, sig); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	index := SchemeManagerIndex(make(map[string]SchemeFileHash))
 	if err = index.FromString(string(indexbts)); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	sha := sha256.Sum256(timestampbts)
 	if !bytes.Equal(index[scheme.id()+"/timestamp"], sha[:]) {
-		return nil, nil, nil, nil, errors.Errorf("signature over timestamp is not valid")
+		return nil, errors.Errorf("signature over timestamp is not valid")
 	}
 
 	timestamp, err := parseTimestamp(timestampbts)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
-	return timestamp, indexbts, sig, index, nil
+	return &remoteSchemeState{scheme, timestamp, timestampbts, index, indexbts, sig}, nil
 }
 
-func (conf *Configuration) writeIndex(dest string, indexbts, sigbts []byte) error {
+func (conf *Configuration) writeSchemeIndex(dest string, indexbts, sigbts []byte) error {
 	if err := common.EnsureDirectoryExists(dest); err != nil {
 		return err
 	}
@@ -823,7 +849,7 @@ func downloadScheme(url string) (Scheme, error) {
 }
 
 func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error) {
-	dir, err := ioutil.TempDir(filepath.Dir(scheme.path()), "tempscheme")
+	dir, err := ioutil.TempDir(filepath.Dir(scheme.path()), ".tempscheme")
 	if err != nil {
 		return "", "", err
 	}
@@ -844,7 +870,7 @@ func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error)
 func (conf *Configuration) updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
 	// Create a directory in the same directory as oldscheme,
 	// this is to make sure os.Rename does not fail with an "invalid cross-device link" error.
-	tmp, err := ioutil.TempDir(filepath.Dir(oldscheme), "oldscheme")
+	tmp, err := ioutil.TempDir(filepath.Dir(oldscheme), ".oldscheme")
 	if err != nil {
 		return err
 	}
