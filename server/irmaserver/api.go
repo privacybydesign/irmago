@@ -331,19 +331,19 @@ func GetSessionResult(requestorToken irma.RequestorToken) (*server.SessionResult
 	return s.GetSessionResult(requestorToken)
 }
 
-// GetSessionDisclosureResult retrieves the disclosure result of the specified IRMA session.
-func GetSessionDisclosureResult(requestorToken irma.RequestorToken) (*server.SessionDisclosureResult, error) {
-	return s.GetSessionDisclosureResult(requestorToken)
+// GetSessionResultExtended retrieves the disclosure result of the specified IRMA session.
+func GetSessionResultExtended(requestorToken irma.RequestorToken) (*server.SessionResultExtended, error) {
+	return s.GetSessionResultExtended(requestorToken)
 }
 
-func (s *Server) GetSessionDisclosureResult(requestorToken irma.RequestorToken) (res *server.SessionDisclosureResult, err error) {
+func (s *Server) GetSessionResultExtended(requestorToken irma.RequestorToken) (res *server.SessionResultExtended, err error) {
 	session, err := s.sessions.get(requestorToken)
 	defer func() { err = updateAndUnlock(session, err) }()
 	if err != nil {
 		return
 	}
 
-	res = session.DisclosureResult
+	res = session.ResultExtended
 	return
 }
 

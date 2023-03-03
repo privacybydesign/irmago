@@ -48,7 +48,7 @@ type sessionData struct {
 	Status             irma.ServerStatus
 	ResponseCache      responseCache
 	LastActive         time.Time
-	DisclosureResult   *server.SessionDisclosureResult // Holds extended disclosure result
+	ResultExtended     *server.SessionResultExtended // Holds extended result
 	Result             *server.SessionResult
 	KssProofs          map[irma.SchemeManagerIdentifier]*gabi.ProofP
 	Next               *irma.Qr

@@ -212,7 +212,7 @@ func (s *Server) Handler() http.Handler {
 				// irma_api_server-compatible JWT
 				r.Get("/getproof", s.handleJwtProofs)
 				// Routes for extended information
-				r.Get("/result-disclosure", s.handleDisclosureResult)
+				r.Get("/result-extended", s.handleResultExtended)
 			})
 		})
 
@@ -368,19 +368,19 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleDisclosureResult(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleResultExtended(w http.ResponseWriter, r *http.Request) {
 	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
 
-	res, err := s.irmaserv.GetSessionDisclosureResult(requestorToken)
+	res, err := s.irmaserv.GetSessionResultExtended(requestorToken)
 	if err != nil {
 		mapToServerError(w, err)
 		return
 	}
 
-	// Disclosure result is not always available
+	// Extended result is not always available
 	if res == nil {
-		s.conf.Logger.Warn("Disclosure result requested but is not available")
-		server.WriteError(w, server.ErrorUnknown, "Disclosure result is not available")
+		s.conf.Logger.Warn("Extended result requested but is not available")
+		server.WriteError(w, server.ErrorUnknown, "Extended result is not available")
 		return
 	}
 

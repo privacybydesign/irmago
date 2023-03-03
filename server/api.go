@@ -23,7 +23,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -53,61 +52,49 @@ type SessionResult struct {
 	LegacySession bool `json:"-"` // true if request was started with legacy (i.e. pre-condiscon) session request
 }
 
-// SessionDisclosureResult contains an extended array of generalized credentials with the zkp
-type SessionDisclosureResult struct {
-	Identifier  *big.Int                            `json:"identifier"` // Identifier assigned by verifier
-	Token       irma.RequestorToken                 `json:"token"`
-	Requestor   SessionDisclosureResultRequestor    `json:"requestor"`
-	Nonce       *big.Int                            `json:"nonce"` // Actual nonce used in proofs
-	Status      irma.ProofStatus                    `json:"status"`
-	Timestamp   *atum.Timestamp                     `json:"timestamp,omitempty"` // If present, timestamp is included in nonce (see ASN1ConvertSignatureNonce)
-	Credentials []SessionDisclosureResultCredential `json:"credentials"`
+// SessionResultExtended contains an extended array of generalized credentials with the zkp
+type SessionResultExtended struct {
+	Token       irma.RequestorToken               `json:"token"`
+	Status      irma.ServerStatus                 `json:"status"`
+	Type        irma.Action                       `json:"type"`
+	ProofStatus irma.ProofStatus                  `json:"proofStatus"`
+	Request     SessionResultExtendedRequest      `json:"request"`
+	Nonce       *big.Int                          `json:"nonce"`               // Actual nonce used in proofs
+	Timestamp   *atum.Timestamp                   `json:"timestamp,omitempty"` // If present, timestamp is included in nonce (see ASN1ConvertSignatureNonce)
+	Credentials []SessionResultExtendedCredential `json:"credentials"`
 }
 
-// DisclosureResult input
-type SessionDisclosureResultRequestor struct {
-	Message *string  `json:"message,omitempty"` // If present, message is included in nonce (see ASN1ConvertSignatureNonce)
-	Nonce   *big.Int `json:"nonce,omitempty"`   // If present, this nonce is used as base nonce
+// ResultExtended request input
+type SessionResultExtendedRequest struct {
+	Identifier *big.Int `json:"identifier"`        // Identifier assigned by requestor
+	Nonce      *big.Int `json:"nonce,omitempty"`   // If present, this nonce is used as base nonce
+	Message    *string  `json:"message,omitempty"` // If present, message is included in nonce (see ASN1ConvertSignatureNonce)
 }
 
-// DisclosureResult credential
-type SessionDisclosureResultCredential struct {
-	Identifier irma.CredentialTypeIdentifier                `json:"identifier"`
-	Issuer     SessionDisclosureResultCredentialIssuer      `json:"issuer"`
-	Scheme     SessionDisclosureResultCredentialScheme      `json:"scheme"`
-	IssuedAt   time.Time                                    `json:"issuedAt"`
-	ExpiresAt  time.Time                                    `json:"expiresAt"`
-	Attributes []SessionDisclosureResultCredentialAttribute `json:"attributes"`
-	Proof      gabi.ProofD                                  `json:"proof"`
-	NotRevoked bool                                         `json:"notRevoked,omitempty"`
+// ResultExtended credential
+type SessionResultExtendedCredential struct {
+	Identifier irma.CredentialTypeIdentifier              `json:"identifier"`
+	Issuer     SessionResultExtendedCredentialIssuer      `json:"issuer"`
+	Scheme     SessionResultExtendedCredentialScheme      `json:"scheme"`
+	IssuedAt   time.Time                                  `json:"issuedAt"`
+	ExpiresAt  time.Time                                  `json:"expiresAt"`
+	Attributes []SessionResultExtendedCredentialAttribute `json:"attributes"`
+	Proof      gabi.ProofD                                `json:"proof"`
 }
 
-// DisclosureResult scheme information
-type SessionDisclosureResultCredentialScheme struct {
+// ResultExtended scheme information
+type SessionResultExtendedCredentialScheme struct {
 	Identifier     irma.SchemeManagerIdentifier `json:"identifier"`
 	DistributedKey bool                         `json:"distributedKey"` // If true, the scheme uses a keyshare server
 }
 
-// DisclosureResult issuer information
-type SessionDisclosureResultCredentialIssuer struct {
-	Identifier irma.IssuerIdentifier                            `json:"identifier"`
-	Publickey  SessionDisclosureResultCredentialIssuerPublickey `json:"publickey"`
+// ResultExtended issuer information
+type SessionResultExtendedCredentialIssuer struct {
+	Identifier irma.IssuerIdentifier `json:"identifier"`
 }
 
-// The publickey
-type SessionDisclosureResultCredentialIssuerPublickey struct {
-	Counter    uint           `json:"Counter"`
-	ExpiryDate int64          `json:"ExpiryDate"`
-	N          *big.Int       `json:"N"` // Modulus n
-	Z          *big.Int       `json:"Z"` // Generator Z
-	S          *big.Int       `json:"S"` // Generator S
-	G          *big.Int       `json:"G"` // Generator G for revocation
-	H          *big.Int       `json:"H"` // Generator H for revocation
-	R          gabikeys.Bases `json:"R"` // All bases R
-}
-
-// DisclosureResult attribute information
-type SessionDisclosureResultCredentialAttribute struct {
+// ResultExtended attribute information
+type SessionResultExtendedCredentialAttribute struct {
 	Identifier irma.AttributeTypeIdentifier `json:"identifier"`
 	Status     irma.AttributeProofStatus    `json:"status"`
 	Value      *string                      `json:"value"`

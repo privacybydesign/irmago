@@ -104,12 +104,14 @@ func (session *session) handleGetStatus() (irma.ServerStatus, *irma.RemoteError)
 	return session.Status, nil
 }
 
-// Creates base DisclosureResult
-func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*server.SessionDisclosureResult, error) {
+// Creates base ResultExtended
+func (session *session) createResultExtended(disclosure *irma.Disclosure) (*server.SessionResultExtended, error) {
 	// Create disclosure result instance
-	disclosureResult := &server.SessionDisclosureResult{
-		Token:  session.Result.Token,
-		Status: session.Result.ProofStatus,
+	resultExtended := &server.SessionResultExtended{
+		Token:       session.Result.Token,
+		Type:        session.Result.Type,
+		Status:      session.Result.Status,
+		ProofStatus: session.Result.ProofStatus,
 	}
 
 	// Depending on action add information
@@ -117,21 +119,21 @@ func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*se
 	case irma.ActionDisclosing:
 		request := session.request.(*irma.DisclosureRequest)
 		if request != nil {
-			disclosureResult.Identifier = request.Base().Identifier
-			disclosureResult.Nonce = request.GetNonce(nil)
-			disclosureResult.Requestor = server.SessionDisclosureResultRequestor{
-				Nonce: request.Base().Nonce,
+			resultExtended.Nonce = request.GetNonce(nil)
+			resultExtended.Request = server.SessionResultExtendedRequest{
+				Identifier: request.Base().Identifier,
+				Nonce:      request.Base().Nonce,
 			}
 		}
 	case irma.ActionSigning:
-		disclosureResult.Nonce = session.Result.Signature.GetNonce()
+		resultExtended.Nonce = session.Result.Signature.GetNonce()
 		request := session.request.(*irma.SignatureRequest)
 		if request != nil {
-			disclosureResult.Identifier = request.Base().Identifier
-			disclosureResult.Timestamp = session.Result.Signature.Timestamp
-			disclosureResult.Requestor = server.SessionDisclosureResultRequestor{
-				Message: &request.Message,
-				Nonce:   request.Base().Nonce,
+			resultExtended.Timestamp = session.Result.Signature.Timestamp
+			resultExtended.Request = server.SessionResultExtendedRequest{
+				Identifier: request.Base().Identifier,
+				Message:    &request.Message,
+				Nonce:      request.Base().Nonce,
 			}
 		}
 	default:
@@ -139,11 +141,11 @@ func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*se
 	}
 
 	// Array of credentials
-	var credentials []server.SessionDisclosureResultCredential
+	var credentials []server.SessionResultExtendedCredential
 
 	// Walk over proofs
 	for _, proof := range disclosure.Proofs {
-		credential := server.SessionDisclosureResultCredential{}
+		credential := server.SessionResultExtendedCredential{}
 		proofd, ok := proof.(*gabi.ProofD)
 
 		// Casting okay
@@ -160,49 +162,32 @@ func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*se
 			return nil, errors.New("Received unknown credential type")
 		}
 
-		// Ensure valid publickey
-		publickey, err := metadata.PublicKey()
-		if err != nil {
-			return nil, errors.New("Failed to parse public key")
-		}
-
 		// Set identifiers
 		credential.Identifier = credType.Identifier()
-		credential.Scheme = server.SessionDisclosureResultCredentialScheme{
+		credential.Scheme = server.SessionResultExtendedCredentialScheme{
 			Identifier:     credType.Identifier().SchemeManagerIdentifier(),
 			DistributedKey: session.conf.IrmaConfiguration.SchemeManagers[credType.Identifier().SchemeManagerIdentifier()].Distributed(),
 		}
-		credential.Issuer = server.SessionDisclosureResultCredentialIssuer{
+		credential.Issuer = server.SessionResultExtendedCredentialIssuer{
 			Identifier: credType.Identifier().IssuerIdentifier(),
-			Publickey: server.SessionDisclosureResultCredentialIssuerPublickey{
-				Counter:    publickey.Counter,
-				ExpiryDate: publickey.ExpiryDate,
-				N:          publickey.N,
-				Z:          publickey.Z,
-				S:          publickey.S,
-				G:          publickey.G,
-				H:          publickey.H,
-				R:          publickey.R,
-			},
 		}
 
 		// Set credential information
 		credential.IssuedAt = metadata.SigningDate()
 		credential.ExpiresAt = metadata.Expiry()
 		credential.Proof = *proofd
-		credential.NotRevoked = proofd.NonRevocationProof != nil
 
 		// Do not directly compare with the original request or walk over the disclosed attributes con array, instead
 		// parse the attributes from the proof object itself, the proof status will flag if the proof
 		// was considered valid or not
-		var attributes []server.SessionDisclosureResultCredentialAttribute
+		var attributes []server.SessionResultExtendedCredentialAttribute
 		for attrkey, attr := range proofd.ADisclosed {
 			// The first revealed attribute always holds the metadata
 			if attrkey == 1 {
 				continue
 			}
 
-			attribute := server.SessionDisclosureResultCredentialAttribute{}
+			attribute := server.SessionResultExtendedCredentialAttribute{}
 			attrType := credType.AttributeTypes[attrkey-2]
 
 			// Set identifier
@@ -238,9 +223,9 @@ func (session *session) createDisclosureResult(disclosure *irma.Disclosure) (*se
 	}
 
 	// Set credentials
-	disclosureResult.Credentials = credentials
+	resultExtended.Credentials = credentials
 
-	return disclosureResult, nil
+	return resultExtended, nil
 }
 
 func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irma.ServerSessionResponse, *irma.RemoteError) {
@@ -262,7 +247,7 @@ func (session *session) handlePostSignature(signature *irma.SignedMessage) (*irm
 	}
 
 	// Create session disclosure result
-	session.DisclosureResult, err = session.createDisclosureResult(signature.Disclosure())
+	session.ResultExtended, err = session.createResultExtended(signature.Disclosure())
 	if err != nil {
 		rerr = session.fail(server.ErrorUnknown, err.Error())
 	}
@@ -292,7 +277,7 @@ func (session *session) handlePostDisclosure(disclosure *irma.Disclosure) (*irma
 	}
 
 	// Create session disclosure result
-	session.DisclosureResult, err = session.createDisclosureResult(disclosure)
+	session.ResultExtended, err = session.createResultExtended(disclosure)
 	if err != nil {
 		rerr = session.fail(server.ErrorUnknown, err.Error())
 	}

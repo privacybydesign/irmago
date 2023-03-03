@@ -35,10 +35,10 @@ type (
 
 	requestorSessionResult struct {
 		*server.SessionResult
-		clientResult     *SessionResult
-		disclosureResult *server.SessionDisclosureResult
-		Missing          [][]irmaclient.DisclosureCandidates
-		Dismisser        irmaclient.SessionDismisser
+		clientResult         *SessionResult
+		clientResultExtended *server.SessionResultExtended
+		Missing              [][]irmaclient.DisclosureCandidates
+		Dismisser            irmaclient.SessionDismisser
 	}
 )
 
@@ -52,7 +52,7 @@ const (
 	optionPrePairingClient
 	optionPolling
 	optionNoSchemeAssets
-	optionGetDisclosureResult
+	optionGetResultExtended
 )
 
 func processOptions(options ...option) option {
@@ -190,24 +190,24 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 }
 
 // getSessionResult retrieves the session result from the IRMA server or library.
-func getSessionDisclosureResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper, opts option) *server.SessionDisclosureResult {
+func getSessionResultExtended(t *testing.T, sesPkg *server.SessionPackage, serv stopper, opts option) *server.SessionResultExtended {
 	waitSessionFinished(t, serv, sesPkg.Token, opts.enabled(optionWait))
 
 	switch s := serv.(type) {
 	case *IrmaServer:
-		result, err := s.irma.GetSessionDisclosureResult(sesPkg.Token)
+		result, err := s.irma.GetSessionResultExtended(sesPkg.Token)
 		require.NoError(t, err)
 		return result
 	default:
 		var res string
-		err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-disclosure", &res)
+		err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-extended", &res)
 		require.NoError(t, err)
 
-		disclosureResult := &server.SessionDisclosureResult{}
-		err = json.Unmarshal([]byte(res), disclosureResult)
+		clientResultExtended := &server.SessionResultExtended{}
+		err = json.Unmarshal([]byte(res), clientResultExtended)
 		require.NoError(t, err)
 
-		return disclosureResult
+		return clientResultExtended
 	}
 }
 
@@ -326,9 +326,9 @@ func doSession(
 		require.NoError(t, err)
 	}
 
-	if opts.enabled(optionGetDisclosureResult) {
-		disclosureResult := getSessionDisclosureResult(t, sesPkg, serv, opts)
-		return &requestorSessionResult{serverResult, clientResult, disclosureResult, nil, dismisser}
+	if opts.enabled(optionGetResultExtended) {
+		clientResultExtended := getSessionResultExtended(t, sesPkg, serv, opts)
+		return &requestorSessionResult{serverResult, clientResult, clientResultExtended, nil, dismisser}
 	}
 
 	return &requestorSessionResult{serverResult, clientResult, nil, nil, dismisser}
