@@ -122,14 +122,21 @@ irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-e
 ```
 
 ## Performance tests
-This project only includes performance tests for the `irma keyshare server`. These tests can be run using the [k6 load testing tool](https://k6.io/docs/) and need a running keyshare server instance to test against. Instructions on how to run a keyshare server locally can be found [above](#running).
+This project only includes performance tests for the `irma server` and the `irma keyshare server`. These tests can be run using the [k6 load testing tool](https://k6.io/docs/) and need a running server instance to test against.
 
-The performance tests can be started in the following way:
+Instructions on how to run `irma server` locally with a Redis datastore can be found [here](#using-a-local-redis-datastore). Instructions on how to run a keyshare server locally can be found [here](#running).
 
-```
-go install go.k6.io/k6@latest
-k6 run ./testdata/performance/keyshare-server.js --env URL=http://localhost:8080 --env ISSUER_ID=test.test
-```
+First, you need to install `k6`:
+
+    go install go.k6.io/k6@latest
+
+The performance tests of the `irma server` can be started in the following way:
+
+    k6 run ./testdata/performance/irma-server.js --env URL=http://localhost:8088
+
+The performance tests of the keyshare server can be started in the following way:
+
+    k6 run ./testdata/performance/keyshare-server.js --env URL=http://localhost:8080 --env ISSUER_ID=test.test
 
 By default, k6 runs a single test iteration using 1 virtual user. These defaults can be adjusted by specifying test stages using the [`-s` CLI parameter](https://k6.io/docs/using-k6/options/#stages).
 
