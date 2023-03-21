@@ -31,7 +31,7 @@ func TestKeyshareChangePin(t *testing.T) {
 	client.KeyshareChangePin("12345", "54321")
 	require.NoError(t, <-handler.c)
 
-	// Test whether the authentication token is still valid after changing the PIN.
+	// Test whether the authorization token is still valid after changing the PIN.
 	transport := irma.NewHTTPTransport(fmt.Sprintf("http://%s", ks1.Addr), false)
 	transport.SetHeader("X-IRMA-Keyshare-Username", client.keyshareServers[testSchemeID].Username)
 	transport.SetHeader("Authorization", client.keyshareServers[testSchemeID].token)
