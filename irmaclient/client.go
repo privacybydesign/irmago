@@ -1290,6 +1290,14 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 
 	switch res.Status {
 	case kssPinSuccess:
+		// The cached authorization token is invalid now, so we have to refresh this.
+		ok, _, _, err = client.KeyshareVerifyPin(newPin, managerID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.Errorf("keyshare authorization token could not be refreshed for scheme %s", managerID)
+		}
 		return nil
 	case kssPinFailure:
 		return errors.Errorf("incorrect PIN for scheme %s", managerID)

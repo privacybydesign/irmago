@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,19 +14,32 @@ import (
 
 // Test pinchange interaction
 func TestKeyshareChangePin(t *testing.T) {
-	ks1 := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"))
+	testSchemeID := irma.NewSchemeManagerIdentifier("test")
+	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
+
+	ks1 := testkeyshare.StartKeyshareServer(t, irma.Logger, testSchemeID)
 	defer ks1.Stop()
-	ks2 := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test2"))
+	ks2 := testkeyshare.StartKeyshareServer(t, irma.Logger, test2SchemeID)
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
 
-	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
+	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
 	require.NoError(t, <-handler.c)
 
 	client.KeyshareChangePin("12345", "54321")
 	require.NoError(t, <-handler.c)
+
+	// Test whether the authorization token is still valid after changing the PIN.
+	transport := irma.NewHTTPTransport(fmt.Sprintf("http://%s", ks1.Addr), false)
+	transport.SetHeader("X-IRMA-Keyshare-Username", client.keyshareServers[testSchemeID].Username)
+	transport.SetHeader("Authorization", client.keyshareServers[testSchemeID].token)
+	reqBody := []string{"test.test-0"}
+	comms := &irma.ProofPCommitmentMap{}
+	err := transport.Post("prove/getCommitments", comms, reqBody)
+	require.NoError(t, err)
+
 	client.KeyshareChangePin("54321", "12345")
 	require.NoError(t, <-handler.c)
 }
