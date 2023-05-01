@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -502,11 +503,11 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 				var err error
 
 				// Read r.Body, and then replace with a fresh ReadCloser for the next handler
-				if message, err = ioutil.ReadAll(r.Body); err != nil {
+				if message, err = io.ReadAll(r.Body); err != nil {
 					message = []byte("<failed to read body: " + err.Error() + ">")
 				}
 				_ = r.Body.Close()
-				r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+				r.Body = io.NopCloser(bytes.NewBuffer(message))
 
 				var headers http.Header
 				var from string
@@ -569,7 +570,8 @@ func RecoverMiddleware(next http.Handler) http.Handler {
 }
 
 func ParseBody(r *http.Request, input interface{}) error {
-	body, err := ioutil.ReadAll(r.Body)
+	defer common.Close(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		Logger.WithField("error", err).Info("Malformed request: could not read request body")
 		return err

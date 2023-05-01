@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -969,8 +970,9 @@ func TestPOSTSizeLimit(t *testing.T) {
 	http.DefaultClient.Timeout = 30 * time.Second
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	bts, err := ioutil.ReadAll(res.Body)
+	bts, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
 
 	var rerr irma.RemoteError
 	require.NoError(t, json.Unmarshal(bts, &rerr))

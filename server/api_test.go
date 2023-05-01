@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"testing"
 	"time"
@@ -113,9 +112,10 @@ func TestServerTimeouts(t *testing.T) {
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
 				start := time.Now()
-				_, err := ioutil.ReadAll(r.Body)
+				_, err := io.ReadAll(r.Body)
 				// check that reading has halted with an error just after the deadline
 				require.Error(t, err)
+				require.NoError(t, r.Body.Close())
 				require.Greater(t, int64(timeout+50*time.Millisecond), int64(time.Now().Sub(start)))
 				w.WriteHeader(400)
 			}),
@@ -140,6 +140,7 @@ func TestServerTimeouts(t *testing.T) {
 			start := time.Now()
 			res, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
+			require.NoError(t, res.Body.Close())
 
 			// check that request was aborted after the timeout and before the handler finished
 			require.Greater(t, int64(timeout+50*time.Millisecond), int64(time.Now().Sub(start)))

@@ -81,33 +81,44 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 		serverURL += "/"
 	}
 
-	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS)
+	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS).
+	// The settings are inspired on the defaults of http.DefaultTransport.
 	innerTransport := &http.Transport{
-		TLSClientConfig: tlsClientConfig,
-		Dial: func(network, addr string) (c net.Conn, err error) {
-			c, err = net.Dial(network, addr)
+		Proxy:                 http.ProxyFromEnvironment,
+		TLSClientConfig:       tlsClientConfig,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			dialer := &net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}
+			conn, err := dialer.DialContext(ctx, network, addr)
 			if err != nil {
-				return c, err
+				return conn, err
 			}
-			if err = disable_sigpipe.DisableSigPipe(c); err != nil {
-				return c, err
-			}
-			return c, nil
+			return conn, disable_sigpipe.DisableSigPipe(conn)
 		},
 	}
 
 	client := &retryablehttp.Client{
 		Logger:       transportlogger,
-		RetryWaitMin: 100 * time.Millisecond,
-		RetryWaitMax: 200 * time.Millisecond,
+		RetryWaitMin: 500 * time.Millisecond,
+		RetryWaitMax: 1000 * time.Millisecond,
 		RetryMax:     2,
 		Backoff:      retryablehttp.DefaultBackoff,
 		CheckRetry: func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+			if cerr := ctx.Err(); cerr != nil {
+				return false, cerr
+			}
 			// Don't retry on 5xx (which retryablehttp does by default)
 			return err != nil || resp.StatusCode == 0, err
 		},
 		HTTPClient: &http.Client{
-			Timeout:   time.Second * 3,
+			Timeout:   time.Second * 5,
 			Transport: innerTransport,
 		},
 	}
@@ -187,7 +198,12 @@ func (transport *HTTPTransport) request(
 	if common.ForceHTTPS && transport.ForceHTTPS && !strings.HasPrefix(u, "https") {
 		return nil, &SessionError{ErrorType: ErrorHTTPS, Err: errors.New("remote server does not use https")}
 	}
-	req.Request, err = http.NewRequest(method, u, reader)
+
+	// To prevent a http request takes to long, we use a deadline of 10 seconds.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req.Request, err = http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
@@ -244,16 +260,18 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 	if err != nil {
 		return err
 	}
+	defer common.Close(res.Body)
 
 	// For DELETE requests it's common to receive a '204 No Content' on success.
 	if method == http.MethodDelete && (res.StatusCode == http.StatusOK || res.StatusCode == http.StatusNoContent) {
 		return nil
 	}
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
+
 	if res.StatusCode == http.StatusNoContent {
 		if result != nil {
 			return &SessionError{
@@ -293,11 +311,12 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
+	defer common.Close(res.Body)
 
 	if res.StatusCode != 200 {
 		return nil, &SessionError{ErrorType: ErrorServerResponse, RemoteStatus: res.StatusCode}
 	}
-	b, err := ioutil.ReadAll(res.Body)
+	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}

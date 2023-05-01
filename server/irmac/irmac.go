@@ -9,7 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	irma "github.com/privacybydesign/irmago"
-	"io/ioutil"
+	"github.com/privacybydesign/irmago/internal/common"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -251,10 +252,11 @@ func handle(
 
 	// perform request
 	w := httptest.NewRecorder()
+	defer common.Close(w.Result().Body)
 	s.HandlerFunc().ServeHTTP(w, r.WithContext(ctx))
 
 	// read response body
-	b, err := ioutil.ReadAll(w.Result().Body)
+	b, err := io.ReadAll(w.Result().Body)
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}
