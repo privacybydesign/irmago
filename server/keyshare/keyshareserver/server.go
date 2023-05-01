@@ -679,7 +679,16 @@ func (s *Server) userMiddleware(next http.Handler) http.Handler {
 		user, err := s.db.user(username)
 		if err != nil {
 			s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
-			server.WriteError(w, server.ErrorUserNotRegistered, err.Error())
+
+			var serverError server.Error
+			switch err {
+			case keyshare.ErrUserNotFound:
+				serverError = server.ErrorUserNotRegistered
+			default:
+				serverError = server.ErrorInternal
+			}
+
+			server.WriteError(w, serverError, err.Error())
 			return
 		}
 
