@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"database/sql"
 	"strconv"
 	"time"
@@ -9,6 +10,8 @@ import (
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
+
+const dbQueryTimeout = 10 * time.Second
 
 type taskHandler struct {
 	conf *Configuration
@@ -48,7 +51,9 @@ func Do(conf *Configuration) error {
 
 // Remove email addresses marked for deletion long enough ago
 func (t *taskHandler) cleanupEmails() {
-	_, err := t.db.Exec("DELETE FROM irma.emails WHERE delete_on < $1", time.Now().Unix())
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+	_, err := t.db.ExecContext(ctx, "DELETE FROM irma.emails WHERE delete_on < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email addresses marked for deletion")
 	}
@@ -56,12 +61,16 @@ func (t *taskHandler) cleanupEmails() {
 
 // Remove old login and email verification tokens
 func (t *taskHandler) cleanupTokens() {
-	_, err := t.db.Exec("DELETE FROM irma.email_login_tokens WHERE expiry < $1", time.Now().Unix())
+	ctxLoginTokens, cancelLoginTokens := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancelLoginTokens()
+	_, err := t.db.ExecContext(ctxLoginTokens, "DELETE FROM irma.email_login_tokens WHERE expiry < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email login tokens that have expired")
 		return
 	}
-	_, err = t.db.Exec("DELETE FROM irma.email_verification_tokens WHERE expiry < $1", time.Now().Unix())
+	ctxVerificationTokens, cancelVerificationTokens := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancelVerificationTokens()
+	_, err = t.db.ExecContext(ctxVerificationTokens, "DELETE FROM irma.email_verification_tokens WHERE expiry < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email verification tokens that have expired")
 	}
@@ -69,7 +78,9 @@ func (t *taskHandler) cleanupTokens() {
 
 // Cleanup accounts disabled long enough ago.
 func (t *taskHandler) cleanupAccounts() {
-	_, err := t.db.Exec("DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR last_seen < delete_on - $2)",
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+	_, err := t.db.ExecContext(ctx, "DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR last_seen < delete_on - $2)",
 		time.Now().Unix(),
 		t.conf.DeleteDelay*24*60*60)
 	if err != nil {
@@ -78,8 +89,10 @@ func (t *taskHandler) cleanupAccounts() {
 }
 
 func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
 	// Fetch user's email addresses
-	err := t.db.QueryIterate("SELECT email FROM irma.emails WHERE user_id = $1",
+	err := t.db.QueryIterateContext(ctx, "SELECT email FROM irma.emails WHERE user_id = $1",
 		func(emailRes *sql.Rows) error {
 			var email string
 			err := emailRes.Scan(&email)
@@ -114,13 +127,16 @@ func (t *taskHandler) expireAccounts() {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+
 	// Iterate over users we havent seen in ExpiryDelay days, and which have a registered email.
 	// We ignore (and thus keep alive) accounts without email addresses, as we can't inform their owners.
 	// (Note that for such accounts we store no email addresses, i.e. no personal data whatsoever.)
 	// We do this for only 10 users at a time to prevent us from sending out lots of emails
 	// simultaneously, which could lead to our email server being flagged as sending spam.
 	// The users excluded by this limit will get their email next time this task is executed.
-	err := t.db.QueryIterate(`
+	err := t.db.QueryIterateContext(ctx, `
 		SELECT id, username, language
 		FROM irma.users
 		WHERE last_seen < $1 AND (
@@ -149,8 +165,11 @@ func (t *taskHandler) expireAccounts() {
 				return err // already logged, just abort
 			}
 
+			ctxMarkDeletion, cancelMarkDeletion := context.WithTimeout(context.Background(), dbQueryTimeout)
+			defer cancelMarkDeletion()
+
 			// Finally, do marking for deletion
-			err = t.db.ExecUser("UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
+			err = t.db.ExecUserContext(ctxMarkDeletion, "UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
 				time.Now().Add(time.Duration(24*t.conf.DeleteDelay)*time.Hour).Unix())
 			if err != nil {
 				return err
