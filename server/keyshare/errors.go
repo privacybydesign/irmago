@@ -23,31 +23,34 @@ func WriteError(w http.ResponseWriter, err error) {
 		msg = err.Error()
 	}
 
+	var serverError server.Error
 	switch err {
 	case ErrUserNotFound:
-		server.WriteError(w, server.ErrorUserNotRegistered, msg)
+		serverError = server.ErrorUserNotRegistered
 	case ErrInvalidEmail:
-		server.WriteError(w, server.ErrorInvalidRequest, msg)
+		serverError = server.ErrorInvalidRequest
 	case keysharecore.ErrInvalidPin:
 		// This error should never be handled here. We want to include information about how
 		// many PIN attempts the user has left, and if zero, how long the user is blocked.
-		server.WriteError(w, server.ErrorInternal, msg)
+		serverError = server.ErrorInternal
 	case keysharecore.ErrPinTooLong:
-		server.WriteError(w, server.ErrorInvalidRequest, msg)
+		serverError = server.ErrorInvalidRequest
 	case keysharecore.ErrInvalidChallenge:
-		server.WriteError(w, server.ErrorInvalidRequest, msg)
+		serverError = server.ErrorInvalidRequest
 	case keysharecore.ErrInvalidJWT:
-		server.WriteError(w, server.ErrorInvalidRequest, msg)
+		serverError = server.ErrorInvalidRequest
 	case keysharecore.ErrKeyNotFound:
-		server.WriteError(w, server.ErrorInvalidRequest, msg)
+		serverError = server.ErrorInvalidRequest
 	case keysharecore.ErrUnknownCommit:
 		// Commit IDs are only used for internal bookkeeping, so this must be a server issue.
-		server.WriteError(w, server.ErrorInternal, msg)
+		serverError = server.ErrorInternal
 	case keysharecore.ErrChallengeResponseRequired:
-		server.WriteError(w, server.ErrorUnexpectedRequest, msg)
+		serverError = server.ErrorUnexpectedRequest
 	case keysharecore.ErrWrongChallenge:
-		server.WriteError(w, server.ErrorUnexpectedRequest, msg)
+		serverError = server.ErrorUnexpectedRequest
 	default:
-		server.WriteError(w, server.ErrorInternal, msg)
+		serverError = server.ErrorInternal
 	}
+
+	server.WriteError(w, serverError, msg)
 }
