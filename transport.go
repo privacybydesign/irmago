@@ -27,6 +27,8 @@ import (
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 )
 
+const responseDeadline = 10 * time.Second
+
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
 	Server     string
@@ -84,7 +86,6 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS).
 	// The settings are inspired on the defaults of http.DefaultTransport.
 	innerTransport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
 		TLSClientConfig:       tlsClientConfig,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
@@ -106,8 +107,8 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 
 	client := &retryablehttp.Client{
 		Logger:       transportlogger,
-		RetryWaitMin: 500 * time.Millisecond,
-		RetryWaitMax: 1000 * time.Millisecond,
+		RetryWaitMin: 100 * time.Millisecond,
+		RetryWaitMax: 200 * time.Millisecond,
 		RetryMax:     2,
 		Backoff:      retryablehttp.DefaultBackoff,
 		CheckRetry: func(ctx context.Context, resp *http.Response, err error) (bool, error) {
@@ -191,17 +192,17 @@ func (transport *HTTPTransport) SetHeader(name, val string) {
 }
 
 func (transport *HTTPTransport) request(
-	url string, method string, reader io.Reader, contenttype string,
+	ctx context.Context,
+	url string,
+	method string,
+	reader io.Reader,
+	contenttype string,
 ) (response *http.Response, err error) {
 	var req retryablehttp.Request
 	u := transport.Server + url
 	if common.ForceHTTPS && transport.ForceHTTPS && !strings.HasPrefix(u, "https") {
 		return nil, &SessionError{ErrorType: ErrorHTTPS, Err: errors.New("remote server does not use https")}
 	}
-
-	// To prevent a http request takes to long, we use a deadline of 10 seconds.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	req.Request, err = http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
@@ -256,7 +257,10 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 		}
 	}
 
-	res, err := transport.request(url, method, reader, contenttype)
+	ctx, cancel := context.WithTimeout(context.Background(), responseDeadline)
+	defer cancel()
+
+	res, err := transport.request(ctx, url, method, reader, contenttype)
 	if err != nil {
 		return err
 	}
@@ -307,7 +311,10 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 }
 
 func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
-	res, err := transport.request(url, http.MethodGet, nil, "")
+	ctx, cancel := context.WithTimeout(context.Background(), responseDeadline)
+	defer cancel()
+
+	res, err := transport.request(ctx, url, http.MethodGet, nil, "")
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
