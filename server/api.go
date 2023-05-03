@@ -492,7 +492,7 @@ func TimeoutMiddleware(except []string, timeout time.Duration) func(http.Handler
 
 			// We set the timeout as deadline in the request's context such that the next handler
 			// can abort its actions and return an appropriate error response. If the next handler does
-			// not return a response within 500 milliseconds after the deadline expires, then we assume
+			// not return a response within 200 milliseconds after the deadline expires, then we assume
 			// it froze and invoke the http.TimeoutHandler, which will send a 503 Service Unavailable.
 			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				ctx, cancel := context.WithTimeout(r.Context(), timeout)
@@ -500,7 +500,7 @@ func TimeoutMiddleware(except []string, timeout time.Duration) func(http.Handler
 				next.ServeHTTP(w, r.WithContext(ctx))
 			})
 
-			http.TimeoutHandler(nextHandler, timeout+500*time.Millisecond, "").ServeHTTP(w, r)
+			http.TimeoutHandler(nextHandler, timeout+200*time.Millisecond, "").ServeHTTP(w, r)
 		})
 	}
 }
