@@ -41,25 +41,29 @@ func Do(conf *Configuration) error {
 		return err
 	}
 
-	tasks := []func(context.Context){
-		task.cleanupEmails,
-		task.cleanupTokens,
-		task.cleanupAccounts,
-		task.expireAccounts,
+	tasks := map[string]func(context.Context){
+		"cleanupEmails":   task.cleanupEmails,
+		"cleanupTokens":   task.cleanupTokens,
+		"cleanupAccounts": task.cleanupAccounts,
+		"expireAccounts":  task.expireAccounts,
 	}
 
-	for _, t := range tasks {
-		runWithTimeout(t)
+	for taskName, taskFunc := range tasks {
+		err := runWithTimeout(taskFunc)
+		if err != nil {
+			conf.Logger.WithField("error", err).Errorf("Task %s exceeded its context deadline", taskName)
+		}
 	}
 
 	return nil
 }
 
-func runWithTimeout(fn func(ctx context.Context)) {
+func runWithTimeout(fn func(ctx context.Context)) error {
 	ctx, cancel := context.WithTimeout(context.Background(), taskTimeout)
 	defer cancel()
 
 	fn(ctx)
+	return ctx.Err()
 }
 
 // Remove email addresses marked for deletion long enough ago
