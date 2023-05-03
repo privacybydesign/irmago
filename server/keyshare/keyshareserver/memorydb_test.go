@@ -18,7 +18,7 @@ func TestMemoryDBUserManagement(t *testing.T) {
 
 	nuser, err := db.user(context.Background(), "testuser")
 	require.NoError(t, err)
-	assert.Equal(t, context.Background(), "testuser", nuser.Username)
+	assert.Equal(t, "testuser", nuser.Username)
 
 	_, err = db.user(context.Background(), "nonexistent")
 	assert.Error(t, err)
