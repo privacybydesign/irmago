@@ -149,11 +149,14 @@ func (db *postgresDB) loginUserCandidates(token string) ([]loginCandidate, error
 
 func (db *postgresDB) verifyLoginToken(token, username string) (int64, error) {
 	var id int64
-	err := db.db.QueryUser(
+	err := db.db.QueryScan(
 		`SELECT users.id FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
 		     username = $1 AND (emails.delete_on >= $3 OR emails.delete_on IS NULL) AND
 		     email = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
 		[]interface{}{&id}, username, token, time.Now().Unix())
+	if err == sql.ErrNoRows {
+		return 0, errTokenNotFound
+	}
 	if err != nil {
 		return 0, err
 	}

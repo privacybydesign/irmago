@@ -197,13 +197,9 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	commitments, err := s.generateCommitments(user, authorization, keys)
-	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -262,16 +258,13 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	// And do the actual responding
 	proofResponse, err := s.generateResponse(user, authorization, challenge)
-	if err != nil &&
-		(err == keysharecore.ErrInvalidChallenge ||
-			err == keysharecore.ErrInvalidJWT ||
-			err == errMissingCommitment) {
+	if err == errMissingCommitment {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -323,7 +316,7 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 	_, _, err := jwt.NewParser().ParseUnverified(msg.AuthRequestJWT, claims)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -331,14 +324,14 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 	user, err := s.db.user(claims.Username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		keyshare.WriteError(w, err)
 		return
 	}
 
 	result, err := s.startAuth(user, msg.AuthRequestJWT)
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -382,7 +375,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		_, _, err := jwt.NewParser().ParseUnverified(msg.AuthResponseJWT, claims)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
-			server.WriteError(w, server.ErrorInternal, err.Error())
+			keyshare.WriteError(w, err)
 			return
 		}
 		username = claims.Username
@@ -392,7 +385,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	user, err := s.db.user(username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -400,7 +393,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	result, err := s.verifyAuth(user, msg)
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -498,7 +491,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	user, err := s.db.user(claims.Username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -506,7 +499,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 	server.WriteJson(w, result)
@@ -562,18 +555,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionptr, err := s.register(msg)
-	if err == keysharecore.ErrPinTooLong || err == keyshare.ErrInvalidEmail {
-		// Too long pin or invalid email address is not an internal error
-		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
-		return
-	}
 	if err == errTooManyTokens {
 		server.WriteError(w, server.ErrorTooManyRequests, err.Error())
 		return
 	}
 	if err != nil {
 		// Already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 	server.WriteJson(w, sessionptr)
@@ -679,16 +667,7 @@ func (s *Server) userMiddleware(next http.Handler) http.Handler {
 		user, err := s.db.user(username)
 		if err != nil {
 			s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
-
-			var serverError server.Error
-			switch err {
-			case keyshare.ErrUserNotFound:
-				serverError = server.ErrorUserNotRegistered
-			default:
-				serverError = server.ErrorInternal
-			}
-
-			server.WriteError(w, serverError, err.Error())
+			keyshare.WriteError(w, err)
 			return
 		}
 
