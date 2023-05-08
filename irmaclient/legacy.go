@@ -3,7 +3,6 @@ package irmaclient
 import (
 	"encoding/binary"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -190,6 +189,14 @@ func (s *storageOld) TxStoreUpdates(tx *transaction, updates []update) error {
 }
 
 func (s *storageOld) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
+	credType := attrs.CredentialType()
+	if credType == nil {
+		return nil, nil, errors.Errorf("Credential %s not known in configuration", credType.Identifier())
+	}
+	if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
+		return nil, nil, errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
+	}
+
 	sig := new(clSignatureWitness)
 	found, err := s.load(signaturesBucket, attrs.Hash(), sig)
 	if err != nil {
@@ -199,7 +206,7 @@ func (s *storageOld) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature
 	}
 	if sig.Witness != nil {
 		pk, err := s.Configuration.Revocation.Keys.PublicKey(
-			attrs.CredentialType().IssuerIdentifier(),
+			credType.IssuerIdentifier(),
 			sig.Witness.SignedAccumulator.PKCounter,
 		)
 		if err != nil {
@@ -247,6 +254,14 @@ func (s *storageOld) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]
 				attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.Configuration)
 			}
 
+			credType := attrlistlist[0].CredentialType()
+			if credType == nil {
+				return errors.Errorf("Credential %s not known in configuration", credTypeID)
+			}
+			if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
+				return errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
+			}
+
 			list[credTypeID] = attrlistlist
 			return nil
 		})
@@ -256,6 +271,17 @@ func (s *storageOld) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]
 func (s *storageOld) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]*keyshareServer, err error) {
 	ksses = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	_, err = s.load(userdataBucket, kssKey, &ksses)
+	if err != nil {
+		return
+	}
+	for schemeID := range ksses {
+		if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+			return ksses, errors.Errorf("Scheme %s is disabled", schemeID)
+		}
+		if schemeManager, ok := s.Configuration.SchemeManagers[schemeID]; !ok || !schemeManager.Distributed() {
+			return ksses, errors.Errorf("Scheme %s not known in configuration", schemeManager.Identifier())
+		}
+	}
 	return
 }
 
@@ -271,6 +297,19 @@ func (s *storageOld) loadLogs() ([]*LogEntry, error) {
 			var log LogEntry
 			if err := json.Unmarshal(v, &log); err != nil {
 				return err
+			}
+
+			sr, err := log.SessionRequest()
+			if err != nil {
+				return err
+			}
+			for schemeID := range sr.Identifiers().SchemeManagers {
+				if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+					return errors.Errorf("Scheme %s is disabled", schemeID)
+				}
+				if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
+					return errors.Errorf("Scheme %s not known in configuration", schemeID)
+				}
 			}
 
 			logs = append(logs, &log)
@@ -353,7 +392,7 @@ func (f *fileStorage) load(dest interface{}, path string) (err error) {
 	if info.IsDir() || !info.Mode().IsRegular() {
 		return errors.New("invalid file")
 	}
-	bytes, err := ioutil.ReadFile(f.path(path))
+	bytes, err := os.ReadFile(f.path(path))
 	if err != nil {
 		return
 	}
@@ -406,10 +445,14 @@ func (f *fileStorage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][
 	for _, attrlist := range temp {
 		attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], f.Configuration)
 		id := attrlist.CredentialType()
-		var ct irma.CredentialTypeIdentifier
-		if id != nil {
-			ct = id.Identifier()
+		if id == nil {
+			return nil, errors.Errorf("Unknown credential type in file storage")
 		}
+		if _, ok := f.Configuration.DisabledSchemeManagers[id.SchemeManagerIdentifier()]; ok {
+			return nil, errors.Errorf("Scheme %s is disabled", id.SchemeManagerIdentifier())
+		}
+
+		ct := id.Identifier()
 		if _, contains := list[ct]; !contains {
 			list[ct] = []*irma.AttributeList{}
 		}

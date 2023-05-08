@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -158,7 +157,9 @@ func (conf *Configuration) ParseFolder() (err error) {
 		}
 		scheme, _, err := conf.parseSchemeDescription(dir)
 		if err != nil {
-			return err
+			// Directory does not contain a valid scheme. We log this issue and skip the directory.
+			Logger.Warnf("Directory %s does not contain a valid scheme: %s", dir, err)
+			return nil
 		}
 		switch scheme.typ() {
 		case SchemeTypeIssuer:
@@ -417,7 +418,7 @@ func (conf *Configuration) KeyshareServerPublicKey(schemeid SchemeManagerIdentif
 	}
 	if _, contains := conf.kssPublicKeys[schemeid][i]; !contains {
 		scheme := conf.SchemeManagers[schemeid]
-		pkbts, err := ioutil.ReadFile(filepath.Join(scheme.path(), fmt.Sprintf("kss-%d.pem", i)))
+		pkbts, err := os.ReadFile(filepath.Join(scheme.path(), fmt.Sprintf("kss-%d.pem", i)))
 		if err != nil {
 			return nil, err
 		}
