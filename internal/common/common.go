@@ -11,7 +11,6 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/sirupsen/logrus"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,7 +19,7 @@ import (
 
 var Logger *logrus.Logger
 
-// Disables HTTP forcing in irma.HTTPTransport for all instances,
+// ForceHTTPS disables HTTP forcing in irma.HTTPTransport for all instances,
 // regardless of the instance's ForceHTTPS member.
 // Only for use in unit tests.
 var ForceHTTPS = true
@@ -94,7 +93,7 @@ func EnsureDirectoryExists(path string) error {
 	return nil
 }
 
-// Save the filecontents at the specified path atomically:
+// SaveFile save the file contents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
@@ -123,7 +122,7 @@ func SaveFile(fpath string, content []byte) (err error) {
 
 	// Create temp file
 	dir := path.Dir(fpath)
-	err = ioutil.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
+	err = os.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
 	if err != nil {
 		return
 	}
@@ -144,9 +143,13 @@ func CopyDirectory(src, dest string) error {
 		if path == src {
 			return
 		}
-		subpath := path[len(src):]
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		destPath := filepath.Join(dest, relPath)
 		if info.IsDir() {
-			if err := EnsureDirectoryExists(dest + subpath); err != nil {
+			if err := EnsureDirectoryExists(destPath); err != nil {
 				return err
 			}
 		} else {
@@ -155,11 +158,11 @@ func CopyDirectory(src, dest string) error {
 				return err
 			}
 			defer func() { e = srcfile.Close() }()
-			bts, err := ioutil.ReadAll(srcfile)
+			bts, err := io.ReadAll(srcfile)
 			if err != nil {
 				return err
 			}
-			if err := SaveFile(dest+subpath, bts); err != nil {
+			if err := SaveFile(destPath, bts); err != nil {
 				return err
 			}
 		}
@@ -191,7 +194,7 @@ func ReadKey(key, path string) ([]byte, error) {
 		if !stat.Mode().IsRegular() {
 			return nil, errors.New("cannot read key from nonregular file")
 		}
-		bts, err = ioutil.ReadFile(path)
+		bts, err = os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -219,7 +222,7 @@ func Base64Decode(b []byte) ([]byte, error) {
 	return bts, err
 }
 
-// iterateSubfolders iterates over the subfolders of the specified path,
+// IterateSubfolders iterates over the subfolders of the specified path,
 // calling the specified handler each time. If anything goes wrong, or
 // if the caller returns a non-nil error, an error is immediately returned.
 func IterateSubfolders(path string, handler func(string, os.FileInfo) error) error {
@@ -252,7 +255,7 @@ func iterateFiles(path string, onlyDirs bool, handler func(string, os.FileInfo) 
 	return nil
 }
 
-// walkDir recursively walks the file tree rooted at path, following symlinks (unlike filepath.Walk).
+// WalkDir recursively walks the file tree rooted at path, following symlinks (unlike filepath.Walk).
 // Avoiding loops is the responsibility of the caller.
 func WalkDir(path string, handler func(string, os.FileInfo) error) error {
 	return iterateFiles(path, false, func(p string, info os.FileInfo) error {
