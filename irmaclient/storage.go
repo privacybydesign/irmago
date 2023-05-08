@@ -336,7 +336,7 @@ func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
 func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
 	credType := attrs.CredentialType()
 	if credType == nil {
-		return nil, nil, errors.Errorf("Credential %s not known in configuration", credType.Identifier())
+		return nil, nil, errors.New("Credential not known in configuration")
 	}
 	if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
 		return nil, nil, errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
@@ -412,7 +412,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 
 			credType := attrlistlist[0].CredentialType()
 			if credType == nil {
-				return errors.Errorf("Credential %s not known in configuration", credType.Identifier())
+				return errors.New("Credential not known in configuration")
 			}
 			if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
 				return errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
