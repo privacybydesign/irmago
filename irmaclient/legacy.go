@@ -191,10 +191,10 @@ func (s *storageOld) TxStoreUpdates(tx *transaction, updates []update) error {
 func (s *storageOld) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
 	credType := attrs.CredentialType()
 	if credType == nil {
-		return nil, nil, errors.New("Credential not known in configuration")
+		return nil, nil, errors.New("credential not known in configuration")
 	}
 	if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
-		return nil, nil, errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
+		return nil, nil, errors.Errorf("scheme %s is disabled", credType.SchemeManagerIdentifier())
 	}
 
 	sig := new(clSignatureWitness)
@@ -202,7 +202,7 @@ func (s *storageOld) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature
 	if err != nil {
 		return nil, nil, err
 	} else if !found {
-		return nil, nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
+		return nil, nil, errors.Errorf("signature of credential with hash %s cannot be found", attrs.Hash())
 	}
 	if sig.Witness != nil {
 		pk, err := s.Configuration.Revocation.Keys.PublicKey(
@@ -256,10 +256,10 @@ func (s *storageOld) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]
 
 			credType := attrlistlist[0].CredentialType()
 			if credType == nil {
-				return errors.Errorf("Credential %s not known in configuration", credTypeID)
+				return errors.Errorf("credential %s not known in configuration", credTypeID)
 			}
 			if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
-				return errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
+				return errors.Errorf("scheme %s is disabled", credType.SchemeManagerIdentifier())
 			}
 
 			list[credTypeID] = attrlistlist
@@ -276,10 +276,10 @@ func (s *storageOld) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifi
 	}
 	for schemeID := range ksses {
 		if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
-			return ksses, errors.Errorf("Scheme %s is disabled", schemeID)
+			return ksses, errors.Errorf("scheme %s is disabled", schemeID)
 		}
 		if schemeManager, ok := s.Configuration.SchemeManagers[schemeID]; !ok || !schemeManager.Distributed() {
-			return ksses, errors.Errorf("Scheme %s not known in configuration", schemeManager.Identifier())
+			return ksses, errors.Errorf("scheme %s not known in configuration", schemeManager.Identifier())
 		}
 	}
 	return
@@ -305,10 +305,10 @@ func (s *storageOld) loadLogs() ([]*LogEntry, error) {
 			}
 			for schemeID := range sr.Identifiers().SchemeManagers {
 				if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
-					return errors.Errorf("Scheme %s is disabled", schemeID)
+					return errors.Errorf("scheme %s is disabled", schemeID)
 				}
 				if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
-					return errors.Errorf("Scheme %s not known in configuration", schemeID)
+					return errors.Errorf("scheme %s not known in configuration", schemeID)
 				}
 			}
 
@@ -446,10 +446,10 @@ func (f *fileStorage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][
 		attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], f.Configuration)
 		id := attrlist.CredentialType()
 		if id == nil {
-			return nil, errors.Errorf("Unknown credential type in file storage")
+			return nil, errors.Errorf("unknown credential type in file storage")
 		}
 		if _, ok := f.Configuration.DisabledSchemeManagers[id.SchemeManagerIdentifier()]; ok {
-			return nil, errors.Errorf("Scheme %s is disabled", id.SchemeManagerIdentifier())
+			return nil, errors.Errorf("scheme %s is disabled", id.SchemeManagerIdentifier())
 		}
 
 		ct := id.Identifier()

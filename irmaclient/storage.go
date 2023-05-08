@@ -336,10 +336,10 @@ func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
 func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
 	credType := attrs.CredentialType()
 	if credType == nil {
-		return nil, nil, errors.New("Credential not known in configuration")
+		return nil, nil, errors.New("credential not known in configuration")
 	}
 	if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
-		return nil, nil, errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
+		return nil, nil, errors.Errorf("scheme %s is disabled", credType.SchemeManagerIdentifier())
 	}
 
 	sig := new(clSignatureWitness)
@@ -347,7 +347,7 @@ func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *
 	if err != nil {
 		return nil, nil, err
 	} else if !found {
-		return nil, nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
+		return nil, nil, errors.Errorf("signature of credential with hash %s cannot be found", attrs.Hash())
 	}
 	if sig.Witness != nil {
 		pk, err := s.Configuration.Revocation.Keys.PublicKey(
@@ -413,10 +413,10 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 
 			credType := attrlistlist[0].CredentialType()
 			if credType == nil {
-				return errors.Errorf("Credential %s not known in configuration", credTypeID)
+				return errors.Errorf("credential %s not known in configuration", credTypeID)
 			}
 			if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
-				return errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
+				return errors.Errorf("scheme %s is disabled", credType.SchemeManagerIdentifier())
 			}
 
 			list[credType.Identifier()] = attrlistlist
@@ -433,10 +433,10 @@ func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]
 	}
 	for schemeID := range ksses {
 		if schemeManager, ok := s.Configuration.SchemeManagers[schemeID]; !ok || !schemeManager.Distributed() {
-			return nil, errors.Errorf("Scheme %s not known in configuration", schemeManager.Identifier())
+			return nil, errors.Errorf("scheme %s not known in configuration", schemeManager.Identifier())
 		}
 		if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
-			return nil, errors.Errorf("Scheme %s is disabled", schemeID)
+			return nil, errors.Errorf("scheme %s is disabled", schemeID)
 		}
 	}
 	return
@@ -487,10 +487,10 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 			}
 			for schemeID := range sr.Identifiers().SchemeManagers {
 				if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
-					return errors.Errorf("Scheme %s not known in configuration", schemeID)
+					return errors.Errorf("scheme %s not known in configuration", schemeID)
 				}
 				if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
-					return errors.Errorf("Scheme %s is disabled", schemeID)
+					return errors.Errorf("scheme %s is disabled", schemeID)
 				}
 			}
 
@@ -532,10 +532,10 @@ func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) err
 		}
 		for schemeID := range sr.Identifiers().SchemeManagers {
 			if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
-				return errors.Errorf("Scheme %s not known in configuration", schemeID)
+				return errors.Errorf("scheme %s not known in configuration", schemeID)
 			}
 			if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
-				return errors.Errorf("Scheme %s is disabled", schemeID)
+				return errors.Errorf("scheme %s is disabled", schemeID)
 			}
 		}
 
