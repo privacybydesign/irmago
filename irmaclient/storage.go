@@ -393,6 +393,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			return nil
 		}
 		return b.ForEach(func(key, value []byte) error {
+			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
 			var attrlistlist []*irma.AttributeList
 
 			plaintext, err := s.decrypt(value)
@@ -412,7 +413,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 
 			credType := attrlistlist[0].CredentialType()
 			if credType == nil {
-				return errors.New("Credential not known in configuration")
+				return errors.Errorf("Credential %s not known in configuration", credTypeID)
 			}
 			if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
 				return errors.Errorf("Scheme %s is disabled", credType.SchemeManagerIdentifier())
