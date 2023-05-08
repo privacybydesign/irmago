@@ -93,7 +93,7 @@ func EnsureDirectoryExists(path string) error {
 	return nil
 }
 
-// SaveFile save the file contents at the specified path atomically:
+// SaveFile saves the file contents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
