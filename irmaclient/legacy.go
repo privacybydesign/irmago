@@ -299,11 +299,23 @@ func (s *storageOld) loadLogs() ([]*LogEntry, error) {
 				return err
 			}
 
+			// Validate whether log entry is consistent with configuration.
 			sr, err := log.SessionRequest()
 			if err != nil {
 				return err
 			}
-			for schemeID := range sr.Identifiers().SchemeManagers {
+			if sr != nil {
+				for schemeID := range sr.Identifiers().SchemeManagers {
+					if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+						return errors.Errorf("scheme %s is disabled", schemeID)
+					}
+					if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
+						return errors.Errorf("scheme %s not known in configuration", schemeID)
+					}
+				}
+			}
+			for credID := range log.Removed {
+				schemeID := credID.SchemeManagerIdentifier()
 				if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
 					return errors.Errorf("scheme %s is disabled", schemeID)
 				}

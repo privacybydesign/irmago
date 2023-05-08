@@ -471,30 +471,12 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 		c := bucket.Cursor()
 
 		for k, v := startAt(c); k != nil && len(logs) < max; k, v = c.Prev() {
-			plaintext, err := s.decrypt(v)
+			log, err := s.decryptLog(v)
 			if err != nil {
 				return err
 			}
 
-			var log LogEntry
-			if err = json.Unmarshal(plaintext, &log); err != nil {
-				return err
-			}
-
-			sr, err := log.SessionRequest()
-			if err != nil {
-				return err
-			}
-			for schemeID := range sr.Identifiers().SchemeManagers {
-				if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
-					return errors.Errorf("scheme %s not known in configuration", schemeID)
-				}
-				if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
-					return errors.Errorf("scheme %s is disabled", schemeID)
-				}
-			}
-
-			logs = append(logs, &log)
+			logs = append(logs, log)
 		}
 		return nil
 	})
@@ -516,34 +498,54 @@ func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) err
 	c := bucket.Cursor()
 
 	for k, v := c.Last(); k != nil; k, v = c.Prev() {
-		plaintext, err := s.decrypt(v)
+		log, err := s.decryptLog(v)
 		if err != nil {
 			return err
 		}
-
-		var log LogEntry
-		if err = json.Unmarshal(plaintext, &log); err != nil {
-			return err
-		}
-
-		sr, err := log.SessionRequest()
-		if err != nil {
-			return err
-		}
-		for schemeID := range sr.Identifiers().SchemeManagers {
-			if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
-				return errors.Errorf("scheme %s not known in configuration", schemeID)
-			}
-			if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
-				return errors.Errorf("scheme %s is disabled", schemeID)
-			}
-		}
-
-		if err = handler(&log); err != nil {
+		if err = handler(log); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *storage) decryptLog(encryptedLog []byte) (*LogEntry, error) {
+	plaintext, err := s.decrypt(encryptedLog)
+	if err != nil {
+		return nil, err
+	}
+
+	var log LogEntry
+	if err = json.Unmarshal(plaintext, &log); err != nil {
+		return nil, err
+	}
+
+	// Validate whether log entry is consistent with configuration.
+	sr, err := log.SessionRequest()
+	if err != nil {
+		return nil, err
+	}
+	if sr != nil {
+		for schemeID := range sr.Identifiers().SchemeManagers {
+			if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+				return nil, errors.Errorf("scheme %s is disabled", schemeID)
+			}
+			if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
+				return nil, errors.Errorf("scheme %s not known in configuration", schemeID)
+			}
+		}
+	}
+	for credID := range log.Removed {
+		schemeID := credID.SchemeManagerIdentifier()
+		if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+			return nil, errors.Errorf("scheme %s is disabled", schemeID)
+		}
+		if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
+			return nil, errors.Errorf("scheme %s not known in configuration", schemeID)
+		}
+	}
+
+	return &log, nil
 }
 
 func (s *storage) LoadUpdates() (updates []update, err error) {
