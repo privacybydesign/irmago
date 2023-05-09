@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"database/sql"
 	"strconv"
 	"time"
@@ -9,6 +10,8 @@ import (
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
+
+const taskTimeout = 30 * time.Second
 
 type taskHandler struct {
 	conf *Configuration
@@ -38,38 +41,55 @@ func Do(conf *Configuration) error {
 		return err
 	}
 
-	task.cleanupEmails()
-	task.cleanupTokens()
-	task.cleanupAccounts()
-	task.expireAccounts()
+	tasks := map[string]func(context.Context){
+		"cleanupEmails":   task.cleanupEmails,
+		"cleanupTokens":   task.cleanupTokens,
+		"cleanupAccounts": task.cleanupAccounts,
+		"expireAccounts":  task.expireAccounts,
+	}
+
+	for taskName, taskFunc := range tasks {
+		err := runWithTimeout(taskFunc)
+		if err != nil {
+			conf.Logger.WithField("error", err).Errorf("Task %s exceeded its context deadline", taskName)
+		}
+	}
 
 	return nil
 }
 
+func runWithTimeout(fn func(ctx context.Context)) error {
+	ctx, cancel := context.WithTimeout(context.Background(), taskTimeout)
+	defer cancel()
+
+	fn(ctx)
+	return ctx.Err()
+}
+
 // Remove email addresses marked for deletion long enough ago
-func (t *taskHandler) cleanupEmails() {
-	_, err := t.db.Exec("DELETE FROM irma.emails WHERE delete_on < $1", time.Now().Unix())
+func (t *taskHandler) cleanupEmails(ctx context.Context) {
+	_, err := t.db.ExecContext(ctx, "DELETE FROM irma.emails WHERE delete_on < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email addresses marked for deletion")
 	}
 }
 
 // Remove old login and email verification tokens
-func (t *taskHandler) cleanupTokens() {
-	_, err := t.db.Exec("DELETE FROM irma.email_login_tokens WHERE expiry < $1", time.Now().Unix())
+func (t *taskHandler) cleanupTokens(ctx context.Context) {
+	_, err := t.db.ExecContext(ctx, "DELETE FROM irma.email_login_tokens WHERE expiry < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email login tokens that have expired")
 		return
 	}
-	_, err = t.db.Exec("DELETE FROM irma.email_verification_tokens WHERE expiry < $1", time.Now().Unix())
+	_, err = t.db.ExecContext(ctx, "DELETE FROM irma.email_verification_tokens WHERE expiry < $1", time.Now().Unix())
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not remove email verification tokens that have expired")
 	}
 }
 
 // Cleanup accounts disabled long enough ago.
-func (t *taskHandler) cleanupAccounts() {
-	_, err := t.db.Exec("DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR last_seen < delete_on - $2)",
+func (t *taskHandler) cleanupAccounts(ctx context.Context) {
+	_, err := t.db.ExecContext(ctx, "DELETE FROM irma.users WHERE delete_on < $1 AND (coredata IS NULL OR last_seen < delete_on - $2)",
 		time.Now().Unix(),
 		t.conf.DeleteDelay*24*60*60)
 	if err != nil {
@@ -77,9 +97,9 @@ func (t *taskHandler) cleanupAccounts() {
 	}
 }
 
-func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
+func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, lang string) error {
 	// Fetch user's email addresses
-	err := t.db.QueryIterate("SELECT email FROM irma.emails WHERE user_id = $1",
+	err := t.db.QueryIterateContext(ctx, "SELECT email FROM irma.emails WHERE user_id = $1",
 		func(emailRes *sql.Rows) error {
 			var email string
 			err := emailRes.Scan(&email)
@@ -107,20 +127,20 @@ func (t *taskHandler) sendExpiryEmails(id int64, username, lang string) error {
 }
 
 // Mark old unused accounts for deletion, and inform their owners.
-func (t *taskHandler) expireAccounts() {
+func (t *taskHandler) expireAccounts(ctx context.Context) {
 	// Disable this task when email server is not given
 	if t.conf.EmailServer == "" {
 		t.conf.Logger.Warning("Expiring accounts is disabled, as no email server is configured")
 		return
 	}
 
-	// Iterate over users we havent seen in ExpiryDelay days, and which have a registered email.
+	// Iterate over users we have not seen in ExpiryDelay days, and which have a registered email.
 	// We ignore (and thus keep alive) accounts without email addresses, as we can't inform their owners.
 	// (Note that for such accounts we store no email addresses, i.e. no personal data whatsoever.)
 	// We do this for only 10 users at a time to prevent us from sending out lots of emails
 	// simultaneously, which could lead to our email server being flagged as sending spam.
 	// The users excluded by this limit will get their email next time this task is executed.
-	err := t.db.QueryIterate(`
+	err := t.db.QueryIterateContext(ctx, `
 		SELECT id, username, language
 		FROM irma.users
 		WHERE last_seen < $1 AND (
@@ -139,7 +159,7 @@ func (t *taskHandler) expireAccounts() {
 			}
 
 			// Send emails
-			err = t.sendExpiryEmails(id, username, lang)
+			err = t.sendExpiryEmails(ctx, id, username, lang)
 			// FIXME: 'return nil' will prevent abortion of 'expireAccounts()'
 			// but will not take care of the actual problem of handling the invalid email
 			if err == keyshare.ErrInvalidEmail {
@@ -150,7 +170,7 @@ func (t *taskHandler) expireAccounts() {
 			}
 
 			// Finally, do marking for deletion
-			err = t.db.ExecUser("UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
+			err = t.db.ExecUserContext(ctx, "UPDATE irma.users SET delete_on = $2 WHERE id = $1", id,
 				time.Now().Add(time.Duration(24*t.conf.DeleteDelay)*time.Hour).Unix())
 			if err != nil {
 				return err

@@ -1,6 +1,7 @@
 package myirmaserver
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -42,15 +43,16 @@ func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTim
 	}, nil
 }
 
-func (db *postgresDB) userIDByUsername(username string) (int64, error) {
+func (db *postgresDB) userIDByUsername(ctx context.Context, username string) (int64, error) {
 	var id int64
-	return id, db.db.QueryUser("SELECT id FROM irma.users WHERE username = $1", []interface{}{&id}, username)
+	return id, db.db.QueryUserContext(ctx, "SELECT id FROM irma.users WHERE username = $1", []interface{}{&id}, username)
 }
 
-func (db *postgresDB) verifyEmailToken(token string) (int64, error) {
+func (db *postgresDB) verifyEmailToken(ctx context.Context, token string) (int64, error) {
 	var email string
 	var id int64
-	err := db.db.QueryScan(
+	err := db.db.QueryScanContext(
+		ctx,
 		"SELECT user_id, email FROM irma.email_verification_tokens WHERE token = $1 AND expiry >= $2",
 		[]interface{}{&id, &email},
 		token, time.Now().Unix())
@@ -61,13 +63,13 @@ func (db *postgresDB) verifyEmailToken(token string) (int64, error) {
 		return 0, err
 	}
 
-	err = db.addEmail(id, email)
+	err = db.addEmail(ctx, id, email)
 	if err != nil {
 		return 0, err
 	}
 
 	// Beyond this point, errors are no longer relevant for frontend, so only log
-	aff, err := db.db.ExecCount("DELETE FROM irma.email_verification_tokens WHERE token = $1", token)
+	aff, err := db.db.ExecCountContext(ctx, "DELETE FROM irma.email_verification_tokens WHERE token = $1", token)
 	if err != nil {
 		_ = server.LogError(err)
 		return id, nil
@@ -79,15 +81,15 @@ func (db *postgresDB) verifyEmailToken(token string) (int64, error) {
 	return id, nil
 }
 
-func (db *postgresDB) scheduleUserRemoval(id int64, delay time.Duration) error {
-	return db.db.ExecUser("UPDATE irma.users SET coredata = NULL, delete_on = $2 WHERE id = $1 AND coredata IS NOT NULL",
+func (db *postgresDB) scheduleUserRemoval(ctx context.Context, id int64, delay time.Duration) error {
+	return db.db.ExecUserContext(ctx, "UPDATE irma.users SET coredata = NULL, delete_on = $2 WHERE id = $1 AND coredata IS NOT NULL",
 		id,
 		time.Now().Add(delay).Unix())
 }
 
-func (db *postgresDB) addLoginToken(email, token string) error {
+func (db *postgresDB) addLoginToken(ctx context.Context, email, token string) error {
 	// Check if email address exists in database
-	err := db.db.QueryScan("SELECT 1 FROM irma.emails WHERE email = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
+	err := db.db.QueryScanContext(ctx, "SELECT 1 FROM irma.emails WHERE email = $1 AND (delete_on >= $2 OR delete_on IS NULL) LIMIT 1",
 		nil, email, time.Now().Unix())
 	if err == sql.ErrNoRows {
 		return errEmailNotFound
@@ -100,7 +102,7 @@ func (db *postgresDB) addLoginToken(email, token string) error {
 	maxPrevExpiry := expiry.Add(-1 * emailTokenRateLimitDuration * time.Minute)
 
 	// Check whether rate limiting is necessary
-	amount, err := db.db.ExecCount("SELECT 1 FROM irma.email_login_tokens WHERE email = $1 AND expiry > $2",
+	amount, err := db.db.ExecCountContext(ctx, "SELECT 1 FROM irma.email_login_tokens WHERE email = $1 AND expiry > $2",
 		email,
 		maxPrevExpiry.Unix())
 	if err != nil {
@@ -111,7 +113,7 @@ func (db *postgresDB) addLoginToken(email, token string) error {
 	}
 
 	// Insert and verify
-	aff, err := db.db.ExecCount("INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ($1, $2, $3)",
+	aff, err := db.db.ExecCountContext(ctx, "INSERT INTO irma.email_login_tokens (token, email, expiry) VALUES ($1, $2, $3)",
 		token,
 		email,
 		expiry.Unix())
@@ -125,9 +127,10 @@ func (db *postgresDB) addLoginToken(email, token string) error {
 	return nil
 }
 
-func (db *postgresDB) loginUserCandidates(token string) ([]loginCandidate, error) {
+func (db *postgresDB) loginUserCandidates(ctx context.Context, token string) ([]loginCandidate, error) {
 	var candidates []loginCandidate
-	err := db.db.QueryIterate(
+	err := db.db.QueryIterateContext(
+		ctx,
 		`SELECT username, last_seen FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
 		     (emails.delete_on >= $2 OR emails.delete_on is NULL) AND
 		          emails.email = (SELECT email FROM irma.email_login_tokens WHERE token = $1 AND expiry >= $2);`,
@@ -147,9 +150,10 @@ func (db *postgresDB) loginUserCandidates(token string) ([]loginCandidate, error
 	return candidates, nil
 }
 
-func (db *postgresDB) verifyLoginToken(token, username string) (int64, error) {
+func (db *postgresDB) verifyLoginToken(ctx context.Context, token, username string) (int64, error) {
 	var id int64
-	err := db.db.QueryUser(
+	err := db.db.QueryUserContext(
+		ctx,
 		`SELECT users.id FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
 		     username = $1 AND (emails.delete_on >= $3 OR emails.delete_on IS NULL) AND
 		     email = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
@@ -158,7 +162,7 @@ func (db *postgresDB) verifyLoginToken(token, username string) (int64, error) {
 		return 0, err
 	}
 
-	aff, err := db.db.ExecCount("DELETE FROM irma.email_login_tokens WHERE token = $1", token)
+	aff, err := db.db.ExecCountContext(ctx, "DELETE FROM irma.email_login_tokens WHERE token = $1", token)
 	if err != nil {
 		return 0, err
 	}
@@ -168,11 +172,11 @@ func (db *postgresDB) verifyLoginToken(token, username string) (int64, error) {
 	return id, nil
 }
 
-func (db *postgresDB) user(id int64) (user, error) {
+func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 	var result user
 
 	// fetch username
-	err := db.db.QueryUser("SELECT username, language, (coredata IS NULL) AS delete_in_progress FROM irma.users WHERE id = $1",
+	err := db.db.QueryUserContext(ctx, "SELECT username, language, (coredata IS NULL) AS delete_in_progress FROM irma.users WHERE id = $1",
 		[]interface{}{&result.Username, &result.language, &result.DeleteInProgress},
 		id)
 	if err != nil {
@@ -180,7 +184,8 @@ func (db *postgresDB) user(id int64) (user, error) {
 	}
 
 	// fetch email addresses
-	err = db.db.QueryIterate(
+	err = db.db.QueryIterateContext(
+		ctx,
 		"SELECT email, (delete_on IS NOT NULL) AS delete_in_progress FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)",
 		func(rows *sql.Rows) error {
 			var email userEmail
@@ -195,9 +200,10 @@ func (db *postgresDB) user(id int64) (user, error) {
 	return result, nil
 }
 
-func (db *postgresDB) logs(id int64, offset, amount int) ([]logEntry, error) {
+func (db *postgresDB) logs(ctx context.Context, id int64, offset, amount int) ([]logEntry, error) {
 	var result []logEntry
-	err := db.db.QueryIterate(
+	err := db.db.QueryIterateContext(
+		ctx,
 		"SELECT time, event, param FROM irma.log_entry_records WHERE user_id = $1 ORDER BY time DESC OFFSET $2 LIMIT $3",
 		func(rows *sql.Rows) error {
 			var curEntry logEntry
@@ -212,9 +218,9 @@ func (db *postgresDB) logs(id int64, offset, amount int) ([]logEntry, error) {
 	return result, nil
 }
 
-func (db *postgresDB) addEmail(id int64, email string) error {
+func (db *postgresDB) addEmail(ctx context.Context, id int64, email string) error {
 	// Try to restore email in process of deletion
-	aff, err := db.db.ExecCount("UPDATE irma.emails SET delete_on = NULL WHERE user_id = $1 AND email = $2", id, email)
+	aff, err := db.db.ExecCountContext(ctx, "UPDATE irma.emails SET delete_on = NULL WHERE user_id = $1 AND email = $2", id, email)
 	if err != nil {
 		return err
 	}
@@ -226,12 +232,12 @@ func (db *postgresDB) addEmail(id int64, email string) error {
 	}
 
 	// Fall back to adding new one
-	_, err = db.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", id, email)
+	_, err = db.db.ExecContext(ctx, "INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", id, email)
 	return err
 }
 
-func (db *postgresDB) scheduleEmailRemoval(id int64, email string, delay time.Duration) error {
-	aff, err := db.db.ExecCount("UPDATE irma.emails SET delete_on = $3 WHERE user_id = $1 AND email = $2 AND delete_on IS NULL",
+func (db *postgresDB) scheduleEmailRemoval(ctx context.Context, id int64, email string, delay time.Duration) error {
+	aff, err := db.db.ExecCountContext(ctx, "UPDATE irma.emails SET delete_on = $3 WHERE user_id = $1 AND email = $2 AND delete_on IS NULL",
 		id,
 		email,
 		time.Now().Add(delay).Unix())
@@ -244,11 +250,12 @@ func (db *postgresDB) scheduleEmailRemoval(id int64, email string, delay time.Du
 	return nil
 }
 
-func (db *postgresDB) setSeen(id int64) error {
+func (db *postgresDB) setSeen(ctx context.Context, id int64) error {
 	// If the user is scheduled for deletion (delete_on is not null), undo that by resetting
 	// delete_on back to null, but only if the user did not explicitly delete her account herself
 	// in the myIRMA website, in which case coredata is null.
-	return db.db.ExecUser(
+	return db.db.ExecUserContext(
+		ctx,
 		`UPDATE irma.users
 		 SET last_seen = $1,
 		     delete_on = CASE

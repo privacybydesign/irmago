@@ -1,6 +1,7 @@
 package myirmaserver
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -21,35 +22,35 @@ func TestMemoryDBUserManagement(t *testing.T) {
 		},
 	}
 
-	id, err := db.userIDByUsername("testuser")
+	id, err := db.userIDByUsername(context.Background(), "testuser")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	id, err = db.verifyEmailToken("testtoken")
+	id, err = db.verifyEmailToken(context.Background(), "testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	_, err = db.verifyEmailToken("testtoken")
+	_, err = db.verifyEmailToken(context.Background(), "testtoken")
 	assert.Error(t, err)
 
-	_, err = db.userIDByUsername("DNE")
+	_, err = db.userIDByUsername(context.Background(), "DNE")
 	assert.Error(t, err)
 
-	err = db.setSeen(15)
+	err = db.setSeen(context.Background(), 15)
 	assert.NoError(t, err)
 
-	err = db.setSeen(123456)
+	err = db.setSeen(context.Background(), 123456)
 	assert.Error(t, err)
 
 	assert.NotEqual(t, time.Unix(0, 0), db.userData["testuser"].lastActive)
 
-	err = db.scheduleUserRemoval(15, 0)
+	err = db.scheduleUserRemoval(context.Background(), 15, 0)
 	assert.NoError(t, err)
 
-	_, err = db.userIDByUsername("testuser")
+	_, err = db.userIDByUsername(context.Background(), "testuser")
 	assert.Error(t, err)
 
-	err = db.scheduleUserRemoval(15, 0)
+	err = db.scheduleUserRemoval(context.Background(), 15, 0)
 	assert.Error(t, err)
 }
 
@@ -69,31 +70,31 @@ func TestMemoryDBLoginToken(t *testing.T) {
 		loginEmailTokens: map[string]string{},
 	}
 
-	err := db.addLoginToken("test2@example.com", "test2token")
+	err := db.addLoginToken(context.Background(), "test2@example.com", "test2token")
 	assert.Error(t, err)
 
-	err = db.addLoginToken("test@example.com", "testtoken")
+	err = db.addLoginToken(context.Background(), "test@example.com", "testtoken")
 	require.NoError(t, err)
 
-	cand, err := db.loginUserCandidates("testtoken")
+	cand, err := db.loginUserCandidates(context.Background(), "testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []loginCandidate{{Username: "testuser", LastActive: 0}}, cand)
 
-	_, err = db.loginUserCandidates("DNE")
+	_, err = db.loginUserCandidates(context.Background(), "DNE")
 	assert.Error(t, err)
 
-	_, err = db.verifyLoginToken("testtoken", "DNE")
+	_, err = db.verifyLoginToken(context.Background(), "testtoken", "DNE")
 	assert.Error(t, err)
 
-	id, err := db.verifyLoginToken("testtoken", "noemail")
+	id, err := db.verifyLoginToken(context.Background(), "testtoken", "noemail")
 	assert.Equal(t, int64(0), id)
 	assert.Error(t, err)
 
-	id, err = db.verifyLoginToken("testtoken", "testuser")
+	id, err = db.verifyLoginToken(context.Background(), "testtoken", "testuser")
 	assert.Equal(t, int64(15), id)
 	assert.NoError(t, err)
 
-	id, err = db.verifyLoginToken("testtoken", "testuser")
+	id, err = db.verifyLoginToken(context.Background(), "testtoken", "testuser")
 	assert.Equal(t, int64(0), id)
 	assert.Error(t, err)
 }
@@ -125,20 +126,20 @@ func TestMemoryDBUserInfo(t *testing.T) {
 		},
 	}
 
-	info, err := db.user(15)
+	info, err := db.user(context.Background(), 15)
 	assert.NoError(t, err)
 	assert.Equal(t, "testuser", info.Username)
 	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
 
-	info, err = db.user(17)
+	info, err = db.user(context.Background(), 17)
 	assert.NoError(t, err)
 	assert.Equal(t, "noemail", info.Username)
 	assert.Equal(t, []userEmail(nil), info.Emails)
 
-	_, err = db.user(1231)
+	_, err = db.user(context.Background(), 1231)
 	assert.Error(t, err)
 
-	entries, err := db.logs(15, 0, 2)
+	entries, err := db.logs(context.Background(), 15, 0, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, []logEntry{
 		{
@@ -153,41 +154,41 @@ func TestMemoryDBUserInfo(t *testing.T) {
 		},
 	}, entries)
 
-	entries, err = db.logs(15, 0, 1)
+	entries, err = db.logs(context.Background(), 15, 0, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(entries))
 
-	entries, err = db.logs(15, 1, 15)
+	entries, err = db.logs(context.Background(), 15, 1, 15)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(entries))
 
-	entries, err = db.logs(15, 100, 20)
+	entries, err = db.logs(context.Background(), 15, 100, 20)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(entries))
 
-	_, err = db.logs(20, 100, 20)
+	_, err = db.logs(context.Background(), 20, 100, 20)
 	assert.Error(t, err)
 
-	err = db.addEmail(17, "test@example.com")
+	err = db.addEmail(context.Background(), 17, "test@example.com")
 	assert.NoError(t, err)
 
-	info, err = db.user(17)
+	info, err = db.user(context.Background(), 17)
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
 
-	err = db.addEmail(20, "bla@bla.com")
+	err = db.addEmail(context.Background(), 20, "bla@bla.com")
 	assert.Error(t, err)
 
-	err = db.scheduleEmailRemoval(17, "test@example.com", 0)
+	err = db.scheduleEmailRemoval(context.Background(), 17, "test@example.com", 0)
 	assert.NoError(t, err)
 
-	info, err = db.user(17)
+	info, err = db.user(context.Background(), 17)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(info.Emails))
 
-	err = db.scheduleEmailRemoval(17, "bla@bla.com", 0)
+	err = db.scheduleEmailRemoval(context.Background(), 17, "bla@bla.com", 0)
 	assert.NoError(t, err)
 
-	err = db.scheduleEmailRemoval(20, "bl@bla.com", 0)
+	err = db.scheduleEmailRemoval(context.Background(), 20, "bl@bla.com", 0)
 	assert.Error(t, err)
 }

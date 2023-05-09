@@ -4,6 +4,7 @@
 package myirmaserver
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -25,42 +26,42 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	_, err = pdb.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, expiry, user_id) VALUES ('testtoken', 'test@example.com', $1, 15)", time.Now().Unix())
 	require.NoError(t, err)
 
-	id, err := db.userIDByUsername("testuser")
+	id, err := db.userIDByUsername(context.Background(), "testuser")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	user, err := db.user(id)
+	user, err := db.user(context.Background(), id)
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail(nil), user.Emails)
 
-	id, err = db.verifyEmailToken("testtoken")
+	id, err = db.verifyEmailToken(context.Background(), "testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	user, err = db.user(id)
+	user, err = db.user(context.Background(), id)
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, user.Emails)
 
-	_, err = db.verifyEmailToken("testtoken")
+	_, err = db.verifyEmailToken(context.Background(), "testtoken")
 	assert.Error(t, err)
 
-	_, err = db.userIDByUsername("DNE")
+	_, err = db.userIDByUsername(context.Background(), "DNE")
 	assert.Error(t, err)
 
-	err = db.setSeen(15)
+	err = db.setSeen(context.Background(), 15)
 	assert.NoError(t, err)
 
-	err = db.setSeen(123456)
+	err = db.setSeen(context.Background(), 123456)
 	assert.Error(t, err)
 
-	err = db.scheduleUserRemoval(15, 0)
+	err = db.scheduleUserRemoval(context.Background(), 15, 0)
 	assert.NoError(t, err)
 
-	user, err = db.user(15)
+	user, err = db.user(context.Background(), 15)
 	require.NoError(t, err)
 	require.True(t, user.DeleteInProgress)
 
-	err = db.scheduleUserRemoval(15, 0)
+	err = db.scheduleUserRemoval(context.Background(), 15, 0)
 	assert.Error(t, err)
 }
 
@@ -79,44 +80,44 @@ func TestPostgresDBLoginToken(t *testing.T) {
 	_, err = pdb.db.Exec("INSERT INTO irma.emails (user_id, email) VALUES (15, 'test@example.com')")
 	require.NoError(t, err)
 
-	err = db.addLoginToken("test2@example.com", "test2token")
+	err = db.addLoginToken(context.Background(), "test2@example.com", "test2token")
 	assert.ErrorIs(t, err, errEmailNotFound)
 
-	err = db.addLoginToken("test@example.com", "testtoken")
+	err = db.addLoginToken(context.Background(), "test@example.com", "testtoken")
 	require.NoError(t, err)
 
-	err = db.addLoginToken("test@example.com", "testtoken")
+	err = db.addLoginToken(context.Background(), "test@example.com", "testtoken")
 	require.ErrorIs(t, err, errTooManyTokens)
 
-	cand, err := db.loginUserCandidates("testtoken")
+	cand, err := db.loginUserCandidates(context.Background(), "testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []loginCandidate{{Username: "testuser", LastActive: 0}}, cand)
 
 	currenttime := time.Now().Unix()
-	require.NoError(t, db.setSeen(int64(15)))
-	cand, err = db.loginUserCandidates("testtoken")
+	require.NoError(t, db.setSeen(context.Background(), int64(15)))
+	cand, err = db.loginUserCandidates(context.Background(), "testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []loginCandidate{{Username: "testuser", LastActive: currenttime}}, cand)
 
-	_, err = db.loginUserCandidates("DNE")
+	_, err = db.loginUserCandidates(context.Background(), "DNE")
 	assert.Error(t, err)
 
-	_, err = db.verifyLoginToken("testtoken", "DNE")
+	_, err = db.verifyLoginToken(context.Background(), "testtoken", "DNE")
 	assert.Error(t, err)
 
-	_, err = db.verifyLoginToken("testtoken", "noemail")
+	_, err = db.verifyLoginToken(context.Background(), "testtoken", "noemail")
 	assert.Error(t, err)
 
-	id, err := db.verifyLoginToken("testtoken", "testuser")
+	id, err := db.verifyLoginToken(context.Background(), "testtoken", "testuser")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(15), id)
 
-	_, err = db.verifyLoginToken("testtoken", "testuser")
+	_, err = db.verifyLoginToken(context.Background(), "testtoken", "testuser")
 	assert.Error(t, err)
 
-	assert.NoError(t, db.addEmail(17, "test@example.com"))
-	assert.NoError(t, db.addLoginToken("test@example.com", "testtoken"))
-	cand, err = db.loginUserCandidates("testtoken")
+	assert.NoError(t, db.addEmail(context.Background(), 17, "test@example.com"))
+	assert.NoError(t, db.addLoginToken(context.Background(), "test@example.com", "testtoken"))
+	cand, err = db.loginUserCandidates(context.Background(), "testtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, []loginCandidate{
 		{Username: "testuser", LastActive: currenttime},
@@ -143,7 +144,7 @@ func TestPostgresDBUserInfo(t *testing.T) {
 		 VALUES (110, 'test', '', 15), (120, 'test2', '15', 15), (130, 'test3', NULL, 15)`)
 	require.NoError(t, err)
 
-	info, err := db.user(15)
+	info, err := db.user(context.Background(), 15)
 	assert.NoError(t, err)
 	assert.Equal(t, user{
 		Username:         "testuser",
@@ -152,15 +153,15 @@ func TestPostgresDBUserInfo(t *testing.T) {
 		DeleteInProgress: false,
 	}, info)
 
-	info, err = db.user(17)
+	info, err = db.user(context.Background(), 17)
 	assert.NoError(t, err)
 	assert.Equal(t, "noemail", info.Username)
 	assert.Equal(t, []userEmail(nil), info.Emails)
 
-	_, err = db.user(1231)
+	_, err = db.user(context.Background(), 1231)
 	assert.Error(t, err)
 
-	entries, err := db.logs(15, 0, 3)
+	entries, err := db.logs(context.Background(), 15, 0, 3)
 	assert.NoError(t, err)
 	assert.Equal(t, []logEntry{
 		{
@@ -180,50 +181,50 @@ func TestPostgresDBUserInfo(t *testing.T) {
 		},
 	}, entries)
 
-	entries, err = db.logs(15, 0, 1)
+	entries, err = db.logs(context.Background(), 15, 0, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(entries))
 
-	entries, err = db.logs(15, 1, 15)
+	entries, err = db.logs(context.Background(), 15, 1, 15)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(entries))
 
-	entries, err = db.logs(15, 100, 20)
+	entries, err = db.logs(context.Background(), 15, 100, 20)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(entries))
 
-	entries, err = db.logs(20, 100, 20)
+	entries, err = db.logs(context.Background(), 20, 100, 20)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(entries))
 
-	err = db.addEmail(17, "test@example.com")
+	err = db.addEmail(context.Background(), 17, "test@example.com")
 	assert.NoError(t, err)
 
-	info, err = db.user(17)
+	info, err = db.user(context.Background(), 17)
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
 
-	err = db.addEmail(20, "bla@bla.com")
+	err = db.addEmail(context.Background(), 20, "bla@bla.com")
 	assert.Error(t, err)
 
-	err = db.scheduleEmailRemoval(17, "test@example.com", 0)
+	err = db.scheduleEmailRemoval(context.Background(), 17, "test@example.com", 0)
 	assert.NoError(t, err)
 
-	info, err = db.user(17)
+	info, err = db.user(context.Background(), 17)
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: true}}, info.Emails)
 
 	// Need sleep here to ensure time has passed since delete
 	time.Sleep(1 * time.Second)
 
-	info, err = db.user(17)
+	info, err = db.user(context.Background(), 17)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(info.Emails))
 
-	err = db.scheduleEmailRemoval(17, "bla@bla.com", 0)
+	err = db.scheduleEmailRemoval(context.Background(), 17, "bla@bla.com", 0)
 	assert.Error(t, err)
 
-	err = db.scheduleEmailRemoval(20, "bl@bla.com", 0)
+	err = db.scheduleEmailRemoval(context.Background(), 20, "bl@bla.com", 0)
 	assert.Error(t, err)
 }
 
