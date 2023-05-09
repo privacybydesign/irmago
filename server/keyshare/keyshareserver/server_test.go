@@ -529,48 +529,48 @@ type testDB struct {
 	err   error
 }
 
-func (db *testDB) AddUser(user *User) error {
-	return db.db.AddUser(user)
+func (db *testDB) AddUser(ctx context.Context, user *User) error {
+	return db.db.AddUser(ctx, user)
 }
 
-func (db *testDB) user(username string) (*User, error) {
-	return db.db.user(username)
+func (db *testDB) user(ctx context.Context, username string) (*User, error) {
+	return db.db.user(ctx, username)
 }
 
-func (db *testDB) updateUser(user *User) error {
-	return db.db.updateUser(user)
+func (db *testDB) updateUser(ctx context.Context, user *User) error {
+	return db.db.updateUser(ctx, user)
 }
 
-func (db *testDB) reservePinTry(_ *User) (bool, int, int64, error) {
+func (db *testDB) reservePinTry(_ context.Context, _ *User) (bool, int, int64, error) {
 	return db.ok, db.tries, db.wait, db.err
 }
 
-func (db *testDB) resetPinTries(user *User) error {
-	return db.db.resetPinTries(user)
+func (db *testDB) resetPinTries(ctx context.Context, user *User) error {
+	return db.db.resetPinTries(ctx, user)
 }
 
-func (db *testDB) setSeen(user *User) error {
-	return db.db.setSeen(user)
+func (db *testDB) setSeen(ctx context.Context, user *User) error {
+	return db.db.setSeen(ctx, user)
 }
 
-func (db *testDB) addLog(user *User, entrytype eventType, params interface{}) error {
-	return db.db.addLog(user, entrytype, params)
+func (db *testDB) addLog(ctx context.Context, user *User, entrytype eventType, params interface{}) error {
+	return db.db.addLog(ctx, user, entrytype, params)
 }
 
-func (db *testDB) addEmailVerification(user *User, email, token string, validity int) error {
-	return db.db.addEmailVerification(user, email, token, validity)
+func (db *testDB) addEmailVerification(ctx context.Context, user *User, email, token string, validity int) error {
+	return db.db.addEmailVerification(ctx, user, email, token, validity)
 }
 
 func createDB(t *testing.T) DB {
 	db := NewMemoryDB()
-	err := db.AddUser(&User{
+	err := db.AddUser(context.Background(), &User{
 		Username: "",
 		Secrets:  keysharecore.UserSecrets{},
 	})
 	require.NoError(t, err)
 	secrets, err := base64.StdEncoding.DecodeString("YWJjZBdd6z/4lW/JBgEjVxcAnhK16iimfeyi1AAtWPzkfbWYyXHAad8A+Xzc6mE8bMj6dMQ5CgT0xcppEWYN9RFtO5+Wv4Carfq3TEIX9IWEDuU+lQG0noeHzKZ6k1J22iNAiL7fEXNWNy2H7igzJbj6svbH2LTRKxEW2Cj9Qkqzip5UapHmGZf6G6E7VkMvmJsbrW5uoZAVq2vP+ocuKmzBPaBlqko9F0YKglwXyhfaQQQ0Y3x4secMwC12")
 	require.NoError(t, err)
-	err = db.AddUser(&User{
+	err = db.AddUser(context.Background(), &User{
 		Username: "legacyuser",
 		Secrets:  secrets,
 	})
@@ -578,7 +578,7 @@ func createDB(t *testing.T) DB {
 
 	secrets, err = base64.StdEncoding.DecodeString("YWJjZHpSayGYcjcKbUNfJJjNOXxgxV+GWTVYinpeKqTSfUjUuT4+Hs2uZY68+KvnXkPkoV1eo4HvpVzxy683DHi8Ih+P4Nuqz4FhhLddFnZlzPn1sHuvSjs8S2qGP/jO5+3075I/TWiT2CxO8B83ezMX7tmlwvTbWdYbmV1saEyCVFssuzTARcfvee0f6YvFe9eX1iHfAwXvPsdrt0eTqbTcUzDzv5pQb/t18MtJsK6cB2vh3XJO0psbBWsshGNJYIkMaiGmhi457zejvIt1xcC+dsZZUJVpvoGrZvHd25gH9PLQ/VSU0atrhXS93nsdW8+Y4M4tDFZ8R9pZsseZKt4Zuj1FbxD/qZcdm2w8KaCQgVjzzJJu6//Z5/qF0Neycmm6uiAs4zQWVkibtR9BLEmwHsLd2u4n1EhPAzp14kyzI72/")
 	require.NoError(t, err)
-	err = db.AddUser(&User{
+	err = db.AddUser(context.Background(), &User{
 		Username: "testusername",
 		Secrets:  secrets,
 	})

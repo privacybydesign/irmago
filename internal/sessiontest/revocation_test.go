@@ -582,6 +582,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		res, err := (&http.Client{}).Do(req)
 		require.NoError(t, err)
+		require.NoError(t, res.Body.Close())
 		cacheheader := res.Header.Get("Cache-Control")
 		require.True(t, cacheheader == fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge) ||
 			cacheheader == fmt.Sprintf("max-age=%d", irma.RevocationParameters.EventsCacheMaxAge-1),
@@ -594,6 +595,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		res, err = (&http.Client{}).Do(req)
 		require.NoError(t, err)
+		require.NoError(t, res.Body.Close())
 		// We have to correct the max age for network delay.
 		maxAge := sacc.Accumulator.Time + int64(irma.RevocationParameters.AccumulatorUpdateInterval) - time.Now().Unix()
 		require.Equal(t,

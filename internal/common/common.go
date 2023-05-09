@@ -427,7 +427,7 @@ func SchemeFilename(dir string) (string, error) {
 
 var SchemeFilenames = []string{"description.xml", "description.json"}
 
-// Helper for absorbing errors in the `defer x.Close()` pattern
+// Close is a helper for absorbing errors in the `defer x.Close()` pattern
 func Close(o io.Closer) {
 	_ = o.Close()
 }

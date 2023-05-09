@@ -3,7 +3,7 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -152,7 +152,7 @@ func chainedServerHandler(
 	// Read the disclosed value, and issue a new credential of type specified by the cred parameter,
 	// whose attributes all have the value that was just disclosed
 	mux.HandleFunc("/2", func(w http.ResponseWriter, r *http.Request) {
-		bts, err := ioutil.ReadAll(r.Body)
+		bts, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 		require.NoError(t, r.Body.Close())
 

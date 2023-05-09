@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -324,8 +324,9 @@ func (s *Server) startNext(session *session, res *irma.ServerSessionResponse) er
 }
 
 func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request) {
+	defer common.Close(r.Body)
 	commitments := &irma.IssueCommitmentMessage{}
-	bts, err := ioutil.ReadAll(r.Body)
+	bts, err := io.ReadAll(r.Body)
 	if err != nil {
 		server.WriteError(w, server.ErrorMalformedInput, err.Error())
 		return
@@ -349,7 +350,8 @@ func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {
-	bts, err := ioutil.ReadAll(r.Body)
+	defer common.Close(r.Body)
+	bts, err := io.ReadAll(r.Body)
 	if err != nil {
 		server.WriteError(w, server.ErrorMalformedInput, err.Error())
 		return
@@ -465,8 +467,9 @@ func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleFrontendOptionsPost(w http.ResponseWriter, r *http.Request) {
+	defer common.Close(r.Body)
 	optionsRequest := &irma.FrontendOptionsRequest{}
-	bts, err := ioutil.ReadAll(r.Body)
+	bts, err := io.ReadAll(r.Body)
 	if err != nil {
 		server.WriteError(w, server.ErrorMalformedInput, err.Error())
 		return
@@ -582,6 +585,7 @@ func (s *Server) handleRevocationGetUpdateLatest(w http.ResponseWriter, r *http.
 
 // POST revocation/issuancerecord/{credtype}/{counter}
 func (s *Server) handleRevocationPostIssuanceRecord(w http.ResponseWriter, r *http.Request) {
+	defer common.Close(r.Body)
 	cred := irma.NewCredentialTypeIdentifier(chi.URLParam(r, "id"))
 	counter, _ := strconv.ParseUint(chi.URLParam(r, "counter"), 10, 32)
 
@@ -598,7 +602,7 @@ func (s *Server) handleRevocationPostIssuanceRecord(w http.ResponseWriter, r *ht
 		return
 	}
 	var rec irma.IssuanceRecord
-	message, err := ioutil.ReadAll(r.Body)
+	message, err := io.ReadAll(r.Body)
 	if err != nil {
 		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, err.Error()))
 		return
