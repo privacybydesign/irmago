@@ -142,7 +142,7 @@ func (db *postgresDB) loginUserCandidates(token string) ([]loginCandidate, error
 		return nil, err
 	}
 	if len(candidates) == 0 {
-		return nil, keyshare.ErrUserNotFound
+		return nil, errTokenNotFound
 	}
 	return candidates, nil
 }

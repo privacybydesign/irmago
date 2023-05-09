@@ -277,10 +277,12 @@ func (s *Server) handleGetCandidates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	candidates, err := s.db.loginUserCandidates(token)
+	if err == errTokenNotFound {
+		server.WriteError(w, server.ErrorInvalidToken, "Unknown login token")
+		return
+	}
 	if err != nil {
-		if err != keyshare.ErrUserNotFound {
-			s.conf.Logger.WithField("error", err).Error("Could not retrieve candidates for token")
-		}
+		s.conf.Logger.WithField("error", err).Error("Could not retrieve candidates for token")
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -295,7 +297,7 @@ type tokenLoginRequest struct {
 
 func (s *Server) processTokenLogin(request tokenLoginRequest) (string, error) {
 	id, err := s.db.verifyLoginToken(request.Token, request.Username)
-	if err == keyshare.ErrUserNotFound {
+	if err == errTokenNotFound {
 		return "", err
 	}
 	if err != nil {
@@ -325,7 +327,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	token, err := s.processTokenLogin(request)
 
 	if err == errTokenNotFound {
-		server.WriteError(w, server.ErrorInvalidRequest, "Invalid login request")
+		server.WriteError(w, server.ErrorInvalidToken, "Invalid login request")
 		return
 	}
 	if err != nil {
