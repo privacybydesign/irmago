@@ -5,7 +5,6 @@ package test
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -104,7 +103,7 @@ func ClearAllTestStorage() {
 }
 
 func CreateTestStorage(t *testing.T) string {
-	tmp, err := ioutil.TempDir("", "irmatest")
+	tmp, err := os.MkdirTemp("", "irmatest")
 	require.NoError(t, err)
 	checkError(t, common.EnsureDirectoryExists(filepath.Join(tmp, "client")))
 	return tmp

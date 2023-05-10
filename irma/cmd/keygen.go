@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"io/ioutil"
+	"os"
 
 	"fmt"
 
@@ -54,11 +54,11 @@ var keygenCmd = &cobra.Command{
 		}
 
 		// Save keys
-		if err = ioutil.WriteFile(skfile, pemEncoded, 0600); err != nil {
+		if err = os.WriteFile(skfile, pemEncoded, 0600); err != nil {
 			return err
 		}
 		fmt.Println("Private key written at", skfile)
-		if err = ioutil.WriteFile(pkfile, pemEncodedPub, 0644); err != nil {
+		if err = os.WriteFile(pkfile, pemEncodedPub, 0644); err != nil {
 			return err
 		}
 		fmt.Println("Public key written at", pkfile)

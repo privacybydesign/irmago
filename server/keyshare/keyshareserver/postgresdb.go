@@ -1,6 +1,7 @@
 package keyshareserver
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"time"
@@ -54,8 +55,8 @@ func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTim
 	}, nil
 }
 
-func (db *postgresDB) AddUser(user *User) error {
-	res, err := db.db.Query("INSERT INTO irma.users (username, language, coredata, last_seen, pin_counter, pin_block_date) VALUES ($1, $2, $3, $4, 0, 0) RETURNING id",
+func (db *postgresDB) AddUser(ctx context.Context, user *User) error {
+	res, err := db.db.QueryContext(ctx, "INSERT INTO irma.users (username, language, coredata, last_seen, pin_counter, pin_block_date) VALUES ($1, $2, $3, $4, 0, 0) RETURNING id",
 		user.Username,
 		user.Language,
 		user.Secrets,
@@ -79,9 +80,10 @@ func (db *postgresDB) AddUser(user *User) error {
 	return nil
 }
 
-func (db *postgresDB) user(username string) (*User, error) {
+func (db *postgresDB) user(ctx context.Context, username string) (*User, error) {
 	var result User
-	err := db.db.QueryUser(
+	err := db.db.QueryUserContext(
+		ctx,
 		"SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL",
 		[]interface{}{&result.id, &result.Username, &result.Language, &result.Secrets},
 		username,
@@ -92,8 +94,9 @@ func (db *postgresDB) user(username string) (*User, error) {
 	return &result, nil
 }
 
-func (db *postgresDB) updateUser(user *User) error {
-	return db.db.ExecUser(
+func (db *postgresDB) updateUser(ctx context.Context, user *User) error {
+	return db.db.ExecUserContext(
+		ctx,
 		"UPDATE irma.users SET username = $1, language = $2, coredata = $3 WHERE id=$4",
 		user.Username,
 		user.Language,
@@ -102,10 +105,10 @@ func (db *postgresDB) updateUser(user *User) error {
 	)
 }
 
-func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
+func (db *postgresDB) reservePinTry(ctx context.Context, user *User) (bool, int, int64, error) {
 	// Check that account is not blocked already, and if not,
 	//  update pinCounter and pinBlockDate
-	uprows, err := db.db.Query(`
+	uprows, err := db.db.QueryContext(ctx, `
 		UPDATE irma.users
 		SET pin_counter = pin_counter+1,
 			pin_block_date = $1 + CASE WHEN pin_counter-$3 < 0 THEN 0
@@ -133,7 +136,7 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 		}
 		// if no results, then account either does not exist (which would be weird here) or is blocked
 		// so request wait timeout
-		pinrows, err := db.db.Query("SELECT pin_block_date FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", user.id)
+		pinrows, err := db.db.QueryContext(ctx, "SELECT pin_block_date FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", user.id)
 		if err != nil {
 			return false, 0, 0, err
 		}
@@ -169,18 +172,20 @@ func (db *postgresDB) reservePinTry(user *User) (bool, int, int64, error) {
 	return allowed, tries, wait, nil
 }
 
-func (db *postgresDB) resetPinTries(user *User) error {
-	return db.db.ExecUser(
+func (db *postgresDB) resetPinTries(ctx context.Context, user *User) error {
+	return db.db.ExecUserContext(
+		ctx,
 		"UPDATE irma.users SET pin_counter = 0, pin_block_date = 0 WHERE id = $1",
 		user.id,
 	)
 }
 
-func (db *postgresDB) setSeen(user *User) error {
+func (db *postgresDB) setSeen(ctx context.Context, user *User) error {
 	// If the user is scheduled for deletion (delete_on is not null), undo that by resetting
 	// delete_on back to null, but only if the user did not explicitly delete her account herself
 	// in the myIRMA website, in which case coredata is null.
-	return db.db.ExecUser(
+	return db.db.ExecUserContext(
+		ctx,
 		`UPDATE irma.users
 		 SET last_seen = $1,
 		     delete_on = CASE
@@ -192,7 +197,7 @@ func (db *postgresDB) setSeen(user *User) error {
 	)
 }
 
-func (db *postgresDB) addLog(user *User, eventType eventType, param interface{}) error {
+func (db *postgresDB) addLog(ctx context.Context, user *User, eventType eventType, param interface{}) error {
 	var encodedParamString *string
 	if param != nil {
 		encodedParam, err := json.Marshal(param)
@@ -203,7 +208,7 @@ func (db *postgresDB) addLog(user *User, eventType eventType, param interface{})
 		encodedParamString = &encodedParams
 	}
 
-	_, err := db.db.Exec("INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES ($1, $2, $3, $4)",
+	_, err := db.db.ExecContext(ctx, "INSERT INTO irma.log_entry_records (time, event, param, user_id) VALUES ($1, $2, $3, $4)",
 		time.Now().Unix(),
 		eventType,
 		encodedParamString,
@@ -211,12 +216,12 @@ func (db *postgresDB) addLog(user *User, eventType eventType, param interface{})
 	return err
 }
 
-func (db *postgresDB) addEmailVerification(user *User, emailAddress, token string, validity int) error {
+func (db *postgresDB) addEmailVerification(ctx context.Context, user *User, emailAddress, token string, validity int) error {
 	expiry := time.Now().Add(time.Duration(validity) * time.Hour)
 	maxPrevExpiry := expiry.Add(-1 * time.Duration(emailTokenRateLimitDuration) * time.Minute)
 
 	// Check whether rate limiting is necessary
-	amount, err := db.db.ExecCount("SELECT 1 FROM irma.email_verification_tokens WHERE email = $1 AND expiry > $2",
+	amount, err := db.db.ExecCountContext(ctx, "SELECT 1 FROM irma.email_verification_tokens WHERE email = $1 AND expiry > $2",
 		emailAddress,
 		maxPrevExpiry.Unix())
 	if err != nil {
@@ -226,7 +231,7 @@ func (db *postgresDB) addEmailVerification(user *User, emailAddress, token strin
 		return errTooManyTokens
 	}
 
-	_, err = db.db.Exec("INSERT INTO irma.email_verification_tokens (token, email, user_id, expiry) VALUES ($1, $2, $3, $4)",
+	_, err = db.db.ExecContext(ctx, "INSERT INTO irma.email_verification_tokens (token, email, user_id, expiry) VALUES ($1, $2, $3, $4)",
 		token,
 		emailAddress,
 		user.id,
