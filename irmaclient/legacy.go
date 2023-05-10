@@ -3,7 +3,6 @@ package irmaclient
 import (
 	"encoding/binary"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -353,7 +352,7 @@ func (f *fileStorage) load(dest interface{}, path string) (err error) {
 	if info.IsDir() || !info.Mode().IsRegular() {
 		return errors.New("invalid file")
 	}
-	bytes, err := ioutil.ReadFile(f.path(path))
+	bytes, err := os.ReadFile(f.path(path))
 	if err != nil {
 		return
 	}

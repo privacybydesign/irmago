@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -76,7 +75,7 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	if Logger.IsLevelEnabled(logrus.TraceLevel) {
 		transportlogger = log.New(Logger.WriterLevel(logrus.TraceLevel), "transport: ", 0)
 	} else {
-		transportlogger = log.New(ioutil.Discard, "", 0)
+		transportlogger = log.New(io.Discard, "", 0)
 	}
 
 	if serverURL != "" && !strings.HasSuffix(serverURL, "/") {

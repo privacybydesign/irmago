@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"reflect"
@@ -456,7 +455,7 @@ func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
 	logger := logrus.New()
 
 	if quiet {
-		logger.Out = ioutil.Discard
+		logger.Out = io.Discard
 		return logger
 	}
 
