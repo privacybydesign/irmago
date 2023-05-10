@@ -2,7 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -127,7 +127,7 @@ func startSessionAtServer(t *testing.T, serv stopper, conf interface{}, request 
 		}
 		url := requestorServerURL
 		if useJWTs {
-			skbts, err := ioutil.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
+			skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
 			require.NoError(t, err)
 			sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
 			require.NoError(t, err)
@@ -166,7 +166,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 		err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-jwt", &res)
 		require.NoError(t, err)
 
-		bts, err := ioutil.ReadFile(jwtPrivkeyPath)
+		bts, err := os.ReadFile(jwtPrivkeyPath)
 		require.NoError(t, err)
 		sk, err := jwt.ParseRSAPrivateKeyFromPEM(bts)
 		require.NoError(t, err)
