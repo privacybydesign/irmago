@@ -4,11 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
 )
-
-var ErrUserNotFound = errors.New("Could not find specified user")
 
 type DB struct {
 	*sql.DB

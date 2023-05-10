@@ -61,7 +61,7 @@ func (db *memoryDB) verifyEmailToken(_ context.Context, token string) (int64, er
 	if !ok {
 		// We return this particular error in this case for consistency with the postgres DB.
 		// The calling function replaces this with a more informative error for the frontend.
-		return 0, keyshare.ErrUserNotFound
+		return 0, errTokenNotFound
 	}
 
 	delete(db.verifyEmailTokens, token)
@@ -102,7 +102,7 @@ func (db *memoryDB) loginUserCandidates(_ context.Context, token string) ([]logi
 	if !ok {
 		// We return this particular error in this case for consistency with the postgres DB.
 		// The calling function replaces this with a more informative error for the frontend.
-		return nil, keyshare.ErrUserNotFound
+		return nil, errTokenNotFound
 	}
 
 	var result []loginCandidate
@@ -123,7 +123,7 @@ func (db *memoryDB) verifyLoginToken(_ context.Context, token, username string) 
 
 	email, ok := db.loginEmailTokens[token]
 	if !ok {
-		return 0, keyshare.ErrUserNotFound
+		return 0, errTokenNotFound
 	}
 
 	user, ok := db.userData[username]

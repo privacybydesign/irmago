@@ -166,7 +166,7 @@ func TestPinTryChallengeResponse(t *testing.T) {
 	// can't do this directly, challenge-response required
 	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		`{"id":"testusername","pin":"puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}`, nil,
-		500, nil,
+		403, nil,
 	)
 
 	sk := loadClientPrivateKey(t)
