@@ -304,12 +304,12 @@ func NewRandomString(count int, characterSet string) string {
 				panic(err)
 			}
 		}
-		if byteValueUpperbound == 0 || randomnessBuffer[bufferIndex] < byteValueUpperbound {
-			charSetIndex := randomnessBuffer[bufferIndex]
+		byteValue := randomnessBuffer[bufferIndex]
+		if byteValueUpperbound == 0 || byteValue < byteValueUpperbound {
 			if len(characterSet) < 256 {
-				charSetIndex = charSetIndex % byte(len(characterSet))
+				byteValue = byteValue % byte(len(characterSet))
 			}
-			b[i] = characterSet[charSetIndex]
+			b[i] = characterSet[byteValue]
 			i++
 		}
 	}
