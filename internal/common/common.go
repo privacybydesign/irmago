@@ -287,15 +287,31 @@ func NewPairingCode() string {
 }
 
 func NewRandomString(count int, characterSet string) string {
-	r := make([]byte, count)
-	_, err := rand.Read(r)
-	if err != nil {
-		panic(err)
-	}
+	// We read bytes (0-255) from the secure random number generator.
+	// If the character set length is smaller than and not a divider of 256, we should only consider the random numbers
+	// smaller than the character set length minus the remainder after division. This ensures an even distribution.
+	byteValueUpperbound := uint8(256 - (256 % len(characterSet)))
+
+	// We collect 16 bytes of randomness at once for efficiency.
+	randomnessBuffer := make([]byte, 16)
 
 	b := make([]byte, count)
-	for i := range b {
-		b[i] = characterSet[r[i]%byte(len(characterSet))]
+	i := 0
+	for bufferIndex := 0; i < len(b); bufferIndex = (bufferIndex + 1) % len(randomnessBuffer) {
+		if bufferIndex == 0 {
+			_, err := rand.Read(randomnessBuffer)
+			if err != nil {
+				panic(err)
+			}
+		}
+		if byteValueUpperbound == 0 || randomnessBuffer[bufferIndex] < byteValueUpperbound {
+			charSetIndex := randomnessBuffer[bufferIndex]
+			if len(characterSet) < 256 {
+				charSetIndex = charSetIndex % byte(len(characterSet))
+			}
+			b[i] = characterSet[charSetIndex]
+			i++
+		}
 	}
 	return string(b)
 }
