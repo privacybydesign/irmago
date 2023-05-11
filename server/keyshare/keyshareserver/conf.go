@@ -3,7 +3,7 @@ package keyshareserver
 import (
 	"encoding/binary"
 	"html/template"
-	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -68,7 +68,7 @@ type Configuration struct {
 }
 
 func readAESKey(filename string) (uint32, keysharecore.AESKey, error) {
-	keyData, err := ioutil.ReadFile(filename)
+	keyData, err := os.ReadFile(filename)
 	if err != nil {
 		return 0, keysharecore.AESKey{}, err
 	}

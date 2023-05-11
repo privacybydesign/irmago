@@ -145,19 +145,22 @@ func (db *postgresDB) loginUserCandidates(ctx context.Context, token string) ([]
 		return nil, err
 	}
 	if len(candidates) == 0 {
-		return nil, keyshare.ErrUserNotFound
+		return nil, errTokenNotFound
 	}
 	return candidates, nil
 }
 
 func (db *postgresDB) verifyLoginToken(ctx context.Context, token, username string) (int64, error) {
 	var id int64
-	err := db.db.QueryUserContext(
+	err := db.db.QueryScanContext(
 		ctx,
 		`SELECT users.id FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
 		     username = $1 AND (emails.delete_on >= $3 OR emails.delete_on IS NULL) AND
 		     email = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
 		[]interface{}{&id}, username, token, time.Now().Unix())
+	if err == sql.ErrNoRows {
+		return 0, errTokenNotFound
+	}
 	if err != nil {
 		return 0, err
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/sirupsen/logrus"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -123,7 +122,7 @@ func SaveFile(fpath string, content []byte) (err error) {
 
 	// Create temp file
 	dir := path.Dir(fpath)
-	err = ioutil.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
+	err = os.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
 	if err != nil {
 		return
 	}
@@ -155,7 +154,7 @@ func CopyDirectory(src, dest string) error {
 				return err
 			}
 			defer func() { e = srcfile.Close() }()
-			bts, err := ioutil.ReadAll(srcfile)
+			bts, err := io.ReadAll(srcfile)
 			if err != nil {
 				return err
 			}
@@ -191,7 +190,7 @@ func ReadKey(key, path string) ([]byte, error) {
 		if !stat.Mode().IsRegular() {
 			return nil, errors.New("cannot read key from nonregular file")
 		}
-		bts, err = ioutil.ReadFile(path)
+		bts, err = os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}

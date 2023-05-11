@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -803,7 +802,7 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestIrmaServerPrivateKeysFolder(t *testing.T) {
-	storage, err := ioutil.TempDir("", "servertest")
+	storage, err := os.MkdirTemp("", "servertest")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
 
