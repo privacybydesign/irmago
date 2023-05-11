@@ -19,7 +19,7 @@ import (
 
 var Logger *logrus.Logger
 
-// Disables HTTP forcing in irma.HTTPTransport for all instances,
+// ForceHTTPS disables HTTP forcing in irma.HTTPTransport for all instances,
 // regardless of the instance's ForceHTTPS member.
 // Only for use in unit tests.
 var ForceHTTPS = true
@@ -93,7 +93,7 @@ func EnsureDirectoryExists(path string) error {
 	return nil
 }
 
-// Save the filecontents at the specified path atomically:
+// SaveFile saves the file contents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file
 func SaveFile(fpath string, content []byte) (err error) {
@@ -143,9 +143,13 @@ func CopyDirectory(src, dest string) error {
 		if path == src {
 			return
 		}
-		subpath := path[len(src):]
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		destPath := filepath.Join(dest, relPath)
 		if info.IsDir() {
-			if err := EnsureDirectoryExists(dest + subpath); err != nil {
+			if err := EnsureDirectoryExists(destPath); err != nil {
 				return err
 			}
 		} else {
@@ -158,7 +162,7 @@ func CopyDirectory(src, dest string) error {
 			if err != nil {
 				return err
 			}
-			if err := SaveFile(dest+subpath, bts); err != nil {
+			if err := SaveFile(destPath, bts); err != nil {
 				return err
 			}
 		}
@@ -218,7 +222,7 @@ func Base64Decode(b []byte) ([]byte, error) {
 	return bts, err
 }
 
-// iterateSubfolders iterates over the subfolders of the specified path,
+// IterateSubfolders iterates over the subfolders of the specified path,
 // calling the specified handler each time. If anything goes wrong, or
 // if the caller returns a non-nil error, an error is immediately returned.
 func IterateSubfolders(path string, handler func(string, os.FileInfo) error) error {
@@ -251,7 +255,7 @@ func iterateFiles(path string, onlyDirs bool, handler func(string, os.FileInfo) 
 	return nil
 }
 
-// walkDir recursively walks the file tree rooted at path, following symlinks (unlike filepath.Walk).
+// WalkDir recursively walks the file tree rooted at path, following symlinks (unlike filepath.Walk).
 // Avoiding loops is the responsibility of the caller.
 func WalkDir(path string, handler func(string, os.FileInfo) error) error {
 	return iterateFiles(path, false, func(p string, info os.FileInfo) error {
@@ -286,15 +290,31 @@ func NewPairingCode() string {
 }
 
 func NewRandomString(count int, characterSet string) string {
-	r := make([]byte, count)
-	_, err := rand.Read(r)
-	if err != nil {
-		panic(err)
-	}
+	// We read bytes (0-255) from the secure random number generator.
+	// If the character set length is smaller than and not a divider of 256, we should only consider the random numbers
+	// smaller than the character set length minus the remainder after division. This ensures an even distribution.
+	byteValueUpperbound := uint8(256 - (256 % len(characterSet)))
+
+	// We collect 16 bytes of randomness at once for efficiency.
+	randomnessBuffer := make([]byte, 16)
 
 	b := make([]byte, count)
-	for i := range b {
-		b[i] = characterSet[r[i]%byte(len(characterSet))]
+	i := 0
+	for bufferIndex := 0; i < len(b); bufferIndex = (bufferIndex + 1) % len(randomnessBuffer) {
+		if bufferIndex == 0 {
+			_, err := rand.Read(randomnessBuffer)
+			if err != nil {
+				panic(err)
+			}
+		}
+		byteValue := randomnessBuffer[bufferIndex]
+		if byteValueUpperbound == 0 || byteValue < byteValueUpperbound {
+			if len(characterSet) < 256 {
+				byteValue = byteValue % byte(len(characterSet))
+			}
+			b[i] = characterSet[byteValue]
+			i++
+		}
 	}
 	return string(b)
 }
