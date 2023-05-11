@@ -3,7 +3,6 @@ package irma
 import (
 	goerrors "errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -56,7 +55,7 @@ var (
 )
 
 func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingFolder, error) {
-	files, err := ioutil.ReadDir(path)
+	files, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
