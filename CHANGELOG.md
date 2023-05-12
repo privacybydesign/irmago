@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.3] - 2023-05-12
+
+### Changed
+- Move checks for missing schemes from scheme parsing to storage parsing
+- Ignore directories in irma_configuration directory that don't contain a scheme
+
+### Fixed
+- Stability issues in transport logic
+- Server and client timeouts are out-of-sync
+- Keyshare server returns 403 status codes when database is down
+- Handling invalid email or login tokens gives different status codes in different contexts
+- CopyDirectory function may fail when relative paths are used
+
+### Security
+- Improve randomness of session tokens and pairing codes
+
+### Internal
+- Change contact e-mail address in README to Yivi
+- Phase out deprecated io/ioutil library
+
 ## [0.12.2] - 2023-03-22
 
 ### Fixed
@@ -312,6 +332,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.12.3]: https://github.com/privacybydesign/irmago/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/privacybydesign/irmago/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/privacybydesign/irmago/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/privacybydesign/irmago/compare/v0.11.2...v0.12.0
