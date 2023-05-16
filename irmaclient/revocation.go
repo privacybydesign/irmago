@@ -195,7 +195,7 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		if err == revocation.ErrorRevoked {
 			id := cred.CredentialType().Identifier()
 			hash := cred.attrs.Hash()
-			irma.Logger.Warnf("credential %s %s revoked", id, hash)
+			irma.Logger.Infof("credential %s %s revoked", id, hash)
 			attrs[i].Revoked = true
 			cred.attrs.Revoked = true
 			save = true
