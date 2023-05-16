@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
@@ -53,7 +52,7 @@ func httpDo(t *testing.T, client *http.Client, url, method, body string, headers
 	require.Equal(t, expectedStatus, res.StatusCode)
 
 	if result != nil {
-		bts, err := ioutil.ReadAll(res.Body)
+		bts, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		if strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
 			require.NoError(t, json.Unmarshal(bts, result))

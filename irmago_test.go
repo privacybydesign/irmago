@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -263,7 +262,7 @@ func TestInstallScheme(t *testing.T) {
 	defer test.StopSchemeManagerHttpServer()
 
 	// setup a new empty Configuration
-	storage, err := ioutil.TempDir("", "scheme")
+	storage, err := os.MkdirTemp("", "scheme")
 	require.NoError(t, err)
 	defer test.ClearTestStorage(t, nil, storage)
 	conf, err := NewConfiguration(storage, ConfigurationOptions{})

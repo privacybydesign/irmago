@@ -36,9 +36,10 @@ func runServer(serv stoppableServer, logger *logrus.Logger) {
 	TLSConfig := configureTLS()
 
 	httpServer := &http.Server{
-		Addr:      fullAddr,
-		Handler:   serv.Handler(),
-		TLSConfig: TLSConfig,
+		Addr:              fullAddr,
+		Handler:           serv.Handler(),
+		TLSConfig:         TLSConfig,
+		ReadHeaderTimeout: server.ReadTimeout,
 	}
 
 	stopped := make(chan struct{})

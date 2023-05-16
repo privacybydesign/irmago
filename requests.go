@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"strconv"
 	"time"
@@ -922,7 +922,7 @@ func readTimestamp(path string) (*Timestamp, bool, error) {
 	if !exists {
 		return nil, false, nil
 	}
-	bts, err := ioutil.ReadFile(path)
+	bts, err := os.ReadFile(path)
 	if err != nil {
 		return nil, true, errors.New("Could not read scheme manager timestamp")
 	}

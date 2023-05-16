@@ -3,7 +3,6 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -306,7 +305,7 @@ func TestWrongSchemeManager(t *testing.T) {
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
 	path := filepath.Join(handler.storage, "client", "irma_configuration", "irma-demo", "MijnOverheid", "description.xml")
-	require.NoError(t, ioutil.WriteFile(path, []byte("overwrite to invalidate file signature"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("overwrite to invalidate file signature"), 0600))
 
 	err := client.Configuration.ParseFolder()
 	_, ok := err.(*irma.SchemeManagerError)
@@ -458,7 +457,7 @@ func (i *TestClientHandler) ChangePinSuccess() {
 }
 func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
 	select {
-	case i.c <- err: //nop
+	case i.c <- err: // nop
 	default:
 		i.t.Fatal(err)
 	}
@@ -466,7 +465,7 @@ func (i *TestClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifie
 func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
 	err := errors.New("incorrect pin")
 	select {
-	case i.c <- err: //nop
+	case i.c <- err: // nop
 	default:
 		i.t.Fatal(err)
 	}
@@ -474,14 +473,14 @@ func (i *TestClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentif
 func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
 	err := errors.New("blocked account")
 	select {
-	case i.c <- err: //nop
+	case i.c <- err: // nop
 	default:
 		i.t.Fatal(err)
 	}
 }
 func (i *TestClientHandler) ReportError(err error) {
 	select {
-	case i.c <- err: //nop
+	case i.c <- err: // nop
 	default:
 		i.t.Fatal(err)
 	}

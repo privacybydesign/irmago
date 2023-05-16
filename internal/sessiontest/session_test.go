@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -857,7 +857,7 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestIrmaServerPrivateKeysFolder(t *testing.T) {
-	storage, err := ioutil.TempDir("", "servertest")
+	storage, err := os.MkdirTemp("", "servertest")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
 
@@ -1024,8 +1024,9 @@ func TestPOSTSizeLimit(t *testing.T) {
 	http.DefaultClient.Timeout = 30 * time.Second
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	bts, err := ioutil.ReadAll(res.Body)
+	bts, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
 
 	var rerr irma.RemoteError
 	require.NoError(t, json.Unmarshal(bts, &rerr))

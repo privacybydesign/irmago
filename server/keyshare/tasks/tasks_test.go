@@ -66,7 +66,7 @@ func TestCleanupEmails(t *testing.T) {
 	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
-	th.cleanupEmails()
+	require.NoError(t, runWithTimeout(th.cleanupEmails))
 
 	assert.Equal(t, 2, countRows(t, db, "emails", ""))
 }
@@ -87,7 +87,7 @@ func TestCleanupTokens(t *testing.T) {
 	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
-	th.cleanupTokens()
+	require.NoError(t, runWithTimeout(th.cleanupTokens))
 
 	assert.Equal(t, 1, countRows(t, db, "email_verification_tokens", ""))
 	assert.Equal(t, 1, countRows(t, db, "email_login_tokens", ""))
@@ -105,7 +105,7 @@ func TestCleanupAccounts(t *testing.T) {
 	th, err := newHandler(&Configuration{DBConnStr: test.PostgresTestUrl, Logger: irma.Logger})
 	require.NoError(t, err)
 
-	th.cleanupAccounts()
+	require.NoError(t, runWithTimeout(th.cleanupAccounts))
 
 	assert.Equal(t, 2, countRows(t, db, "users", ""))
 }
@@ -153,14 +153,14 @@ func TestExpireAccounts(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	th.expireAccounts()
+	require.NoError(t, runWithTimeout(th.expireAccounts))
 	deleteOnMap := countDeleteDates(t, db)
 
 	assert.Equal(t, 10, countRows(t, db, "users", "delete_on IS NOT NULL"))
 	assert.Equal(t, 4, countRows(t, db, "users", "delete_on IS NULL"))
 
 	time.Sleep(1 * time.Second)
-	th.expireAccounts()
+	require.NoError(t, runWithTimeout(th.expireAccounts))
 
 	for date, count := range deleteOnMap {
 		assert.Equal(t, count, countRows(t, db, "users", "delete_on = "+date))

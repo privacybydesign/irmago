@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/go-errors/errors"
@@ -23,7 +23,7 @@ var updateCmd = &cobra.Command{
 			if irmaconf == "" {
 				die("Failed to find default irma_configuration path", nil)
 			}
-			files, err := ioutil.ReadDir(irmaconf)
+			files, err := os.ReadDir(irmaconf)
 			if err != nil {
 				die("Failed to read default irma_configuration path", err)
 			}

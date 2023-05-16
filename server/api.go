@@ -2,12 +2,12 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-
+	"io"
 	"net"
 	"net/http"
 	"reflect"
@@ -127,7 +127,7 @@ const (
 )
 
 const (
-	ReadTimeout  = 5 * time.Second
+	ReadTimeout  = 2 * time.Second
 	WriteTimeout = 2 * ReadTimeout
 )
 
@@ -251,27 +251,27 @@ func parseInput(request interface{}) (irma.RequestorRequest, error) {
 		return parseInput([]byte(r))
 	case []byte:
 		var isRequestorRequest bool
-		context, err := common.ParseLDContext(r)
+		ldContext, err := common.ParseLDContext(r)
 		if err != nil {
 			return nil, err
 		}
-		if context == "" {
-			context, err = common.ParseNestedLDContext(r)
+		if ldContext == "" {
+			ldContext, err = common.ParseNestedLDContext(r)
 			if err != nil {
 				return nil, err
 			}
-			if context != "" {
+			if ldContext != "" {
 				isRequestorRequest = true
 			}
 		}
 
-		if context == "" {
+		if ldContext == "" {
 			return parseLegacySessionRequest(r)
 		}
 
 		if isRequestorRequest {
 			var msg irma.RequestorRequest
-			switch context {
+			switch ldContext {
 			case irma.LDContextDisclosureRequest:
 				msg = &irma.ServiceProviderRequest{}
 			case irma.LDContextSignatureRequest:
@@ -287,7 +287,7 @@ func parseInput(request interface{}) (irma.RequestorRequest, error) {
 			return msg, nil
 		} else {
 			var msg irma.SessionRequest
-			switch context {
+			switch ldContext {
 			case irma.LDContextDisclosureRequest:
 				msg = &irma.DisclosureRequest{}
 			case irma.LDContextSignatureRequest:
@@ -507,7 +507,7 @@ func NewLogger(verbosity int, quiet bool, json bool) *logrus.Logger {
 	logger := logrus.New()
 
 	if quiet {
-		logger.Out = ioutil.Discard
+		logger.Out = io.Discard
 		return logger
 	}
 
@@ -533,7 +533,6 @@ func SizeLimitMiddleware(next http.Handler) http.Handler {
 
 func TimeoutMiddleware(except []string, timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		timeoutNext := http.TimeoutHandler(next, timeout, "")
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			for _, e := range except {
 				if strings.HasSuffix(r.URL.Path, e) {
@@ -541,7 +540,18 @@ func TimeoutMiddleware(except []string, timeout time.Duration) func(http.Handler
 					return
 				}
 			}
-			timeoutNext.ServeHTTP(w, r)
+
+			// We set the timeout as deadline in the request's context such that the next handler
+			// can abort its actions and return an appropriate error response. If the next handler does
+			// not return a response within 200 milliseconds after the deadline expires, then we assume
+			// it froze and invoke the http.TimeoutHandler, which will send a 503 Service Unavailable.
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx, cancel := context.WithTimeout(r.Context(), timeout)
+				defer cancel()
+				next.ServeHTTP(w, r.WithContext(ctx))
+			})
+
+			http.TimeoutHandler(nextHandler, timeout+200*time.Millisecond, "").ServeHTTP(w, r)
 		})
 	}
 }
@@ -555,11 +565,11 @@ func LogMiddleware(typ string, opts LogOptions) func(next http.Handler) http.Han
 				var err error
 
 				// Read r.Body, and then replace with a fresh ReadCloser for the next handler
-				if message, err = ioutil.ReadAll(r.Body); err != nil {
+				if message, err = io.ReadAll(r.Body); err != nil {
 					message = []byte("<failed to read body: " + err.Error() + ">")
 				}
 				_ = r.Body.Close()
-				r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+				r.Body = io.NopCloser(bytes.NewBuffer(message))
 
 				var headers http.Header
 				var from string
@@ -622,7 +632,8 @@ func RecoverMiddleware(next http.Handler) http.Handler {
 }
 
 func ParseBody(r *http.Request, input interface{}) error {
-	body, err := ioutil.ReadAll(r.Body)
+	defer common.Close(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		Logger.WithField("error", err).Info("Malformed request: could not read request body")
 		return err
