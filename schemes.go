@@ -1324,7 +1324,18 @@ func (scheme *RequestorScheme) setStatus(s SchemeManagerStatus) { scheme.Status 
 
 func (scheme *RequestorScheme) path() string { return scheme.storagepath }
 
-func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path }
+func (scheme *RequestorScheme) setPath(path string) {
+	scheme.storagepath = path
+
+	// Rebase all logo paths
+	for _, requestor := range scheme.requestors {
+		requestor.LogoPath = nil
+		logoPath := requestor.logoPath(scheme)
+		if logoPath != "" {
+			requestor.LogoPath = &logoPath
+		}
+	}
+}
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {
