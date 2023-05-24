@@ -81,6 +81,8 @@ type session struct {
 	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
 
+	pendingPermissionRequest bool
+
 	next               *session
 	implicitDisclosure [][]*irma.AttributeIdentifier
 
@@ -430,6 +432,7 @@ func (session *session) requestPermission() {
 		return
 	}
 
+	session.pendingPermissionRequest = true
 	session.Handler.StatusUpdate(session.Action, irma.ClientStatusConnected)
 
 	// Ask for permission to execute the session
@@ -454,6 +457,7 @@ func (session *session) requestPermission() {
 func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 	defer session.recoverFromPanic()
 
+	session.pendingPermissionRequest = false
 	if !proceed {
 		session.cancel()
 		return
@@ -835,7 +839,9 @@ func (s sessions) remove(token string) {
 
 	if last.Action == irma.ActionIssuing {
 		for _, session := range s.sessions {
-			session.requestPermission()
+			if session.pendingPermissionRequest {
+				session.requestPermission()
+			}
 		}
 	}
 
