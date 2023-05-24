@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Print warning in logs if log verbosity is set to trace
 
 ### Fixed
+- LogoPath is incorrect after a requestor scheme update
 - Parallel sessions may fail when one of the sessions requires pairing
 
 ## [0.12.4] - 2023-05-16
