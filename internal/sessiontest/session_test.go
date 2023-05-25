@@ -1182,6 +1182,34 @@ func TestParallelSessions(t *testing.T) {
 	require.Len(t, logs, 2)
 }
 
+func TestParallelSessionsWithPairing(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	frontendOptionsHandler := func(handler *TestHandler) {
+		_ = setPairingMethod(irma.PairingMethodPin, handler)
+	}
+
+	pairingHandler := func(handler *TestHandler) {
+		<-handler.pairingCodeChan
+
+		// Do a second session while the first session is pairing.
+		doSession(t, request, client, irmaServer, nil, nil, nil)
+
+		// After the second session has been completed, we complete pairing of the first session.
+		err := handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
+		require.NoError(t, err)
+	}
+
+	// Initiate the first session with pairing being enabled.
+	doSession(t, request, client, irmaServer, frontendOptionsHandler, pairingHandler, nil)
+}
+
 func expireKey(t *testing.T, conf *irma.Configuration) {
 	pk, err := conf.PublicKey(irma.NewIssuerIdentifier("irma-demo.RU"), 2)
 	require.NoError(t, err)

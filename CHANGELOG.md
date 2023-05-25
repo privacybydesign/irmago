@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - LogoPath is incorrect after a requestor scheme update
+- Parallel sessions may fail when one of the sessions requires pairing
 
 ## [0.12.4] - 2023-05-16
 
