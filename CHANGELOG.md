@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.12.5] - 2023-05-25
+
 ### Changed
 - Print warning in logs if log verbosity is set to trace
 
@@ -346,6 +348,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.12.5]: https://github.com/privacybydesign/irmago/compare/v0.12.4...v0.12.5
 [0.12.4]: https://github.com/privacybydesign/irmago/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/privacybydesign/irmago/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/privacybydesign/irmago/compare/v0.12.1...v0.12.2
