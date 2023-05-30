@@ -34,7 +34,7 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 		return pk, err
 	})
 	if err != nil {
-		keyshare.WriteError(w, err)
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
 	}
 
