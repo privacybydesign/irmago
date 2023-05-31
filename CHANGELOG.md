@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [0.12.6] - 2023-05-31
 ### Fixed
 - Legacy endpoints of keyshare server return 403 status codes when database is down
 
@@ -350,6 +352,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.12.6]: https://github.com/privacybydesign/irmago/compare/v0.12.5...v0.12.6
 [0.12.5]: https://github.com/privacybydesign/irmago/compare/v0.12.4...v0.12.5
 [0.12.4]: https://github.com/privacybydesign/irmago/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/privacybydesign/irmago/compare/v0.12.2...v0.12.3
