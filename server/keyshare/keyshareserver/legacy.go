@@ -12,6 +12,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/sirupsen/logrus"
 )
 
@@ -41,14 +42,14 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 	user, err := s.db.user(r.Context(), claims.Username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		keyshare.WriteError(w, err)
 		return
 	}
 
 	result, err := s.registerPublicKey(r.Context(), user, claims.Pin, pk)
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 	server.WriteJson(w, result)
@@ -146,7 +147,7 @@ func (s *Server) handleChangePinLegacy(ctx context.Context, w http.ResponseWrite
 	user, err := s.db.user(ctx, username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -154,7 +155,7 @@ func (s *Server) handleChangePinLegacy(ctx context.Context, w http.ResponseWrite
 
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 	server.WriteJson(w, result)
