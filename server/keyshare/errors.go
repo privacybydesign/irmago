@@ -1,10 +1,11 @@
 package keyshare
 
 import (
+	"net/http"
+
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
-	"net/http"
 )
 
 var (
@@ -14,7 +15,10 @@ var (
 
 	// Email errors:
 
-	ErrInvalidEmail = errors.New("invalid email address")
+	ErrInvalidEmail    = errors.New("invalid email address")
+	ErrInvalidMXRecord = errors.New("invalid mx record")
+
+	ErrNoNetwork = errors.New("no network connection")
 )
 
 func WriteError(w http.ResponseWriter, err error) {

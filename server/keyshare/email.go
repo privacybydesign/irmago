@@ -78,13 +78,17 @@ func (conf EmailConfiguration) SendEmail(
 	if err != nil {
 		return ErrInvalidEmail
 	}
-	err = verifyMXRecord(email)
-	if err != nil {
-		return ErrInvalidEmail
-	}
+
 	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
+		return err
+	}
+
+	at := strings.LastIndex(toAddr.Address, "@")
+	host := toAddr.Address[at+1:]
+
+	if err := VerifyMXRecord(host); err != nil {
 		return err
 	}
 
@@ -134,17 +138,26 @@ func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject str
 	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
 }
 
-func verifyMXRecord(email string) error {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return errors.Errorf("no '@'-sign found in %v", email)
-	}
-	records, err := net.LookupMX(email[at+1:])
-	if err != nil {
-		return err
-	}
-	if len(records) == 0 {
-		return errors.Errorf("no domain part found in %v", email)
+// Check if the given host has a valid MX record. If none is found, it alternatively
+// checks for a valid A record as this is used as fallback by mailservers
+func VerifyMXRecord(host string) error {
+	if records, err := net.LookupMX(host); err != nil || len(records) == 0 {
+		if err != nil {
+			e, isDNSError := err.(*net.DNSError)
+
+			// When DNS is not resolving or there is no active network connection
+			if isDNSError && (e.IsTemporary || e.IsTimeout) {
+				return ErrNoNetwork
+			}
+		}
+
+		// Check if there is an A record which is used as fallback by mailservers
+		// when there are no MX records present
+		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
+			return ErrInvalidMXRecord
+		} else {
+			return nil
+		}
 	}
 	return nil
 }
