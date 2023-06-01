@@ -18,6 +18,10 @@ type EmailConfiguration struct {
 	DefaultLanguage string `json:"default_language" mapstructure:"default_language"`
 	EmailAuth       smtp.Auth
 }
+type EmailAddress struct {
+	mail.Address
+	Host string
+}
 
 func ParseEmailTemplates(files, subjects map[string]string, defaultLanguage string) (map[string]*template.Template, error) {
 	if _, ok := files[defaultLanguage]; !ok {
@@ -67,45 +71,51 @@ func (conf EmailConfiguration) SendEmail(
 	lang string,
 ) error {
 	var msg bytes.Buffer
-	err := conf.translateTemplate(templates, lang).Execute(&msg, templateData)
-	if err != nil {
+	if err := conf.translateTemplate(templates, lang).Execute(&msg, templateData); err != nil {
 		server.Logger.WithField("error", err).Error("Could not generate email from template")
 		return err
 	}
 
 	// Do input validation on email address fields.
-	toAddr, err := mail.ParseAddress(email)
+	toAddr, err := ParseEmailAddress(email)
 	if err != nil {
 		return ErrInvalidEmail
 	}
 
-	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
+	fromAddr, err := ParseEmailAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
 		return err
 	}
 
-	at := strings.LastIndex(toAddr.Address, "@")
-	host := toAddr.Address[at+1:]
-
-	if err := VerifyMXRecord(host); err != nil {
+	if err := VerifyMXRecord(toAddr.Host); err != nil {
 		return err
 	}
 
-	err = sendHTMLEmail(
+	if err := sendHTMLEmail(
 		conf.EmailServer,
 		conf.EmailAuth,
-		fromAddr,
-		toAddr,
+		&fromAddr.Address,
+		&toAddr.Address,
 		conf.TranslateString(subjects, lang),
 		msg.Bytes(),
-	)
-	if err != nil {
+	); err != nil {
 		server.Logger.WithField("error", err).Error("Could not send email")
 		return err
 	}
 
 	return nil
+}
+
+func ParseEmailAddress(email string) (EmailAddress, error) {
+	addr, err := mail.ParseAddress(email)
+	if err != nil {
+		return EmailAddress{}, ErrInvalidEmail
+	}
+	return EmailAddress{
+		Address: *addr,
+		Host:    addr.Address[strings.LastIndex(addr.Address, "@")+1:],
+	}, nil
 }
 
 func (conf EmailConfiguration) VerifyEmailServer() error {
