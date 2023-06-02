@@ -89,6 +89,7 @@ func (conf EmailConfiguration) SendEmail(
 	}
 
 	if err := VerifyMXRecord(toAddr.Host); err != nil {
+		server.Logger.WithField("error", err).Error("no valid MX record found for email address")
 		return err
 	}
 
@@ -161,7 +162,7 @@ func VerifyMXRecord(host string) error {
 			}
 		}
 
-		// Check if there is an A record which is used as fallback by mailservers
+		// Check if there is a valid A record which is used as fallback by mailservers
 		// when there are no MX records present
 		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
 			return ErrInvalidMXRecord
