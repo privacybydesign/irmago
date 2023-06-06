@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+- Use separate application user in Dockerfile for entrypoint
+
+### Removed
+- Superfluous openssl package in Dockerfile
+
 ## [0.12.6] - 2023-05-31
 ### Fixed
 - Legacy endpoints of keyshare server return 403 status codes when database is down
