@@ -13,8 +13,11 @@ RUN go build -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./irma
 
 FROM $BASE_IMAGE
 
+# The amazonlinux image does not include adduser, so we have to install this first.
+RUN if grep -q -E 'Amazon Linux' /etc/os-release; then yum install -y shadow-utils; fi
+
 # Add application user
-RUN adduser --disabled-password --gecos '' irma
+RUN adduser --disabled-password --gecos '' irma || adduser irma
 
 # The debian image does not include ca-certificates, so we have to install this first.
 RUN if which apt-get &> /dev/null; then apt-get update && apt-get install -y ca-certificates; fi
