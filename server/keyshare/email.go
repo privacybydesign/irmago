@@ -165,7 +165,7 @@ func VerifyMXRecord(host string) error {
 		// Check if there is a valid A record which is used as fallback by mailservers
 		// when there are no MX records present
 		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
-			return ErrInvalidMXRecord
+			return ErrInvalidEmailDomain
 		} else {
 			return nil
 		}
