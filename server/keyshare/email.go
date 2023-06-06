@@ -19,7 +19,7 @@ type EmailConfiguration struct {
 	EmailAuth       smtp.Auth
 }
 type EmailAddress struct {
-	mail.Address
+	*mail.Address
 	Host string
 }
 
@@ -96,8 +96,8 @@ func (conf EmailConfiguration) SendEmail(
 	if err := sendHTMLEmail(
 		conf.EmailServer,
 		conf.EmailAuth,
-		&fromAddr.Address,
-		&toAddr.Address,
+		fromAddr.Address,
+		toAddr.Address,
 		conf.TranslateString(subjects, lang),
 		msg.Bytes(),
 	); err != nil {
@@ -114,7 +114,7 @@ func ParseEmailAddress(email string) (EmailAddress, error) {
 		return EmailAddress{}, ErrInvalidEmail
 	}
 	return EmailAddress{
-		Address: *addr,
+		Address: addr,
 		Host:    addr.Address[strings.LastIndex(addr.Address, "@")+1:],
 	}, nil
 }
