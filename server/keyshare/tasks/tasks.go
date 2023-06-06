@@ -81,11 +81,16 @@ func hasMailRevalidation(conf *Configuration, db *keyshare.DB) bool {
 
 	c, err := db.ExecCountContext(ctx, "SELECT true FROM information_schema.columns where table_schema='irma' AND table_name='emails' AND column_name='revalidate_on'")
 	if err != nil {
-		conf.Logger.WithField("error", err).Error("could not query the schema for column emails.revalidate_on, therefore revalidation is disabled")
+		conf.Logger.WithField("error", err).Error("Could not query the schema for column emails.revalidate_on, therefore revalidation is disabled")
 		return false
 	}
 
-	return c != 0
+	if c == 0 {
+		conf.Logger.Warning("Email address revalidation is disabled because the emails.revalidate_on column is not present in the schema")
+		return false
+	}
+
+	return true
 }
 
 // Remove email addresses marked for deletion long enough ago
@@ -242,7 +247,6 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 func (t *taskHandler) revalidateMails(ctx context.Context) {
 
 	if !t.revalidateMail {
-		t.conf.Logger.Warning("email address revalidation is disabled because the emails.revalidate_on column is not present in the schema")
 		return
 	}
 
