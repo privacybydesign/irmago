@@ -148,7 +148,13 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 				lang,
 			)
 
-			if t.revalidateMail && err != nil && err != keyshare.ErrNoNetwork {
+			if err != nil {
+
+				if !t.revalidateMail || err == keyshare.ErrNoNetwork {
+					t.conf.Logger.WithField("error", err).Error("Could not send expiry mail")
+					return err
+				}
+
 				// When email revalidation is enabled and sending was impossible because of
 				// (temporary) MX / A record issues at the domain or an invalid email address,
 				// we mark the record to be revalidated in 5 days from now.
@@ -158,9 +164,8 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 					t.conf.Logger.WithField("error", err).Error("Could not update email address to set revalidate_on")
 					return err
 				}
-				return nil
 			}
-			return err
+			return nil
 		},
 		id,
 	)
