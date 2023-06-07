@@ -18,9 +18,11 @@ type EmailConfiguration struct {
 	DefaultLanguage string `json:"default_language" mapstructure:"default_language"`
 	EmailAuth       smtp.Auth
 }
+
+// An EmailAddress represents an Address with an additional Host part.
 type EmailAddress struct {
-	*mail.Address
-	Host string
+	*mail.Address        // Address part of the email address
+	Host          string // Host part of the email address
 }
 
 func ParseEmailTemplates(files, subjects map[string]string, defaultLanguage string) (map[string]*template.Template, error) {
@@ -108,6 +110,7 @@ func (conf EmailConfiguration) SendEmail(
 	return nil
 }
 
+// ParseEmailAddress parses a single RFC 5322 address, e.g. "Barry Gibbs <bg@example.com>"
 func ParseEmailAddress(email string) (EmailAddress, error) {
 	addr, err := mail.ParseAddress(email)
 	if err != nil {
@@ -149,15 +152,13 @@ func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject str
 	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
 }
 
-// Check if the given host has a valid MX record. If none is found, it alternatively
-// checks for a valid A record as this is used as fallback by mailservers
+// VerifyMXRecord checks if the given host has a valid MX record. If none is found, it alternatively
+// looks for a valid A or AAAA record as this is used as fallback by mailservers
 func VerifyMXRecord(host string) error {
 	if records, err := net.LookupMX(host); err != nil || len(records) == 0 {
 		if err != nil {
-			e, isDNSError := err.(*net.DNSError)
-
-			// When DNS is not resolving or there is no active network connection
-			if isDNSError && (e.IsTemporary || e.IsTimeout) {
+			if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
+				// When DNS is not resolving or there is no active network connection
 				return ErrNoNetwork
 			}
 		}
@@ -166,9 +167,8 @@ func VerifyMXRecord(host string) error {
 		// when there are no MX records present
 		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
 			return ErrInvalidEmailDomain
-		} else {
-			return nil
 		}
+		return nil
 	}
 	return nil
 }

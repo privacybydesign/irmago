@@ -33,12 +33,13 @@ func newHandler(conf *Configuration) (*taskHandler, error) {
 		return nil, errors.Errorf("failed to connect to database: %v", err)
 	}
 
-	keyshareDb := keyshare.DB{DB: db}
+	keyshareDB := keyshare.DB{DB: db}
 
 	task := &taskHandler{
-		db:             keyshareDb,
+		db:             keyshareDB,
 		conf:           conf,
-		revalidateMail: hasMailRevalidation(conf, &keyshareDb)}
+		revalidateMail: hasMailRevalidation(conf, &keyshareDB),
+	}
 
 	return task, nil
 }
@@ -124,8 +125,9 @@ func (t *taskHandler) cleanupAccounts(ctx context.Context) {
 	}
 }
 
-// Send an email to the user informing them their account is expiring in DeleteDelay. If sending is not possible due to
-// a (temporary) invalid e-mail address or network error it is marked for revalidation.
+// sendExpiryEmails sends an email to the user informing them their account is expiring in DeleteDelay.
+// If sending is not possible due to a (temporary) invalid e-mail address or network error it is marked
+// for revalidation.
 func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, lang string) error {
 	// Fetch user's email addresses
 	err := t.db.QueryIterateContext(ctx, "SELECT id, email FROM irma.emails WHERE user_id = $1",
@@ -153,30 +155,29 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 				if err = t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
 					time.Now().AddDate(0, 0, 5).Unix(),
 					id); err != nil {
-					t.conf.Logger.WithField("error", err).Error("could not update email address to set revalidate_on")
+					t.conf.Logger.WithField("error", err).Error("Could not update email address to set revalidate_on")
 					return err
 				}
 				return nil
-			} else {
-				return err
 			}
+			return err
 		},
 		id,
 	)
 	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("could not retrieve user's email addresses")
+		t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
 		return err
 	}
 	return nil
 }
 
-// Mark old unused accounts for deletion, and inform their owners. When email revalidation enabled,
-// email addresses which where marked for revalidation are skipped because these will be processed
-// separately inside revalidateEmails.
+// expireAccounts marks old unused accounts for deletion and informs their owners.
+// When email revalidation is enabled, email addresses which where marked for revalidation are skipped
+// because these will be processed separately inside revalidateEmails.
 func (t *taskHandler) expireAccounts(ctx context.Context) {
 	// Disable this task when email server is not given
 	if t.conf.EmailServer == "" {
-		t.conf.Logger.Warning("expiring accounts is disabled, as no email server is configured")
+		t.conf.Logger.Warning("Expiring accounts is disabled, as no email server is configured")
 		return
 	}
 
@@ -220,9 +221,8 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 				// we return nil when the error is ErrInvalidEmail
 				if !t.revalidateMail && err == keyshare.ErrInvalidEmail {
 					return nil
-				} else {
-					return err // already logged, just abort
 				}
+				return err // already logged, just abort
 			}
 
 			// Finally, do marking for deletion
@@ -237,12 +237,12 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 		time.Now().Add(time.Duration(-24*t.conf.ExpiryDelay)*time.Hour).Unix(),
 	)
 	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("could not query for accounts that have expired")
+		t.conf.Logger.WithField("error", err).Error("Could not query for accounts that have expired")
 		return
 	}
 }
 
-// When email revalidation is enabled, this task revalidates email addresses which where
+// revalidateMails revalidates, when enabled, email addresses which where
 // flagged in expireAccounts due to being (temporary) invalid.
 func (t *taskHandler) revalidateMails(ctx context.Context) {
 
@@ -272,17 +272,17 @@ func (t *taskHandler) revalidateMails(ctx context.Context) {
 
 			if err := keyshare.VerifyMXRecord(addr.Host); err != nil {
 				if err == keyshare.ErrNoNetwork {
-					t.conf.Logger.WithField("error", err).Error("could not revalidate email address because there is no active network connection")
+					t.conf.Logger.WithField("error", err).Error("Could not revalidate email address because there is no active network connection")
 				} else {
 					// When email address still doesn't work, we can assume it's a permanent problem and delete it
 					if _, err = t.db.ExecContext(ctx, "DELETE FROM irma.emails WHERE id = $1", id); err != nil {
-						t.conf.Logger.WithField("error", err).Error("could not delete revalidated and still invalid email address")
+						t.conf.Logger.WithField("error", err).Error("Could not delete revalidated and still invalid email address")
 					}
 				}
 			} else {
 				// When email address works again, clear revalidate_on to prevent unwanted deletion
 				if _, err = t.db.ExecContext(ctx, "UPDATE irma.emails SET revalidate_on = NULL WHERE id = $1", id); err != nil {
-					t.conf.Logger.WithField("error", err).Error("could not reset revalidation for email address")
+					t.conf.Logger.WithField("error", err).Error("Could not reset revalidation for email address")
 				}
 			}
 
@@ -291,7 +291,7 @@ func (t *taskHandler) revalidateMails(ctx context.Context) {
 		time.Now().Unix())
 
 	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("could not query email addresses for revalidation")
+		t.conf.Logger.WithField("error", err).Error("Could not query email addresses for revalidation")
 		return
 	}
 }
