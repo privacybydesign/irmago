@@ -1,6 +1,7 @@
 package myirmaserver
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -30,7 +31,7 @@ func newMemoryDB() db {
 	}
 }
 
-func (db *memoryDB) userIDByUsername(username string) (int64, error) {
+func (db *memoryDB) userIDByUsername(_ context.Context, username string) (int64, error) {
 	db.Lock()
 	defer db.Unlock()
 	data, ok := db.userData[username]
@@ -40,7 +41,7 @@ func (db *memoryDB) userIDByUsername(username string) (int64, error) {
 	return data.id, nil
 }
 
-func (db *memoryDB) scheduleUserRemoval(id int64, _ time.Duration) error {
+func (db *memoryDB) scheduleUserRemoval(_ context.Context, id int64, _ time.Duration) error {
 	db.Lock()
 	defer db.Unlock()
 	for username, user := range db.userData {
@@ -52,7 +53,7 @@ func (db *memoryDB) scheduleUserRemoval(id int64, _ time.Duration) error {
 	return keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) verifyEmailToken(token string) (int64, error) {
+func (db *memoryDB) verifyEmailToken(_ context.Context, token string) (int64, error) {
 	db.Lock()
 	defer db.Unlock()
 
@@ -60,7 +61,7 @@ func (db *memoryDB) verifyEmailToken(token string) (int64, error) {
 	if !ok {
 		// We return this particular error in this case for consistency with the postgres DB.
 		// The calling function replaces this with a more informative error for the frontend.
-		return 0, keyshare.ErrUserNotFound
+		return 0, errTokenNotFound
 	}
 
 	delete(db.verifyEmailTokens, token)
@@ -68,7 +69,7 @@ func (db *memoryDB) verifyEmailToken(token string) (int64, error) {
 	return userID, nil
 }
 
-func (db *memoryDB) addLoginToken(email, token string) error {
+func (db *memoryDB) addLoginToken(_ context.Context, email, token string) error {
 	db.Lock()
 	defer db.Unlock()
 
@@ -93,7 +94,7 @@ func (db *memoryDB) addLoginToken(email, token string) error {
 	return nil
 }
 
-func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) {
+func (db *memoryDB) loginUserCandidates(_ context.Context, token string) ([]loginCandidate, error) {
 	db.Lock()
 	defer db.Unlock()
 
@@ -101,7 +102,7 @@ func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) 
 	if !ok {
 		// We return this particular error in this case for consistency with the postgres DB.
 		// The calling function replaces this with a more informative error for the frontend.
-		return nil, keyshare.ErrUserNotFound
+		return nil, errTokenNotFound
 	}
 
 	var result []loginCandidate
@@ -116,13 +117,13 @@ func (db *memoryDB) loginUserCandidates(token string) ([]loginCandidate, error) 
 	return result, nil
 }
 
-func (db *memoryDB) verifyLoginToken(token, username string) (int64, error) {
+func (db *memoryDB) verifyLoginToken(_ context.Context, token, username string) (int64, error) {
 	db.Lock()
 	defer db.Unlock()
 
 	email, ok := db.loginEmailTokens[token]
 	if !ok {
-		return 0, keyshare.ErrUserNotFound
+		return 0, errTokenNotFound
 	}
 
 	user, ok := db.userData[username]
@@ -139,7 +140,7 @@ func (db *memoryDB) verifyLoginToken(token, username string) (int64, error) {
 	return 0, keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) user(id int64) (user, error) {
+func (db *memoryDB) user(_ context.Context, id int64) (user, error) {
 	db.Lock()
 	defer db.Unlock()
 	for username, u := range db.userData {
@@ -169,7 +170,7 @@ func min(a, b int) int {
 	}
 }
 
-func (db *memoryDB) logs(id int64, offset, amount int) ([]logEntry, error) {
+func (db *memoryDB) logs(_ context.Context, id int64, offset, amount int) ([]logEntry, error) {
 	db.Lock()
 	defer db.Unlock()
 	for _, user := range db.userData {
@@ -180,7 +181,7 @@ func (db *memoryDB) logs(id int64, offset, amount int) ([]logEntry, error) {
 	return nil, keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) addEmail(id int64, email string) error {
+func (db *memoryDB) addEmail(_ context.Context, id int64, email string) error {
 	db.Lock()
 	defer db.Unlock()
 	for username, user := range db.userData {
@@ -193,7 +194,7 @@ func (db *memoryDB) addEmail(id int64, email string) error {
 	return keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) scheduleEmailRemoval(id int64, email string, _ time.Duration) error {
+func (db *memoryDB) scheduleEmailRemoval(_ context.Context, id int64, email string, _ time.Duration) error {
 	db.Lock()
 	defer db.Unlock()
 	for username, user := range db.userData {
@@ -213,7 +214,7 @@ func (db *memoryDB) scheduleEmailRemoval(id int64, email string, _ time.Duration
 	return keyshare.ErrUserNotFound
 }
 
-func (db *memoryDB) setSeen(id int64) error {
+func (db *memoryDB) setSeen(_ context.Context, id int64) error {
 	db.Lock()
 	defer db.Unlock()
 	for username, user := range db.userData {

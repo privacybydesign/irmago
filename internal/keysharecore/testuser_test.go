@@ -3,7 +3,6 @@ package keysharecore
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,8 +54,8 @@ func TestEncryptTestUser(t *testing.T) {
 
 	// Normally we don't want to print stuff in our tests, so this is commented out.
 	// Uncomment when necessary.
-	//fmt.Println("Without public key:", without)
-	//fmt.Println("With public key:", with)
+	// fmt.Println("Without public key:", without)
+	// fmt.Println("With public key:", with)
 
 	// Dummy references to prevent the compiler from thinking the variables are unused
 	_ = without
@@ -71,7 +70,7 @@ func decodeBase64(t *testing.T, s string) []byte {
 }
 
 func readAESKey(filename string) (uint32, AESKey, error) {
-	keyData, err := ioutil.ReadFile(filename)
+	keyData, err := os.ReadFile(filename)
 	if err != nil {
 		return 0, AESKey{}, err
 	}

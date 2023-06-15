@@ -1,28 +1,26 @@
 package keyshare
 
 import (
+	"context"
 	"database/sql"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
 )
-
-var ErrUserNotFound = errors.New("Could not find specified user")
 
 type DB struct {
 	*sql.DB
 }
 
-func (db *DB) ExecCount(query string, args ...interface{}) (int64, error) {
-	res, err := db.Exec(query, args...)
+func (db *DB) ExecCountContext(ctx context.Context, query string, args ...interface{}) (int64, error) {
+	res, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
 	return res.RowsAffected()
 }
 
-func (db *DB) ExecUser(query string, args ...interface{}) error {
-	c, err := db.ExecCount(query, args...)
+func (db *DB) ExecUserContext(ctx context.Context, query string, args ...interface{}) error {
+	c, err := db.ExecCountContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -32,8 +30,8 @@ func (db *DB) ExecUser(query string, args ...interface{}) error {
 	return nil
 }
 
-func (db *DB) QueryScan(query string, results []interface{}, args ...interface{}) error {
-	res, err := db.Query(query, args...)
+func (db *DB) QueryScanContext(ctx context.Context, query string, results []interface{}, args ...interface{}) error {
+	res, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -54,16 +52,16 @@ func (db *DB) QueryScan(query string, results []interface{}, args ...interface{}
 	return nil
 }
 
-func (db *DB) QueryUser(query string, results []interface{}, args ...interface{}) error {
-	err := db.QueryScan(query, results, args...)
+func (db *DB) QueryUserContext(ctx context.Context, query string, results []interface{}, args ...interface{}) error {
+	err := db.QueryScanContext(ctx, query, results, args...)
 	if err == sql.ErrNoRows {
 		return ErrUserNotFound
 	}
 	return err
 }
 
-func (db *DB) QueryIterate(query string, f func(rows *sql.Rows) error, args ...interface{}) error {
-	res, err := db.Query(query, args...)
+func (db *DB) QueryIterateContext(ctx context.Context, query string, f func(rows *sql.Rows) error, args ...interface{}) error {
+	res, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}

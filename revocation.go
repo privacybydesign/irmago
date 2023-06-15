@@ -833,12 +833,13 @@ func (rs *RevocationStorage) SetRevocationUpdates(b *BaseRequest) error {
 		if err = rs.SyncIfOld(credid, tolerance/2); err != nil {
 			updated := settings.updated
 			if !updated.IsZero() {
-				Logger.Warnf("failed to fetch revocation updates for %s, nonrevocation is guaranteed only until %s ago:",
-					credid, time.Now().Sub(updated).String())
-				Logger.Warn(err)
+				Logger.WithError(err).Warnf(
+					"failed to fetch revocation updates for %s, nonrevocation is guaranteed only until %s ago",
+					credid,
+					time.Now().Sub(updated).String(),
+				)
 			} else {
-				Logger.Errorf("revocation is disabled for %s: failed to fetch revocation updates and none are known locally", credid)
-				Logger.Warn(err)
+				Logger.WithError(err).Errorf("revocation is disabled for %s: failed to fetch revocation updates and none are known locally", credid)
 				// We can offer no nonrevocation guarantees at all while the requestor explicitly
 				// asked for it; fail the session by returning an error
 				return err

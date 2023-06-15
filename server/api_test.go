@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/privacybydesign/irmago/internal/common"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"testing"
 	"time"
@@ -113,7 +113,8 @@ func TestServerTimeouts(t *testing.T) {
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
 				start := time.Now()
-				_, err := ioutil.ReadAll(r.Body)
+				_, err := io.ReadAll(r.Body)
+				defer common.Close(r.Body)
 				// check that reading has halted with an error just after the deadline
 				require.Error(t, err)
 				require.Greater(t, int64(timeout+50*time.Millisecond), int64(time.Now().Sub(start)))
@@ -140,9 +141,11 @@ func TestServerTimeouts(t *testing.T) {
 			start := time.Now()
 			res, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
+			require.NoError(t, res.Body.Close())
 
-			// check that request was aborted after the timeout and before the handler finished
-			require.Greater(t, int64(timeout+50*time.Millisecond), int64(time.Now().Sub(start)))
+			// Check whether an error is returned when the context deadline exceeds and the handler
+			// does not act upon this within 200 ms. We add 50 ms slack to prevent race conditions.
+			require.Greater(t, int64(timeout+250*time.Millisecond), int64(time.Now().Sub(start)))
 			require.GreaterOrEqual(t, res.StatusCode, 400)
 			require.True(t, called)
 		})

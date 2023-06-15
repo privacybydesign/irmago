@@ -1,28 +1,29 @@
 package myirmaserver
 
 import (
+	"context"
 	"time"
 )
 
 type db interface {
-	user(id int64) (user, error)
+	user(ctx context.Context, id int64) (user, error)
 
-	userIDByUsername(username string) (int64, error)
+	userIDByUsername(ctx context.Context, username string) (int64, error)
 
-	verifyEmailToken(token string) (int64, error)
-	verifyLoginToken(token, username string) (int64, error)
+	verifyEmailToken(ctx context.Context, token string) (int64, error)
+	verifyLoginToken(ctx context.Context, token, username string) (int64, error)
 
-	scheduleUserRemoval(id int64, delay time.Duration) error
+	scheduleUserRemoval(ctx context.Context, id int64, delay time.Duration) error
 
-	addLoginToken(email, token string) error
-	loginUserCandidates(token string) ([]loginCandidate, error)
+	addLoginToken(ctx context.Context, email, token string) error
+	loginUserCandidates(ctx context.Context, token string) ([]loginCandidate, error)
 
-	logs(id int64, offset int, amount int) ([]logEntry, error)
+	logs(ctx context.Context, id int64, offset int, amount int) ([]logEntry, error)
 
-	addEmail(id int64, email string) error
-	scheduleEmailRemoval(id int64, email string, delay time.Duration) error
+	addEmail(ctx context.Context, id int64, email string) error
+	scheduleEmailRemoval(ctx context.Context, id int64, email string, delay time.Duration) error
 
-	setSeen(id int64) error
+	setSeen(ctx context.Context, id int64) error
 }
 
 type userEmail struct {

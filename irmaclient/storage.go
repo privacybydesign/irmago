@@ -334,16 +334,24 @@ func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
 }
 
 func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
+	credType := attrs.CredentialType()
+	if credType == nil {
+		return nil, nil, errors.New("credential not known in configuration")
+	}
+	if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
+		return nil, nil, errors.Errorf("scheme %s is disabled", credType.SchemeManagerIdentifier())
+	}
+
 	sig := new(clSignatureWitness)
 	found, err := s.load(signaturesBucket, attrs.Hash(), sig)
 	if err != nil {
 		return nil, nil, err
 	} else if !found {
-		return nil, nil, errors.Errorf("Signature of credential with hash %s cannot be found", attrs.Hash())
+		return nil, nil, errors.Errorf("signature of credential with hash %s cannot be found", attrs.Hash())
 	}
 	if sig.Witness != nil {
 		pk, err := s.Configuration.Revocation.Keys.PublicKey(
-			attrs.CredentialType().IssuerIdentifier(),
+			credType.IssuerIdentifier(),
 			sig.Witness.SignedAccumulator.PKCounter,
 		)
 		if err != nil {
@@ -385,6 +393,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			return nil
 		}
 		return b.ForEach(func(key, value []byte) error {
+			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
 			var attrlistlist []*irma.AttributeList
 
 			plaintext, err := s.decrypt(value)
@@ -402,7 +411,15 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 				attrlist.MetadataAttribute = irma.MetadataFromInt(attrlist.Ints[0], s.Configuration)
 			}
 
-			list[attrlistlist[0].Info().Identifier()] = attrlistlist
+			credType := attrlistlist[0].CredentialType()
+			if credType == nil {
+				return errors.Errorf("credential %s not known in configuration", credTypeID)
+			}
+			if _, ok := s.Configuration.DisabledSchemeManagers[credType.SchemeManagerIdentifier()]; ok {
+				return errors.Errorf("scheme %s is disabled", credType.SchemeManagerIdentifier())
+			}
+
+			list[credType.Identifier()] = attrlistlist
 			return nil
 		})
 	})
@@ -411,6 +428,17 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 func (s *storage) LoadKeyshareServers() (ksses map[irma.SchemeManagerIdentifier]*keyshareServer, err error) {
 	ksses = make(map[irma.SchemeManagerIdentifier]*keyshareServer)
 	_, err = s.load(userdataBucket, kssKey, &ksses)
+	if err != nil {
+		return
+	}
+	for schemeID := range ksses {
+		if schemeManager, ok := s.Configuration.SchemeManagers[schemeID]; !ok || !schemeManager.Distributed() {
+			return nil, errors.Errorf("scheme %s not known in configuration", schemeManager.Identifier())
+		}
+		if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+			return nil, errors.Errorf("scheme %s is disabled", schemeID)
+		}
+	}
 	return
 }
 
@@ -443,17 +471,12 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 		c := bucket.Cursor()
 
 		for k, v := startAt(c); k != nil && len(logs) < max; k, v = c.Prev() {
-			plaintext, err := s.decrypt(v)
+			log, err := s.decryptLog(v)
 			if err != nil {
 				return err
 			}
 
-			var log LogEntry
-			if err = json.Unmarshal(plaintext, &log); err != nil {
-				return err
-			}
-
-			logs = append(logs, &log)
+			logs = append(logs, log)
 		}
 		return nil
 	})
@@ -475,21 +498,54 @@ func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) err
 	c := bucket.Cursor()
 
 	for k, v := c.Last(); k != nil; k, v = c.Prev() {
-		plaintext, err := s.decrypt(v)
+		log, err := s.decryptLog(v)
 		if err != nil {
 			return err
 		}
-
-		var log LogEntry
-		if err = json.Unmarshal(plaintext, &log); err != nil {
-			return err
-		}
-
-		if err = handler(&log); err != nil {
+		if err = handler(log); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *storage) decryptLog(encryptedLog []byte) (*LogEntry, error) {
+	plaintext, err := s.decrypt(encryptedLog)
+	if err != nil {
+		return nil, err
+	}
+
+	var log LogEntry
+	if err = json.Unmarshal(plaintext, &log); err != nil {
+		return nil, err
+	}
+
+	// Validate whether log entry is consistent with configuration.
+	sr, err := log.SessionRequest()
+	if err != nil {
+		return nil, err
+	}
+	if sr != nil {
+		for schemeID := range sr.Identifiers().SchemeManagers {
+			if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+				return nil, errors.Errorf("scheme %s is disabled", schemeID)
+			}
+			if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
+				return nil, errors.Errorf("scheme %s not known in configuration", schemeID)
+			}
+		}
+	}
+	for credID := range log.Removed {
+		schemeID := credID.SchemeManagerIdentifier()
+		if _, ok := s.Configuration.DisabledSchemeManagers[schemeID]; ok {
+			return nil, errors.Errorf("scheme %s is disabled", schemeID)
+		}
+		if _, ok := s.Configuration.SchemeManagers[schemeID]; !ok {
+			return nil, errors.Errorf("scheme %s not known in configuration", schemeID)
+		}
+	}
+
+	return &log, nil
 }
 
 func (s *storage) LoadUpdates() (updates []update, err error) {
