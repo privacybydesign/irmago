@@ -226,6 +226,15 @@ func TestPostgresDBUserInfo(t *testing.T) {
 
 	err = db.scheduleEmailRemoval(context.Background(), 20, "bl@bla.com", 0)
 	assert.Error(t, err)
+
+	revaliation := db.hasEmailRevalidation(context.Background())
+	assert.True(t, revaliation)
+
+	err = db.scheduleEmailRevalidation(context.Background(), 15, "test@example.com", 1)
+	assert.NoError(t, err)
+
+	err = db.setPinBlockDate(context.Background(), 15, 1)
+	assert.NoError(t, err)
 }
 
 func SetupDatabase(t *testing.T) {

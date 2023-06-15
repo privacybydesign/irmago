@@ -162,16 +162,41 @@ func (s *Server) sendDeleteEmails(ctx context.Context, session *session) error {
 		return err
 	}
 
+	revalidation := s.db.hasEmailRevalidation(ctx)
+
 	for _, email := range user.Emails {
-		// The error gets already logged in the SendEmail method. We can still proceed with deleting
-		// the user account, even if one or more notification mails could not be sent.
-		_ = s.conf.SendEmail(
+		// When sending fails and revalidation is disabled, we can still proceed with deleting the user account,
+		// even if one or more notification mails could not be sent. When revalidation is enabled, we mark the
+		// email address for revaliation and block access to the account for 5 days instead of deleting it.
+		if err := s.conf.SendEmail(
 			s.conf.deleteAccountTemplates,
 			s.conf.DeleteAccountSubjects,
 			map[string]string{"Username": user.Username, "Email": email.Email, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
 			email.Email,
 			user.language,
-		)
+		); err != nil {
+			if err == keyshare.ErrNoNetwork {
+				return err
+			}
+
+			if !revalidation {
+				// Keep behavior the same as before revalidation was introduced
+				return nil
+			}
+
+			delay := 5 * 24 * time.Hour
+			if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email.Email, delay); err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not schedule email revalidation")
+				return err
+			}
+			if err := s.db.setPinBlockDate(ctx, *session.userID, delay); err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not update pin block date")
+				return err
+			}
+
+			s.conf.Logger.WithError(err).Warn("Could not send delete email")
+			return err
+		}
 	}
 
 	return nil
@@ -519,15 +544,23 @@ func (s *Server) processRemoveEmail(ctx context.Context, session *session, email
 	}
 
 	if s.conf.EmailServer != "" {
-		err = s.conf.SendEmail(
+		if err = s.conf.SendEmail(
 			s.conf.deleteEmailTemplates,
 			s.conf.DeleteEmailSubjects,
 			map[string]string{"Username": user.Username, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
 			email,
 			user.language,
-		)
-		if err != nil {
-			// already logged
+		); err != nil {
+			if err == keyshare.ErrNoNetwork {
+				return err
+			}
+
+			if s.db.hasEmailRevalidation(ctx) {
+				if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email, 24*time.Hour*time.Duration(s.conf.DeleteDelay)); err != nil {
+					s.conf.Logger.WithField("error", err).Error("Could not schedule email address for revalidation")
+					return err
+				}
+			}
 			return err
 		}
 	}
