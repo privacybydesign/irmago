@@ -38,7 +38,7 @@ func newHandler(conf *Configuration) (*taskHandler, error) {
 	task := &taskHandler{
 		db:             keyshareDB,
 		conf:           conf,
-		revalidateMail: hasMailRevalidation(conf, &keyshareDB),
+		revalidateMail: hasEmailRevalidation(conf, &keyshareDB),
 	}
 
 	return task, nil
@@ -76,7 +76,7 @@ func runWithTimeout(fn func(ctx context.Context)) error {
 	return ctx.Err()
 }
 
-func hasMailRevalidation(conf *Configuration, db *keyshare.DB) bool {
+func hasEmailRevalidation(conf *Configuration, db *keyshare.DB) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), taskTimeout)
 	defer cancel()
 
