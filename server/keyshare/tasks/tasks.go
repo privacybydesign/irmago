@@ -12,7 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
-const taskTimeout = 300 * time.Second
+const taskTimeout = 30 * time.Second
 
 type taskHandler struct {
 	conf           *Configuration
