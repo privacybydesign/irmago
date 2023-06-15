@@ -87,11 +87,11 @@ func (conf EmailConfiguration) SendEmail(
 	fromAddr, err := ParseEmailAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
+		server.Logger.WithField("error", err).Error("From address in configuration is invalid")
 		return err
 	}
 
 	if err := VerifyMXRecord(toAddr.Host); err != nil {
-		server.Logger.WithField("error", err).Error("no valid MX record found for email address")
 		return err
 	}
 
@@ -159,6 +159,7 @@ func VerifyMXRecord(host string) error {
 		if err != nil {
 			if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
 				// When DNS is not resolving or there is no active network connection
+				server.Logger.WithField("error", err).Error("No active network connection")
 				return ErrNoNetwork
 			}
 		}
