@@ -729,8 +729,8 @@ var (
 
 func TestRevocationMemoryStore(t *testing.T) {
 	conf := parseConfiguration(t)
-	db := conf.Revocation.memdb
-	require.NotNil(t, db)
+	storage := conf.Revocation
+	require.NotNil(t, storage)
 
 	// prepare key material
 	sk, err := conf.Revocation.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
@@ -739,38 +739,40 @@ func TestRevocationMemoryStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// construct initial update
-	update, err := revocation.NewAccumulator(sk)
+	err = storage.EnableRevocation(revocationTestCred, sk)
 	require.NoError(t, err)
-
-	// insert and retrieve it and check its validity
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 0, 0)
+	retrieve(t, pk, storage, 0, 0)
+	updates, err := storage.UpdateLatest(revocationTestCred, 1, &pk.Counter)
+	require.NoError(t, err)
+	require.Len(t, updates, 1)
+	update := updates[pk.Counter]
+	require.NotNil(t, update)
 
 	// construct new update message with a few revocation events
 	update = revokeMultiple(t, sk, update)
 	oldupdate := *update // save a copy for below
 
 	// insert it, retrieve it with a varying amount of events, verify
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 4, 3)
+	storage.AddUpdate(revocationTestCred, update)
+	retrieve(t, pk, storage, 4, 3)
 
 	// construct and test against a new update whose events have no overlap with that of our db
 	update = revokeMultiple(t, sk, update)
 	update.Events = update.Events[4:]
 	require.Equal(t, uint64(4), update.Events[0].Index)
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 4, 6)
+	storage.AddUpdate(revocationTestCred, update)
+	retrieve(t, pk, storage, 4, 6)
 
 	// attempt to insert an update that is too new
 	update = revokeMultiple(t, sk, update)
 	update.Events = update.Events[5:]
 	require.Equal(t, uint64(9), update.Events[0].Index)
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 4, 6)
+	storage.AddUpdate(revocationTestCred, update)
+	retrieve(t, pk, storage, 4, 6)
 
 	// attempt to insert an update that is too old
-	db.Insert(revocationTestCred, &oldupdate)
-	retrieve(t, pk, db, 4, 6)
+	storage.AddUpdate(revocationTestCred, &oldupdate)
+	retrieve(t, pk, storage, 4, 6)
 }
 
 func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Update) *revocation.Update {
@@ -786,21 +788,22 @@ func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Up
 	return update
 }
 
-func retrieve(t *testing.T, pk *gabikeys.PublicKey, db *memRevStorage, count uint64, expectedIndex uint64) {
-	var updates map[uint]*revocation.Update
-	var err error
-	for i := uint64(0); i <= count; i++ {
-		updates = db.Latest(revocationTestCred, i)
-		require.Len(t, updates, 1)
-		require.NotNil(t, updates[revocationPkCounter])
-		require.Len(t, updates[revocationPkCounter].Events, int(i))
-		_, err = updates[revocationPkCounter].Verify(pk)
+func retrieve(t *testing.T, pk *gabikeys.PublicKey, storage *RevocationStorage, count uint64, expectedIndex uint64) {
+	for i := uint64(1); i <= count; i++ {
+		updates, err := storage.UpdateLatest(revocationTestCred, i, &pk.Counter) // TODO: test limit 0 is unlimited
 		require.NoError(t, err)
+		require.Len(t, updates, 1)
+		update := updates[revocationPkCounter]
+		require.NotNil(t, update)
+		require.Len(t, update.Events, int(i))
+		_, err = update.Verify(pk)
+		require.NoError(t, err)
+
+		// Check accumulator value
+		acc, err := update.SignedAccumulator.UnmarshalVerify(pk)
+		require.NoError(t, err)
+		require.Equal(t, expectedIndex, acc.Index)
 	}
-	sacc := db.SignedAccumulator(revocationTestCred, revocationPkCounter)
-	acc, err := sacc.UnmarshalVerify(pk)
-	require.NoError(t, err)
-	require.Equal(t, expectedIndex, acc.Index)
 }
 
 func revoke(t *testing.T, acc *revocation.Accumulator, parent *revocation.Event, sk *gabikeys.PrivateKey) (*revocation.Accumulator, *revocation.Event) {

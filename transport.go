@@ -26,7 +26,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 )
 
-const responseDeadline = 10 * time.Second
+const responseDeadline = 10 * time.Minute // TODO: undo
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
@@ -93,8 +93,8 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 		ExpectContinueTimeout: 1 * time.Second,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			dialer := &net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
+				Timeout:   30 * time.Minute, // TODO: remove
+				KeepAlive: 30 * time.Minute,
 			}
 			conn, err := dialer.DialContext(ctx, network, addr)
 			if err != nil {
@@ -118,7 +118,7 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 			return err != nil || resp.StatusCode == 0, err
 		},
 		HTTPClient: &http.Client{
-			Timeout:   time.Second * 5,
+			Timeout:   time.Hour * 5,
 			Transport: innerTransport,
 		},
 	}

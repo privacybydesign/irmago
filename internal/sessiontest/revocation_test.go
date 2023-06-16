@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
-	"github.com/jinzhu/gorm"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
@@ -33,6 +34,8 @@ var (
 
 	revocationPkCounter uint = 2
 )
+
+// TODO: write a test for the case where the number of request that are cached in irma servers is changed when a sql db is used.
 
 func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler, server *irmaserver.Server) {
 	// issue first credential
@@ -377,14 +380,19 @@ func TestRevocationAll(t *testing.T) {
 		revServer, client, handler := revocationSetup(t, nil) // revocation server is stopped manually below
 		defer test.ClearTestStorage(t, client, handler.storage)
 
-		// Advance the accumulator by performing a few revocations
+		// Advance the accumulator by performing 3 revocations
 		conf := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
-		fakeMultipleRevocations(t, irma.RevocationParameters.DefaultUpdateEventCount+3, conf, sacc.Accumulator)
+		fakeMultipleRevocations(t, 3, conf, sacc.Accumulator)
 
-		// Client updates at revocation server
+		// Client updates at revocation server to index 3
 		require.NoError(t, client.NonrevUpdateFromServer(revocationTestCred))
+		sacc, err = conf.Accumulator(revocationTestCred, revocationPkCounter)
+		require.Equal(t, uint64(3), sacc.Accumulator.Index)
+
+		// Perform extra revocations such that those updates won't be present in the client
+		fakeMultipleRevocations(t, irma.RevocationParameters.DefaultUpdateEventCount, conf, sacc.Accumulator)
 
 		// Start an IRMA server and let it update at revocation server
 		irmaServer := StartIrmaServer(t, nil)
@@ -401,9 +409,61 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+3, acc.Index)
 
-		// Stop revocation server and do session
-		// IRMA server is at index 3, so if the client would not be it would need to update, which would fail
+		// Stop revocation server
 		revServer.Stop()
+
+		// The client has only been updated until revocation event with index 3, and because the revocation server has
+		// been stopped the client cannot update by itself anymore. The IRMA server should exactly provide enough revocation
+		// events from its cache to fulfill the client's update needs. Therefore, the session should succeed.
+		result := revocationSession(t, client, nil, irmaServer)
+		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+		require.NotEmpty(t, result.Disclosed)
+	})
+
+	t.Run("LaggingNonRevocationWitness", func(t *testing.T) {
+		revServer, client, handler := revocationSetup(t, nil)
+		defer revServer.Stop()
+		defer test.ClearTestStorage(t, client, handler.storage)
+
+		// Advance the accumulator by performing a few revocations
+		revServerStorage := revServer.conf.IrmaConfiguration.Revocation
+		sacc, err := revServerStorage.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
+		fakeMultipleRevocations(t, irma.RevocationParameters.DefaultUpdateEventCount+3, revServerStorage, sacc.Accumulator)
+
+		// Start an IRMA server and let it update at the revocation server
+		irmaServer := StartIrmaServer(t, nil)
+		defer irmaServer.Stop()
+		irmaServerStorage := irmaServer.conf.IrmaConfiguration.Revocation
+		require.NoError(t, irmaServerStorage.SyncDB(revocationTestCred))
+		sacc, err = irmaServerStorage.Accumulator(revocationTestCred, revocationPkCounter)
+		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+3, sacc.Accumulator.Index)
+
+		// Increase revocation update count to enlarge the IRMA server's revocation cache.
+		irmaServer.conf.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationUpdateCount = 2*irma.RevocationParameters.DefaultUpdateEventCount
+
+		// Advance the accumulator further.
+		fakeMultipleRevocations(t, 3, revServerStorage, sacc.Accumulator)
+
+		// Let the IRMA server update at the revocation server again.
+		require.NoError(t, irmaServerStorage.SyncDB(revocationTestCred))
+		sacc, err = irmaServerStorage.Accumulator(revocationTestCred, revocationPkCounter)
+		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+6, sacc.Accumulator.Index)
+
+		// We increased the revocation update count, but the IRMA server's revocation storage will not be updated retroactively.
+		// So, just as before, the initial revocation event and the first 3 update events should miss in the storage.
+		// The events that were cached previously and the 3 events that we added after the first SyncDB should be present now.
+		updates, err := irmaServerStorage.UpdateLatest(revocationTestCred, 2*irma.RevocationParameters.DefaultUpdateEventCount, &revocationPkCounter)
+		require.NoError(t, err)
+		require.Contains(t, updates, revocationPkCounter)
+		events := updates[revocationPkCounter].Events
+		require.Len(t, events, int(irma.RevocationParameters.DefaultUpdateEventCount)+3)
+		require.Equal(t, uint64(4), events[0].Index)
+		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+6, events[len(events)-1].Index)
+
+		// Do a revocation session.
+		// The client has not updated at all, so it should use the revocation events from the IRMA server's cache to update,
+		// and it should contact the revocation server to fetch the 4 events that the cache is missing.
 		result := revocationSession(t, client, nil, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
@@ -797,15 +857,17 @@ func startRevocationServer(t *testing.T, droptables bool) *IrmaServer {
 
 	// Connect to database and clear records from previous test runs
 	if droptables {
-		g, err := gorm.Open(revocationDbType, revocationDbStr)
+		g, err := gorm.Open(postgres.Open(revocationDbStr))
 		require.NoError(t, err)
-		require.NoError(t, g.DropTableIfExists((*irma.EventRecord)(nil)).Error)
-		require.NoError(t, g.DropTableIfExists((*irma.AccumulatorRecord)(nil)).Error)
-		require.NoError(t, g.DropTableIfExists((*irma.IssuanceRecord)(nil)).Error)
-		require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)).Error)
-		require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)).Error)
-		require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)).Error)
-		require.NoError(t, g.Close())
+		require.NoError(t, g.Migrator().DropTable((*irma.EventRecord)(nil)))
+		require.NoError(t, g.Migrator().DropTable((*irma.AccumulatorRecord)(nil)))
+		require.NoError(t, g.Migrator().DropTable((*irma.IssuanceRecord)(nil)))
+		require.NoError(t, g.AutoMigrate((*irma.EventRecord)(nil)))
+		require.NoError(t, g.AutoMigrate((*irma.AccumulatorRecord)(nil)))
+		require.NoError(t, g.AutoMigrate((*irma.IssuanceRecord)(nil)))
+		db, err := g.DB()
+		require.NoError(t, err)
+		require.NoError(t, db.Close())
 	}
 
 	// Start revocation server

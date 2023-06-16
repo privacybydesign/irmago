@@ -2,6 +2,8 @@ package keyshareserver
 
 import (
 	"context"
+	"database/sql/driver"
+
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 
 	"github.com/go-errors/errors"
@@ -52,10 +54,28 @@ type DB interface {
 	addEmailVerification(ctx context.Context, user *User, emailAddress, token string, validity int) error
 }
 
+// UserSecrets is a keysharecore.UserSecrets with DB (un)marshaling methods.
+type UserSecrets keysharecore.UserSecrets
+
 // User represents a user of this server.
 type User struct {
 	Username string
 	Language string
-	Secrets  keysharecore.UserSecrets
+	Secrets  UserSecrets
 	id       int64
+}
+
+// Scan implements sql/driver Scanner interface.
+func (us *UserSecrets) Scan(src interface{}) (err error) {
+	bts, ok := src.([]byte)
+	if !ok {
+		return errors.New("cannot convert source: not a byte slice")
+	}
+	*us = bts
+	return nil
+}
+
+// Value implements sql/driver Scanner interface.
+func (us UserSecrets) Value() (driver.Value, error) {
+	return []byte(us), nil
 }

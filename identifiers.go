@@ -8,7 +8,8 @@ import (
 
 	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 type metaObjectIdentifier string
@@ -414,8 +415,8 @@ func (oi *metaObjectIdentifier) Scan(src interface{}) error {
 	return errors.New("cannot convert source: not a string or []byte")
 }
 
-func (metaObjectIdentifier) GormDataType(dialect gorm.Dialect) string {
-	switch dialect.GetName() {
+func (metaObjectIdentifier) GormDBDataType(db *gorm.DB, _ *schema.Field) string  {
+	switch db.Dialector.Name() {
 	case "postgres":
 		return "text"
 	case "mysql":
