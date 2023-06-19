@@ -1252,13 +1252,30 @@ func (scheme *SchemeManager) parseCredentialsFolder(conf *Configuration, issuer 
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
+		revAttrs := false
 		for index, attr := range cred.AttributeTypes {
 			attr.Index = index
 			attr.SchemeManagerID = cred.SchemeManagerID
 			attr.IssuerID = cred.IssuerID
 			attr.CredentialTypeID = cred.ID
 			conf.AttributeTypes[attr.GetAttributeTypeIdentifier()] = attr
+
+			if attr.ID != "" && attr.RevocationAttribute {
+				return errors.New(fmt.Sprintf("Attribute %s.%s cannot contain revocation=\"true\". This needs to be a separate attribute: <Attribute revocation=\"true\" />", attr.IssuerID, attr.ID))
+			}
+
+			if attr.RevocationAttribute {
+				revAttrs = true
+			}
 		}
+
+		if len(cred.RevocationServers) == 0 && revAttrs {
+			return errors.New("Revocation attribute specified, but RevocationServer(s) is missing")
+		}
+		if len(cred.RevocationServers) > 0 && !revAttrs {
+			return errors.New("RevocationServer(s) specified, but revocation attribute: '<Attribute revocation=\"true\" />' is missing")
+		}
+
 		return nil
 	})
 	if !foundcred {

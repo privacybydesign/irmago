@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- Scheme verification/signing does not reject credentials with invalid revocation settings
+
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
 
