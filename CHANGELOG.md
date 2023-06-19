@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
-- E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- E-mail address revalidation. At automated mailings (`irma keyshare tasks`) informing users their account is about to expire (temporary) invalid e-mail addresses are withheld from processing for 5 days, preventing cluttering of the processing queue
+
+**Note:** E-mail address revalidation requires a change in the database schema. In order to enable this feature please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file.
 
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
 As part of e-mail address revalidation:
-- `VerifyMXRecord` incorporates check to see if there is an active network connection
-- MyIrma server: `/user returns` an additional field `revalidate_in_progress` for e-mail addresses
+- `VerifyMXRecord` incorporates a check to see if there is an active network connection
+- MyIrma server: `/user` returns an additional field `revalidate_in_progress` in the JSON response body, indicating whether the e-mail address is being revalidated or not 
 - MyIrma server: `/user/delete` and `/email/remove` return a 400 status code if one or more e-mail addresses of the user are invalid
-- MyIrma server: `/email/remove` returns a 400 status if one or more e-mail addresses of the user are invalid
+- MyIrma server: `/email/remove` returns a 400 status code if one or more e-mail addresses of the user are invalid
 
 ### Removed
 - Superfluous openssl package in Dockerfile
