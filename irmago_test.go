@@ -742,7 +742,7 @@ func TestRevocationMemoryStore(t *testing.T) {
 	err = storage.EnableRevocation(revocationTestCred, sk)
 	require.NoError(t, err)
 	retrieve(t, pk, storage, 0, 0)
-	updates, err := storage.UpdateLatest(revocationTestCred, 1, &pk.Counter)
+	updates, err := storage.LatestUpdates(revocationTestCred, 1, &pk.Counter)
 	require.NoError(t, err)
 	require.Len(t, updates, 1)
 	update := updates[pk.Counter]
@@ -790,7 +790,7 @@ func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Up
 
 func retrieve(t *testing.T, pk *gabikeys.PublicKey, storage *RevocationStorage, count uint64, expectedIndex uint64) {
 	for i := uint64(1); i <= count; i++ {
-		updates, err := storage.UpdateLatest(revocationTestCred, i, &pk.Counter) // TODO: test limit 0 is unlimited
+		updates, err := storage.LatestUpdates(revocationTestCred, i, &pk.Counter) // TODO: test limit 0 is unlimited
 		require.NoError(t, err)
 		require.Len(t, updates, 1)
 		update := updates[revocationPkCounter]

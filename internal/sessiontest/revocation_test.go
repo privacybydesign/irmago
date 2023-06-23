@@ -451,7 +451,7 @@ func TestRevocationAll(t *testing.T) {
 		// We increased the revocation update count, but the IRMA server's revocation storage will not be updated retroactively.
 		// So, just as before, the initial revocation event and the first 3 update events should miss in the storage.
 		// The events that were cached previously and the 3 events that we added after the first SyncDB should be present now.
-		updates, err := irmaServerStorage.UpdateLatest(revocationTestCred, 2*irma.RevocationParameters.DefaultUpdateEventCount, &revocationPkCounter)
+		updates, err := irmaServerStorage.LatestUpdates(revocationTestCred, 2*irma.RevocationParameters.DefaultUpdateEventCount, &revocationPkCounter)
 		require.NoError(t, err)
 		require.Contains(t, updates, revocationPkCounter)
 		events := updates[revocationPkCounter].Events
@@ -510,7 +510,7 @@ func TestRevocationAll(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, sacc2, sacc3)
 
-		update, err := rev.UpdateLatest(revocationTestCred, 10, &revocationPkCounter)
+		update, err := rev.LatestUpdates(revocationTestCred, 10, &revocationPkCounter)
 		require.NoError(t, err)
 		pk, err := rev.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
 		require.NoError(t, err)
@@ -576,7 +576,7 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, irma.ErrUnknownRevocationKey, err)
 
 		// fetch and verify update message
-		update, err := rev.UpdateLatest(revocationTestCred, 10, &revocationPkCounter)
+		update, err := rev.LatestUpdates(revocationTestCred, 10, &revocationPkCounter)
 		require.NoError(t, err)
 		require.Contains(t, update, revocationPkCounter)
 		pk, err := rev.Keys.PublicKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
@@ -829,7 +829,7 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 	require.NoError(t, err)
 	events := make([]*revocation.Event, count)
 
-	u, err := conf.UpdateLatest(revocationTestCred, 1, &revocationPkCounter)
+	u, err := conf.LatestUpdates(revocationTestCred, 1, &revocationPkCounter)
 	require.NoError(t, err)
 	require.NotEmpty(t, u[revocationPkCounter].Events)
 	event := u[revocationPkCounter].Events[len(u[revocationPkCounter].Events)-1]

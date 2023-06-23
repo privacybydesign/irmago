@@ -1,18 +1,23 @@
 package irma
 
 import (
+	"database/sql/driver"
 	"io"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/gabi/signed"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
 type (
@@ -37,6 +42,7 @@ type (
 		// The length of the Events slice can be limited using the limit parameter. A limit is applied at the beginning of the slice,
 		// i.e. if the latest accumulator signs event 5 and the limit is 3, then the Events slice will contain the events 3, 4 and 5.
 		// If limit is set to 0, then all revocation events are being returned.
+		// If pkCounter is set to nil, then an update is returned for every public key.
 		LatestAccumulatorUpdates(id CredentialTypeIdentifier, pkCounter *uint, limit int) (map[uint]*revocation.Update, error)
 		// AppendAccumulatorUpdate allows the caller to append an update to the revocation storage based on its current state.
 		// The handler function gives the current state of the accumulator and the latest revocation event being stored (the),
@@ -67,6 +73,41 @@ type (
 	}
 
 	sqlTraceLogger struct{}
+
+	// signedMessage is a signed.Message with DB (un)marshaling methods.
+	signedMessage signed.Message
+	// RevocationAttribute is a big.Int with DB (un)marshaling methods.
+	RevocationAttribute big.Int
+	// eventHash is a revocation.Hash with DB (un)marshaling methods.
+	eventHash revocation.Hash
+
+	// AccumulatorRecord corresponds to SQL table rows to store accumulators using GORM.
+	AccumulatorRecord struct {
+		CredType  CredentialTypeIdentifier `gorm:"primaryKey"`
+		Data      signedMessage
+		PKCounter *uint `gorm:"primaryKey;autoIncrement:false"`
+	}
+
+	// EventRecord corresponds to SQL table rows to store revocation events using GORM.
+	EventRecord struct {
+		Index      *uint64                  `gorm:"primaryKey;column:eventindex;autoIncrement:false"`
+		CredType   CredentialTypeIdentifier `gorm:"primaryKey"`
+		PKCounter  *uint                    `gorm:"primaryKey;autoIncrement:false"`
+		E          *RevocationAttribute
+		ParentHash eventHash
+	}
+
+	// IssuanceRecord contains information generated during issuance, needed for later revocation.
+	// It corresponds to SQL table rows to store issuance records using GORM.
+	IssuanceRecord struct {
+		Key        string                   `gorm:"primaryKey;column:revocationkey"`
+		CredType   CredentialTypeIdentifier `gorm:"primaryKey"`
+		Issued     int64                    `gorm:"primaryKey;autoIncrement:false"`
+		PKCounter  *uint
+		Attr       *RevocationAttribute
+		ValidUntil int64
+		RevokedAt  int64 `json:",omitempty"` // 0 if not currently revoked
+	}
 
 	// memRevStorage is a much simpler in-memory database, suitable only for storing update messages.
 	memRevStorage struct {
@@ -477,4 +518,138 @@ func (m *memRevStorage) UpdateIssuanceRecord(id CredentialTypeIdentifier, key st
 func (m *memRevStorage) DeleteExpiredIssuanceRecords() error {
 	// The memRevStorage does not support storing issuance records, so nothing has to be deleted.
 	return nil
+}
+
+// Conversion methods to/from database structs, SQL table rows, gob
+
+// Event converts a EventRecord to a revocation.Event.
+func (e *EventRecord) Event() *revocation.Event {
+	return &revocation.Event{
+		Index:      *e.Index,
+		E:          (*big.Int)(e.E),
+		ParentHash: revocation.Hash(e.ParentHash),
+	}
+}
+
+// Convert converts a revocation.Event to a EventRecord.
+func (e *EventRecord) Convert(id CredentialTypeIdentifier, pkcounter uint, event *revocation.Event) *EventRecord {
+	*e = EventRecord{
+		Index:      &event.Index,
+		E:          (*RevocationAttribute)(event.E),
+		ParentHash: eventHash(event.ParentHash),
+		CredType:   id,
+		PKCounter:  &pkcounter,
+	}
+	return e
+}
+
+// SignedAccumulator converts a AccumulatorRecord to a revocation.SignedAccumulator.
+// Note: the Accumulator field in SignedAccumulator is not initialized yet.
+// Use the UnmarshalVerify method for this.
+func (a *AccumulatorRecord) SignedAccumulator() *revocation.SignedAccumulator {
+	return &revocation.SignedAccumulator{
+		PKCounter: *a.PKCounter,
+		Data:      signed.Message(a.Data),
+	}
+}
+
+// Convert converts a revocation.SignedAccumulator to an AccumulatorRecord.
+func (a *AccumulatorRecord) Convert(id CredentialTypeIdentifier, sacc *revocation.SignedAccumulator) *AccumulatorRecord {
+	*a = AccumulatorRecord{
+		Data:      signedMessage(sacc.Data),
+		PKCounter: &sacc.PKCounter,
+		CredType:  id,
+	}
+	return a
+}
+
+// Scan implements sql/driver Scanner interface.
+func (hash *eventHash) Scan(src interface{}) error {
+	s, ok := src.([]byte)
+	if !ok {
+		return errors.New("cannot convert source: not a []byte")
+	}
+	*hash = make([]byte, len(s))
+	copy(*hash, s)
+	return nil
+}
+
+// Value implements sql/driver Scanner interface.
+func (hash eventHash) Value() (driver.Value, error) {
+	return []byte(hash), nil
+}
+
+// GormDBDataType implements the gorm.io/gorm/migrator GormDataTypeInterface interface.
+func (eventHash) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
+	switch db.Dialector.Name() {
+	case "postgres":
+		return "bytea"
+	case "mysql":
+		return "blob"
+	default:
+		return ""
+	}
+}
+
+// GormDBDataType implements the gorm.io/gorm/migrator GormDataTypeInterface interface.
+func (signedMessage) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
+	switch db.Dialector.Name() {
+	case "postgres":
+		return "bytea"
+	case "mysql":
+		return "blob"
+	default:
+		return ""
+	}
+}
+
+// Scan implements sql/driver Scanner interface.
+func (s *signedMessage) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("cannot convert source: not a byte slice")
+	}
+	return cbor.Unmarshal(b, &s)
+}
+
+// Value implements sql/driver Scanner interface.
+func (s signedMessage) Value() (driver.Value, error) {
+	return cbor.Marshal(s, cbor.EncOptions{})
+}
+
+// Scan implements sql.Scanner, for SQL unmarshaling (from a []byte).
+func (i *RevocationAttribute) Scan(src interface{}) error {
+	b, ok := src.([]byte)
+	if !ok {
+		return errors.New("cannot convert source: not a byte slice")
+	}
+	(*big.Int)(i).SetBytes(b)
+	return nil
+}
+
+// Value implements driver.Valuer, for SQL marshaling (to []byte).
+func (i *RevocationAttribute) Value() (driver.Value, error) {
+	return (*big.Int)(i).Bytes(), nil
+}
+
+// GormDBDataType implements the gorm.io/gorm/migrator GormDataTypeInterface interface.
+func (RevocationAttribute) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
+	switch db.Dialector.Name() {
+	case "postgres":
+		return "bytea"
+	case "mysql":
+		return "blob"
+	default:
+		return ""
+	}
+}
+
+// MarshalCBOR marshals the given revocation attribute to CBOR.
+func (i *RevocationAttribute) MarshalCBOR() ([]byte, error) {
+	return cbor.Marshal((*big.Int)(i), cbor.EncOptions{})
+}
+
+// UnmarshalCBOR unmarshals the given CBOR bytes and parses it as revocation attribute.
+func (i *RevocationAttribute) UnmarshalCBOR(data []byte) error {
+	return cbor.Unmarshal(data, (*big.Int)(i))
 }
