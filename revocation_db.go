@@ -238,7 +238,7 @@ func (s sqlRevStorage) AppendAccumulatorUpdate(
 		heads := make(map[uint]revocationUpdateHead, len(accs))
 		for _, acc := range accs {
 			var event *EventRecord
-			if err := tx.Last(&event, map[string]interface{}{"pk_counter": *acc.PKCounter}).Error; err != nil { // TODO: the tests allow me to remove cred_type here.
+			if err := tx.Last(&event, map[string]interface{}{"cred_type": id, "pk_counter": *acc.PKCounter}).Error; err != nil {
 				return err
 			}
 			heads[*acc.PKCounter] = revocationUpdateHead{acc.SignedAccumulator(), event.Event()}

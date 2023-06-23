@@ -438,7 +438,7 @@ func TestRevocationAll(t *testing.T) {
 		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+3, sacc.Accumulator.Index)
 
 		// Increase revocation update count to enlarge the IRMA server's revocation cache.
-		irmaServer.conf.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationUpdateCount = 2*irma.RevocationParameters.DefaultUpdateEventCount
+		irmaServer.conf.IrmaConfiguration.CredentialTypes[revocationTestCred].RevocationUpdateCount = 2 * irma.RevocationParameters.DefaultUpdateEventCount
 
 		// Advance the accumulator further.
 		fakeMultipleRevocations(t, 3, revServerStorage, sacc.Accumulator)
@@ -722,6 +722,18 @@ func TestKeyshareRevocation(t *testing.T) {
 		testRevocation(t, revKeyshareTestAttr, client, handler, revServer.irma)
 		testRevocation(t, revocationTestAttr, client, handler, revServer.irma)
 	})
+
+	t.Run("KeyshareMultipleCredentials", func(t *testing.T) {
+		revServer := startRevocationServer(t, true)
+		defer revServer.Stop()
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+		defer keyshareServer.Stop()
+		client, handler := parseStorage(t)
+		defer test.ClearTestStorage(t, client, handler.storage)
+
+		testRevocation(t, revKeyshareTestAttr, client, handler, revServer.irma)
+		testRevocation(t, revKeyshareSecondTestAttr, client, handler, revServer.irma)
+	})
 }
 
 // Helper functions
@@ -744,6 +756,8 @@ func revocationIssuanceRequest(t *testing.T, credid irma.CredentialTypeIdentifie
 			},
 		}})
 	case revKeyshareTestCred:
+		fallthrough
+	case revKeyshareSecondTestCred:
 		return irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 			RevocationKey:    "keysharekey",
 			CredentialTypeID: credid,
@@ -842,8 +856,9 @@ func revocationConf(_ *testing.T) *server.Configuration {
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
-			revocationTestCred:  {Authority: true},
-			revKeyshareTestCred: {Authority: true},
+			revocationTestCred:        {Authority: true},
+			revKeyshareTestCred:       {Authority: true},
+			revKeyshareSecondTestCred: {Authority: true},
 		},
 		RevocationDBConnStr: revocationDbStr,
 		RevocationDBType:    revocationDbType,
