@@ -35,8 +35,6 @@ var (
 	revocationPkCounter uint = 2
 )
 
-// TODO: write a test for the case where the number of request that are cached in irma servers is changed when a sql db is used.
-
 func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler, server *irmaserver.Server) {
 	// issue first credential
 	credid := attr.CredentialTypeIdentifier()

@@ -5,10 +5,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/bits"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +29,9 @@ type (
 	// and offers a revocation API for all other irmago code, including a Revoke() method that
 	// revokes an earlier issued credential.
 	RevocationStorage struct {
-		conf                  *Configuration
-		updateStorage         revocationUpdateStorage
-		issuanceRecordStorage revocationIssuanceRecordStorage // can be nil
-		settings              RevocationSettings
+		conf          *Configuration
+		recordStorage revocationRecordStorage
+		settings      RevocationSettings
 
 		Keys   RevocationKeys
 		client RevocationClient
@@ -206,7 +203,7 @@ func (rs *RevocationStorage) EnableRevocation(id CredentialTypeIdentifier, sk *g
 
 // Exists returns whether or not an accumulator exists in the database for the given credential type.
 func (rs *RevocationStorage) Exists(id CredentialTypeIdentifier, counter uint) (bool, error) {
-	return rs.updateStorage.Exists(id, counter)
+	return rs.recordStorage.Exists(id, counter)
 }
 
 // Revocation update message methods
@@ -216,7 +213,7 @@ func (rs *RevocationStorage) Events(id CredentialTypeIdentifier, pkcounter uint,
 		return nil, errors.New("illegal update interval")
 	}
 
-	events, err := rs.updateStorage.Events(id, pkcounter, from, to)
+	events, err := rs.recordStorage.Events(id, pkcounter, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +226,7 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, limit uin
 		return nil, errors.New("invalid limit")
 	}
 	limitInt := int(limit)
-	updates, err := rs.updateStorage.LatestAccumulatorUpdates(id, pkCounter, limitInt)
+	updates, err := rs.recordStorage.LatestAccumulatorUpdates(id, pkCounter, limitInt)
 	if err != nil {
 		return nil, err
 	}
@@ -247,29 +244,6 @@ func (rs *RevocationStorage) UpdateLatest(id CredentialTypeIdentifier, limit uin
 	return updates, nil
 }
 
-// TODO: move to the db file
-func newUpdates(recordsMap map[uint]*AccumulatorRecord, eventsMap map[uint][]*EventRecord) map[uint]*revocation.Update {
-	updates := make(map[uint]*revocation.Update, len(recordsMap))
-	for pkCounter, r := range recordsMap {
-		updates[pkCounter] = &revocation.Update{SignedAccumulator: r.SignedAccumulator()}
-	}
-	for pkCounter, events := range eventsMap {
-		update := updates[pkCounter]
-		if update == nil {
-			continue
-		}
-		for _, e := range events {
-			update.Events = append(update.Events, e.Event())
-		}
-	}
-	for _, update := range updates {
-		sort.Slice(update.Events, func(i, j int) bool {
-			return update.Events[i].Index < update.Events[j].Index
-		})
-	}
-	return updates
-}
-
 func (rs *RevocationStorage) AddUpdate(id CredentialTypeIdentifier, update *revocation.Update) error {
 	pkCounter := update.SignedAccumulator.PKCounter
 
@@ -282,7 +256,7 @@ func (rs *RevocationStorage) AddUpdate(id CredentialTypeIdentifier, update *revo
 		return err
 	}
 
-	return rs.updateStorage.AppendUpdate(id, func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error) {
+	return rs.recordStorage.AppendAccumulatorUpdate(id, func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error) {
 		// We should only add events to the storage that we do not have already.
 		// If no records are present at all, we can only add it if the update contains the full event chain.
 		newEvents := update.Events
@@ -332,17 +306,11 @@ func (rs *RevocationStorage) AddUpdate(id CredentialTypeIdentifier, update *revo
 // Issuance records
 
 func (rs *RevocationStorage) AddIssuanceRecord(r *IssuanceRecord) error {
-	if rs.issuanceRecordStorage == nil {
-		return errors.New("no issuance record storage set")
-	}
-	return rs.issuanceRecordStorage.AddIssuanceRecord(r)
+	return rs.recordStorage.AddIssuanceRecord(r)
 }
 
 func (rs *RevocationStorage) IssuanceRecords(id CredentialTypeIdentifier, key string, issued time.Time) ([]*IssuanceRecord, error) {
-	if rs.issuanceRecordStorage == nil {
-		return nil, errors.New("no issuance record storage set")
-	}
-	return rs.issuanceRecordStorage.IssuanceRecords(id, key, issued)
+	return rs.recordStorage.IssuanceRecords(id, key, issued)
 }
 
 // Revocation methods
@@ -355,11 +323,8 @@ func (rs *RevocationStorage) Revoke(id CredentialTypeIdentifier, key string, iss
 	if !rs.settings.Get(id).Authority {
 		return errors.Errorf("cannot revoke %s", id)
 	}
-	if rs.issuanceRecordStorage == nil {
-		return errors.New("no issuance record storage set")
-	}
-	return rs.issuanceRecordStorage.UpdateIssuanceRecord(id, key, issued, func(records []*IssuanceRecord) error {
-		return rs.updateStorage.AppendUpdate(id, func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error) {
+	return rs.recordStorage.UpdateIssuanceRecord(id, key, issued, func(records []*IssuanceRecord) error {
+		return rs.recordStorage.AppendAccumulatorUpdate(id, func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error) {
 			accsMap := make(map[uint]*revocation.Accumulator)
 			eventsMap := make(map[uint][]*revocation.Event)
 			// We initialize accsMap and accsMap with the current state from head such that we can build upon it as parent.
@@ -458,7 +423,7 @@ func (rs *RevocationStorage) Accumulator(id CredentialTypeIdentifier, pkCounter 
 func (rs *RevocationStorage) accumulator(id CredentialTypeIdentifier, pkCounter uint) (
 	*revocation.SignedAccumulator, error,
 ) {
-	updates, err := rs.updateStorage.LatestAccumulatorUpdates(id, &pkCounter, 1)
+	updates, err := rs.recordStorage.LatestAccumulatorUpdates(id, &pkCounter, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -491,7 +456,7 @@ func (rs *RevocationStorage) updateAccumulatorTimes() error {
 	for _, id := range types {
 		Logger.Tracef("updating accumulator times %s", id)
 		updates := make(map[uint]*revocation.Update)
-		if err := rs.updateStorage.AppendUpdate(id, func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error) {
+		if err := rs.recordStorage.AppendAccumulatorUpdate(id, func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error) {
 			for pkCounter, head := range heads {
 				pk, err := rs.Keys.PublicKey(id.IssuerIdentifier(), pkCounter)
 				if err != nil {
@@ -700,10 +665,7 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 	}
 
 	if _, err := rs.conf.Scheduler.Every(RevocationParameters.DeleteIssuanceRecordsInterval).Minutes().WaitForSchedule().Do(func() {
-		if rs.issuanceRecordStorage == nil {
-			return
-		}
-		if err := rs.issuanceRecordStorage.DeleteExpiredIssuanceRecords(); err != nil {
+		if err := rs.recordStorage.DeleteExpiredIssuanceRecords(); err != nil {
 			Logger.WithField("error", err).Error("failed to delete expired issuance records")
 		}
 	}); err != nil {
@@ -712,15 +674,14 @@ func (rs *RevocationStorage) Load(debug bool, dbtype, connstr string, settings R
 
 	if connstr == "" {
 		Logger.Trace("Using memory revocation database")
-		rs.updateStorage = newMemStorage()
+		rs.recordStorage = newMemStorage()
 	} else {
 		Logger.Trace("Connecting to revocation SQL database")
 		storage, err := newSQLStorage(debug, dbtype, connstr)
 		if err != nil {
 			return err
 		}
-		rs.updateStorage = storage
-		rs.issuanceRecordStorage = storage
+		rs.recordStorage = storage
 	}
 	if settings != nil {
 		rs.settings = settings
@@ -742,17 +703,8 @@ func (rs *RevocationStorage) Close() error {
 	if rs.close != nil {
 		close(rs.close)
 	}
-	if closer, ok := rs.updateStorage.(io.Closer); ok {
-		if err := closer.Close(); err != nil {
-			return err
-		}
-	}
-	if rs.issuanceRecordStorage != nil {
-		if closer, ok := rs.issuanceRecordStorage.(io.Closer); ok {
-			if err := closer.Close(); err != nil {
-				return err
-			}
-		}
+	if err := rs.recordStorage.Close(); err != nil {
+		return err
 	}
 	return nil
 }
