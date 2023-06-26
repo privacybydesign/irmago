@@ -327,7 +327,10 @@ func (s sqlRevStorage) UpdateIssuanceRecord(id CredentialTypeIdentifier, key str
 			return err
 		}
 
-		handler(records)
+		err = handler(records)
+		if err != nil {
+			return err
+		}
 
 		for _, r := range records {
 			if err := tx.Save(r).Error; err != nil {
