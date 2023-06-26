@@ -415,7 +415,7 @@ func (oi *metaObjectIdentifier) Scan(src interface{}) error {
 	return errors.New("cannot convert source: not a string or []byte")
 }
 
-func (metaObjectIdentifier) GormDBDataType(db *gorm.DB, _ *schema.Field) string  {
+func (metaObjectIdentifier) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 	switch db.Dialector.Name() {
 	case "postgres":
 		return "text"

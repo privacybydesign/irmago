@@ -564,7 +564,7 @@ func createDB(t *testing.T) DB {
 	db := NewMemoryDB()
 	err := db.AddUser(context.Background(), &User{
 		Username: "",
-		Secrets: UserSecrets{},
+		Secrets:  UserSecrets{},
 	})
 	require.NoError(t, err)
 	secrets, err := base64.StdEncoding.DecodeString("YWJjZBdd6z/4lW/JBgEjVxcAnhK16iimfeyi1AAtWPzkfbWYyXHAad8A+Xzc6mE8bMj6dMQ5CgT0xcppEWYN9RFtO5+Wv4Carfq3TEIX9IWEDuU+lQG0noeHzKZ6k1J22iNAiL7fEXNWNy2H7igzJbj6svbH2LTRKxEW2Cj9Qkqzip5UapHmGZf6G6E7VkMvmJsbrW5uoZAVq2vP+ocuKmzBPaBlqko9F0YKglwXyhfaQQQ0Y3x4secMwC12")
