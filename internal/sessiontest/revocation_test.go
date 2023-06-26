@@ -435,6 +435,7 @@ func TestRevocationAll(t *testing.T) {
 		irmaServerStorage := irmaServer.conf.IrmaConfiguration.Revocation
 		require.NoError(t, irmaServerStorage.SyncDB(revocationTestCred))
 		sacc, err = irmaServerStorage.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
 		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+3, sacc.Accumulator.Index)
 
 		// Increase revocation update count to enlarge the IRMA server's revocation cache.
@@ -446,6 +447,7 @@ func TestRevocationAll(t *testing.T) {
 		// Let the IRMA server update at the revocation server again.
 		require.NoError(t, irmaServerStorage.SyncDB(revocationTestCred))
 		sacc, err = irmaServerStorage.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
 		require.Equal(t, irma.RevocationParameters.DefaultUpdateEventCount+6, sacc.Accumulator.Index)
 
 		// We increased the revocation update count, but the IRMA server's revocation storage will not be updated retroactively.
