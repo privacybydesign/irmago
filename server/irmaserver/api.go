@@ -171,13 +171,13 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r := chi.NewRouter()
 	s.router = r
 
-	// r.Use(server.RecoverMiddleware)
+	r.Use(server.RecoverMiddleware)
 
 	opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: true}
 	r.Use(server.LogMiddleware("client", opts))
 
-	//r.Use(server.SizeLimitMiddleware)
-	//r.Use(server.TimeoutMiddleware([]string{"/statusevents", "/updateevents"}, server.WriteTimeout))
+	r.Use(server.SizeLimitMiddleware)
+	r.Use(server.TimeoutMiddleware([]string{"/statusevents", "/updateevents"}, server.WriteTimeout))
 
 	notfound := &irma.RemoteError{Status: 404, ErrorName: string(server.ErrorInvalidRequest.Type)}
 	notallowed := &irma.RemoteError{Status: 405, ErrorName: string(server.ErrorInvalidRequest.Type)}
