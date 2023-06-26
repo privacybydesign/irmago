@@ -690,10 +690,7 @@ func (rs *RevocationStorage) Close() error {
 	if rs.close != nil {
 		close(rs.close)
 	}
-	if err := rs.recordStorage.Close(); err != nil {
-		return err
-	}
-	return nil
+	return rs.recordStorage.Close()
 }
 
 // SetRevocationUpdates retrieves the latest revocation records from the database, and attaches
