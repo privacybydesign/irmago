@@ -1270,10 +1270,10 @@ func (scheme *SchemeManager) parseCredentialsFolder(conf *Configuration, issuer 
 		}
 
 		if len(cred.RevocationServers) == 0 && revAttrs {
-			return errors.New("Revocation attribute specified, but RevocationServer(s) is missing")
+			return errors.New("Revocation attribute specified, but RevocationServer is missing")
 		}
 		if len(cred.RevocationServers) > 0 && !revAttrs {
-			return errors.New("RevocationServer(s) specified, but revocation attribute: '<Attribute revocation=\"true\" />' is missing")
+			return errors.New("RevocationServer specified, but revocation attribute: '<Attribute revocation=\"true\" />' is missing")
 		}
 
 		return nil
