@@ -387,6 +387,7 @@ func TestRevocationAll(t *testing.T) {
 		// Client updates at revocation server to index 3
 		require.NoError(t, client.NonrevUpdateFromServer(revocationTestCred))
 		sacc, err = conf.Accumulator(revocationTestCred, revocationPkCounter)
+		require.NoError(t, err)
 		require.Equal(t, uint64(3), sacc.Accumulator.Index)
 
 		// Perform extra revocations such that those updates won't be present in the client
