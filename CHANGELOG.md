@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+- `irma scheme verify` not detecting missing files in index 
 - Scheme verification/signing does not reject credentials with invalid revocation settings
 
 ### Changed

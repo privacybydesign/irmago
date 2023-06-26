@@ -1204,7 +1204,7 @@ func (scheme *SchemeManager) verifyFiles(conf *Configuration) error {
 			return err
 		}
 		if !exists {
-			continue
+			return errors.Errorf("file %s in index is not found on disk", file)
 		}
 		// Don't care about the actual bytes
 		if _, _, err = conf.readSignedFile(scheme.index, scheme.path(), file); err != nil {
