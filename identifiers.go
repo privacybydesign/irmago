@@ -399,10 +399,12 @@ func (set *IrmaIdentifierSet) Empty() bool {
 		len(set.RequestorSchemes) == 0
 }
 
+// Value implements sql/driver Scanner interface.
 func (oi metaObjectIdentifier) Value() (driver.Value, error) {
 	return oi.String(), nil
 }
 
+// Scan implements sql/driver Scanner interface.
 func (oi *metaObjectIdentifier) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case string:
@@ -415,6 +417,7 @@ func (oi *metaObjectIdentifier) Scan(src interface{}) error {
 	return errors.New("cannot convert source: not a string or []byte")
 }
 
+// GormDBDataType implements the gorm.io/gorm/migrator GormDataTypeInterface interface.
 func (metaObjectIdentifier) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 	switch db.Dialector.Name() {
 	case "postgres":
