@@ -186,7 +186,7 @@ func (rs *RevocationStorage) Events(id CredentialTypeIdentifier, pkcounter uint,
 
 // LatestUpdates returns revocation update instances for the given credential type and (optionally) public key
 // containing the latest signed accumulator, and the latest revocation events.
-// If limit is set to 0, then all revocation events are being returned.
+// If limit is set to 0, then all revocation events are returned.
 // If pkCounter is set to nil, then an update is returned for every public key.
 func (rs *RevocationStorage) LatestUpdates(id CredentialTypeIdentifier, limit uint64, pkCounter *uint) (map[uint]*revocation.Update, error) {
 	if limit > math.MaxInt {
