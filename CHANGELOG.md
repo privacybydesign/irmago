@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- `irma scheme verify` not detecting missing files in index 
+- Scheme verification/signing does not reject credentials with invalid revocation settings
+
 ### Added
 - E-mail address revalidation. At automated mailings (`irma keyshare tasks`) informing users their account is about to expire (temporary) invalid e-mail addresses are withheld from processing for 5 days, preventing cluttering of the processing queue
 
