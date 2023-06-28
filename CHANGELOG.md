@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scheme verification/signing does not reject credentials with invalid revocation settings
 
 ### Added
-- E-mail address revalidation. At automated mailings (`irma keyshare tasks`) informing users their account is about to expire (temporary) invalid e-mail addresses are withheld from processing for 5 days, preventing cluttering of the processing queue
+- E-mail address revalidation. At automated mailings (`irma keyshare tasks`) informing users their account is about to expire, (temporary) invalid e-mail addresses are withheld from processing for 5 days, preventing cluttering of the processing queue
 
-**Note:** E-mail address revalidation requires a change in the database schema. In order to enable this feature please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file.
+**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail addres revalidation is disabled and there will not be any breaking change.
 
 ### Changed
 - Use separate application user in Dockerfile for entrypoint

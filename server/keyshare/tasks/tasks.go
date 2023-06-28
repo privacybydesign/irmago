@@ -80,7 +80,7 @@ func hasEmailRevalidation(conf *Configuration, db *keyshare.DB) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), taskTimeout)
 	defer cancel()
 
-	c, err := db.ExecCountContext(ctx, "SELECT true FROM information_schema.columns where table_schema='irma' AND table_name='emails' AND column_name='revalidate_on'")
+	c, err := db.ExecCountContext(ctx, "SELECT true FROM information_schema.columns WHERE table_schema='irma' AND table_name='emails' AND column_name='revalidate_on'")
 	if err != nil {
 		conf.Logger.WithField("error", err).Error("Could not query the schema for column emails.revalidate_on, therefore revalidation is disabled")
 		return false
@@ -156,7 +156,7 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 				}
 
 				// When email revalidation is enabled and sending was impossible because of
-				// (temporary) MX / A record issues at the domain or an invalid email address,
+				// (temporary) MX / A / AAAA record issues at the domain or an invalid email address,
 				// we mark the record to be revalidated in 5 days from now.
 				if err = t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
 					time.Now().AddDate(0, 0, 5).Unix(),
@@ -177,7 +177,7 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 }
 
 // expireAccounts marks old unused accounts for deletion and informs their owners.
-// When email revalidation is enabled, email addresses which where marked for revalidation are skipped
+// When email revalidation is enabled, email addresses which were marked for revalidation are skipped
 // because these will be processed separately inside revalidateEmails.
 func (t *taskHandler) expireAccounts(ctx context.Context) {
 	// Disable this task when email server is not given
@@ -247,7 +247,7 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 	}
 }
 
-// revalidateMails revalidates, when enabled, email addresses which where
+// revalidateMails revalidates, when enabled, email addresses which were
 // flagged in expireAccounts due to being (temporary) invalid.
 func (t *taskHandler) revalidateMails(ctx context.Context) {
 
