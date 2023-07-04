@@ -53,7 +53,7 @@ type (
 		// do not contain events that were stored already. It's the responsibility of the caller to validate this.
 		AppendAccumulatorUpdate(id CredentialTypeIdentifier, handler func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error)) error
 
-		// Storing ssuance records:
+		// Storing issuance records:
 
 		// AddIssuanceRecord adds the given issuance record to the revocation storage.
 		AddIssuanceRecord(*IssuanceRecord) error
