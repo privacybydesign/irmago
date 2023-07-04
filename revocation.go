@@ -148,7 +148,7 @@ func (rs *RevocationStorage) EnableRevocation(id CredentialTypeIdentifier, sk *g
 		return err
 	}
 	if enabled {
-		return errors.New("revocation already enabled")
+		return nil
 	}
 
 	update, err := revocation.NewAccumulator(sk)
