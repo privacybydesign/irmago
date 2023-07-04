@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
 - Rename revocationStorage's UpdateLastest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
+- Validate revocation witness before revocation update is applied
 
 ### Fixed
 - Race conditions in database logic of revocation storage
