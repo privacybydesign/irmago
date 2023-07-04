@@ -789,13 +789,19 @@ func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Up
 }
 
 func retrieve(t *testing.T, pk *gabikeys.PublicKey, storage *RevocationStorage, count uint64, expectedIndex uint64) {
-	for i := uint64(1); i <= count; i++ {
-		updates, err := storage.LatestUpdates(revocationTestCred, i, &pk.Counter) // TODO: test limit 0 is unlimited
+	for i := uint64(0); i <= count; i++ {
+		// If limit is 0, then all events should be returned.
+		expectedLength := i
+		if i == 0 {
+			expectedLength = count
+		}
+
+		updates, err := storage.LatestUpdates(revocationTestCred, i, &pk.Counter)
 		require.NoError(t, err)
 		require.Len(t, updates, 1)
 		update := updates[revocationPkCounter]
 		require.NotNil(t, update)
-		require.Len(t, update.Events, int(i))
+		require.Len(t, update.Events, int(expectedLength))
 		_, err = update.Verify(pk)
 		require.NoError(t, err)
 
