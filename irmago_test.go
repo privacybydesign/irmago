@@ -741,7 +741,7 @@ func TestRevocationMemoryStore(t *testing.T) {
 	// construct initial update
 	err = storage.EnableRevocation(revocationTestCred, sk)
 	require.NoError(t, err)
-	retrieve(t, pk, storage, 0, 0)
+	retrieve(t, pk, storage, 0)
 	updates, err := storage.LatestUpdates(revocationTestCred, 1, &pk.Counter)
 	require.NoError(t, err)
 	require.Len(t, updates, 1)
@@ -754,25 +754,25 @@ func TestRevocationMemoryStore(t *testing.T) {
 
 	// insert it, retrieve it with a varying amount of events, verify
 	storage.AddUpdate(revocationTestCred, update)
-	retrieve(t, pk, storage, 4, 3)
+	retrieve(t, pk, storage, 3)
 
 	// construct and test against a new update whose events have no overlap with that of our db
 	update = revokeMultiple(t, sk, update)
 	update.Events = update.Events[4:]
 	require.Equal(t, uint64(4), update.Events[0].Index)
 	storage.AddUpdate(revocationTestCred, update)
-	retrieve(t, pk, storage, 4, 6)
+	retrieve(t, pk, storage, 6)
 
 	// attempt to insert an update that is too new
 	update = revokeMultiple(t, sk, update)
 	update.Events = update.Events[5:]
 	require.Equal(t, uint64(9), update.Events[0].Index)
 	storage.AddUpdate(revocationTestCred, update)
-	retrieve(t, pk, storage, 4, 6)
+	retrieve(t, pk, storage, 6)
 
 	// attempt to insert an update that is too old
 	storage.AddUpdate(revocationTestCred, &oldupdate)
-	retrieve(t, pk, storage, 4, 6)
+	retrieve(t, pk, storage, 6)
 }
 
 func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Update) *revocation.Update {
@@ -788,7 +788,8 @@ func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Up
 	return update
 }
 
-func retrieve(t *testing.T, pk *gabikeys.PublicKey, storage *RevocationStorage, count uint64, expectedIndex uint64) {
+func retrieve(t *testing.T, pk *gabikeys.PublicKey, storage *RevocationStorage, expectedIndex uint64) {
+	count := expectedIndex + 1
 	for i := uint64(0); i <= count; i++ {
 		// If limit is 0, then all events should be returned.
 		expectedLength := i
