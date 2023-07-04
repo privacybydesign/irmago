@@ -387,7 +387,7 @@ func (rs *RevocationStorage) revokeCredential(
 
 // Accumulator methods
 
-// Accumulator returns the current state of the accumutor that belongs to the given credential type and public key.
+// Accumulator returns the current state of the accumulator that belongs to the given credential type and public key.
 func (rs *RevocationStorage) Accumulator(id CredentialTypeIdentifier, pkCounter uint) (
 	*revocation.SignedAccumulator, error,
 ) {
