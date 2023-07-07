@@ -653,7 +653,7 @@ func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language
 		s.conf.registrationEmailTemplates,
 		s.conf.RegistrationEmailSubjects,
 		map[string]string{"VerificationURL": verificationBaseURL + token},
-		email,
+		[]string{email},
 		language,
 	)
 }

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - E-mail address revalidation. At automated mailings (`irma keyshare tasks`) informing users their account is about to expire, (temporary) invalid e-mail addresses are withheld from processing for 5 days, preventing cluttering of the processing queue
 
-**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail addres revalidation is disabled and there will not be any breaking change.
+**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail address revalidation is disabled and there will not be a breaking change.
 
 ### Changed
 - Use separate application user in Dockerfile for entrypoint

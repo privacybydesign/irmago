@@ -126,38 +126,34 @@ func (t *taskHandler) cleanupAccounts(ctx context.Context) {
 }
 
 // sendExpiryEmails sends an email to the user informing them their account is expiring in DeleteDelay.
-// If sending is not possible due to a (temporary) invalid e-mail address or network error it is marked
-// for revalidation.
+// If sending is not possible due to a (temporary) invalid e-mail address or mailserver error
+// it is marked for revalidation.
 func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, lang string) error {
+	addrs := []string{}
+
 	// Fetch user's email addresses
 	err := t.db.QueryIterateContext(ctx, "SELECT id, email FROM irma.emails WHERE user_id = $1",
 		func(res *sql.Rows) error {
 			var id int64
 			var email string
-			err := res.Scan(&id, &email)
-			if err != nil {
+			if err := res.Scan(&id, &email); err != nil {
 				return err
 			}
 
-			// And send
-			err = t.conf.SendEmail(
-				t.conf.deleteExpiredAccountTemplate,
-				t.conf.DeleteExpiredAccountSubjects,
-				map[string]string{"Username": username, "Email": email, "Delay": strconv.Itoa(t.conf.DeleteDelay)},
-				email,
-				lang,
-			)
+			err := keyshare.VerifyMXRecord(email)
 
-			if err != nil {
+			if err == nil {
+				// If valid, add to the list of valid addresses
+				addrs = append(addrs, email)
+				return nil
+			}
 
-				if !t.revalidateMail || err == keyshare.ErrNoNetwork {
-					t.conf.Logger.WithField("error", err).Error("Could not send expiry mail")
-					return err
-				}
+			if err == keyshare.ErrNoNetwork {
+				// Already logged
+				return err
+			}
 
-				// When email revalidation is enabled and sending was impossible because of
-				// (temporary) MX / A / AAAA record issues at the domain or an invalid email address,
-				// we mark the record to be revalidated in 5 days from now.
+			if t.revalidateMail {
 				if err = t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
 					time.Now().AddDate(0, 0, 5).Unix(),
 					id); err != nil {
@@ -169,10 +165,34 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 		},
 		id,
 	)
+
 	if err != nil {
 		t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
 		return err
 	}
+
+	if len(addrs) == 0 {
+		if !t.revalidateMail {
+			// When revalidation is disabled, we can't do anything with this user. It will cause a decrease
+			// in the amount of expiring users that are processed in the next run as long as this user is in
+			// the database with only invalid email addresses.
+			return keyshare.ErrInvalidEmail
+		}
+		return nil
+	}
+
+	// Send mail to all valid addresses at once
+	if err := t.conf.SendEmail(
+		t.conf.deleteExpiredAccountTemplate,
+		t.conf.DeleteExpiredAccountSubjects,
+		map[string]string{"Username": username, "Email": strings.Join(addrs, ", "), "Delay": strconv.Itoa(t.conf.DeleteDelay)},
+		addrs,
+		lang,
+	); err != nil {
+		t.conf.Logger.WithField("error", err).Error("Could not send expiry mail")
+		return err
+	}
+
 	return nil
 }
 
@@ -223,8 +243,9 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 			if err := t.sendExpiryEmails(ctx, id, username, lang); err != nil {
 
 				// To have the exact same behavior as before email revalidation functionality,
-				// we return nil when the error is ErrInvalidEmail
+				// we return nil when the error is ErrInvalidEmail. Additionally we log the error
 				if !t.revalidateMail && err == keyshare.ErrInvalidEmail {
+					t.conf.Logger.WithField("error", err).Errorf("User decreases processing amount in expireAccounts, id: %d", id)
 					return nil
 				}
 				return err // already logged, just abort
@@ -275,7 +296,7 @@ func (t *taskHandler) revalidateMails(ctx context.Context) {
 				return err
 			}
 
-			if err := keyshare.VerifyMXRecord(addr.Host); err != nil {
+			if err := keyshare.VerifyMXRecord(addr.Address); err != nil {
 				if err == keyshare.ErrNoNetwork {
 					t.conf.Logger.WithField("error", err).Error("Could not revalidate email address because there is no active network connection")
 				} else {
