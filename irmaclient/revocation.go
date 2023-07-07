@@ -185,13 +185,8 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		if cred.NonRevocationWitness == nil || cred.Pk.Counter != counter {
 			continue
 		}
+
 		updated, err := cred.nonrevApplyUpdates(update, irma.RevocationKeys{Conf: client.Configuration})
-		if updated {
-			save = true
-			if err = client.storage.StoreSignature(cred); err != nil {
-				return err
-			}
-		}
 		if err == revocation.ErrorRevoked {
 			id := cred.CredentialType().Identifier()
 			hash := cred.attrs.Hash()
@@ -208,6 +203,14 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		if err != nil {
 			return err
 		}
+
+		if updated {
+			save = true
+			if err = client.storage.StoreSignature(cred); err != nil {
+				return err
+			}
+		}
+
 		// Asynchroniously update nonrevocation proof cache from updated witness
 		irma.Logger.WithField("credtype", id).Debug("scheduling nonrevocation cache update")
 		go func(cred *credential) {
@@ -269,6 +272,15 @@ func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.
 	if err != nil {
 		return false, err
 	}
+
+	// Check whether the revocation witness is valid. If it fails, then our revocation storage is in an inconsistent state.
+	// This should never happen, but it makes debugging easier if something goes wrong.
+	if cred.NonRevocationWitness != nil {
+		if err := cred.NonRevocationWitness.Verify(cred.Pk); err != nil {
+			return false, errors.WrapPrefix(err, "revocation witness is in an inconsistent state", 0)
+		}
+	}
+
 	logger := irma.Logger.WithFields(logrus.Fields{"credtype": cred.CredentialType().Identifier(), "hash": cred.attrs.Hash()})
 	logger.Debugf("updating witness")
 	defer logger.Debug("updating witness done")

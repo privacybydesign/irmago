@@ -208,7 +208,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) generateCommitments(user *User, authorization string, keys []irma.PublicKeyIdentifier) (*irma.ProofPCommitmentMap, error) {
 	// Generate commitments
-	commitments, commitID, err := s.core.GenerateCommitments(user.Secrets, authorization, keys)
+	commitments, commitID, err := s.core.GenerateCommitments(keysharecore.UserSecrets(user.Secrets), authorization, keys)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
 		return nil, err
@@ -293,7 +293,7 @@ func (s *Server) generateResponse(ctx context.Context, user *User, authorization
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateResponse(user.Secrets, authorization, sessionData.CommitID, challenge, sessionData.KeyID)
+	proofResponse, err := s.core.GenerateResponse(keysharecore.UserSecrets(user.Secrets), authorization, sessionData.CommitID, challenge, sessionData.KeyID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err
@@ -339,7 +339,7 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startAuth(user *User, jwtt string) (irma.KeyshareAuthChallenge, error) {
-	challenge, err := s.core.GenerateChallenge(user.Secrets, jwtt)
+	challenge, err := s.core.GenerateChallenge(keysharecore.UserSecrets(user.Secrets), jwtt)
 	if err != nil {
 		return irma.KeyshareAuthChallenge{}, err
 	}
@@ -413,9 +413,9 @@ func (s *Server) verifyAuth(ctx context.Context, user *User, msg irma.KeyshareAu
 	// At this point, we are allowed to do an actual check (we have successfully reserved a spot for it), so do it.
 	var jwtt string
 	if msg.AuthResponseJWT == "" {
-		jwtt, err = s.core.ValidateAuthLegacy(user.Secrets, msg.Pin)
+		jwtt, err = s.core.ValidateAuthLegacy(keysharecore.UserSecrets(user.Secrets), msg.Pin)
 	} else {
-		jwtt, err = s.core.ValidateAuth(user.Secrets, msg.AuthResponseJWT)
+		jwtt, err = s.core.ValidateAuth(keysharecore.UserSecrets(user.Secrets), msg.AuthResponseJWT)
 	}
 
 	if err != nil && err != keysharecore.ErrInvalidPin {
@@ -516,7 +516,7 @@ func (s *Server) updatePin(ctx context.Context, user *User, jwtt string) (irma.K
 	}
 
 	// Try to do the update
-	user.Secrets, err = s.core.ChangePin(user.Secrets, jwtt)
+	secrets, err := s.core.ChangePin(keysharecore.UserSecrets(user.Secrets), jwtt)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -527,6 +527,7 @@ func (s *Server) updatePin(ctx context.Context, user *User, jwtt string) (irma.K
 		s.conf.Logger.WithField("error", err).Error("Could not change pin")
 		return irma.KeysharePinStatus{}, err
 	}
+	user.Secrets = UserSecrets(secrets)
 
 	// Mark pincheck as success, resetting users wait and count
 	err = s.db.resetPinTries(ctx, user)
@@ -602,7 +603,7 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 		s.conf.Logger.WithField("error", err).Error("Could not register user")
 		return nil, err
 	}
-	user := &User{Username: username, Language: data.Language, Secrets: secrets}
+	user := &User{Username: username, Language: data.Language, Secrets: UserSecrets(secrets)}
 	err = s.db.AddUser(ctx, user)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
@@ -685,7 +686,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 
 		// verify access
 		ctx := r.Context()
-		err := s.core.ValidateJWT(ctx.Value("user").(*User).Secrets, authorization)
+		err := s.core.ValidateJWT(keysharecore.UserSecrets(ctx.Value("user").(*User).Secrets), authorization)
 		hasValidAuthorization := err == nil
 
 		// Construct new context with both authorization and its validity

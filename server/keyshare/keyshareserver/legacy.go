@@ -66,7 +66,7 @@ func (s *Server) registerPublicKey(ctx context.Context, user *User, pin string, 
 	}
 
 	var jwtt string
-	jwtt, user.Secrets, err = s.core.SetUserPublicKey(user.Secrets, pin, pk)
+	jwtt, secrets, err := s.core.SetUserPublicKey(keysharecore.UserSecrets(user.Secrets), pin, pk)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -77,6 +77,7 @@ func (s *Server) registerPublicKey(ctx context.Context, user *User, pin string, 
 		s.conf.Logger.WithField("error", err).Error("Could not set user public key")
 		return irma.KeysharePinStatus{}, err
 	}
+	user.Secrets = UserSecrets(secrets)
 
 	// Mark pincheck as success, resetting users wait and count
 	err = s.db.resetPinTries(ctx, user)
@@ -113,7 +114,7 @@ func (s *Server) updatePinLegacy(ctx context.Context, user *User, oldPin, newPin
 	}
 
 	// Try to do the update
-	user.Secrets, err = s.core.ChangePinLegacy(user.Secrets, oldPin, newPin)
+	secrets, err := s.core.ChangePinLegacy(keysharecore.UserSecrets(user.Secrets), oldPin, newPin)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -124,6 +125,7 @@ func (s *Server) updatePinLegacy(ctx context.Context, user *User, oldPin, newPin
 		s.conf.Logger.WithField("error", err).Error("Could not change pin")
 		return irma.KeysharePinStatus{}, err
 	}
+	user.Secrets = UserSecrets(secrets)
 
 	// Mark pincheck as success, resetting users wait and count
 	err = s.db.resetPinTries(ctx, user)

@@ -192,7 +192,7 @@ func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.Crede
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
-	updates, err := rs.UpdateLatest(id, 0, &cred.KeyCounter)
+	updates, err := rs.LatestUpdates(id, 0, &cred.KeyCounter)
 	if err != nil {
 		return nil, err
 	}

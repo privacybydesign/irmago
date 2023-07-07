@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
