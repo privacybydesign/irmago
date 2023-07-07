@@ -172,13 +172,7 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 	}
 
 	if len(addrs) == 0 {
-		if !t.revalidateMail {
-			// When revalidation is disabled, we can't do anything with this user. It will cause a decrease
-			// in the amount of expiring users that are processed in the next run as long as this user is in
-			// the database with only invalid email addresses.
-			return keyshare.ErrInvalidEmail
-		}
-		return nil
+		return keyshare.ErrInvalidEmail
 	}
 
 	// Send mail to all valid addresses at once
@@ -241,13 +235,15 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 
 			// Send emails
 			if err := t.sendExpiryEmails(ctx, id, username, lang); err != nil {
-
-				// To have the exact same behavior as before email revalidation functionality,
-				// we return nil when the error is ErrInvalidEmail. Additionally we log the error
-				if !t.revalidateMail && err == keyshare.ErrInvalidEmail {
-					t.conf.Logger.WithField("error", err).Errorf("User decreases processing amount in expireAccounts, id: %d", id)
+				if err == keyshare.ErrInvalidEmail {
+					if !t.revalidateMail {
+						// To have the exact same behavior as before email revalidation functionality,
+						// we return nil when the error is ErrInvalidEmail. Additionally we log the error
+						t.conf.Logger.WithField("error", err).Errorf("User decreases processable amount in expireAccounts, id: %d", id)
+					}
 					return nil
 				}
+
 				return err // already logged, just abort
 			}
 
