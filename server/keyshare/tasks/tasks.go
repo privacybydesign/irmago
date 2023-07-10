@@ -139,38 +139,29 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 				return err
 			}
 
-			err := keyshare.VerifyMXRecord(email)
-
-			if err == nil {
-				// If valid, add to the list of valid addresses
-				addrs = append(addrs, email)
-				return nil
-			}
-
-			if err == keyshare.ErrNoNetwork {
-				// Already logged
-				return err
-			}
-
-			if t.revalidateMail {
-				if err = t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
-					time.Now().AddDate(0, 0, 5).Unix(),
-					id); err != nil {
-					t.conf.Logger.WithField("error", err).Error("Could not update email address to set revalidate_on")
-					return err
+			if err := keyshare.VerifyMXRecord(email); err != nil {
+				if t.revalidateMail {
+					if err = t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
+						time.Now().AddDate(0, 0, 5).Unix(),
+						id); err != nil {
+						t.conf.Logger.WithField("error", err).Error("Could not update email address to set revalidate_on")
+						return err
+					}
 				}
 
 				// We wait with further processing until the email address is revalidated
 				// so we can send the expiry mail to all, and only valid, addresses at once
-				return keyshare.ErrInvalidEmail
+				return err
 			}
+
+			addrs = append(addrs, email)
 			return nil
 		},
 		id,
 	)
 
 	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("Could not retrieve user's email addresses")
+		t.conf.Logger.WithField("error", err).Error("Could not process user's email addresses")
 		return err
 	}
 
