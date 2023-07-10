@@ -228,8 +228,13 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	// First, send emails
 	if s.conf.EmailServer != "" {
-		err := s.sendDeleteEmails(r.Context(), session)
-		if err != nil {
+		if err := s.sendDeleteEmails(r.Context(), session); err != nil {
+
+			if (err == keyshare.ErrInvalidEmail || err == keyshare.ErrInvalidEmailDomain) && s.db.hasEmailRevalidation(r.Context()) {
+				server.WriteError(w, server.ErrorRevalidateEmail, "Email address is scheduled for revalidation")
+				return
+			}
+
 			// already logged
 			keyshare.WriteError(w, err)
 			return
@@ -568,6 +573,12 @@ func (s *Server) processRemoveEmail(ctx context.Context, session *session, email
 	}
 
 	if err := keyshare.VerifyMXRecord(email); err != nil {
+		if s.db.hasEmailRevalidation(ctx) {
+			if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email, 5*24*time.Hour); err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not schedule email address for revalidation")
+				return err
+			}
+		}
 		return err
 	}
 
@@ -579,12 +590,7 @@ func (s *Server) processRemoveEmail(ctx context.Context, session *session, email
 			[]string{email},
 			user.language,
 		); err != nil {
-			if s.db.hasEmailRevalidation(ctx) {
-				if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email, 5*24*time.Hour); err != nil {
-					s.conf.Logger.WithField("error", err).Error("Could not schedule email address for revalidation")
-					return err
-				}
-			}
+			s.conf.Logger.WithError(err).Warn("Could not send delete email")
 			return err
 		}
 	}
@@ -607,10 +613,16 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 
 	session := r.Context().Value("session").(*session)
 	err := s.processRemoveEmail(r.Context(), session, email)
-	if err == errUnknownEmail || err == keyshare.ErrInvalidEmail {
+	if err == errUnknownEmail {
 		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
 		return
 	}
+
+	if (err == keyshare.ErrInvalidEmail || err == keyshare.ErrInvalidEmailDomain) && s.db.hasEmailRevalidation(r.Context()) {
+		server.WriteError(w, server.ErrorRevalidateEmail, "Email address is scheduled for revalidation")
+		return
+	}
+
 	if err != nil {
 		// already logged
 		keyshare.WriteError(w, err)
