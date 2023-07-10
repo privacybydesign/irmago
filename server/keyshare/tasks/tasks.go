@@ -159,6 +159,10 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 					t.conf.Logger.WithField("error", err).Error("Could not update email address to set revalidate_on")
 					return err
 				}
+
+				// We wait with further processing until the email address is revalidated
+				// so we can send the expiry mail to all, and only valid, addresses at once
+				return keyshare.ErrInvalidEmail
 			}
 			return nil
 		},
