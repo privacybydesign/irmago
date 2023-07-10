@@ -553,7 +553,7 @@ func copySignedAccumulator(acc *revocation.SignedAccumulator) *revocation.Signed
 	dataCopy := make([]byte, len(acc.Data))
 	copy(dataCopy, acc.Data)
 	return &revocation.SignedAccumulator{
-		Data: dataCopy,
+		Data:      dataCopy,
 		PKCounter: acc.PKCounter,
 	}
 }
