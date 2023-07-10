@@ -6,10 +6,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-### Fixed
-- `irma scheme verify` not detecting missing files in index 
-- Scheme verification/signing does not reject credentials with invalid revocation settings
-
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
 - Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
@@ -18,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Race conditions in database logic of revocation storage
+- `irma scheme verify` not detecting missing files in index 
+- Scheme verification/signing does not reject credentials with invalid revocation settings
+- Write transactions within memory implementation of revocation storage may lead to unintended changes
 
 ### Removed
 - Superfluous openssl package in Dockerfile
