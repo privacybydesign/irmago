@@ -188,7 +188,7 @@ func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 
 	query := "SELECT email, (delete_on IS NOT NULL) AS delete_in_progress {{revalidate}} FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)"
 
-	if db.hasEmailRevalidation(ctx) {
+	if db.db.EmailRevalidation(ctx) {
 		query = strings.ReplaceAll(query, "{{revalidate}}", ", (revalidate_on IS NOT NULL) AS revalidate_in_progress")
 	} else {
 		query = strings.ReplaceAll(query, "{{revalidate}}", "")
@@ -279,13 +279,7 @@ func (db *postgresDB) setSeen(ctx context.Context, id int64) error {
 }
 
 func (db *postgresDB) hasEmailRevalidation(ctx context.Context) bool {
-	c, err := db.db.ExecCountContext(ctx, "SELECT true FROM information_schema.columns where table_schema='irma' AND table_name='emails' AND column_name='revalidate_on'")
-	if err != nil {
-		server.LogError(errors.New("Could not query the schema for column emails.revalidate_on, therefore revalidation is disabled"))
-		return false
-	}
-
-	return c != 0
+	return db.db.EmailRevalidation(ctx)
 }
 
 func (db *postgresDB) scheduleEmailRevalidation(ctx context.Context, id int64, email string, delay time.Duration) error {

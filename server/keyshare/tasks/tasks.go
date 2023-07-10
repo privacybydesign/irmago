@@ -37,7 +37,7 @@ func newHandler(conf *Configuration) (*taskHandler, error) {
 	task := &taskHandler{
 		db:             keyshareDB,
 		conf:           conf,
-		revalidateMail: hasEmailRevalidation(conf, &keyshareDB),
+		revalidateMail: hasEmailRevalidation(&keyshareDB),
 	}
 
 	return task, nil
@@ -75,22 +75,10 @@ func runWithTimeout(fn func(ctx context.Context)) error {
 	return ctx.Err()
 }
 
-func hasEmailRevalidation(conf *Configuration, db *keyshare.DB) bool {
+func hasEmailRevalidation(db *keyshare.DB) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), taskTimeout)
 	defer cancel()
-
-	c, err := db.ExecCountContext(ctx, "SELECT true FROM information_schema.columns WHERE table_schema='irma' AND table_name='emails' AND column_name='revalidate_on'")
-	if err != nil {
-		conf.Logger.WithField("error", err).Error("Could not query the schema for column emails.revalidate_on, therefore revalidation is disabled")
-		return false
-	}
-
-	if c == 0 {
-		conf.Logger.Warning("Email address revalidation is disabled because the emails.revalidate_on column is not present in the schema")
-		return false
-	}
-
-	return true
+	return db.EmailRevalidation(ctx)
 }
 
 // Remove email addresses marked for deletion long enough ago
