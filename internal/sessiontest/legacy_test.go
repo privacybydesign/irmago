@@ -5,6 +5,7 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,6 +45,9 @@ func testSessionUsingLegacyStorage(t *testing.T, dir string) {
 }
 
 func TestWithoutPairingSupport(t *testing.T) {
+	irmaserver.AcceptInsecureProtocolVersions = true
+	defer func() { irmaserver.AcceptInsecureProtocolVersions = false }()
+
 	t.Run("SigningSession", apply(testSigningSession, nil, optionPrePairingClient))
 	t.Run("DisclosureSession", apply(testDisclosureSession, nil, optionPrePairingClient))
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, nil, optionPrePairingClient))

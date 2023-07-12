@@ -1091,10 +1091,34 @@ func TestDoubleGET(t *testing.T) {
 	// Simulate the first GET by the client in the session protocol, twice
 	var o interface{}
 	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.MinVersionHeader, "2.5")
-	transport.SetHeader(irma.MaxVersionHeader, "2.5")
+	transport.SetHeader(irma.MinVersionHeader, "2.8")
+	transport.SetHeader(irma.MaxVersionHeader, "2.8")
+	transport.SetHeader(irma.AuthorizationHeader, "testauthtoken")
 	require.NoError(t, transport.Get("", &o))
 	require.NoError(t, transport.Get("", &o))
+}
+
+func TestInsecureProtocolVersion(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	// Test whether the server accepts a request with an insecure protocol version
+	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+
+	qr, _, _, err := irmaServer.irma.StartSession(request, func(result *server.SessionResult) {})
+	require.NoError(t, err)
+
+	var o interface{}
+	transport := irma.NewHTTPTransport(qr.URL, false)
+	transport.SetHeader(irma.MinVersionHeader, "2.7")
+	transport.SetHeader(irma.MaxVersionHeader, "2.7")
+	transport.SetHeader(irma.AuthorizationHeader, "testauthtoken")
+	err = transport.Get("", &o)
+	require.Error(t, err)
+	serr, ok := err.(*irma.SessionError)
+	require.True(t, ok)
+	require.Equal(t, server.ErrorProtocolVersion.Status, serr.RemoteStatus)
+	require.Equal(t, string(server.ErrorProtocolVersion.Type), serr.RemoteError.ErrorName)
 }
 
 func TestClientDeveloperMode(t *testing.T) {
