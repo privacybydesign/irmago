@@ -407,7 +407,7 @@ func (m *memRevStorage) Events(id CredentialTypeIdentifier, pkCounter uint, from
 		return nil, errors.New("invalid range")
 	}
 
-	return events[startIndex:endIndex], nil
+	return copyEvents(events[startIndex:endIndex]), nil
 }
 
 // LatestAccumulatorUpdates implements revocationRecordStorage interface.
@@ -443,8 +443,8 @@ func (m *memRevStorage) LatestAccumulatorUpdates(id CredentialTypeIdentifier, pk
 			offset = len(events)
 		}
 		updatesMap[pkCounter] = &revocation.Update{
-			SignedAccumulator: acc,
-			Events:            events[len(events)-offset:],
+			SignedAccumulator: copySignedAccumulator(acc),
+			Events:            copyEvents(events[len(events)-offset:]),
 		}
 	}
 	return updatesMap, nil
@@ -464,10 +464,17 @@ func (m *memRevStorage) AppendAccumulatorUpdate(
 	// Get the accumulator and the latest revocation event for every public key.
 	for _, pkCounter := range pkCounters {
 		recordKey := memRecordKey{id, pkCounter}
+		acc, ok := m.accs[recordKey]
+		if !ok {
+			return ErrRevocationStateNotFound
+		}
 		events := m.events[recordKey]
+		if len(events) == 0 {
+			return errors.New("revocation events and accumulator out-of-sync")
+		}
 		heads[pkCounter] = revocationUpdateHead{
-			m.accs[recordKey],
-			events[len(events)-1],
+			copySignedAccumulator(acc),
+			copyEvent(events[len(events)-1]),
 		}
 	}
 
@@ -490,8 +497,8 @@ func (m *memRevStorage) AppendAccumulatorUpdate(
 		}
 
 		recordKey := memRecordKey{id, pkCounter}
-		m.accs[recordKey] = update.SignedAccumulator
-		m.events[recordKey] = append(m.events[recordKey], update.Events...)
+		m.accs[recordKey] = copySignedAccumulator(update.SignedAccumulator)
+		m.events[recordKey] = append(m.events[recordKey], copyEvents(update.Events)...)
 	}
 	return nil
 }
@@ -521,6 +528,34 @@ func (m *memRevStorage) UpdateIssuanceRecord(id CredentialTypeIdentifier, key st
 func (m *memRevStorage) DeleteExpiredIssuanceRecords() error {
 	// The memRevStorage does not support storing issuance records, so nothing has to be deleted.
 	return nil
+}
+
+// Utility functions for memRevStorage
+
+func copyEvents(events []*revocation.Event) []*revocation.Event {
+	eventsCopy := make([]*revocation.Event, len(events))
+	for i, event := range events {
+		eventsCopy[i] = copyEvent(event)
+	}
+	return eventsCopy
+}
+func copyEvent(event *revocation.Event) *revocation.Event {
+	hashCopy := make([]byte, len(event.ParentHash))
+	copy(hashCopy, event.ParentHash)
+	return &revocation.Event{
+		Index:      event.Index,
+		E:          new(big.Int).Set(event.E),
+		ParentHash: hashCopy,
+	}
+}
+
+func copySignedAccumulator(acc *revocation.SignedAccumulator) *revocation.SignedAccumulator {
+	dataCopy := make([]byte, len(acc.Data))
+	copy(dataCopy, acc.Data)
+	return &revocation.SignedAccumulator{
+		Data:      dataCopy,
+		PKCounter: acc.PKCounter,
+	}
 }
 
 // Conversion methods to/from database structs, SQL table rows, gob

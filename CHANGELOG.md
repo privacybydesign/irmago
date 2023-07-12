@@ -6,16 +6,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-### Fixed
-- `irma scheme verify` not detecting missing files in index 
-- Scheme verification/signing does not reject credentials with invalid revocation settings
-- Race conditions in database logic of revocation storage
-
-### Added
-- E-mail address revalidation. At automated mailings (`irma keyshare tasks`) informing users their account is about to expire, (temporary) invalid e-mail addresses are withheld from processing for 5 days, preventing cluttering of the processing queue
-
-**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail address revalidation is disabled and there will not be a breaking change.
-
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
 As part of e-mail address revalidation:
@@ -25,6 +15,11 @@ As part of e-mail address revalidation:
 - Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
 - Validate revocation witness before revocation update is applied
 - RevocationStorage's EnableRevocation function does not return an error anymore if it has been enabled already
+
+### Fixed
+- Race conditions in database logic of revocation storage
+- `irma scheme verify` not detecting missing files in index 
+- Scheme verification/signing does not reject credentials with invalid revocation settings
 
 ### Removed
 - Superfluous openssl package in Dockerfile
