@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Superfluous openssl package in Dockerfile
 
+### Internal
+- Use Postgres 15 for unit and component tests
+
 ## [0.12.6] - 2023-05-31
 ### Fixed
 - Legacy endpoints of keyshare server return 403 status codes when database is down
