@@ -18,8 +18,8 @@ func TestServerRegistrationWithEmail(t *testing.T) {
 		200, nil,
 	)
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@test.com","language":"en"}`, nil,
-		400, nil, // no MX record for test.com
+		`{"pin":"testpin","email":"test@idonotexist-d8ejd84md7aja8.com","language":"en"}`, nil,
+		400, nil, // no MX/A/AAAA record for idonotexist-d8ejd84md7aja8.com
 	)
 
 	// If somehow the IRMA app gains support for a language earlier than the keyshare server,

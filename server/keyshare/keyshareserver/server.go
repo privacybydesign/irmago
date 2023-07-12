@@ -636,6 +636,11 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 }
 
 func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language, email string) error {
+
+	if err := keyshare.VerifyMXRecord(email); err != nil {
+		return keyshare.ErrInvalidEmail
+	}
+
 	// Generate token
 	token := common.NewSessionToken()
 
@@ -654,7 +659,7 @@ func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language
 		s.conf.registrationEmailTemplates,
 		s.conf.RegistrationEmailSubjects,
 		map[string]string{"VerificationURL": verificationBaseURL + token},
-		email,
+		[]string{email},
 		language,
 	)
 }
