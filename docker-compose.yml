@@ -16,7 +16,7 @@ services:
     ports:
       - 5432:5432
   postgres-init:
-    image: postgres:13
+    image: postgres:15
     environment:
       PGHOST: postgres
       PGUSER: testuser
