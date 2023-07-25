@@ -120,7 +120,7 @@ jobs:
         with:
           os: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
-          
+
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
