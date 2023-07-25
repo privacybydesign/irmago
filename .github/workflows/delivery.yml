@@ -4,6 +4,7 @@ on:
   push:
     branches: [ master ]
   release:
+    # Note: a current limitation is that when a release is edited after publication, then the Docker tags are not automatically updated.
     types: [ published ]
 
 permissions:
@@ -71,13 +72,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull Docker image
-        continue-on-error: true
-        id: docker-pull
-        run: docker pull ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }}
-
-      - name: Build Docker image (if necessary)
-        if: steps.docker-pull.outcome == 'failure'
+      - name: Build Docker image
         run: docker build -t ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} .
 
       - name: Tag Docker image (edge)
@@ -92,8 +87,17 @@ jobs:
         if: needs.prepare.outputs.is-latest-release == 'true'
         run: docker tag ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} ghcr.io/${{ github.repository_owner }}/irma:latest
 
-      - name: Push Docker image
-        run: docker push --all-tags ghcr.io/${{ github.repository_owner }}/irma
+      - name: Push Docker image (edge)
+        if: needs.prepare.outputs.is-head-master == 'true'
+        run: docker push ghcr.io/${{ github.repository_owner }}/irma:edge
+
+      - name: Push Docker image (version)
+        if: github.event_name == 'release'
+        run: docker push ghcr.io/${{ github.repository_owner }}/irma:${{ github.event.release.tag_name }}
+
+      - name: Tag Docker image (latest)
+        if: needs.prepare.outputs.is-latest-release == 'true'
+        run: docker push ghcr.io/${{ github.repository_owner }}/irma:latest
 
   build-release-artifact:
     needs: prepare
