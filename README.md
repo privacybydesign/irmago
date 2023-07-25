@@ -11,9 +11,9 @@
 
 Technical documentation of all components of `irmago` and more can be found at https://irma.app/docs.
 
-## Running
+## Running (development)
 
-The easiest way to run the `irma` command line tool is using Docker.
+The easiest way to run the `irma` command line tool for development purposes is using Docker.
 
     docker-compose run irma
 
@@ -30,29 +30,37 @@ You can run the `irma keyshare` services locally using the test configuration in
     docker-compose run -p 8081:8081 irma keyshare myirmaserver -c ./testdata/configurations/myirmaserver.yml
 
 ## Installing
+### Using Go
+To install the latest released version of the `irma` command line tool using Go, you do the following.
 
-    git clone https://github.com/privacybydesign/irmago
+    go install github.com/privacybydesign/irmago/irma@latest
 
-`irmago` and its subpackages use Go modules for their dependencies. The `go` command will automatically download dependencies when needed.
+You can also specify an exact version. You should replace `v0.0.0` with the desired version number.
+  
+    go install github.com/privacybydesign/irmago/irma@v0.0.0
 
-To install the `irma` command line tool:
+### Using a container
+If you want a container image of the `irma` command line tool, then you can use our `ghcr.io/privacybydesign/irma` image.
 
-    go install ./irma
+    docker run ghcr.io/privacybydesign/irma:latest
 
-You can also include the `irma` command line tool in a Docker image, using a base image of your choice. The default base image is Debian's `stable-slim`.
+The images are tagged in the following way:
+- `latest`: latest released version of `irma`
+- `edge`: HEAD of the main development branch (`master`)
+- `v0.0.0`: `irma` version (replace `v0.0.0` with the desired version number)
 
-    docker build --build-arg BASE_IMAGE=alpine -t privacybydesign/irma:edge .
+When you build for production, we recommend you to use the [latest release](https://github.com/privacybydesign/irmago/releases/latest).
 
-When you build for production, we recommend you to build the [latest release](https://github.com/privacybydesign/irmago/releases/latest). You should replace `v0.0.0` with the latest version number.
-
-    docker build -t privacybydesign/irma https://github.com/privacybydesign/irmago.git#v0.0.0
-
-In case you want to build `v0.8.0` or lower, then you should do some extra steps. The `Dockerfile` was not part of the repository at that time.
+In case you want to use `v0.12.6` or lower, then you should build it yourself.
 
     VERSION=v0.8.0
     git checkout $VERSION
     git checkout master -- Dockerfile
     docker build -t privacybydesign/irma:$VERSION .
+
+### Using pre-compiled binaries
+You can find pre-compiled binaries of the `irma` command line tool on the [GitHub release page](https://github.com/privacybydesign/irmago/releases).
+We recommend you to use the [latest release](https://github.com/privacybydesign/irmago/releases/latest).
 
 ## Running the unit tests
 
