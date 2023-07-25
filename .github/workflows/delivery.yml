@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master ]
   release:
-    types: [ created, edited ]
+    types: [ published, edited ]
 
 permissions:
   contents: write
@@ -124,7 +124,7 @@ jobs:
           path: ${{ steps.build.outputs.artifact-name }}
 
       - name: Upload artifact to release
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: github.event_name == 'release' && github.event.action == 'published'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload ${{ github.event.release.tag_name }} ${{ steps.build.outputs.artifact-name }}
