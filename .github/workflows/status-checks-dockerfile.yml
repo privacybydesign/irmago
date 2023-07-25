@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Build Dockerfile
-        run: docker build -t privacybydesign/irma:edge --build-arg BASE_IMAGE=${{ matrix.image }} .
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} --build-arg BASE_IMAGE=${{ matrix.image }} .
 
       - name: Test Docker image
-        run: docker run privacybydesign/irma:edge version
+        run: docker run ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} version

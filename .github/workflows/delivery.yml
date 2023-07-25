@@ -2,17 +2,25 @@ name: Delivery
 
 on:
   push:
-    tags: [ v* ]
+    branches: [ master ]
+  release:
+    types: [ created, edited ]
 
 permissions:
   contents: write
+  packages: write
+
+# Disable concurrency to prevent that images are tagged in the wrong order.
+concurrency:
+  group: delivery
 
 jobs:
 
-  ensure-release-present:
+  prepare:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      is-head-master: ${{ steps.is-head-master.outcome == 'success' }}
+      is-latest-release: ${{ steps.is-latest-release.outcome == 'success' }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -23,30 +31,73 @@ jobs:
         run: git branch --contains ${{ github.sha }} | grep -x "* master"
         shell: bash
 
+      - name: Check whether this event is the HEAD of master
+        continue-on-error: true
+        id: is-head-master
+        run: git rev-parse HEAD | grep -x ${{ github.sha }}
+        shell: bash
+
       - uses: actions/checkout@v3
 
       - name: Check whether version.go contains the new version number
+        if: github.event_name == 'release'
         run: cat version.go | grep ${GITHUB_REF_NAME:1}
         shell: bash
 
       - name: Check whether CHANGELOG.md contains the new version number
+        if: github.event_name == 'release'
         run: cat CHANGELOG.md | grep "\[${GITHUB_REF_NAME:1}\]"
         shell: bash
 
-      - name: Check whether release is present
-        id: release-present
-        run: gh release view ${{ github.ref_name }}
+      - name: Check whether the release is latest
         continue-on-error: true
+        id: is-latest-release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release view --json tagName --jq .tagName | grep -x ${{ github.event.release.tag_name }}
+        shell: bash
+  
+  build-docker-image:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v3
 
-      - name: Make new release if necessary
-        if: steps.release-present.outcome == 'failure'
-        run: gh release create ${{ github.ref_name }} -t "${{ github.ref_name }}" -n "Check CHANGELOG.md in repository."
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Docker image
+        continue-on-error: true
+        id: docker-pull
+        run: docker pull ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }}
+
+      - name: Build Docker image (if necessary)
+        if: steps.docker-pull.outcome == 'failure'
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} .
+
+      - name: Tag Docker image (edge)
+        if: needs.prepare.outputs.is-head-master == 'true'
+        run: docker tag ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} ghcr.io/${{ github.repository_owner }}/irma:edge
+
+      - name: Tag Docker image (version)
+        if: github.event_name == 'release'
+        run: docker tag ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} ghcr.io/${{ github.repository_owner }}/irma:${{ github.event.release.tag_name }}
+
+      - name: Tag Docker image (latest)
+        if: needs.prepare.outputs.is-latest-release == 'true'
+        run: docker tag ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} ghcr.io/${{ github.repository_owner }}/irma:latest
+
+      - name: Push Docker image
+        run: docker push --all-tags ghcr.io/${{ github.repository_owner }}/irma
 
   build-release-artifact:
-    needs: ensure-release-present
+    needs: prepare
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
         os: [ linux, darwin, windows ]
@@ -65,6 +116,15 @@ jobs:
         with:
           os: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
-
+          
       - name: Upload artifact
-        run: gh release upload ${{ github.ref_name }} ${{ steps.build.outputs.artifact-name }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: irma-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ steps.build.outputs.artifact-name }}
+
+      - name: Upload artifact to release
+        if: github.event_name == 'release' && github.event.action == 'created'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.event.release.tag_name }} ${{ steps.build.outputs.artifact-name }}

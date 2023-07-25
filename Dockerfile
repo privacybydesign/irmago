@@ -1,7 +1,4 @@
-# Use variable base image, such that we can also build for other base images, like alpine.
-ARG BASE_IMAGE=debian:stable-slim
-
-FROM golang:1 as build
+FROM golang:1-alpine as build
 
 # Set build environment
 ENV CGO_ENABLED=0
@@ -11,23 +8,27 @@ COPY . /irmago
 WORKDIR /irmago
 RUN go build -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./irma
 
-FROM $BASE_IMAGE
+# Create application user
+RUN adduser -D -u 1000 -g irma irma
 
-# The amazonlinux image does not include adduser, so we have to install this first.
-RUN if grep -q -E 'Amazon Linux' /etc/os-release; then yum install -y shadow-utils; fi
+# Start building the final image
+FROM scratch
 
-# Add application user
-RUN adduser --disabled-password --gecos '' irma || adduser irma
+# Copy binary from build stage
+COPY --from=build /bin/irma /bin/irma
 
-# The debian image does not include ca-certificates, so we have to install this first.
-RUN if which apt-get &> /dev/null; then apt-get update && apt-get install -y ca-certificates; fi
+# Add TLS root certificates
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=build /bin/irma /usr/local/bin/irma
+# Ensure the application user and group is set
+COPY --from=build /etc/passwd /etc/passwd
+COPY --from=build /etc/group /etc/group
+COPY --from=build --chown=irma:irma /home/irma/ /home/irma/
 
 # Switch to application user
 USER irma
 
-# Include schemes in the Docker image to speed up the start-up time.
-RUN irma scheme download
+# Include schemes in the Docker image to speed up the start-up time
+RUN ["/bin/irma", "scheme", "download"]
 
-ENTRYPOINT ["irma"]
+ENTRYPOINT ["/bin/irma"]
