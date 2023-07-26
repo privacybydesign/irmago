@@ -22,31 +22,11 @@ type CredentialInfo struct {
 // A CredentialInfoList is a list of credentials (implements sort.Interface).
 type CredentialInfoList []*CredentialInfo
 
-func (attrs *AttributeList) CredentialInfo() *CredentialInfo {
-	credtype := attrs.CredentialType()
-	if credtype == nil {
-		return nil
-	}
-	id := credtype.Identifier()
-	issid := id.IssuerIdentifier()
-	return &CredentialInfo{
-		ID:                  id.Name(),
-		IssuerID:            issid.Name(),
-		SchemeManagerID:     issid.SchemeManagerIdentifier().Name(),
-		SignedOn:            Timestamp(attrs.SigningDate()),
-		Expires:             Timestamp(attrs.Expiry()),
-		Attributes:          attrs.Map(),
-		Hash:                attrs.Hash(),
-		Revoked:             attrs.Revoked,
-		RevocationSupported: attrs.RevocationSupported,
-	}
-}
-
 func (ci CredentialInfo) GetCredentialType(conf *Configuration) *CredentialType {
 	return conf.CredentialTypes[ci.Identifier()]
 }
 
-// Returns true if credential is expired at moment of calling this function
+// IsExpired returns true if credential is expired at moment of calling this function
 func (ci CredentialInfo) IsExpired() bool {
 	return ci.Expires.Before(Timestamp(time.Now()))
 }

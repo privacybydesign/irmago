@@ -68,7 +68,7 @@ func (client *Client) initRevocation() {
 					irma.Logger.WithFields(logrus.Fields{
 						"random":      r,
 						"prob":        p,
-						"lastupdated": time.Now().Sub(cred.NonRevocationWitness.Updated).Seconds(),
+						"lastupdated": time.Since(cred.NonRevocationWitness.Updated).Seconds(),
 						"credtype":    id,
 						"hash":        attrs.Hash(),
 					}).Debug("scheduling nonrevocation witness remote update")
@@ -300,7 +300,7 @@ func probability(lastUpdate time.Time, refindex uint64) float64 {
 		refprobability = 0.75 * asymptote // probability after one week
 	)
 	f := math.Tan(math.Pi * refprobability / (2 * asymptote))
-	i := time.Now().Sub(lastUpdate).Seconds()
+	i := time.Since(lastUpdate).Seconds()
 	return 2 * asymptote / math.Pi * math.Atan(i/float64(refindex)*f)
 }
 

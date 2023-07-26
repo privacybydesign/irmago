@@ -29,13 +29,13 @@ var (
 	credentialID     = metadataField{16, 8}
 )
 
-// metadataField contains the length and offset of a field within a metadata attribute.
+// MetadataField contains the length and offset of a field within a metadata attribute.
 type metadataField struct {
 	length int
 	offset int
 }
 
-// metadataAttribute represents a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
+// MetadataAttribute represents a metadata attribute. Contains the credential type, signing date, validity, and the public key counter.
 type MetadataAttribute struct {
 	Int  *big.Int
 	pk   *gabikeys.PublicKey
@@ -59,16 +59,16 @@ type AttributeList struct {
 func NewAttributeListFromInts(ints []*big.Int, conf *Configuration) *AttributeList {
 	metadata := MetadataFromInt(ints[0], conf)
 	credtype := metadata.CredentialType()
-	idx := credtype.RevocationIndex + 1
-	var rev bool
+	revocationSupported := false
 	if credtype != nil {
-		rev = credtype.RevocationSupported() &&
+		idx := credtype.RevocationIndex + 1
+		revocationSupported = credtype.RevocationSupported() &&
 			len(ints) > idx && ints[idx] != nil && ints[idx].Cmp(bigZero) != 0
 	}
 	return &AttributeList{
 		Ints:                ints,
 		MetadataAttribute:   metadata,
-		RevocationSupported: rev,
+		RevocationSupported: revocationSupported,
 	}
 }
 
@@ -215,6 +215,26 @@ func (al *AttributeList) Attribute(identifier AttributeTypeIdentifier) Translate
 	}
 
 	return nil
+}
+
+func (al *AttributeList) CredentialInfo() *CredentialInfo {
+	credtype := al.CredentialType()
+	if credtype == nil {
+		return nil
+	}
+	id := credtype.Identifier()
+	issid := id.IssuerIdentifier()
+	return &CredentialInfo{
+		ID:                  id.Name(),
+		IssuerID:            issid.Name(),
+		SchemeManagerID:     issid.SchemeManagerIdentifier().Name(),
+		SignedOn:            Timestamp(al.SigningDate()),
+		Expires:             Timestamp(al.Expiry()),
+		Attributes:          al.Map(),
+		Hash:                al.Hash(),
+		Revoked:             al.Revoked,
+		RevocationSupported: al.RevocationSupported,
+	}
 }
 
 // MetadataFromInt wraps the given Int

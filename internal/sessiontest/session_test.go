@@ -166,7 +166,7 @@ func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts
 
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
@@ -272,7 +272,7 @@ func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...opt
 
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 }
@@ -447,7 +447,7 @@ func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...option
 	doSession(t, issuanceRequest, client, nil, nil, nil, conf, opts...)
 	require.NoError(t, client.Close())
 
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
 	doSession(t, getDisclosureRequest(id), client, nil, nil, nil, conf, opts...)
 }
@@ -962,7 +962,7 @@ func TestPOSTSizeLimit(t *testing.T) {
 	req, err := http.NewRequest(
 		http.MethodPost,
 		requestorServerURL+"/session/",
-		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
+		bytes.NewReader(make([]byte, server.PostSizeLimit+1)),
 	)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")

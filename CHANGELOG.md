@@ -31,6 +31,9 @@ As part of e-mail address revalidation:
 ### Removed
 - Superfluous openssl package in Dockerfile
 
+### Internal
+- Linter switch from golint to staticcheck
+
 ## [0.12.6] - 2023-05-31
 ### Fixed
 - Legacy endpoints of keyshare server return 403 status codes when database is down

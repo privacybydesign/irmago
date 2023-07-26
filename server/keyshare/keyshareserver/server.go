@@ -685,9 +685,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Extract authorization from request
 		authorization := r.Header.Get("Authorization")
-		if strings.HasPrefix(authorization, "Bearer ") {
-			authorization = authorization[7:]
-		}
+		authorization = strings.TrimPrefix(authorization, "Bearer ")
 
 		// verify access
 		ctx := r.Context()

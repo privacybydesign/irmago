@@ -37,7 +37,7 @@ func testSessionUsingLegacyStorage(t *testing.T, dir string) {
 
 	// Re-open client
 	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 
 	// Test whether credential is still there after the storage has been reloaded
 	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil)
