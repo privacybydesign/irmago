@@ -8,12 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- Publish the Docker image of the `irma`` CLI tool on ghcr.io/privacybydesign/irma
 
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
 - Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
 - Validate revocation witness before revocation update is applied
 - RevocationStorage's EnableRevocation function does not return an error anymore if it has been enabled already
+- Use a scratch Docker image as base for the Dockerfile
 
 As part of e-mail address revalidation:
 - `VerifyMXRecord` incorporates a check to see if there is an active network connection
