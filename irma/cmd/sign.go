@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/sha256"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,7 +76,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 	if err != nil {
 		return err
 	}
-	bts, err := ioutil.ReadFile(filepath.Join(path, filename))
+	bts, err := os.ReadFile(filepath.Join(path, filename))
 	if err != nil {
 		return err
 	}
@@ -88,7 +87,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 
 	// Write timestamp
 	bts = []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
-	if err := ioutil.WriteFile(filepath.Join(path, "timestamp"), bts, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "timestamp"), bts, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write timestamp", 0)
 	}
 
@@ -103,7 +102,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 
 	// Write index
 	bts = []byte(index.String())
-	if err := ioutil.WriteFile(filepath.Join(path, "index"), bts, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "index"), bts, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write index", 0)
 	}
 
@@ -112,7 +111,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to serialize signature:", 0)
 	}
-	if err = ioutil.WriteFile(filepath.Join(path, "index.sig"), sigbytes, 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(path, "index.sig"), sigbytes, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write index.sig", 0)
 	}
 
@@ -121,7 +120,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to serialize public key", 0)
 	}
-	if err := ioutil.WriteFile(filepath.Join(path, "pk.pem"), pemEncodedPub, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "pk.pem"), pemEncodedPub, 0644); err != nil {
 		return errors.WrapPrefix(err, "Failed to write public key", 0)
 	}
 
@@ -137,7 +136,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 }
 
 func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {
-	bts, err := ioutil.ReadFile(path)
+	bts, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +148,7 @@ func calculateFileHash(id, confpath, path string, info os.FileInfo, index irma.S
 		return nil
 	}
 
-	bts, err := ioutil.ReadFile(path)
+	bts, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}

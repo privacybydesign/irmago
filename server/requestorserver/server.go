@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"time"
@@ -241,7 +241,8 @@ func (s *Server) StaticFilesHandler() http.Handler {
 }
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	defer common.Close(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.conf.Logger.Error("Could not read session request HTTP POST body")
 		_ = server.LogError(err)
@@ -284,7 +285,8 @@ func (s *Server) tokenMiddleware(next http.Handler) http.Handler {
 }
 
 func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	defer common.Close(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.conf.Logger.Error("Could not read revocation request HTTP POST body")
 		_ = server.LogError(err)

@@ -3,7 +3,7 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -25,10 +25,12 @@ var (
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
 
-	revocationTestAttr  = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
-	revocationTestCred  = revocationTestAttr.CredentialTypeIdentifier()
-	revKeyshareTestAttr = irma.NewAttributeTypeIdentifier("test.test.revocable.email")
-	revKeyshareTestCred = revKeyshareTestAttr.CredentialTypeIdentifier()
+	revocationTestAttr        = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	revocationTestCred        = revocationTestAttr.CredentialTypeIdentifier()
+	revKeyshareTestAttr       = irma.NewAttributeTypeIdentifier("test.test.revocable.email")
+	revKeyshareTestCred       = revKeyshareTestAttr.CredentialTypeIdentifier()
+	revKeyshareSecondTestAttr = irma.NewAttributeTypeIdentifier("test.test.revocable-2.email")
+	revKeyshareSecondTestCred = revKeyshareSecondTestAttr.CredentialTypeIdentifier()
 
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
@@ -152,7 +154,7 @@ func chainedServerHandler(
 	// Read the disclosed value, and issue a new credential of type specified by the cred parameter,
 	// whose attributes all have the value that was just disclosed
 	mux.HandleFunc("/2", func(w http.ResponseWriter, r *http.Request) {
-		bts, err := ioutil.ReadAll(r.Body)
+		bts, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 		require.NoError(t, r.Body.Close())
 
@@ -234,8 +236,9 @@ func IrmaServerConfiguration() *server.Configuration {
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
-			revocationTestCred:  {RevocationServerURL: revocationServerURL, SSE: true},
-			revKeyshareTestCred: {RevocationServerURL: revocationServerURL},
+			revocationTestCred:        {RevocationServerURL: revocationServerURL, SSE: true},
+			revKeyshareTestCred:       {RevocationServerURL: revocationServerURL},
+			revKeyshareSecondTestCred: {RevocationServerURL: revocationServerURL},
 		},
 		JwtPrivateKeyFile: jwtPrivkeyPath,
 		StaticSessions: map[string]interface{}{

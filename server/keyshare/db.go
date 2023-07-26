@@ -1,28 +1,26 @@
 package keyshare
 
 import (
+	"context"
 	"database/sql"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
 )
-
-var ErrUserNotFound = errors.New("Could not find specified user")
 
 type DB struct {
 	*sql.DB
 }
 
-func (db *DB) ExecCount(query string, args ...interface{}) (int64, error) {
-	res, err := db.Exec(query, args...)
+func (db *DB) ExecCountContext(ctx context.Context, query string, args ...interface{}) (int64, error) {
+	res, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
 	return res.RowsAffected()
 }
 
-func (db *DB) ExecUser(query string, args ...interface{}) error {
-	c, err := db.ExecCount(query, args...)
+func (db *DB) ExecUserContext(ctx context.Context, query string, args ...interface{}) error {
+	c, err := db.ExecCountContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -32,8 +30,8 @@ func (db *DB) ExecUser(query string, args ...interface{}) error {
 	return nil
 }
 
-func (db *DB) QueryScan(query string, results []interface{}, args ...interface{}) error {
-	res, err := db.Query(query, args...)
+func (db *DB) QueryScanContext(ctx context.Context, query string, results []interface{}, args ...interface{}) error {
+	res, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -54,16 +52,16 @@ func (db *DB) QueryScan(query string, results []interface{}, args ...interface{}
 	return nil
 }
 
-func (db *DB) QueryUser(query string, results []interface{}, args ...interface{}) error {
-	err := db.QueryScan(query, results, args...)
+func (db *DB) QueryUserContext(ctx context.Context, query string, results []interface{}, args ...interface{}) error {
+	err := db.QueryScanContext(ctx, query, results, args...)
 	if err == sql.ErrNoRows {
 		return ErrUserNotFound
 	}
 	return err
 }
 
-func (db *DB) QueryIterate(query string, f func(rows *sql.Rows) error, args ...interface{}) error {
-	res, err := db.Query(query, args...)
+func (db *DB) QueryIterateContext(ctx context.Context, query string, f func(rows *sql.Rows) error, args ...interface{}) error {
+	res, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -75,4 +73,19 @@ func (db *DB) QueryIterate(query string, f func(rows *sql.Rows) error, args ...i
 		}
 	}
 	return res.Err()
+}
+
+// EmailRevalidation returns whether email address revalidation is enabled.
+func (db *DB) EmailRevalidation(ctx context.Context) bool {
+	c, err := db.ExecCountContext(ctx, "SELECT true FROM information_schema.columns WHERE table_schema='irma' AND table_name='emails' AND column_name='revalidate_on'")
+	if err != nil {
+		common.Logger.WithField("error", err).Error("Could not query the schema for column emails.revalidate_on, therefore revalidation is disabled")
+		return false
+	}
+
+	if c == 0 {
+		common.Logger.Warning("Email address revalidation is disabled because the emails.revalidate_on column is not present in the schema")
+		return false
+	}
+	return true
 }

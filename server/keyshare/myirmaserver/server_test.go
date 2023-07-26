@@ -104,24 +104,24 @@ func TestServerSessionMgmnt(t *testing.T) {
 	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8081/login/token/candidates", "doesnotexist", textPlainHeader(), 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token/candidates", "doesnotexist", textPlainHeader(), 403, nil)
 
 	var cands []loginCandidate
 	test.HTTPPost(t, client, "http://localhost:8081/login/token/candidates", "testtoken", textPlainHeader(), 200, &cands)
 	assert.Equal(t, 1, len(cands))
 	assert.Equal(t, "testuser", cands[0].Username)
 
-	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "doesnotexist", "username": "testuser"}`, nil, 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "doesnotexist", "username": "testuser"}`, nil, 403, nil)
 
 	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "testtoken", "username":"doesnotexist"}`, nil, 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "testtoken", "username":"doesnotexist"}`, nil, 403, nil)
 
 	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "testtoken", "username":"noemail"}`, nil, 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/login/token", `{"token": "testtoken", "username":"noemail"}`, nil, 403, nil)
 
 	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
@@ -136,7 +136,7 @@ func TestServerSessionMgmnt(t *testing.T) {
 	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)
 
-	test.HTTPPost(t, client, "http://localhost:8081/verify", "doesnotexist", textPlainHeader(), 400, nil)
+	test.HTTPPost(t, client, "http://localhost:8081/verify", "doesnotexist", textPlainHeader(), 403, nil)
 
 	test.HTTPPost(t, client, "http://localhost:8081/checksession", "", nil, 200, &body)
 	assert.Equal(t, []byte("expired"), body)

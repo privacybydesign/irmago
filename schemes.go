@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -455,7 +454,7 @@ func (conf *Configuration) reinstallSchemeFromRemote(scheme Scheme) error {
 	if conf.readOnly {
 		return errors.New("cannot install scheme into a read-only configuration")
 	}
-	pkbts, err := ioutil.ReadFile(filepath.Join(scheme.path(), "pk.pem"))
+	pkbts, err := os.ReadFile(filepath.Join(scheme.path(), "pk.pem"))
 	if err != nil {
 		return err
 	}
@@ -676,7 +675,7 @@ func (conf *Configuration) verifySignature(dir string) (err error) {
 	}
 
 	// Read and hash index file
-	indexbts, err := ioutil.ReadFile(filepath.Join(dir, "index"))
+	indexbts, err := os.ReadFile(filepath.Join(dir, "index"))
 	if err != nil {
 		return err
 	}
@@ -688,7 +687,7 @@ func (conf *Configuration) verifySignature(dir string) (err error) {
 	}
 
 	// Read and parse signature
-	sig, err := ioutil.ReadFile(filepath.Join(dir, "index.sig"))
+	sig, err := os.ReadFile(filepath.Join(dir, "index.sig"))
 	if err != nil {
 		return err
 	}
@@ -697,7 +696,7 @@ func (conf *Configuration) verifySignature(dir string) (err error) {
 }
 
 func (conf *Configuration) schemePublicKey(dir string) (*ecdsa.PublicKey, error) {
-	pkbts, err := ioutil.ReadFile(filepath.Join(dir, "pk.pem"))
+	pkbts, err := os.ReadFile(filepath.Join(dir, "pk.pem"))
 	if err != nil {
 		return nil, err
 	}
@@ -718,7 +717,7 @@ func (conf *Configuration) readSignedFile(index SchemeManagerIndex, base string,
 }
 
 func (conf *Configuration) readHashedFile(path string, hash SchemeFileHash) ([]byte, error) {
-	bts, err := ioutil.ReadFile(path)
+	bts, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -739,7 +738,7 @@ func (conf *Configuration) parseIndex(dir string) (SchemeManagerIndex, error, Sc
 	if err := common.AssertPathExists(path); err != nil {
 		return nil, fmt.Errorf("missing scheme manager index file; tried %s", path), SchemeManagerStatusInvalidIndex
 	}
-	indexbts, err := ioutil.ReadFile(path)
+	indexbts, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err, SchemeManagerStatusInvalidIndex
 	}
@@ -849,7 +848,7 @@ func downloadScheme(url string) (Scheme, error) {
 }
 
 func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error) {
-	dir, err := ioutil.TempDir(filepath.Dir(scheme.path()), ".tempscheme")
+	dir, err := os.MkdirTemp(filepath.Dir(scheme.path()), ".tempscheme")
 	if err != nil {
 		return "", "", err
 	}
@@ -870,7 +869,7 @@ func (conf *Configuration) tempSchemeCopy(scheme Scheme) (string, string, error)
 func (conf *Configuration) updateSchemeDir(scheme Scheme, oldscheme, newscheme string) error {
 	// Create a directory in the same directory as oldscheme,
 	// this is to make sure os.Rename does not fail with an "invalid cross-device link" error.
-	tmp, err := ioutil.TempDir(filepath.Dir(oldscheme), ".oldscheme")
+	tmp, err := os.MkdirTemp(filepath.Dir(oldscheme), ".oldscheme")
 	if err != nil {
 		return err
 	}
@@ -1205,7 +1204,7 @@ func (scheme *SchemeManager) verifyFiles(conf *Configuration) error {
 			return err
 		}
 		if !exists {
-			continue
+			return errors.Errorf("file %s in index is not found on disk", file)
 		}
 		// Don't care about the actual bytes
 		if _, _, err = conf.readSignedFile(scheme.index, scheme.path(), file); err != nil {
@@ -1253,13 +1252,30 @@ func (scheme *SchemeManager) parseCredentialsFolder(conf *Configuration, issuer 
 		credid := cred.Identifier()
 		conf.CredentialTypes[credid] = cred
 		conf.addReverseHash(credid)
+		revAttrs := false
 		for index, attr := range cred.AttributeTypes {
 			attr.Index = index
 			attr.SchemeManagerID = cred.SchemeManagerID
 			attr.IssuerID = cred.IssuerID
 			attr.CredentialTypeID = cred.ID
 			conf.AttributeTypes[attr.GetAttributeTypeIdentifier()] = attr
+
+			if attr.ID != "" && attr.RevocationAttribute {
+				return errors.New(fmt.Sprintf("Attribute %s.%s cannot contain revocation=\"true\". This needs to be a separate attribute: <Attribute revocation=\"true\" />", attr.IssuerID, attr.ID))
+			}
+
+			if attr.RevocationAttribute {
+				revAttrs = true
+			}
 		}
+
+		if len(cred.RevocationServers) == 0 && revAttrs {
+			return errors.New("Revocation attribute specified, but RevocationServer is missing")
+		}
+		if len(cred.RevocationServers) > 0 && !revAttrs {
+			return errors.New("RevocationServer specified, but revocation attribute: '<Attribute revocation=\"true\" />' is missing")
+		}
+
 		return nil
 	})
 	if !foundcred {
@@ -1325,7 +1341,18 @@ func (scheme *RequestorScheme) setStatus(s SchemeManagerStatus) { scheme.Status 
 
 func (scheme *RequestorScheme) path() string { return scheme.storagepath }
 
-func (scheme *RequestorScheme) setPath(path string) { scheme.storagepath = path }
+func (scheme *RequestorScheme) setPath(path string) {
+	scheme.storagepath = path
+
+	// Rebase all logo paths
+	for _, requestor := range scheme.requestors {
+		requestor.LogoPath = nil
+		logoPath := requestor.logoPath(scheme)
+		if logoPath != "" {
+			requestor.LogoPath = &logoPath
+		}
+	}
+}
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {

@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -802,7 +802,7 @@ func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestIrmaServerPrivateKeysFolder(t *testing.T) {
-	storage, err := ioutil.TempDir("", "servertest")
+	storage, err := os.MkdirTemp("", "servertest")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
 
@@ -969,8 +969,9 @@ func TestPOSTSizeLimit(t *testing.T) {
 	http.DefaultClient.Timeout = 30 * time.Second
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	bts, err := ioutil.ReadAll(res.Body)
+	bts, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
 
 	var rerr irma.RemoteError
 	require.NoError(t, json.Unmarshal(bts, &rerr))
@@ -1179,6 +1180,34 @@ func TestParallelSessions(t *testing.T) {
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
+}
+
+func TestParallelSessionsWithPairing(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	frontendOptionsHandler := func(handler *TestHandler) {
+		_ = setPairingMethod(irma.PairingMethodPin, handler)
+	}
+
+	pairingHandler := func(handler *TestHandler) {
+		<-handler.pairingCodeChan
+
+		// Do a second session while the first session is pairing.
+		doSession(t, request, client, irmaServer, nil, nil, nil)
+
+		// After the second session has been completed, we complete pairing of the first session.
+		err := handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
+		require.NoError(t, err)
+	}
+
+	// Initiate the first session with pairing being enabled.
+	doSession(t, request, client, irmaServer, frontendOptionsHandler, pairingHandler, nil)
 }
 
 func expireKey(t *testing.T, conf *irma.Configuration) {

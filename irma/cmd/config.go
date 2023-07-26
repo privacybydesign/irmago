@@ -141,6 +141,10 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 		"verbosity": server.Verbosity(viper.GetInt("verbose")),
 	}).Info(logname + " running")
 
+	if logger.Level >= logrus.TraceLevel {
+		logger.Warn("Logger has been configured to show TRACE messages. These messages may contain untrusted user input and personal data of users. Use this option with care!")
+	}
+
 	// Now we finally examine and log any error from viper.ReadInConfig()
 	if err != nil {
 		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {

@@ -154,8 +154,8 @@ k6 run ./testdata/performance/keyshare-server.js --env URL=http://localhost:8080
 By default, k6 runs a single test iteration using 1 virtual user. These defaults can be adjusted by specifying test stages using the [`-s` CLI parameter](https://k6.io/docs/using-k6/options/#stages).
 
 ## Contact
-Request access to our IRMA slack channel by mailing to [our support](mailto:support.irma@sidn.nl) if you want to become part of the community. In our slack channels, the latest news on IRMA are shared and technical details get discussed.
+Request access to our IRMA slack channel by mailing to [our support](mailto:support@yivi.app) if you want to become part of the community. In our slack channels, the latest news on IRMA are shared and technical details get discussed.
 
-For responsible disclosure mail to [our responsible disclosure mailbox](mailto:irma-responsibledisclosure@sidn.nl)
+For responsible disclosure mail to [our responsible disclosure mailbox](mailto:responsible.disclosure@sidn.nl)
 
 <!-- vim: set ts=4 sw=4: -->

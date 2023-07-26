@@ -4,10 +4,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## Unreleased
 
 ### Added
-- Support for revocation db type `mssql` (Microsoft SQL Server)
+- E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- Support for revocation db type `sqlserver` (Microsoft SQL Server)
+
+### Changed
+- Use separate application user in Dockerfile for entrypoint
+- Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
+- Validate revocation witness before revocation update is applied
+- RevocationStorage's EnableRevocation function does not return an error anymore if it has been enabled already
+
+As part of e-mail address revalidation:
+- `VerifyMXRecord` incorporates a check to see if there is an active network connection
+- MyIrma server: `/user` returns an additional field `revalidate_in_progress` in the JSON response body, indicating whether the e-mail address is being revalidated or not 
+- MyIrma server: `/user/delete` and `/email/remove` return a 500 status code and `REVALIDATE_EMAIL` error type if one or more e-mail addresses of the user are invalid
+
+**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail address revalidation is disabled and there will not be a breaking change.
+
+### Fixed
+- Race conditions in database logic of revocation storage
+- `irma scheme verify` not detecting missing files in index 
+- Scheme verification/signing does not reject credentials with invalid revocation settings
+- Write transactions within memory implementation of revocation storage may lead to unintended changes
+
+### Removed
+- Superfluous openssl package in Dockerfile
+
+## [0.12.6] - 2023-05-31
+### Fixed
+- Legacy endpoints of keyshare server return 403 status codes when database is down
+
+## [0.12.5] - 2023-05-25
+
+### Changed
+- Print warning in logs if log verbosity is set to trace
+
+### Fixed
+- LogoPath is incorrect after a requestor scheme update
+- Parallel sessions may fail when one of the sessions requires pairing
+
+## [0.12.4] - 2023-05-16
+
+### Fixed
+- Revocation related log messages occur twice or have wrong severity in irmaclient
+
+## [0.12.3] - 2023-05-12
+
+### Changed
+- Move checks for missing schemes from scheme parsing to storage parsing
+- Ignore directories in irma_configuration directory that don't contain a scheme
+
+### Fixed
+- Stability issues in transport logic
+- Server and client timeouts are out-of-sync
+- Keyshare server returns 403 status codes when database is down
+- Handling invalid email or login tokens gives different status codes in different contexts
+- CopyDirectory function may fail when relative paths are used
+
+### Security
+- Improve randomness of session tokens and pairing codes
+
+### Internal
+- Change contact e-mail address in README to Yivi
+- Phase out deprecated io/ioutil library
 
 ## [0.12.2] - 2023-03-22
 
@@ -317,6 +378,10 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.12.6]: https://github.com/privacybydesign/irmago/compare/v0.12.5...v0.12.6
+[0.12.5]: https://github.com/privacybydesign/irmago/compare/v0.12.4...v0.12.5
+[0.12.4]: https://github.com/privacybydesign/irmago/compare/v0.12.3...v0.12.4
+[0.12.3]: https://github.com/privacybydesign/irmago/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/privacybydesign/irmago/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/privacybydesign/irmago/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/privacybydesign/irmago/compare/v0.11.2...v0.12.0
