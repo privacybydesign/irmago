@@ -55,7 +55,7 @@ type LogOptions struct {
 	Response, Headers, From, EncodeBinary bool
 }
 
-// LegacySessionResult is a legacy version of SessionResult.
+// LegacySessionResult is a pre-condiscon version of SessionResult.
 // Remove this when dropping support for legacy pre-condiscon session requests.
 type LegacySessionResult struct {
 	Token       irma.RequestorToken        `json:"token"`
