@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron"
+	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 
 	"github.com/privacybydesign/gabi"
@@ -29,9 +31,11 @@ import (
 )
 
 var (
-	revocationDbType, revocationDbStr = "postgres", "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable"
-	//revocationDbType, revocationDbStr = "mysql", "testuser:testpassword@tcp(127.0.0.1)/test"
-	//revocationDbType, revocationDbStr = "mssql", "sqlserver://testuser:test-Password@127.0.0.1:1433?database=test"
+	revocationDbStrs = map[string]string{
+		"postgres": "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable",
+		"mysql": "testuser:testpassword@tcp(127.0.0.1)/test",
+		"sqlserver": "sqlserver://testuser:test-Password@127.0.0.1:1433?database=test",
+	}
 
 	revocationPkCounter uint = 2
 )
@@ -94,9 +98,21 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	require.False(t, satisfiable)
 }
 
-func TestRevocationAll(t *testing.T) {
+func TestRevocationPostgres(t *testing.T) {
+	testRevocationAll(t, "postgres")
+}
+
+func TestRevocationMySQL(t *testing.T) {
+	testRevocationAll(t, "mysql")
+}
+
+func TestRevocationSQLServer(t *testing.T) {
+	testRevocationAll(t, "sqlserver")
+}
+
+func testRevocationAll(t *testing.T, dbType string) {
 	t.Run("Revocation", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, client, handler.storage)
@@ -104,7 +120,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("RevocationServerSessions", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 
 		// issue a MijnOverheid.root instance with revocation enabled
@@ -134,7 +150,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("MixRevocationNonRevocation", func(t *testing.T) {
-		revServer, client, handler := revocationSetup(t, nil)
+		revServer, client, handler := revocationSetup(t, nil, dbType)
 		defer test.ClearTestStorage(t, client, handler.storage)
 		defer revServer.Stop()
 
@@ -155,7 +171,7 @@ func TestRevocationAll(t *testing.T) {
 		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
 
-		revServer, client, handler := revocationSetup(t, nil)
+		revServer, client, handler := revocationSetup(t, nil, dbType)
 		defer test.ClearTestStorage(t, client, handler.storage)
 		defer revServer.Stop()
 
@@ -188,7 +204,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("POSTUpdates", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
@@ -228,7 +244,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("NoKnownAccumulator", func(t *testing.T) {
-		revServer, client, handler := revocationSetup(t, nil)
+		revServer, client, handler := revocationSetup(t, nil, dbType)
 		defer test.ClearTestStorage(t, client, handler.storage)
 
 		// stop revocation server so the verifier cannot fetch revocation state
@@ -241,7 +257,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("OtherAccumulator", func(t *testing.T) {
-		revServer, client, handler := revocationSetup(t, nil)
+		revServer, client, handler := revocationSetup(t, nil, dbType)
 		defer test.ClearTestStorage(t, client, handler.storage)
 		defer revServer.Stop()
 
@@ -323,7 +339,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("ClientSessionServerUpdate", func(t *testing.T) {
-		revServer, client, handler := revocationSetup(t, nil)
+		revServer, client, handler := revocationSetup(t, nil, dbType)
 		defer test.ClearTestStorage(t, client, handler.storage)
 		defer revServer.Stop()
 
@@ -341,7 +357,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("UpdateSameIndex", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		irmaServer := StartIrmaServer(t, nil)
 		defer irmaServer.Stop()
@@ -376,7 +392,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("ClientAutoServerUpdate", func(t *testing.T) {
-		revServer, client, handler := revocationSetup(t, nil) // revocation server is stopped manually below
+		revServer, client, handler := revocationSetup(t, nil, dbType) // revocation server is stopped manually below
 		defer test.ClearTestStorage(t, client, handler.storage)
 
 		// Advance the accumulator by performing 3 revocations
@@ -421,7 +437,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("LaggingNonRevocationWitness", func(t *testing.T) {
-		revServer, client, handler := revocationSetup(t, nil)
+		revServer, client, handler := revocationSetup(t, nil, dbType)
 		defer revServer.Stop()
 		defer test.ClearTestStorage(t, client, handler.storage)
 
@@ -476,7 +492,7 @@ func TestRevocationAll(t *testing.T) {
 		defer irmaServer.Stop()
 
 		// issue a credential, populating irmaServer's revocation memdb
-		revServer, client, handler := revocationSetup(t, irmaServer)
+		revServer, client, handler := revocationSetup(t, irmaServer, dbType)
 		defer test.ClearTestStorage(t, client, handler.storage)
 		defer revServer.Stop()
 
@@ -490,7 +506,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("RestartRevocationServer", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		rev := revServer.conf.IrmaConfiguration.Revocation
 		sacc1, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
 		require.NoError(t, err)
@@ -507,7 +523,7 @@ func TestRevocationAll(t *testing.T) {
 
 		revServer.Stop()
 
-		revServer = startRevocationServer(t, false)
+		revServer = startRevocationServer(t, false, dbType)
 		defer revServer.Stop()
 		rev = revServer.conf.IrmaConfiguration.Revocation
 		sacc3, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
@@ -525,7 +541,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("DeleteExpiredIssuanceRecords", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 
 		// Insert expired issuance record
@@ -552,7 +568,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("RevokeMany", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		rev := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
@@ -597,7 +613,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("RevocationTolerance", func(t *testing.T) {
-		revServer, client, handler := revocationSetup(t, nil)
+		revServer, client, handler := revocationSetup(t, nil, dbType)
 		defer test.ClearTestStorage(t, client, handler.storage)
 		defer revServer.Stop()
 		start := time.Now()
@@ -628,7 +644,7 @@ func TestRevocationAll(t *testing.T) {
 	})
 
 	t.Run("Cache", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		rev := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := rev.Accumulator(revocationTestCred, revocationPkCounter)
@@ -693,7 +709,7 @@ func TestRevocationAll(t *testing.T) {
 		// Restore revocation setup
 		credtyp.RevocationServers = servers
 		credtyp.AttributeTypes = append(credtyp.AttributeTypes, revAttr)
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 
 		// Try disclosure session requiring nonrevocation proof
@@ -704,8 +720,9 @@ func TestRevocationAll(t *testing.T) {
 }
 
 func TestKeyshareRevocation(t *testing.T) {
+	dbType := "postgres"
 	t.Run("Keyshare", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
 		defer keyshareServer.Stop()
@@ -716,7 +733,7 @@ func TestKeyshareRevocation(t *testing.T) {
 	})
 
 	t.Run("Both", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
 		defer keyshareServer.Stop()
@@ -728,7 +745,7 @@ func TestKeyshareRevocation(t *testing.T) {
 	})
 
 	t.Run("KeyshareMultipleCredentials", func(t *testing.T) {
-		revServer := startRevocationServer(t, true)
+		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
 		defer keyshareServer.Stop()
@@ -794,8 +811,8 @@ func revocationSession(t *testing.T, client *irmaclient.Client, request irma.Ses
 }
 
 // revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
-func revocationSetup(t *testing.T, irmaServer *IrmaServer) (*IrmaServer, *irmaclient.Client, *TestClientHandler) {
-	revServer := startRevocationServer(t, true)
+func revocationSetup(t *testing.T, irmaServer *IrmaServer, dbType string) (*IrmaServer, *irmaclient.Client, *TestClientHandler) {
+	revServer := startRevocationServer(t, true, dbType)
 
 	// issue a MijnOverheid.root instance with revocation enabled
 	client, handler := parseStorage(t)
@@ -851,7 +868,7 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 	require.NoError(t, conf.AddUpdate(revocationTestCred, update))
 }
 
-func revocationConf(_ *testing.T) *server.Configuration {
+func revocationConf(_ *testing.T, dbType string) *server.Configuration {
 	return &server.Configuration{
 		URL:                   revocationServerURL,
 		Logger:                logger,
@@ -864,17 +881,25 @@ func revocationConf(_ *testing.T) *server.Configuration {
 			revKeyshareTestCred:       {Authority: true},
 			revKeyshareSecondTestCred: {Authority: true},
 		},
-		RevocationDBConnStr: revocationDbStr,
-		RevocationDBType:    revocationDbType,
+		RevocationDBConnStr: revocationDbStrs[dbType],
+		RevocationDBType:    dbType,
 	}
 }
 
-func startRevocationServer(t *testing.T, droptables bool) *IrmaServer {
+func startRevocationServer(t *testing.T, droptables bool, dbType string) *IrmaServer {
 	var err error
 
 	// Connect to database and clear records from previous test runs
 	if droptables {
-		g, err := gorm.Open(postgres.Open(revocationDbStr))
+		var g *gorm.DB
+		switch dbType {
+		case "postgres":
+			g, err = gorm.Open(postgres.Open(revocationDbStrs[dbType]))
+		case "mysql":
+			g, err = gorm.Open(mysql.Open(revocationDbStrs[dbType]))
+		case "sqlserver":
+			g, err = gorm.Open(sqlserver.Open(revocationDbStrs[dbType]))
+		}
 		require.NoError(t, err)
 		require.NoError(t, g.Migrator().DropTable((*irma.EventRecord)(nil)))
 		require.NoError(t, g.Migrator().DropTable((*irma.AccumulatorRecord)(nil)))
@@ -888,7 +913,7 @@ func startRevocationServer(t *testing.T, droptables bool) *IrmaServer {
 	}
 
 	// Start revocation server
-	conf := revocationConf(t)
+	conf := revocationConf(t, dbType)
 	revocationServer, err := irmaserver.New(conf)
 	require.NoError(t, err)
 	mux := http.NewServeMux()
