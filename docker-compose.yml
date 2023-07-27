@@ -43,16 +43,15 @@ services:
       - 3306:3306
   mssqlserver:
     image: kcollins/mssql:2019-latest
-    ports:
-      - 1433:1433
     environment:
-      # ACCEPT_EULA confirms your acceptance of the End-User Licensing Agreement.
-      ACCEPT_EULA: Y
+      ACCEPT_EULA: Y # Confirms your acceptance of the End-User Licensing Agreement.
       SA_PASSWORD: test-Password # Include dash and uppercase letter to meet password requirements.
       MSSQL_DATABASE: test
       MSSQL_USER: testuser
       MSSQL_PASSWORD: test-Password
       MSSQL_PID: Developer
+    ports:
+      - 1433:1433
   mailhog:
     image: mailhog/mailhog
     networks:
@@ -88,6 +87,8 @@ services:
       - .:/irmago
     depends_on:
       - postgres
+      - mysql
+      - mssqlserver
       - mailhog
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
