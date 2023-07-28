@@ -277,7 +277,7 @@ func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.
 	// This should never happen, but it makes debugging easier if something goes wrong.
 	if cred.NonRevocationWitness != nil {
 		if err := cred.NonRevocationWitness.Verify(cred.Pk); err != nil {
-			return false, errors.WrapPrefix(err, "revocation witness is in an inconsistent state", 0)
+			return false, irma.WrapErrorPrefix(err, "revocation witness is in an inconsistent state")
 		}
 	}
 

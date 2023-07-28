@@ -1122,7 +1122,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		}
 	}
 	if err != nil {
-		return errors.WrapPrefix(err, "failed to validate pin", 0)
+		return irma.WrapErrorPrefix(err, "failed to validate pin")
 	}
 	if !pinCorrect {
 		return errors.New("incorrect pin")
