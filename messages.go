@@ -517,8 +517,12 @@ type FrontendSessionStatus struct {
 func WrapErrorPrefix(err error, msg string) error {
 	// If error is already a SessionError, just add the prefix to the info
 	if sessionErr, ok := err.(*SessionError); ok {
-		sessionErr.Info = msg + ": " + sessionErr.Info
-		return sessionErr
+		return &SessionError{
+			Err:         sessionErr.Err,
+			ErrorType:   sessionErr.ErrorType,
+			Info:        fmt.Sprintf("%s: %s", msg, sessionErr.Info),
+			RemoteError: sessionErr.RemoteError,
+		}
 	}
 
 	// Otherwise just use error.WrapPrefix
