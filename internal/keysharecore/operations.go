@@ -309,7 +309,7 @@ func (c *Core) GenerateResponseV2(
 	secrets UserSecrets,
 	accessToken string,
 	commitID uint64,
-	hash gabi.KeyshareCommitmentRequest,
+	hashedComms gabi.KeyshareCommitmentRequest,
 	req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier],
 	keyID irma.PublicKeyIdentifier,
 	linkable bool) (string, error) {
@@ -335,7 +335,7 @@ func (c *Core) GenerateResponseV2(
 		return "", ErrUnknownCommit
 	}
 
-	proofP, err := gabi.KeyshareResponse(s.KeyshareSecret, commit, hash, req, c.trustedKeys)
+	proofP, err := gabi.KeyshareResponse(s.KeyshareSecret, commit, hashedComms, req, c.trustedKeys)
 	if err != nil {
 		return "", err
 	}
