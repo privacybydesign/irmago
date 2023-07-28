@@ -41,7 +41,7 @@ services:
       MYSQL_PASSWORD: testpassword
     ports:
       - 3306:3306
-  mssqlserver:
+  sqlserver:
     image: kcollins/mssql:2019-latest
     environment:
       ACCEPT_EULA: Y # Confirms your acceptance of the End-User Licensing Agreement.
@@ -88,7 +88,7 @@ services:
     depends_on:
       - postgres
       - mysql
-      - mssqlserver
+      - sqlserver
       - mailhog
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
