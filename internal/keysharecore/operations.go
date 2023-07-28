@@ -305,6 +305,8 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 }
 
 // GenerateResponseV2 generates the response of a zero-knowledge proof of the keyshare secret, for a given previous commit and response request.
+// In older versions of the IRMA protocol (2.8 or below), issuers need a response that is linkable to earlier issuance sessions. In this case,
+// the ProofP.P will be set as well. The linkable parameter indicates whether the ProofP.P should be included.
 func (c *Core) GenerateResponseV2(
 	secrets UserSecrets,
 	accessToken string,
@@ -344,7 +346,7 @@ func (c *Core) GenerateResponseV2(
 		return "", ErrInvalidChallenge
 	}
 
-	// Linkable response for legacy purposes
+	// Set Proof.P to R_0^userSecret if the response should be linkable.
 	if linkable {
 		proofP.P = new(big.Int).Exp(key.R[0], s.KeyshareSecret, key.N)
 	}
