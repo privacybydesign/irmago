@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -102,7 +101,7 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
 		if err = common.AssertPathExists(conf.assets); err != nil {
-			return nil, errors.WrapPrefix(err, "Nonexistent assets folder specified", 0)
+			return nil, WrapErrorPrefix(err, "Nonexistent assets folder specified")
 		}
 	}
 	if err = common.EnsureDirectoryExists(conf.Path); err != nil {
@@ -143,9 +142,24 @@ func (conf *Configuration) ParseFolder() (err error) {
 	var mgrerr *SchemeManagerError
 	var issuerschemes, requestorschemes []Scheme
 	err = common.IterateSubfolders(conf.Path, func(dir string, _ os.FileInfo) error {
+		dirname := filepath.Base(dir)
+		if common.IsTempSchemeDir(dirname) {
+			Logger.Infof("Removing leftover temporary scheme directory %s", dirname)
+			if err := os.RemoveAll(dir); err != nil {
+				// warn the error but continue, dotted dirs are ignored below anyway
+				Logger.Warn(err)
+			}
+			return nil
+		}
+		if strings.HasPrefix(filepath.Base(dir), ".") {
+			// Ignore other hidden directories
+			return nil
+		}
 		scheme, _, err := conf.parseSchemeDescription(dir)
 		if err != nil {
-			return err
+			// Directory does not contain a valid scheme. We log this issue and skip the directory.
+			Logger.Warnf("Directory %s does not contain a valid scheme: %s", dir, err)
+			return nil
 		}
 		switch scheme.typ() {
 		case SchemeTypeIssuer:
@@ -404,7 +418,7 @@ func (conf *Configuration) KeyshareServerPublicKey(schemeid SchemeManagerIdentif
 	}
 	if _, contains := conf.kssPublicKeys[schemeid][i]; !contains {
 		scheme := conf.SchemeManagers[schemeid]
-		pkbts, err := ioutil.ReadFile(filepath.Join(scheme.path(), fmt.Sprintf("kss-%d.pem", i)))
+		pkbts, err := os.ReadFile(filepath.Join(scheme.path(), fmt.Sprintf("kss-%d.pem", i)))
 		if err != nil {
 			return nil, err
 		}

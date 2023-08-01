@@ -1,0 +1,70 @@
+name: Delivery
+
+on:
+  push:
+    tags: [ v* ]
+
+permissions:
+  contents: write
+
+jobs:
+
+  ensure-release-present:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Check whether the release is merged to master
+        run: git branch --contains ${{ github.sha }} | grep -x "* master"
+        shell: bash
+
+      - uses: actions/checkout@v3
+
+      - name: Check whether version.go contains the new version number
+        run: cat version.go | grep ${GITHUB_REF_NAME:1}
+        shell: bash
+
+      - name: Check whether CHANGELOG.md contains the new version number
+        run: cat CHANGELOG.md | grep "\[${GITHUB_REF_NAME:1}\]"
+        shell: bash
+
+      - name: Check whether release is present
+        id: release-present
+        run: gh release view ${{ github.ref_name }}
+        continue-on-error: true
+
+      - name: Make new release if necessary
+        if: steps.release-present.outcome == 'failure'
+        run: gh release create ${{ github.ref_name }} -t "${{ github.ref_name }}" -n "Check CHANGELOG.md in repository."
+
+  build-release-artifact:
+    needs: ensure-release-present
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      matrix:
+        os: [ linux, darwin, windows ]
+        arch: [ amd64, 386, arm, arm64 ]
+        exclude:
+          - os: darwin
+            arch: 386
+          - os: darwin
+            arch: arm
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build artifact
+        uses: ./.github/actions/build
+        id: build
+        with:
+          os: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+
+      - name: Upload artifact
+        run: gh release upload ${{ github.ref_name }} ${{ steps.build.outputs.artifact-name }}

@@ -61,6 +61,7 @@ func configureIRMAServer() *server.Configuration {
 		Logger:                 logger,
 		Production:             viper.GetBool("production"),
 		MaxSessionLifetime:     viper.GetInt("max_session_lifetime"),
+		SessionResultLifetime:  viper.GetInt("session_result_lifetime"),
 		JwtIssuer:              viper.GetString("jwt_issuer"),
 		JwtPrivateKey:          viper.GetString("jwt_privkey"),
 		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
@@ -139,6 +140,10 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 		"mode":      mode,
 		"verbosity": server.Verbosity(viper.GetInt("verbose")),
 	}).Info(logname + " running")
+
+	if logger.Level >= logrus.TraceLevel {
+		logger.Warn("Logger has been configured to show TRACE messages. These messages may contain untrusted user input and personal data of users. Use this option with care!")
+	}
 
 	// Now we finally examine and log any error from viper.ReadInConfig()
 	if err != nil {

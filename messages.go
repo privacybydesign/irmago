@@ -513,7 +513,7 @@ func ParseRequestorJwt(action string, requestorJwt string) (RequestorJwt, error)
 		return nil, err
 	}
 	if err := retval.RequestorRequest().Validate(); err != nil {
-		return nil, errors.WrapPrefix(err, "Invalid JWT body", 0)
+		return nil, WrapErrorPrefix(err, "Invalid JWT body")
 	}
 	return retval, nil
 }
@@ -560,4 +560,19 @@ type ServerSessionResponse struct {
 type FrontendSessionStatus struct {
 	Status      ServerStatus `json:"status"`
 	NextSession *Qr          `json:"nextSession,omitempty"`
+}
+
+func WrapErrorPrefix(err error, msg string) error {
+	// If error is already a SessionError, just add the prefix to the info
+	if sessionErr, ok := err.(*SessionError); ok {
+		return &SessionError{
+			Err:         sessionErr.Err,
+			ErrorType:   sessionErr.ErrorType,
+			Info:        fmt.Sprintf("%s: %s", msg, sessionErr.Info),
+			RemoteError: sessionErr.RemoteError,
+		}
+	}
+
+	// Otherwise just use error.WrapPrefix
+	return errors.WrapPrefix(err, msg, 0)
 }

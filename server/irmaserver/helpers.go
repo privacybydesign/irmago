@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"reflect"
@@ -192,7 +192,7 @@ func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.Crede
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
-	updates, err := rs.UpdateLatest(id, 0, &cred.KeyCounter)
+	updates, err := rs.LatestUpdates(id, 0, &cred.KeyCounter)
 	if err != nil {
 		return nil, err
 	}
@@ -537,13 +537,12 @@ func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 		session := r.Context().Value("session").(*session)
 
 		// Read r.Body, and then replace with a fresh ReadCloser for the next handler
-		var message []byte
-		var err error
-		if message, err = ioutil.ReadAll(r.Body); err != nil {
+		message, err := io.ReadAll(r.Body)
+		if err != nil {
 			message = []byte("<failed to read body: " + err.Error() + ">")
 		}
 		_ = r.Body.Close()
-		r.Body = ioutil.NopCloser(bytes.NewBuffer(message))
+		r.Body = io.NopCloser(bytes.NewBuffer(message))
 
 		// if a cache is set and applicable, return it
 		status, output := session.checkCache(r.URL.Path, message)

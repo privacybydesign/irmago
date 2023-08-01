@@ -5,10 +5,10 @@ package test
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,7 +30,7 @@ func checkError(t *testing.T, err error) {
 
 var schemeServer *http.Server
 var badServer *http.Server
-var badServerCount int
+var badServerCount atomic.Uint32
 var testStorageDir = "client"
 
 func StartSchemeManagerHttpServer() {
@@ -47,13 +47,12 @@ func StopSchemeManagerHttpServer() {
 }
 
 // StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.
-func StartBadHttpServer(count int, timeout time.Duration, success string) {
+func StartBadHttpServer(count uint32, timeout time.Duration, success string) {
 	badServer = &http.Server{Addr: "localhost:48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if badServerCount >= count {
+		if badServerCount.CompareAndSwap(count, 0) {
 			_, _ = fmt.Fprintln(w, success)
-			return
 		} else {
-			badServerCount++
+			badServerCount.Add(1)
 			time.Sleep(timeout)
 		}
 	})}
@@ -104,7 +103,7 @@ func ClearAllTestStorage() {
 }
 
 func CreateTestStorage(t *testing.T) string {
-	tmp, err := ioutil.TempDir("", "irmatest")
+	tmp, err := os.MkdirTemp("", "irmatest")
 	require.NoError(t, err)
 	checkError(t, common.EnsureDirectoryExists(filepath.Join(tmp, "client")))
 	return tmp

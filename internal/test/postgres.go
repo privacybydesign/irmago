@@ -2,7 +2,7 @@ package test
 
 import (
 	"database/sql"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/privacybydesign/irmago/internal/common"
@@ -15,7 +15,7 @@ func RunScriptOnDB(t *testing.T, filename string, allowErr bool) {
 	db, err := sql.Open("pgx", PostgresTestUrl)
 	require.NoError(t, err)
 	defer common.Close(db)
-	scriptData, err := ioutil.ReadFile(filename)
+	scriptData, err := os.ReadFile(filename)
 	require.NoError(t, err)
 	_, err = db.Exec(string(scriptData))
 	if !allowErr {

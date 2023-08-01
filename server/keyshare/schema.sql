@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS irma.emails
     id serial PRIMARY KEY,
     user_id int NOT NULL REFERENCES irma.users (id) ON DELETE CASCADE,
     email text NOT NULL,
+    revalidate_on bigint,
     delete_on bigint
 );
 CREATE INDEX email_index ON irma.emails (email);

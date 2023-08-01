@@ -8,7 +8,8 @@ import (
 
 	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 type metaObjectIdentifier string
@@ -398,10 +399,12 @@ func (set *IrmaIdentifierSet) Empty() bool {
 		len(set.RequestorSchemes) == 0
 }
 
+// Value implements sql/driver Scanner interface.
 func (oi metaObjectIdentifier) Value() (driver.Value, error) {
 	return oi.String(), nil
 }
 
+// Scan implements sql/driver Scanner interface.
 func (oi *metaObjectIdentifier) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case string:
@@ -414,8 +417,9 @@ func (oi *metaObjectIdentifier) Scan(src interface{}) error {
 	return errors.New("cannot convert source: not a string or []byte")
 }
 
-func (metaObjectIdentifier) GormDataType(dialect gorm.Dialect) string {
-	switch dialect.GetName() {
+// GormDBDataType implements the gorm.io/gorm/migrator GormDataTypeInterface interface.
+func (metaObjectIdentifier) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
+	switch db.Dialector.Name() {
 	case "postgres":
 		return "text"
 	case "mysql":

@@ -206,6 +206,8 @@ func (s *memorySessionStore) deleteExpired() {
 		timeout := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
 		if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 			timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
+		} else if session.Status.Finished() {
+			timeout = time.Duration(s.conf.SessionResultLifetime) * time.Minute
 		}
 
 		if session.LastActive.Add(timeout).Before(time.Now()) {
@@ -302,16 +304,16 @@ func (s *redisSessionStore) clientGet(t irma.ClientToken) (*session, error) {
 }
 
 func (s *redisSessionStore) add(session *session) error {
-	lifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
-	// After the timeout, the session will automatically be removed. Therefore the timeout needs to
-	// be significantly longer than the session lifetime. Factor 2 was chosen since it matches the logic
-	// used in the memory store: After the session expired, the session will be marked as timed out
-	// and will exist for another session lifetime.
-	timeout := 2 * lifetime
+	sessionLifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
+	resultLifetime := time.Duration(s.conf.SessionResultLifetime) * time.Minute
+	// After the timeout, the session will automatically be removed. Therefore, the timeout needs to
+	// already include the session result lifetime. In this way, when the session expires, the session
+	// will be preserved until session result lifetime ends.
+	timeout := sessionLifetime + resultLifetime
 	if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
 		timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
 	} else if session.Status.Finished() {
-		timeout = lifetime
+		timeout = resultLifetime
 	}
 
 	sessionJSON, err := json.Marshal(session.sessionData)

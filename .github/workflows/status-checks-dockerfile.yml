@@ -1,7 +1,14 @@
-# Checks to weekly monitor the status of master.
-name: Weekly checks
+# Workflow to check whether changes to master concerning the Dockerfile fulfill all requirements.
+name: Status checks (Dockerfile)
 
 on:
+  push:
+    branches: [ master ]
+    paths:
+      - Dockerfile
+  pull_request:
+    paths:
+      - Dockerfile
   schedule:
     # Run every monday on 9:00 in the morning (UTC).
     - cron: "0 9 * * 1"
@@ -9,13 +16,11 @@ on:
   workflow_dispatch:
 
 jobs:
-
-  # Check whether the Dockerfile still builds using the latest Docker base images.
-  docker-build:
+  # Building the Dockerfile includes downloading the IRMA schemes.
+  # Therefore, we only run one check at the time, and we put a limit on the event types triggering this job.
+  docker-build-all:
     runs-on: ubuntu-latest
     strategy:
-      # Building the Dockerfile includes downloading the IRMA schemes.
-      # Therefore, we only run one check at the time.
       max-parallel: 1
       matrix:
         # busybox is not working yet.
@@ -26,13 +31,10 @@ jobs:
           - "centos:latest"
           - "amazonlinux:latest"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Build Dockerfile
         run: docker build -t privacybydesign/irma:edge --build-arg BASE_IMAGE=${{ matrix.image }} .
 
       - name: Test Docker image
         run: docker run privacybydesign/irma:edge version
-
-  analyze:
-    uses: ./.github/workflows/codeql-analysis.yml
