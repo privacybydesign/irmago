@@ -408,6 +408,10 @@ func (e *SessionError) Error() string {
 
 	buffer.WriteString("Error type: ")
 	buffer.WriteString(string(typ))
+	if len(e.Info) > 0 {
+		buffer.WriteString("\nInfo: ")
+		buffer.WriteString(e.Info)
+	}
 	if e.Err != nil {
 		buffer.WriteString("\nDescription: ")
 		buffer.WriteString(e.Err.Error())
@@ -417,7 +421,7 @@ func (e *SessionError) Error() string {
 		buffer.WriteString(strconv.Itoa(e.RemoteStatus))
 	}
 	if e.RemoteError != nil {
-		buffer.WriteString("\nIRMA server error: ")
+		buffer.WriteString("\nServer error: ")
 		buffer.WriteString(e.RemoteError.Error())
 	}
 
