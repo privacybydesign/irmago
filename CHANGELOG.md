@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
 - Validate revocation witness before revocation update is applied
 - RevocationStorage's EnableRevocation function does not return an error anymore if it has been enabled already
+- Custom WrapErrorPrefix function that respects the error's type
+- Log info message of irma.SessionError errors
 
 As part of e-mail address revalidation:
 - `VerifyMXRecord` incorporates a check to see if there is an active network connection

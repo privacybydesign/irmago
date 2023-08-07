@@ -535,14 +535,14 @@ func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTT
 		},
 	})
 	if err != nil {
-		err = errors.WrapPrefix(err, "failed to sign public key registration JWT", 0)
+		err = irma.WrapErrorPrefix(err, "failed to sign public key registration JWT")
 		return nil, err
 	}
 
 	result := &irma.KeysharePinStatus{}
 	err = transport.Post("users/register_publickey", result, irma.KeyshareKeyRegistration{PublicKeyRegistrationJWT: jwtt})
 	if err != nil {
-		err = errors.WrapPrefix(err, "failed to register public key", 0)
+		err = irma.WrapErrorPrefix(err, "failed to register public key")
 		return nil, err
 	}
 
@@ -551,7 +551,7 @@ func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTT
 		kss.ChallengeResponse = true
 		err = client.storage.StoreKeyshareServers(client.keyshareServers)
 		if err != nil {
-			err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)
+			err = irma.WrapErrorPrefix(err, "failed to store updated keyshare server")
 			return nil, err
 		}
 	}
