@@ -33,6 +33,13 @@ As part of e-mail address revalidation:
 ### Removed
 - Superfluous openssl package in Dockerfile
 
+### Security
+- Let IRMA servers by default reject IRMA/Yivi apps that don't support pairing codes (IRMA protocol version <= 2.7)
+
+**Note:** This is an important security update for issuers to make sure that pairing codes cannot be circumvented.
+IRMA apps that don't support pairing codes should not be in circulation anymore, so this change won't affect users.
+Yivi apps have always supported pairing codes.
+
 ## [0.12.6] - 2023-05-31
 ### Fixed
 - Legacy endpoints of keyshare server return 403 status codes when database is down
