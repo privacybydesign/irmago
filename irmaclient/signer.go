@@ -21,7 +21,7 @@ type Signer interface {
 // encoding used for JWTs (in which the bytes of r and s are concatenated after each other in one
 // byte slice).
 func signatureJwtEncoding(signature []byte) ([]byte, error) {
-	ints := make([]*gobig.Int, 2, 2)
+	ints := make([]*gobig.Int, 2)
 	_, err := asn1.Unmarshal(signature, &ints)
 	if err != nil {
 		return nil, err

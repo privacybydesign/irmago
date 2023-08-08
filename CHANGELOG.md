@@ -40,6 +40,9 @@ As part of e-mail address revalidation:
 IRMA apps that don't support pairing codes should not be in circulation anymore, so this change won't affect users.
 Yivi apps have always supported pairing codes.
 
+### Internal
+- Linter switch from golint to staticcheck
+
 ## [0.12.6] - 2023-05-31
 ### Fixed
 - Legacy endpoints of keyshare server return 403 status codes when database is down

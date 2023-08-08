@@ -64,7 +64,7 @@ func (v *ProtocolVersion) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.String())
 }
 
-// Returns true if v is below the given version.
+// Below returns true if v is below the given version.
 func (v *ProtocolVersion) Below(major, minor int) bool {
 	if v.Major < major {
 		return true
@@ -72,10 +72,12 @@ func (v *ProtocolVersion) Below(major, minor int) bool {
 	return v.Major == major && v.Minor < minor
 }
 
+// BelowVersion returns true if v is below the given version.
 func (v *ProtocolVersion) BelowVersion(other *ProtocolVersion) bool {
 	return v.Below(other.Major, other.Minor)
 }
 
+// Above returns true if v is above the given version.
 func (v *ProtocolVersion) Above(major, minor int) bool {
 	if v.Major > major {
 		return true
@@ -83,6 +85,7 @@ func (v *ProtocolVersion) Above(major, minor int) bool {
 	return v.Major == major && v.Minor > minor
 }
 
+// AboveVersion returns true if v is above the given version.
 func (v *ProtocolVersion) AboveVersion(other *ProtocolVersion) bool {
 	return v.Above(other.Major, other.Minor)
 }
@@ -171,8 +174,10 @@ type Qr struct {
 	Type Action `json:"irmaqr"`
 }
 
-// Tokens to identify a session from the perspective of the different agents
+// RequestorToken identifies a session from the perspective of the requestor.
 type RequestorToken string
+
+// ClientToken identifies a session from the perspective of the client.
 type ClientToken string
 
 // ParseClientToken parses a string to a ClientToken after validating the input.
@@ -194,8 +199,10 @@ func ParseRequestorToken(input string) (RequestorToken, error) {
 }
 
 // Authorization headers
-type ClientAuthorization string
-type FrontendAuthorization string
+type (
+	ClientAuthorization   string
+	FrontendAuthorization string
+)
 
 // Client statuses
 const (
