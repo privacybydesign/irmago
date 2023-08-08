@@ -620,5 +620,4 @@ func (s *Server) handleRevocationPostIssuanceRecord(w http.ResponseWriter, r *ht
 		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorRevocation, err.Error()))
 	}
 	w.WriteHeader(200)
-	return
 }
