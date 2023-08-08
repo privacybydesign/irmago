@@ -67,7 +67,7 @@ type Configuration struct {
 	readOnly    bool
 }
 
-// ConfigurationListeners are the interface provided to react to changes in schemes.
+// ConfigurationListener are the interface provided to react to changes in schemes.
 type ConfigurationListener func(conf *Configuration)
 
 type UnknownIdentifierError struct {
@@ -101,7 +101,7 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
 		if err = common.AssertPathExists(conf.assets); err != nil {
-			return nil, errors.WrapPrefix(err, "Nonexistent assets folder specified", 0)
+			return nil, WrapErrorPrefix(err, "Nonexistent assets folder specified")
 		}
 	}
 	if err = common.EnsureDirectoryExists(conf.Path); err != nil {
@@ -596,8 +596,6 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 		}
 		return nil
 	})
-
-	return
 }
 
 func (conf *Configuration) checkIdentifiers(session SessionRequest) (*IrmaIdentifierSet, *IrmaIdentifierSet, error) {

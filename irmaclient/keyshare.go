@@ -81,8 +81,8 @@ func newKeyshareServer(schemeManagerIdentifier irma.SchemeManagerIdentifier) (*k
 	return ks, nil
 }
 
-func (ks *keyshareServer) HashedPin(pin string) string {
-	hash := sha256.Sum256(append(ks.Nonce, []byte(pin)...))
+func (kss *keyshareServer) HashedPin(pin string) string {
+	hash := sha256.Sum256(append(kss.Nonce, []byte(pin)...))
 	// We must be compatible with the old Android app here,
 	// which uses Base64.encodeToString(hash, Base64.DEFAULT),
 	// which appends a newline.
@@ -182,30 +182,6 @@ func startKeyshareSession(
 		ks.VerifyPin(-1)
 	} else {
 		ks.GetCommitments()
-	}
-}
-
-func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error) {
-	serr, ok := err.(*irma.SessionError)
-	if ok {
-		if serr.RemoteError != nil && len(serr.RemoteError.ErrorName) > 0 {
-			switch serr.RemoteError.ErrorName {
-			case "USER_NOT_FOUND":
-				ks.sessionHandler.KeyshareEnrollmentDeleted(manager)
-			case "USER_NOT_REGISTERED":
-				ks.sessionHandler.KeyshareEnrollmentIncomplete(manager)
-			case "USER_BLOCKED":
-				duration, err := strconv.Atoi(serr.RemoteError.Message)
-				if err != nil { // Not really clear what to do with duration, but should never happen anyway
-					duration = -1
-				}
-				ks.sessionHandler.KeyshareBlocked(manager, duration)
-			default:
-				ks.sessionHandler.KeyshareError(&manager, err)
-			}
-		}
-	} else {
-		ks.sessionHandler.KeyshareError(&manager, err)
 	}
 }
 
