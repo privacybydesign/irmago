@@ -487,7 +487,7 @@ func (cdc AttributeConDisCon) Validate(conf *Configuration) error {
 						nonsingleton = &typ
 					}
 				}
-				
+
 				managerID := typ.SchemeManagerIdentifier()
 				if conf.SchemeManagers[managerID].Distributed() {
 					distributedSchemes[managerID] = struct{}{}
