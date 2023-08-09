@@ -3,7 +3,7 @@ version: '3.1'
 services:
   # Dependencies for running unit tests and for running the 'irma' command line tool using one of the test configurations.
   postgres:
-    image: postgres:13
+    image: postgres:15
     environment:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpassword
@@ -16,7 +16,7 @@ services:
     ports:
       - 5432:5432
   postgres-init:
-    image: postgres:13
+    image: postgres:15
     environment:
       PGHOST: postgres
       PGUSER: testuser

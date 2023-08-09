@@ -43,6 +43,7 @@ Yivi apps have always supported pairing codes.
 
 ### Internal
 - Linter switch from golint to staticcheck
+- Use Postgres 15 for unit and component tests
 
 ## [0.12.6] - 2023-05-31
 ### Fixed
