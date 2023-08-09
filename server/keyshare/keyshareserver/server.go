@@ -499,7 +499,7 @@ func (s *Server) generateResponseV2(ctx context.Context, user *User, authorizati
 	return proofResponse, nil
 }
 
-// /prove/getLinkableResponse
+// /api/v2/prove/getLinkableResponse
 func (s *Server) handleResponseV2Linkable(w http.ResponseWriter, r *http.Request) {
 	s.keyshareResponse(r.Context(), w, r, true)
 }

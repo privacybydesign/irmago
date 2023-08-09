@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -45,9 +46,10 @@ const (
 	updatesKey      = "updates"      // Value: []update
 	kssKey          = "kss"          // Value: map[irma.SchemeManagerIdentifier]*keyshareServer
 
-	attributesBucket = "attrs" // Key: []byte, value: []*irma.AttributeList
-	logsBucket       = "logs"  // Key: (auto-increment index), value: *LogEntry
-	signaturesBucket = "sigs"  // Key: credential.attrs.Hash, value: *gabi.CLSignature
+	attributesBucket       = "attrs"              // Key: []byte, value: []*irma.AttributeList
+	logsBucket             = "logs"               // Key: (auto-increment index), value: *LogEntry
+	signaturesBucket       = "sigs"               // Key: credential.attrs.Hash, value: *gabi.CLSignature
+	keyshareCachedPsBucket = "keyshare_cached_ps" // Key: irma.PublicKeyIdentifier, value: *big.Int
 )
 
 func (s *storage) path(p string) string {
@@ -333,6 +335,17 @@ func (s *storage) TxStoreUpdates(tx *transaction, updates []update) error {
 	return s.txStore(tx, userdataBucket, updatesKey, updates)
 }
 
+func (s *storage) StoreKeyshareCachedPs(ps map[irma.PublicKeyIdentifier]*big.Int) error {
+	return s.Transaction(func(tx *transaction) error {
+		for pkid, p := range ps {
+			if err := s.txStore(tx, keyshareCachedPsBucket, pkid.String(), p); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *storage) LoadSignature(attrs *irma.AttributeList) (*gabi.CLSignature, *revocation.Witness, error) {
 	credType := attrs.CredentialType()
 	if credType == nil {
@@ -560,6 +573,15 @@ func (s *storage) LoadPreferences() (Preferences, error) {
 	return config, err
 }
 
+func (s *storage) LoadKeyshareCachedP(pkid irma.PublicKeyIdentifier) (*big.Int, error) {
+	var cachedP *big.Int
+	found, err := s.load(keyshareCachedPsBucket, pkid.String(), &cachedP)
+	if err == nil && !found {
+		return nil, errors.New("no cached p found")
+	}
+	return cachedP, err
+}
+
 func (s *storage) TxDeleteUserdata(tx *transaction) error {
 	return tx.DeleteBucket([]byte(userdataBucket))
 }
@@ -582,6 +604,15 @@ func (s *storage) TxDeleteLogs(tx *transaction) error {
 	return tx.DeleteBucket([]byte(logsBucket))
 }
 
+func (s *storage) TxDeleteKeyshareCachedPs(tx *transaction) error {
+	err := tx.DeleteBucket([]byte(keyshareCachedPsBucket))
+	// This bucket might not exist yet, so ignore the error if it does not exist.
+	if err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	return nil
+}
+
 func (s *storage) TxDeleteAll(tx *transaction) error {
 	if err := s.TxDeleteAllAttributes(tx); err != nil && err != bbolt.ErrBucketNotFound {
 		return err
@@ -593,6 +624,9 @@ func (s *storage) TxDeleteAll(tx *transaction) error {
 		return err
 	}
 	if err := s.TxDeleteLogs(tx); err != nil && err != bbolt.ErrBucketNotFound {
+		return err
+	}
+	if err := s.TxDeleteKeyshareCachedPs(tx); err != nil && err != bbolt.ErrBucketNotFound {
 		return err
 	}
 	return nil

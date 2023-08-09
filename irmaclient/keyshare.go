@@ -13,7 +13,9 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains an implementation of the client side of the keyshare protocol,
@@ -256,7 +258,7 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 	}
 
 	auth := &irma.KeyshareAuthChallenge{}
-	err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
+	err = transport.Post("api/v1/users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +285,7 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 	}
 
 	pinresult := &irma.KeysharePinStatus{}
-	err = transport.Post("users/verify/pin_challengeresponse", pinresult, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt})
+	err = transport.Post("api/v1/users/verify/pin_challengeresponse", pinresult, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt})
 	if err != nil {
 		return nil, err
 	}
@@ -359,34 +361,50 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 // of all keyshare servers of their part of the private key, and merges these commitments
 // in our own proof builders.
 func (ks *keyshareSession) GetCommitments() {
-	pkids := map[irma.SchemeManagerIdentifier][]*irma.PublicKeyIdentifier{}
-	commitments := map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment{}
+	pkidsBuilders := make([]irma.PublicKeyIdentifier, len(ks.builders))
+	pkidsKeyshare := map[irma.SchemeManagerIdentifier][]irma.PublicKeyIdentifier{}
+	pksKeyshare := map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{}
 
 	// For each scheme manager, build a list of public keys under this manager
 	// that we will use in the keyshare protocol with the keyshare server of this manager
-	for _, builder := range ks.builders {
+	for i, builder := range ks.builders {
 		pk := builder.PublicKey()
+		pkid := irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter}
+		pkidsBuilders[i] = pkid
+
 		managerID := irma.NewIssuerIdentifier(pk.Issuer).SchemeManagerIdentifier()
-		if !ks.client.Configuration.SchemeManagers[managerID].Distributed() {
-			continue
+		if ks.client.Configuration.SchemeManagers[managerID].Distributed() {
+			pksKeyshare[pkid] = pk
+			pkidsKeyshare[managerID] = append(pkidsKeyshare[managerID], pkid)
 		}
-		if _, contains := pkids[managerID]; !contains {
-			pkids[managerID] = []*irma.PublicKeyIdentifier{}
-		}
-		pkids[managerID] = append(pkids[managerID], &irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter})
+	}
+
+	// TODO: this code is copied from gabi, because there was no way to call the gabi code. Check how we can resolve this.
+	// The secret key may be used across credentials supporting different attribute sizes.
+	// So we should take it, and hence also its commitment, to fit within the smallest size -
+	// otherwise it will be too big so that we cannot perform the range proof showing
+	// that it is not too big.
+	skRandomizer := common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabikeys.DefaultSystemParameters[1024].LmCommit))
+	randomizers := map[string]*big.Int{"secretkey": skRandomizer}
+
+	// Calculate the user commitments
+	hash, challengeInput, err := gabi.KeyshareUserCommitmentRequest(ks.builders, randomizers, pksKeyshare)
+	if err != nil {
+		ks.fail(irma.NewSchemeManagerIdentifier(""), irma.WrapErrorPrefix(err, "keyshare user commitment could not be calculated"))
+		return
 	}
 
 	// Now inform each keyshare server of with respect to which public keys
 	// we want them to send us commitments
-	for managerID := range ks.schemeIDs {
-		if !ks.client.Configuration.SchemeManagers[managerID].Distributed() {
-			continue
+	commitments := map[irma.PublicKeyIdentifier]*gabi.ProofPCommitment{}
+	for managerID, pkids := range pkidsKeyshare {
+		req := irma.GetCommitmentsRequest{
+			Keys: pkids,
+			Hash: hash,
 		}
 
-		transport := ks.transports[managerID]
-		comms := &irma.ProofPCommitmentMap{}
-		err := transport.Post("prove/getCommitments", comms, pkids[managerID])
-		if err != nil {
+		comms := &irma.ProofPCommitmentMapV2{}
+		if err := ks.transports[managerID].Post("api/v2/prove/getCommitments", comms, req); err != nil {
 			if err.(*irma.SessionError).RemoteError != nil &&
 				err.(*irma.SessionError).RemoteError.Status == http.StatusForbidden && !ks.pinCheck {
 				// JWT may be out of date due to clock drift; request pin and try again
@@ -402,31 +420,29 @@ func (ks *keyshareSession) GetCommitments() {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
-		for pki, c := range comms.Commitments {
-			commitments[pki] = c
+		for pkid, c := range comms.Commitments {
+			commitments[pkid] = &gabi.ProofPCommitment{Pcommit: c}
 		}
 	}
 
 	// Merge in the commitments
-	for _, builder := range ks.builders {
-		pk := builder.PublicKey()
-		pki := irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier(pk.Issuer), Counter: pk.Counter}
-		comm, distributed := commitments[pki]
-		if !distributed {
-			continue
+	for i, pkid := range pkidsBuilders {
+		if comm, ok := commitments[pkid]; ok {
+			ks.builders[i].SetProofPCommitment(comm)
 		}
-		builder.SetProofPCommitment(comm)
 	}
 
-	ks.GetProofPs()
+	ks.GetProofPs(randomizers, challengeInput)
 }
 
 // GetProofPs uses the combined commitments of all keyshare servers and ourself
 // to calculate the challenge, which is sent to the keyshare servers in order to
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
-func (ks *keyshareSession) GetProofPs() {
-	_, issig := ks.session.(*irma.SignatureRequest)
-	challenge, err := ks.builders.Challenge(ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), issig)
+func (ks *keyshareSession) GetProofPs(randomizers map[string]*big.Int, hashInput []gabi.KeyshareUserChallengeInput[irma.PublicKeyIdentifier]) {
+	_, isSig := ks.session.(*irma.SignatureRequest)
+	_, isIssuance := ks.session.(*irma.IssuanceRequest)
+
+	req, challenge, err := gabi.KeyshareUserResponseRequest(ks.builders, randomizers, hashInput, ks.session.Base().GetContext(), ks.session.GetNonce(ks.timestamp), isSig)
 	if err != nil {
 		ks.sessionHandler.KeyshareError(&ks.keyshareServer.SchemeManagerIdentifier, err)
 		return
@@ -439,13 +455,25 @@ func (ks *keyshareSession) GetProofPs() {
 		if !distributed {
 			continue
 		}
-		var j string
-		err = transport.Post("prove/getResponse", &j, challenge)
+
+		// If the protocol version is below 2.9, the P value should be included in the JWT. Legacy issuers need this P value to validate the commitments.
+		// We obtain the JWT containing the P value using the api/v2/prove/getResponseLinkable endpoint.
+		// For disclosure and signing sessions, the P value is being merged on our side (the client side).
+		// This means that in these cases we need to use the api/v2/prove/getResponse endpoint. Otherwise, we would trigger legacy behavior in gabi.
+		var endpoint string
+		if ks.protocolVersion.Below(2, 9) && isIssuance {
+			endpoint = "api/v2/prove/getResponseLinkable"
+		} else {
+			endpoint = "api/v2/prove/getResponse"
+		}
+
+		var respJwt string
+		err = transport.Post(endpoint, &respJwt, req)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
-		responses[managerID] = j
+		responses[managerID] = respJwt
 	}
 
 	ks.Finish(challenge, responses)
@@ -495,8 +523,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
 		}{}
-		parser := new(jwt.Parser)
-		parser.SkipClaimsValidation = true // no need to abort due to clock drift issues
+		parser := jwt.NewParser(jwt.WithoutClaimsValidation()) // no need to validate claims due to clock drift issues
 		if _, err := parser.ParseWithClaims(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID)); err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
@@ -515,7 +542,7 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 
 // getKeysharePs retrieves all P values (i.e. R_0^{keyshare server secret}) from all keyshare servers,
 // for use during issuance.
-func (ks *keyshareSession) getKeysharePs(request *irma.IssuanceRequest) (map[irma.SchemeManagerIdentifier]*irma.PMap, error) {
+func (ks *keyshareSession) getKeysharePs(request *irma.IssuanceRequest) (map[irma.PublicKeyIdentifier]*big.Int, error) {
 	// Assemble keys of which to retrieve P's, grouped per keyshare server
 	distributedKeys := map[irma.SchemeManagerIdentifier][]irma.PublicKeyIdentifier{}
 	for _, futurecred := range request.Credentials {
@@ -525,13 +552,32 @@ func (ks *keyshareSession) getKeysharePs(request *irma.IssuanceRequest) (map[irm
 		}
 	}
 
-	keysharePs := map[irma.SchemeManagerIdentifier]*irma.PMap{}
-	for schemeID, keys := range distributedKeys {
-		Ps := irma.PMap{Ps: map[irma.PublicKeyIdentifier]*big.Int{}}
-		if err := ks.transports[schemeID].Post("api/v2/prove/getPs", &Ps, keys); err != nil {
+	// Collect the P values for the public keys we want to get commitments for.
+	keysharePs := map[irma.PublicKeyIdentifier]*big.Int{}
+	missingKeysharePs := map[irma.SchemeManagerIdentifier][]irma.PublicKeyIdentifier{}
+	for _, pkids := range distributedKeys {
+		for _, pkid := range pkids {
+			if p, err := ks.client.storage.LoadKeyshareCachedP(pkid); err == nil {
+				keysharePs[pkid] = p
+			} else {
+				managerID := pkid.Issuer.SchemeManagerIdentifier()
+				missingKeysharePs[managerID] = append(missingKeysharePs[managerID], pkid)
+			}
+		}
+	}
+
+	// If we don't have all P values, we ask the keyshare server for the missing ones.
+	for managerID, pkids := range missingKeysharePs {
+		var pMap *irma.PMap
+		if err := ks.transports[managerID].Post("api/v2/prove/getPs", &pMap, pkids); err != nil {
 			return nil, err
 		}
-		keysharePs[schemeID] = &Ps
+		if err := ks.client.storage.StoreKeyshareCachedPs(pMap.Ps); err != nil {
+			return nil, err
+		}
+		for pkid, p := range pMap.Ps {
+			keysharePs[pkid] = p
+		}
 	}
 
 	return keysharePs, nil

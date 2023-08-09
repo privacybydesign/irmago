@@ -29,6 +29,8 @@ const (
 	DefaultJwtValidity              = 120
 )
 
+var ErrMultipleDistributedSchemes = errors.New("multiple distributed schemes (having a keyshare server) within one disclosure request are not supported")
+
 // BaseRequest contains information used by all IRMA session types, such the context and nonce,
 // and revocation information.
 type BaseRequest struct {
@@ -471,6 +473,8 @@ func (dc AttributeDisCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAtt
 }
 
 func (cdc AttributeConDisCon) Validate(conf *Configuration) error {
+	distributedSchemes := map[SchemeManagerIdentifier]struct{}{}
+
 	for _, discon := range cdc {
 		for _, con := range discon {
 			var nonsingleton *CredentialTypeIdentifier
@@ -483,9 +487,19 @@ func (cdc AttributeConDisCon) Validate(conf *Configuration) error {
 						nonsingleton = &typ
 					}
 				}
+				
+				managerID := typ.SchemeManagerIdentifier()
+				if conf.SchemeManagers[managerID].Distributed() {
+					distributedSchemes[managerID] = struct{}{}
+				}
 			}
 		}
 	}
+
+	if len(distributedSchemes) > 1 {
+		return ErrMultipleDistributedSchemes
+	}
+
 	return nil
 }
 

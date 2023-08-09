@@ -125,12 +125,19 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
 	require.NoError(t, <-handler.c)
 
+	// A session request that contains attributes from both test and test2 (both distributed schemes) should fail.
 	request := irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
 		irma.NewAttributeTypeIdentifier("test2.test.mijnirma.email"),
 	)
-	doSession(t, request, client, irmaServer, nil, nil, nil)
+	_, _, _, err = irmaServer.irma.StartSession(request, nil)
+	require.ErrorIs(t, err, irma.ErrMultipleDistributedSchemes)
 
+	// Do a session with a request that contains attributes from test2 only.
+	request = irma.NewDisclosureRequest(
+		irma.NewAttributeTypeIdentifier("test2.test.mijnirma.email"),
+	)
+	doSession(t, request, client, irmaServer, nil, nil, nil)
 	logs, err = client.LoadNewestLogs(20)
 	require.NoError(t, err)
 	require.Len(t, logs, logsAmount+2)

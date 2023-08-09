@@ -11,7 +11,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -963,7 +962,7 @@ func (client *Client) IssuanceProofBuilders(
 	}
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
 
-	var keysharePs = map[irma.SchemeManagerIdentifier]*irma.PMap{}
+	var keysharePs = map[irma.PublicKeyIdentifier]*big.Int{}
 	if keyshareSession != nil {
 		keysharePs, err = keyshareSession.getKeysharePs(request)
 		if err != nil {
@@ -972,26 +971,14 @@ func (client *Client) IssuanceProofBuilders(
 	}
 
 	for _, futurecred := range request.Credentials {
-		var pk *gabikeys.PublicKey
 		keyID := futurecred.PublicKeyIdentifier()
-		schemeID := keyID.Issuer.SchemeManagerIdentifier()
-		distributed := client.Configuration.SchemeManagers[schemeID].Distributed()
-		var keyshareP *big.Int
-		var present bool
-		if distributed {
-			keyshareP, present = keysharePs[schemeID].Ps[keyID]
-			if distributed && !present {
-				return nil, nil, nil, errors.Errorf("missing keyshareP for %s-%d", keyID.Issuer, keyID.Counter)
-			}
-		}
-
-		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
+		pk, err := client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		credtype := client.Configuration.CredentialTypes[futurecred.CredentialTypeID]
 		credBuilder, err := gabi.NewCredentialBuilder(pk, request.GetContext(),
-			client.secretkey.Key, issuerProofNonce, keyshareP, credtype.RandomBlindAttributeIndices())
+			client.secretkey.Key, issuerProofNonce, keysharePs[keyID], credtype.RandomBlindAttributeIndices())
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1175,7 +1162,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 
 	transport := irma.NewHTTPTransport(manager.KeyshareServer, !client.Preferences.DeveloperMode)
 	qr := &irma.Qr{}
-	err = transport.Post("client/register", qr, irma.KeyshareEnrollment{EnrollmentJWT: jwtt})
+	err = transport.Post("api/v1/client/register", qr, irma.KeyshareEnrollment{EnrollmentJWT: jwtt})
 	if err != nil {
 		return err
 	}
@@ -1382,6 +1369,10 @@ func (client *Client) keyshareRemoveMultiple(schemeIDs []irma.SchemeManagerIdent
 					return err
 				}
 				err = client.storage.TxDeleteSignature(tx, cred.Hash)
+				if err != nil {
+					return err
+				}
+				err = client.storage.TxDeleteKeyshareCachedPs(tx)
 				if err != nil {
 					return err
 				}
