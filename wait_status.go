@@ -68,7 +68,6 @@ func poll(transport *HTTPTransport, initialStatus ServerStatus, statuschan chan 
 				errorchan <- nil
 				return
 			}
-			break
 		case err := <-errorchanPolling:
 			if err != nil {
 				errorchan <- err

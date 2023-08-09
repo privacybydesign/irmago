@@ -874,14 +874,6 @@ func credidptr(s string) *CredentialTypeIdentifier {
 	id := credid(s)
 	return &id
 }
-func credinfo(id string) *CredentialInfo {
-	i := credid(id)
-	return &CredentialInfo{
-		SchemeManagerID: i.Root(),
-		IssuerID:        i.IssuerIdentifier().Name(),
-		ID:              i.Name(),
-	}
-}
 func credtype(id string, deps ...string) *CredentialType {
 	i := credid(id)
 	d := CredentialDependencies{{{}}}

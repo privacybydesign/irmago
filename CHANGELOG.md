@@ -6,11 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- Support for revocation db type `sqlserver` (Microsoft SQL Server)
+
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
 - Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
 - Validate revocation witness before revocation update is applied
 - RevocationStorage's EnableRevocation function does not return an error anymore if it has been enabled already
+- Custom WrapErrorPrefix function that respects the error's type
+- Log info message of irma.SessionError errors
+
+As part of e-mail address revalidation:
+- `VerifyMXRecord` incorporates a check to see if there is an active network connection
+- MyIrma server: `/user` returns an additional field `revalidate_in_progress` in the JSON response body, indicating whether the e-mail address is being revalidated or not 
+- MyIrma server: `/user/delete` and `/email/remove` return a 500 status code and `REVALIDATE_EMAIL` error type if one or more e-mail addresses of the user are invalid
+
+**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail address revalidation is disabled and there will not be a breaking change.
 
 ### Fixed
 - Race conditions in database logic of revocation storage
@@ -21,7 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Superfluous openssl package in Dockerfile
 
+### Security
+- Let IRMA servers by default reject IRMA/Yivi apps that don't support pairing codes (IRMA protocol version <= 2.7)
+
+**Note:** This is an important security update for issuers to make sure that pairing codes cannot be circumvented.
+IRMA apps that don't support pairing codes should not be in circulation anymore, so this change won't affect users.
+Yivi apps have always supported pairing codes.
+
 ### Internal
+- Linter switch from golint to staticcheck
 - Use Postgres 15 for unit and component tests
 
 ## [0.12.6] - 2023-05-31

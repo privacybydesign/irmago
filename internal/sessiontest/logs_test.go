@@ -84,7 +84,7 @@ func TestLogging(t *testing.T) {
 
 	// Check whether log entry for signature session is actually stored
 	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)

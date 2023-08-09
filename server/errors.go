@@ -41,6 +41,7 @@ var (
 	ErrorProtocolVersion Error = Error{Type: "PROTOCOL_VERSION", Status: 400, Description: "Protocol version negotiation failed"}
 	ErrorInvalidToken    Error = Error{Type: "INVALID_TOKEN", Status: 403, Description: "Provided token is unknown or invalid"}
 	ErrorInternal        Error = Error{Type: "INTERNAL_ERROR", Status: 500, Description: "Internal server error"}
+	ErrorRevalidateEmail Error = Error{Type: "REVALIDATE_EMAIL", Status: 500, Description: "Invalid email address is scheduled for revalidation"}
 )
 
 // Keyshare errors
