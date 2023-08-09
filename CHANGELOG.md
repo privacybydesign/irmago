@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- Support for revocation db type `sqlserver` (Microsoft SQL Server)
 
 ### Changed
 - Use separate application user in Dockerfile for entrypoint

@@ -56,25 +56,7 @@ In case you want to build `v0.8.0` or lower, then you should do some extra steps
 
 ## Running the unit tests
 
-Some of the unit tests connect to locally running external services, namely PostgreSQL and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can either be done using `docker-compose` or by following the instructions below to install the services manually.
-
-#### PostgreSQL
-
- * Install using e.g. `brew install postgresql`, or `apt-get install postgresql`, or via another package manager of your OS.
- * Prepare the database and user:
-
-       create database test;
-       create user testuser with encrypted password 'testpassword';
-       grant all privileges on database test to testuser;
-
-   This only needs to be done once. No table or rows need to be created; the unit tests do this themselves.
-
-#### SMTP server
-For the SMTP server you can use [MailHog](https://github.com/mailhog/MailHog) (see also their [installation instructions](https://github.com/mailhog/MailHog#installation)):
- * Install using `brew install mailhog` or `go get github.com/mailhog/MailHog`.
- * Run using `MailHog`, or `~/go/bin/MailHog`, depending on your setup.
-
-For the unit tests it only matters that the SMTP server itself is running and accepts emails, but MailHog additionally comes with a webinterface showing incoming emails. By default this runs at <http://localhost:8025>.
+Some of the unit tests connect to locally running external services, namely PostgreSQL, MySQL, Microsoft SQL Server and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can be done using `docker-compose`.
 
 ### Running the tests
 
@@ -82,16 +64,16 @@ In case you chose to start PostgreSQL and MailHog using `docker-compose`, you fi
 
     docker-compose up
 
-When PostgreSQL and MailHog are running, the tests can be run using:
+When the databases and MailHog are running, the tests can be run using:
 
     go test -p 1 ./...
 
 * The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
 
-### Running without PostgreSQL, MailHog or Docker
+### Running without Docker
 
-If installing PostgreSQL, MailHog or Docker is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:
+If installing Docker or Docker alternatives is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:
 
     go test -p 1 --tags=local_tests ./...
 
