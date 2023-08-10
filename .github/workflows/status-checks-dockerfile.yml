@@ -2,39 +2,24 @@
 name: Status checks (Dockerfile)
 
 on:
-  push:
-    branches: [ master ]
-    paths:
-      - Dockerfile
+  # Delivery pipeline already runs this on push to master.
   pull_request:
     paths:
       - Dockerfile
-  schedule:
-    # Run every monday on 9:00 in the morning (UTC).
-    - cron: "0 9 * * 1"
-  # Make it possible to trigger the checks manually.
-  workflow_dispatch:
+
+# Building the Dockerfile includes downloading the IRMA schemes.
+# Therefore, we only run one check at the time, and we put a limit on the event types triggering this job.
+concurrency:
+  group: dockerfile
 
 jobs:
-  # Building the Dockerfile includes downloading the IRMA schemes.
-  # Therefore, we only run one check at the time, and we put a limit on the event types triggering this job.
-  docker-build-all:
+  docker-build:
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 1
-      matrix:
-        # busybox is not working yet.
-        image:
-          - "debian:stable"
-          - "alpine:latest"
-          - "ubuntu:latest"
-          - "centos:latest"
-          - "amazonlinux:latest"
     steps:
       - uses: actions/checkout@v3
 
       - name: Build Dockerfile
-        run: docker build -t privacybydesign/irma:edge --build-arg BASE_IMAGE=${{ matrix.image }} .
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} .
 
       - name: Test Docker image
-        run: docker run privacybydesign/irma:edge version
+        run: docker run ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} version
