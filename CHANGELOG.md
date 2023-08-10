@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
 - Publish the Docker image of the `irma` CLI tool on ghcr.io/privacybydesign/irma
+- Support for revocation db type `sqlserver` (Microsoft SQL Server)
 
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
@@ -44,6 +45,7 @@ Yivi apps have always supported pairing codes.
 
 ### Internal
 - Linter switch from golint to staticcheck
+- Use Postgres 15 for unit and component tests
 
 ## [0.12.6] - 2023-05-31
 ### Fixed
