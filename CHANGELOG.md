@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- Invalid amount of arguments in query scan when e-mail revalidation is disabled
+
 ## [0.13.0] - 2023-08-10
 ### Added
 - E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
