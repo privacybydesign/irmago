@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+- Remove mail header 'Content-Transfer-Encoding: binary'
+  The header gets converted to 'Content-Transfer-Encoding: quoted-printable' causing 'arc=fail (body hash mismatch)' with gmail
+
 ## [0.13.1] - 2023-08-16
 ### Fixed
 - Invalid amount of arguments in query scan when e-mail revalidation is disabled
@@ -27,14 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 As part of e-mail address revalidation:
 - `VerifyMXRecord` incorporates a check to see if there is an active network connection
-- MyIrma server: `/user` returns an additional field `revalidate_in_progress` in the JSON response body, indicating whether the e-mail address is being revalidated or not 
+- MyIrma server: `/user` returns an additional field `revalidate_in_progress` in the JSON response body, indicating whether the e-mail address is being revalidated or not
 - MyIrma server: `/user/delete` and `/email/remove` return a 500 status code and `REVALIDATE_EMAIL` error type if one or more e-mail addresses of the user are invalid
 
 **Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail address revalidation is disabled and there will not be a breaking change.
 
 ### Fixed
 - Race conditions in database logic of revocation storage
-- `irma scheme verify` not detecting missing files in index 
+- `irma scheme verify` not detecting missing files in index
 - Scheme verification/signing does not reject credentials with invalid revocation settings
 - Write transactions within memory implementation of revocation storage may lead to unintended changes
 
