@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.13.2] - 2023-08-22
 ### Changed
 - Remove mail header 'Content-Transfer-Encoding: binary'
   The header gets converted to 'Content-Transfer-Encoding: quoted-printable' causing 'arc=fail (body hash mismatch)' with gmail
@@ -402,6 +403,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.13.2]: https://github.com/privacybydesign/irmago/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/privacybydesign/irmago/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/privacybydesign/irmago/compare/v0.12.6...v0.13.0
 [0.12.6]: https://github.com/privacybydesign/irmago/compare/v0.12.5...v0.12.6
