@@ -100,7 +100,6 @@ func (conf EmailConfiguration) SendEmail(
 	fmt.Fprintf(&message, "From: %s\r\n", from.Address)
 	fmt.Fprintf(&message, "Subject: %s\r\n", conf.TranslateString(subjects, lang))
 	fmt.Fprintf(&message, "Content-Type: text/html; charset=UTF-8\r\n")
-	fmt.Fprintf(&message, "Content-Transfer-Encoding: binary\r\n")
 	fmt.Fprintf(&message, "\r\n")
 	fmt.Fprint(&message, content.String())
 
