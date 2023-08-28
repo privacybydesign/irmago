@@ -346,9 +346,14 @@ func (c *Core) GenerateResponseV2(
 		return "", ErrInvalidChallenge
 	}
 
-	// Set Proof.P to R_0^userSecret if the response should be linkable.
+	// If the session involves a legacy issuer that doesn't understand the new keyshare protocol,
+	// return a legacy ProofP of the old keyshare protocol, differing as follows to a normal ProofP:
+	// - Includes P = R_0^userSecret in the Proof.P field (making the ProofP linkable)
+	// - The response in ProofP.SResponse should be just our response, not with the user's response added
+	//   as done by added earlier in `gabi.KeyshareResponse()` above, so we subtract the user's response from it.
 	if linkable {
 		proofP.P = new(big.Int).Exp(key.R[0], s.KeyshareSecret, key.N)
+		proofP.SResponse.Sub(proofP.SResponse, req.UserResponse)
 	}
 
 	// Generate response
