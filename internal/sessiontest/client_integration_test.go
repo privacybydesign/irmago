@@ -9,7 +9,7 @@ The other way around, the backwards compatibility of the IRMA server and keyshar
 source code of an older irmago version and run an older version of this test against a newer server version.
 This integration test is being introduced after irmago v0.13.2, so older irmaclient versions cannot be tested using this setup.
 
-This test only runs if you pass --tags=integration_tests to go test.
+This test only runs if you pass --tags=integration_tests to go test, i.e.: go test --tags integration_tests -run TestClientIntegration -p 1 ./...
 Before running this test, you should start the IRMA server and keyshare server manually.
 
 First, ensure you installed the desired irma version.
