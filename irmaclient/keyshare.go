@@ -15,7 +15,6 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // This file contains an implementation of the client side of the keyshare protocol,
@@ -379,13 +378,12 @@ func (ks *keyshareSession) GetCommitments() {
 		}
 	}
 
-	// TODO: this code is copied from gabi, because there was no way to call the gabi code. Check how we can resolve this.
-	// The secret key may be used across credentials supporting different attribute sizes.
-	// So we should take it, and hence also its commitment, to fit within the smallest size -
-	// otherwise it will be too big so that we cannot perform the range proof showing
-	// that it is not too big.
-	skRandomizer := common.RandomBigInt(new(big.Int).Lsh(big.NewInt(1), gabikeys.DefaultSystemParameters[1024].LmCommit))
-	randomizers := map[string]*big.Int{"secretkey": skRandomizer}
+	// Construct randomizer for proving equality of the secret key of which knowledge is proven in the multiple proofs
+	randomizers, err := gabi.NewProofRandomizers()
+	if err != nil {
+		ks.fail(irma.NewSchemeManagerIdentifier(""), irma.WrapErrorPrefix(err, "randomizers could not be constructed"))
+		return
+	}
 
 	// Calculate the user commitments
 	hash, challengeInput, err := gabi.KeyshareUserCommitmentRequest(ks.builders, randomizers, pksKeyshare)
