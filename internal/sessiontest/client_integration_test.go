@@ -1,5 +1,4 @@
-//go:build integration_tests
-// +build integration_tests
+package sessiontest
 
 /*
 This file contains the integration tests for the irmaclient library.
@@ -9,7 +8,7 @@ The other way around, the backwards compatibility of the IRMA server and keyshar
 source code of an older irmago version and run an older version of this test against a newer server version.
 This integration test is being introduced after irmago v0.13.2, so older irmaclient versions cannot be tested using this setup.
 
-This test only runs if you pass --tags=integration_tests to go test, i.e.: go test --tags integration_tests -run TestClientIntegration -p 1 ./...
+This test only runs if you pass IRMAGO_INTEGRATION_TESTS=Y to go test, i.e.: IRMAGO_INTEGRATION_TESTS=Y go test -run TestClientIntegration -p 1 ./...
 Before running this test, you should start the IRMA server and keyshare server manually.
 
 First, ensure you installed the desired irma version.
@@ -21,9 +20,9 @@ $ docker-compose up -d
 $ irma keyshare server -c testdata/configurations/keyshareserver.yml
 */
 
-package sessiontest
-
 import (
+	"os"
+	"strings"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -31,6 +30,10 @@ import (
 )
 
 func TestClientIntegration(t *testing.T) {
+	if !strings.HasPrefix(strings.ToUpper(os.Getenv("IRMAGO_INTEGRATION_TESTS")), "Y") {
+		t.Skip("Set IRMAGO_INTEGRATION_TESTS=Y to run this test")
+	}
+
 	// Tests without keyshare server.
 	t.Run("DisclosureSession", apply(testDisclosureSession, nil, optionReuseServer, optionForceNoAuth))
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, nil, optionReuseServer, optionForceNoAuth))
