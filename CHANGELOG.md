@@ -5,12 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
-
-## Added
-- Keyshare server /api/v2/prove/... endpoints for the new keyshare protocol
-
 ### Added
 - E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- Keyshare server /api/v2/prove/... endpoints for the new keyshare protocol
 
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
