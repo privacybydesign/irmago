@@ -71,5 +71,7 @@ runs:
 
     - name: Run integration tests
       working-directory: irmago_test_checkout
-      run: go test -v --tags=integration_tests -run TestClientIntegration -p 1 ./...
+      env:
+        IRMAGO_INTEGRATION_TESTS: Y
+      run: go test -v -run TestClientIntegration -p 1 ./...
       shell: bash

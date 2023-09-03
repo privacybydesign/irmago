@@ -31,7 +31,7 @@ import (
 
 func TestClientIntegration(t *testing.T) {
 	if !strings.HasPrefix(strings.ToUpper(os.Getenv("IRMAGO_INTEGRATION_TESTS")), "Y") {
-		t.Skip("Set IRMAGO_INTEGRATION_TESTS=Y to run this test")
+		t.Skip("set IRMAGO_INTEGRATION_TESTS=Y to run this test")
 	}
 
 	// Tests without keyshare server.
