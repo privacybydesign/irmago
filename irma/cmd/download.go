@@ -17,7 +17,7 @@ var downloadCmd = &cobra.Command{
 		var path string
 		var urls []string
 		defaultIrmaconf := irma.DefaultSchemesPath()
-		if useSchemeAssetsPath, _ := cmd.Flags().GetBool("use-schemes-assets-path"); useSchemeAssetsPath {
+		if useSchemesAssetsPath, _ := cmd.Flags().GetBool("use-schemes-assets-path"); useSchemesAssetsPath {
 			defaultIrmaconf = irma.EnsureDefaultSchemesAssetsPathExists()
 		}
 
