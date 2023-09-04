@@ -393,12 +393,12 @@ func (ppcm *ProofPCommitmentMap) MarshalJSON() ([]byte, error) {
 }
 
 type PMap struct {
-	Ps map[PublicKeyIdentifier]*big.Int `json:"p"`
+	Ps map[PublicKeyIdentifier]*big.Int `json:"ps"`
 }
 
 func (pm *PMap) MarshalJSON() ([]byte, error) {
 	var encPM struct {
-		Ps map[string]*big.Int `json:"p"`
+		Ps map[string]*big.Int `json:"ps"`
 	}
 	encPM.Ps = make(map[string]*big.Int)
 
