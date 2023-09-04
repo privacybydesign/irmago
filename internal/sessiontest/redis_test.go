@@ -211,8 +211,9 @@ func TestRedisUpdates(t *testing.T) {
 
 	var o interface{}
 	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.MinVersionHeader, "2.5")
-	transport.SetHeader(irma.MaxVersionHeader, "2.5")
+	transport.SetHeader(irma.MinVersionHeader, "2.8")
+	transport.SetHeader(irma.MaxVersionHeader, "2.8")
+	transport.SetHeader(irma.AuthorizationHeader, "testauthtoken")
 	clientToken, err := mr.Get("token:" + string(token))
 	require.NoError(t, err)
 

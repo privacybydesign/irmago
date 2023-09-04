@@ -310,7 +310,6 @@ func authmethodAlias(f *pflag.FlagSet, name string) pflag.NormalizedName {
 	switch name {
 	case "authmethod":
 		name = "auth-method"
-		break
 	}
 	return pflag.NormalizedName(name)
 }
