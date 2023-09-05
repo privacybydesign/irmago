@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Fixed
 - Auto-update mechanism of IRMA configuration not working in ghcr.io/privacybydesign/irma Docker container
+- Panics occur when the timestamp file does not exist in a scheme directory
 
 ## [0.13.2] - 2023-08-22
 ### Changed
