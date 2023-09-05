@@ -29,9 +29,16 @@ jobs:
 
       - name: Build artifact
         uses: ./.github/actions/build
+        id: build
         with:
           os: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: irma-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ steps.build.outputs.artifact-name }}
 
   docker-build:
     runs-on: ubuntu-latest
@@ -88,6 +95,43 @@ jobs:
       - uses: actions/checkout@v3
       - name: Run all unit tests
         run: docker-compose run test -v ./...
+
+  # The integration tests are split into two jobs, one for the client side and one for the server side.
+  # They test whether irmago versions with different versions of gabi can interact.
+  # We assume that the keyshare server is always kept up to date, so we don't test using older versions of the keyshare server.
+  integration-test-clientside: # Checks whether irmaclient interacts with older IRMA servers
+    needs: build
+    strategy:
+      matrix:
+        irma-server:
+          - v0.13.2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run integration test
+        uses: ./.github/actions/integration-test
+        with:
+          test-ref: ${{ github.ref }}
+          irma-server-artifact: https://github.com/privacybydesign/irmago/releases/download/${{ matrix.irma-server }}/irma-linux-amd64
+          keyshare-server-artifact: irma-linux-amd64 # Current build
+
+  integration-test-serverside: # Checks whether IRMA server interacts with older irmaclients
+    needs: build
+    strategy:
+      matrix:
+        irmaclient-ref:
+          - f0023141ec429d912e329665f937d05b178a3fee # v0.13.2 (integration test did not exist when version tag was created)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run integration test
+        uses: ./.github/actions/integration-test
+        with:
+          test-ref: ${{ matrix.irmaclient-ref }}
+          irma-server-artifact: irma-linux-amd64 # Current build
+          keyshare-server-artifact: irma-linux-amd64 # Current build
 
   analyze:
     needs: build

@@ -46,6 +46,7 @@ const (
 	optionRetryPost
 	optionIgnoreError
 	optionReuseServer // makes doSession assume a requestor server with authentication is used
+	optionForceNoAuth // makes doSession assume no authentication is required (useful when reused server has no authentication)
 	optionClientWait
 	optionWait
 	optionPrePairingClient
@@ -105,7 +106,7 @@ func startServer(t *testing.T, opts option, irmaServer *IrmaServer, conf interfa
 
 // startSessionAtServer starts an IRMA session using the specified session request, against an IRMA server
 // or library, as determined by the type of serv.
-func startSessionAtServer(t *testing.T, serv stopper, conf interface{}, request interface{}) *server.SessionPackage {
+func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request interface{}) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
 		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil)
@@ -117,15 +118,9 @@ func startSessionAtServer(t *testing.T, serv stopper, conf interface{}, request 
 		}
 	default:
 		var (
-			sesPkg  server.SessionPackage
-			err     error
-			useJWTs bool
+			sesPkg server.SessionPackage
+			err    error
 		)
-		if conf != nil {
-			useJWTs = !conf.(*requestorserver.Configuration).DisableRequestorAuthentication
-		} else {
-			useJWTs = true
-		}
 		url := requestorServerURL
 		if useJWTs {
 			skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
@@ -154,7 +149,7 @@ func startSessionAtClient(t *testing.T, sesPkg *server.SessionPackage, client *i
 }
 
 // getSessionResult retrieves the session result from the IRMA server or library.
-func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper, opts option) *server.SessionResult {
+func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper, useJWTs bool, opts option) *server.SessionResult {
 	waitSessionFinished(t, serv, sesPkg.Token, opts.enabled(optionWait))
 
 	switch s := serv.(type) {
@@ -163,28 +158,35 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 		require.NoError(t, err)
 		return result
 	default:
-		var res string
-		err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-jwt", &res)
-		require.NoError(t, err)
+		if useJWTs {
+			var res string
+			err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-jwt", &res)
+			require.NoError(t, err)
 
-		bts, err := os.ReadFile(jwtPrivkeyPath)
-		require.NoError(t, err)
-		sk, err := jwt.ParseRSAPrivateKeyFromPEM(bts)
-		require.NoError(t, err)
+			bts, err := os.ReadFile(jwtPrivkeyPath)
+			require.NoError(t, err)
+			sk, err := jwt.ParseRSAPrivateKeyFromPEM(bts)
+			require.NoError(t, err)
 
-		// Validate JWT
-		claims := struct {
-			jwt.RegisteredClaims
-			*server.SessionResult
-		}{}
-		_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (interface{}, error) {
-			return &sk.PublicKey, nil
-		})
-		require.NoError(t, err)
+			// Validate JWT
+			claims := struct {
+				jwt.RegisteredClaims
+				*server.SessionResult
+			}{}
+			_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (interface{}, error) {
+				return &sk.PublicKey, nil
+			})
+			require.NoError(t, err)
 
-		// Check default expiration time
-		require.True(t, claims.IssuedAt.Add(irma.DefaultJwtValidity*time.Second).Equal(claims.ExpiresAt.Time))
-		return claims.SessionResult
+			// Check default expiration time
+			require.True(t, claims.IssuedAt.Add(irma.DefaultJwtValidity*time.Second).Equal(claims.ExpiresAt.Time))
+			return claims.SessionResult
+		} else {
+			var res server.SessionResult
+			err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result", &res)
+			require.NoError(t, err)
+			return &res
+		}
 	}
 }
 
@@ -265,7 +267,14 @@ func doSession(
 		defer serv.Stop()
 	}
 
-	sesPkg := startSessionAtServer(t, serv, conf, request)
+	useJWTs := true
+	if opts.enabled(optionForceNoAuth) {
+		useJWTs = false
+	} else if rconf, ok := conf.(*requestorserver.Configuration); ok {
+		useJWTs = !rconf.DisableRequestorAuthentication
+	}
+
+	sesPkg := startSessionAtServer(t, serv, useJWTs, request)
 	sessionHandler, clientChan := createSessionHandler(t, opts, client, sesPkg, frontendOptionsHandler, pairingHandler)
 
 	if frontendOptionsHandler != nil {
@@ -294,7 +303,7 @@ func doSession(
 		return &requestorSessionResult{nil, nil, clientResult.Missing, dismisser}
 	}
 
-	serverResult := getSessionResult(t, sesPkg, serv, opts)
+	serverResult := getSessionResult(t, sesPkg, serv, useJWTs, opts)
 	require.Equal(t, sesPkg.Token, serverResult.Token)
 
 	if opts.enabled(optionRetryPost) {

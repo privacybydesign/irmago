@@ -987,7 +987,8 @@ func TestStatusEventsSSE(t *testing.T) {
 
 	// Start a session at the server
 	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sesPkg := startSessionAtServer(t, rs, conf, request)
+	useJWTs := !conf.DisableRequestorAuthentication
+	sesPkg := startSessionAtServer(t, rs, useJWTs, request)
 
 	// Start SSE connections to the SSE endpoints
 	url := fmt.Sprintf("http://localhost:%d/session/%s/statusevents", conf.Port, sesPkg.Token)

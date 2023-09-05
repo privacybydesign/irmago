@@ -62,7 +62,7 @@ func TestKeyshareSessions(t *testing.T) {
 	keyshareSessions(t, client, irmaServer)
 }
 
-func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer, options ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	issuanceRequest := getCombinedIssuanceRequest(id)
@@ -73,15 +73,15 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaS
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
-	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil, options...)
 
 	disclosureRequest := getDisclosureRequest(id)
 	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, options...)
 
 	sigRequest := getSigningRequest(id)
 	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	doSession(t, sigRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, sigRequest, client, irmaServer, nil, nil, nil, options...)
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
