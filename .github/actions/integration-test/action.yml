@@ -1,0 +1,77 @@
+name: Integration test
+description: Runs the tests in ./internal/sessiontest/client_integration_test.go against the given IRMA server and keyshare server artifacts.
+inputs:
+  test-ref:
+    description: The branch, tag or SHA to check out the tests from
+    required: true
+  irma-server-artifact:
+    description: Artifact url or id of the irma server artifact to use
+    required: true
+  keyshare-server-artifact:
+    description: Artifact url or id of the keyshare server artifact to use
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ^1.18
+
+    - name: Download IRMA server artifact (url)
+      if: startsWith(inputs.irma-server-artifact, 'https://')
+      run: curl --create-dirs -L -o ./bin-is/irma-linux-amd64 ${{ inputs.irma-server-artifact }}
+      shell: bash
+
+    - name: Download IRMA server artifact (artifact id)
+      if: ${{ !startsWith(inputs.irma-server-artifact, 'https://') }}
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ inputs.irma-server-artifact }}
+        path: bin-is
+
+    - name: Set file permissions for bin-is
+      run: chmod +x ./bin-is/irma-linux-amd64
+      shell: bash
+
+    - name: Download keyshare server artifact (url)
+      if: startsWith(inputs.keyshare-server-artifact, 'https://')
+      run: curl --create-dirs -L -o ./bin-ks/irma-linux-amd64 ${{ inputs.keyshare-server-artifact }}
+      shell: bash
+
+    - name: Download keyshare server artifact (artifact id)
+      if: ${{ !startsWith(inputs.keyshare-server-artifact, 'https://') }}
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ inputs.keyshare-server-artifact }}
+        path: bin-ks
+
+    - name: Set file permissions for bin-ks
+      run: chmod +x ./bin-ks/irma-linux-amd64
+      shell: bash
+
+    - name: Run keyshare server utilities
+      run: docker-compose up -d
+      shell: bash
+
+    # We add & at the end of each command to run them in the background.
+    - name: Run IRMA server
+      run: ./bin-is/irma-linux-amd64 server -s testdata/irma_configuration --url http://localhost:port -p 48682 -k testdata/privatekeys &
+      shell: bash
+
+    - name: Run keyshare server
+      run: ./bin-ks/irma-linux-amd64 keyshare server -c testdata/configurations/keyshareserver.yml &
+      shell: bash
+
+    - name: Checkout test code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.test-ref }}
+        path: irmago_test_checkout
+
+    - name: Run integration tests
+      working-directory: irmago_test_checkout
+      env:
+        IRMAGO_INTEGRATION_TESTS: Y
+      run: go test -v -run TestClientIntegration -p 1 ./...
+      shell: bash
