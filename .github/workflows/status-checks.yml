@@ -121,7 +121,7 @@ jobs:
     strategy:
       matrix:
         irmaclient-ref:
-          - ab3f743c339f10bd80fe79d0d8d34e8be0c430a3 # v0.13.2 (integration test did not exist when version tag was created)
+          - f0023141ec429d912e329665f937d05b178a3fee # v0.13.2 (integration test did not exist when version tag was created)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
