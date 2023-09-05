@@ -177,6 +177,7 @@ func (db *postgresDB) verifyLoginToken(ctx context.Context, token, username stri
 
 func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 	var result user
+	revalidation := db.db.EmailRevalidation(ctx)
 
 	// fetch username
 	err := db.db.QueryUserContext(ctx, "SELECT username, language, (coredata IS NULL) AS delete_in_progress FROM irma.users WHERE id = $1",
@@ -188,7 +189,7 @@ func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 
 	query := "SELECT email, (delete_on IS NOT NULL) AS delete_in_progress {{revalidate}} FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)"
 
-	if db.db.EmailRevalidation(ctx) {
+	if revalidation {
 		query = strings.ReplaceAll(query, "{{revalidate}}", ", (revalidate_on IS NOT NULL) AS revalidate_in_progress")
 	} else {
 		query = strings.ReplaceAll(query, "{{revalidate}}", "")
@@ -200,7 +201,13 @@ func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 		query,
 		func(rows *sql.Rows) error {
 			var email userEmail
-			err = rows.Scan(&email.Email, &email.DeleteInProgress, &email.RevalidateInProgress)
+
+			if revalidation {
+				err = rows.Scan(&email.Email, &email.DeleteInProgress, &email.RevalidateInProgress)
+			} else {
+				err = rows.Scan(&email.Email, &email.DeleteInProgress)
+			}
+
 			result.Emails = append(result.Emails, email)
 			return err
 		},

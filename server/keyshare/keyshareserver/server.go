@@ -315,7 +315,6 @@ func (s *Server) handleCommitmentsV2(w http.ResponseWriter, r *http.Request) {
 	}
 
 	commitments, err := s.generateCommitmentsV2(user, authorization, req)
-	// TODO: can ErrInvalidChallenge be removed?
 	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -338,7 +337,6 @@ func (s *Server) generateCommitmentsV2(user *User, authorization string, req irm
 	}
 
 	// Prepare output message format
-	// TODO: move logic to gabi?
 	mappedCommitments := map[irma.PublicKeyIdentifier]*big.Int{}
 	for i, keyID := range req.Keys {
 		mappedCommitments[keyID] = commitments[i].Pcommit
@@ -887,9 +885,7 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Extract authorization from request
 		authorization := r.Header.Get("Authorization")
-		if strings.HasPrefix(authorization, "Bearer ") {
-			authorization = authorization[7:]
-		}
+		authorization = strings.TrimPrefix(authorization, "Bearer ")
 
 		// verify access
 		ctx := r.Context()

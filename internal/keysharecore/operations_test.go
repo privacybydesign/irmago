@@ -183,7 +183,6 @@ func TestProofFunctionality(t *testing.T) {
 		require.NoError(t, err)
 
 		// For issuance, initially get P_t
-		// TODO: The result ps will be used in the generate commitment step and checked when the response is made.
 		_, err = c.GeneratePs(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 		require.NoError(t, err)
 

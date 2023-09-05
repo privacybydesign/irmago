@@ -70,12 +70,12 @@ func (s *unencryptedUserSecrets) setID(id []byte) error {
 	return nil
 }
 
-func (user *unencryptedUserSecrets) verifyPin(pin string) error {
+func (s *unencryptedUserSecrets) verifyPin(pin string) error {
 	paddedPin, err := padBytes([]byte(pin), 64)
 	if err != nil {
 		return err
 	}
-	if subtle.ConstantTimeCompare(user.Pin, paddedPin) != 1 {
+	if subtle.ConstantTimeCompare(s.Pin, paddedPin) != 1 {
 		return ErrInvalidPin
 	}
 	return nil

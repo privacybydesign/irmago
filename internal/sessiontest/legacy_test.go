@@ -6,6 +6,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,13 +39,16 @@ func testSessionUsingLegacyStorage(t *testing.T, dir string) {
 
 	// Re-open client
 	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 
 	// Test whether credential is still there after the storage has been reloaded
 	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil)
 }
 
 func TestWithoutPairingSupport(t *testing.T) {
+	irmaserver.AcceptInsecureProtocolVersions = true
+	defer func() { irmaserver.AcceptInsecureProtocolVersions = false }()
+
 	t.Run("SigningSession", apply(testSigningSession, nil, optionPrePairingClient))
 	t.Run("DisclosureSession", apply(testDisclosureSession, nil, optionPrePairingClient))
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, nil, optionPrePairingClient))

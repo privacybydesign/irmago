@@ -116,7 +116,7 @@ var genkeypairCmd = &cobra.Command{
 		// Now generate the key pair
 		sysParams, ok := gabikeys.DefaultSystemParameters[keylength]
 		if !ok {
-			return fmt.Errorf("Unsupported key length, should be one of %v", gabikeys.DefaultKeyLengths)
+			return fmt.Errorf("unsupported key length, should be one of %v", gabikeys.DefaultKeyLengths)
 		}
 		privk, pubk, err := gabikeys.GenerateKeyPair(sysParams, numAttributes, counter, expiryDate)
 		if err != nil {

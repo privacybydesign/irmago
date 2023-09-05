@@ -15,7 +15,6 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
-	"github.com/sirupsen/logrus"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -74,6 +73,7 @@ type Client struct {
 	credMutex sync.Mutex
 }
 
+// Preferences contains the preferences of the user of this client.
 // TODO: consider if we should save irmamobile preferences here, because they would automatically
 // be part of any backup and syncing solution we implement at a later time
 type Preferences struct {
@@ -249,15 +249,6 @@ func (client *Client) loadCredentialStorage() (err error) {
 	}
 	client.credentialsCache = concmap.New[credLookup, *credential]()
 	return
-}
-
-func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
-	irma.Logger.WithFields(logrus.Fields{"credid": credid, "index": index}).Debug("Preparing cache")
-	cred, err := client.credential(credid, index)
-	if err != nil {
-		return err
-	}
-	return cred.NonrevPrepareCache()
 }
 
 func (client *Client) reportError(err error) {
@@ -451,8 +442,8 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
-// Removes all attributes, signatures, logs and userdata
-// Includes the user's secret key, keyshare servers and preferences/updates
+// RemoveStorage removes all attributes, signatures, logs and userdata.
+// This includes the user's secret key, keyshare servers and preferences/updates.
 // A fresh secret key is installed.
 func (client *Client) RemoveStorage() error {
 	var err error
@@ -1462,7 +1453,7 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 			if diff <= 0 {
 				continue
 			}
-			attrs = append(attrs, make([]*big.Int, diff, diff)...)
+			attrs = append(attrs, make([]*big.Int, diff)...)
 			for j := len(attrs) - diff; j < len(attrs); j++ {
 				attrs[j] = big.NewInt(0)
 			}

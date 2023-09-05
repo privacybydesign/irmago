@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/gabi/signed"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
@@ -130,6 +131,8 @@ func newSQLStorage(debug bool, dbtype, connstr string) (sqlRevStorage, error) {
 		dialector = postgres.Open(connstr)
 	case "mysql":
 		dialector = mysql.Open(connstr)
+	case "sqlserver":
+		dialector = sqlserver.Open(connstr)
 	default:
 		return sqlRevStorage{}, errors.New("unsupported database type")
 	}
@@ -271,8 +274,16 @@ func (s sqlRevStorage) AppendAccumulatorUpdate(
 	return s.gorm.Transaction(func(tx *gorm.DB) error {
 		// Retrieve the current accumulator state for every public key of the credential and lock the rows for update.
 		var accs []*AccumulatorRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&accs, map[string]interface{}{"cred_type": id}).Error; err != nil {
-			return err
+
+		// Microsoft SQL server does not support the locking clause, so we have to use a raw query instead.
+		if s.gorm.Dialector.Name() == "sqlserver" {
+			if err := tx.Raw("SELECT * FROM accumulator_records WITH (UPDLOCK, ROWLOCK) WHERE cred_type = ?", id).Scan(&accs).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&accs, map[string]interface{}{"cred_type": id}).Error; err != nil {
+				return err
+			}
 		}
 
 		// Accumulators always relate to the latest revocation event of its type. We retrieve those too and combine them in revocationUpdateHead instances.
@@ -624,6 +635,8 @@ func (eventHash) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 		return "bytea"
 	case "mysql":
 		return "blob"
+	case "sqlserver":
+		return "varbinary(max)"
 	default:
 		return ""
 	}
@@ -636,6 +649,8 @@ func (signedMessage) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 		return "bytea"
 	case "mysql":
 		return "blob"
+	case "sqlserver":
+		return "varbinary(max)"
 	default:
 		return ""
 	}
@@ -677,6 +692,8 @@ func (RevocationAttribute) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 		return "bytea"
 	case "mysql":
 		return "blob"
+	case "sqlserver":
+		return "varbinary(max)"
 	default:
 		return ""
 	}

@@ -44,7 +44,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 	disclosedint := make([][]*gobig.Int, len(disclosed))
 	dlreps := make([]*gobig.Int, len(disclosed))
 	var d interface{} = disclosedint
-	for i, _ := range disclosed {
+	for i := range disclosed {
 		meta := MetadataFromInt(disclosed[i][1], conf)
 		if meta.CredentialType() == nil {
 			return nil, "", errors.New("Cannot compute timestamp request involving unknown credential types")
@@ -99,8 +99,8 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 	return hashed[:], timestampServerUrl, nil
 }
 
-// Given an SignedMessage, verify the timestamp over the signed message, disclosed attributes,
-// and rerandomized CL-signatures.
+// VerifyTimestamp verifies the timestamp over the signed message, disclosed attributes,
+// and rerandomized CL-signatures of the given SignedMessage.
 func (sm *SignedMessage) VerifyTimestamp(message string, conf *Configuration) error {
 	// Extract the disclosed attributes and randomized CL-signatures from the proofs in order to
 	// construct the nonce that should be signed by the timestamp server.

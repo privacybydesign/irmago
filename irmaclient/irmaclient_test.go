@@ -292,7 +292,7 @@ func TestCredentialRemoval(t *testing.T) {
 	// Also check whether credential is removed after reloading the storage
 	err = client.storage.db.Close()
 	require.NoError(t, err)
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
@@ -359,7 +359,7 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 
 	err = client.storage.db.Close()
 	require.NoError(t, err)
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 
 	require.NotContains(t, client.keyshareServers, "test")
 }

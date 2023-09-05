@@ -67,7 +67,7 @@ type Configuration struct {
 	readOnly    bool
 }
 
-// ConfigurationListeners are the interface provided to react to changes in schemes.
+// ConfigurationListener are the interface provided to react to changes in schemes.
 type ConfigurationListener func(conf *Configuration)
 
 type UnknownIdentifierError struct {
@@ -596,8 +596,6 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 		}
 		return nil
 	})
-
-	return
 }
 
 func (conf *Configuration) checkIdentifiers(session SessionRequest) (*IrmaIdentifierSet, *IrmaIdentifierSet, error) {
