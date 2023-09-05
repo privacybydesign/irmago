@@ -17,6 +17,9 @@ var downloadCmd = &cobra.Command{
 		var path string
 		var urls []string
 		defaultIrmaconf := irma.DefaultSchemesPath()
+		if useSchemesAssetsPath, _ := cmd.Flags().GetBool("use-schemes-assets-path"); useSchemesAssetsPath {
+			defaultIrmaconf = irma.EnsureDefaultSchemesAssetsPathExists()
+		}
 
 		if len(args) == 0 {
 			path = defaultIrmaconf
@@ -84,5 +87,7 @@ func downloadHelp() string {
 }
 
 func init() {
+	flags := downloadCmd.Flags()
+	flags.Bool("use-schemes-assets-path", false, "download the schemes to the schemes assets path instead of the schemes path")
 	schemeCmd.AddCommand(downloadCmd)
 }

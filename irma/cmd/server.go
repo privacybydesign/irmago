@@ -78,14 +78,15 @@ func setFlags(cmd *cobra.Command, production bool) error {
 		}
 	}
 
-	schemespath := irma.DefaultSchemesPath()
+	schemesPath := irma.DefaultSchemesPath()
+	schemesAssetsPath := irma.DefaultSchemesAssetsPath()
 
 	flags := cmd.Flags()
 	flags.SortFlags = false
 
 	flags.StringP("config", "c", "", "path to configuration file")
-	flags.StringP("schemes-path", "s", schemespath, "path to irma_configuration")
-	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
+	flags.StringP("schemes-path", "s", schemesPath, "path to irma_configuration")
+	flags.String("schemes-assets-path", schemesAssetsPath, "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
 	flags.StringP("privkeys", "k", "", "path to IRMA private keys")
 	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
