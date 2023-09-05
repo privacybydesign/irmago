@@ -190,6 +190,30 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 	return true
 }
 
+func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error) {
+	serr, ok := err.(*irma.SessionError)
+	if ok {
+		if serr.RemoteError != nil && len(serr.RemoteError.ErrorName) > 0 {
+			switch serr.RemoteError.ErrorName {
+			case "USER_NOT_FOUND":
+				ks.sessionHandler.KeyshareEnrollmentDeleted(manager)
+			case "USER_NOT_REGISTERED":
+				ks.sessionHandler.KeyshareEnrollmentIncomplete(manager)
+			case "USER_BLOCKED":
+				duration, err := strconv.Atoi(serr.RemoteError.Message)
+				if err != nil { // Not really clear what to do with duration, but should never happen anyway
+					duration = -1
+				}
+				ks.sessionHandler.KeyshareBlocked(manager, duration)
+			default:
+				ks.sessionHandler.KeyshareError(&manager, err)
+			}
+		}
+	} else {
+		ks.sessionHandler.KeyshareError(&manager, err)
+	}
+}
+
 // VerifyPin asks for a pin, repeatedly if necessary, informing the handler of success or failure.
 // It returns whether the authentication was successful or not.
 func (ks *keyshareSession) VerifyPin(attempts int) bool {
