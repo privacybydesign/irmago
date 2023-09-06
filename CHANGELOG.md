@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [0.13.3] - 2023-09-06
 ### Fixed
 - Auto-update mechanism of IRMA configuration not working in ghcr.io/privacybydesign/irma Docker container
 - Panics occur when the timestamp file does not exist in a scheme directory
@@ -406,6 +408,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.13.3]: https://github.com/privacybydesign/irmago/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/privacybydesign/irmago/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/privacybydesign/irmago/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/privacybydesign/irmago/compare/v0.12.6...v0.13.0
