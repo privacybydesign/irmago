@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- User account expiry continues when one or more e-mail addresses are marked for revalidation
+
 ## [0.13.3] - 2023-09-06
 ### Fixed
 - Auto-update mechanism of IRMA configuration not working in ghcr.io/privacybydesign/irma Docker container
