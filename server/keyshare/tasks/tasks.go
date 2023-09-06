@@ -189,12 +189,18 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 			SELECT count(*)
 			FROM irma.emails
 			WHERE irma.users.id = irma.emails.user_id
-			{{revalidate}}
-		) > 0 AND delete_on IS NULL
+		) > 0 
+		{{revalidate}}
+		AND delete_on IS NULL
 		LIMIT 10`
 
 	if t.revalidateMail {
-		query = strings.ReplaceAll(query, "{{revalidate}}", "AND irma.emails.revalidate_on IS NULL")
+		query = strings.ReplaceAll(query, "{{revalidate}}", `AND (
+			SELECT count(*)
+			FROM irma.emails
+			WHERE irma.users.id = irma.emails.user_id
+			AND irma.emails.revalidate_on IS NOT NULL
+			) = 0`)
 	} else {
 		query = strings.ReplaceAll(query, "{{revalidate}}", "")
 	}
