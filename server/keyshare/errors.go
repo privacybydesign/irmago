@@ -1,10 +1,11 @@
 package keyshare
 
 import (
+	"net/http"
+
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
-	"net/http"
 )
 
 var (
@@ -14,7 +15,10 @@ var (
 
 	// Email errors:
 
-	ErrInvalidEmail = errors.New("invalid email address")
+	ErrInvalidEmail       = errors.New("invalid email address")
+	ErrInvalidEmailDomain = errors.New("invalid email domain")
+
+	ErrNoNetwork = errors.New("no network connection")
 )
 
 func WriteError(w http.ResponseWriter, err error) {
@@ -29,6 +33,10 @@ func WriteError(w http.ResponseWriter, err error) {
 		serverError = server.ErrorUserNotRegistered
 	case ErrInvalidEmail:
 		serverError = server.ErrorInvalidRequest
+	case ErrInvalidEmailDomain:
+		serverError = server.ErrorInvalidRequest
+	case ErrNoNetwork:
+		serverError = server.ErrorInternal
 	case keysharecore.ErrInvalidPin:
 		// This error should never be handled here. We want to include information about how
 		// many PIN attempts the user has left, and if zero, how long the user is blocked.

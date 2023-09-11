@@ -15,7 +15,7 @@ import (
 // ProofStatus is the status of the complete proof
 type ProofStatus string
 
-// Status is the proof status of a single attribute
+// AttributeProofStatus is the proof status of a single attribute
 type AttributeProofStatus string
 
 const (
@@ -54,9 +54,7 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabikeys
 	var publicKeys = make([]*gabikeys.PublicKey, 0, len(pl))
 
 	for _, v := range pl {
-		switch v.(type) {
-		case *gabi.ProofD:
-			proof := v.(*gabi.ProofD)
+		if proof, ok := v.(*gabi.ProofD); ok {
 			metadata := MetadataFromInt(proof.ADisclosed[1], configuration) // index 1 is metadata attribute
 			publicKey, err := metadata.PublicKey()
 			if err != nil {
@@ -66,7 +64,7 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabikeys
 				return nil, ErrMissingPublicKey
 			}
 			publicKeys = append(publicKeys, publicKey)
-		default:
+		} else {
 			return nil, errors.New("Cannot extract public key, not a disclosure proofD")
 		}
 	}

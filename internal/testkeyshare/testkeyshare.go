@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
@@ -28,7 +27,7 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeMan
 	db := keyshareserver.NewMemoryDB()
 	err := db.AddUser(context.Background(), &keyshareserver.User{
 		Username: "",
-		Secrets:  keysharecore.UserSecrets{},
+		Secrets:  keyshareserver.UserSecrets{},
 	})
 	require.NoError(t, err)
 	secrets, err := base64.StdEncoding.DecodeString("YWJjZBdd6z/4lW/JBgEjVxcAnhK16iimfeyi1AAtWPzkfbWYyXHAad8A+Xzc6mE8bMj6dMQ5CgT0xcppEWYN9RFtO5+Wv4Carfq3TEIX9IWEDuU+lQG0noeHzKZ6k1J22iNAiL7fEXNWNy2H7igzJbj6svbH2LTRKxEW2Cj9Qkqzip5UapHmGZf6G6E7VkMvmJsbrW5uoZAVq2vP+ocuKmzBPaBlqko9F0YKglwXyhfaQQQ0Y3x4secMwC12")

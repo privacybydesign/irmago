@@ -74,3 +74,18 @@ func (db *DB) QueryIterateContext(ctx context.Context, query string, f func(rows
 	}
 	return res.Err()
 }
+
+// EmailRevalidation returns whether email address revalidation is enabled.
+func (db *DB) EmailRevalidation(ctx context.Context) bool {
+	c, err := db.ExecCountContext(ctx, "SELECT true FROM information_schema.columns WHERE table_schema='irma' AND table_name='emails' AND column_name='revalidate_on'")
+	if err != nil {
+		common.Logger.WithField("error", err).Error("Could not query the schema for column emails.revalidate_on, therefore revalidation is disabled")
+		return false
+	}
+
+	if c == 0 {
+		common.Logger.Warning("Email address revalidation is disabled because the emails.revalidate_on column is not present in the schema")
+		return false
+	}
+	return true
+}

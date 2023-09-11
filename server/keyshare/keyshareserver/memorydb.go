@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
@@ -14,11 +13,11 @@ import (
 
 type memoryDB struct {
 	sync.Mutex
-	users map[string]keysharecore.UserSecrets
+	users map[string]UserSecrets
 }
 
 func NewMemoryDB() DB {
-	return &memoryDB{users: map[string]keysharecore.UserSecrets{}}
+	return &memoryDB{users: map[string]UserSecrets{}}
 }
 
 func (db *memoryDB) user(_ context.Context, username string) (*User, error) {
@@ -31,7 +30,7 @@ func (db *memoryDB) user(_ context.Context, username string) (*User, error) {
 	if !ok {
 		return nil, keyshare.ErrUserNotFound
 	}
-	return &User{Username: username, Secrets: secrets}, nil
+	return &User{Username: username, Secrets: UserSecrets(secrets)}, nil
 }
 
 func (db *memoryDB) AddUser(_ context.Context, user *User) error {

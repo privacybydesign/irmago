@@ -119,7 +119,7 @@ may be used.`,
 		}()
 
 		// Build the proof
-		bases := append([]*big.Int{pk.Z, pk.S})
+		bases := []*big.Int{pk.Z, pk.S}
 		if pk.G != nil {
 			bases = append(bases, pk.G)
 		}

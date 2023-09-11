@@ -14,8 +14,9 @@ var revokeCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
-		schemespath, _ := flags.GetString("schemes-path")
-		authmethod, _ := flags.GetString("auth-method")
+		schemesPath, _ := flags.GetString("schemes-path")
+		schemesAssetsPath, _ := flags.GetString("schemes-assets-path")
+		authMethod, _ := flags.GetString("auth-method")
 		key, _ := flags.GetString("key")
 		name, _ := flags.GetString("name")
 		verbosity, _ := cmd.Flags().GetCount("verbose")
@@ -27,15 +28,15 @@ var revokeCmd = &cobra.Command{
 			Key:            args[1],
 		}
 
-		postRevocation(request, url, schemespath, authmethod, key, name, verbosity)
+		postRevocation(request, url, schemesPath, schemesAssetsPath, authMethod, key, name, verbosity)
 	},
 }
 
-func postRevocation(request *irma.RevocationRequest, url, schemespath, authmethod, key, name string, verbosity int) {
+func postRevocation(request *irma.RevocationRequest, url, schemesPath, schemesAssetsPath, authMethod, key, name string, verbosity int) {
 	logger.Level = server.Verbosity(verbosity)
 	irma.SetLogger(logger)
 
-	conf, err := irma.NewConfiguration(schemespath, irma.ConfigurationOptions{ReadOnly: true})
+	conf, err := irma.NewConfiguration(schemesPath, irma.ConfigurationOptions{ReadOnly: true, Assets: schemesAssetsPath})
 	if err != nil {
 		die("failed to open irma_configuration", err)
 	}
@@ -53,7 +54,7 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 
 	transport := irma.NewHTTPTransport(url, false)
 
-	switch authmethod {
+	switch authMethod {
 	case "none":
 		err = transport.Post("revocation", nil, request)
 	case "token":
@@ -61,7 +62,7 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 		err = transport.Post("revocation", nil, request)
 	case "hmac", "rsa":
 		// Prevent that err is redeclared in the inner scope
-		sk, jwtalg, errJwtKey := configureJWTKey(authmethod, key)
+		sk, jwtalg, errJwtKey := configureJWTKey(authMethod, key)
 		if errJwtKey != nil {
 			die("failed to configure JWT key", errJwtKey)
 		}
@@ -90,6 +91,7 @@ func postRevocation(request *irma.RevocationRequest, url, schemespath, authmetho
 func init() {
 	flags := revokeCmd.Flags()
 	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
+	flags.String("schemes-assets-path", irma.DefaultSchemesAssetsPath(), "if specified, copy schemes from here into --schemes-path")
 	flags.StringP("auth-method", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
 	flags.String("key", "", "Key to sign request with")
 	flags.String("name", "", "Requestor name")

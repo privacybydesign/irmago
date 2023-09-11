@@ -81,6 +81,8 @@ type session struct {
 	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
 
+	pendingPermissionRequest bool
+
 	next               *session
 	implicitDisclosure [][]*irma.AttributeIdentifier
 
@@ -367,8 +369,8 @@ func (session *session) processSessionInfo() {
 		issuedAt := time.Now()
 		_, err := ir.GetCredentialInfoList(session.client.Configuration, session.Version, issuedAt)
 		if err != nil {
-			if err, ok := err.(*irma.SessionError); ok {
-				session.fail(err)
+			if serr, ok := err.(*irma.SessionError); ok {
+				session.fail(serr)
 			} else {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorUnknownIdentifier, Err: err})
 			}
@@ -430,6 +432,7 @@ func (session *session) requestPermission() {
 		return
 	}
 
+	session.pendingPermissionRequest = true
 	session.Handler.StatusUpdate(session.Action, irma.ClientStatusConnected)
 
 	// Ask for permission to execute the session
@@ -454,6 +457,7 @@ func (session *session) requestPermission() {
 func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 	defer session.recoverFromPanic()
 
+	session.pendingPermissionRequest = false
 	if !proceed {
 		session.cancel()
 		return
@@ -542,6 +546,12 @@ func (session *session) sendResponse(message interface{}) {
 		path = "commitments"
 	}
 
+	log, err = session.createLogEntry(message)
+	if err != nil {
+		session.fail(&irma.SessionError{Info: "Failed to create log entry", Err: err})
+		return
+	}
+
 	if session.IsInteractive() {
 		if err = session.transport.Post(path, &serverResponse, ourResponse); err != nil {
 			session.fail(err.(*irma.SessionError))
@@ -559,11 +569,10 @@ func (session *session) sendResponse(message interface{}) {
 		}
 	}
 
-	log, err = session.createLogEntry(message)
-	if err != nil {
-		irma.Logger.Warn(errors.WrapPrefix(err, "Failed to create log entry", 0).ErrorStack())
-		session.client.reportError(err)
-	}
+	// We don't add new credentials in one transaction, because the credentials are already manipulated in cache,
+	// and it is too complex to do a rollback of all these changes if that single transaction would fail.
+	// Changing this would require a major refactor. Therefore, we currently start a separate transaction
+	// to add the log entry. If this fails, we log the error as a warning.
 	if err = session.client.storage.AddLogEntry(log); err != nil {
 		irma.Logger.Warn(errors.WrapPrefix(err, "Failed to write log entry", 0).ErrorStack())
 	}
@@ -745,7 +754,6 @@ func (session *session) finish(delete bool) bool {
 
 func (session *session) fail(err *irma.SessionError) {
 	if session.finish(true) && err.ErrorType != irma.ErrorKeyshareUnenrolled {
-		irma.Logger.Warn("client session error: ", err.Error())
 		// Don't use errors.Wrap() if err.Err == nil, otherwise we may get
 		// https://yourbasic.org/golang/gotcha-why-nil-error-not-equal-nil/.
 		// since errors.Wrap() returns an *errors.Error.
@@ -831,7 +839,9 @@ func (s sessions) remove(token string) {
 
 	if last.Action == irma.ActionIssuing {
 		for _, session := range s.sessions {
-			session.requestPermission()
+			if session.pendingPermissionRequest {
+				session.requestPermission()
+			}
 		}
 	}
 

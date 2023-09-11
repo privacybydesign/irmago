@@ -3,10 +3,10 @@ package myirmaserver
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
-	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
@@ -177,6 +177,7 @@ func (db *postgresDB) verifyLoginToken(ctx context.Context, token, username stri
 
 func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 	var result user
+	revalidation := db.db.EmailRevalidation(ctx)
 
 	// fetch username
 	err := db.db.QueryUserContext(ctx, "SELECT username, language, (coredata IS NULL) AS delete_in_progress FROM irma.users WHERE id = $1",
@@ -186,13 +187,27 @@ func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 		return user{}, err
 	}
 
+	query := "SELECT email, (delete_on IS NOT NULL) AS delete_in_progress {{revalidate}} FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)"
+
+	if revalidation {
+		query = strings.ReplaceAll(query, "{{revalidate}}", ", (revalidate_on IS NOT NULL) AS revalidate_in_progress")
+	} else {
+		query = strings.ReplaceAll(query, "{{revalidate}}", "")
+	}
+
 	// fetch email addresses
 	err = db.db.QueryIterateContext(
 		ctx,
-		"SELECT email, (delete_on IS NOT NULL) AS delete_in_progress FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)",
+		query,
 		func(rows *sql.Rows) error {
 			var email userEmail
-			err = rows.Scan(&email.Email, &email.DeleteInProgress)
+
+			if revalidation {
+				err = rows.Scan(&email.Email, &email.DeleteInProgress, &email.RevalidateInProgress)
+			} else {
+				err = rows.Scan(&email.Email, &email.DeleteInProgress)
+			}
+
 			result.Emails = append(result.Emails, email)
 			return err
 		},
@@ -268,4 +283,35 @@ func (db *postgresDB) setSeen(ctx context.Context, id int64) error {
 		 WHERE id = $2`,
 		time.Now().Unix(), id,
 	)
+}
+
+func (db *postgresDB) hasEmailRevalidation(ctx context.Context) bool {
+	return db.db.EmailRevalidation(ctx)
+}
+
+func (db *postgresDB) scheduleEmailRevalidation(ctx context.Context, id int64, email string, delay time.Duration) error {
+	aff, err := db.db.ExecCountContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE user_id = $2 AND email = $3 AND delete_on IS NULL",
+		time.Now().Add(delay).Unix(),
+		id,
+		email)
+	if err != nil {
+		return err
+	}
+	if aff != 1 {
+		return errors.Errorf("Unexpected number of affected rows %d for email revalidation", aff)
+	}
+	return nil
+}
+
+func (db *postgresDB) setPinBlockDate(ctx context.Context, id int64, delay time.Duration) error {
+	aff, err := db.db.ExecCountContext(ctx, "UPDATE irma.users SET pin_block_date = $1 WHERE id = $2",
+		time.Now().Add(delay).Unix(),
+		id)
+	if err != nil {
+		return err
+	}
+	if aff != 1 {
+		return errors.Errorf("Unexpected number of affected rows %d at setting pin_block_date", aff)
+	}
+	return nil
 }

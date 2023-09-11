@@ -12,6 +12,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 	"github.com/sirupsen/logrus"
 )
 
@@ -41,14 +42,14 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 	user, err := s.db.user(r.Context(), claims.Username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		keyshare.WriteError(w, err)
 		return
 	}
 
 	result, err := s.registerPublicKey(r.Context(), user, claims.Pin, pk)
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 	server.WriteJson(w, result)
@@ -65,7 +66,7 @@ func (s *Server) registerPublicKey(ctx context.Context, user *User, pin string, 
 	}
 
 	var jwtt string
-	jwtt, user.Secrets, err = s.core.SetUserPublicKey(user.Secrets, pin, pk)
+	jwtt, secrets, err := s.core.SetUserPublicKey(keysharecore.UserSecrets(user.Secrets), pin, pk)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -76,6 +77,7 @@ func (s *Server) registerPublicKey(ctx context.Context, user *User, pin string, 
 		s.conf.Logger.WithField("error", err).Error("Could not set user public key")
 		return irma.KeysharePinStatus{}, err
 	}
+	user.Secrets = UserSecrets(secrets)
 
 	// Mark pincheck as success, resetting users wait and count
 	err = s.db.resetPinTries(ctx, user)
@@ -112,7 +114,7 @@ func (s *Server) updatePinLegacy(ctx context.Context, user *User, oldPin, newPin
 	}
 
 	// Try to do the update
-	user.Secrets, err = s.core.ChangePinLegacy(user.Secrets, oldPin, newPin)
+	secrets, err := s.core.ChangePinLegacy(keysharecore.UserSecrets(user.Secrets), oldPin, newPin)
 	if err == keysharecore.ErrInvalidPin {
 		if tries == 0 {
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -123,6 +125,7 @@ func (s *Server) updatePinLegacy(ctx context.Context, user *User, oldPin, newPin
 		s.conf.Logger.WithField("error", err).Error("Could not change pin")
 		return irma.KeysharePinStatus{}, err
 	}
+	user.Secrets = UserSecrets(secrets)
 
 	// Mark pincheck as success, resetting users wait and count
 	err = s.db.resetPinTries(ctx, user)
@@ -146,7 +149,7 @@ func (s *Server) handleChangePinLegacy(ctx context.Context, w http.ResponseWrite
 	user, err := s.db.user(ctx, username)
 	if err != nil {
 		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
-		server.WriteError(w, server.ErrorUserNotRegistered, "")
+		keyshare.WriteError(w, err)
 		return
 	}
 
@@ -154,7 +157,7 @@ func (s *Server) handleChangePinLegacy(ctx context.Context, w http.ResponseWrite
 
 	if err != nil {
 		// already logged
-		server.WriteError(w, server.ErrorInternal, err.Error())
+		keyshare.WriteError(w, err)
 		return
 	}
 	server.WriteJson(w, result)

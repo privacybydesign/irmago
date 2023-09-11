@@ -1,0 +1,25 @@
+# Workflow to check whether changes to master concerning the Dockerfile fulfill all requirements.
+name: Status checks (Dockerfile)
+
+on:
+  # Delivery pipeline already runs this on push to master.
+  pull_request:
+    paths:
+      - Dockerfile
+
+# Building the Dockerfile includes downloading the IRMA schemes.
+# Therefore, we only run one check at the time, and we put a limit on the event types triggering this job.
+concurrency:
+  group: dockerfile
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build Dockerfile
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} .
+
+      - name: Test Docker image
+        run: docker run ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} version

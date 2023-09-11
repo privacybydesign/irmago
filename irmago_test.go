@@ -92,12 +92,22 @@ func TestUpdateConfiguration(t *testing.T) {
 	require.NoError(t, conf.UpdateScheme(scheme, updated))
 	require.Contains(t, updated.CredentialTypes, NewCredentialTypeIdentifier("irma-demo.RU.studentCard"))
 
+	// Get LogoPath of test-requestor
+	require.Contains(t, conf.Requestors, "localhost")
+	require.NotNil(t, conf.Requestors["localhost"].LogoPath)
+	logoPath := *conf.Requestors["localhost"].LogoPath
+
 	updated = newIrmaIdentifierSet()
 	requestorschemeid := NewRequestorSchemeIdentifier("test-requestors")
 	requestorscheme := conf.RequestorSchemes[requestorschemeid]
 	requestorscheme.URL = "http://localhost:48681/irma_configuration_updated/test-requestors"
 	require.NoError(t, conf.UpdateScheme(requestorscheme, updated))
 	require.Contains(t, updated.RequestorSchemes, requestorschemeid)
+
+	// Check whether logo path is still correct
+	require.Contains(t, conf.Requestors, "localhost")
+	require.NotNil(t, conf.Requestors["localhost"].LogoPath)
+	require.Equal(t, *conf.Requestors["localhost"].LogoPath, logoPath)
 }
 
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
@@ -719,8 +729,8 @@ var (
 
 func TestRevocationMemoryStore(t *testing.T) {
 	conf := parseConfiguration(t)
-	db := conf.Revocation.memdb
-	require.NotNil(t, db)
+	storage := conf.Revocation
+	require.NotNil(t, storage)
 
 	// prepare key material
 	sk, err := conf.Revocation.Keys.PrivateKey(revocationTestCred.IssuerIdentifier(), revocationPkCounter)
@@ -729,38 +739,40 @@ func TestRevocationMemoryStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// construct initial update
-	update, err := revocation.NewAccumulator(sk)
+	err = storage.EnableRevocation(revocationTestCred, sk)
 	require.NoError(t, err)
-
-	// insert and retrieve it and check its validity
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 0, 0)
+	retrieve(t, pk, storage, 0)
+	updates, err := storage.LatestUpdates(revocationTestCred, 1, &pk.Counter)
+	require.NoError(t, err)
+	require.Len(t, updates, 1)
+	update := updates[pk.Counter]
+	require.NotNil(t, update)
 
 	// construct new update message with a few revocation events
 	update = revokeMultiple(t, sk, update)
 	oldupdate := *update // save a copy for below
 
 	// insert it, retrieve it with a varying amount of events, verify
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 4, 3)
+	storage.AddUpdate(revocationTestCred, update)
+	retrieve(t, pk, storage, 3)
 
 	// construct and test against a new update whose events have no overlap with that of our db
 	update = revokeMultiple(t, sk, update)
 	update.Events = update.Events[4:]
 	require.Equal(t, uint64(4), update.Events[0].Index)
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 4, 6)
+	storage.AddUpdate(revocationTestCred, update)
+	retrieve(t, pk, storage, 6)
 
 	// attempt to insert an update that is too new
 	update = revokeMultiple(t, sk, update)
 	update.Events = update.Events[5:]
 	require.Equal(t, uint64(9), update.Events[0].Index)
-	db.Insert(revocationTestCred, update)
-	retrieve(t, pk, db, 4, 6)
+	storage.AddUpdate(revocationTestCred, update)
+	retrieve(t, pk, storage, 6)
 
 	// attempt to insert an update that is too old
-	db.Insert(revocationTestCred, &oldupdate)
-	retrieve(t, pk, db, 4, 6)
+	storage.AddUpdate(revocationTestCred, &oldupdate)
+	retrieve(t, pk, storage, 6)
 }
 
 func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Update) *revocation.Update {
@@ -776,21 +788,29 @@ func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Up
 	return update
 }
 
-func retrieve(t *testing.T, pk *gabikeys.PublicKey, db *memRevStorage, count uint64, expectedIndex uint64) {
-	var updates map[uint]*revocation.Update
-	var err error
+func retrieve(t *testing.T, pk *gabikeys.PublicKey, storage *RevocationStorage, expectedIndex uint64) {
+	count := expectedIndex + 1
 	for i := uint64(0); i <= count; i++ {
-		updates = db.Latest(revocationTestCred, i)
-		require.Len(t, updates, 1)
-		require.NotNil(t, updates[revocationPkCounter])
-		require.Len(t, updates[revocationPkCounter].Events, int(i))
-		_, err = updates[revocationPkCounter].Verify(pk)
+		// If limit is 0, then all events should be returned.
+		expectedLength := i
+		if i == 0 {
+			expectedLength = count
+		}
+
+		updates, err := storage.LatestUpdates(revocationTestCred, i, &pk.Counter)
 		require.NoError(t, err)
+		require.Len(t, updates, 1)
+		update := updates[revocationPkCounter]
+		require.NotNil(t, update)
+		require.Len(t, update.Events, int(expectedLength))
+		_, err = update.Verify(pk)
+		require.NoError(t, err)
+
+		// Check accumulator value
+		acc, err := update.SignedAccumulator.UnmarshalVerify(pk)
+		require.NoError(t, err)
+		require.Equal(t, expectedIndex, acc.Index)
 	}
-	sacc := db.SignedAccumulator(revocationTestCred, revocationPkCounter)
-	acc, err := sacc.UnmarshalVerify(pk)
-	require.NoError(t, err)
-	require.Equal(t, expectedIndex, acc.Index)
 }
 
 func revoke(t *testing.T, acc *revocation.Accumulator, parent *revocation.Event, sk *gabikeys.PrivateKey) (*revocation.Accumulator, *revocation.Event) {
@@ -853,14 +873,6 @@ func credid(s string) CredentialTypeIdentifier {
 func credidptr(s string) *CredentialTypeIdentifier {
 	id := credid(s)
 	return &id
-}
-func credinfo(id string) *CredentialInfo {
-	i := credid(id)
-	return &CredentialInfo{
-		SchemeManagerID: i.Root(),
-		IssuerID:        i.IssuerIdentifier().Name(),
-		ID:              i.Name(),
-	}
 }
 func credtype(id string, deps ...string) *CredentialType {
 	i := credid(id)

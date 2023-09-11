@@ -170,7 +170,7 @@ func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts
 
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
@@ -276,7 +276,7 @@ func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...opt
 
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 }
@@ -451,7 +451,7 @@ func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...option
 	doSession(t, issuanceRequest, client, nil, nil, nil, conf, opts...)
 	require.NoError(t, client.Close())
 
-	client, handler = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.storage)
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
 	doSession(t, getDisclosureRequest(id), client, nil, nil, nil, conf, opts...)
 }
@@ -1017,7 +1017,7 @@ func TestPOSTSizeLimit(t *testing.T) {
 	req, err := http.NewRequest(
 		http.MethodPost,
 		requestorServerURL+"/session/",
-		bytes.NewReader(make([]byte, server.PostSizeLimit+1, server.PostSizeLimit+1)),
+		bytes.NewReader(make([]byte, server.PostSizeLimit+1)),
 	)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
@@ -1042,7 +1042,8 @@ func TestStatusEventsSSE(t *testing.T) {
 
 	// Start a session at the server
 	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
-	sesPkg := startSessionAtServer(t, rs, conf, request)
+	useJWTs := !conf.DisableRequestorAuthentication
+	sesPkg := startSessionAtServer(t, rs, useJWTs, request)
 
 	// Start SSE connections to the SSE endpoints
 	url := fmt.Sprintf("http://localhost:%d/session/%s/statusevents", conf.Port, sesPkg.Token)
@@ -1146,10 +1147,34 @@ func TestDoubleGET(t *testing.T) {
 	// Simulate the first GET by the client in the session protocol, twice
 	var o interface{}
 	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.MinVersionHeader, "2.5")
-	transport.SetHeader(irma.MaxVersionHeader, "2.5")
+	transport.SetHeader(irma.MinVersionHeader, "2.8")
+	transport.SetHeader(irma.MaxVersionHeader, "2.8")
+	transport.SetHeader(irma.AuthorizationHeader, "testauthtoken")
 	require.NoError(t, transport.Get("", &o))
 	require.NoError(t, transport.Get("", &o))
+}
+
+func TestInsecureProtocolVersion(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	// Test whether the server accepts a request with an insecure protocol version
+	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
+
+	qr, _, _, err := irmaServer.irma.StartSession(request, func(result *server.SessionResult) {})
+	require.NoError(t, err)
+
+	var o interface{}
+	transport := irma.NewHTTPTransport(qr.URL, false)
+	transport.SetHeader(irma.MinVersionHeader, "2.7")
+	transport.SetHeader(irma.MaxVersionHeader, "2.7")
+	transport.SetHeader(irma.AuthorizationHeader, "testauthtoken")
+	err = transport.Get("", &o)
+	require.Error(t, err)
+	serr, ok := err.(*irma.SessionError)
+	require.True(t, ok)
+	require.Equal(t, server.ErrorProtocolVersion.Status, serr.RemoteStatus)
+	require.Equal(t, string(server.ErrorProtocolVersion.Type), serr.RemoteError.ErrorName)
 }
 
 func TestClientDeveloperMode(t *testing.T) {
@@ -1235,6 +1260,34 @@ func TestParallelSessions(t *testing.T) {
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
+}
+
+func TestParallelSessionsWithPairing(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getCombinedIssuanceRequest(id)
+
+	frontendOptionsHandler := func(handler *TestHandler) {
+		_ = setPairingMethod(irma.PairingMethodPin, handler)
+	}
+
+	pairingHandler := func(handler *TestHandler) {
+		<-handler.pairingCodeChan
+
+		// Do a second session while the first session is pairing.
+		doSession(t, request, client, irmaServer, nil, nil, nil)
+
+		// After the second session has been completed, we complete pairing of the first session.
+		err := handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
+		require.NoError(t, err)
+	}
+
+	// Initiate the first session with pairing being enabled.
+	doSession(t, request, client, irmaServer, frontendOptionsHandler, pairingHandler, nil)
 }
 
 func expireKey(t *testing.T, conf *irma.Configuration) {

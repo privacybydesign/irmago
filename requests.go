@@ -675,7 +675,7 @@ func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i, _ := range a {
+	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
@@ -748,7 +748,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			ir.ids.Issuers[issuer] = struct{}{}
 			credID := credreq.CredentialTypeID
 			ir.ids.CredentialTypes[credID] = struct{}{}
-			for attr, _ := range credreq.Attributes { // this is kind of ugly
+			for attr := range credreq.Attributes { // this is kind of ugly
 				ir.ids.AttributeTypes[NewAttributeTypeIdentifier(credID.String()+"."+attr)] = struct{}{}
 			}
 			if ir.ids.PublicKeys[issuer] == nil {
@@ -859,20 +859,22 @@ func (sr *SignatureRequest) Validate() error {
 	return nil
 }
 
-// Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
+// Before checks if Timestamp is before other Timestamp. Used for checking expiry of attributes.
 func (t Timestamp) Before(u Timestamp) bool {
 	return time.Time(t).Before(time.Time(u))
 }
 
+// After checks if Timestamp is after other Timestamp. Used for checking expiry of attributes.
 func (t Timestamp) After(u Timestamp) bool {
 	return time.Time(t).After(time.Time(u))
 }
 
+// Sub returns the time difference between two Timestamps.
 func (t Timestamp) Sub(u Timestamp) time.Duration {
 	return time.Time(t).Sub(time.Time(u))
 }
 
-// To check whether Timestamp is uninitialized
+// IsZero checks whether Timestamp is uninitialized
 func (t Timestamp) IsZero() bool {
 	return time.Time(t).IsZero()
 }
@@ -905,7 +907,7 @@ func (t *Timestamp) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Timestamp implements Stringer.
+// String returns the timestamp as a Unix time string.
 func (t *Timestamp) String() string {
 	return fmt.Sprint(time.Time(*t).Unix())
 }

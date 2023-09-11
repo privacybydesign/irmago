@@ -4,6 +4,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+- User account expiry continues when one or more e-mail addresses are marked for revalidation
+
+## [0.13.3] - 2023-09-06
+### Fixed
+- Auto-update mechanism of IRMA configuration not working in ghcr.io/privacybydesign/irma Docker container
+- Panics occur when the timestamp file does not exist in a scheme directory
+
+## [0.13.2] - 2023-08-22
+### Changed
+- Remove mail header 'Content-Transfer-Encoding: binary'
+  The header gets converted to 'Content-Transfer-Encoding: quoted-printable' causing 'arc=fail (body hash mismatch)' with gmail
+
+## [0.13.1] - 2023-08-16
+### Fixed
+- Invalid amount of arguments in query scan when e-mail revalidation is disabled
+
+## [0.13.0] - 2023-08-10
+### Added
+- E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- Publish the Docker image of the `irma` CLI tool on ghcr.io/privacybydesign/irma
+- Support for revocation db type `sqlserver` (Microsoft SQL Server)
+
+### Changed
+- Use separate application user in Dockerfile for entrypoint
+- Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
+- Validate revocation witness before revocation update is applied
+- RevocationStorage's EnableRevocation function does not return an error anymore if it has been enabled already
+- Use a Docker image created from scratch as base for the Dockerfile
+- Custom WrapErrorPrefix function that respects the error's type
+- Log info message of irma.SessionError errors
+
+As part of e-mail address revalidation:
+- `VerifyMXRecord` incorporates a check to see if there is an active network connection
+- MyIrma server: `/user` returns an additional field `revalidate_in_progress` in the JSON response body, indicating whether the e-mail address is being revalidated or not
+- MyIrma server: `/user/delete` and `/email/remove` return a 500 status code and `REVALIDATE_EMAIL` error type if one or more e-mail addresses of the user are invalid
+
+**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail address revalidation is disabled and there will not be a breaking change.
+
+### Fixed
+- Race conditions in database logic of revocation storage
+- `irma scheme verify` not detecting missing files in index
+- Scheme verification/signing does not reject credentials with invalid revocation settings
+- Write transactions within memory implementation of revocation storage may lead to unintended changes
+
+### Removed
+- Superfluous openssl package in Dockerfile
+
+### Security
+- Let IRMA servers by default reject IRMA/Yivi apps that don't support pairing codes (IRMA protocol version <= 2.7)
+
+**Note:** This is an important security update for issuers to make sure that pairing codes cannot be circumvented.
+IRMA apps that don't support pairing codes should not be in circulation anymore, so this change won't affect users.
+Yivi apps have always supported pairing codes.
+
+### Internal
+- Linter switch from golint to staticcheck
+- Use Postgres 15 for unit and component tests
+
+## [0.12.6] - 2023-05-31
+### Fixed
+- Legacy endpoints of keyshare server return 403 status codes when database is down
+
+## [0.12.5] - 2023-05-25
+
+### Changed
+- Print warning in logs if log verbosity is set to trace
+
+### Fixed
+- LogoPath is incorrect after a requestor scheme update
+- Parallel sessions may fail when one of the sessions requires pairing
+
+## [0.12.4] - 2023-05-16
+
+### Fixed
+- Revocation related log messages occur twice or have wrong severity in irmaclient
+
 ## [0.12.3] - 2023-05-12
 
 ### Changed
@@ -332,6 +411,13 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.13.3]: https://github.com/privacybydesign/irmago/compare/v0.13.2...v0.13.3
+[0.13.2]: https://github.com/privacybydesign/irmago/compare/v0.13.1...v0.13.2
+[0.13.1]: https://github.com/privacybydesign/irmago/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/privacybydesign/irmago/compare/v0.12.6...v0.13.0
+[0.12.6]: https://github.com/privacybydesign/irmago/compare/v0.12.5...v0.12.6
+[0.12.5]: https://github.com/privacybydesign/irmago/compare/v0.12.4...v0.12.5
+[0.12.4]: https://github.com/privacybydesign/irmago/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/privacybydesign/irmago/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/privacybydesign/irmago/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/privacybydesign/irmago/compare/v0.12.0...v0.12.1

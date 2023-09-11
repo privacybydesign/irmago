@@ -68,7 +68,7 @@ func (client *Client) initRevocation() {
 					irma.Logger.WithFields(logrus.Fields{
 						"random":      r,
 						"prob":        p,
-						"lastupdated": time.Now().Sub(cred.NonRevocationWitness.Updated).Seconds(),
+						"lastupdated": time.Since(cred.NonRevocationWitness.Updated).Seconds(),
 						"credtype":    id,
 						"hash":        attrs.Hash(),
 					}).Debug("scheduling nonrevocation witness remote update")
@@ -185,17 +185,12 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		if cred.NonRevocationWitness == nil || cred.Pk.Counter != counter {
 			continue
 		}
+
 		updated, err := cred.nonrevApplyUpdates(update, irma.RevocationKeys{Conf: client.Configuration})
-		if updated {
-			save = true
-			if err = client.storage.StoreSignature(cred); err != nil {
-				return err
-			}
-		}
 		if err == revocation.ErrorRevoked {
 			id := cred.CredentialType().Identifier()
 			hash := cred.attrs.Hash()
-			irma.Logger.Warnf("credential %s %s revoked", id, hash)
+			irma.Logger.Infof("credential %s %s revoked", id, hash)
 			attrs[i].Revoked = true
 			cred.attrs.Revoked = true
 			save = true
@@ -208,6 +203,14 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 		if err != nil {
 			return err
 		}
+
+		if updated {
+			save = true
+			if err = client.storage.StoreSignature(cred); err != nil {
+				return err
+			}
+		}
+
 		// Asynchroniously update nonrevocation proof cache from updated witness
 		irma.Logger.WithField("credtype", id).Debug("scheduling nonrevocation cache update")
 		go func(cred *credential) {
@@ -269,6 +272,15 @@ func (cred *credential) nonrevApplyUpdates(update *revocation.Update, keys irma.
 	if err != nil {
 		return false, err
 	}
+
+	// Check whether the revocation witness is valid. If it fails, then our revocation storage is in an inconsistent state.
+	// This should never happen, but it makes debugging easier if something goes wrong.
+	if cred.NonRevocationWitness != nil {
+		if err := cred.NonRevocationWitness.Verify(cred.Pk); err != nil {
+			return false, irma.WrapErrorPrefix(err, "revocation witness is in an inconsistent state")
+		}
+	}
+
 	logger := irma.Logger.WithFields(logrus.Fields{"credtype": cred.CredentialType().Identifier(), "hash": cred.attrs.Hash()})
 	logger.Debugf("updating witness")
 	defer logger.Debug("updating witness done")
@@ -288,7 +300,7 @@ func probability(lastUpdate time.Time, refindex uint64) float64 {
 		refprobability = 0.75 * asymptote // probability after one week
 	)
 	f := math.Tan(math.Pi * refprobability / (2 * asymptote))
-	i := time.Now().Sub(lastUpdate).Seconds()
+	i := time.Since(lastUpdate).Seconds()
 	return 2 * asymptote / math.Pi * math.Atan(i/float64(refindex)*f)
 }
 

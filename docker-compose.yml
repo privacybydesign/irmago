@@ -3,7 +3,7 @@ version: '3.1'
 services:
   # Dependencies for running unit tests and for running the 'irma' command line tool using one of the test configurations.
   postgres:
-    image: postgres:13
+    image: postgres:15
     environment:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpassword
@@ -16,7 +16,7 @@ services:
     ports:
       - 5432:5432
   postgres-init:
-    image: postgres:13
+    image: postgres:15
     environment:
       PGHOST: postgres
       PGUSER: testuser
@@ -32,6 +32,26 @@ services:
     # We have to wait until the database is up and running.
     # Database might already be running, so we need to do a cleanup first.
     command: /bin/sh -c "sleep 5 && psql -f cleanup.sql && psql -f schema.sql"
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: testpassword
+      MYSQL_DATABASE: test
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpassword
+    ports:
+      - 3306:3306
+  sqlserver:
+    image: kcollins/mssql:2019-latest
+    environment:
+      ACCEPT_EULA: Y # Confirms your acceptance of the End-User Licensing Agreement.
+      SA_PASSWORD: test-Password # Include dash and uppercase letter to meet password requirements.
+      MSSQL_DATABASE: test
+      MSSQL_USER: testuser
+      MSSQL_PASSWORD: test-Password
+      MSSQL_PID: Developer
+    ports:
+      - 1433:1433
   mailhog:
     image: mailhog/mailhog
     networks:
@@ -67,6 +87,8 @@ services:
       - .:/irmago
     depends_on:
       - postgres
+      - mysql
+      - sqlserver
       - mailhog
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
