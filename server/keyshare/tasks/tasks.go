@@ -128,21 +128,17 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 			}
 
 			if err := keyshare.VerifyMXRecord(email); err != nil {
-				if !t.revalidateMail {
-					// It could be this user has another, valid email address. Therefore we do not abort
-					// since is a chance we can still inform the user.
-					return nil
+				if t.revalidateMail {
+					if revErr := t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
+						time.Now().AddDate(0, 0, 5).Unix(),
+						id); revErr != nil {
+						t.conf.Logger.WithField("error", revErr).Error("Could not update email address to set revalidate_on")
+						return revErr
+					}
 				}
 
-				if revErr := t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
-					time.Now().AddDate(0, 0, 5).Unix(),
-					id); revErr != nil {
-					t.conf.Logger.WithField("error", revErr).Error("Could not update email address to set revalidate_on")
-					return revErr
-				}
-
-				// Abort to prevent sending mail until the invalid email address is revalidated
-				// so we can send the expiry mail to all, and only valid, addresses at once
+				// Abort to prevent sending mail. If revalidation is enabled, after the e-mail address is revalidated,
+				// the process will continue so an expiry mail is sent to all, and only valid, addresses at once.
 				return err
 			}
 
