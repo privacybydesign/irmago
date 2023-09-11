@@ -283,7 +283,7 @@ func TestEmailRevalidation(t *testing.T) {
 	require.NoError(t, runWithTimeout(th.expireAccounts))
 	require.NoError(t, runWithTimeout(th.revalidateMails))
 
-	// Is revalidate_on set for both email addresses?
+	// Is revalidate_on set for all email addresses?
 	assert.Equal(t, 3, countRows(t, db, "emails", "revalidate_on IS NOT NULL"))
 	assert.Equal(t, 0, countRows(t, db, "users", "delete_on IS NOT NULL"))
 
@@ -291,7 +291,7 @@ func TestEmailRevalidation(t *testing.T) {
 	_, err = db.Exec("UPDATE irma.emails SET email = $1, revalidate_on = $2 WHERE id = $3", "user_1@github.com", time.Now().AddDate(0, 0, -1).Unix(), 1)
 	require.NoError(t, err)
 
-	// Forward time for the invalid address
+	// Forward time for the invalid addresses
 	_, err = db.Exec("UPDATE irma.emails SET revalidate_on = $1 WHERE email LIKE $2", time.Now().AddDate(0, 0, -1).Unix(), "%@permenantlyinvalidaddress.com")
 	require.NoError(t, err)
 
