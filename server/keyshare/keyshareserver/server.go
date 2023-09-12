@@ -150,8 +150,13 @@ func (s *Server) routeHandler(r chi.Router) http.Handler {
 	r.Group(func(router chi.Router) {
 		router.Use(s.userMiddleware)
 		router.Use(s.authorizationMiddleware)
+
+		// Keyshare protocol
 		router.Post("/prove/getCommitments", s.handleCommitments)
 		router.Post("/prove/getResponse", s.handleResponse)
+
+		// User management
+		router.Get("/users/renewKeyshareAttribute", s.handleRenewKeyshareAttribute)
 	})
 
 	return r
@@ -505,6 +510,26 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 	server.WriteJson(w, result)
 }
 
+// /users/renewKeyshareAttribute
+func (s *Server) handleRenewKeyshareAttribute(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+
+	// Make an issuance request that first validates whether an old (expired) instance of the keyshare attribute is present
+	// and issues a new one if the username matches.
+	irmaReq := s.keyshareAttributeIssuanceRequest(user.Username)
+	irmaReq.AddSingle(s.conf.KeyshareAttribute, &user.Username, nil)
+	irmaReq.Disclosure().SkipExpiryCheck = []irma.CredentialTypeIdentifier{s.conf.KeyshareAttribute.CredentialTypeIdentifier()}
+
+	sessionptr, _, _, err := s.irmaserv.StartSession(irmaReq, nil)
+	if err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+		return
+	}
+
+	server.WriteJson(w, sessionptr)
+}
+
 func (s *Server) updatePin(ctx context.Context, user *User, jwtt string) (irma.KeysharePinStatus, error) {
 	// Check whether pin check is currently allowed
 	ok, tries, wait, err := s.reservePinCheck(ctx, user)
@@ -620,13 +645,7 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 	}
 
 	// Setup and return issuance session for keyshare credential.
-	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
-		{
-			CredentialTypeID: s.conf.KeyshareAttribute.CredentialTypeIdentifier(),
-			Attributes: map[string]string{
-				s.conf.KeyshareAttribute.Name(): username,
-			},
-		}})
+	request := s.keyshareAttributeIssuanceRequest(username)
 	sessionptr, _, _, err := s.irmaserv.StartSession(request, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not start keyshare credential issuance sessions")
@@ -716,4 +735,16 @@ func (s *Server) reservePinCheck(ctx context.Context, user *User) (bool, int, in
 		return false, tries, wait, nil
 	}
 	return true, tries, wait, nil
+}
+
+func (s *Server) keyshareAttributeIssuanceRequest(username string) *irma.IssuanceRequest {
+	validity := irma.Timestamp(time.Now().AddDate(1, 0, 0)) // 1 year from now
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: s.conf.KeyshareAttribute.CredentialTypeIdentifier(),
+			Attributes: map[string]string{
+				s.conf.KeyshareAttribute.Name(): username,
+			},
+			Validity: &validity,
+		}})
 }
