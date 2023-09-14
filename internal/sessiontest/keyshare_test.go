@@ -52,7 +52,7 @@ func TestKeyshareRegister(t *testing.T) {
 	keyshareSessions(t, client, irmaServer)
 }
 
-func TestKeyshareRenewal(t *testing.T) {
+func TestKeyshareAttributeRenewal(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
 	defer keyshareServer.Stop()
 

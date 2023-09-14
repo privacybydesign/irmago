@@ -1162,17 +1162,24 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	// If the session succeeds or fails, the keyshare server is stored to disk or
 	// removed from the client by the keyshareEnrollmentHandler.
 	client.keyshareServers[managerID] = kss
-	handler := newBackgroundIssuanceHandler(pin)
+	handler := &backgroundIssuanceHandler{
+		pin: pin,
+		credentialsToBeIssuedCallback: func(creds []*irma.CredentialRequest) {
+			// We need to store the keyshare username before the issuance permission is granted.
+			// Otherwise, authentication to the keyshare server fails during issuance of the keyshare attribute.
+			for _, attr := range creds[0].Attributes {
+				kss.Username = attr
+				break
+			}
+		},
+		resultErr: make(chan error),
+	}
 	client.newQrSession(qr, handler)
 	go func() {
 		err := <-handler.resultErr
 		if err != nil {
 			client.handler.EnrollmentFailure(managerID, irma.WrapErrorPrefix(err, "keyshare attribute issuance"))
 			return
-		}
-		for _, attr := range handler.credentials[0].Attributes {
-			kss.Username = attr
-			break
 		}
 		err = client.storage.StoreKeyshareServers(client.keyshareServers)
 		if err != nil {
@@ -1432,7 +1439,10 @@ func (client *Client) ensureKeyshareAttributeValid(pin string, kss *keyshareServ
 			client.reportError(err)
 			return
 		}
-		handler := newBackgroundIssuanceHandler(pin)
+		handler := &backgroundIssuanceHandler{
+			pin:       pin,
+			resultErr: make(chan error),
+		}
 		client.newQrSession(qr, handler)
 		if err := <-handler.resultErr; err != nil {
 			client.reportError(err)

@@ -11,15 +11,8 @@ import (
 type backgroundIssuanceHandler struct {
 	pin string
 
-	credentials []*irma.CredentialRequest
-	resultErr   chan error
-}
-
-func newBackgroundIssuanceHandler(pin string) *backgroundIssuanceHandler {
-	return &backgroundIssuanceHandler{
-		pin:       pin,
-		resultErr: make(chan error, 1),
-	}
+	credentialsToBeIssuedCallback func([]*irma.CredentialRequest)
+	resultErr                     chan error
 }
 
 // Force keyshareEnrollmentHandler to implement the Handler interface
@@ -28,6 +21,10 @@ var _ Handler = (*backgroundIssuanceHandler)(nil)
 // Session handlers in the order they are called
 
 func (h *backgroundIssuanceHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
+	if h.credentialsToBeIssuedCallback != nil {
+		h.credentialsToBeIssuedCallback(request.Credentials)
+	}
+
 	// First, collect all attributes that are to be issued.
 	attrsToBeIssued := map[irma.AttributeTypeIdentifier]string{}
 	for _, credReq := range request.Credentials {
@@ -80,8 +77,9 @@ func (h *backgroundIssuanceHandler) RequestPin(remainingAttempts int, callback P
 }
 
 func (h *backgroundIssuanceHandler) Success(result string) {
-	h.resultErr <- nil
-	close(h.resultErr)
+	if h.resultErr != nil {
+		h.resultErr <- nil
+	}
 }
 
 func (h *backgroundIssuanceHandler) Failure(err *irma.SessionError) {
@@ -90,8 +88,9 @@ func (h *backgroundIssuanceHandler) Failure(err *irma.SessionError) {
 
 // fail is a helper to ensure the kss is removed from the client in case of any problem
 func (h *backgroundIssuanceHandler) fail(err error) {
-	h.resultErr <- err
-	close(h.resultErr)
+	if h.resultErr != nil {
+		h.resultErr <- err
+	}
 }
 
 // Not interested, ingore
