@@ -25,7 +25,7 @@ func (h *backgroundIssuanceHandler) RequestIssuancePermission(request *irma.Issu
 		h.credentialsToBeIssuedCallback(request.Credentials)
 	}
 
-	// First, collect all attributes that are to be issued.
+	// First, collect all attributes that are going to be issued.
 	attrsToBeIssued := map[irma.AttributeTypeIdentifier]string{}
 	for _, credReq := range request.Credentials {
 		for id, value := range credReq.Attributes {
