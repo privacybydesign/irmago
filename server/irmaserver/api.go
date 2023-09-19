@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron"
+	etcd_client "go.etcd.io/etcd/client/v3"
 
 	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
@@ -95,6 +96,29 @@ func New(conf *server.Configuration) (*Server, error) {
 			client: cl,
 			conf:   conf,
 			locker: redislock.New(cl),
+		}
+	case "etcd":
+		etcdClient := conf.EtcdClient
+		if etcdClient == nil {
+			if conf.EtcdSettings == nil {
+				return nil, errors.New("etcd client not configured")
+			}
+			var err error
+			etcdClient, err = etcd_client.New(*conf.EtcdSettings)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelFunc()
+		if err := etcdClient.Sync(ctx); err != nil {
+			return nil, errors.WrapPrefix(err, "failed to sync with etcd cluster", 0)
+		}
+		s.conf.Logger.Debug("connected to etcd endpoints: ", etcdClient.Endpoints())
+		s.sessions = &etcdSessionStore{
+			client: etcdClient,
+			conf:   conf,
 		}
 	default:
 		return nil, errors.New("storeType not known")
@@ -490,8 +514,8 @@ func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, 
 	return s.SessionStatus(requestorToken)
 }
 func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan chan irma.ServerStatus, err error) {
-	if s.conf.StoreType == "redis" {
-		return nil, errors.New("SessionStatus cannot be used in combination with Redis.")
+	if s.conf.StoreType != "memory" {
+		return nil, errors.New("SessionStatus cannot be used in combination with Redis/etcd.")
 	}
 
 	session, err := s.sessions.get(requestorToken)

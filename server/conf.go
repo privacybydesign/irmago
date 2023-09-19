@@ -16,6 +16,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
+	etcd_client "go.etcd.io/etcd/client/v3"
 )
 
 // Configuration contains configuration for the irmaserver library and irmad.
@@ -51,6 +52,10 @@ type Configuration struct {
 	StoreType string `json:"store_type" mapstructure:"store_type"`
 	// RedisSettings that need to be specified when Redis is used as session data store.
 	RedisSettings *RedisSettings `json:"redis_settings" mapstructure:"redis_settings"`
+	// EtcdSettings that need to be specified when etcd is used as session data store (cannot be combined with EtcdClient option).
+	EtcdSettings *EtcdSettings `json:"etcd_settings" mapstructure:"etcd_settings"`
+	// EtcdClient specifies an existing etcd client to use as session data store (cannot be combined with EtcdSettings option).
+	EtcdClient *etcd_client.Client `json:"-"`
 
 	// Static session requests that can be created by POST /session/{name}
 	StaticSessions map[string]interface{} `json:"static_sessions"`
@@ -106,6 +111,8 @@ type RedisSettings struct {
 	DisableTLS         bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
+type EtcdSettings = etcd_client.Config
+
 // Check ensures that the Configuration is loaded, usable and free of errors.
 func (conf *Configuration) Check() error {
 	if conf.Logger == nil {
@@ -143,8 +150,8 @@ func (conf *Configuration) Check() error {
 		}
 	}
 
-	if conf.EnableSSE && conf.StoreType == "redis" {
-		return errors.New("Currently server-sent events (SSE) cannot be used simultaneously with the Redis session store.")
+	if conf.EnableSSE && conf.StoreType != "memory" {
+		return errors.New("Currently server-sent events (SSE) cannot be used simultaneously with the Redis/etcd session store.")
 	}
 
 	return nil

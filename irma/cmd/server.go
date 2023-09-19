@@ -130,6 +130,9 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("redis-tls-cert", "", "use Redis TLS with specific certificate or certificate authority")
 	flags.String("redis-tls-cert-file", "", "use Redis TLS path to specific certificate or certificate authority")
 	flags.Bool("redis-no-tls", false, "disable Redis TLS (by default, Redis TLS is enabled with the system certificate pool)")
+	flags.StringSlice("etcd-endpoints", nil, "comma-separated list of etcd endpoints")
+	flags.String("etcd-username", "", "etcd cluster username")
+	flags.String("etcd-password", "", "etcd cluster password")
 
 	headers["jwt-issuer"] = "JWT configuration"
 	flags.StringP("jwt-issuer", "j", "irmaserver", "JWT issuer")
@@ -233,7 +236,8 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	}
 
 	// Parse Redis store configuration
-	if conf.StoreType == "redis" {
+	switch conf.StoreType {
+	case "redis":
 		conf.RedisSettings = &server.RedisSettings{}
 		if conf.RedisSettings.Addr = viper.GetString("redis_addr"); conf.RedisSettings.Addr == "" {
 			return nil, errors.New("When Redis is used as session data store, a Redis URL must be specified with the --redis-addr flag.")
@@ -248,6 +252,17 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 		conf.RedisSettings.TLSCertificate = viper.GetString("redis_tls_cert")
 		conf.RedisSettings.TLSCertificateFile = viper.GetString("redis_tls_cert_file")
 		conf.RedisSettings.DisableTLS = viper.GetBool("redis_no_tls")
+	case "etcd":
+		conf.EtcdSettings = &server.EtcdSettings{
+			Endpoints: viper.GetStringSlice("etcd_endpoints"),
+			Username:  viper.GetString("etcd_username"),
+			Password:  viper.GetString("etcd_password"),
+		}
+
+		if len(conf.EtcdSettings.Endpoints) == 0 {
+			return nil, errors.New("When etcd is used as session data store, at least one etcd endpoint must be specified with the --etcd-endpoints flag.")
+		}
+		// TODO: Add tls cert support and a no-tls flag like the Redis implementation has.
 	}
 
 	logger.Debug("Done configuring")

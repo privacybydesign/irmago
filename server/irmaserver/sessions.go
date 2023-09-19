@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-errors/errors"
+	etcd_client "go.etcd.io/etcd/client/v3"
 
 	"github.com/bsm/redislock"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// TODO: split struct for different store implementations?
 type session struct {
 	sync.Mutex
 	sse            *sse.Server
@@ -34,6 +37,9 @@ type session struct {
 	request        irma.SessionRequest
 	statusChannels []chan irma.ServerStatus
 	handler        server.SessionHandler
+
+	etcdLease       etcd_client.LeaseID
+	etcdModRevision int64
 
 	sessionData
 }
@@ -85,6 +91,11 @@ type memorySessionStore struct {
 type redisSessionStore struct {
 	client *redis.Client
 	locker *redislock.Client
+	conf   *server.Configuration
+}
+
+type etcdSessionStore struct {
+	client *etcd_client.Client
 	conf   *server.Configuration
 }
 
@@ -380,6 +391,169 @@ func (s *redisSessionStore) stop() {
 		_ = logAsRedisError(err)
 	}
 	s.conf.Logger.Info("Redis client closed successfully")
+}
+
+func (s *etcdSessionStore) get(t irma.RequestorToken) (*session, error) {
+	ctx := context.TODO()
+
+	resp, err := s.client.Get(ctx, requestorTokenLookupPrefix+string(t))
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Kvs) != 1 {
+		return nil, &UnknownSessionError{t, ""}
+	}
+
+	return s.clientGet(irma.ClientToken(resp.Kvs[0].Value))
+}
+
+func (s *etcdSessionStore) clientGet(t irma.ClientToken) (*session, error) {
+	ctx := context.TODO()
+
+	key := clientTokenLookupPrefix + string(t)
+
+	resp, err := s.client.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Kvs) != 1 {
+		return nil, &UnknownSessionError{"", t}
+	}
+
+	session := &session{
+		sessions:        s,
+		conf:            s.conf,
+		etcdLease:       etcd_client.LeaseID(resp.Kvs[0].Lease),
+		etcdModRevision: resp.Kvs[0].ModRevision,
+	}
+	if err := json.Unmarshal(resp.Kvs[0].Value, &session.sessionData); err != nil {
+		return nil, err
+	}
+
+	// Initialize session request
+	session.request = session.Rrequest.SessionRequest()
+
+	// hashing the current session data needs to take place before the timeout check to detect all changes!
+	hash := session.sessionData.hash()
+	session.hashBefore = &hash
+
+	// timeout check
+	lifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
+	if session.LastActive.Add(lifetime).Before(time.Now()) && !session.Status.Finished() {
+		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session expired")
+		session.markAlive()
+		session.setStatus(irma.ServerStatusTimeout)
+	}
+
+	return session, nil
+}
+
+func (s *etcdSessionStore) add(session *session) error {
+	ctx := context.TODO()
+
+	sessionJSON, err := json.Marshal(session.sessionData)
+	if err != nil {
+		return server.LogError(err)
+	}
+
+	leaseID, err := s.newLease(session)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.client.Txn(ctx).
+		Then(
+			etcd_client.OpPut(requestorTokenLookupPrefix+string(session.sessionData.RequestorToken), string(session.ClientToken), etcd_client.WithLease(leaseID)),
+			etcd_client.OpPut(clientTokenLookupPrefix+string(session.ClientToken), string(sessionJSON), etcd_client.WithLease(leaseID)),
+		).
+		Commit()
+	return err
+}
+
+func (s *etcdSessionStore) update(session *session) error {
+	ctx := context.TODO()
+
+	hash := session.hash()
+	if session.hashBefore == nil || *session.hashBefore == hash {
+		// if nothing changed, updating is not necessary
+		return nil
+	}
+
+	sessionJSON, err := json.Marshal(session.sessionData)
+	if err != nil {
+		return server.LogError(err)
+	}
+
+	leaseID, err := s.newLease(session)
+	if err != nil {
+		return err
+	}
+
+	// TODO: this code is basically the same as in add. Can we refactor this?
+	requestorKey := requestorTokenLookupPrefix + string(session.sessionData.RequestorToken)
+	clientKey := clientTokenLookupPrefix + string(session.ClientToken)
+
+	resp, err := s.client.Txn(ctx).
+		If(etcd_client.Compare(etcd_client.ModRevision(clientKey), "=", session.etcdModRevision)).
+		Then(
+			etcd_client.OpPut(clientKey, string(sessionJSON), etcd_client.WithLease(leaseID)),
+			etcd_client.OpPut(requestorKey, string(session.ClientToken), etcd_client.WithLease(leaseID)),
+		).
+		Commit()
+	if err == nil && !resp.Succeeded {
+		// TODO: ensure that this error leads to another error than 500.
+		err = errors.New("session has been updated by another server")
+	}
+	if err != nil {
+		// Clean-up new lease if update failed
+		if _, revErr := s.client.Revoke(ctx, leaseID); revErr != nil {
+			s.conf.Logger.WithError(revErr).Error("failed to revoke etcd lease")
+		}
+		return err
+	}
+
+	// Clean-up old lease
+	if _, revErr := s.client.Revoke(ctx, session.etcdLease); revErr != nil {
+		s.conf.Logger.WithError(revErr).Error("failed to revoke etcd lease")
+	}
+	return nil
+}
+
+func (s *etcdSessionStore) newLease(session *session) (etcd_client.LeaseID, error) {
+	ctx := context.TODO()
+
+	// TODO: can't we stick to just one lease to improve performance? In clientGet there is also another expiry check mechanism.
+
+	// TODO: code duplication with redisSessionStore
+	sessionLifetime := time.Duration(s.conf.MaxSessionLifetime) * time.Minute
+	resultLifetime := time.Duration(s.conf.SessionResultLifetime) * time.Minute
+	// After the timeout, the session will automatically be removed. Therefore, the timeout needs to
+	// already include the session result lifetime. In this way, when the session expires, the session
+	// will be preserved until session result lifetime ends.
+	timeout := sessionLifetime + resultLifetime
+	if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
+		timeout = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
+	} else if session.Status.Finished() {
+		timeout = resultLifetime
+	}
+
+	// Create a new etcd lease
+	timeoutSeconds := int64(math.Ceil(timeout.Seconds()))
+	leaseResp, err := s.client.Grant(ctx, timeoutSeconds)
+	if err != nil {
+		return 0, err
+	}
+	return leaseResp.ID, nil
+}
+
+func (s *etcdSessionStore) unlock(session *session) {
+	// No locking is used in the etcd implementation.
+}
+
+func (s *etcdSessionStore) stop() {
+	if err := s.client.Close(); err != nil {
+		s.conf.Logger.WithError(err).Error("failed to close etcd client")
+	}
 }
 
 var one *big.Int = big.NewInt(1)
