@@ -39,7 +39,7 @@ type Configuration struct {
 	DBType            DBType `json:"db_type" mapstructure:"db_type"`
 	DBConnStr         string `json:"db_str" mapstructure:"db_str"`
 	DBConnMaxIdle     int    `json:"db_max_idle" mapstructure:"db_max_idle"`
-	DBConnMaxOpen    int    `json:"db_max_open" mapstructure:"db_max_open"`
+	DBConnMaxOpen     int    `json:"db_max_open" mapstructure:"db_max_open"`
 	DBConnMaxIdleTime int    `json:"db_max_idle_time" mapstructure:"db_max_idle_time"`
 	DBConnMaxOpenTime int    `json:"db_max_open_time" mapstructure:"db_max_open_time"`
 	// DeleteDelay is the delay in days before a user or email address deletion becomes effective.
