@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Sending the account expiry email is done when user has only valid e-mail addresses
+- Strip unnecessary details from database errors
 
 ### Fixed
 - User account expiry continues when one or more e-mail addresses are marked for revalidation
