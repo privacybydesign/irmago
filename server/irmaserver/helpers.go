@@ -303,7 +303,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
-		if cred.Validity.Before(irma.Timestamp(now)) {
+		if !AllowIssuingExpiredCredentials && cred.Validity.Before(irma.Timestamp(now)) {
 			return errors.New("cannot issue expired credentials")
 		}
 	}

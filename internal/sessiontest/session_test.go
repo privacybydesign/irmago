@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	sseclient "github.com/sietseringers/go-sse"
 	"github.com/stretchr/testify/require"
 )
@@ -1262,4 +1263,43 @@ func TestIssueExpiredKey(t *testing.T) {
 	expireKey(t, irmaServer.conf.IrmaConfiguration)
 	_, _, _, err := irmaServer.irma.StartSession(getIssuanceRequest(true), nil)
 	require.Error(t, err)
+}
+
+func TestExpiredCredential(t *testing.T) {
+	irmaserver.AllowIssuingExpiredCredentials = true
+	defer func() {
+		irmaserver.AllowIssuingExpiredCredentials = false
+	}()
+
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	// Issue an expired credential
+	invalidValidity := irma.Timestamp(time.Now())
+	value := "13371337"
+	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			Validity:         &invalidValidity,
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Radboud",
+				"studentCardNumber": value,
+				"studentID":         "s1234567",
+				"level":             "42",
+			},
+		},
+	})
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+
+	// Try to disclose it and check that it fails.
+	disclosureRequest := irma.NewDisclosureRequest()
+	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentCardNumber"), &value, nil)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+
+	// Try to disclose it when allowing expired credentials and check that it succeeds.
+	disclosureRequest.SkipExpiryCheck = []irma.CredentialTypeIdentifier{issuanceRequest.Credentials[0].CredentialTypeID}
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
 }

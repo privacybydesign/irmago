@@ -1,35 +1,74 @@
 package irmaclient
 
 import (
+	"fmt"
+
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 )
 
-// keyshareEnrollmentHandler handles the keyshare attribute issuance session
-// after registering to a new keyshare server.
-type keyshareEnrollmentHandler struct {
-	pin    string
-	client *Client
-	kss    *keyshareServer
+// backgroundIssuanceHandler handles an IRMA issuance session in the background.
+type backgroundIssuanceHandler struct {
+	pin string
+
+	credentialsToBeIssuedCallback func([]*irma.CredentialRequest)
+	resultErr                     chan error
 }
 
 // Force keyshareEnrollmentHandler to implement the Handler interface
-var _ Handler = (*keyshareEnrollmentHandler)(nil)
+var _ Handler = (*backgroundIssuanceHandler)(nil)
 
 // Session handlers in the order they are called
 
-func (h *keyshareEnrollmentHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
-	// Fetch the username from the credential request and save it along with the scheme manager
-	for _, attr := range request.Credentials[0].Attributes {
-		h.kss.Username = attr
-		break
+func (h *backgroundIssuanceHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
+	if h.credentialsToBeIssuedCallback != nil {
+		h.credentialsToBeIssuedCallback(request.Credentials)
 	}
 
-	// Do the issuance
-	callback(true, nil)
+	// First, collect all attributes that are going to be issued.
+	attrsToBeIssued := map[irma.AttributeTypeIdentifier]string{}
+	for _, credReq := range request.Credentials {
+		for id, value := range credReq.Attributes {
+			attrsToBeIssued[irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credReq.CredentialTypeID, id))] = value
+		}
+	}
+
+	// We only allow disclosing the previous values if the new values are the same.
+	var choice irma.DisclosureChoice
+	for _, discon := range candidates {
+		for _, con := range discon {
+			valid := true
+			for _, attr := range con {
+				if attr.CredentialHash == "" {
+					valid = false
+					break
+				}
+				if newValue, ok := attrsToBeIssued[attr.Type]; !ok || newValue != attr.Value[""] {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				attrs, err := con.Choose()
+				if err != nil {
+					callback(false, nil)
+					return
+				}
+				choice.Attributes = append(choice.Attributes, attrs)
+				break
+			}
+		}
+	}
+	// Check whether we chose an option from every candidate discon.
+	if len(choice.Attributes) != len(candidates) {
+		callback(false, nil)
+		return
+	}
+
+	callback(true, &choice)
 }
 
-func (h *keyshareEnrollmentHandler) RequestPin(remainingAttempts int, callback PinHandler) {
+func (h *backgroundIssuanceHandler) RequestPin(remainingAttempts int, callback PinHandler) {
 	if remainingAttempts == -1 { // -1 signifies that this is the first attempt
 		callback(true, h.pin)
 	} else {
@@ -37,52 +76,54 @@ func (h *keyshareEnrollmentHandler) RequestPin(remainingAttempts int, callback P
 	}
 }
 
-func (h *keyshareEnrollmentHandler) Success(result string) {
-	_ = h.client.storage.StoreKeyshareServers(h.client.keyshareServers) // TODO handle err?
-	h.client.handler.EnrollmentSuccess(h.kss.SchemeManagerIdentifier)
+func (h *backgroundIssuanceHandler) Success(result string) {
+	if h.resultErr != nil {
+		h.resultErr <- nil
+	}
 }
 
-func (h *keyshareEnrollmentHandler) Failure(err *irma.SessionError) {
+func (h *backgroundIssuanceHandler) Failure(err *irma.SessionError) {
 	h.fail(err)
 }
 
 // fail is a helper to ensure the kss is removed from the client in case of any problem
-func (h *keyshareEnrollmentHandler) fail(err error) {
-	delete(h.client.keyshareServers, h.kss.SchemeManagerIdentifier)
-	h.client.handler.EnrollmentFailure(h.kss.SchemeManagerIdentifier, err)
+func (h *backgroundIssuanceHandler) fail(err error) {
+	if h.resultErr != nil {
+		h.resultErr <- err
+	}
 }
 
 // Not interested, ingore
-func (h *keyshareEnrollmentHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
+func (h *backgroundIssuanceHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
 
 // The methods below should never be called, so we let each of them fail the session
-func (h *keyshareEnrollmentHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
+func (h *backgroundIssuanceHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
 	callback(false, nil)
 }
-func (h *keyshareEnrollmentHandler) RequestSignaturePermission(request *irma.SignatureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
+func (h *backgroundIssuanceHandler) RequestSignaturePermission(request *irma.SignatureRequest, satisfiable bool, candidates [][]DisclosureCandidates, ServerName *irma.RequestorInfo, callback PermissionHandler) {
 	callback(false, nil)
 }
-func (h *keyshareEnrollmentHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
+func (h *backgroundIssuanceHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(false)
 }
-func (h *keyshareEnrollmentHandler) Cancelled() {
-	h.fail(errors.New("Keyshare enrollment session unexpectedly cancelled"))
+func (h *backgroundIssuanceHandler) Cancelled() {
+	h.fail(errors.New("session unexpectedly cancelled"))
 }
-func (h *keyshareEnrollmentHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
-	h.fail(errors.New("Keyshare enrollment failed: blocked"))
+func (h *backgroundIssuanceHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	h.fail(errors.New("user is blocked"))
 }
-func (h *keyshareEnrollmentHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	h.fail(errors.New("Keyshare enrollment failed: registration incomplete"))
+func (h *backgroundIssuanceHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	h.fail(errors.New("keyshare registration incomplete"))
 }
-func (h *keyshareEnrollmentHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
-	h.fail(errors.New("Keyshare enrollment failed: not enrolled"))
+func (h *backgroundIssuanceHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	h.fail(errors.New("keyshare enrollment deleted"))
 }
-func (h *keyshareEnrollmentHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
-	h.fail(errors.New("Keyshare enrollment failed: unenrolled"))
+func (h *backgroundIssuanceHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
+	h.fail(errors.New("keyshare enrollment missing"))
 }
-func (h *keyshareEnrollmentHandler) ClientReturnURLSet(clientReturnURL string) {
-	h.fail(errors.New("Keyshare enrollment session unexpectedly found an external return url"))
+func (h *backgroundIssuanceHandler) ClientReturnURLSet(clientReturnURL string) {
+	h.fail(errors.New("unexpectedly found an external return url"))
 }
-func (h *keyshareEnrollmentHandler) PairingRequired(pairingCode string) {
-	h.fail(errors.New("Keyshare enrollment session failed: device pairing required"))
+func (h *backgroundIssuanceHandler) PairingRequired(pairingCode string) {
+	h.fail(errors.New("device pairing required"))
 }

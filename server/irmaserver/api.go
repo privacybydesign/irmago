@@ -25,6 +25,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// AllowIssuingExpiredCredentials indicates whether or not expired credentials can be issued.
+var AllowIssuingExpiredCredentials = false
+
 type Server struct {
 	conf             *server.Configuration
 	router           *chi.Mux
