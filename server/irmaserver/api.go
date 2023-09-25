@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-co-op/gocron"
@@ -315,9 +316,19 @@ func (s *Server) startNextSession(
 			Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 	session.handler = handler
+
+	url, err := url.Parse(s.conf.URL)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	url = url.JoinPath("session", string(session.ClientToken))
+	if request.Base().Host != "" {
+		url.Host = request.Base().Host
+	}
+
 	return &irma.Qr{
 			Type: action,
-			URL:  s.conf.URL + "session/" + string(session.ClientToken),
+			URL:  url.String(),
 		},
 		session.RequestorToken,
 		&irma.FrontendSessionRequest{
