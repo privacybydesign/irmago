@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     }
   }
   ```
-- Permission option `hosts` in the requestor configuration to specify which values a requestor may use for the `host` option in session requests
+- Permission option `host_perms` in the requestor configuration to specify which values a requestor may use for the `host` option in session requests
   ```
   {
     "requestors": {
@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             "disclose_perms": [ "irma-demo.MijnOverheid.ageLower.over18" ],
             "sign_perms": [ "irma-demo.MijnOverheid.ageLower.*" ],
             "issue_perms": [ "irma-demo.MijnOverheid.ageLower" ],
-            "hosts": ["*.example.com"]
+            "host_perms": ["*.example.com"]
             "auth_method": "token",
             "key": "eGE2PSomOT84amVVdTU"
         }

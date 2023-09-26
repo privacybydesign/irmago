@@ -68,7 +68,7 @@ type Permissions struct {
 	Issuing    []string `json:"issue_perms" mapstructure:"issue_perms"`
 	Revoking   []string `json:"revoke_perms" mapstructure:"revoke_perms"`
 
-	Hosts []string `json:"hosts" mapstructure:"hosts"`
+	Hosts []string `json:"host_perms" mapstructure:"host_perms"`
 }
 
 // Requestor contains all configuration (disclosure or verification permissions and authentication)
