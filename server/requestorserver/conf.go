@@ -95,26 +95,30 @@ func (conf *Configuration) CanRequest(requestor string, request irma.SessionRequ
 		}
 	}
 
-	host := request.Base().Host
-	if host != "" {
-		if len(conf.Requestors[requestor].Hosts) == 0 {
-			defaultURL, err := url.Parse(conf.URL)
-			if err != nil {
-				return false, "default host is invalid"
-			}
-			if host == defaultURL.Host {
-				return true, ""
-			}
-		}
-		for _, hostPattern := range conf.Requestors[requestor].Hosts {
-			if match, _ := filepath.Match(hostPattern, host); match {
-				return true, ""
-			}
-		}
-		return false, "requestor not allowed to use the requested host"
+	defaultURL, err := url.Parse(conf.URL)
+	if err != nil {
+		return false, "default host is invalid"
 	}
 
-	return true, ""
+	// If no host is specified in the request, then the default URL from the configuration will be used.
+	// We should take this into account when checking the permissions.
+	host := request.Base().Host
+	if host == "" {
+		host = defaultURL.Host
+	}
+
+	// If no host are specified in the requestor configuration, then we only allow the default host.
+	if len(conf.Requestors[requestor].Hosts) == 0 && host == defaultURL.Host {
+		return true, ""
+	}
+
+	// For all host patterns being set in the requestor configuration, check whether the requested host matches it.
+	for _, hostPattern := range conf.Requestors[requestor].Hosts {
+		if match, _ := filepath.Match(hostPattern, host); match {
+			return true, ""
+		}
+	}
+	return false, "requestor not allowed to use the requested host"
 }
 
 // CanIssue returns whether or not the specified requestor may issue the specified credentials.
