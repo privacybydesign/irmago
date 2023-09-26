@@ -107,7 +107,7 @@ func (conf *Configuration) CanRequest(requestor string, request irma.SessionRequ
 		host = defaultURL.Host
 	}
 
-	// If no host are specified in the requestor configuration, then we only allow the default host.
+	// If no host is specified in the requestor configuration, then we only allow the default host.
 	if len(conf.Requestors[requestor].Hosts) == 0 && host == defaultURL.Host {
 		return true, ""
 	}
