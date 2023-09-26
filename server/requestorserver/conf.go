@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/url"
-	"path/filepath"
+	"path"
 	"slices"
 	"strings"
 
@@ -114,7 +114,7 @@ func (conf *Configuration) CanRequest(requestor string, request irma.SessionRequ
 
 	// For all host patterns being set in the requestor configuration, check whether the requested host matches it.
 	for _, hostPattern := range conf.Requestors[requestor].Hosts {
-		if match, _ := filepath.Match(hostPattern, host); match {
+		if match, _ := path.Match(hostPattern, host); match {
 			return true, ""
 		}
 	}
