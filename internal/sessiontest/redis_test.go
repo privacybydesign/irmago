@@ -246,7 +246,7 @@ func TestRedisRedundancy(t *testing.T) {
 
 	for i, port := range ports {
 		c := redisRequestorConfigDecorator(mr, cert, "", RequestorServerAuthConfiguration)()
-		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", port)
+		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", requestorServerPort)
 		c.Port = port
 		rs := StartRequestorServer(t, c)
 		servers[i] = rs
