@@ -619,6 +619,13 @@ func (dr *DisclosureRequest) Validate() error {
 	return nil
 }
 
+func (cr *CredentialRequest) PublicKeyIdentifier() PublicKeyIdentifier {
+	return PublicKeyIdentifier{
+		Issuer:  cr.CredentialTypeID.IssuerIdentifier(),
+		Counter: cr.KeyCounter,
+	}
+}
+
 func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, issuedAt time.Time) (*CredentialInfo, error) {
 	list, err := cr.AttributeList(conf, metadataVersion, nil, issuedAt)
 	if err != nil {

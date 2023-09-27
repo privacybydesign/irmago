@@ -43,11 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   }
   ```
 - Renewal endpoint for keyshare attribute in the keyshare server (`/users/renewKeyshareAttribute`)
+- Keyshare server /api/v2/prove/... endpoints for the new keyshare protocol
 
 ### Changed
 - `KeyshareVerifyPin` function in irmaclient ensures the keyshare attribute is valid
-
-### Changed
 - Sending the account expiry email is done when user has only valid e-mail addresses
 - Strip unnecessary details from database errors
 

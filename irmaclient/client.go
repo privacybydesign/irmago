@@ -952,22 +952,44 @@ func generateIssuerProofNonce() (*big.Int, error) {
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
 // for the future credentials as well as possibly any disclosed attributes, and generates
 // a nonce against which the issuer's proof of knowledge must verify.
-func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest, choice *irma.DisclosureChoice,
+func (client *Client) IssuanceProofBuilders(
+	request *irma.IssuanceRequest, choice *irma.DisclosureChoice, keyshareSession *keyshareSession,
 ) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
 	issuerProofNonce, err := generateIssuerProofNonce()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
+
+	var keysharePs = map[irma.SchemeManagerIdentifier]*irma.PMap{}
+	if keyshareSession != nil {
+		keysharePs, err = keyshareSession.getKeysharePs(request)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
 	for _, futurecred := range request.Credentials {
 		var pk *gabikeys.PublicKey
+		keyID := futurecred.PublicKeyIdentifier()
+		schemeID := keyID.Issuer.SchemeManagerIdentifier()
+		distributed := client.Configuration.SchemeManagers[schemeID].Distributed()
+		var keyshareP *big.Int
+		var present bool
+		if distributed {
+			keyshareP, present = keysharePs[schemeID].Ps[keyID]
+			if distributed && !present {
+				return nil, nil, nil, errors.Errorf("missing keyshareP for %s-%d", keyID.Issuer, keyID.Counter)
+			}
+		}
+
 		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		credtype := client.Configuration.CredentialTypes[futurecred.CredentialTypeID]
 		credBuilder, err := gabi.NewCredentialBuilder(pk, request.GetContext(),
-			client.secretkey.Key, issuerProofNonce, credtype.RandomBlindAttributeIndices())
+			client.secretkey.Key, issuerProofNonce, keyshareP, credtype.RandomBlindAttributeIndices())
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -986,7 +1008,7 @@ func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest, choic
 // and also returns the credential builders which will become the new credentials upon combination with the issuer's signature.
 func (client *Client) IssueCommitments(request *irma.IssuanceRequest, choice *irma.DisclosureChoice,
 ) (*irma.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
-	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request, choice)
+	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request, choice, nil)
 	if err != nil {
 		return nil, nil, err
 	}
