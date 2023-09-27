@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Added
 - Option `skipExpiryCheck` in disclosure requests to allow disclosure of expired credentials (e.g. `"skipExpiryCheck": ["irma-demo.sidn-pbdf.email"]`)
+- Option `host` in session request to overrule host name in IRMA QR if permission has been granted (see below)
+  ```
+  {
+    "@context": "https://irma.app/ld/request/disclosure/v2",
+    "host": "irma.example.com",
+    "disclose": ...
+  }
+  ```
+  This leads to the following session package:
+  ```
+  {
+    "token":"KzxuWKwL5KGLKr4uerws",
+    "sessionPtr": {"u":"https://irma.example.com/irma/session/ysDohpoySavbHAUDjmpz","irmaqr":"disclosing"},
+    "frontendRequest": {
+      "authorization":"qGrMmL8UZwZ88Sq8gobV",
+      "minProtocolVersion": "1.0",
+      "maxProtocolVersion": "1.1"
+    }
+  }
+  ```
+- Permission option `host_perms` in the requestor configuration to specify which values a requestor may use for the `host` option in session requests
+  ```
+  {
+    "requestors": {
+        "myapp": {
+            "disclose_perms": [ "irma-demo.MijnOverheid.ageLower.over18" ],
+            "sign_perms": [ "irma-demo.MijnOverheid.ageLower.*" ],
+            "issue_perms": [ "irma-demo.MijnOverheid.ageLower" ],
+            "host_perms": ["*.example.com"]
+            "auth_method": "token",
+            "key": "eGE2PSomOT84amVVdTU"
+        }
+    }
+  }
+  ```
 - Renewal endpoint for keyshare attribute in the keyshare server (`/users/renewKeyshareAttribute`)
 
 ### Changed

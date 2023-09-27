@@ -51,6 +51,8 @@ type BaseRequest struct {
 
 	ClientReturnURL  string `json:"clientReturnUrl,omitempty"`  // URL to proceed to when IRMA session is completed
 	AugmentReturnURL bool   `json:"augmentReturnUrl,omitempty"` // Whether to augment the return url with the server session token
+
+	Host string `json:"host,omitempty"` // Host to use in the IRMA session QR
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.

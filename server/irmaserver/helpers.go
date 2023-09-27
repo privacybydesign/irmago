@@ -604,6 +604,12 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			}
 		}()
 
+		expectedHost := session.request.Base().Host
+		if expectedHost != "" && expectedHost != r.Host {
+			server.WriteError(w, server.ErrorUnauthorized, "Host mismatch")
+			return
+		}
+
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
 	})
 }
